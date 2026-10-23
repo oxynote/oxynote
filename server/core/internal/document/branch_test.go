@@ -32,8 +32,41 @@ func Test_Document_AllowsBranchRename(t *testing.T) {
 func Test_Document_AllowsBranchDelete(t *testing.T) {
 	t.Parallel()
 
-	testutil.AssertEqualError(t, ErrDefaultBranchDelete, Document{Default: true}.AllowsBranchDelete())
-	testutil.AssertEqualError(t, nil, Document{}.AllowsBranchDelete())
+	cc := map[string]struct {
+		Doc Document
+		Err error
+	}{
+		"Default branch deleted": {Doc: Document{Default: true}, Err: ErrDefaultBranchDelete},
+		"Fork deleted":           {Doc: Document{}},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Doc.AllowsBranchDelete())
+		})
+	}
+}
+
+func Test_Document_AllowsDocumentChange(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Doc Document
+		Err error
+	}{
+		"Protected branch":   {Doc: Document{Protected: true}, Err: ErrBranchProtected},
+		"Unprotected branch": {Doc: Document{}},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Doc.AllowsDocumentChange())
+		})
+	}
 }
 
 func Test_AllowsMerge(t *testing.T) {
@@ -41,6 +74,20 @@ func Test_AllowsMerge(t *testing.T) {
 
 	from, to := xid.New(), xid.New()
 
-	testutil.AssertEqualError(t, ErrBranchSelfMerge, AllowsMerge(from, from))
-	testutil.AssertEqualError(t, nil, AllowsMerge(from, to))
+	cc := map[string]struct {
+		From xid.ID
+		To   xid.ID
+		Err  error
+	}{
+		"Branch merged into itself":      {From: from, To: from, Err: ErrBranchSelfMerge},
+		"Branch merged into another one": {From: from, To: to},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, AllowsMerge(c.From, c.To))
+		})
+	}
 }

@@ -25,7 +25,7 @@ func Test_New(t *testing.T) {
 
 	var (
 		log = slog.New(slog.DiscardHandler)
-		fc  = newFactory()
+		fc  = metricutil.NewFactory("engineering", prometheus.NewRegistry(), metricutil.WithCustomHost("demo"))
 	)
 
 	s := New(log, fc)
@@ -45,49 +45,64 @@ func Test_New(t *testing.T) {
 func Test_Server_Listen(t *testing.T) {
 	t.Parallel()
 
-	log, wr, content := bufferLog()
-
-	s := Server{
-		log:  log,
-		http: &http.Server{Addr: ":a", ReadHeaderTimeout: time.Minute},
+	cc := map[string]struct {
+		Addr      string
+		Shutdown  bool
+		ErrLogged bool
+	}{
+		// an invalid port makes ListenAndServe fail immediately.
+		"Error returned by http.Server.ListenAndServe": {
+			Addr:      ":a",
+			ErrLogged: true,
+		},
+		// a graceful shutdown ends Listen without the error log.
+		"Successful graceful shutdown": {
+			Addr:     "127.0.0.1:0",
+			Shutdown: true,
+		},
 	}
 
-	// an invalid port makes ListenAndServe fail immediately.
-	s.Listen()
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	require.NoError(t, wr.Flush())
-	assert.Contains(t, content(), `"msg":"listening"`)
-	assert.Contains(t, content(), "cannot terminate gracefully")
+			wr, buf := testutil.NewBuffer()
 
-	// a graceful shutdown ends Listen without the error log.
-	log2, wr2, content2 := bufferLog()
+			s := Server{
+				log:  slog.New(slog.NewJSONHandler(wr, nil)),
+				http: &http.Server{Addr: c.Addr, ReadHeaderTimeout: time.Minute},
+			}
 
-	s2 := Server{
-		log:  log2,
-		http: &http.Server{Addr: "127.0.0.1:0", ReadHeaderTimeout: time.Minute},
+			stopCh := make(chan struct{})
+
+			go func() {
+				defer close(stopCh)
+
+				s.Listen()
+			}()
+
+			if c.Shutdown {
+				require.Eventually(t, func() bool {
+					require.NoError(t, wr.Flush())
+
+					return buf.String() != ""
+				}, 5*time.Second, 10*time.Millisecond)
+
+				require.NoError(t, s.http.Shutdown(context.Background()))
+			}
+
+			<-stopCh
+
+			require.NoError(t, wr.Flush())
+			assert.Contains(t, buf.String(), `"msg":"listening"`)
+
+			if c.ErrLogged {
+				assert.Contains(t, buf.String(), "cannot terminate gracefully")
+			} else {
+				assert.NotContains(t, buf.String(), "cannot terminate gracefully")
+			}
+		})
 	}
-
-	stopCh := make(chan struct{})
-
-	go func() {
-		defer close(stopCh)
-
-		s2.Listen()
-	}()
-
-	require.Eventually(t, func() bool {
-		require.NoError(t, wr2.Flush())
-
-		return content2() != ""
-	}, 5*time.Second, 10*time.Millisecond)
-
-	require.NoError(t, s2.http.Shutdown(context.Background()))
-
-	<-stopCh
-
-	require.NoError(t, wr2.Flush())
-	assert.Contains(t, content2(), `"msg":"listening"`)
-	assert.NotContains(t, content2(), "cannot terminate gracefully")
 }
 
 func Test_Server_Address(t *testing.T) {
@@ -166,7 +181,9 @@ func Test_Server_router(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			fc := newFactory()
+			// each subtest registers the same gauge, so each needs its own
+			// registry.
+			fc := metricutil.NewFactory("engineering", prometheus.NewRegistry(), metricutil.WithCustomHost("demo"))
 
 			// a registered gauge gives the scrape something to report.
 			fc.NewGauge(metricutil.Options{Name: "test_gauge", Help: "Tracks nothing."}).Set(1)
@@ -185,22 +202,4 @@ func Test_Server_router(t *testing.T) {
 			}
 		})
 	}
-}
-
-// newFactory creates a metrics factory backed by a registry of its own, so
-// parallel tests never collide over metric names.
-func newFactory() metricutil.Factory {
-	return metricutil.NewFactory(
-		"engineering",
-		prometheus.NewRegistry(),
-		metricutil.WithCustomHost("demo"),
-	)
-}
-
-// bufferLog creates a logger writing into a buffer whose contents the caller
-// can read back once flushed.
-func bufferLog() (*slog.Logger, *testutil.Writer, func() string) {
-	wr, buf := testutil.NewBuffer()
-
-	return slog.New(slog.NewJSONHandler(wr, nil)), wr, buf.String
 }

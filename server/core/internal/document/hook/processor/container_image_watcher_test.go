@@ -61,16 +61,6 @@ func newFakeRegistryImage(t *testing.T, unauthorized bool) (string, string) {
 	return strings.TrimPrefix(authSrv.URL, "http://") + "/test/img:v1", digest.String()
 }
 
-// imageWatcherState marshals a container-image-watcher state for tests.
-func imageWatcherState(t *testing.T, digest string) State {
-	t.Helper()
-
-	raw, err := json.Marshal(ContainerImageWatcherState{Digest: digest})
-	require.NoError(t, err)
-
-	return State(raw)
-}
-
 func Test_ContainerImageWatcher_Validate(t *testing.T) {
 	t.Parallel()
 
@@ -155,7 +145,10 @@ func Test_ContainerImageWatcher_Process(t *testing.T) {
 
 			state := c.State
 			if state == nil {
-				state = imageWatcherState(t, digest)
+				raw, err := json.Marshal(ContainerImageWatcherState{Digest: digest})
+				require.NoError(t, err)
+
+				state = State(raw)
 			}
 
 			res, err := (&ContainerImageWatcher{Image: image}).Process(context.Background(), stubInput{state: state})
@@ -215,7 +208,9 @@ func Test_ContainerImageWatcher_Reset(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, imageWatcherState(t, digest), res.State)
+			raw, err := json.Marshal(ContainerImageWatcherState{Digest: digest})
+			require.NoError(t, err)
+			assert.Equal(t, State(raw), res.State)
 		})
 	}
 }

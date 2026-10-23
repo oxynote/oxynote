@@ -11,14 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// sessionCtx returns a subscriber context carrying a session of the user.
-func sessionCtx(userID, organizationID string) context.Context {
-	return auth.AddSessionToContext(context.Background(), auth.Session{
-		UserID:               userID,
-		ActiveOrganizationID: organizationID,
-	})
-}
-
 func Test_Handler_BindChange(t *testing.T) {
 	t.Parallel()
 
@@ -33,17 +25,17 @@ func Test_Handler_NotifyChange(t *testing.T) {
 
 	cc := map[string]struct {
 		UserID null.String
-		Allow  []context.Context
-		Deny   []context.Context
+		Allow  []auth.Session
+		Deny   []auth.Session
 	}{
 		"Organization change reaches every member": {
-			Allow: []context.Context{sessionCtx("u1", "org1"), sessionCtx("u2", "org1")},
-			Deny:  []context.Context{sessionCtx("u1", "org2"), context.Background()},
+			Allow: []auth.Session{{UserID: "u1", ActiveOrganizationID: "org1"}, {UserID: "u2", ActiveOrganizationID: "org1"}},
+			Deny:  []auth.Session{{UserID: "u1", ActiveOrganizationID: "org2"}},
 		},
 		"Value change reaches only the user": {
 			UserID: null.StringFrom("u1"),
-			Allow:  []context.Context{sessionCtx("u1", "org1")},
-			Deny:   []context.Context{sessionCtx("u2", "org1"), context.Background()},
+			Allow:  []auth.Session{{UserID: "u1", ActiveOrganizationID: "org1"}},
+			Deny:   []auth.Session{{UserID: "u2", ActiveOrganizationID: "org1"}},
 		},
 	}
 
@@ -64,13 +56,14 @@ func Test_Handler_NotifyChange(t *testing.T) {
 			pubs := tpc.PublishManyCalls()
 			require.Len(t, pubs, 1)
 			assert.Equal(t, ChangeMessage{}, pubs[0].Payload)
+			assert.False(t, pubs[0].Filter(context.Background(), "topic"))
 
-			for _, ctx := range c.Allow {
-				assert.True(t, pubs[0].Filter(ctx, "topic"))
+			for _, s := range c.Allow {
+				assert.True(t, pubs[0].Filter(auth.AddSessionToContext(context.Background(), s), "topic"))
 			}
 
-			for _, ctx := range c.Deny {
-				assert.False(t, pubs[0].Filter(ctx, "topic"))
+			for _, s := range c.Deny {
+				assert.False(t, pubs[0].Filter(auth.AddSessionToContext(context.Background(), s), "topic"))
 			}
 		})
 	}

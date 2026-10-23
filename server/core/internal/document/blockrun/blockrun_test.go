@@ -25,24 +25,19 @@ const (
 	_organizationID = "org-1"
 )
 
-// docWith wraps the given block in the document the runner resolves it
-// out of.
-func docWith(documentID xid.ID, block document.Block) *document.Document {
+// docWith wraps a block of the given kind, carrying the addressed uid, in
+// the document the runner resolves it out of.
+func docWith(documentID xid.ID, typ document.BlockNodeType) *document.Document {
 	doc := &document.Document{ID: documentID, OrganizationID: _organizationID}
 	doc.Content = document.RootBlock{
-		Type:    document.BlockNodeDoc,
-		Content: []document.Block{block},
+		Type: document.BlockNodeDoc,
+		Content: []document.Block{{
+			Type:  typ,
+			Attrs: document.Attributes{document.AttrUID: _blockUID},
+		}},
 	}
 
 	return doc
-}
-
-// blockOfType is a block of the given kind carrying the addressed uid.
-func blockOfType(typ document.BlockNodeType) document.Block {
-	return document.Block{
-		Type:  typ,
-		Attrs: document.Attributes{document.AttrUID: _blockUID},
-	}
 }
 
 func Test_Runner_Run(t *testing.T) {
@@ -62,15 +57,15 @@ func Test_Runner_Run(t *testing.T) {
 		SimCalls   int
 	}{
 		"A metric block is handed to its simulation": {
-			Doc:        docWith(documentID, blockOfType(document.BlockNodeMetricBlock)),
+			Doc:        docWith(documentID, document.BlockNodeMetricBlock),
 			SimResult:  simulation.Result{Cleared: true},
 			DocumentID: documentID,
 			BlockUID:   _blockUID,
 			Expected:   simulation.Result{Cleared: true},
 			SimCalls:   1,
 		},
-		"What the block kind reports is what comes back": {
-			Doc:        docWith(documentID, blockOfType(document.BlockNodeMetricBlock)),
+		"Error returned by MetricSimulation.Check": {
+			Doc:        docWith(documentID, document.BlockNodeMetricBlock),
 			SimErr:     assert.AnError,
 			DocumentID: documentID,
 			BlockUID:   _blockUID,
@@ -78,24 +73,24 @@ func Test_Runner_Run(t *testing.T) {
 			SimCalls:   1,
 		},
 		"The uid names no block on the branch": {
-			Doc:        docWith(documentID, blockOfType(document.BlockNodeMetricBlock)),
+			Doc:        docWith(documentID, document.BlockNodeMetricBlock),
 			DocumentID: documentID,
 			BlockUID:   "nope",
 			Err:        ErrBlockNotFound,
 		},
 		"The branch belongs to another document": {
-			Doc:        docWith(xid.New(), blockOfType(document.BlockNodeMetricBlock)),
+			Doc:        docWith(xid.New(), document.BlockNodeMetricBlock),
 			DocumentID: documentID,
 			BlockUID:   _blockUID,
 			Err:        ErrBlockNotFound,
 		},
 		"The block kind has nothing to run": {
-			Doc:        docWith(documentID, blockOfType(document.BlockNodeParagraph)),
+			Doc:        docWith(documentID, document.BlockNodeParagraph),
 			DocumentID: documentID,
 			BlockUID:   _blockUID,
 			Err:        ErrNotRunnable,
 		},
-		"The branch cannot be read": {
+		"Error returned by DB.FetchDocumentByBranchID": {
 			DocErr:     true,
 			DocumentID: documentID,
 			BlockUID:   _blockUID,
@@ -146,7 +141,10 @@ func Test_Runner_Run(t *testing.T) {
 				assert.Equal(t, c.DocumentID, call.DocumentID)
 				assert.Equal(t, branchID, call.BranchID)
 				assert.Equal(t, _organizationID, call.OrganizationID)
-				assert.Equal(t, blockOfType(document.BlockNodeMetricBlock), call.Block)
+				assert.Equal(t, document.Block{
+					Type:  document.BlockNodeMetricBlock,
+					Attrs: document.Attributes{document.AttrUID: _blockUID},
+				}, call.Block)
 			}
 
 			// the branch is read exactly once, whatever the block is

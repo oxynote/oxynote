@@ -49,9 +49,9 @@ type searchDocuments struct{}
 func (searchDocuments) Info() Info {
 	return Info{
 		Name:        NameSearchDocuments,
-		Description: "Full-text search for blocks whose text matches the query, across every branch of every document. Returns {documents: [{document_id, document_name, branch_id, branch_name, default, hits: [{block_uid, text}]}]}, best match first. A block a fork copied unchanged is found on every branch holding it. A hit is the innermost block holding the text; get_document with its block_uid reads the element holding it. Use list_documents to find a document by title.",
+		Description: "Full-text search of document titles and block text, across every branch of every document. Returns {documents: [{document_id, document_name, branch_id, branch_name, default, protected, title_match, hits: [{block_uid, text}]}]}, best match first. A title or block matches when it holds all but one of the query's words, typos allowed, so search for a title or a phrase, not both, and check document_name. title_match says the title matched. A hit is the innermost block holding the text, and get_document with its block_uid reads the element holding it. A block a fork copied unchanged is found on every branch holding it.",
 		Properties: map[string]any{
-			"query": map[string]any{"type": "string", "description": "The text to search for; matching is typo-tolerant."},
+			"query": map[string]any{"type": "string", "description": "The title or phrase to search for."},
 			"limit": map[string]any{
 				"type":        "integer",
 				"description": "Optional. The most hits to return: 20 by default, 50 at most.",
@@ -94,26 +94,24 @@ func (searchDocuments) Execute(inp *input) (string, error) {
 		return "", fmt.Errorf("search: %w", err)
 	}
 
-	// the index stores block text keyed by (branch, block uid) but not
-	// document names; join names in from the document tree so the AI can
-	// talk about hits without a follow-up lookup per document. Zero hits
-	// have nothing to decorate, so the fetch is skipped.
-	names := map[xid.ID]document.Summary{}
+	// the index holds neither document names nor branch protection; both
+	// are joined in from the organisation's branches, so the model can
+	// talk about hits and pick a branch to write to without a lookup per
+	// document. Zero hits have nothing to decorate, so the fetch is skipped.
+	branches := map[xid.ID][]document.BranchSummary{}
 
 	if len(blocks) > 0 {
-		tree, terr := inp.FetchDocumentTree()
-		if terr != nil {
-			// the names decorate the hits; losing them is not worth
-			// failing the search over, but it should not pass unnoticed
-			// either.
+		found, berr := inp.FetchBranchesByDocument()
+		if berr != nil {
+			// the names and flags decorate the hits; losing them is not
+			// worth failing the search over, but it should not pass
+			// unnoticed either.
 			inp.Warn(
-				"cannot fetch the document tree for search hit names",
-				slog.String("error", terr.Error()),
+				"cannot fetch the branches for search hits",
+				slog.String("error", berr.Error()),
 			)
 		} else {
-			for _, d := range tree.Descendants() {
-				names[d.ID] = d
-			}
+			branches = found
 		}
 	}
 
@@ -130,13 +128,35 @@ func (searchDocuments) Execute(inp *input) (string, error) {
 			at = len(out.Documents)
 			index[b.BranchID] = at
 
-			out.Documents = append(out.Documents, searchDocument{
-				DocumentID:   b.DocumentID,
-				DocumentName: names[b.DocumentID].DocumentName,
-				BranchID:     b.BranchID,
-				BranchName:   b.BranchName,
-				Default:      b.BranchDefault,
-			})
+			entry := searchDocument{
+				DocumentID: b.DocumentID,
+				BranchID:   b.BranchID,
+				BranchName: b.BranchName,
+				Default:    b.BranchDefault,
+				Hits:       []searchHit{},
+			}
+
+			// the document goes by its default branch's name, as in the
+			// sidebar.
+			for _, br := range branches[b.DocumentID] {
+				if br.Default {
+					entry.DocumentName = br.DocumentName
+				}
+
+				if br.BranchID == b.BranchID {
+					entry.Protected = &br.Protected
+				}
+			}
+
+			out.Documents = append(out.Documents, entry)
+		}
+
+		// the name's entry is not a block, so it is a flag rather than a
+		// hit get_document could not read.
+		if b.IsDocumentName() {
+			out.Documents[at].TitleMatch = true
+
+			continue
 		}
 
 		out.Documents[at].Hits = append(out.Documents[at].Hits, searchHit{
@@ -161,8 +181,8 @@ type searchDocument struct {
 	DocumentID xid.ID `json:"document_id"`
 
 	// DocumentName is the document's display name, when resolvable from
-	// the tree. Empty if the document vanished between the index update
-	// and the search.
+	// its branches. Empty if the document vanished between the index
+	// update and the search.
 	DocumentName string `json:"document_name,omitempty"`
 
 	// BranchID is the branch the hits were indexed from, which is what a
@@ -174,6 +194,13 @@ type searchDocument struct {
 
 	// Default reports whether that branch is the document's default.
 	Default bool `json:"default"`
+
+	// Protected reports whether that branch refuses writes. It is left
+	// out when the branches could not be read.
+	Protected *bool `json:"protected,omitempty"`
+
+	// TitleMatch reports whether the document's name matched the query.
+	TitleMatch bool `json:"title_match,omitempty"`
 
 	// Hits are the matching blocks of the branch, in relevance order.
 	Hits []searchHit `json:"hits"`

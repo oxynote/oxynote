@@ -63,15 +63,29 @@ func Test_renderInline(t *testing.T) {
 func Test_visibleMarks(t *testing.T) {
 	t.Parallel()
 
-	got := visibleMarks([]document.Mark{
-		{Type: "comment"},
-		{Type: "italic"},
-		{Type: "link", Attrs: document.Attributes{_attrHref: `https://x.test/?a=1&b="2"`}},
-	})
+	cc := map[string]struct {
+		Marks  []document.Mark
+		Result []tagMark
+	}{
+		"Hidden marks dropped and the rest in nesting order with the href escaped": {
+			Marks: []document.Mark{
+				{Type: "comment"},
+				{Type: "italic"},
+				{Type: "link", Attrs: document.Attributes{_attrHref: `https://x.test/?a=1&b="2"`}},
+			},
+			Result: []tagMark{
+				{tag: _tagLink, open: `<a href="https://x.test/?a=1&amp;b=&quot;2&quot;">`},
+				{tag: _tagItalic, open: "<i>"},
+			},
+		},
+		"No marks": {},
+	}
 
-	assert.Equal(t, []tagMark{
-		{tag: _tagLink, open: `<a href="https://x.test/?a=1&amp;b=&quot;2&quot;">`},
-		{tag: _tagItalic, open: "<i>"},
-	}, got)
-	assert.Nil(t, visibleMarks(nil))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, visibleMarks(c.Marks))
+		})
+	}
 }

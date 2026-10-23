@@ -84,6 +84,20 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 		}
 	}
 
+	wasExecutorTypeCalled := func(count int) check {
+		return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+			assert.Len(t, exec.runner.TypeCalls(), count)
+		}
+	}
+
+	wasExecutorClientCalled := func(prometheus, mysql, postgresql int) check {
+		return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+			assert.Len(t, exec.runner.PrometheusCalls(), prometheus)
+			assert.Len(t, exec.runner.MySQLCalls(), mysql)
+			assert.Len(t, exec.runner.PostgreSQLCalls(), postgresql)
+		}
+	}
+
 	cc := map[string]struct {
 		DB          *DBMock
 		Clients     *clientMocks
@@ -100,6 +114,11 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
 				wasExecutorQueryCalled(0, 0, 0),
+				wasDBFetchDataSourceCalled(0),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorTypeCalled(0),
+				wasExecutorClientCalled(0, 0, 0),
 			),
 		},
 		"Missing data source id": {
@@ -107,6 +126,11 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
 				wasExecutorQueryCalled(0, 0, 0),
+				wasDBFetchDataSourceCalled(0),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorTypeCalled(0),
+				wasExecutorClientCalled(0, 0, 0),
 			),
 		},
 		"Error returned by db.FetchDataSource": {
@@ -116,6 +140,11 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasExecutorQueryCalled(0, 0, 0),
+				wasDBFetchDataSourceCalled(1),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorTypeCalled(0),
+				wasExecutorClientCalled(0, 0, 0),
 			),
 		},
 		"Missing query parameter": {
@@ -125,6 +154,11 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"query.required","message":"Query parameter is required."}`),
 				wasExecutorQueryCalled(0, 0, 0),
+				wasDBFetchDataSourceCalled(1),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorTypeCalled(0),
+				wasExecutorClientCalled(0, 0, 0),
 			),
 		},
 		"Invalid chart type": {
@@ -134,6 +168,11 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"chart_type.invalid","message":"Invalid chart type. Must be one of: line, bar, gauge."}`),
 				wasExecutorQueryCalled(0, 0, 0),
+				wasDBFetchDataSourceCalled(1),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorTypeCalled(0),
+				wasExecutorClientCalled(0, 0, 0),
 			),
 		},
 		"Invalid time range": {
@@ -143,6 +182,11 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"From parameter must be a valid RFC3339 timestamp."}`),
 				wasExecutorQueryCalled(0, 0, 0),
+				wasDBFetchDataSourceCalled(1),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorTypeCalled(0),
+				wasExecutorClientCalled(0, 0, 0),
 			),
 		},
 		"Unsupported data source type": {
@@ -152,9 +196,14 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.type_not_supported","message":"Generic query is not supported for this data source type."}`),
 				wasExecutorQueryCalled(0, 0, 0),
+				wasDBFetchDataSourceCalled(1),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTypeCalled(1),
+				wasExecutorClientCalled(0, 0, 0),
 			),
 		},
-		"Error returned by the query": {
+		"Error returned by Prometheus.QueryRange": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubPrometheusQueryClients("", nil, assert.AnError),
 			Target:  _testGenericQueryTarget,
@@ -162,9 +211,14 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasExecutorQueryCalled(1, 0, 0),
+				wasDBFetchDataSourceCalled(1),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTypeCalled(1),
+				wasExecutorClientCalled(1, 0, 0),
 			),
 		},
-		"A connection the data source refused": {
+		"Error returned by Runner.Prometheus": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubPrometheusQueryClients(processor.ConnectionStatusUnreachable, nil, nil),
 			Target:  _testGenericQueryTarget,
@@ -172,6 +226,11 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
 				wasExecutorQueryCalled(0, 0, 0),
+				wasDBFetchDataSourceCalled(1),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTypeCalled(1),
+				wasExecutorClientCalled(1, 0, 0),
 			),
 		},
 		"Successful query": {
@@ -193,6 +252,10 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 				hasResp(http.StatusOK, `{"status":"ok","data":[{"labels":{"job":"a"},"metrics":[[1700000000,10]]}]}`),
 				wasExecutorQueryCalled(1, 0, 0),
 				wasVariableManagerFetchTreeCalled(0),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTypeCalled(1),
+				wasExecutorClientCalled(1, 0, 0),
 			),
 		},
 		"Prometheus dispatch": {
@@ -204,6 +267,10 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 				hasResp(http.StatusOK, `{"status":"no-data"}`),
 				wasExecutorQueryCalled(1, 0, 0),
 				wasVariableManagerFetchTreeCalled(0),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTypeCalled(1),
+				wasExecutorClientCalled(1, 0, 0),
 			),
 		},
 		"PostgreSQL dispatch": {
@@ -215,6 +282,10 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 				hasResp(http.StatusOK, `{"status":"no-data"}`),
 				wasExecutorQueryCalled(0, 0, 1),
 				wasVariableManagerFetchTreeCalled(0),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTypeCalled(1),
+				wasExecutorClientCalled(0, 0, 1),
 			),
 		},
 		"MariaDB dispatch": {
@@ -226,6 +297,10 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 				hasResp(http.StatusOK, `{"status":"no-data"}`),
 				wasExecutorQueryCalled(0, 1, 0),
 				wasVariableManagerFetchTreeCalled(0),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTypeCalled(1),
+				wasExecutorClientCalled(0, 1, 0),
 			),
 		},
 		"MySQL dispatch": {
@@ -237,6 +312,10 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 				hasResp(http.StatusOK, `{"status":"no-data"}`),
 				wasExecutorQueryCalled(0, 1, 0),
 				wasVariableManagerFetchTreeCalled(0),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTypeCalled(1),
+				wasExecutorClientCalled(0, 1, 0),
 			),
 		},
 		"Error returned by VariableManager.FetchTree": {
@@ -248,6 +327,10 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasExecutorQueryCalled(0, 0, 0),
 				wasVariableManagerFetchTreeCalled(1),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(0),
+				wasExecutorTypeCalled(0),
+				wasExecutorClientCalled(0, 0, 0),
 			),
 		},
 		"Prometheus substituted variables": {
@@ -260,6 +343,10 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 				hasResp(http.StatusOK, `{"status":"no-data"}`),
 				wasExecutorQueryCalled(1, 0, 0),
 				wasVariableManagerFetchTreeCalled(1),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTypeCalled(1),
+				wasExecutorClientCalled(1, 0, 0),
 			),
 		},
 		"PostgreSQL substituted variables": {
@@ -272,6 +359,10 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 				hasResp(http.StatusOK, `{"status":"no-data"}`),
 				wasExecutorQueryCalled(0, 0, 1),
 				wasVariableManagerFetchTreeCalled(1),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTypeCalled(1),
+				wasExecutorClientCalled(0, 0, 1),
 			),
 		},
 		"MySQL substituted variables": {
@@ -284,6 +375,10 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 				hasResp(http.StatusOK, `{"status":"no-data"}`),
 				wasExecutorQueryCalled(0, 1, 0),
 				wasVariableManagerFetchTreeCalled(1),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTypeCalled(1),
+				wasExecutorClientCalled(0, 1, 0),
 			),
 		},
 	}

@@ -118,7 +118,7 @@ type listDataSources struct{}
 func (listDataSources) Info() Info {
 	return Info{
 		Name:        NameListDataSources,
-		Traits:      Traits{DataSource: true},
+		Traits:      Traits{Group: GroupDataSources, DataSource: true},
 		Description: "List the organisation's data sources as {id, name, type, status}. type (prometheus, postgresql, mariadb or mysql) decides the query language and which tools serve it. Start here: the other data source tools take an id from this list.",
 		Properties:  map[string]any{},
 	}
@@ -170,7 +170,7 @@ type getDataSourceMetadata struct{}
 func (getDataSourceMetadata) Info() Info {
 	return Info{
 		Name:        NameGetDataSourceMetadata,
-		Traits:      Traits{DataSource: true},
+		Traits:      Traits{Group: GroupDataSources, DataSource: true},
 		Description: "Describe what a data source holds: for Prometheus, each metric with its type, help and unit; for SQL, {default_schema, tables: {table: [columns]}}. Read it before writing a query, so the names in it are real ones.",
 		Properties:  map[string]any{"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription}},
 		Required:    []string{"data_source_id"},
@@ -291,7 +291,7 @@ type listPrometheusLabels struct{}
 func (listPrometheusLabels) Info() Info {
 	return Info{
 		Name:        NameListPrometheusLabels,
-		Traits:      Traits{DataSource: true},
+		Traits:      Traits{Group: GroupDataSources, DataSource: true},
 		Description: "List the label names of a Prometheus data source or, with label set, the values that label takes. matchers narrows either to the series they select. Use it to find the labels and values a query should filter on.",
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
@@ -401,7 +401,7 @@ type listPrometheusSeries struct{}
 func (listPrometheusSeries) Info() Info {
 	return Info{
 		Name:        NameListPrometheusSeries,
-		Traits:      Traits{DataSource: true},
+		Traits:      Traits{Group: GroupDataSources, DataSource: true},
 		Description: "List the series that matchers select in a Prometheus data source, each as its full label set. Use it to see which label combinations a metric has before querying it.",
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
@@ -501,7 +501,7 @@ type queryDataSource struct{}
 func (queryDataSource) Info() Info {
 	return Info{
 		Name:        NameQueryDataSource,
-		Traits:      Traits{DataSource: true},
+		Traits:      Traits{Group: GroupDataSources, DataSource: true},
 		Description: fmt.Sprintf("Run a query over a time range: PromQL for Prometheus, read-only SQL for the others, where $__ macros such as $__timeFilter expand against the range. Without chart_type it returns the raw answer, capped at %d series of %d points or %d rows. With chart_type it returns what a metric block would draw: status, series count, and each series' labels, point count and endpoints. Check a query that way before putting it in a block.", _maxRawSeries, _maxRawPoints, _maxRawRows),
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},

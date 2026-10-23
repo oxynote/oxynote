@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"log/slog"
+	"path/filepath"
 	"testing"
 
 	bleveSearch "github.com/blevesearch/bleve/v2/search"
@@ -60,7 +61,7 @@ func Test_GroupPage_BranchIDs(t *testing.T) {
 func Test_Index_SearchGroups(t *testing.T) {
 	t.Parallel()
 
-	idx := openIndex(t, indexPath(t), &stubSource{})
+	idx := openIndex(t, filepath.Join(t.TempDir(), "index"), &stubSource{})
 	t.Cleanup(func() { require.NoError(t, idx.Close()) })
 
 	shipments := Scope{
@@ -128,21 +129,24 @@ func Test_Index_SearchGroups(t *testing.T) {
 		require.NoError(t, idx.ReplaceBranch(context.Background(), branchID, entries))
 	}
 
-	// mark returns the block with its text replaced by the highlighted one.
-	mark := func(b Block, text string) Block {
-		b.Text = text
+	// the hits come back with the highlighted text.
+	codeHit := code
+	codeHit.Text = "POST /v1/<mark>shipments</mark>"
 
-		return b
-	}
+	chartHit := chart
+	chartHit.Text = "<mark>Shipments</mark> created per minute"
+
+	forkCodeHit := forkCode
+	forkCodeHit.Text = "POST /v1/<mark>shipments</mark>"
 
 	shipmentsGroup := Group{
 		DocumentID: shipments.DocumentID,
 		BranchID:   shipments.BranchID,
 		Title:      null.StringFrom("<mark>Shipments</mark>"),
 		Hits: []Block{
-			mark(shipments.Block("h1", "heading", "Create a shipment"), "Create a <mark>shipment</mark>"),
-			mark(code, "POST /v1/<mark>shipments</mark>"),
-			mark(chart, "<mark>Shipments</mark> created per minute"),
+			shipments.Block("h1", "heading", "Create a <mark>shipment</mark>"),
+			codeHit,
+			chartHit,
 		},
 		TotalHits: 3,
 	}
@@ -151,7 +155,7 @@ func Test_Index_SearchGroups(t *testing.T) {
 		DocumentID: kafka.DocumentID,
 		BranchID:   kafka.BranchID,
 		Hits: []Block{
-			mark(kafka.Block("p1", "paragraph", "shipment events"), "<mark>shipment</mark> events"),
+			kafka.Block("p1", "paragraph", "<mark>shipment</mark> events"),
 		},
 		TotalHits: 1,
 	}
@@ -160,7 +164,7 @@ func Test_Index_SearchGroups(t *testing.T) {
 		DocumentID: shipments.DocumentID,
 		BranchID:   fork.BranchID,
 		Hits: []Block{
-			mark(forkCode, "POST /v1/<mark>shipments</mark>"),
+			forkCodeHit,
 		},
 		TotalHits: 1,
 	}
@@ -172,11 +176,6 @@ func Test_Index_SearchGroups(t *testing.T) {
 		BranchID: shipments.BranchID,
 		Query:    "shipment",
 	}.fingerprint()))
-
-	// token returns the page token of the offset for the query.
-	token := func(gq GroupQuery, offset int) string {
-		return encodePageToken(offset, gq.fingerprint())
-	}
 
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -203,7 +202,7 @@ func Test_Index_SearchGroups(t *testing.T) {
 			Query: GroupQuery{
 				OrganizationID: "org-1",
 				Query:          "shipment",
-				PageToken:      token(GroupQuery{Query: "kafka"}, 1),
+				PageToken:      encodePageToken(1, GroupQuery{Query: "kafka"}.fingerprint()),
 			},
 			Err: ErrInvalidPageToken,
 		},
@@ -232,7 +231,7 @@ func Test_Index_SearchGroups(t *testing.T) {
 				Groups:         []Group{shipmentsGroup, kafkaGroup},
 				TotalHits:      5,
 				TotalDocuments: 3,
-				NextPageToken:  null.StringFrom(token(GroupQuery{Query: "shipment"}, 2)),
+				NextPageToken:  null.StringFrom(encodePageToken(2, GroupQuery{Query: "shipment"}.fingerprint())),
 			},
 		},
 		"Last page": {
@@ -240,7 +239,7 @@ func Test_Index_SearchGroups(t *testing.T) {
 				OrganizationID: "org-1",
 				Query:          "shipment",
 				Limit:          2,
-				PageToken:      token(GroupQuery{Query: "shipment"}, 2),
+				PageToken:      encodePageToken(2, GroupQuery{Query: "shipment"}.fingerprint()),
 			},
 			Result: GroupPage{
 				Groups:         []Group{forkGroup},
@@ -252,7 +251,7 @@ func Test_Index_SearchGroups(t *testing.T) {
 			Query: GroupQuery{
 				OrganizationID: "org-1",
 				Query:          "shipment",
-				PageToken:      token(GroupQuery{Query: "shipment"}, 10),
+				PageToken:      encodePageToken(10, GroupQuery{Query: "shipment"}.fingerprint()),
 			},
 			Result: GroupPage{
 				Groups:         []Group{},
@@ -314,7 +313,7 @@ func Test_Index_SearchGroups(t *testing.T) {
 						DocumentID: kafka.DocumentID,
 						BranchID:   kafka.BranchID,
 						Hits: []Block{
-							mark(kafka.Block("p2", "paragraph", ""), "<mark>a11y</mark> &amp; &lt;tags&gt;"),
+							kafka.Block("p2", "paragraph", "<mark>a11y</mark> &amp; &lt;tags&gt;"),
 						},
 						TotalHits: 1,
 					},
@@ -415,13 +414,11 @@ func Test_Index_decodeHighlightedHit(t *testing.T) {
 		Type:           "paragraph",
 	}
 
-	// withText returns the block with the text.
-	withText := func(text string) Block {
-		b := block
-		b.Text = text
+	escaped := block
+	escaped.Text = "a &amp; b"
 
-		return b
-	}
+	highlighted := block
+	highlighted.Text = "<mark>a</mark> &amp; b"
 
 	cc := map[string]struct {
 		Hit    *bleveSearch.DocumentMatch
@@ -434,7 +431,7 @@ func Test_Index_decodeHighlightedHit(t *testing.T) {
 		},
 		"Hit without a fragment is escaped": {
 			Hit:    &bleveSearch.DocumentMatch{ID: "e1", Fields: fields},
-			Result: withText("a &amp; b"),
+			Result: escaped,
 		},
 		"Hit with a fragment": {
 			Hit: &bleveSearch.DocumentMatch{
@@ -442,7 +439,7 @@ func Test_Index_decodeHighlightedHit(t *testing.T) {
 				Fields:    fields,
 				Fragments: bleveSearch.FieldFragmentMap{_fieldText: {"<mark>a</mark> &amp; b"}},
 			},
-			Result: withText("<mark>a</mark> &amp; b"),
+			Result: highlighted,
 		},
 	}
 
@@ -470,10 +467,6 @@ func Test_encodePageToken(t *testing.T) {
 }
 
 func Test_decodePageToken(t *testing.T) {
-	encode := func(s string) string {
-		return base64.RawURLEncoding.EncodeToString([]byte(s))
-	}
-
 	cc := map[string]struct {
 		Token  string
 		Result int
@@ -481,11 +474,11 @@ func Test_decodePageToken(t *testing.T) {
 	}{
 		"Empty token":         {Token: "", Result: 0},
 		"Invalid base64":      {Token: "%%%", Err: ErrInvalidPageToken},
-		"Invalid JSON":        {Token: encode("nope"), Err: ErrInvalidPageToken},
-		"Negative offset":     {Token: encode(`{"o":-1,"f":"fp"}`), Err: ErrInvalidPageToken},
-		"Offset over the cap": {Token: encode(`{"o":9223372036854775800,"f":"fp"}`), Err: ErrInvalidPageToken},
+		"Invalid JSON":        {Token: base64.RawURLEncoding.EncodeToString([]byte("nope")), Err: ErrInvalidPageToken},
+		"Negative offset":     {Token: base64.RawURLEncoding.EncodeToString([]byte(`{"o":-1,"f":"fp"}`)), Err: ErrInvalidPageToken},
+		"Offset over the cap": {Token: base64.RawURLEncoding.EncodeToString([]byte(`{"o":9223372036854775800,"f":"fp"}`)), Err: ErrInvalidPageToken},
 		"Offset at the cap":   {Token: encodePageToken(_maxPageOffset, "fp"), Result: _maxPageOffset},
-		"Another fingerprint": {Token: encode(`{"o":1,"f":"other"}`), Err: ErrInvalidPageToken},
+		"Another fingerprint": {Token: base64.RawURLEncoding.EncodeToString([]byte(`{"o":1,"f":"other"}`)), Err: ErrInvalidPageToken},
 		"Valid token":         {Token: encodePageToken(30, "fp"), Result: 30},
 	}
 

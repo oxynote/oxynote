@@ -10,7 +10,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"sync"
 	"testing"
@@ -19,6 +22,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/jarcoal/httpmock"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -43,6 +48,54 @@ func AddChiCtx(ctx context.Context, key, value string) context.Context {
 	rctx.URLParams.Add(key, value)
 
 	return ctx
+}
+
+// AssertResponse asserts that the recorded response carries the status code
+// and a JSON body equal to body, or no body at all when body is empty.
+func AssertResponse(t *testing.T, rec *httptest.ResponseRecorder, code int, body string) {
+	t.Helper()
+
+	assert.Equal(t, code, rec.Code)
+
+	if body == "" {
+		assert.Zero(t, rec.Body.Len(), rec.Body.String())
+		return
+	}
+
+	assert.JSONEq(t, body, rec.Body.String())
+}
+
+// JSONHandler creates a handler that answers the path with the status code
+// and JSON body, and every other path with a 404.
+func JSONHandler(path string, code int, body string) http.Handler {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(code)
+		fmt.Fprint(w, body) //nolint:errcheck // error provides no meaningful info
+	})
+
+	return mux
+}
+
+// MultipartBody creates a multipart form body carrying a single file field
+// and returns it with its Content-Type header value.
+func MultipartBody(t *testing.T, field, name string, content []byte) (io.Reader, string) {
+	t.Helper()
+
+	var buf bytes.Buffer
+
+	mw := multipart.NewWriter(&buf)
+
+	fw, err := mw.CreateFormFile(field, name)
+	require.NoError(t, err)
+
+	_, err = fw.Write(content)
+	require.NoError(t, err)
+	require.NoError(t, mw.Close())
+
+	return &buf, mw.FormDataContentType()
 }
 
 // AssertEqualError uses testify's assert package to check if errors
@@ -104,6 +157,62 @@ func AssertFilterEqual(t *testing.T, v1, v2 any, ignoreTypes ...any) {
 
 	if err := FilterEqual(v1, v2, ignoreTypes...); err != nil {
 		t.Error(err)
+	}
+}
+
+// MetricValue returns the value of the named metric whose labels include
+// every pair in labels, or -1 when there is none. Counters report their
+// value, histograms their sample count and other types -1.
+func MetricValue(t *testing.T, rg prometheus.Gatherer, name string, labels map[string]string) float64 {
+	t.Helper()
+
+	families, err := rg.Gather()
+	require.NoError(t, err)
+
+	for _, mf := range families {
+		if mf.GetName() != name {
+			continue
+		}
+
+	metric:
+		for _, m := range mf.GetMetric() {
+			got := map[string]string{}
+
+			for _, lp := range m.GetLabel() {
+				got[lp.GetName()] = lp.GetValue()
+			}
+
+			for k, v := range labels {
+				if got[k] != v {
+					continue metric
+				}
+			}
+
+			switch mf.GetType() {
+			case dto.MetricType_COUNTER:
+				return m.GetCounter().GetValue()
+			case dto.MetricType_HISTOGRAM:
+				return float64(m.GetHistogram().GetSampleCount())
+			default:
+				return -1
+			}
+		}
+	}
+
+	return -1
+}
+
+// StubBeginTx creates a BeginTx stub that fails with err or, without one,
+// sets tx into the pointer it is given, as the real BeginTx does.
+func StubBeginTx(tx any, err error) func(context.Context, any) error {
+	return func(_ context.Context, dest any) error {
+		if err != nil {
+			return err
+		}
+
+		reflect.ValueOf(dest).Elem().Set(reflect.ValueOf(tx))
+
+		return nil
 	}
 }
 

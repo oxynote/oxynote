@@ -120,10 +120,15 @@ test.describe("search", () => {
 		})
 		const listed = JSON.parse(
 			(listing.content as { text: string }[])[0]?.text ?? "{}",
-		) as { documents: { id: string; default_branch_id: string }[] }
-		const branchId = listed.documents.find(
-			(d) => d.id === id,
-		)?.default_branch_id
+		) as {
+			documents: {
+				id: string
+				branches: { id: string; default: boolean }[]
+			}[]
+		}
+		const branchId = listed.documents
+			.find((d) => d.id === id)
+			?.branches.find((b) => b.default)?.id
 		expect(branchId).toBeDefined()
 
 		const inserted = await client.callTool({

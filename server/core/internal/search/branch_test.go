@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"encoding/base64"
+	"path/filepath"
 	"testing"
 
 	"github.com/guregu/null/v5"
@@ -45,7 +46,7 @@ func Test_BranchQuery_fingerprint(t *testing.T) {
 func Test_Index_SearchBranch(t *testing.T) {
 	t.Parallel()
 
-	idx := openIndex(t, indexPath(t), &stubSource{})
+	idx := openIndex(t, filepath.Join(t.TempDir(), "index"), &stubSource{})
 	t.Cleanup(func() { require.NoError(t, idx.Close()) })
 
 	main := Scope{
@@ -97,19 +98,6 @@ func Test_Index_SearchBranch(t *testing.T) {
 	all, err := idx.SearchBranch(context.Background(), query)
 	require.NoError(t, err)
 	require.Len(t, all.Hits, 4)
-
-	// with returns the query with the limit and the page token of the
-	// offset.
-	with := func(limit, offset int) BranchQuery {
-		bq := query
-		bq.Limit = limit
-
-		if offset != 0 {
-			bq.PageToken = encodePageToken(offset, query.fingerprint())
-		}
-
-		return bq
-	}
 
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -166,7 +154,7 @@ func Test_Index_SearchBranch(t *testing.T) {
 			return tcase{Query: bq, Result: BranchPage{Hits: []Block{}}}
 		}(),
 		"First page": {
-			Query: with(2, 0),
+			Query: BranchQuery{OrganizationID: "org-1", BranchID: main.BranchID, Query: "shipment", Limit: 2},
 			Result: BranchPage{
 				Hits:          all.Hits[:2],
 				TotalHits:     4,
@@ -174,19 +162,61 @@ func Test_Index_SearchBranch(t *testing.T) {
 			},
 		},
 		"Last page": {
-			Query: with(2, 2),
+			Query: BranchQuery{
+				OrganizationID: "org-1",
+				BranchID:       main.BranchID,
+				Query:          "shipment",
+				Limit:          2,
+				PageToken:      encodePageToken(2, query.fingerprint()),
+			},
 			Result: BranchPage{
 				Hits:      all.Hits[2:],
 				TotalHits: 4,
 			},
 		},
 		"Page past the end": {
-			Query: with(2, 10),
+			Query: BranchQuery{
+				OrganizationID: "org-1",
+				BranchID:       main.BranchID,
+				Query:          "shipment",
+				Limit:          2,
+				PageToken:      encodePageToken(10, query.fingerprint()),
+			},
 			Result: BranchPage{
 				Hits:      []Block{},
 				TotalHits: 4,
 			},
 		},
+		"Continues the hits of a group": func() tcase {
+			gp, err := idx.SearchGroups(context.Background(), GroupQuery{
+				OrganizationID: "org-1",
+				Query:          "shipment",
+				HitsLimit:      2,
+			})
+			require.NoError(t, err)
+
+			var group Group
+
+			for _, g := range gp.Groups {
+				if g.BranchID == main.BranchID {
+					group = g
+				}
+			}
+
+			require.True(t, group.NextHitsToken.Valid)
+			require.Equal(t, all.Hits[:len(group.Hits)], group.Hits)
+
+			bq := query
+			bq.PageToken = group.NextHitsToken.String
+
+			return tcase{
+				Query: bq,
+				Result: BranchPage{
+					Hits:      all.Hits[len(group.Hits):],
+					TotalHits: 4,
+				},
+			}
+		}(),
 	}
 
 	for cn, c := range cc {
@@ -208,35 +238,6 @@ func Test_Index_SearchBranch(t *testing.T) {
 			assert.Equal(t, c.Result, res)
 		})
 	}
-
-	t.Run("Continues the hits of a group", func(t *testing.T) {
-		t.Parallel()
-
-		gp, err := idx.SearchGroups(context.Background(), GroupQuery{
-			OrganizationID: "org-1",
-			Query:          "shipment",
-			HitsLimit:      2,
-		})
-		require.NoError(t, err)
-
-		var group Group
-
-		for _, g := range gp.Groups {
-			if g.BranchID == main.BranchID {
-				group = g
-			}
-		}
-
-		require.True(t, group.NextHitsToken.Valid)
-
-		bq := query
-		bq.PageToken = group.NextHitsToken.String
-
-		res, err := idx.SearchBranch(context.Background(), bq)
-		require.NoError(t, err)
-
-		assert.Equal(t, all.Hits, append(group.Hits, res.Hits...))
-	})
 }
 
 func Test_BranchLimit(t *testing.T) {

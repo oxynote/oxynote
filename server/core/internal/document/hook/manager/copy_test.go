@@ -71,12 +71,10 @@ func Test_CopyHooks(t *testing.T) {
 			err := CopyHooks(context.Background(), tx, fromBranchID, toBranchID, documentID, "org-1", c.UIDs)
 			testutil.AssertEqualError(t, c.Err, err)
 
-			if c.FetchErr == nil {
-				ff := tx.FetchDocumentHooksByBranchIDCalls()
-				require.Len(t, ff, 1)
-				assert.Equal(t, fromBranchID, ff[0].BranchID)
-				assert.Equal(t, "org-1", ff[0].OrganizationID)
-			}
+			ff := tx.FetchDocumentHooksByBranchIDCalls()
+			require.Len(t, ff, 1)
+			assert.Equal(t, fromBranchID, ff[0].BranchID)
+			assert.Equal(t, "org-1", ff[0].OrganizationID)
 
 			ii := tx.InsertDocumentHookCalls()
 			require.Len(t, ii, len(c.Blocks))

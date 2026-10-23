@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -283,145 +284,197 @@ func Test_agent_DeleteBranchReviewer(t *testing.T) {
 }
 
 func Test_agent_PromoteBranchApprovals(t *testing.T) {
-	t.Run("Error returned by the stale reviewer cleanup", func(t *testing.T) {
-		t.Parallel()
+	// a concrete error must match exactly, while assert.AnError accepts
+	// any error. That proves the function stopped at the failing
+	// statement, because sqlmock answers any later call with an error of
+	// its own.
+	errExec := errors.New("exec failure")
 
-		a, mock := prepMockDB(t)
+	type tcase struct {
+		Agent            *agent
+		CancelledContext bool
+		FromBranchID     xid.ID
+		ToBranchID       xid.ID
+		OrganizationID   string
+		Result           []document.BranchReviewer
+		Err              error
+	}
 
-		mock.ExpectBegin()
-		mock.ExpectExec("DELETE FROM branch_reviewers").WillReturnError(assert.AnError)
-		mock.ExpectRollback()
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Error returned by the stale reviewer cleanup": func(t *testing.T, _ *DB) tcase {
+			a, mock := prepMockDB(t)
 
-		err := a.PromoteBranchApprovals(context.Background(), xid.New(), xid.New(), "org-id")
-		assert.Equal(t, assert.AnError, err)
-	})
+			mock.ExpectBegin()
+			mock.ExpectExec("DELETE FROM branch_reviewers").WillReturnError(errExec)
+			mock.ExpectRollback()
 
-	t.Run("Error returned by the reviewer update", func(t *testing.T) {
-		t.Parallel()
+			return tcase{
+				Agent:          a,
+				FromBranchID:   xid.New(),
+				ToBranchID:     xid.New(),
+				OrganizationID: "org-id",
+				Err:            errExec,
+			}
+		},
+		"Error returned by the reviewer update": func(t *testing.T, _ *DB) tcase {
+			a, mock := prepMockDB(t)
 
-		a, mock := prepMockDB(t)
+			mock.ExpectBegin()
+			mock.ExpectExec("DELETE FROM branch_reviewers").WillReturnResult(sqlmock.NewResult(0, 0))
+			mock.ExpectExec("UPDATE branch_reviewers").WillReturnError(errExec)
+			mock.ExpectRollback()
 
-		mock.ExpectBegin()
-		mock.ExpectExec("DELETE FROM branch_reviewers").WillReturnResult(sqlmock.NewResult(0, 0))
-		mock.ExpectExec("UPDATE branch_reviewers").WillReturnError(assert.AnError)
-		mock.ExpectRollback()
+			return tcase{
+				Agent:          a,
+				FromBranchID:   xid.New(),
+				ToBranchID:     xid.New(),
+				OrganizationID: "org-id",
+				Err:            errExec,
+			}
+		},
+		"Error returned by the reviewer upsert": func(t *testing.T, _ *DB) tcase {
+			a, mock := prepMockDB(t)
 
-		err := a.PromoteBranchApprovals(context.Background(), xid.New(), xid.New(), "org-id")
-		assert.Equal(t, assert.AnError, err)
-	})
+			mock.ExpectBegin()
+			mock.ExpectExec("DELETE FROM branch_reviewers").WillReturnResult(sqlmock.NewResult(0, 0))
+			mock.ExpectExec("UPDATE branch_reviewers").WillReturnResult(sqlmock.NewResult(0, 0))
+			mock.ExpectExec("INSERT INTO branch_reviewers").WillReturnError(errExec)
+			mock.ExpectRollback()
 
-	t.Run("Error returned by the reviewer upsert", func(t *testing.T) {
-		t.Parallel()
+			return tcase{
+				Agent:          a,
+				FromBranchID:   xid.New(),
+				ToBranchID:     xid.New(),
+				OrganizationID: "org-id",
+				Err:            errExec,
+			}
+		},
+		"Error returned by the source cleanup": func(t *testing.T, _ *DB) tcase {
+			a, mock := prepMockDB(t)
 
-		a, mock := prepMockDB(t)
+			mock.ExpectBegin()
+			mock.ExpectExec("DELETE FROM branch_reviewers").WillReturnResult(sqlmock.NewResult(0, 0))
+			mock.ExpectExec("UPDATE branch_reviewers").WillReturnResult(sqlmock.NewResult(0, 0))
+			mock.ExpectExec("INSERT INTO branch_reviewers").WillReturnResult(sqlmock.NewResult(0, 0))
+			mock.ExpectExec("DELETE FROM branch_reviewers").WillReturnError(errExec)
+			mock.ExpectRollback()
 
-		mock.ExpectBegin()
-		mock.ExpectExec("DELETE FROM branch_reviewers").WillReturnResult(sqlmock.NewResult(0, 0))
-		mock.ExpectExec("UPDATE branch_reviewers").WillReturnResult(sqlmock.NewResult(0, 0))
-		mock.ExpectExec("INSERT INTO branch_reviewers").WillReturnError(assert.AnError)
-		mock.ExpectRollback()
+			return tcase{
+				Agent:          a,
+				FromBranchID:   xid.New(),
+				ToBranchID:     xid.New(),
+				OrganizationID: "org-id",
+				Err:            errExec,
+			}
+		},
+		"Cancelled context": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				FromBranchID:     xid.New(),
+				ToBranchID:       xid.New(),
+				OrganizationID:   "org-id",
+				Err:              assert.AnError,
+			}
+		},
+		"Successful promotion": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+			target := prepDocumentBranches(t, db, 1, func(_ int, ndoc *document.Document) {
+				ndoc.ID = doc.ID
+				ndoc.OrganizationID = doc.OrganizationID
+			})[0]
+			users := prepUsers(t, db, 4)
 
-		err := a.PromoteBranchApprovals(context.Background(), xid.New(), xid.New(), "org-id")
-		assert.Equal(t, assert.AnError, err)
-	})
+			// the target branch holds one reviewer who never approved
+			// (dropped), one currently approved (demoted to previously
+			// approved and shared with the source branch), and one with
+			// only a stale previous approval.
+			prepBranchReviewers(t, db, 3, func(i int, r *document.BranchReviewer) {
+				r.BranchID = target.BranchID
+				r.OrganizationID = target.OrganizationID
+				r.UserID = users[i]
+				r.CurrentlyApproved = i == 1
+				r.PreviouslyApproved = i == 2
+			})
 
-	t.Run("Error returned by the source cleanup", func(t *testing.T) {
-		t.Parallel()
+			// the source branch holds the shared reviewer with a fresh
+			// approval and a brand new reviewer without one.
+			prepBranchReviewers(t, db, 2, func(i int, r *document.BranchReviewer) {
+				r.BranchID = doc.BranchID
+				r.OrganizationID = doc.OrganizationID
+				r.UserID = users[2*i+1]
+				r.CurrentlyApproved = i == 0
+			})
 
-		a, mock := prepMockDB(t)
+			// users[0] never approved and is dropped; users[1] is demoted to
+			// previously approved and re-approves via the source branch;
+			// users[2] keeps the earlier approval that spared it from the
+			// cleanup; users[3] joins without an approval.
+			return tcase{
+				FromBranchID:   doc.BranchID,
+				ToBranchID:     target.BranchID,
+				OrganizationID: doc.OrganizationID,
+				Result: []document.BranchReviewer{
+					{
+						BranchID:           target.BranchID,
+						UserID:             users[1],
+						OrganizationID:     target.OrganizationID,
+						CurrentlyApproved:  true,
+						PreviouslyApproved: true,
+					},
+					{
+						BranchID:           target.BranchID,
+						UserID:             users[2],
+						OrganizationID:     target.OrganizationID,
+						CurrentlyApproved:  false,
+						PreviouslyApproved: true,
+					},
+					{
+						BranchID:           target.BranchID,
+						UserID:             users[3],
+						OrganizationID:     target.OrganizationID,
+						CurrentlyApproved:  false,
+						PreviouslyApproved: false,
+					},
+				},
+			}
+		},
+	}
 
-		mock.ExpectBegin()
-		mock.ExpectExec("DELETE FROM branch_reviewers").WillReturnResult(sqlmock.NewResult(0, 0))
-		mock.ExpectExec("UPDATE branch_reviewers").WillReturnResult(sqlmock.NewResult(0, 0))
-		mock.ExpectExec("INSERT INTO branch_reviewers").WillReturnResult(sqlmock.NewResult(0, 0))
-		mock.ExpectExec("DELETE FROM branch_reviewers").WillReturnError(assert.AnError)
-		mock.ExpectRollback()
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-		err := a.PromoteBranchApprovals(context.Background(), xid.New(), xid.New(), "org-id")
-		assert.Equal(t, assert.AnError, err)
-	})
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-	t.Run("Cancelled context", func(t *testing.T) {
-		t.Parallel()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
-		db := prepTempDB(t)
+			if c.CancelledContext {
+				cancel()
+			}
 
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
+			ag := &db.agent
 
-		err := db.PromoteBranchApprovals(ctx, xid.New(), xid.New(), "org-id")
-		require.Error(t, err)
-	})
+			if c.Agent != nil {
+				ag = c.Agent
+			}
 
-	t.Run("Successful promotion", func(t *testing.T) {
-		t.Parallel()
+			err := ag.PromoteBranchApprovals(ctx, c.FromBranchID, c.ToBranchID, c.OrganizationID)
+			testutil.RequireEqualError(t, c.Err, err)
 
-		db := prepTempDB(t)
+			if err != nil {
+				return
+			}
 
-		doc := prepDocuments(t, db, 1, nil)[0]
-		target := prepDocumentBranches(t, db, 1, func(_ int, ndoc *document.Document) {
-			ndoc.ID = doc.ID
-			ndoc.OrganizationID = doc.OrganizationID
-		})[0]
-		users := prepUsers(t, db, 4)
+			// the source branch is cleared.
+			res, err := db.FetchBranchReviewers(context.Background(), c.FromBranchID, c.OrganizationID)
+			require.NoError(t, err)
+			assert.Empty(t, res)
 
-		// the target branch holds one reviewer who never approved
-		// (dropped), one currently approved (demoted to previously
-		// approved and shared with the source branch), and one with
-		// only a stale previous approval.
-		prepBranchReviewers(t, db, 3, func(i int, r *document.BranchReviewer) {
-			r.BranchID = target.BranchID
-			r.OrganizationID = target.OrganizationID
-			r.UserID = users[i]
-			r.CurrentlyApproved = i == 1
-			r.PreviouslyApproved = i == 2
+			res, err = db.FetchBranchReviewers(context.Background(), c.ToBranchID, c.OrganizationID)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, c.Result, res)
 		})
-
-		// the source branch holds the shared reviewer with a fresh
-		// approval and a brand new reviewer without one.
-		prepBranchReviewers(t, db, 2, func(i int, r *document.BranchReviewer) {
-			r.BranchID = doc.BranchID
-			r.OrganizationID = doc.OrganizationID
-			r.UserID = users[2*i+1]
-			r.CurrentlyApproved = i == 0
-		})
-
-		err := db.PromoteBranchApprovals(context.Background(), doc.BranchID, target.BranchID, doc.OrganizationID)
-		require.NoError(t, err)
-
-		// the source branch is cleared.
-		res, err := db.FetchBranchReviewers(context.Background(), doc.BranchID, doc.OrganizationID)
-		require.NoError(t, err)
-		assert.Empty(t, res)
-
-		// users[0] never approved and is dropped; users[1] is demoted to
-		// previously approved and re-approves via the source branch;
-		// users[2] keeps the earlier approval that spared it from the
-		// cleanup; users[3] joins without an approval.
-		res, err = db.FetchBranchReviewers(context.Background(), target.BranchID, target.OrganizationID)
-		require.NoError(t, err)
-		assert.ElementsMatch(t, []document.BranchReviewer{
-			{
-				BranchID:           target.BranchID,
-				UserID:             users[1],
-				OrganizationID:     target.OrganizationID,
-				CurrentlyApproved:  true,
-				PreviouslyApproved: true,
-			},
-			{
-				BranchID:           target.BranchID,
-				UserID:             users[2],
-				OrganizationID:     target.OrganizationID,
-				CurrentlyApproved:  false,
-				PreviouslyApproved: true,
-			},
-			{
-				BranchID:           target.BranchID,
-				UserID:             users[3],
-				OrganizationID:     target.OrganizationID,
-				CurrentlyApproved:  false,
-				PreviouslyApproved: false,
-			},
-		}, res)
-	})
+	}
 }

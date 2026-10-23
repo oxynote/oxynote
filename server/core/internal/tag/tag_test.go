@@ -123,10 +123,6 @@ func Test_Summaries_Swap(t *testing.T) {
 
 	idA, idB, idC := xid.New(), xid.New(), xid.New()
 
-	tree := func() Summaries {
-		return Summaries{{ID: idA}, {ID: idB}, {ID: idC}}
-	}
-
 	cc := map[string]struct {
 		ID        xid.ID
 		SortIndex int
@@ -172,7 +168,7 @@ func Test_Summaries_Swap(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			original := tree()
+			original := Summaries{{ID: idA}, {ID: idB}, {ID: idC}}
 
 			swapped, err := original.Swap(c.ID, c.SortIndex)
 

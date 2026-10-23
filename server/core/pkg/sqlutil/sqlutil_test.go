@@ -208,99 +208,147 @@ func Test_Select(t *testing.T) {
 }
 
 func Test_SortString(t *testing.T) {
-	assert.Equal(t, "test DESC", SortString(httpserver.SortKey{Key: "test", Asc: false}))
-	assert.Equal(t, "test ASC", SortString(httpserver.SortKey{Key: "test", Asc: true}))
+	cc := map[string]struct {
+		SortKey httpserver.SortKey
+		Result  string
+	}{
+		"Descending order": {
+			SortKey: httpserver.SortKey{Key: "test", Asc: false},
+			Result:  "test DESC",
+		},
+		"Ascending order": {
+			SortKey: httpserver.SortKey{Key: "test", Asc: true},
+			Result:  "test ASC",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, SortString(c.SortKey))
+		})
+	}
 }
 
 func Test_WrapTx(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
+	cc := map[string]struct {
+		Expect  func(sqlmock.Sqlmock)
+		Agent   func(*testing.T, *sqlx.DB) any
+		FnErr   error
+		FnPanic bool
+		FnCalls int
+		Panic   any
+		Err     error
+	}{
+		"Invalid agent type": {
+			Agent: func(*testing.T, *sqlx.DB) any {
+				return struct{}{}
+			},
+			Panic: "invalid agent type",
+		},
+		"Error returned by DB.BeginTxx": {
+			Expect: func(m sqlmock.Sqlmock) {
+				m.ExpectBegin().WillReturnError(assert.AnError)
+			},
+			Agent: func(_ *testing.T, db *sqlx.DB) any { return db },
+			Err:   assert.AnError,
+		},
+		"Error returned by fn": {
+			Expect: func(m sqlmock.Sqlmock) {
+				m.ExpectBegin()
+				m.ExpectRollback()
+			},
+			Agent:   func(_ *testing.T, db *sqlx.DB) any { return db },
+			FnErr:   assert.AnError,
+			FnCalls: 1,
+			Err:     assert.AnError,
+		},
+		"Panic in fn": {
+			Expect: func(m sqlmock.Sqlmock) {
+				m.ExpectBegin()
+				m.ExpectRollback()
+			},
+			Agent:   func(_ *testing.T, db *sqlx.DB) any { return db },
+			FnPanic: true,
+			FnCalls: 1,
+			Panic:   assert.AnError,
+		},
+		"Error returned by Tx.Commit": {
+			Expect: func(m sqlmock.Sqlmock) {
+				m.ExpectBegin()
+				m.ExpectCommit().WillReturnError(assert.AnError)
+			},
+			Agent:   func(_ *testing.T, db *sqlx.DB) any { return db },
+			FnCalls: 1,
+			Err:     assert.AnError,
+		},
+		"Successful execution with DB": {
+			Expect: func(m sqlmock.Sqlmock) {
+				m.ExpectBegin()
+				m.ExpectCommit()
+			},
+			Agent:   func(_ *testing.T, db *sqlx.DB) any { return db },
+			FnCalls: 1,
+		},
+		"Successful execution with Tx": {
+			Expect: func(m sqlmock.Sqlmock) {
+				m.ExpectBegin()
+				m.ExpectRollback()
+			},
+			Agent: func(t *testing.T, db *sqlx.DB) any {
+				tx, err := db.BeginTxx(context.Background(), nil)
+				require.NoError(t, err)
 
-	defer db.Close() //nolint:errcheck // error provides no meaning info
-
-	var called bool
-
-	dbx := sqlx.NewDb(db, "")
-	fn1 := func(_ *sqlx.Tx) error { //nolint:unparam // we must return an error here to fulfill WrapTx parameter requirements
-		called = true
-		return nil
+				return tx
+			},
+			FnCalls: 1,
+		},
 	}
 
-	fn2 := func(_ *sqlx.Tx) error {
-		called = true
-		return assert.AnError
-	}
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	fn3 := func(_ *sqlx.Tx) error {
-		called = true
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
 
-		panic(assert.AnError)
-	}
+			defer db.Close() //nolint:errcheck // error provides no meaningful info
 
-	// error - invalid agent
-	assert.PanicsWithValue(t, "invalid agent type", func() {
-		require.NoError(t, WrapTx(context.Background(), struct{}{}, fn1))
-	})
-
-	// error in begin
-	mock.ExpectBegin().WillReturnError(assert.AnError)
-	assert.Equal(t, assert.AnError, WrapTx(context.Background(), dbx, fn1))
-	assert.NoError(t, mock.ExpectationsWereMet())
-	assert.False(t, called)
-
-	// error in fn
-	mock.ExpectBegin()
-	mock.ExpectRollback()
-	assert.Equal(t, assert.AnError, WrapTx(context.Background(), dbx, fn2))
-	assert.NoError(t, mock.ExpectationsWereMet())
-	assert.True(t, called)
-
-	// panic in fn
-	called = false
-
-	mock.ExpectBegin()
-	mock.ExpectRollback()
-	assert.Equal(t, assert.AnError, func() (err error) {
-		defer func() {
-			if rerr := recover(); rerr != nil {
-				err = rerr.(error)
+			if c.Expect != nil {
+				c.Expect(mock)
 			}
-		}()
 
-		return WrapTx(context.Background(), dbx, fn3)
-	}())
-	assert.NoError(t, mock.ExpectationsWereMet())
-	assert.True(t, called)
+			agent := c.Agent(t, sqlx.NewDb(db, ""))
 
-	// error in commit
-	called = false
+			var calls int
 
-	mock.ExpectBegin()
-	mock.ExpectCommit().WillReturnError(assert.AnError)
-	assert.Equal(t, assert.AnError, WrapTx(context.Background(), dbx, fn1))
-	assert.NoError(t, mock.ExpectationsWereMet())
-	assert.True(t, called)
+			fn := func(_ *sqlx.Tx) error {
+				calls++
 
-	// success - db
-	called = false
+				if c.FnPanic {
+					panic(assert.AnError)
+				}
 
-	mock.ExpectBegin()
-	mock.ExpectCommit()
-	assert.NoError(t, WrapTx(context.Background(), dbx, fn1))
-	assert.NoError(t, mock.ExpectationsWereMet())
-	assert.True(t, called)
+				return c.FnErr
+			}
 
-	// success - tx
-	called = false
+			if c.Panic != nil {
+				assert.PanicsWithValue(t, c.Panic, func() {
+					err = WrapTx(context.Background(), agent, fn)
+				})
+			} else {
+				err = WrapTx(context.Background(), agent, fn)
+			}
 
-	mock.ExpectBegin()
-	mock.ExpectRollback()
+			assert.Equal(t, c.Err, err)
+			assert.Equal(t, c.FnCalls, calls)
 
-	tx, err := dbx.BeginTxx(context.Background(), nil)
-	require.NoError(t, err)
+			if tx, ok := agent.(*sqlx.Tx); ok {
+				assert.NoError(t, tx.Rollback())
+			}
 
-	assert.NoError(t, WrapTx(context.Background(), tx, fn1))
-	assert.NoError(t, tx.Rollback())
-	assert.NoError(t, mock.ExpectationsWereMet())
-	assert.True(t, called)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }

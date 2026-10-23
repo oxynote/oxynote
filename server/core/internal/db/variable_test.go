@@ -205,12 +205,6 @@ func storedVariableValues(t *testing.T, db *DB, variableID xid.ID) map[string]st
 	return res
 }
 
-func withOptions(v variable.Variable, options []variable.Option) variable.Variable {
-	v.Options = options
-
-	return v
-}
-
 func storedVariableOptions(t *testing.T, db *DB, variableID xid.ID) []variable.Option {
 	t.Helper()
 
@@ -762,7 +756,7 @@ func Test_agent_FetchVariableTree(t *testing.T) {
 				Err:              assert.AnError,
 			}
 		},
-		"Missing personal_variables table": func(t *testing.T, db *DB) tcase {
+		"Missing values table": func(t *testing.T, db *DB) tcase {
 			return tcase{
 				Fail:           "personal_variable_values",
 				OrganizationID: prepOrganizations(t, db, 1)[0],
@@ -782,7 +776,7 @@ func Test_agent_FetchVariableTree(t *testing.T) {
 				Result:         variable.Tree{},
 			}
 		},
-		"Groups with personal_variables, options and the user's values": func(t *testing.T, db *DB) tcase {
+		"Groups with variables and options and the values of the user": func(t *testing.T, db *DB) tcase {
 			users := prepUsers(t, db, 2)
 
 			groups := prepVariableGroups(t, db, 2, nil)
@@ -794,6 +788,7 @@ func Test_agent_FetchVariableTree(t *testing.T) {
 			})
 
 			options := prepVariableOptions(t, db, vars[0].ID, "a", "b")
+			vars[0].Options = options
 
 			prepVariableValue(t, db, vars[0], users[0], options[1].ID.String())
 			prepVariableValue(t, db, vars[1], users[1], "someone else's")
@@ -806,7 +801,7 @@ func Test_agent_FetchVariableTree(t *testing.T) {
 						Group: groups[0],
 						Variables: []variable.Entry{
 							{Variable: vars[1]},
-							{Variable: withOptions(vars[0], options), Value: null.StringFrom(options[1].ID.String())},
+							{Variable: vars[0], Value: null.StringFrom(options[1].ID.String())},
 						},
 					},
 					{Group: groups[1], Variables: []variable.Entry{}},
@@ -1293,7 +1288,7 @@ func Test_agent_ReplaceVariableOptions(t *testing.T) {
 				Err:            sql.ErrNoRows,
 			}
 		},
-		"Kept, renamed, reordered and removed options": func(t *testing.T, db *DB) tcase {
+		"Kept renamed reordered and removed options": func(t *testing.T, db *DB) tcase {
 			users := prepUsers(t, db, 2)
 
 			v := prepVariables(t, db, 1, func(_ int, v *variable.Variable) {
@@ -1461,7 +1456,7 @@ func Test_agent_DeleteVariableGroup(t *testing.T) {
 				Err:            errutil.ErrNotFound,
 			}
 		},
-		"Group with personal_variables": func(t *testing.T, db *DB) tcase {
+		"Group with variables": func(t *testing.T, db *DB) tcase {
 			v := prepVariables(t, db, 1, nil)[0]
 
 			return tcase{
@@ -1578,7 +1573,7 @@ func Test_agent_DeleteVariableValue(t *testing.T) {
 				Err:              assert.AnError,
 			}
 		},
-		"Only the user's value": func(t *testing.T, db *DB) tcase {
+		"Only the value of the user": func(t *testing.T, db *DB) tcase {
 			users := prepUsers(t, db, 2)
 			v := prepVariables(t, db, 1, nil)[0]
 
@@ -1639,7 +1634,7 @@ func Test_agent_DeleteVariableValues(t *testing.T) {
 				Err:              assert.AnError,
 			}
 		},
-		"Every user's value": func(t *testing.T, db *DB) tcase {
+		"Values of every user": func(t *testing.T, db *DB) tcase {
 			users := prepUsers(t, db, 2)
 			v := prepVariables(t, db, 1, nil)[0]
 

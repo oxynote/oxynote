@@ -65,72 +65,180 @@ func prepOrganizationMembers(t *testing.T, db *DB, organizationID string, userID
 }
 
 func Test_agent_FetchOrganizationMembers(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		CancelledContext bool
+		OrganizationID   string
+		Result           []string
+		Err              error
+	}
 
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				OrganizationID:   "org-id",
+				Err:              assert.AnError,
+			}
+		},
+		"Organization without members": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				OrganizationID: "non-existent-org-id",
+			}
+		},
+		"Successful fetch": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+			users := prepUsers(t, db, 3)
+			prepOrganizationMembers(t, db, org, users)
 
-	res, err := db.FetchOrganizationMembers(ctx, "org-id")
-	require.Error(t, err)
-	assert.Nil(t, res)
+			return tcase{
+				OrganizationID: org,
+				Result:         users,
+			}
+		},
+	}
 
-	// success - no members
-	res, err = db.FetchOrganizationMembers(context.Background(), "non-existent-org-id")
-	require.NoError(t, err)
-	assert.Empty(t, res)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// success
-	org := prepOrganizations(t, db, 1)[0]
-	users := prepUsers(t, db, 3)
-	prepOrganizationMembers(t, db, org, users)
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-	res, err = db.FetchOrganizationMembers(context.Background(), org)
-	assert.NoError(t, err)
-	assert.Equal(t, users, res)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchOrganizationMembers(ctx, c.OrganizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, res)
+
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
 }
 
 func Test_agent_CheckOrganizationMember(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		CancelledContext bool
+		OrganizationID   string
+		UserID           string
+		Result           bool
+		Err              error
+	}
 
-	org := prepOrganizations(t, db, 1)[0]
-	users := prepUsers(t, db, 1)
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+			users := prepUsers(t, db, 1)
 
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+			return tcase{
+				CancelledContext: true,
+				OrganizationID:   org,
+				UserID:           users[0],
+				Err:              assert.AnError,
+			}
+		},
+		"User is not a member": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+			users := prepUsers(t, db, 1)
 
-	ok, err := db.CheckOrganizationMember(ctx, org, users[0])
-	require.Error(t, err)
-	assert.False(t, ok)
+			return tcase{
+				OrganizationID: org,
+				UserID:         users[0],
+			}
+		},
+		"User is a member": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+			users := prepUsers(t, db, 1)
+			prepOrganizationMembers(t, db, org, users)
 
-	// success - not a member
-	ok, err = db.CheckOrganizationMember(context.Background(), org, users[0])
-	require.NoError(t, err)
-	assert.False(t, ok)
+			return tcase{
+				OrganizationID: org,
+				UserID:         users[0],
+				Result:         true,
+			}
+		},
+	}
 
-	// success - member
-	prepOrganizationMembers(t, db, org, users)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	ok, err = db.CheckOrganizationMember(context.Background(), org, users[0])
-	require.NoError(t, err)
-	assert.True(t, ok)
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			ok, err := db.CheckOrganizationMember(ctx, c.OrganizationID, c.UserID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.False(t, ok)
+
+				return
+			}
+
+			assert.Equal(t, c.Result, ok)
+		})
+	}
 }
 
 func Test_agent_FetchOrganizationSlug(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		OrganizationID string
+		Result         string
+		Err            error
+	}
 
-	// error - not found
-	slug, err := db.FetchOrganizationSlug(context.Background(), "non-existent-org-id")
-	testutil.AssertEqualError(t, sql.ErrNoRows, err)
-	assert.Empty(t, slug)
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Non-existent organization": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				OrganizationID: "non-existent-org-id",
+				Err:            sql.ErrNoRows,
+			}
+		},
+		"Successful fetch": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
 
-	// success
-	org := prepOrganizations(t, db, 1)[0]
+			return tcase{
+				OrganizationID: org,
+				Result:         "org-" + org,
+			}
+		},
+	}
 
-	slug, err = db.FetchOrganizationSlug(context.Background(), org)
-	assert.NoError(t, err)
-	assert.Equal(t, "org-"+org, slug)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			slug, err := db.FetchOrganizationSlug(context.Background(), c.OrganizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Empty(t, slug)
+
+				return
+			}
+
+			assert.Equal(t, c.Result, slug)
+		})
+	}
 }
 
 func Test_agent_UpdateOrganizationLogo(t *testing.T) {

@@ -92,194 +92,321 @@ func Test_agent_CreateNotification(t *testing.T) {
 		}
 	}
 
-	t.Run("Cancelled context", func(t *testing.T) {
-		t.Parallel()
+	type tcase struct {
+		Agent            *agent
+		CancelledContext bool
+		Notification     *notification.Notification
+		UnreadCount      uint64
+		Result           []*notification.Notification
+		Err              error
+	}
 
-		db := prepTempDB(t)
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(*testing.T, *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				Notification:     stubNotification("org-id", "user-id"),
+				Err:              assert.AnError,
+			}
+		},
+		"Error returned by the insert": func(t *testing.T, db *DB) tcase {
+			return tcase{
+				Notification: prepNotifications(t, db, 1, nil)[0],
+				Err:          assert.AnError,
+			}
+		},
+		"Error returned by the retention delete": func(t *testing.T, _ *DB) tcase {
+			a, mock := prepMockDB(t)
+			a.opts.MaxNotifications = 1
 
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
+			mock.ExpectBegin()
+			mock.ExpectExec("INSERT INTO notifications").WillReturnResult(sqlmock.NewResult(0, 1))
+			mock.ExpectExec("DELETE FROM notifications").WillReturnError(assert.AnError)
+			mock.ExpectRollback()
 
-		err := db.CreateNotification(ctx, stubNotification("org-id", "user-id"))
-		require.Error(t, err)
-	})
+			return tcase{
+				Agent:        a,
+				Notification: stubNotification("org-id", "user-id"),
+				Err:          assert.AnError,
+			}
+		},
+		"Successful creation without a retention limit": func(t *testing.T, db *DB) tcase {
+			existing := prepNotifications(t, db, 2, nil)
+			nt := stubNotification(existing[0].OrganizationID, existing[0].UserID)
+			nt.CreatedAt = existing[1].CreatedAt.Add(time.Hour)
 
-	t.Run("Error returned by the insert", func(t *testing.T) {
-		t.Parallel()
+			return tcase{
+				Notification: nt,
+				UnreadCount:  3,
+				Result:       []*notification.Notification{nt, existing[1], existing[0]},
+			}
+		},
+		"Successful creation with retention trimming": func(t *testing.T, db *DB) tcase {
+			db.opts.MaxNotifications = 2
 
-		db := prepTempDB(t)
+			existing := prepNotifications(t, db, 2, nil)
+			nt := stubNotification(existing[0].OrganizationID, existing[0].UserID)
+			nt.CreatedAt = existing[1].CreatedAt.Add(time.Hour)
 
-		nt := prepNotifications(t, db, 1, nil)[0]
+			return tcase{
+				Notification: nt,
+				UnreadCount:  2,
+				// the oldest notification is trimmed; the two newest remain.
+				Result: []*notification.Notification{nt, existing[1]},
+			}
+		},
+	}
 
-		err := db.CreateNotification(context.Background(), nt)
-		require.Error(t, err)
-	})
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("Error returned by the retention delete", func(t *testing.T) {
-		t.Parallel()
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-		a, mock := prepMockDB(t)
-		a.opts.MaxNotifications = 1
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
-		mock.ExpectBegin()
-		mock.ExpectExec("INSERT INTO notifications").WillReturnResult(sqlmock.NewResult(0, 1))
-		mock.ExpectExec("DELETE FROM notifications").WillReturnError(assert.AnError)
-		mock.ExpectRollback()
+			if c.CancelledContext {
+				cancel()
+			}
 
-		err := a.CreateNotification(context.Background(), stubNotification("org-id", "user-id"))
-		assert.Equal(t, assert.AnError, err)
-	})
+			ag := &db.agent
 
-	t.Run("Successful creation without a retention limit", func(t *testing.T) {
-		t.Parallel()
+			if c.Agent != nil {
+				ag = c.Agent
+			}
 
-		db := prepTempDB(t)
+			err := ag.CreateNotification(ctx, c.Notification)
+			testutil.RequireEqualError(t, c.Err, err)
 
-		existing := prepNotifications(t, db, 2, nil)
-		nt := stubNotification(existing[0].OrganizationID, existing[0].UserID)
+			if err != nil {
+				return
+			}
 
-		err := db.CreateNotification(context.Background(), nt)
-		require.NoError(t, err)
+			count, err := db.FetchNotificationCount(context.Background(), c.Notification.OrganizationID, c.Notification.UserID, false)
+			require.NoError(t, err)
+			assert.Equal(t, c.UnreadCount, count)
 
-		count, err := db.FetchNotificationCount(context.Background(), nt.OrganizationID, nt.UserID, false)
-		require.NoError(t, err)
-		assert.Equal(t, uint64(3), count)
-	})
-
-	t.Run("Successful creation with retention trimming", func(t *testing.T) {
-		t.Parallel()
-
-		db := prepTempDB(t)
-		db.opts.MaxNotifications = 2
-
-		existing := prepNotifications(t, db, 2, nil)
-		nt := stubNotification(existing[0].OrganizationID, existing[0].UserID)
-		nt.CreatedAt = existing[1].CreatedAt.Add(time.Hour)
-
-		err := db.CreateNotification(context.Background(), nt)
-		require.NoError(t, err)
-
-		// the oldest notification is trimmed; the two newest remain.
-		res, _, err := db.FetchManyNotifications(
-			context.Background(),
-			nt.OrganizationID,
-			nt.UserID,
-			httpserver.Query{Limit: 10, Page: 1},
-		)
-		require.NoError(t, err)
-		testutil.AssertFilterEqual(t, []*notification.Notification{nt, existing[1]}, res)
-	})
+			res, _, err := db.FetchManyNotifications(
+				context.Background(),
+				c.Notification.OrganizationID,
+				c.Notification.UserID,
+				httpserver.Query{Limit: 10, Page: 1},
+			)
+			require.NoError(t, err)
+			testutil.AssertFilterEqual(t, c.Result, res)
+		})
+	}
 }
 
 func Test_agent_FetchManyNotifications(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		CancelledContext bool
+		OrganizationID   string
+		UserID           string
+		Query            httpserver.Query
+		Result           []*notification.Notification
+		Pages            uint64
+		Err              error
+	}
 
-	// error - invalid query
-	res, pages, err := db.FetchManyNotifications(context.Background(), "org-id", "user-id", httpserver.Query{})
-	require.Error(t, err)
-	assert.Nil(t, res)
-	assert.Zero(t, pages)
-
-	// error - invalid filter key
-	res, pages, err = db.FetchManyNotifications(context.Background(), "org-id", "user-id", httpserver.Query{
-		Limit: 10,
-		Page:  1,
-		Filters: map[string]string{
-			"unknown": "true",
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Invalid query": func(*testing.T, *DB) tcase {
+			return tcase{
+				OrganizationID: "org-id",
+				UserID:         "user-id",
+				Err:            assert.AnError,
+			}
 		},
-	})
-	assert.Equal(t, httpserver.ErrInvalidFilterKey, err)
-	assert.Nil(t, res)
-	assert.Zero(t, pages)
-
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	res, pages, err = db.FetchManyNotifications(ctx, "org-id", "user-id", httpserver.Query{Limit: 10, Page: 1})
-	require.Error(t, err)
-	assert.Nil(t, res)
-	assert.Zero(t, pages)
-
-	// success - no notifications
-	res, pages, err = db.FetchManyNotifications(context.Background(), "org-id", "user-id", httpserver.Query{Limit: 10, Page: 1})
-	require.NoError(t, err)
-	assert.Empty(t, res)
-	assert.Zero(t, pages)
-
-	notifications := prepNotifications(t, db, 3, func(i int, nt *notification.Notification) {
-		nt.Read = i == 0
-	})
-
-	organizationID := notifications[0].OrganizationID
-	userID := notifications[0].UserID
-
-	// success - first page, newest first
-	res, pages, err = db.FetchManyNotifications(context.Background(), organizationID, userID, httpserver.Query{
-		Limit: 2,
-		Page:  1,
-	})
-	require.NoError(t, err)
-	assert.Equal(t, uint64(2), pages)
-	testutil.AssertFilterEqual(t, []*notification.Notification{notifications[2], notifications[1]}, res)
-
-	// success - second page
-	res, pages, err = db.FetchManyNotifications(context.Background(), organizationID, userID, httpserver.Query{
-		Limit: 2,
-		Page:  2,
-	})
-	require.NoError(t, err)
-	assert.Equal(t, uint64(2), pages)
-	testutil.AssertFilterEqual(t, []*notification.Notification{notifications[0]}, res)
-
-	// success - filtered by read state
-	res, pages, err = db.FetchManyNotifications(context.Background(), organizationID, userID, httpserver.Query{
-		Limit: 10,
-		Page:  1,
-		Filters: map[string]string{
-			notification.FilterReadEq: "true",
+		"Invalid filter key": func(*testing.T, *DB) tcase {
+			return tcase{
+				OrganizationID: "org-id",
+				UserID:         "user-id",
+				Query: httpserver.Query{
+					Limit: 10,
+					Page:  1,
+					Filters: map[string]string{
+						"unknown": "true",
+					},
+				},
+				Err: httpserver.ErrInvalidFilterKey,
+			}
 		},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, uint64(1), pages)
-	testutil.AssertFilterEqual(t, []*notification.Notification{notifications[0]}, res)
-
-	// success - sorted by creation time ascending
-	res, pages, err = db.FetchManyNotifications(context.Background(), organizationID, userID, httpserver.Query{
-		Limit: 10,
-		Page:  1,
-		SortKeys: []httpserver.SortKey{
-			{Key: notification.SortCreatedAt, Asc: true},
+		"Cancelled context": func(*testing.T, *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				OrganizationID:   "org-id",
+				UserID:           "user-id",
+				Query:            httpserver.Query{Limit: 10, Page: 1},
+				Err:              assert.AnError,
+			}
 		},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, uint64(1), pages)
-	testutil.AssertFilterEqual(t, notifications, res)
+		"No notifications": func(*testing.T, *DB) tcase {
+			return tcase{
+				OrganizationID: "org-id",
+				UserID:         "user-id",
+				Query:          httpserver.Query{Limit: 10, Page: 1},
+				Result:         []*notification.Notification{},
+			}
+		},
+		"First page newest first": func(t *testing.T, db *DB) tcase {
+			notifications := prepNotifications(t, db, 3, func(i int, nt *notification.Notification) {
+				nt.Read = i == 0
+			})
+
+			return tcase{
+				OrganizationID: notifications[0].OrganizationID,
+				UserID:         notifications[0].UserID,
+				Query: httpserver.Query{
+					Limit: 2,
+					Page:  1,
+				},
+				Result: []*notification.Notification{notifications[2], notifications[1]},
+				Pages:  2,
+			}
+		},
+		"Second page": func(t *testing.T, db *DB) tcase {
+			notifications := prepNotifications(t, db, 3, func(i int, nt *notification.Notification) {
+				nt.Read = i == 0
+			})
+
+			return tcase{
+				OrganizationID: notifications[0].OrganizationID,
+				UserID:         notifications[0].UserID,
+				Query: httpserver.Query{
+					Limit: 2,
+					Page:  2,
+				},
+				Result: []*notification.Notification{notifications[0]},
+				Pages:  2,
+			}
+		},
+		"Filtered by read state": func(t *testing.T, db *DB) tcase {
+			notifications := prepNotifications(t, db, 3, func(i int, nt *notification.Notification) {
+				nt.Read = i == 0
+			})
+
+			return tcase{
+				OrganizationID: notifications[0].OrganizationID,
+				UserID:         notifications[0].UserID,
+				Query: httpserver.Query{
+					Limit: 10,
+					Page:  1,
+					Filters: map[string]string{
+						notification.FilterReadEq: "true",
+					},
+				},
+				Result: []*notification.Notification{notifications[0]},
+				Pages:  1,
+			}
+		},
+		"Sorted by creation time ascending": func(t *testing.T, db *DB) tcase {
+			notifications := prepNotifications(t, db, 3, func(i int, nt *notification.Notification) {
+				nt.Read = i == 0
+			})
+
+			return tcase{
+				OrganizationID: notifications[0].OrganizationID,
+				UserID:         notifications[0].UserID,
+				Query: httpserver.Query{
+					Limit: 10,
+					Page:  1,
+					SortKeys: []httpserver.SortKey{
+						{Key: notification.SortCreatedAt, Asc: true},
+					},
+				},
+				Result: notifications,
+				Pages:  1,
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, pages, err := db.FetchManyNotifications(ctx, c.OrganizationID, c.UserID, c.Query)
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Pages, pages)
+			testutil.AssertFilterEqual(t, c.Result, res)
+		})
+	}
 }
 
 func Test_agent_FetchNotificationCount(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		CancelledContext bool
+		OrganizationID   string
+		UserID           string
+		Read             bool
+		Result           uint64
+		Err              error
+	}
 
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(*testing.T, *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				OrganizationID:   "org-id",
+				UserID:           "user-id",
+				Err:              assert.AnError,
+			}
+		},
+		"Successful count of unread notifications": func(t *testing.T, db *DB) tcase {
+			notifications := prepNotifications(t, db, 3, func(i int, nt *notification.Notification) {
+				nt.Read = i == 0
+			})
 
-	count, err := db.FetchNotificationCount(ctx, "org-id", "user-id", false)
-	require.Error(t, err)
-	assert.Zero(t, count)
+			return tcase{
+				OrganizationID: notifications[0].OrganizationID,
+				UserID:         notifications[0].UserID,
+				Result:         2,
+			}
+		},
+		"Successful count of read notifications": func(t *testing.T, db *DB) tcase {
+			notifications := prepNotifications(t, db, 3, func(i int, nt *notification.Notification) {
+				nt.Read = i == 0
+			})
 
-	// success
-	notifications := prepNotifications(t, db, 3, func(i int, nt *notification.Notification) {
-		nt.Read = i == 0
-	})
+			return tcase{
+				OrganizationID: notifications[0].OrganizationID,
+				UserID:         notifications[0].UserID,
+				Read:           true,
+				Result:         1,
+			}
+		},
+	}
 
-	count, err = db.FetchNotificationCount(context.Background(), notifications[0].OrganizationID, notifications[0].UserID, false)
-	require.NoError(t, err)
-	assert.Equal(t, uint64(2), count)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	count, err = db.FetchNotificationCount(context.Background(), notifications[0].OrganizationID, notifications[0].UserID, true)
-	require.NoError(t, err)
-	assert.Equal(t, uint64(1), count)
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			count, err := db.FetchNotificationCount(ctx, c.OrganizationID, c.UserID, c.Read)
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Result, count)
+		})
+	}
 }
 
 func Test_agent_MarkReadByNotificationsIDs(t *testing.T) {

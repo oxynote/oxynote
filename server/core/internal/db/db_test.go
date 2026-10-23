@@ -297,50 +297,82 @@ func Test_DB_migrateUp(t *testing.T) {
 }
 
 func Test_DB_BeginTx(t *testing.T) {
-	db := prepTempDB(t)
-
-	// provided destination isn't a pointer
-	require.PanicsWithValue(
-		t,
-		"dest is not a pointer",
-		func() {
-			require.NoError(t, db.BeginTx(context.Background(), struct{}{}))
-		},
-	)
-
-	// provided destination is nil
-	require.PanicsWithValue(
-		t,
-		"dest is not a pointer",
-		func() {
-			require.NoError(t, db.BeginTx(context.Background(), (*struct{})(nil)))
-		},
-	)
-
-	// cannot fulfill destination requirements
-	require.Panics(
-		t,
-		func() {
-			require.NoError(t, db.BeginTx(context.Background(), &struct{}{}))
-		},
-	)
-
 	type test2 interface {
 		Commit() error
 	}
 
-	var val test2
+	cc := map[string]struct {
+		CancelledContext bool
+		Dest             any
+		Panics           bool
+		PanicValue       any
+		Err              error
+	}{
+		"Destination is not a pointer": {
+			Dest:       struct{}{},
+			Panics:     true,
+			PanicValue: "dest is not a pointer",
+		},
+		"Destination is nil": {
+			Dest:       (*struct{})(nil),
+			Panics:     true,
+			PanicValue: "dest is not a pointer",
+		},
+		"Destination cannot hold a transaction": {
+			Dest:   &struct{}{},
+			Panics: true,
+		},
+		"Cancelled context": {
+			CancelledContext: true,
+			Dest:             new(test2),
+			Err:              assert.AnError,
+		},
+		"Successful begin": {
+			Dest: new(test2),
+		},
+	}
 
-	// context error
-	nctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	require.Error(t, db.BeginTx(nctx, &val))
+			db := prepTempDB(t)
 
-	// success
-	require.NoError(t, db.BeginTx(context.Background(), &val))
-	assert.IsType(t, &Tx{}, val)
-	assert.NoError(t, val.Commit())
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			if c.Panics {
+				if c.PanicValue == nil {
+					require.Panics(t, func() {
+						require.NoError(t, db.BeginTx(ctx, c.Dest))
+					})
+
+					return
+				}
+
+				require.PanicsWithValue(t, c.PanicValue, func() {
+					require.NoError(t, db.BeginTx(ctx, c.Dest))
+				})
+
+				return
+			}
+
+			err := db.BeginTx(ctx, c.Dest)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			val := *c.Dest.(*test2)
+			assert.IsType(t, &Tx{}, val)
+			assert.NoError(t, val.Commit())
+		})
+	}
 }
 
 func Test_Tx_SQLTx(t *testing.T) {

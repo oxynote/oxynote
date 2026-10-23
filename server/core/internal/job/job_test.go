@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,6 +19,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/orlangure/gnomock"
 	pgDocker "github.com/orlangure/gnomock/preset/postgres"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -150,16 +153,42 @@ func Test_Manager_Close(t *testing.T) {
 func Test_Manager_cleanup(t *testing.T) {
 	t.Parallel()
 
-	w, buf := testutil.NewBuffer()
-	m := prepManager(t, slog.New(slog.NewTextHandler(w, nil)))
+	cc := map[string]struct {
+		Closed bool
+		Logged bool
+	}{
+		"Error returned by Manager.deleteFinished": {
+			Closed: true,
+			Logged: true,
+		},
+		"Successful cleanup": {},
+	}
 
-	// failing on a closed runtime is the only way to reach the log.
-	require.NoError(t, m.Close())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	m.cleanup(context.Background())
+			w, buf := testutil.NewBuffer()
+			m := prepManager(t, slog.New(slog.NewTextHandler(w, nil)))
 
-	require.NoError(t, w.Flush())
-	assert.Contains(t, buf.String(), `msg="cannot delete finished jobs"`)
+			// failing on a closed runtime is the only way to reach the log.
+			if c.Closed {
+				require.NoError(t, m.Close())
+			}
+
+			m.cleanup(context.Background())
+
+			require.NoError(t, w.Flush())
+
+			if !c.Logged {
+				assert.NotContains(t, buf.String(), `msg="cannot delete finished jobs"`)
+
+				return
+			}
+
+			assert.Contains(t, buf.String(), `msg="cannot delete finished jobs"`)
+		})
+	}
 }
 
 func Test_Manager_deleteFinished(t *testing.T) {
@@ -263,23 +292,25 @@ func Test_Manager_Register(t *testing.T) {
 
 	dsn := prepDSN(t)
 	m := prepManager(t, slog.New(slog.DiscardHandler), dsn)
-	handle := func(context.Context, int) error { return nil }
 
 	// error
-	assert.Error(t, m.Register(NewQueue("test", handle, QueueOptions{})))
+	assert.Error(t, m.Register(NewQueue("test", func(context.Context, int) error { return nil }, QueueOptions{})))
 
 	// success: queues of the same input type coexist
 	handled := make(chan QueueName, 2)
 
-	queue := func(name QueueName) *Queue[int] {
-		return prepQueue(t, m, name, func(context.Context, int) error {
-			handled <- name
+	first := prepQueue(t, m, "first", func(context.Context, int) error {
+		handled <- "first"
 
-			return nil
-		}, _testQueueOpts)
-	}
+		return nil
+	}, _testQueueOpts)
 
-	first, second := queue("first"), queue("second")
+	second := prepQueue(t, m, "second", func(context.Context, int) error {
+		handled <- "second"
+
+		return nil
+	}, _testQueueOpts)
+
 	assert.Equal(t, m.dbos, first.dbos)
 	assert.Contains(t, m.names, QueueName("first"))
 	assert.Contains(t, m.names, QueueName("second"))
@@ -380,160 +411,245 @@ func Test_Queue_register(t *testing.T) {
 func Test_Queue_Enqueue(t *testing.T) {
 	t.Parallel()
 
-	dsn := prepDSN(t)
-	m := prepManager(t, slog.New(slog.DiscardHandler), dsn)
+	begin := func(t *testing.T, sdb *sql.DB) sqlutil.Tx {
+		t.Helper()
 
-	var (
-		active    atomic.Int32
-		maxActive atomic.Int32
-	)
+		tx, err := sdb.Begin()
+		require.NoError(t, err)
 
-	handled := make(chan int, 10)
-
-	q := prepQueue(t, m, "test", func(_ context.Context, inp int) error {
-		n := active.Add(1)
-		defer active.Add(-1)
-
-		if n > maxActive.Load() {
-			maxActive.Store(n)
-		}
-
-		handled <- inp
-
-		return nil
-	}, _testQueueOpts)
-	require.NoError(t, m.Launch())
-
-	sdb := openDB(t, dsn)
-
-	// error
-	err := q.Enqueue(context.Background(), bareTx{}, 0)
-	assert.EqualError(t, err, "transaction job.bareTx has no underlying sql transaction")
-
-	tx, err := sdb.Begin()
-	require.NoError(t, err)
-	require.NoError(t, tx.Rollback())
-
-	err = q.Enqueue(context.Background(), stubTx{tx: tx}, 1)
-	assert.Error(t, err)
-
-	// a rolled back job never runs.
-	tx, err = sdb.Begin()
-	require.NoError(t, err)
-	require.NoError(t, q.Enqueue(context.Background(), stubTx{tx: tx}, 2))
-	require.NoError(t, tx.Rollback())
-
-	// success
-	for i := 3; i <= 5; i++ {
-		enqueueCommitted(t, dsn, q, i)
+		return stubTx{tx: tx}
 	}
 
-	got := []int{<-handled, <-handled, <-handled}
-	assert.ElementsMatch(t, []int{3, 4, 5}, got)
+	cc := map[string]struct {
+		Tx        func(t *testing.T, sdb *sql.DB) sqlutil.Tx
+		Inp       []int
+		Rollback  bool
+		Handled   []int
+		MaxActive int32
+		Err       error
+	}{
+		"Transaction without an underlying one": {
+			Tx: func(*testing.T, *sql.DB) sqlutil.Tx {
+				return bareTx{}
+			},
+			Inp: []int{0},
+			Err: errors.New("transaction job.bareTx has no underlying sql transaction"),
+		},
+		"Error returned by dbos.Enqueue": {
+			Tx: func(t *testing.T, sdb *sql.DB) sqlutil.Tx {
+				tx := begin(t, sdb)
+				require.NoError(t, tx.Rollback())
 
-	awaitQueue(t, m, "test", 3)
+				return tx
+			},
+			Inp: []int{1},
+			Err: assert.AnError,
+		},
+		"Rolled back job never runs": {
+			Tx:       begin,
+			Inp:      []int{2},
+			Rollback: true,
+		},
+		"Successful enqueue": {
+			Tx:        begin,
+			Inp:       []int{3, 4, 5},
+			Handled:   []int{3, 4, 5},
+			MaxActive: 1,
+		},
+	}
 
-	assert.Empty(t, handled)
-	assert.Equal(t, int32(1), maxActive.Load())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			dsn := prepDSN(t)
+			m := prepManager(t, slog.New(slog.DiscardHandler), dsn)
+
+			var (
+				active    atomic.Int32
+				maxActive atomic.Int32
+			)
+
+			handled := make(chan int, 10)
+
+			q := prepQueue(t, m, "test", func(_ context.Context, inp int) error {
+				n := active.Add(1)
+				defer active.Add(-1)
+
+				if n > maxActive.Load() {
+					maxActive.Store(n)
+				}
+
+				handled <- inp
+
+				return nil
+			}, _testQueueOpts)
+			require.NoError(t, m.Launch())
+
+			sdb := openDB(t, dsn)
+
+			// a failed enqueue still reaches the queue checks below, which
+			// prove it queued nothing.
+			for _, inp := range c.Inp {
+				tx := c.Tx(t, sdb)
+
+				err := q.Enqueue(context.Background(), tx, inp)
+				testutil.AssertEqualError(t, c.Err, err)
+
+				if err != nil {
+					continue
+				}
+
+				if c.Rollback {
+					require.NoError(t, tx.Rollback())
+
+					continue
+				}
+
+				require.NoError(t, tx.Commit())
+			}
+
+			got := make([]int, len(c.Handled))
+			for i := range got {
+				got[i] = <-handled
+			}
+
+			assert.ElementsMatch(t, c.Handled, got)
+
+			awaitQueue(t, m, "test", len(c.Handled))
+
+			assert.Empty(t, handled)
+			assert.Equal(t, c.MaxActive, maxActive.Load())
+		})
+	}
 }
 
 func Test_Queue_run(t *testing.T) {
 	t.Parallel()
 
-	dsn := prepDSN(t)
-	w, buf := testutil.NewBuffer()
-	m := prepManager(t, slog.New(slog.NewTextHandler(w, nil)), dsn)
-
-	var calls atomic.Int32
-
-	done := make(chan struct{})
-
-	// the first attempt panics, the next ten fail and the twelfth
-	// succeeds, so the last failure is past the critical threshold.
-	q := prepQueue(t, m, "test", func(_ context.Context, inp string) error {
-		n := calls.Add(1)
-
-		switch {
-		case n == 1:
-			panic("boom")
-		case n <= 11:
-			return assert.AnError
-		}
-
-		assert.Equal(t, "scope", inp)
-		close(done)
-
-		return nil
-	}, _testQueueOpts)
-	require.NoError(t, m.Launch())
-
-	enqueueCommitted(t, dsn, q, "scope")
-	<-done
-
-	awaitQueue(t, m, "test", 12)
-	assert.Equal(t, int32(12), calls.Load())
-
-	require.NoError(t, w.Flush())
-
-	failures := map[int]string{}
-
-	for line := range strings.Lines(buf.String()) {
-		if !strings.Contains(line, `msg="cannot handle job"`) {
-			continue
-		}
-
-		_, rest, ok := strings.Cut(line, "attempt=")
-		require.True(t, ok)
-
-		var attempt int
-
-		_, err := fmt.Sscanf(rest, "%d", &attempt)
-		require.NoError(t, err)
-
-		failures[attempt] = line
+	cc := map[string]struct {
+		Panics  bool
+		Fails   int32
+		Restart bool
+		Calls   int32
+		Logs    map[int][]string
+	}{
+		// the first attempt panics, the next ten fail and the twelfth
+		// succeeds, so the last failure is past the critical threshold.
+		"Failed attempts are retried until one succeeds": {
+			Panics: true,
+			Fails:  11,
+			Calls:  12,
+			Logs: map[int][]string{
+				0:  {`error="handler panicked: boom"`, "retry_in=1ms"},
+				1:  {"retry_in=2ms"},
+				9:  {`error="` + assert.AnError.Error() + `"`},
+				10: {`error="internal error"`},
+			},
+		},
+		// every attempt fails until the process stops, and a succeeding
+		// handler takes the job over after the restart.
+		"Retry pending at shutdown runs in the next process": {
+			Fails:   math.MaxInt32,
+			Restart: true,
+		},
 	}
 
-	require.Len(t, failures, 11)
-	assert.Contains(t, failures[0], `error="handler panicked: boom"`)
-	assert.Contains(t, failures[0], "retry_in=1ms")
-	assert.Contains(t, failures[1], "retry_in=2ms")
-	assert.Contains(t, failures[9], `error="`+assert.AnError.Error()+`"`)
-	assert.Contains(t, failures[10], `error="internal error"`)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// a retry still pending when the process stops runs in the next one.
-	dsn = prepDSN(t)
-	m = prepManager(t, slog.New(slog.DiscardHandler), dsn)
+			dsn := prepDSN(t)
+			w, buf := testutil.NewBuffer()
+			m := prepManager(t, slog.New(slog.NewTextHandler(w, nil)), dsn)
 
-	failed := make(chan struct{}, 1)
+			var (
+				calls      atomic.Int32
+				failOnce   sync.Once
+				handleOnce sync.Once
+			)
 
-	q = prepQueue(t, m, "test", func(context.Context, string) error {
-		select {
-		case failed <- struct{}{}:
-		default:
-		}
+			failed := make(chan struct{})
+			handled := make(chan string, 1)
 
-		return assert.AnError
-	}, _testQueueOpts)
-	require.NoError(t, m.Launch())
+			q := prepQueue(t, m, "test", func(_ context.Context, inp string) error {
+				n := calls.Add(1)
 
-	enqueueCommitted(t, dsn, q, "scope")
-	<-failed
-	require.NoError(t, m.Close())
+				switch {
+				case c.Panics && n == 1:
+					panic("boom")
+				case n <= c.Fails:
+					failOnce.Do(func() { close(failed) })
 
-	m = prepManager(t, slog.New(slog.DiscardHandler), dsn)
-	resumed := make(chan string, 1)
+					return assert.AnError
+				}
 
-	prepQueue(t, m, "test", func(_ context.Context, inp string) error {
-		select {
-		case resumed <- inp:
-		default:
-		}
+				handleOnce.Do(func() { handled <- inp })
 
-		return nil
-	}, _testQueueOpts)
-	require.NoError(t, m.Launch())
+				return nil
+			}, _testQueueOpts)
+			require.NoError(t, m.Launch())
 
-	assert.Equal(t, "scope", <-resumed)
+			enqueueCommitted(t, dsn, q, "scope")
+
+			if c.Restart {
+				<-failed
+				require.NoError(t, m.Close())
+
+				m = prepManager(t, slog.New(slog.DiscardHandler), dsn)
+
+				prepQueue(t, m, "test", func(_ context.Context, inp string) error {
+					handleOnce.Do(func() { handled <- inp })
+
+					return nil
+				}, _testQueueOpts)
+				require.NoError(t, m.Launch())
+
+				assert.Equal(t, "scope", <-handled)
+
+				return
+			}
+
+			assert.Equal(t, "scope", <-handled)
+
+			awaitQueue(t, m, "test", int(c.Calls))
+			assert.Equal(t, c.Calls, calls.Load())
+
+			require.NoError(t, w.Flush())
+
+			failures := map[int]string{}
+
+			for line := range strings.Lines(buf.String()) {
+				if !strings.Contains(line, `msg="cannot handle job"`) {
+					continue
+				}
+
+				_, rest, ok := strings.Cut(line, "attempt=")
+				require.True(t, ok)
+
+				var attempt int
+
+				_, err := fmt.Sscanf(rest, "%d", &attempt)
+				require.NoError(t, err)
+
+				failures[attempt] = line
+			}
+
+			require.Len(t, failures, int(c.Fails))
+
+			for attempt, ss := range c.Logs {
+				for _, s := range ss {
+					assert.Contains(t, failures[attempt], s)
+				}
+			}
+		})
+	}
+}
+
+func Test_instance_ConfigName(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "test", instance("test").ConfigName())
 }
 
 func Test_retryDelay(t *testing.T) {

@@ -80,7 +80,7 @@ func Test_Handler_RunBlock(t *testing.T) {
 			Code:       http.StatusNotFound,
 			Body:       `{"code":"general","message":"not found"}`,
 		},
-		"Error returned by the runner": {
+		"Error returned by Runner.Run": {
 			Err:        assert.AnError,
 			DocumentID: documentID.String(),
 			BranchID:   branchID.String(),

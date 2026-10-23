@@ -265,48 +265,82 @@ func Test_agent_InsertDocumentCommentReply(t *testing.T) {
 }
 
 func Test_agent_FetchDocumentComment(t *testing.T) {
-	t.Run("Not found", func(t *testing.T) {
-		t.Parallel()
+	type tcase struct {
+		Agent          *agent
+		ID             xid.ID
+		DocumentID     xid.ID
+		OrganizationID string
+		Result         *comment.Comment
+		Err            error
+	}
 
-		db := prepTempDB(t)
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Not found": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				ID:             xid.New(),
+				DocumentID:     xid.New(),
+				OrganizationID: "non-existent-org-id",
+				Err:            sql.ErrNoRows,
+			}
+		},
+		"Error returned by the replies query": func(t *testing.T, _ *DB) tcase {
+			a, mock := prepMockDB(t)
 
-		res, err := db.FetchDocumentComment(context.Background(), xid.New(), xid.New(), "non-existent-org-id")
-		testutil.AssertEqualError(t, sql.ErrNoRows, err)
-		assert.Nil(t, res)
-	})
+			id := xid.New()
 
-	t.Run("Error returned by the replies query", func(t *testing.T) {
-		t.Parallel()
+			mock.ExpectQuery("SELECT .* FROM document_comments").
+				WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(id.String()))
+			mock.ExpectQuery("SELECT .* FROM document_comment_replies").
+				WillReturnError(assert.AnError)
 
-		a, mock := prepMockDB(t)
+			return tcase{
+				Agent:          a,
+				ID:             id,
+				DocumentID:     xid.New(),
+				OrganizationID: "org-id",
+				Err:            assert.AnError,
+			}
+		},
+		"Successful fetch with replies": func(t *testing.T, db *DB) tcase {
+			c := prepDocumentComments(t, db, 1, nil)[0]
+			c.Replies = prepDocumentCommentReplies(t, db, 2, func(_ int, r *comment.Reply) {
+				r.CommentID = c.ID
+				r.OrganizationID = c.OrganizationID
+			})
 
-		id := xid.New()
+			return tcase{
+				ID:             c.ID,
+				DocumentID:     c.DocumentID,
+				OrganizationID: c.OrganizationID,
+				Result:         &c,
+			}
+		},
+	}
 
-		mock.ExpectQuery("SELECT .* FROM document_comments").
-			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(id.String()))
-		mock.ExpectQuery("SELECT .* FROM document_comment_replies").
-			WillReturnError(assert.AnError)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-		res, err := a.FetchDocumentComment(context.Background(), id, xid.New(), "org-id")
-		assert.Equal(t, assert.AnError, err)
-		assert.Nil(t, res)
-	})
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-	t.Run("Successful fetch with replies", func(t *testing.T) {
-		t.Parallel()
+			ag := &db.agent
 
-		db := prepTempDB(t)
+			if c.Agent != nil {
+				ag = c.Agent
+			}
 
-		c := prepDocumentComments(t, db, 1, nil)[0]
-		c.Replies = prepDocumentCommentReplies(t, db, 2, func(_ int, r *comment.Reply) {
-			r.CommentID = c.ID
-			r.OrganizationID = c.OrganizationID
+			res, err := ag.FetchDocumentComment(context.Background(), c.ID, c.DocumentID, c.OrganizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, res)
+				return
+			}
+
+			testutil.AssertFilterEqual(t, c.Result, res)
 		})
-
-		res, err := db.FetchDocumentComment(context.Background(), c.ID, c.DocumentID, c.OrganizationID)
-		assert.NoError(t, err)
-		testutil.AssertFilterEqual(t, &c, res)
-	})
+	}
 }
 
 func Test_agent_FetchDocumentCommentReply(t *testing.T) {
@@ -622,51 +656,22 @@ func Test_agent_ReplaceDocumentComment(t *testing.T) {
 }
 
 func Test_agent_FetchDocumentCommentsByBranchID(t *testing.T) {
-	t.Run("Error returned by the comments query", func(t *testing.T) {
-		t.Parallel()
+	type tcase struct {
+		Agent            *agent
+		CancelledContext bool
+		BranchID         xid.ID
+		OrganizationID   string
+		Resolved         bool
+		Result           []comment.Comment
+		Err              error
+	}
 
-		db := prepTempDB(t)
+	// prepBranchComments creates three unresolved comments of one branch,
+	// the first two with replies, and one resolved comment of the same
+	// branch.
+	prepBranchComments := func(t *testing.T, db *DB) ([]comment.Comment, []comment.Comment) {
+		t.Helper()
 
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-
-		res, err := db.FetchDocumentCommentsByBranchID(ctx, xid.New(), "org-id", false)
-		require.Error(t, err)
-		assert.Nil(t, res)
-	})
-
-	t.Run("Error returned by the replies query", func(t *testing.T) {
-		t.Parallel()
-
-		a, mock := prepMockDB(t)
-
-		id := xid.New()
-
-		mock.ExpectQuery("SELECT .* FROM document_comments").
-			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(id.String()))
-		mock.ExpectQuery("SELECT .* FROM document_comment_replies").
-			WillReturnError(assert.AnError)
-
-		res, err := a.FetchDocumentCommentsByBranchID(context.Background(), xid.New(), "org-id", false)
-		assert.Equal(t, assert.AnError, err)
-		assert.Nil(t, res)
-	})
-
-	t.Run("Successful fetch", func(t *testing.T) {
-		t.Parallel()
-
-		db := prepTempDB(t)
-
-		// success - no comments
-		res, err := db.FetchDocumentCommentsByBranchID(context.Background(), xid.New(), "non-existent-org-id", false)
-		require.NoError(t, err)
-		assert.Empty(t, res)
-
-		// success - newest comment first, replies in creation order and
-		// attached to the comment they belong to rather than the first
-		// one; a comment with no replies carries an empty slice, not
-		// nil, matching FetchDocumentComment; a resolved comment of the
-		// same branch is left out
 		comments := prepDocumentComments(t, db, 3, nil)
 		resolved := prepDocumentComments(t, db, 1, func(_ int, c *comment.Comment) {
 			c.BranchID = comments[0].BranchID
@@ -686,15 +691,99 @@ func Test_agent_FetchDocumentCommentsByBranchID(t *testing.T) {
 		})
 		comments[2].Replies = make([]comment.Reply, 0)
 
-		res, err = db.FetchDocumentCommentsByBranchID(context.Background(), comments[0].BranchID, comments[0].OrganizationID, false)
-		assert.NoError(t, err)
-		testutil.AssertFilterEqual(t, comments, res)
+		return comments, resolved
+	}
 
-		// success - only the resolved comment
-		res, err = db.FetchDocumentCommentsByBranchID(context.Background(), comments[0].BranchID, comments[0].OrganizationID, true)
-		assert.NoError(t, err)
-		testutil.AssertFilterEqual(t, resolved, res)
-	})
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Error returned by the comments query": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				BranchID:         xid.New(),
+				OrganizationID:   "org-id",
+				Err:              assert.AnError,
+			}
+		},
+		"Error returned by the replies query": func(t *testing.T, _ *DB) tcase {
+			a, mock := prepMockDB(t)
+
+			id := xid.New()
+
+			mock.ExpectQuery("SELECT .* FROM document_comments").
+				WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(id.String()))
+			mock.ExpectQuery("SELECT .* FROM document_comment_replies").
+				WillReturnError(assert.AnError)
+
+			return tcase{
+				Agent:          a,
+				BranchID:       xid.New(),
+				OrganizationID: "org-id",
+				Err:            assert.AnError,
+			}
+		},
+		"Successful fetch without comments": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				BranchID:       xid.New(),
+				OrganizationID: "non-existent-org-id",
+				Result:         []comment.Comment{},
+			}
+		},
+		"Successful fetch of unresolved comments": func(t *testing.T, db *DB) tcase {
+			// newest comment first, replies in creation order and
+			// attached to the comment they belong to rather than the first
+			// one; a comment with no replies carries an empty slice, not
+			// nil, matching FetchDocumentComment; a resolved comment of the
+			// same branch is left out.
+			comments, _ := prepBranchComments(t, db)
+
+			return tcase{
+				BranchID:       comments[0].BranchID,
+				OrganizationID: comments[0].OrganizationID,
+				Result:         comments,
+			}
+		},
+		"Successful fetch of resolved comments": func(t *testing.T, db *DB) tcase {
+			comments, resolved := prepBranchComments(t, db)
+
+			return tcase{
+				BranchID:       comments[0].BranchID,
+				OrganizationID: comments[0].OrganizationID,
+				Resolved:       true,
+				Result:         resolved,
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			ag := &db.agent
+
+			if c.Agent != nil {
+				ag = c.Agent
+			}
+
+			res, err := ag.FetchDocumentCommentsByBranchID(ctx, c.BranchID, c.OrganizationID, c.Resolved)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, res)
+				return
+			}
+
+			testutil.AssertFilterEqual(t, c.Result, res)
+		})
+	}
 }
 
 func Test_agent_DeleteDocumentCommentsByBranchID(t *testing.T) {

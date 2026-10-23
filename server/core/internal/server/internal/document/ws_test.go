@@ -16,14 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// sessionCtx returns a context carrying the standard test session.
-func sessionCtx() context.Context {
-	return auth.AddSessionToContext(context.Background(), auth.Session{
-		UserID:               "u1",
-		ActiveOrganizationID: "org1",
-	})
-}
-
 // docTopicCtx returns a subscriber context for the given document topic.
 func docTopicCtx(orgID string, documentID xid.ID) context.Context {
 	return wsserver.NewTopicParamsContext(
@@ -48,25 +40,55 @@ func Test_Handler_BindTreeChange(t *testing.T) {
 func Test_Handler_NotifyTreeChange(t *testing.T) {
 	t.Parallel()
 
-	hdl := &Handler{}
+	cc := map[string]struct {
+		Bound     bool
+		Published int
+	}{
+		"Unbound handler publishes nothing": {},
+		"Bound handler publishes the change": {
+			Bound:     true,
+			Published: 1,
+		},
+	}
 
-	// NotifyTreeChange before binding must be a safe no-op.
-	hdl.NotifyTreeChange("org1", null.Value[xid.ID]{})
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	tpc := &wsMock.Topic{}
+			hdl := &Handler{}
+			tpc := &wsMock.Topic{}
 
-	hdl.BindTreeChange(tpc)
+			if c.Bound {
+				hdl.BindTreeChange(tpc)
+			}
 
-	parentID := null.ValueFrom(xid.New())
+			parentID := null.ValueFrom(xid.New())
 
-	hdl.NotifyTreeChange("org1", parentID)
+			hdl.NotifyTreeChange("org1", parentID)
 
-	pubs := tpc.PublishManyCalls()
-	require.Len(t, pubs, 1)
-	assert.Equal(t, TreeChangeMessage{ParentID: parentID}, pubs[0].Payload)
+			// a later bind must not replay the dropped change.
+			if !c.Bound {
+				hdl.BindTreeChange(tpc)
+			}
 
-	assert.True(t, pubs[0].Filter(sessionCtx(), "topic"))
-	assert.False(t, pubs[0].Filter(context.Background(), "topic"))
+			pubs := tpc.PublishManyCalls()
+			require.Len(t, pubs, c.Published)
+
+			if c.Published == 0 {
+				return
+			}
+
+			assert.Equal(t, TreeChangeMessage{ParentID: parentID}, pubs[0].Payload)
+
+			ctx := auth.AddSessionToContext(context.Background(), auth.Session{
+				UserID:               "u1",
+				ActiveOrganizationID: "org1",
+			})
+
+			assert.True(t, pubs[0].Filter(ctx, "topic"))
+			assert.False(t, pubs[0].Filter(context.Background(), "topic"))
+		})
+	}
 }
 
 func Test_Handler_BindReviewersChange(t *testing.T) {
@@ -114,17 +136,20 @@ func Test_Handler_BindMetadataChange(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB        *DBMock
-		Published int
+		DB                      *DBMock
+		Published               int
+		FetchDocumentBranches   int
+		FetchDocumentByBranchID int
 	}{
-		"Branch fetch error on subscription": {
+		"Error returned by DB.FetchDocumentBranches": {
 			DB: &DBMock{
 				FetchDocumentBranchesFunc: func(context.Context, xid.ID, string) ([]documentCore.BranchSummary, error) {
 					return nil, errors.New("boom")
 				},
 			},
+			FetchDocumentBranches: 1,
 		},
-		"Branch document fetch error skips the branch": {
+		"Error returned by DB.FetchDocumentByBranchID skips the branch": {
 			DB: &DBMock{
 				FetchDocumentBranchesFunc: func(context.Context, xid.ID, string) ([]documentCore.BranchSummary, error) {
 					return []documentCore.BranchSummary{{BranchID: _branchID}, {BranchID: _branchID2}}, nil
@@ -137,7 +162,9 @@ func Test_Handler_BindMetadataChange(t *testing.T) {
 					return storedDoc(), nil
 				},
 			},
-			Published: 1,
+			Published:               1,
+			FetchDocumentBranches:   1,
+			FetchDocumentByBranchID: 2,
 		},
 		"Initial state sync publishes each branch": {
 			DB: &DBMock{
@@ -148,7 +175,9 @@ func Test_Handler_BindMetadataChange(t *testing.T) {
 					return storedDoc(), nil
 				},
 			},
-			Published: 2,
+			Published:               2,
+			FetchDocumentBranches:   1,
+			FetchDocumentByBranchID: 2,
 		},
 	}
 
@@ -172,6 +201,9 @@ func Test_Handler_BindMetadataChange(t *testing.T) {
 			hdl.BindMetadataChange(tpc)
 			require.NotNil(t, hdl.metadata.changeCallback)
 
+			assert.Len(t, tpc.OnSubCalls(), 1)
+			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), c.FetchDocumentBranches)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchID)
 			assert.Len(t, tpc.PublishOneCalls(), c.Published)
 
 			if c.Published > 0 {

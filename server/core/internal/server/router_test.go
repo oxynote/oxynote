@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log/slog"
 	"net/http"
 	"testing"
 
@@ -23,7 +24,7 @@ func Test_Server_httpRouter(t *testing.T) {
 	t.Parallel()
 
 	s := &Server{
-		log: discardLog(),
+		log: slog.New(slog.DiscardHandler),
 		fc:  metricutil.NewFactory("test", prometheus.NewRegistry()),
 	}
 

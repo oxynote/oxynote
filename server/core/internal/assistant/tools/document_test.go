@@ -2,7 +2,7 @@ package tools
 
 import (
 	"context"
-	"reflect"
+	"encoding/json"
 	"testing"
 
 	"github.com/guregu/null/v5"
@@ -15,30 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// stubCreateDB builds a DB whose transaction accepts every write, for
-// the tools that create a document.
-func stubCreateDB(checkErr error) *DBMock {
-	return &DBMock{
-		CheckDocumentExistsFunc: func(context.Context, xid.ID, string) error {
-			return checkErr
-		},
-		BeginTxFunc: func(_ context.Context, dest any) error {
-			reflect.ValueOf(dest).Elem().Set(reflect.ValueOf(&TxMock{
-				InsertDocumentFunc: func(context.Context, document.Document) error { return nil },
-				UpsertDocumentMaintainersFunc: func(context.Context, xid.ID, string, []string) error {
-					return nil
-				},
-			}))
-
-			return nil
-		},
-	}
-}
-
 func Test_listDocumentsArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, listDocumentsArgs{}, nil)
+	assert.NoError(t, listDocumentsArgs{}.Validate())
 }
 
 func Test_listDocuments_Info(t *testing.T) {
@@ -64,49 +44,65 @@ func Test_listDocuments_Execute(t *testing.T) {
 	parentBranchID := xid.New()
 	childBranchID := xid.New()
 
-	treeDB := &DBMock{
-		FetchDocumentTreeFunc: func(context.Context, string) (document.Summaries, error) {
-			return document.Summaries{{
-				ID:              parentID,
-				DocumentName:    "Parent",
-				DefaultBranchID: parentBranchID,
-				Icon:            "lucide:file",
-				Children:        document.Summaries{{ID: childID, DocumentName: "Child", DefaultBranchID: childBranchID}},
-			}}, nil
-		},
-		FetchDocumentTreeByDocumentParentIDFunc: func(
-			_ context.Context, pid null.Value[xid.ID], _ string,
-		) (document.Summaries, error) {
-			if pid.V != parentID {
-				return nil, assert.AnError
-			}
+	stubTreeDB := func() *DBMock {
+		return &DBMock{
+			FetchDocumentBranchesByOrganizationIDFunc: func(context.Context, string) ([]document.BranchSummary, error) {
+				return []document.BranchSummary{
+					{BranchID: parentBranchID, DocumentID: parentID, BranchName: "main", Default: true, Protected: true},
+					{BranchID: childBranchID, DocumentID: childID, BranchName: "main", Default: true},
+				}, nil
+			},
+			FetchDocumentTreeFunc: func(context.Context, string) (document.Summaries, error) {
+				return document.Summaries{{
+					ID:              parentID,
+					DocumentName:    "Parent",
+					DefaultBranchID: parentBranchID,
+					Icon:            "lucide:file",
+					Children:        document.Summaries{{ID: childID, DocumentName: "Child", DefaultBranchID: childBranchID}},
+				}}, nil
+			},
+			FetchDocumentTreeByDocumentParentIDFunc: func(
+				_ context.Context, pid null.Value[xid.ID], _ string,
+			) (document.Summaries, error) {
+				if pid.V != parentID {
+					return nil, assert.AnError
+				}
 
-			return document.Summaries{{ID: childID, DocumentName: "Child", DefaultBranchID: childBranchID}}, nil
-		},
+				return document.Summaries{{ID: childID, DocumentName: "Child", DefaultBranchID: childBranchID}}, nil
+			},
+		}
 	}
 
+	parentBranches := `"branches":[{"id":"` + parentBranchID.String() + `","name":"main","protected":true,"default":true}]`
+	childBranches := `"branches":[{"id":"` + childBranchID.String() + `","name":"main","protected":false,"default":true}]`
+
 	cc := map[string]struct {
-		DB     *DBMock
-		Args   string
-		Result string
-		Err    error
+		DB            *DBMock
+		Args          string
+		TreeFetches   int
+		ChildFetches  int
+		BranchFetches int
+		Result        string
+		Err           error
 	}{
-		"Malformed arguments": {DB: treeDB, Args: `{`, Err: assert.AnError},
+		"Malformed arguments": {DB: stubTreeDB(), Args: `{`, Err: assert.AnError},
 		"Parent id is not a valid xid": {
-			DB:   treeDB,
+			DB:   stubTreeDB(),
 			Args: `{"parent_id":"nope"}`,
 			Err:  assert.AnError,
 		},
 		"Empty parent id is refused": {
-			DB:   treeDB,
+			DB:   stubTreeDB(),
 			Args: `{"parent_id":""}`,
 			Err:  assert.AnError,
 		},
 		"Null parent id lists the whole tree": {
-			DB:   treeDB,
-			Args: `{"parent_id":null}`,
-			Result: `{"documents":[{"id":"` + parentID.String() + `","name":"Parent","default_branch_id":"` + parentBranchID.String() + `",` +
-				`"children":[{"id":"` + childID.String() + `","name":"Child","default_branch_id":"` + childBranchID.String() + `"}]}]}`,
+			DB:            stubTreeDB(),
+			Args:          `{"parent_id":null}`,
+			TreeFetches:   1,
+			BranchFetches: 1,
+			Result: `{"documents":[{"id":"` + parentID.String() + `","name":"Parent",` + parentBranches + `,` +
+				`"children":[{"id":"` + childID.String() + `","name":"Child",` + childBranches + `}]}]}`,
 		},
 		"Error returned by db.FetchDocumentTree": {
 			DB: &DBMock{
@@ -114,19 +110,38 @@ func Test_listDocuments_Execute(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			Args: `{}`,
-			Err:  assert.AnError,
+			Args:        `{}`,
+			TreeFetches: 1,
+			Err:         assert.AnError,
+		},
+		"Error returned by db.FetchDocumentBranchesByOrganizationID": {
+			DB: func() *DBMock {
+				db := stubTreeDB()
+				db.FetchDocumentBranchesByOrganizationIDFunc = func(context.Context, string) ([]document.BranchSummary, error) {
+					return nil, assert.AnError
+				}
+
+				return db
+			}(),
+			Args:          `{}`,
+			TreeFetches:   1,
+			BranchFetches: 1,
+			Err:           assert.AnError,
 		},
 		"Whole tree": {
-			DB:   treeDB,
-			Args: `{}`,
-			Result: `{"documents":[{"id":"` + parentID.String() + `","name":"Parent","default_branch_id":"` + parentBranchID.String() + `",` +
-				`"children":[{"id":"` + childID.String() + `","name":"Child","default_branch_id":"` + childBranchID.String() + `"}]}]}`,
+			DB:            stubTreeDB(),
+			Args:          `{}`,
+			TreeFetches:   1,
+			BranchFetches: 1,
+			Result: `{"documents":[{"id":"` + parentID.String() + `","name":"Parent",` + parentBranches + `,` +
+				`"children":[{"id":"` + childID.String() + `","name":"Child",` + childBranches + `}]}]}`,
 		},
 		"Children of one parent": {
-			DB:     treeDB,
-			Args:   `{"parent_id":"` + parentID.String() + `"}`,
-			Result: `{"documents":[{"id":"` + childID.String() + `","name":"Child","default_branch_id":"` + childBranchID.String() + `"}]}`,
+			DB:            stubTreeDB(),
+			Args:          `{"parent_id":"` + parentID.String() + `"}`,
+			ChildFetches:  1,
+			BranchFetches: 1,
+			Result:        `{"documents":[{"id":"` + childID.String() + `","name":"Child",` + childBranches + `}]}`,
 		},
 	}
 
@@ -134,8 +149,12 @@ func Test_listDocuments_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := listDocuments{}.Execute(testInput(testDeps(c.DB, nil, nil), NameListDocuments, c.Args))
+			res, err := listDocuments{}.Execute(testDeps(c.DB, nil, nil).newInput(context.Background(), NameListDocuments, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentTreeCalls(), c.TreeFetches)
+			assert.Len(t, c.DB.FetchDocumentTreeByDocumentParentIDCalls(), c.ChildFetches)
+			assert.Len(t, c.DB.FetchDocumentBranchesByOrganizationIDCalls(), c.BranchFetches)
 
 			if err != nil {
 				return
@@ -162,21 +181,46 @@ func Test_getDocument_Info(t *testing.T) {
 func Test_getDocument_Title(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "Reading Runbook", getDocument{}.Title(testInput(
-		testDeps(stubDocumentDB(), nil, nil), NameGetDocument,
-		`{`+targetArgs(_stubMainBranchID)+`}`,
-	)))
+	cc := map[string]struct {
+		DB            *DBMock
+		Args          string
+		BranchFetches int
+		Result        string
+	}{
+		"Default branch": {
+			DB:            stubDocumentDB(),
+			Args:          `{` + targetArgs(_stubMainBranchID) + `}`,
+			BranchFetches: 1,
+			Result:        "Reading Runbook",
+		},
+		"Another branch is named": {
+			DB:            stubDocumentDB(),
+			Args:          `{` + targetArgs(_stubBranchID) + `}`,
+			BranchFetches: 1,
+			Result:        "Reading Runbook on branch draft",
+		},
+		// a document that does not resolve, or arguments that cannot be
+		// read, make no line.
+		"Error returned by db.FetchDocumentByBranchID": {
+			DB:            failingDocumentDB(),
+			Args:          requiredArgs(t, NameGetDocument),
+			BranchFetches: 1,
+		},
+		"Malformed arguments": {DB: stubDocumentDB(), Args: `{`},
+	}
 
-	// a branch other than the default one is named.
-	assert.Equal(t, "Reading Runbook on branch draft", getDocument{}.Title(testInput(
-		testDeps(stubDocumentDB(), nil, nil), NameGetDocument,
-		`{`+targetArgs(_stubBranchID)+`}`,
-	)))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// a document that does not resolve, or arguments that cannot be
-	// read, make no line.
-	assert.Empty(t, getDocument{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameGetDocument, requiredArgs(t, NameGetDocument))))
-	assert.Empty(t, getDocument{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameGetDocument, `{`)))
+			res := getDocument{}.Title(testDeps(c.DB, nil, nil).newInput(context.Background(), NameGetDocument, json.RawMessage(c.Args)))
+
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.BranchFetches)
+			assert.Empty(t, c.DB.FetchDocumentBranchesCalls())
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
 }
 
 func Test_getDocument_Execute(t *testing.T) {
@@ -220,11 +264,14 @@ func Test_getDocument_Execute(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		DB       *DBMock
-		Args     string
-		Contains []string
-		Omits    []string
-		Err      error
+		DB             *DBMock
+		Args           string
+		BranchFetches  int
+		BranchListings int
+		TagFetches     int
+		Contains       []string
+		Omits          []string
+		Err            error
 	}{
 		"Malformed arguments": {DB: stubContentDB(nil), Args: `{`, Err: assert.AnError},
 		"Document id is not a valid xid": {
@@ -233,23 +280,32 @@ func Test_getDocument_Execute(t *testing.T) {
 			Err:  assert.AnError,
 		},
 		"Error returned by db.FetchDocumentByBranchID": {
-			DB:   stubContentDB(assert.AnError),
-			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
-			Err:  assert.AnError,
+			DB:            stubContentDB(assert.AnError),
+			Args:          `{` + targetArgs(_stubMainBranchID) + `}`,
+			BranchFetches: 1,
+			Err:           assert.AnError,
 		},
 		"Error returned by db.FetchDocumentBranches": {
-			DB:   branchless,
-			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
-			Err:  assert.AnError,
+			DB:             branchless,
+			Args:           `{` + targetArgs(_stubMainBranchID) + `}`,
+			BranchFetches:  1,
+			BranchListings: 1,
+			Err:            assert.AnError,
 		},
 		"Error returned by db.FetchBranchTags": {
-			DB:   untaggable,
-			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
-			Err:  assert.AnError,
+			DB:             untaggable,
+			Args:           `{` + targetArgs(_stubMainBranchID) + `}`,
+			BranchFetches:  1,
+			BranchListings: 1,
+			TagFetches:     1,
+			Err:            assert.AnError,
 		},
-		"Metadata, branches and content are returned": {
-			DB:   nested,
-			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
+		"Metadata branches and content are returned": {
+			DB:             nested,
+			Args:           `{` + targetArgs(_stubMainBranchID) + `}`,
+			BranchFetches:  1,
+			BranchListings: 1,
+			TagFetches:     1,
 			Contains: []string{
 				`"name":"Runbook"`,
 				`"icon":"lucide:rocket"`,
@@ -261,33 +317,48 @@ func Test_getDocument_Execute(t *testing.T) {
 			},
 		},
 		"Another branch is read": {
-			DB:       stubContentDB(nil),
-			Args:     `{` + targetArgs(_stubBranchID) + `}`,
-			Contains: []string{`<p id=\"a\">hello</p>`},
+			DB:             stubContentDB(nil),
+			Args:           `{` + targetArgs(_stubBranchID) + `}`,
+			BranchFetches:  1,
+			BranchListings: 1,
+			TagFetches:     1,
+			Contains:       []string{`<p id=\"a\">hello</p>`},
 		},
 		"Tags of the branch read are listed": {
-			DB:   tagged,
-			Args: `{` + targetArgs(_stubBranchID) + `}`,
+			DB:             tagged,
+			Args:           `{` + targetArgs(_stubBranchID) + `}`,
+			BranchFetches:  1,
+			BranchListings: 1,
+			TagFetches:     1,
 			Contains: []string{
 				`"tags":[{"id":"` + _testTagID.String() + `","name":"Production","color":"green"}]`,
 			},
 		},
 		"Block narrows the content to it": {
-			DB:       stubContentDB(nil),
-			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"cp"}`,
-			Contains: []string{`"content":"<p id=\"cp\">inside</p>\n"`},
-			Omits:    []string{`id=\"a\"`},
+			DB:             stubContentDB(nil),
+			Args:           `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"cp"}`,
+			BranchFetches:  1,
+			BranchListings: 1,
+			TagFetches:     1,
+			Contains:       []string{`"content":"<p id=\"cp\">inside</p>\n"`},
+			Omits:          []string{`id=\"a\"`},
 		},
 		"Block the document does not hold": {
-			DB:   stubContentDB(nil),
-			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"zzz"}`,
-			Err:  assert.AnError,
+			DB:             stubContentDB(nil),
+			Args:           `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"zzz"}`,
+			BranchFetches:  1,
+			BranchListings: 1,
+			TagFetches:     1,
+			Err:            assert.AnError,
 		},
 		"Root document omits the parent": {
-			DB:       stubContentDB(nil),
-			Args:     `{` + targetArgs(_stubMainBranchID) + `}`,
-			Contains: []string{`"name":"Runbook"`},
-			Omits:    []string{`"parent_id"`, `"branch_id"`, `"branch":`},
+			DB:             stubContentDB(nil),
+			Args:           `{` + targetArgs(_stubMainBranchID) + `}`,
+			BranchFetches:  1,
+			BranchListings: 1,
+			TagFetches:     1,
+			Contains:       []string{`"name":"Runbook"`},
+			Omits:          []string{`"parent_id"`, `"branch_id"`, `"branch":`},
 		},
 	}
 
@@ -295,8 +366,12 @@ func Test_getDocument_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := getDocument{}.Execute(testInput(testDeps(c.DB, nil, nil), NameGetDocument, c.Args))
+			res, err := getDocument{}.Execute(testDeps(c.DB, nil, nil).newInput(context.Background(), NameGetDocument, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.BranchFetches)
+			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), c.BranchListings)
+			assert.Len(t, c.DB.FetchBranchTagsCalls(), c.TagFetches)
 
 			if err != nil {
 				return
@@ -316,16 +391,38 @@ func Test_getDocument_Execute(t *testing.T) {
 func Test_createDocumentArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, createDocumentArgs{Name: "n"}, map[string]Args{
-		"name": createDocumentArgs{},
-	})
+	cc := map[string]struct {
+		Args        createDocumentArgs
+		ErrContains string
+		Err         error
+	}{
+		"Valid arguments": {Args: createDocumentArgs{Name: "n"}},
+		"Name is required": {
+			Args:        createDocumentArgs{},
+			ErrContains: "name is required",
+			Err:         assert.AnError,
+		},
+		"Icon the picker offers": {Args: createDocumentArgs{Name: "n", Icon: "mingcute:rocket-fill"}},
+		// an icon the picker does not offer is refused, naming close ones.
+		"Icon the picker does not offer": {
+			Args:        createDocumentArgs{Name: "n", Icon: "lucide:rocket"},
+			ErrContains: "mingcute:rocket-fill",
+			Err:         assert.AnError,
+		},
+	}
 
-	require.NoError(t, createDocumentArgs{Name: "n", Icon: "mingcute:rocket-fill"}.Validate())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// an icon the picker does not offer is refused, naming close ones.
-	err := createDocumentArgs{Name: "n", Icon: "lucide:rocket"}.Validate()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "mingcute:rocket-fill")
+			err := c.Args.Validate()
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Contains(t, err.Error(), c.ErrContains)
+			}
+		})
+	}
 }
 
 func Test_createDocument_Info(t *testing.T) {
@@ -345,15 +442,33 @@ func Test_createDocument_Summary(t *testing.T) {
 
 	d := testDeps(nil, nil, nil)
 
-	// a document that does not exist yet has no id to name.
-	got, err := createDocument{}.Summary(testInput(d, NameCreateDocument, `{"name":"Runbook"}`))
-	require.NoError(t, err)
-	assert.Equal(t, NameCreateDocument, got.Tool)
-	assert.Equal(t, `Create document "Runbook"`, got.Summary)
-	assert.Empty(t, got.DocumentID)
+	cc := map[string]struct {
+		Args   string
+		Result ActionSummary
+		Err    error
+	}{
+		// a document that does not exist yet has no id to name.
+		"Document to create has no id": {
+			Args:   `{"name":"Runbook"}`,
+			Result: ActionSummary{Tool: NameCreateDocument, Summary: `Create document "Runbook"`},
+		},
+		"Name is required": {Args: `{}`, Err: assert.AnError},
+	}
 
-	_, err = createDocument{}.Summary(testInput(d, NameCreateDocument, `{}`))
-	require.Error(t, err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := createDocument{}.Summary(d.newInput(context.Background(), NameCreateDocument, json.RawMessage(c.Args)))
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, got)
+		})
+	}
 }
 
 func Test_createDocument_Execute(t *testing.T) {
@@ -361,59 +476,123 @@ func Test_createDocument_Execute(t *testing.T) {
 
 	parentID := xid.New()
 
-	cc := map[string]struct {
-		DB     *DBMock
-		Args   string
-		Notify int
-		Err    error
-	}{
-		"Malformed arguments": {DB: stubCreateDB(nil), Args: `{`, Err: assert.AnError},
-		"Name is required":    {DB: stubCreateDB(nil), Args: `{}`, Err: assert.AnError},
-		"Parent id is not a valid xid": {
-			DB:   stubCreateDB(nil),
-			Args: `{"name":"Runbook","parent_id":"nope"}`,
-			Err:  assert.AnError,
-		},
-		"Empty parent id is refused": {
-			DB:   stubCreateDB(nil),
-			Args: `{"name":"Runbook","parent_id":""}`,
-			Err:  assert.AnError,
-		},
-		"Error returned by db.CheckDocumentExists": {
-			DB:   stubCreateDB(assert.AnError),
-			Args: `{"name":"Runbook","parent_id":"` + parentID.String() + `"}`,
-			Err:  assert.AnError,
-		},
-		"Error returned by the transaction": {
-			DB: &DBMock{
-				BeginTxFunc: func(context.Context, any) error { return assert.AnError },
-			},
-			Args: `{"name":"Runbook"}`,
-			Err:  assert.AnError,
-		},
-		"Created at the root": {
-			DB:     stubCreateDB(nil),
-			Args:   `{"name":"Runbook"}`,
-			Notify: 1,
-		},
-		"Created under a parent": {
-			DB:     stubCreateDB(nil),
-			Args:   `{"name":"Runbook","icon":"mingcute:rocket-fill","parent_id":"` + parentID.String() + `"}`,
-			Notify: 1,
-		},
+	type tcase struct {
+		DB           *DBMock
+		Tx           *TxMock
+		Args         string
+		ParentChecks int
+		Begins       int
+		Inserts      int
+		Upserts      int
+		Jobs         int
+		Commits      int
+		Rollbacks    int
+		Notify       int
+		Err          error
+	}
+
+	stubDB := func(tx *TxMock, beginErr error) *DBMock {
+		return &DBMock{
+			BeginTxFunc: testutil.StubBeginTx(tx, beginErr),
+		}
+	}
+
+	cc := map[string]tcase{
+		"Malformed arguments": func() tcase {
+			tx := &TxMock{}
+
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Args: `{`, Err: assert.AnError}
+		}(),
+		"Name is required": func() tcase {
+			tx := &TxMock{}
+
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Args: `{}`, Err: assert.AnError}
+		}(),
+		"Parent id is not a valid xid": func() tcase {
+			tx := &TxMock{}
+
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Args: `{"name":"Runbook","parent_id":"nope"}`, Err: assert.AnError}
+		}(),
+		"Empty parent id is refused": func() tcase {
+			tx := &TxMock{}
+
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Args: `{"name":"Runbook","parent_id":""}`, Err: assert.AnError}
+		}(),
+		"Error returned by db.CheckDocumentExists": func() tcase {
+			tx := &TxMock{}
+			db := stubDB(tx, nil)
+			db.CheckDocumentExistsFunc = func(context.Context, xid.ID, string) error {
+				return assert.AnError
+			}
+
+			return tcase{
+				DB:           db,
+				Tx:           tx,
+				Args:         `{"name":"Runbook","parent_id":"` + parentID.String() + `"}`,
+				ParentChecks: 1,
+				Err:          assert.AnError,
+			}
+		}(),
+		"Error returned by db.BeginTx": func() tcase {
+			tx := &TxMock{}
+
+			return tcase{DB: stubDB(tx, assert.AnError), Tx: tx, Args: `{"name":"Runbook"}`, Begins: 1, Err: assert.AnError}
+		}(),
+		"Created at the root": func() tcase {
+			tx := &TxMock{}
+
+			return tcase{
+				DB:        stubDB(tx, nil),
+				Tx:        tx,
+				Args:      `{"name":"Runbook"}`,
+				Begins:    1,
+				Inserts:   1,
+				Upserts:   1,
+				Jobs:      1,
+				Commits:   1,
+				Rollbacks: 1,
+				Notify:    1,
+			}
+		}(),
+		"Created under a parent": func() tcase {
+			tx := &TxMock{}
+
+			return tcase{
+				DB:           stubDB(tx, nil),
+				Tx:           tx,
+				Args:         `{"name":"Runbook","icon":"mingcute:rocket-fill","parent_id":"` + parentID.String() + `"}`,
+				ParentChecks: 1,
+				Begins:       1,
+				Inserts:      1,
+				Upserts:      1,
+				Jobs:         1,
+				Commits:      1,
+				Rollbacks:    1,
+				Notify:       1,
+			}
+		}(),
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			queue := &SearchQueueMock{}
 			tree := &TreeNotifierMock{}
 
-			res, err := createDocument{}.Execute(
-				testInput(testDeps(c.DB, nil, tree), NameCreateDocument, c.Args),
-			)
+			d := testDeps(c.DB, nil, tree)
+			d.searchQueue = queue
+
+			res, err := createDocument{}.Execute(d.newInput(context.Background(), NameCreateDocument, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
 
+			assert.Len(t, c.DB.CheckDocumentExistsCalls(), c.ParentChecks)
+			assert.Len(t, c.DB.BeginTxCalls(), c.Begins)
+			assert.Len(t, c.Tx.InsertDocumentCalls(), c.Inserts)
+			assert.Len(t, c.Tx.UpsertDocumentMaintainersCalls(), c.Upserts)
+			assert.Len(t, queue.EnqueueCalls(), c.Jobs)
+			assert.Len(t, c.Tx.CommitCalls(), c.Commits)
+			assert.Len(t, c.Tx.RollbackCalls(), c.Rollbacks)
 			assert.Len(t, tree.NotifyTreeChangeCalls(), c.Notify)
 
 			if err != nil {
@@ -429,9 +608,31 @@ func Test_createDocument_Execute(t *testing.T) {
 func Test_deleteDocumentArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, deleteDocumentArgs{DocumentID: _testDocID}, map[string]Args{
-		"document_id": deleteDocumentArgs{},
-	})
+	cc := map[string]struct {
+		Args        deleteDocumentArgs
+		ErrContains string
+		Err         error
+	}{
+		"Valid arguments": {Args: deleteDocumentArgs{DocumentID: _testDocID}},
+		"Document id is required": {
+			Args:        deleteDocumentArgs{},
+			ErrContains: "document_id is required",
+			Err:         assert.AnError,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			err := c.Args.Validate()
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Contains(t, err.Error(), c.ErrContains)
+			}
+		})
+	}
 }
 
 func Test_deleteDocument_Info(t *testing.T) {
@@ -450,19 +651,8 @@ func Test_deleteDocument_Info(t *testing.T) {
 func Test_deleteDocument_Summary(t *testing.T) {
 	t.Parallel()
 
-	got, err := deleteDocument{}.Summary(testInput(
-		testDeps(stubDocumentDB(), nil, nil), NameDeleteDocument,
-		`{"document_id":"`+_testDocID.String()+`"}`,
-	))
-	require.NoError(t, err)
+	doc := `{"document_id":"` + _testDocID.String() + `"}`
 
-	assert.Equal(t, NameDeleteDocument, got.Tool)
-	assert.Equal(t, _testDocID, got.DocumentID)
-	assert.Equal(t, "Runbook", got.DocumentName)
-	assert.Equal(t, "Delete Runbook", got.Summary)
-
-	// the delete cascades, so a card naming only the document would
-	// have the user approve a subtree they were never shown.
 	withKids := stubDocumentDB()
 	withKids.FetchDocumentTreeFunc = func(context.Context, string) (document.Summaries, error) {
 		return document.Summaries{{
@@ -474,14 +664,6 @@ func Test_deleteDocument_Summary(t *testing.T) {
 		}}, nil
 	}
 
-	got, err = deleteDocument{}.Summary(testInput(
-		testDeps(withKids, nil, nil), NameDeleteDocument,
-		`{"document_id":"`+_testDocID.String()+`"}`,
-	))
-	require.NoError(t, err)
-	assert.Equal(t, "Delete Runbook and the 3 pages nested under it", got.Summary)
-
-	// one reads as one.
 	withOneKid := stubDocumentDB()
 	withOneKid.FetchDocumentTreeFunc = func(context.Context, string) (document.Summaries, error) {
 		return document.Summaries{{
@@ -490,35 +672,100 @@ func Test_deleteDocument_Summary(t *testing.T) {
 		}}, nil
 	}
 
-	got, err = deleteDocument{}.Summary(testInput(
-		testDeps(withOneKid, nil, nil), NameDeleteDocument,
-		`{"document_id":"`+_testDocID.String()+`"}`,
-	))
-	require.NoError(t, err)
-	assert.Equal(t, "Delete Runbook and the 1 page nested under it", got.Summary)
-
-	// a tree that cannot be read still names the document: the count is
-	// worth having, never worth failing the confirmation over.
 	treeFails := stubDocumentDB()
 	treeFails.FetchDocumentTreeFunc = func(context.Context, string) (document.Summaries, error) {
 		return nil, assert.AnError
 	}
 
-	got, err = deleteDocument{}.Summary(testInput(
-		testDeps(treeFails, nil, nil), NameDeleteDocument,
-		`{"document_id":"`+_testDocID.String()+`"}`,
-	))
-	require.NoError(t, err)
-	assert.Equal(t, "Delete Runbook", got.Summary)
+	cc := map[string]struct {
+		DB              *DBMock
+		Args            string
+		DocumentFetches int
+		TreeFetches     int
+		Result          ActionSummary
+		Err             error
+	}{
+		"Document without nested pages": {
+			DB:              stubDocumentDB(),
+			Args:            doc,
+			DocumentFetches: 1,
+			TreeFetches:     1,
+			Result: ActionSummary{
+				Tool:         NameDeleteDocument,
+				DocumentID:   _testDocID,
+				DocumentName: "Runbook",
+				Summary:      "Delete Runbook",
+			},
+		},
+		// the delete cascades, so a card naming only the document would
+		// have the user approve a subtree they were never shown.
+		"Nested pages are counted": {
+			DB:              withKids,
+			Args:            doc,
+			DocumentFetches: 1,
+			TreeFetches:     1,
+			Result: ActionSummary{
+				Tool:         NameDeleteDocument,
+				DocumentID:   _testDocID,
+				DocumentName: "Runbook",
+				Summary:      "Delete Runbook and the 3 pages nested under it",
+			},
+		},
+		"One nested page reads as one": {
+			DB:              withOneKid,
+			Args:            doc,
+			DocumentFetches: 1,
+			TreeFetches:     1,
+			Result: ActionSummary{
+				Tool:         NameDeleteDocument,
+				DocumentID:   _testDocID,
+				DocumentName: "Runbook",
+				Summary:      "Delete Runbook and the 1 page nested under it",
+			},
+		},
+		// a tree that cannot be read still names the document: the count
+		// is worth having, never worth failing the confirmation over.
+		"Error returned by db.FetchDocumentTree": {
+			DB:              treeFails,
+			Args:            doc,
+			DocumentFetches: 1,
+			TreeFetches:     1,
+			Result: ActionSummary{
+				Tool:         NameDeleteDocument,
+				DocumentID:   _testDocID,
+				DocumentName: "Runbook",
+				Summary:      "Delete Runbook",
+			},
+		},
+		// the document it names has to resolve; the failure is passed on
+		// rather than described around.
+		"Error returned by db.FetchDocument": {
+			DB:              failingDocumentDB(),
+			Args:            requiredArgs(t, NameDeleteDocument),
+			DocumentFetches: 1,
+			Err:             assert.AnError,
+		},
+		// unreadable arguments are refused before anything is looked up.
+		"Malformed arguments": {DB: stubDocumentDB(), Args: `{`, Err: assert.AnError},
+	}
 
-	// the document it names has to resolve; the failure is passed on
-	// rather than described around.
-	_, err = deleteDocument{}.Summary(testInput(testDeps(failingDocumentDB(), nil, nil), NameDeleteDocument, requiredArgs(t, NameDeleteDocument)))
-	require.Error(t, err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// unreadable arguments are refused before anything is looked up.
-	_, err = deleteDocument{}.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), NameDeleteDocument, `{`))
-	require.Error(t, err)
+			got, err := deleteDocument{}.Summary(testDeps(c.DB, nil, nil).newInput(context.Background(), NameDeleteDocument, json.RawMessage(c.Args)))
+			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentCalls(), c.DocumentFetches)
+			assert.Len(t, c.DB.FetchDocumentTreeCalls(), c.TreeFetches)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, got)
+		})
+	}
 }
 
 func Test_deleteDocument_Execute(t *testing.T) {
@@ -526,74 +773,134 @@ func Test_deleteDocument_Execute(t *testing.T) {
 
 	docID := xid.New()
 
-	// stubDeleteDB wires the given DB (nil for a bare one) with a
-	// transaction whose delete reports one destroyed document, or fails
-	// with deleteErr.
-	stubDeleteDB := func(db *DBMock, deleteErr error) *DBMock {
-		if db == nil {
-			db = stubDocumentDB()
-		}
+	type tcase struct {
+		DB              *DBMock
+		Tx              *TxMock
+		Args            string
+		DocumentFetches int
+		Begins          int
+		Deletes         int
+		Jobs            int
+		Commits         int
+		Rollbacks       int
+		Notify          int
+		Err             error
+	}
 
-		db.BeginTxFunc = func(_ context.Context, dest any) error {
-			reflect.ValueOf(dest).Elem().Set(reflect.ValueOf(&TxMock{
-				DeleteDocumentFunc: func(_ context.Context, id xid.ID, _ string) ([]xid.ID, error) {
-					return []xid.ID{id}, deleteErr
-				},
-			}))
-
-			return nil
+	// the delete reports one destroyed document, or fails with
+	// deleteErr.
+	stubTx := func(deleteErr error) *TxMock {
+		return &TxMock{
+			DeleteDocumentFunc: func(_ context.Context, id xid.ID, _ string) ([]xid.ID, error) {
+				return []xid.ID{id}, deleteErr
+			},
 		}
+	}
+
+	stubDB := func(tx *TxMock, beginErr error) *DBMock {
+		db := stubDocumentDB()
+		db.BeginTxFunc = testutil.StubBeginTx(tx, beginErr)
 
 		return db
 	}
 
-	cc := map[string]struct {
-		DB     *DBMock
-		Args   string
-		Notify int
-		Err    error
-	}{
-		"Malformed arguments": {DB: &DBMock{}, Args: `{`, Err: assert.AnError},
-		"Document id is not a valid xid": {
-			DB:   &DBMock{},
-			Args: `{"document_id":"nope"}`,
-			Err:  assert.AnError,
-		},
-		"Error returned by Tx.DeleteDocument": {
-			DB:   stubDeleteDB(nil, assert.AnError),
-			Args: `{"document_id":"` + docID.String() + `"}`,
-			Err:  assert.AnError,
-		},
-		"Deleted": {
-			DB:     stubDeleteDB(stubDocumentDB(), nil),
-			Args:   `{"document_id":"` + docID.String() + `"}`,
-			Notify: 1,
-		},
-		"Deleted even when the parent cannot be captured": {
-			DB: stubDeleteDB(&DBMock{
-				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
-					return nil, assert.AnError
-				},
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
-					return nil, assert.AnError
-				},
-			}, nil),
-			Args:   `{"document_id":"` + docID.String() + `"}`,
-			Notify: 1,
-		},
+	cc := map[string]tcase{
+		"Malformed arguments": func() tcase {
+			tx := stubTx(nil)
+
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Args: `{`, Err: assert.AnError}
+		}(),
+		"Document id is not a valid xid": func() tcase {
+			tx := stubTx(nil)
+
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Args: `{"document_id":"nope"}`, Err: assert.AnError}
+		}(),
+		"Error returned by db.BeginTx": func() tcase {
+			tx := stubTx(nil)
+
+			return tcase{
+				DB:              stubDB(tx, assert.AnError),
+				Tx:              tx,
+				Args:            `{"document_id":"` + docID.String() + `"}`,
+				DocumentFetches: 1,
+				Begins:          1,
+				Err:             assert.AnError,
+			}
+		}(),
+		"Error returned by Tx.DeleteDocument": func() tcase {
+			tx := stubTx(assert.AnError)
+
+			return tcase{
+				DB:              stubDB(tx, nil),
+				Tx:              tx,
+				Args:            `{"document_id":"` + docID.String() + `"}`,
+				DocumentFetches: 1,
+				Begins:          1,
+				Deletes:         1,
+				Rollbacks:       1,
+				Err:             assert.AnError,
+			}
+		}(),
+		"Deleted": func() tcase {
+			tx := stubTx(nil)
+
+			return tcase{
+				DB:              stubDB(tx, nil),
+				Tx:              tx,
+				Args:            `{"document_id":"` + docID.String() + `"}`,
+				DocumentFetches: 1,
+				Begins:          1,
+				Deletes:         1,
+				Jobs:            1,
+				Commits:         1,
+				Rollbacks:       1,
+				Notify:          1,
+			}
+		}(),
+		"Deleted even when the parent cannot be captured": func() tcase {
+			tx := stubTx(nil)
+			db := stubDB(tx, nil)
+			db.FetchDocumentFunc = func(context.Context, xid.ID, string, string) (*document.Document, error) {
+				return nil, assert.AnError
+			}
+			db.FetchDocumentByBranchIDFunc = func(context.Context, xid.ID, string) (*document.Document, error) {
+				return nil, assert.AnError
+			}
+
+			return tcase{
+				DB:              db,
+				Tx:              tx,
+				Args:            `{"document_id":"` + docID.String() + `"}`,
+				DocumentFetches: 1,
+				Begins:          1,
+				Deletes:         1,
+				Jobs:            1,
+				Commits:         1,
+				Rollbacks:       1,
+				Notify:          1,
+			}
+		}(),
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			queue := &SearchQueueMock{}
 			tree := &TreeNotifierMock{}
 
-			res, err := deleteDocument{}.Execute(
-				testInput(testDeps(c.DB, nil, tree), NameDeleteDocument, c.Args),
-			)
+			d := testDeps(c.DB, nil, tree)
+			d.searchQueue = queue
+
+			res, err := deleteDocument{}.Execute(d.newInput(context.Background(), NameDeleteDocument, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
 
+			assert.Len(t, c.DB.FetchDocumentCalls(), c.DocumentFetches)
+			assert.Len(t, c.DB.BeginTxCalls(), c.Begins)
+			assert.Len(t, c.Tx.DeleteDocumentCalls(), c.Deletes)
+			assert.Len(t, queue.EnqueueCalls(), c.Jobs)
+			assert.Len(t, c.Tx.CommitCalls(), c.Commits)
+			assert.Len(t, c.Tx.RollbackCalls(), c.Rollbacks)
 			assert.Len(t, tree.NotifyTreeChangeCalls(), c.Notify)
 
 			if err != nil {
@@ -611,28 +918,53 @@ func Test_updateDocumentArgs_Validate(t *testing.T) {
 	root := ""
 	bad := "nope"
 
-	assertValidate(t, updateDocumentArgs{DocumentID: _testDocID, Name: "n"}, map[string]Args{
-		"document_id": updateDocumentArgs{Name: "n"},
-	})
+	cc := map[string]struct {
+		Args        updateDocumentArgs
+		ErrContains string
+		Err         error
+	}{
+		"Valid arguments": {Args: updateDocumentArgs{DocumentID: _testDocID, Name: "n"}},
+		"Document id is required": {
+			Args:        updateDocumentArgs{Name: "n"},
+			ErrContains: "document_id is required",
+			Err:         assert.AnError,
+		},
+		// any one change is enough, and the root is a change.
+		"Icon alone is a change": {Args: updateDocumentArgs{DocumentID: _testDocID, Icon: "mingcute:rocket-fill"}},
+		"Root alone is a change": {Args: updateDocumentArgs{DocumentID: _testDocID, ParentID: &root}},
+		// a call that changes nothing is refused, named by what it takes.
+		"Nothing to change": {
+			Args:        updateDocumentArgs{DocumentID: _testDocID},
+			ErrContains: "at least one of name, icon or parent_id",
+			Err:         assert.AnError,
+		},
+		// a parent that is not an id is refused before anything is looked
+		// up.
+		"Parent id is not a valid xid": {
+			Args:        updateDocumentArgs{DocumentID: _testDocID, ParentID: &bad},
+			ErrContains: "parent_id",
+			Err:         assert.AnError,
+		},
+		// an icon the picker does not offer is refused, naming close ones.
+		"Icon the picker does not offer": {
+			Args:        updateDocumentArgs{DocumentID: _testDocID, Icon: "lucide:rocket"},
+			ErrContains: "mingcute:rocket-fill",
+			Err:         assert.AnError,
+		},
+	}
 
-	// any one change is enough, and the root is a change.
-	require.NoError(t, updateDocumentArgs{DocumentID: _testDocID, Icon: "mingcute:rocket-fill"}.Validate())
-	require.NoError(t, updateDocumentArgs{DocumentID: _testDocID, ParentID: &root}.Validate())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// a call that changes nothing is refused, named by what it takes.
-	err := updateDocumentArgs{DocumentID: _testDocID}.Validate()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "at least one of name, icon or parent_id")
+			err := c.Args.Validate()
+			testutil.AssertEqualError(t, c.Err, err)
 
-	// a parent that is not an id is refused before anything is looked up.
-	err = updateDocumentArgs{DocumentID: _testDocID, ParentID: &bad}.Validate()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "parent_id")
-
-	// an icon the picker does not offer is refused, naming close ones.
-	err = updateDocumentArgs{DocumentID: _testDocID, Icon: "lucide:rocket"}.Validate()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "mingcute:rocket-fill")
+			if err != nil {
+				assert.Contains(t, err.Error(), c.ErrContains)
+			}
+		})
+	}
 }
 
 func Test_updateDocumentArgs_parent(t *testing.T) {
@@ -642,19 +974,25 @@ func Test_updateDocumentArgs_parent(t *testing.T) {
 	id := xid.New()
 	named := id.String()
 
-	// absent: no move.
-	_, ok := updateDocumentArgs{}.parent()
-	assert.False(t, ok)
+	cc := map[string]struct {
+		Args   updateDocumentArgs
+		Result null.Value[xid.ID]
+		OK     bool
+	}{
+		"Absent parent is no move":   {Args: updateDocumentArgs{}},
+		"Empty parent is the root":   {Args: updateDocumentArgs{ParentID: &root}, OK: true},
+		"Parent id names the parent": {Args: updateDocumentArgs{ParentID: &named}, Result: null.ValueFrom(id), OK: true},
+	}
 
-	// empty: the root.
-	parent, ok := updateDocumentArgs{ParentID: &root}.parent()
-	assert.True(t, ok)
-	assert.False(t, parent.Valid)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// an id: that parent.
-	parent, ok = updateDocumentArgs{ParentID: &named}.parent()
-	assert.True(t, ok)
-	assert.Equal(t, null.ValueFrom(id), parent)
+			parent, ok := c.Args.parent()
+			assert.Equal(t, c.OK, ok)
+			assert.Equal(t, c.Result, parent)
+		})
+	}
 }
 
 func Test_updateDocumentArgs_changes(t *testing.T) {
@@ -691,7 +1029,7 @@ func Test_updateDocument_Info(t *testing.T) {
 
 	info := updateDocument{}.Info()
 
-	assert.Equal(t, Traits{Write: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Idempotent: true}, info.Traits)
 
 	assert.Equal(t, NameUpdateDocument, info.Name)
 	assert.Equal(t, []string{"document_id"}, info.Required)
@@ -703,43 +1041,51 @@ func Test_updateDocument_Info(t *testing.T) {
 func Test_updateDocument_Summary(t *testing.T) {
 	t.Parallel()
 
-	d := testDeps(stubDocumentDB(), nil, nil)
 	doc := `{"document_id":"` + _testDocID.String() + `"`
 
 	cc := map[string]struct {
-		Args   string
-		Result string
+		DB              *DBMock
+		Args            string
+		DocumentFetches int
+		Result          string
+		Err             error
 	}{
-		"Rename":    {Args: doc + `,"name":"Playbook"}`, Result: `Rename Runbook to "Playbook"`},
-		"Icon":      {Args: doc + `,"icon":"mingcute:rocket-fill"}`, Result: "Set the icon to mingcute:rocket-fill"},
-		"Root":      {Args: doc + `,"parent_id":""}`, Result: "Move it to the org root"},
-		"Parent":    {Args: doc + `,"parent_id":"` + xid.New().String() + `"}`, Result: "Move it under another document"},
-		"Two":       {Args: doc + `,"name":"Playbook","icon":"mingcute:rocket-fill"}`, Result: `Rename Runbook to "Playbook" and set the icon to mingcute:rocket-fill`},
-		"All three": {Args: doc + `,"name":"Playbook","icon":"mingcute:rocket-fill","parent_id":""}`, Result: `Rename Runbook to "Playbook", set the icon to mingcute:rocket-fill and move it to the org root`},
+		"Rename":    {DB: stubDocumentDB(), Args: doc + `,"name":"Playbook"}`, DocumentFetches: 1, Result: `Rename Runbook to "Playbook"`},
+		"Icon":      {DB: stubDocumentDB(), Args: doc + `,"icon":"mingcute:rocket-fill"}`, DocumentFetches: 1, Result: "Set the icon to mingcute:rocket-fill"},
+		"Root":      {DB: stubDocumentDB(), Args: doc + `,"parent_id":""}`, DocumentFetches: 1, Result: "Move it to the org root"},
+		"Parent":    {DB: stubDocumentDB(), Args: doc + `,"parent_id":"` + xid.New().String() + `"}`, DocumentFetches: 1, Result: "Move it under another document"},
+		"Two":       {DB: stubDocumentDB(), Args: doc + `,"name":"Playbook","icon":"mingcute:rocket-fill"}`, DocumentFetches: 1, Result: `Rename Runbook to "Playbook" and set the icon to mingcute:rocket-fill`},
+		"All three": {DB: stubDocumentDB(), Args: doc + `,"name":"Playbook","icon":"mingcute:rocket-fill","parent_id":""}`, DocumentFetches: 1, Result: `Rename Runbook to "Playbook", set the icon to mingcute:rocket-fill and move it to the org root`},
+		// a call that changes nothing is refused before a card is built.
+		"Nothing to change": {DB: stubDocumentDB(), Args: doc + `}`, Err: assert.AnError},
+		// the document it names has to resolve; the failure is passed on
+		// rather than described around.
+		"Error returned by db.FetchDocument": {
+			DB:              failingDocumentDB(),
+			Args:            doc + `,"name":"n"}`,
+			DocumentFetches: 1,
+			Err:             assert.AnError,
+		},
+		// unreadable arguments are refused before anything is looked up.
+		"Malformed arguments": {DB: stubDocumentDB(), Args: `{`, Err: assert.AnError},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := updateDocument{}.Summary(testInput(d, NameUpdateDocument, c.Args))
-			require.NoError(t, err)
+			got, err := updateDocument{}.Summary(testDeps(c.DB, nil, nil).newInput(context.Background(), NameUpdateDocument, json.RawMessage(c.Args)))
+			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentCalls(), c.DocumentFetches)
+
+			if err != nil {
+				return
+			}
+
 			assert.Equal(t, c.Result, got.Summary)
 		})
 	}
-
-	// a call that changes nothing is refused before a card is built.
-	_, err := updateDocument{}.Summary(testInput(d, NameUpdateDocument, doc+`}`))
-	require.Error(t, err)
-
-	// the document it names has to resolve; the failure is passed on
-	// rather than described around.
-	_, err = updateDocument{}.Summary(testInput(testDeps(failingDocumentDB(), nil, nil), NameUpdateDocument, doc+`,"name":"n"}`))
-	require.Error(t, err)
-
-	// unreadable arguments are refused before anything is looked up.
-	_, err = updateDocument{}.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), NameUpdateDocument, `{`))
-	require.Error(t, err)
 }
 
 func Test_updateDocument_Execute(t *testing.T) {
@@ -762,13 +1108,18 @@ func Test_updateDocument_Execute(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		DB      *DBMock
-		Applier *EditApplierMock
-		Args    string
-		Ops     int
-		Notify  int
-		Result  string
-		Err     error
+		DB              *DBMock
+		Applier         *EditApplierMock
+		Args            string
+		DocumentFetches int
+		BranchFetches   int
+		Ops             int
+		ParentChecks    int
+		CycleChecks     int
+		ParentUpdates   int
+		Notify          int
+		Result          string
+		Err             error
 	}{
 		"Malformed arguments": {DB: stubDocumentDB(), Applier: stubApplier(), Args: `{`, Err: assert.AnError},
 		"Nothing to change": {
@@ -778,88 +1129,118 @@ func Test_updateDocument_Execute(t *testing.T) {
 			Err:     assert.AnError,
 		},
 		"Error returned by db.FetchDocument": {
-			DB:      failingDocumentDB(),
-			Applier: stubApplier(),
-			Args:    doc + `,"name":"Playbook"}`,
-			Err:     assert.AnError,
+			DB:              failingDocumentDB(),
+			Applier:         stubApplier(),
+			Args:            doc + `,"name":"Playbook"}`,
+			DocumentFetches: 1,
+			Err:             assert.AnError,
 		},
-		"Error returned by the edit": {
+		"Error returned by applier.Apply": {
 			DB: stubDocumentDB(),
 			Applier: &EditApplierMock{
 				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, string, bool) (edit.Result, error) {
 					return edit.Result{}, assert.AnError
 				},
 			},
-			Args: doc + `,"name":"Playbook"}`,
-			Err:  assert.AnError,
+			Args:            doc + `,"name":"Playbook"}`,
+			DocumentFetches: 1,
+			BranchFetches:   1,
+			Ops:             1,
+			Err:             assert.AnError,
 		},
 		"Renamed": {
-			DB:      stubDocumentDB(),
-			Applier: stubApplier(),
-			Args:    doc + `,"name":"Playbook"}`,
-			Ops:     1,
-			Notify:  1,
-			Result:  `{"document_id":"` + _testDocID.String() + `","name":"Playbook"}`,
+			DB:              stubDocumentDB(),
+			Applier:         stubApplier(),
+			Args:            doc + `,"name":"Playbook"}`,
+			DocumentFetches: 1,
+			BranchFetches:   1,
+			Ops:             1,
+			Notify:          1,
+			Result:          `{"document_id":"` + _testDocID.String() + `","name":"Playbook"}`,
 		},
 		"Icon set": {
-			DB:      stubDocumentDB(),
-			Applier: stubApplier(),
-			Args:    doc + `,"icon":"mingcute:rocket-fill"}`,
-			Ops:     1,
-			Notify:  1,
-			Result:  `{"document_id":"` + _testDocID.String() + `","icon":"mingcute:rocket-fill"}`,
+			DB:              stubDocumentDB(),
+			Applier:         stubApplier(),
+			Args:            doc + `,"icon":"mingcute:rocket-fill"}`,
+			DocumentFetches: 1,
+			BranchFetches:   1,
+			Ops:             1,
+			Notify:          1,
+			Result:          `{"document_id":"` + _testDocID.String() + `","icon":"mingcute:rocket-fill"}`,
 		},
 		// name and icon travel in one batch, so the live document
 		// changes once.
 		"Renamed and icon set": {
-			DB:      stubDocumentDB(),
-			Applier: stubApplier(),
-			Args:    doc + `,"name":"Playbook","icon":"mingcute:rocket-fill"}`,
-			Ops:     2,
-			Notify:  1,
-			Result:  `{"document_id":"` + _testDocID.String() + `","name":"Playbook","icon":"mingcute:rocket-fill"}`,
+			DB:              stubDocumentDB(),
+			Applier:         stubApplier(),
+			Args:            doc + `,"name":"Playbook","icon":"mingcute:rocket-fill"}`,
+			DocumentFetches: 1,
+			BranchFetches:   1,
+			Ops:             2,
+			Notify:          1,
+			Result:          `{"document_id":"` + _testDocID.String() + `","name":"Playbook","icon":"mingcute:rocket-fill"}`,
 		},
 		"Error returned by db.CheckDocumentExists": {
-			DB:      moveDB(assert.AnError, false, nil, nil),
-			Applier: stubApplier(),
-			Args:    doc + `,"parent_id":"` + parentID.String() + `"}`,
-			Err:     assert.AnError,
+			DB:              moveDB(assert.AnError, false, nil, nil),
+			Applier:         stubApplier(),
+			Args:            doc + `,"parent_id":"` + parentID.String() + `"}`,
+			DocumentFetches: 1,
+			ParentChecks:    1,
+			Err:             assert.AnError,
 		},
 		"Cycle is refused": {
-			DB:      moveDB(nil, true, nil, nil),
-			Applier: stubApplier(),
-			Args:    doc + `,"parent_id":"` + parentID.String() + `"}`,
-			Err:     assert.AnError,
+			DB:              moveDB(nil, true, nil, nil),
+			Applier:         stubApplier(),
+			Args:            doc + `,"parent_id":"` + parentID.String() + `"}`,
+			DocumentFetches: 1,
+			ParentChecks:    1,
+			CycleChecks:     1,
+			Err:             assert.AnError,
 		},
 		"Error returned by db.UpdateDocumentParentID": {
-			DB:      moveDB(nil, false, nil, assert.AnError),
-			Applier: stubApplier(),
-			Args:    doc + `,"parent_id":"` + parentID.String() + `"}`,
-			Err:     assert.AnError,
+			DB:              moveDB(nil, false, nil, assert.AnError),
+			Applier:         stubApplier(),
+			Args:            doc + `,"parent_id":"` + parentID.String() + `"}`,
+			DocumentFetches: 1,
+			ParentChecks:    1,
+			CycleChecks:     1,
+			ParentUpdates:   1,
+			Err:             assert.AnError,
 		},
 		// source and destination are the same (both root), so one
 		// notification covers both.
 		"Moved to the root": {
-			DB:      moveDB(nil, false, nil, nil),
-			Applier: stubApplier(),
-			Args:    doc + `,"parent_id":""}`,
-			Notify:  1,
-			Result:  `{"document_id":"` + _testDocID.String() + `","parent_id":""}`,
+			DB:              moveDB(nil, false, nil, nil),
+			Applier:         stubApplier(),
+			Args:            doc + `,"parent_id":""}`,
+			DocumentFetches: 1,
+			ParentUpdates:   1,
+			Notify:          1,
+			Result:          `{"document_id":"` + _testDocID.String() + `","parent_id":""}`,
 		},
 		"Moved under a parent": {
-			DB:      moveDB(nil, false, nil, nil),
-			Applier: stubApplier(),
-			Args:    doc + `,"parent_id":"` + parentID.String() + `"}`,
-			Notify:  2,
-			Result:  `{"document_id":"` + _testDocID.String() + `","parent_id":"` + parentID.String() + `"}`,
+			DB:              moveDB(nil, false, nil, nil),
+			Applier:         stubApplier(),
+			Args:            doc + `,"parent_id":"` + parentID.String() + `"}`,
+			DocumentFetches: 1,
+			ParentChecks:    1,
+			CycleChecks:     1,
+			ParentUpdates:   1,
+			Notify:          2,
+			Result:          `{"document_id":"` + _testDocID.String() + `","parent_id":"` + parentID.String() + `"}`,
 		},
 		"Renamed and moved": {
-			DB:      moveDB(nil, false, nil, nil),
-			Applier: stubApplier(),
-			Args:    doc + `,"name":"Playbook","parent_id":"` + parentID.String() + `"}`,
-			Ops:     1,
-			Notify:  3,
-			Result:  `{"document_id":"` + _testDocID.String() + `","name":"Playbook","parent_id":"` + parentID.String() + `"}`,
+			DB:              moveDB(nil, false, nil, nil),
+			Applier:         stubApplier(),
+			Args:            doc + `,"name":"Playbook","parent_id":"` + parentID.String() + `"}`,
+			DocumentFetches: 1,
+			BranchFetches:   1,
+			Ops:             1,
+			ParentChecks:    1,
+			CycleChecks:     1,
+			ParentUpdates:   1,
+			Notify:          3,
+			Result:          `{"document_id":"` + _testDocID.String() + `","name":"Playbook","parent_id":"` + parentID.String() + `"}`,
 		},
 	}
 
@@ -870,23 +1251,29 @@ func Test_updateDocument_Execute(t *testing.T) {
 			tree := &TreeNotifierMock{}
 
 			res, err := updateDocument{}.Execute(
-				testInput(testDeps(c.DB, c.Applier, tree), NameUpdateDocument, c.Args),
+				testDeps(c.DB, c.Applier, tree).newInput(context.Background(), NameUpdateDocument, json.RawMessage(c.Args)),
 			)
 			testutil.AssertEqualError(t, c.Err, err)
 
+			assert.Len(t, c.DB.FetchDocumentCalls(), c.DocumentFetches)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.BranchFetches)
+			assert.Empty(t, c.DB.FetchDocumentBranchesCalls())
+			assert.Len(t, c.DB.CheckDocumentExistsCalls(), c.ParentChecks)
+			assert.Len(t, c.DB.CheckDocumentCycleCalls(), c.CycleChecks)
+			assert.Len(t, c.DB.UpdateDocumentParentIDCalls(), c.ParentUpdates)
 			assert.Len(t, tree.NotifyTreeChangeCalls(), c.Notify)
 
-			if err != nil {
-				return
-			}
-
-			// every requested name or icon change is in the one batch
-			// that reached the live document.
+			// every requested name or icon change travels in the one
+			// batch sent to the live document.
 			if c.Ops == 0 {
 				assert.Empty(t, c.Applier.ApplyCalls())
 			} else {
 				require.Len(t, c.Applier.ApplyCalls(), 1)
 				assert.Len(t, c.Applier.ApplyCalls()[0].Ops, c.Ops)
+			}
+
+			if err != nil {
+				return
 			}
 
 			assert.JSONEq(t, c.Result, res)
@@ -897,25 +1284,36 @@ func Test_updateDocument_Execute(t *testing.T) {
 func Test_summariesToTree(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, []docTreeNode{}, summariesToTree(nil))
+	assert.Equal(t, []docTreeNode{}, summariesToTree(nil, nil))
 
 	id := xid.New()
 	child := xid.New()
 
-	branch := xid.New()
+	mainID, draftID := xid.New(), xid.New()
 
 	got := summariesToTree(document.Summaries{{
 		ID:              id,
 		DocumentName:    "Parent",
-		DefaultBranchID: branch,
+		DefaultBranchID: mainID,
 		Icon:            "lucide:file",
 		Children:        document.Summaries{{ID: child, DocumentName: "Child"}},
-	}})
+	}}, map[xid.ID][]document.BranchSummary{
+		id: {
+			{BranchID: mainID, DocumentID: id, BranchName: "main", Default: true, Protected: true},
+			{BranchID: draftID, DocumentID: id, BranchName: "draft"},
+		},
+	})
 
 	require.Len(t, got, 1)
 	assert.Equal(t, id, got[0].ID)
 	assert.Equal(t, "Parent", got[0].Name)
-	assert.Equal(t, branch, got[0].DefaultBranchID)
+	assert.Equal(t, []branchInfo{
+		{ID: mainID, Name: "main", Protected: true, Default: true},
+		{ID: draftID, Name: "draft"},
+	}, got[0].Branches)
 	require.Len(t, got[0].Children, 1)
 	assert.Equal(t, child, got[0].Children[0].ID)
+
+	// a document whose branches are not listed has none, never null.
+	assert.Equal(t, []branchInfo{}, got[0].Children[0].Branches)
 }

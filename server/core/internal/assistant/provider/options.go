@@ -153,6 +153,14 @@ func (o Options) requiresAPIKey() bool {
 	return true
 }
 
+// ExpandsToolReferences reports whether the configured model expands a
+// tool result's tool references into tool definitions, which loading
+// tools on request depends on. Anthropic's own API does; Bedrock and
+// Vertex are left out until each is checked.
+func (o Options) ExpandsToolReferences() bool {
+	return o.Provider == ProviderAnthropic && !o.Bedrock.Enabled && !o.Vertex.Enabled
+}
+
 // timeout returns the configured request timeout, or the default when
 // the operator did not set one.
 func (o Options) timeout() time.Duration {

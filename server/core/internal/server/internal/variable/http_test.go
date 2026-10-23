@@ -2,17 +2,16 @@ package variable
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	variableCore "github.com/oxynote/oxynote/server/core/internal/variable"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -86,33 +85,14 @@ func serve(t *testing.T, fn http.HandlerFunc, req request) *httptest.ResponseRec
 		}))
 	}
 
-	rctx := chi.NewRouteContext()
-
 	for k, v := range req.Params {
-		rctx.URLParams.Add(k, v)
+		r = r.WithContext(testutil.AddChiCtx(r.Context(), k, v))
 	}
-
-	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 
 	rec := httptest.NewRecorder()
 	fn(rec, r)
 
 	return rec
-}
-
-// assertResponse checks the status code and, when one is expected, the
-// JSON body; a 204 has to come back empty.
-func assertResponse(t *testing.T, rec *httptest.ResponseRecorder, code int, body string) {
-	t.Helper()
-
-	assert.Equal(t, code, rec.Code)
-
-	if body == "" {
-		assert.Empty(t, rec.Body.String())
-		return
-	}
-
-	assert.JSONEq(t, body, rec.Body.String())
 }
 
 func Test_NewHandler(t *testing.T) {
@@ -150,10 +130,11 @@ func Test_Handler_FetchVariableTree(t *testing.T) {
 	}}
 
 	cc := map[string]struct {
-		Man  *ManagerMock
-		Req  request
-		Code int
-		Body string
+		Man   *ManagerMock
+		Req   request
+		Code  int
+		Body  string
+		Calls int
 	}{
 		"No session in context": {
 			Man:  &ManagerMock{},
@@ -164,11 +145,12 @@ func Test_Handler_FetchVariableTree(t *testing.T) {
 		"Error returned by Manager.FetchTree": {
 			Man: &ManagerMock{
 				FetchTreeFunc: func(context.Context, string, string) (variableCore.Tree, error) {
-					return nil, errors.New("boom")
+					return nil, assert.AnError
 				},
 			},
-			Code: http.StatusInternalServerError,
-			Body: _internal,
+			Code:  http.StatusInternalServerError,
+			Body:  _internal,
+			Calls: 1,
 		},
 		"Successful fetch": {
 			Man: &ManagerMock{
@@ -203,6 +185,7 @@ func Test_Handler_FetchVariableTree(t *testing.T) {
 					"options": []
 				}]
 			}]`,
+			Calls: 1,
 		},
 	}
 
@@ -213,14 +196,15 @@ func Test_Handler_FetchVariableTree(t *testing.T) {
 			hdl := Handler{log: slog.New(slog.DiscardHandler), man: c.Man}
 
 			rec := serve(t, hdl.FetchVariableTree, c.Req)
-			assertResponse(t, rec, c.Code, c.Body)
+			testutil.AssertResponse(t, rec, c.Code, c.Body)
 
-			if c.Req.NoSession {
+			calls := c.Man.FetchTreeCalls()
+			require.Len(t, calls, c.Calls)
+
+			if c.Calls == 0 {
 				return
 			}
 
-			calls := c.Man.FetchTreeCalls()
-			require.Len(t, calls, 1)
 			assert.Equal(t, "org1", calls[0].OrganizationID)
 			assert.Equal(t, "u1", calls[0].UserID)
 		})
@@ -289,7 +273,7 @@ func Test_Handler_CreateVariableGroup(t *testing.T) {
 			hdl := Handler{log: slog.New(slog.DiscardHandler), man: c.Man}
 
 			rec := serve(t, hdl.CreateVariableGroup, c.Req)
-			assertResponse(t, rec, c.Code, c.Body)
+			testutil.AssertResponse(t, rec, c.Code, c.Body)
 
 			calls := c.Man.CreateGroupCalls()
 			require.Len(t, calls, c.Calls)
@@ -358,7 +342,7 @@ func Test_Handler_UpdateVariableGroup(t *testing.T) {
 			hdl := Handler{log: slog.New(slog.DiscardHandler), man: c.Man}
 
 			rec := serve(t, hdl.UpdateVariableGroup, c.Req)
-			assertResponse(t, rec, c.Code, c.Body)
+			testutil.AssertResponse(t, rec, c.Code, c.Body)
 
 			calls := c.Man.UpdateGroupCalls()
 			require.Len(t, calls, c.Calls)
@@ -422,7 +406,7 @@ func Test_Handler_UpdateVariableGroupTree(t *testing.T) {
 			hdl := Handler{log: slog.New(slog.DiscardHandler), man: c.Man}
 
 			rec := serve(t, hdl.UpdateVariableGroupTree, c.Req)
-			assertResponse(t, rec, c.Code, c.Body)
+			testutil.AssertResponse(t, rec, c.Code, c.Body)
 
 			calls := c.Man.MoveGroupCalls()
 			require.Len(t, calls, c.Calls)
@@ -484,7 +468,7 @@ func Test_Handler_DeleteVariableGroup(t *testing.T) {
 			hdl := Handler{log: slog.New(slog.DiscardHandler), man: c.Man}
 
 			rec := serve(t, hdl.DeleteVariableGroup, c.Req)
-			assertResponse(t, rec, c.Code, c.Body)
+			testutil.AssertResponse(t, rec, c.Code, c.Body)
 
 			calls := c.Man.DeleteGroupCalls()
 			require.Len(t, calls, c.Calls)
@@ -583,7 +567,7 @@ func Test_Handler_CreateVariable(t *testing.T) {
 			hdl := Handler{log: slog.New(slog.DiscardHandler), man: c.Man}
 
 			rec := serve(t, hdl.CreateVariable, c.Req)
-			assertResponse(t, rec, c.Code, c.Body)
+			testutil.AssertResponse(t, rec, c.Code, c.Body)
 
 			calls := c.Man.CreateVariableCalls()
 			require.Len(t, calls, c.Calls)
@@ -660,7 +644,7 @@ func Test_Handler_UpdateVariable(t *testing.T) {
 			hdl := Handler{log: slog.New(slog.DiscardHandler), man: c.Man}
 
 			rec := serve(t, hdl.UpdateVariable, c.Req)
-			assertResponse(t, rec, c.Code, c.Body)
+			testutil.AssertResponse(t, rec, c.Code, c.Body)
 
 			calls := c.Man.UpdateVariableCalls()
 			require.Len(t, calls, c.Calls)
@@ -735,7 +719,7 @@ func Test_Handler_UpdateVariableTree(t *testing.T) {
 			hdl := Handler{log: slog.New(slog.DiscardHandler), man: c.Man}
 
 			rec := serve(t, hdl.UpdateVariableTree, c.Req)
-			assertResponse(t, rec, c.Code, c.Body)
+			testutil.AssertResponse(t, rec, c.Code, c.Body)
 
 			calls := c.Man.MoveVariableCalls()
 			require.Len(t, calls, c.Calls)
@@ -797,7 +781,7 @@ func Test_Handler_DeleteVariable(t *testing.T) {
 			hdl := Handler{log: slog.New(slog.DiscardHandler), man: c.Man}
 
 			rec := serve(t, hdl.DeleteVariable, c.Req)
-			assertResponse(t, rec, c.Code, c.Body)
+			testutil.AssertResponse(t, rec, c.Code, c.Body)
 
 			calls := c.Man.DeleteVariableCalls()
 			require.Len(t, calls, c.Calls)
@@ -865,7 +849,7 @@ func Test_Handler_SetVariableDefault(t *testing.T) {
 			hdl := Handler{log: slog.New(slog.DiscardHandler), man: c.Man}
 
 			rec := serve(t, hdl.SetVariableDefault, c.Req)
-			assertResponse(t, rec, c.Code, c.Body)
+			testutil.AssertResponse(t, rec, c.Code, c.Body)
 
 			calls := c.Man.SetDefaultValueCalls()
 			require.Len(t, calls, c.Calls)
@@ -934,7 +918,7 @@ func Test_Handler_SetVariableValue(t *testing.T) {
 			hdl := Handler{log: slog.New(slog.DiscardHandler), man: c.Man}
 
 			rec := serve(t, hdl.SetVariableValue, c.Req)
-			assertResponse(t, rec, c.Code, c.Body)
+			testutil.AssertResponse(t, rec, c.Code, c.Body)
 
 			calls := c.Man.SetValueCalls()
 			require.Len(t, calls, c.Calls)
@@ -975,7 +959,7 @@ func Test_Handler_ResetVariableValue(t *testing.T) {
 		"Error returned by Manager.ResetValue": {
 			Man: &ManagerMock{
 				ResetValueFunc: func(context.Context, xid.ID, string, string) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			Req:   request{Params: map[string]string{"variableId": _id.String()}},
@@ -998,7 +982,7 @@ func Test_Handler_ResetVariableValue(t *testing.T) {
 			hdl := Handler{log: slog.New(slog.DiscardHandler), man: c.Man}
 
 			rec := serve(t, hdl.ResetVariableValue, c.Req)
-			assertResponse(t, rec, c.Code, c.Body)
+			testutil.AssertResponse(t, rec, c.Code, c.Body)
 
 			calls := c.Man.ResetValueCalls()
 			require.Len(t, calls, c.Calls)

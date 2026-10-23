@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -14,16 +15,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// tagDeps builds session wiring over the given DB with a tag notifier
-// attached, so a test can assert the broadcast a tag write ends with.
-func tagDeps(db *DBMock) (*Deps, *TagNotifierMock) {
-	d := testDeps(db, nil, nil)
-	tags := &TagNotifierMock{}
-	d.tags = tags
-
-	return d, tags
-}
 
 // stubTagDB answers every tag and document lookup, and accepts every
 // tag write; err, when set, is what the tag tree lookup fails with.
@@ -39,15 +30,10 @@ func stubTagDB(err error) *DBMock {
 	return db
 }
 
-// tagArgs renders the tag_id argument every tag write takes.
-func tagArgs(tagID xid.ID) string {
-	return `"tag_id":"` + tagID.String() + `"`
-}
-
 func Test_listTagsArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, listTagsArgs{}, nil)
+	assert.NoError(t, listTagsArgs{}.Validate())
 }
 
 func Test_listTags_Info(t *testing.T) {
@@ -55,7 +41,7 @@ func Test_listTags_Info(t *testing.T) {
 
 	info := listTags{}.Info()
 
-	assert.Equal(t, Traits{}, info.Traits)
+	assert.Equal(t, Traits{Group: GroupTags}, info.Traits)
 
 	assert.Equal(t, NameListTags, info.Name)
 	assert.NotEmpty(t, info.Description)
@@ -67,16 +53,18 @@ func Test_listTags_Execute(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB     *DBMock
-		Args   string
-		Result string
-		Err    error
+		DB      *DBMock
+		Args    string
+		Fetches int
+		Result  string
+		Err     error
 	}{
 		"Malformed arguments": {DB: stubTagDB(nil), Args: `{`, Err: assert.AnError},
 		"Error returned by db.FetchTagTree": {
-			DB:   stubTagDB(assert.AnError),
-			Args: `{}`,
-			Err:  assert.AnError,
+			DB:      stubTagDB(assert.AnError),
+			Args:    `{}`,
+			Fetches: 1,
+			Err:     assert.AnError,
 		},
 		// the tool declares no parameters, so a provider may call it with
 		// no arguments at all.
@@ -86,8 +74,9 @@ func Test_listTags_Execute(t *testing.T) {
 					return tag.Summaries{}, nil
 				},
 			},
-			Args:   ``,
-			Result: `{"tags":[]}`,
+			Args:    ``,
+			Fetches: 1,
+			Result:  `{"tags":[]}`,
 		},
 		"No tags": {
 			DB: &DBMock{
@@ -95,14 +84,16 @@ func Test_listTags_Execute(t *testing.T) {
 					return tag.Summaries{}, nil
 				},
 			},
-			Args:   `{}`,
-			Result: `{"tags":[]}`,
+			Args:    `{}`,
+			Fetches: 1,
+			Result:  `{"tags":[]}`,
 		},
 		// the tree lists the nested children of an assigned document as
 		// sidebar context; only the assigned document itself is listed.
 		"Tags with their documents and the hidden flag": {
-			DB:   stubTagDB(nil),
-			Args: `{}`,
+			DB:      stubTagDB(nil),
+			Args:    `{}`,
+			Fetches: 1,
 			Result: `{"tags":[` +
 				`{"id":"` + _testTagID.String() + `","name":"Production","color":"green","hidden":false,` +
 				`"documents":[{"id":"` + _testDocID.String() + `","name":"Runbook","default_branch_id":"` + _stubMainBranchID.String() + `"}]},` +
@@ -115,8 +106,10 @@ func Test_listTags_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := listTags{}.Execute(testInput(testDeps(c.DB, nil, nil), NameListTags, c.Args))
+			res, err := listTags{}.Execute(testDeps(c.DB, nil, nil).newInput(context.Background(), NameListTags, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchTagTreeCalls(), c.Fetches)
 
 			if err != nil {
 				return
@@ -130,13 +123,24 @@ func Test_listTags_Execute(t *testing.T) {
 func Test_createTagArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, createTagArgs{Name: "Release", ColorName: "blue"}, map[string]Args{
-		"name":  createTagArgs{ColorName: "blue"},
-		"color": createTagArgs{Name: "Release"},
-	})
+	cc := map[string]struct {
+		Args createTagArgs
+		Err  error
+	}{
+		"Name is required":   {Args: createTagArgs{ColorName: "blue"}, Err: errRequired("name")},
+		"Colour is required": {Args: createTagArgs{Name: "Release"}, Err: errRequired("color")},
+		// a colour outside the palette is refused in the domain's words.
+		"Colour outside the palette": {Args: createTagArgs{Name: "Release", ColorName: "navy"}, Err: tag.ErrInvalidTagColor},
+		"Valid arguments":            {Args: createTagArgs{Name: "Release", ColorName: "blue"}},
+	}
 
-	// a colour outside the palette is refused in the domain's words.
-	assert.Equal(t, tag.ErrInvalidTagColor, createTagArgs{Name: "Release", ColorName: "navy"}.Validate())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Args.Validate())
+		})
+	}
 }
 
 func Test_createTagArgs_input(t *testing.T) {
@@ -170,50 +174,59 @@ func Test_createTag_Info(t *testing.T) {
 
 	info := createTag{}.Info()
 
-	assert.Equal(t, Traits{Write: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Group: GroupTags}, info.Traits)
 
 	assert.Equal(t, NameCreateTag, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"name", "color"}, info.Required)
 	assert.Contains(t, info.Properties, "name")
-	assert.Equal(t, tag.ColorNames(), colorEnum(t, info))
-}
-
-// colorEnum returns the palette names a tool's schema lists for color.
-func colorEnum(t *testing.T, info Info) []string {
-	t.Helper()
 
 	prop, ok := info.Properties["color"].(map[string]any)
 	require.True(t, ok)
-
-	names, ok := prop["enum"].([]string)
-	require.True(t, ok)
-
-	return names
+	assert.Equal(t, tag.ColorNames(), prop["enum"])
 }
 
 func Test_createTag_Summary(t *testing.T) {
 	t.Parallel()
 
-	d := testDeps(nil, nil, nil)
+	cc := map[string]struct {
+		Args   string
+		Result ActionSummary
+		Err    error
+	}{
+		"Name is required": {Args: `{}`, Err: assert.AnError},
+		// a tag that does not exist yet has no id to name, and no document.
+		"Tag to create": {
+			Args:   `{"name":"Release","color":"blue"}`,
+			Result: ActionSummary{Tool: NameCreateTag, Summary: "Create tag Release (blue)"},
+		},
+	}
 
-	// a tag that does not exist yet has no id to name, and no document.
-	got, err := createTag{}.Summary(testInput(d, NameCreateTag, `{"name":"Release","color":"blue"}`))
-	require.NoError(t, err)
-	assert.Equal(t, ActionSummary{Tool: NameCreateTag, Summary: "Create tag Release (blue)"}, got)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	_, err = createTag{}.Summary(testInput(d, NameCreateTag, `{}`))
-	require.Error(t, err)
+			got, err := createTag{}.Summary(testDeps(nil, nil, nil).newInput(context.Background(), NameCreateTag, json.RawMessage(c.Args)))
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, got)
+		})
+	}
 }
 
 func Test_createTag_Execute(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB     *DBMock
-		Args   string
-		Notify int
-		Err    error
+		DB      *DBMock
+		Args    string
+		Notify  int
+		Inserts int
+		Err     error
 	}{
 		"Malformed arguments":     {DB: &DBMock{}, Args: `{`, Err: assert.AnError},
 		"Name is required":        {DB: &DBMock{}, Args: `{"color":"blue"}`, Err: assert.AnError},
@@ -226,8 +239,9 @@ func Test_createTag_Execute(t *testing.T) {
 					return tag.ErrDuplicateTagName
 				},
 			},
-			Args: `{"name":"Release","color":"blue"}`,
-			Err:  tag.ErrDuplicateTagName,
+			Args:    `{"name":"Release","color":"blue"}`,
+			Inserts: 1,
+			Err:     tag.ErrDuplicateTagName,
 		},
 		"Error returned by db.InsertTag": {
 			DB: &DBMock{
@@ -235,13 +249,15 @@ func Test_createTag_Execute(t *testing.T) {
 					return assert.AnError
 				},
 			},
-			Args: `{"name":"Release","color":"blue"}`,
-			Err:  assert.AnError,
+			Args:    `{"name":"Release","color":"blue"}`,
+			Inserts: 1,
+			Err:     assert.AnError,
 		},
 		"Created": {
-			DB:     &DBMock{},
-			Args:   `{"name":"Release","color":"blue"}`,
-			Notify: 1,
+			DB:      &DBMock{},
+			Args:    `{"name":"Release","color":"blue"}`,
+			Notify:  1,
+			Inserts: 1,
 		},
 	}
 
@@ -249,12 +265,15 @@ func Test_createTag_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, tags := tagDeps(c.DB)
+			tags := &TagNotifierMock{}
+			d := testDeps(c.DB, nil, nil)
+			d.tags = tags
 
-			res, err := createTag{}.Execute(testInput(d, NameCreateTag, c.Args))
+			res, err := createTag{}.Execute(d.newInput(context.Background(), NameCreateTag, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, tags.NotifyTreeChangeCalls(), c.Notify)
+			assert.Len(t, c.DB.InsertTagCalls(), c.Inserts)
 
 			if err != nil {
 				return
@@ -276,16 +295,26 @@ func Test_createTag_Execute(t *testing.T) {
 func Test_updateTagArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, updateTagArgs{TagID: _testTagID, Name: "Release"}, map[string]Args{
-		"tag_id": updateTagArgs{Name: "Release"},
-	})
+	cc := map[string]struct {
+		Args updateTagArgs
+		Err  error
+	}{
+		"Tag id is required":         {Args: updateTagArgs{Name: "Release"}, Err: errRequired("tag_id")},
+		"Nothing to change":          {Args: updateTagArgs{TagID: _testTagID}, Err: errors.New("give at least one of name, color or sort_index")},
+		"Colour outside the palette": {Args: updateTagArgs{TagID: _testTagID, ColorName: "navy"}, Err: tag.ErrInvalidTagColor},
+		"Rename":                     {Args: updateTagArgs{TagID: _testTagID, Name: "Release"}},
+		"Recolour":                   {Args: updateTagArgs{TagID: _testTagID, ColorName: "blue"}},
+		// the first position is a move like any other.
+		"Move to the first position": {Args: updateTagArgs{TagID: _testTagID, SortIndex: null.ValueFrom(0)}},
+	}
 
-	testutil.AssertEqualError(t, errors.New("give at least one of name, color or sort_index"), updateTagArgs{TagID: _testTagID}.Validate())
-	assert.Equal(t, tag.ErrInvalidTagColor, updateTagArgs{TagID: _testTagID, ColorName: "navy"}.Validate())
-	require.NoError(t, updateTagArgs{TagID: _testTagID, ColorName: "blue"}.Validate())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// the first position is a move like any other.
-	require.NoError(t, updateTagArgs{TagID: _testTagID, SortIndex: null.ValueFrom(0)}.Validate())
+			testutil.AssertEqualError(t, c.Err, c.Args.Validate())
+		})
+	}
 }
 
 func Test_updateTagArgs_input(t *testing.T) {
@@ -323,63 +352,74 @@ func Test_updateTag_Info(t *testing.T) {
 
 	info := updateTag{}.Info()
 
-	assert.Equal(t, Traits{Write: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Idempotent: true, Group: GroupTags}, info.Traits)
 
 	assert.Equal(t, NameUpdateTag, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"tag_id"}, info.Required)
 	assert.Contains(t, info.Properties, "name")
 	assert.Contains(t, info.Properties, "sort_index")
-	assert.Contains(t, info.Properties, "sort_index")
-	assert.Equal(t, tag.ColorNames(), colorEnum(t, info))
+	assert.Contains(t, info.Properties, "tag_id")
+
+	prop, ok := info.Properties["color"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, tag.ColorNames(), prop["enum"])
 }
 
 func Test_updateTag_Summary(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB     *DBMock
-		Args   string
-		Result string
-		Err    error
+		DB      *DBMock
+		Args    string
+		Fetches int
+		Result  string
+		Err     error
 	}{
 		"Malformed arguments": {DB: stubTagDB(nil), Args: `{`, Err: assert.AnError},
-		"Nothing to change":   {DB: stubTagDB(nil), Args: `{` + tagArgs(_testTagID) + `}`, Err: assert.AnError},
+		"Nothing to change":   {DB: stubTagDB(nil), Args: `{"tag_id":"` + _testTagID.String() + `"}`, Err: assert.AnError},
 		"Unknown tag": {
-			DB:   stubTagDB(nil),
-			Args: `{` + tagArgs(_unknownTagID) + `,"name":"Release"}`,
-			Err:  assert.AnError,
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _unknownTagID.String() + `","name":"Release"}`,
+			Fetches: 1,
+			Err:     assert.AnError,
 		},
 		"Rename only": {
-			DB:     stubTagDB(nil),
-			Args:   `{` + tagArgs(_testTagID) + `,"name":"Release"}`,
-			Result: `Rename Production to "Release"`,
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _testTagID.String() + `","name":"Release"}`,
+			Fetches: 1,
+			Result:  `Rename Production to "Release"`,
 		},
 		"Recolour only": {
-			DB:     stubTagDB(nil),
-			Args:   `{` + tagArgs(_testTagID) + `,"color":"blue"}`,
-			Result: "Set the colour to blue",
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _testTagID.String() + `","color":"blue"}`,
+			Fetches: 1,
+			Result:  "Set the colour to blue",
 		},
 		"Rename and recolour": {
-			DB:     stubTagDB(nil),
-			Args:   `{` + tagArgs(_testTagID) + `,"name":"Release","color":"blue"}`,
-			Result: `Rename Production to "Release" and set the colour to blue`,
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _testTagID.String() + `","name":"Release","color":"blue"}`,
+			Fetches: 1,
+			Result:  `Rename Production to "Release" and set the colour to blue`,
 		},
 		// the card counts positions from one, the way a person does.
 		"Move only": {
-			DB:     stubTagDB(nil),
-			Args:   `{` + tagArgs(_testTagID) + `,"sort_index":1}`,
-			Result: "Move it to position 2",
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _testTagID.String() + `","sort_index":1}`,
+			Fetches: 1,
+			Result:  "Move it to position 2",
 		},
 		"Rename and move": {
-			DB:     stubTagDB(nil),
-			Args:   `{` + tagArgs(_testTagID) + `,"name":"Release","sort_index":0}`,
-			Result: `Rename Production to "Release" and move it to position 1`,
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _testTagID.String() + `","name":"Release","sort_index":0}`,
+			Fetches: 1,
+			Result:  `Rename Production to "Release" and move it to position 1`,
 		},
-		"Rename, recolour and move": {
-			DB:     stubTagDB(nil),
-			Args:   `{` + tagArgs(_testTagID) + `,"name":"Release","color":"blue","sort_index":0}`,
-			Result: `Rename Production to "Release", set the colour to blue and move it to position 1`,
+		"Rename recolour and move": {
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _testTagID.String() + `","name":"Release","color":"blue","sort_index":0}`,
+			Fetches: 1,
+			Result:  `Rename Production to "Release", set the colour to blue and move it to position 1`,
 		},
 	}
 
@@ -387,8 +427,10 @@ func Test_updateTag_Summary(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := updateTag{}.Summary(testInput(testDeps(c.DB, nil, nil), NameUpdateTag, c.Args))
+			got, err := updateTag{}.Summary(testDeps(c.DB, nil, nil).newInput(context.Background(), NameUpdateTag, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchTagTreeCalls(), c.Fetches)
 
 			if err != nil {
 				return
@@ -411,22 +453,24 @@ func Test_updateTag_Execute(t *testing.T) {
 		DB      *DBMock
 		Args    string
 		Notify  int
+		Fetches int
 		Renames int
+		Moves   int
 		Order   []xid.ID
 		Result  string
 		Err     error
 	}{
 		"Malformed arguments": {DB: &DBMock{}, Args: `{`, Err: assert.AnError},
 		"Tag id is required":  {DB: &DBMock{}, Args: `{"name":"Release"}`, Err: assert.AnError},
-		"Nothing to change":   {DB: &DBMock{}, Args: `{` + tagArgs(_testTagID) + `}`, Err: assert.AnError},
-		"Unknown colour":      {DB: &DBMock{}, Args: `{` + tagArgs(_testTagID) + `,"color":"navy"}`, Err: assert.AnError},
+		"Nothing to change":   {DB: &DBMock{}, Args: `{"tag_id":"` + _testTagID.String() + `"}`, Err: assert.AnError},
+		"Unknown colour":      {DB: &DBMock{}, Args: `{"tag_id":"` + _testTagID.String() + `","color":"navy"}`, Err: assert.AnError},
 		"Unknown tag": {
 			DB: &DBMock{
 				UpdateTagFunc: func(context.Context, string, xid.ID, tag.UpdateInput) error {
 					return errutil.ErrNotFound
 				},
 			},
-			Args:    `{` + tagArgs(_unknownTagID) + `,"name":"Release"}`,
+			Args:    `{"tag_id":"` + _unknownTagID.String() + `","name":"Release"}`,
 			Renames: 1,
 			Err:     fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
 		},
@@ -436,76 +480,88 @@ func Test_updateTag_Execute(t *testing.T) {
 					return assert.AnError
 				},
 			},
-			Args:    `{` + tagArgs(_testTagID) + `,"name":"Release"}`,
+			Args:    `{"tag_id":"` + _testTagID.String() + `","name":"Release"}`,
 			Renames: 1,
 			Err:     assert.AnError,
 		},
 		"Renamed": {
 			DB:      &DBMock{},
-			Args:    `{` + tagArgs(_testTagID) + `,"name":"Release"}`,
+			Args:    `{"tag_id":"` + _testTagID.String() + `","name":"Release"}`,
 			Renames: 1,
 			Notify:  1,
 			Result:  `{"tag_id":"` + _testTagID.String() + `","name":"Release"}`,
 		},
 		"Renamed and recoloured": {
 			DB:      &DBMock{},
-			Args:    `{` + tagArgs(_testTagID) + `,"name":"Release","color":"blue"}`,
+			Args:    `{"tag_id":"` + _testTagID.String() + `","name":"Release","color":"blue"}`,
 			Renames: 1,
 			Notify:  1,
 			Result:  `{"tag_id":"` + _testTagID.String() + `","name":"Release","color":"blue"}`,
 		},
 		"Error returned by db.FetchTagTree": {
-			DB:   stubTagDB(assert.AnError),
-			Args: `{` + tagArgs(_testTagID) + `,"sort_index":1}`,
-			Err:  assert.AnError,
+			DB:      stubTagDB(assert.AnError),
+			Args:    `{"tag_id":"` + _testTagID.String() + `","sort_index":1}`,
+			Fetches: 1,
+			Err:     assert.AnError,
 		},
 		"Unknown tag to move": {
-			DB:   stubTagDB(nil),
-			Args: `{` + tagArgs(_unknownTagID) + `,"sort_index":1}`,
-			Err:  fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _unknownTagID.String() + `","sort_index":1}`,
+			Fetches: 1,
+			Err:     fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
 		},
 		"Sort index past the last tag": {
-			DB:   stubTagDB(nil),
-			Args: `{` + tagArgs(_testTagID) + `,"sort_index":2}`,
-			Err:  assert.AnError,
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _testTagID.String() + `","sort_index":2}`,
+			Fetches: 1,
+			Err:     assert.AnError,
 		},
 		"Negative sort index": {
-			DB:   stubTagDB(nil),
-			Args: `{` + tagArgs(_testTagID) + `,"sort_index":-1}`,
-			Err:  assert.AnError,
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _testTagID.String() + `","sort_index":-1}`,
+			Fetches: 1,
+			Err:     assert.AnError,
 		},
 		"Error returned by db.UpdateTagTree": {
-			DB:   failingTree,
-			Args: `{` + tagArgs(_testTagID) + `,"sort_index":1}`,
-			Err:  assert.AnError,
+			DB:      failingTree,
+			Args:    `{"tag_id":"` + _testTagID.String() + `","sort_index":1}`,
+			Fetches: 1,
+			Moves:   1,
+			Err:     assert.AnError,
 		},
 		"Moved to the end": {
-			DB:     stubTagDB(nil),
-			Args:   `{` + tagArgs(_testTagID) + `,"sort_index":1}`,
-			Notify: 1,
-			Order:  []xid.ID{_otherTagID, _testTagID},
-			Result: `{"tag_id":"` + _testTagID.String() + `","sort_index":1}`,
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _testTagID.String() + `","sort_index":1}`,
+			Notify:  1,
+			Fetches: 1,
+			Moves:   1,
+			Order:   []xid.ID{_otherTagID, _testTagID},
+			Result:  `{"tag_id":"` + _testTagID.String() + `","sort_index":1}`,
 		},
 		"Moved to the front": {
-			DB:     stubTagDB(nil),
-			Args:   `{` + tagArgs(_otherTagID) + `,"sort_index":0}`,
-			Notify: 1,
-			Order:  []xid.ID{_otherTagID, _testTagID},
-			Result: `{"tag_id":"` + _otherTagID.String() + `","sort_index":0}`,
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _otherTagID.String() + `","sort_index":0}`,
+			Notify:  1,
+			Fetches: 1,
+			Moves:   1,
+			Order:   []xid.ID{_otherTagID, _testTagID},
+			Result:  `{"tag_id":"` + _otherTagID.String() + `","sort_index":0}`,
 		},
 		// a position the move would refuse fails the call before the
 		// rename is saved.
 		"Rename with a sort index past the last tag": {
-			DB:   stubTagDB(nil),
-			Args: `{` + tagArgs(_testTagID) + `,"name":"Release","sort_index":9}`,
-			Err:  assert.AnError,
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _testTagID.String() + `","name":"Release","sort_index":9}`,
+			Fetches: 1,
+			Err:     assert.AnError,
 		},
-		"Rename while the tags cannot be read": {
-			DB:   stubTagDB(assert.AnError),
-			Args: `{` + tagArgs(_testTagID) + `,"name":"Release","sort_index":1}`,
-			Err:  assert.AnError,
+		"Error returned by db.FetchTagTree before the rename": {
+			DB:      stubTagDB(assert.AnError),
+			Args:    `{"tag_id":"` + _testTagID.String() + `","name":"Release","sort_index":1}`,
+			Fetches: 1,
+			Err:     assert.AnError,
 		},
-		"Renamed, then the move fails": {
+		"Error returned by db.UpdateTagTree after the rename": {
 			DB: func() *DBMock {
 				db := stubTagDB(nil)
 				db.UpdateTagTreeFunc = func(context.Context, tag.Summaries, string) error {
@@ -514,15 +570,19 @@ func Test_updateTag_Execute(t *testing.T) {
 
 				return db
 			}(),
-			Args:    `{` + tagArgs(_testTagID) + `,"name":"Release","sort_index":1}`,
+			Args:    `{"tag_id":"` + _testTagID.String() + `","name":"Release","sort_index":1}`,
+			Fetches: 2,
 			Renames: 1,
+			Moves:   1,
 			Notify:  1,
 			Err:     assert.AnError,
 		},
 		"Renamed and moved": {
 			DB:      stubTagDB(nil),
-			Args:    `{` + tagArgs(_testTagID) + `,"name":"Release","sort_index":1}`,
+			Args:    `{"tag_id":"` + _testTagID.String() + `","name":"Release","sort_index":1}`,
+			Fetches: 2,
 			Renames: 1,
+			Moves:   1,
 			Notify:  2,
 			Order:   []xid.ID{_otherTagID, _testTagID},
 			Result:  `{"tag_id":"` + _testTagID.String() + `","name":"Release","sort_index":1}`,
@@ -533,13 +593,17 @@ func Test_updateTag_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, tags := tagDeps(c.DB)
+			tags := &TagNotifierMock{}
+			d := testDeps(c.DB, nil, nil)
+			d.tags = tags
 
-			res, err := updateTag{}.Execute(testInput(d, NameUpdateTag, c.Args))
+			res, err := updateTag{}.Execute(d.newInput(context.Background(), NameUpdateTag, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, tags.NotifyTreeChangeCalls(), c.Notify)
+			assert.Len(t, c.DB.FetchTagTreeCalls(), c.Fetches)
 			assert.Len(t, c.DB.UpdateTagCalls(), c.Renames)
+			assert.Len(t, c.DB.UpdateTagTreeCalls(), c.Moves)
 
 			if err != nil {
 				return
@@ -571,9 +635,21 @@ func Test_updateTag_Execute(t *testing.T) {
 func Test_deleteTagArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, deleteTagArgs{TagID: _testTagID}, map[string]Args{
-		"tag_id": deleteTagArgs{},
-	})
+	cc := map[string]struct {
+		Args deleteTagArgs
+		Err  error
+	}{
+		"Tag id is required": {Args: deleteTagArgs{}, Err: errRequired("tag_id")},
+		"Valid arguments":    {Args: deleteTagArgs{TagID: _testTagID}},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Args.Validate())
+		})
+	}
 }
 
 func Test_deleteTag_Info(t *testing.T) {
@@ -582,7 +658,7 @@ func Test_deleteTag_Info(t *testing.T) {
 	info := deleteTag{}.Info()
 
 	// a delete stays outside any "approve all" answer.
-	assert.Equal(t, Traits{Write: true, Destructive: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Destructive: true, Group: GroupTags}, info.Traits)
 
 	assert.Equal(t, NameDeleteTag, info.Name)
 	assert.Contains(t, info.Description, "cannot be restored")
@@ -593,33 +669,38 @@ func Test_deleteTag_Summary(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB     *DBMock
-		Args   string
-		Result string
-		Err    error
+		DB      *DBMock
+		Args    string
+		Fetches int
+		Result  string
+		Err     error
 	}{
 		"Malformed arguments": {DB: stubTagDB(nil), Args: `{`, Err: assert.AnError},
 		"Error returned by db.FetchTagTree": {
-			DB:   stubTagDB(assert.AnError),
-			Args: `{` + tagArgs(_testTagID) + `}`,
-			Err:  assert.AnError,
+			DB:      stubTagDB(assert.AnError),
+			Args:    `{"tag_id":"` + _testTagID.String() + `"}`,
+			Fetches: 1,
+			Err:     assert.AnError,
 		},
 		"Unknown tag": {
-			DB:   stubTagDB(nil),
-			Args: `{` + tagArgs(_unknownTagID) + `}`,
-			Err:  assert.AnError,
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _unknownTagID.String() + `"}`,
+			Fetches: 1,
+			Err:     assert.AnError,
 		},
 		// the delete takes the tag off every document carrying it, so
 		// the card says how many.
 		"Tag carried by a document": {
-			DB:     stubTagDB(nil),
-			Args:   `{` + tagArgs(_testTagID) + `}`,
-			Result: "Delete tag Production and take it off the 1 page carrying it",
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _testTagID.String() + `"}`,
+			Fetches: 1,
+			Result:  "Delete tag Production and take it off the 1 page carrying it",
 		},
 		"Tag carried by nothing": {
-			DB:     stubTagDB(nil),
-			Args:   `{` + tagArgs(_otherTagID) + `}`,
-			Result: "Delete tag Staging",
+			DB:      stubTagDB(nil),
+			Args:    `{"tag_id":"` + _otherTagID.String() + `"}`,
+			Fetches: 1,
+			Result:  "Delete tag Staging",
 		},
 	}
 
@@ -627,8 +708,10 @@ func Test_deleteTag_Summary(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := deleteTag{}.Summary(testInput(testDeps(c.DB, nil, nil), NameDeleteTag, c.Args))
+			got, err := deleteTag{}.Summary(testDeps(c.DB, nil, nil).newInput(context.Background(), NameDeleteTag, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchTagTreeCalls(), c.Fetches)
 
 			if err != nil {
 				return
@@ -643,10 +726,11 @@ func Test_deleteTag_Execute(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB     *DBMock
-		Args   string
-		Notify int
-		Err    error
+		DB      *DBMock
+		Args    string
+		Notify  int
+		Deletes int
+		Err     error
 	}{
 		"Malformed arguments": {DB: &DBMock{}, Args: `{`, Err: assert.AnError},
 		"Tag id is required":  {DB: &DBMock{}, Args: `{}`, Err: assert.AnError},
@@ -656,8 +740,9 @@ func Test_deleteTag_Execute(t *testing.T) {
 					return errutil.ErrNotFound
 				},
 			},
-			Args: `{` + tagArgs(_unknownTagID) + `}`,
-			Err:  fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
+			Args:    `{"tag_id":"` + _unknownTagID.String() + `"}`,
+			Deletes: 1,
+			Err:     fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
 		},
 		"Error returned by db.DeleteTag": {
 			DB: &DBMock{
@@ -665,13 +750,15 @@ func Test_deleteTag_Execute(t *testing.T) {
 					return assert.AnError
 				},
 			},
-			Args: `{` + tagArgs(_testTagID) + `}`,
-			Err:  assert.AnError,
+			Args:    `{"tag_id":"` + _testTagID.String() + `"}`,
+			Deletes: 1,
+			Err:     assert.AnError,
 		},
 		"Deleted": {
-			DB:     &DBMock{},
-			Args:   `{` + tagArgs(_testTagID) + `}`,
-			Notify: 1,
+			DB:      &DBMock{},
+			Args:    `{"tag_id":"` + _testTagID.String() + `"}`,
+			Notify:  1,
+			Deletes: 1,
 		},
 	}
 
@@ -679,12 +766,15 @@ func Test_deleteTag_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, tags := tagDeps(c.DB)
+			tags := &TagNotifierMock{}
+			d := testDeps(c.DB, nil, nil)
+			d.tags = tags
 
-			res, err := deleteTag{}.Execute(testInput(d, NameDeleteTag, c.Args))
+			res, err := deleteTag{}.Execute(d.newInput(context.Background(), NameDeleteTag, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, tags.NotifyTreeChangeCalls(), c.Notify)
+			assert.Len(t, c.DB.DeleteTagCalls(), c.Deletes)
 
 			if err != nil {
 				return
@@ -702,14 +792,38 @@ func Test_deleteTag_Execute(t *testing.T) {
 func Test_setTagAssignmentArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	ok := setTagAssignmentArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, TagID: _testTagID, Assigned: null.ValueFrom(false)}
+	cc := map[string]struct {
+		Args setTagAssignmentArgs
+		Err  error
+	}{
+		"Document id is required": {
+			Args: setTagAssignmentArgs{docTarget: docTarget{BranchID: _stubMainBranchID}, TagID: _testTagID, Assigned: null.ValueFrom(true)},
+			Err:  errRequired("document_id"),
+		},
+		"Branch id is required": {
+			Args: setTagAssignmentArgs{docTarget: docTarget{DocumentID: _testDocID}, TagID: _testTagID, Assigned: null.ValueFrom(true)},
+			Err:  errRequired("branch_id"),
+		},
+		"Tag id is required": {
+			Args: setTagAssignmentArgs{docTarget: docTarget{DocumentID: _testDocID, BranchID: _stubMainBranchID}, Assigned: null.ValueFrom(true)},
+			Err:  errRequired("tag_id"),
+		},
+		"Assigned is required": {
+			Args: setTagAssignmentArgs{docTarget: docTarget{DocumentID: _testDocID, BranchID: _stubMainBranchID}, TagID: _testTagID},
+			Err:  errRequired("assigned"),
+		},
+		"Valid arguments": {
+			Args: setTagAssignmentArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, TagID: _testTagID, Assigned: null.ValueFrom(false)},
+		},
+	}
 
-	assertValidate(t, ok, map[string]Args{
-		"document_id": setTagAssignmentArgs{docTarget: docTarget{BranchID: _stubMainBranchID}, TagID: _testTagID, Assigned: null.ValueFrom(true)},
-		"branch_id":   setTagAssignmentArgs{docTarget: docTarget{DocumentID: _testDocID}, TagID: _testTagID, Assigned: null.ValueFrom(true)},
-		"tag_id":      setTagAssignmentArgs{docTarget: docTarget{DocumentID: _testDocID, BranchID: _stubMainBranchID}, Assigned: null.ValueFrom(true)},
-		"assigned":    setTagAssignmentArgs{docTarget: docTarget{DocumentID: _testDocID, BranchID: _stubMainBranchID}, TagID: _testTagID},
-	})
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Args.Validate())
+		})
+	}
 }
 
 func Test_setTagAssignment_Info(t *testing.T) {
@@ -717,7 +831,7 @@ func Test_setTagAssignment_Info(t *testing.T) {
 
 	info := setTagAssignment{}.Info()
 
-	assert.Equal(t, Traits{Write: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Idempotent: true, Group: GroupTags}, info.Traits)
 
 	assert.Equal(t, NameSetTagAssignment, info.Name)
 	assert.NotEmpty(t, info.Description)
@@ -728,25 +842,34 @@ func Test_setTagAssignment_Summary(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB     *DBMock
-		Args   string
-		Result ActionSummary
-		Err    error
+		DB            *DBMock
+		Args          string
+		BranchFetches int
+		BranchLists   int
+		Fetches       int
+		Result        ActionSummary
+		Err           error
 	}{
 		"Malformed arguments": {DB: stubTagDB(nil), Args: `{`, Err: assert.AnError},
 		"Unknown branch": {
-			DB:   stubTagDB(nil),
-			Args: `{` + targetArgs(_unknownBranchID) + `,` + tagArgs(_testTagID) + `,"assigned":true}`,
-			Err:  assert.AnError,
+			DB:            stubTagDB(nil),
+			Args:          `{` + targetArgs(_unknownBranchID) + `,"tag_id":"` + _testTagID.String() + `","assigned":true}`,
+			BranchFetches: 1,
+			BranchLists:   1,
+			Err:           assert.AnError,
 		},
 		"Unknown tag": {
-			DB:   stubTagDB(nil),
-			Args: `{` + targetArgs(_stubMainBranchID) + `,` + tagArgs(_unknownTagID) + `,"assigned":true}`,
-			Err:  assert.AnError,
+			DB:            stubTagDB(nil),
+			Args:          `{` + targetArgs(_stubMainBranchID) + `,"tag_id":"` + _unknownTagID.String() + `","assigned":true}`,
+			BranchFetches: 1,
+			Fetches:       1,
+			Err:           assert.AnError,
 		},
 		"Putting the tag on": {
-			DB:   stubTagDB(nil),
-			Args: `{` + targetArgs(_stubBranchID) + `,` + tagArgs(_testTagID) + `,"assigned":true}`,
+			DB:            stubTagDB(nil),
+			Args:          `{` + targetArgs(_stubBranchID) + `,"tag_id":"` + _testTagID.String() + `","assigned":true}`,
+			BranchFetches: 1,
+			Fetches:       1,
 			Result: ActionSummary{
 				Tool:         NameSetTagAssignment,
 				DocumentID:   _testDocID,
@@ -755,8 +878,10 @@ func Test_setTagAssignment_Summary(t *testing.T) {
 			},
 		},
 		"Taking the tag off": {
-			DB:   stubTagDB(nil),
-			Args: `{` + targetArgs(_stubMainBranchID) + `,` + tagArgs(_testTagID) + `,"assigned":false}`,
+			DB:            stubTagDB(nil),
+			Args:          `{` + targetArgs(_stubMainBranchID) + `,"tag_id":"` + _testTagID.String() + `","assigned":false}`,
+			BranchFetches: 1,
+			Fetches:       1,
 			Result: ActionSummary{
 				Tool:         NameSetTagAssignment,
 				DocumentID:   _testDocID,
@@ -770,8 +895,12 @@ func Test_setTagAssignment_Summary(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := setTagAssignment{}.Summary(testInput(testDeps(c.DB, nil, nil), NameSetTagAssignment, c.Args))
+			got, err := setTagAssignment{}.Summary(testDeps(c.DB, nil, nil).newInput(context.Background(), NameSetTagAssignment, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.BranchFetches)
+			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), c.BranchLists)
+			assert.Len(t, c.DB.FetchTagTreeCalls(), c.Fetches)
 
 			if err != nil {
 				return
@@ -786,27 +915,32 @@ func Test_setTagAssignment_Execute(t *testing.T) {
 	t.Parallel()
 
 	type tcase struct {
-		DB       *DBMock
-		Args     string
-		Notify   int
-		Assigns  int
-		Removes  int
-		BranchID xid.ID
-		Result   string
-		Err      error
+		DB            *DBMock
+		Args          string
+		Notify        int
+		BranchFetches int
+		BranchLists   int
+		Fetches       int
+		Assigns       int
+		Removes       int
+		BranchID      xid.ID
+		Result        string
+		Err           error
 	}
 
 	cc := map[string]tcase{
 		"Malformed arguments": {DB: stubTagDB(nil), Args: `{`, Err: assert.AnError},
 		"Assigned is required": {
 			DB:   stubTagDB(nil),
-			Args: `{` + targetArgs(_stubMainBranchID) + `,` + tagArgs(_testTagID) + `}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"tag_id":"` + _testTagID.String() + `"}`,
 			Err:  assert.AnError,
 		},
 		"Unknown branch": {
-			DB:   stubTagDB(nil),
-			Args: `{` + targetArgs(_unknownBranchID) + `,` + tagArgs(_testTagID) + `,"assigned":true}`,
-			Err:  assert.AnError,
+			DB:            stubTagDB(nil),
+			Args:          `{` + targetArgs(_unknownBranchID) + `,"tag_id":"` + _testTagID.String() + `","assigned":true}`,
+			BranchFetches: 1,
+			BranchLists:   1,
+			Err:           assert.AnError,
 		},
 		"Unknown tag": func() tcase {
 			db := stubTagDB(nil)
@@ -815,10 +949,11 @@ func Test_setTagAssignment_Execute(t *testing.T) {
 			}
 
 			return tcase{
-				DB:      db,
-				Args:    `{` + targetArgs(_stubMainBranchID) + `,` + tagArgs(_unknownTagID) + `,"assigned":true}`,
-				Assigns: 1,
-				Err:     fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
+				DB:            db,
+				Args:          `{` + targetArgs(_stubMainBranchID) + `,"tag_id":"` + _unknownTagID.String() + `","assigned":true}`,
+				BranchFetches: 1,
+				Assigns:       1,
+				Err:           fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
 			}
 		}(),
 		"Error returned by db.AssignBranchTag": func() tcase {
@@ -828,10 +963,11 @@ func Test_setTagAssignment_Execute(t *testing.T) {
 			}
 
 			return tcase{
-				DB:      db,
-				Args:    `{` + targetArgs(_stubMainBranchID) + `,` + tagArgs(_testTagID) + `,"assigned":true}`,
-				Assigns: 1,
-				Err:     assert.AnError,
+				DB:            db,
+				Args:          `{` + targetArgs(_stubMainBranchID) + `,"tag_id":"` + _testTagID.String() + `","assigned":true}`,
+				BranchFetches: 1,
+				Assigns:       1,
+				Err:           assert.AnError,
 			}
 		}(),
 		"Error returned by db.UnassignBranchTag": func() tcase {
@@ -841,37 +977,43 @@ func Test_setTagAssignment_Execute(t *testing.T) {
 			}
 
 			return tcase{
-				DB:      db,
-				Args:    `{` + targetArgs(_stubMainBranchID) + `,` + tagArgs(_testTagID) + `,"assigned":false}`,
-				Removes: 1,
-				Err:     assert.AnError,
+				DB:            db,
+				Args:          `{` + targetArgs(_stubMainBranchID) + `,"tag_id":"` + _testTagID.String() + `","assigned":false}`,
+				BranchFetches: 1,
+				Fetches:       1,
+				Removes:       1,
+				Err:           assert.AnError,
 			}
 		}(),
 		// the repository treats a tag the branch already carries as
 		// nothing to do, so the call reads the same as a fresh one.
 		"Assigned": {
-			DB:       stubTagDB(nil),
-			Args:     `{` + targetArgs(_stubBranchID) + `,` + tagArgs(_testTagID) + `,"assigned":true}`,
-			Notify:   1,
-			Assigns:  1,
-			BranchID: _stubBranchID,
-			Result:   `{"document_id":"` + _testDocID.String() + `","branch_id":"` + _stubBranchID.String() + `","tag_id":"` + _testTagID.String() + `","assigned":true}`,
+			DB:            stubTagDB(nil),
+			Args:          `{` + targetArgs(_stubBranchID) + `,"tag_id":"` + _testTagID.String() + `","assigned":true}`,
+			Notify:        1,
+			BranchFetches: 1,
+			Assigns:       1,
+			BranchID:      _stubBranchID,
+			Result:        `{"document_id":"` + _testDocID.String() + `","branch_id":"` + _stubBranchID.String() + `","tag_id":"` + _testTagID.String() + `","assigned":true}`,
 		},
 		"Hidden tag is assigned all the same": {
-			DB:       stubTagDB(nil),
-			Args:     `{` + targetArgs(_stubBranchID) + `,` + tagArgs(_otherTagID) + `,"assigned":true}`,
-			Notify:   1,
-			Assigns:  1,
-			BranchID: _stubBranchID,
-			Result:   `{"document_id":"` + _testDocID.String() + `","branch_id":"` + _stubBranchID.String() + `","tag_id":"` + _otherTagID.String() + `","assigned":true}`,
+			DB:            stubTagDB(nil),
+			Args:          `{` + targetArgs(_stubBranchID) + `,"tag_id":"` + _otherTagID.String() + `","assigned":true}`,
+			Notify:        1,
+			BranchFetches: 1,
+			Assigns:       1,
+			BranchID:      _stubBranchID,
+			Result:        `{"document_id":"` + _testDocID.String() + `","branch_id":"` + _stubBranchID.String() + `","tag_id":"` + _otherTagID.String() + `","assigned":true}`,
 		},
 		"Unassigned": {
-			DB:       stubTagDB(nil),
-			Args:     `{` + targetArgs(_stubMainBranchID) + `,` + tagArgs(_testTagID) + `,"assigned":false}`,
-			Notify:   1,
-			Removes:  1,
-			BranchID: _stubMainBranchID,
-			Result:   `{"document_id":"` + _testDocID.String() + `","branch_id":"` + _stubMainBranchID.String() + `","tag_id":"` + _testTagID.String() + `","assigned":false}`,
+			DB:            stubTagDB(nil),
+			Args:          `{` + targetArgs(_stubMainBranchID) + `,"tag_id":"` + _testTagID.String() + `","assigned":false}`,
+			Notify:        1,
+			BranchFetches: 1,
+			Fetches:       1,
+			Removes:       1,
+			BranchID:      _stubMainBranchID,
+			Result:        `{"document_id":"` + _testDocID.String() + `","branch_id":"` + _stubMainBranchID.String() + `","tag_id":"` + _testTagID.String() + `","assigned":false}`,
 		},
 	}
 
@@ -879,12 +1021,17 @@ func Test_setTagAssignment_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, tags := tagDeps(c.DB)
-			inp := testInput(d, NameSetTagAssignment, c.Args)
+			tags := &TagNotifierMock{}
+			d := testDeps(c.DB, nil, nil)
+			d.tags = tags
+			inp := d.newInput(context.Background(), NameSetTagAssignment, json.RawMessage(c.Args))
 
 			res, err := setTagAssignment{}.Execute(inp)
 			testutil.AssertEqualError(t, c.Err, err)
 
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.BranchFetches)
+			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), c.BranchLists)
+			assert.Len(t, c.DB.FetchTagTreeCalls(), c.Fetches)
 			assert.Len(t, c.DB.AssignBranchTagCalls(), c.Assigns)
 			assert.Len(t, c.DB.UnassignBranchTagCalls(), c.Removes)
 			assert.Len(t, tags.NotifyTreeChangeCalls(), c.Notify)

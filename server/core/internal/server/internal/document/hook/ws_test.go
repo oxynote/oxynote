@@ -13,19 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// sessionCtx returns a subscriber context carrying a test session.
-func sessionCtx() context.Context {
-	return auth.AddSessionToContext(context.Background(), auth.Session{
-		UserID:               "u1",
-		ActiveOrganizationID: "org1",
-	})
-}
-
-// docTopicCtx returns a subscriber context for the given document topic.
-func docTopicCtx(documentID xid.ID) context.Context {
-	return wsserver.NewTopicParamsContext(sessionCtx(), map[string]string{"documentId": documentID.String()})
-}
-
 func Test_Handler_BindHooksChange(t *testing.T) {
 	t.Parallel()
 
@@ -39,29 +26,64 @@ func Test_Handler_BindHooksChange(t *testing.T) {
 func Test_Handler_NotifyHooksChange(t *testing.T) {
 	t.Parallel()
 
-	hdl := &Handler{}
+	cc := map[string]struct {
+		Bound      bool
+		DocumentID null.Value[xid.ID]
+		BranchID   null.Value[xid.ID]
+		Published  int
+	}{
+		"Unbound handler publishes nothing": {
+			DocumentID: null.ValueFrom(_documentID),
+			BranchID:   null.ValueFrom(_branchID),
+		},
+		"Null branch ID publishes nothing": {
+			Bound:      true,
+			DocumentID: null.ValueFrom(_documentID),
+		},
+		"Null document ID publishes nothing": {
+			Bound:    true,
+			BranchID: null.ValueFrom(_branchID),
+		},
+		"Bound handler publishes the change": {
+			Bound:      true,
+			DocumentID: null.ValueFrom(_documentID),
+			BranchID:   null.ValueFrom(_branchID),
+			Published:  1,
+		},
+	}
 
-	// notifying before binding must be a safe no-op.
-	hdl.NotifyHooksChange("org1", null.ValueFrom(_documentID), null.ValueFrom(_branchID))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	tpc := &wsMock.Topic{}
+			hdl := &Handler{}
+			tpc := &wsMock.Topic{}
 
-	hdl.BindHooksChange(tpc)
+			if c.Bound {
+				hdl.BindHooksChange(tpc)
+			}
 
-	// a hook whose branch or document is gone has no editor to redraw.
-	hdl.NotifyHooksChange("org1", null.ValueFrom(_documentID), null.Value[xid.ID]{})
-	hdl.NotifyHooksChange("org1", null.Value[xid.ID]{}, null.ValueFrom(_branchID))
-	require.Empty(t, tpc.PublishManyCalls())
+			hdl.NotifyHooksChange("org1", c.DocumentID, c.BranchID)
 
-	hdl.NotifyHooksChange("org1", null.ValueFrom(_documentID), null.ValueFrom(_branchID))
+			pubs := tpc.PublishManyCalls()
+			require.Len(t, pubs, c.Published)
 
-	pubs := tpc.PublishManyCalls()
-	require.Len(t, pubs, 1)
-	assert.Equal(t, HooksChangeMessage{BranchID: _branchID}, pubs[0].Payload)
+			if c.Published == 0 {
+				return
+			}
 
-	// only the subscribers of that document in the organization hear it
-	assert.True(t, pubs[0].Filter(docTopicCtx(_documentID), "topic"))
-	assert.False(t, pubs[0].Filter(docTopicCtx(xid.New()), "topic"))
-	assert.False(t, pubs[0].Filter(sessionCtx(), "topic"))
-	assert.False(t, pubs[0].Filter(context.Background(), "topic"))
+			assert.Equal(t, HooksChangeMessage{BranchID: _branchID}, pubs[0].Payload)
+
+			ctx := auth.AddSessionToContext(context.Background(), auth.Session{
+				UserID:               "u1",
+				ActiveOrganizationID: "org1",
+			})
+
+			// only the subscribers of that document in the organization hear it
+			assert.True(t, pubs[0].Filter(wsserver.NewTopicParamsContext(ctx, map[string]string{"documentId": _documentID.String()}), "topic"))
+			assert.False(t, pubs[0].Filter(wsserver.NewTopicParamsContext(ctx, map[string]string{"documentId": xid.New().String()}), "topic"))
+			assert.False(t, pubs[0].Filter(ctx, "topic"))
+			assert.False(t, pubs[0].Filter(context.Background(), "topic"))
+		})
+	}
 }

@@ -31,6 +31,22 @@ func Test_OpError_describe(t *testing.T) {
 			Msg:    "paragraph is not allowed there in calloutBlock, which takes bulletList or orderedList at that point.",
 			Result: "<p> is not allowed there in <callout>, which takes <ul> or <ol> at that point.",
 		},
+		"Titled pre at the root is told where it goes": {
+			Msg:    "titledCodeBlock is not allowed there in the document root, which takes paragraph or heading at that point. Choose a reference block in a container that takes it.",
+			Result: "a titled <pre> is not allowed there in the document root, which takes <p> or a heading at that point. Choose a reference block in a container that takes it. A titled <pre> goes only in a <split_doc>'s <right>; leave the title out for code anywhere else.",
+		},
+		"Params at the root are told where they go": {
+			Msg:    "splitDocumentationParameterList is not allowed there in the document root, which takes paragraph at that point.",
+			Result: "<params> is not allowed there in the document root, which takes <p> at that point. <params> go only in a <split_doc>'s <left>, after its heading and text.",
+		},
+		"Text after the params is told to go before them": {
+			Msg:    "paragraph is not allowed there in splitDocumentationLeftSide, which takes splitDocumentationParameterList at that point.",
+			Result: "<p> is not allowed there in <left>, which takes <params> at that point. In <left>, text, lists and callouts go before the <params>.",
+		},
+		"Metric outside its containers is told where it goes": {
+			Msg:    "metricBlock is not allowed there in calloutBlock, which takes paragraph at that point.",
+			Result: "<metric> is not allowed there in <callout>, which takes <p> at that point. A <metric> goes only in <metrics> or a <split_doc>'s <right>.",
+		},
 		"Node type without an element named by the element holding it": {
 			Msg:    "codeBlockTitle would end without text in nrk_7bSz-mJp",
 			Result: "a titled <pre>'s title would end without text in nrk_7bSz-mJp",

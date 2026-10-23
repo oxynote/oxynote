@@ -30,8 +30,8 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 		}
 	}
 
-	// stubExec returns an executor mock whose SQLQueryLabels yields the
-	// provided values.
+	// stubClients returns clients whose accessors fail with the error of cs
+	// and whose SQL QueryLabels returns the given values.
 	stubClients := func(cs processor.ConnectionStatus, labels map[string]string, err error) *clientMocks {
 		return &clientMocks{
 			err: cs.Error(),
@@ -58,6 +58,10 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 			ID:          _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
+				wasDBFetchDataSourceCalled(0),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorSQLCalled(0),
 				wasExecutorSQLQueryLabelsCalled(0),
 			),
 		},
@@ -65,6 +69,10 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 			Target: _testQueryTarget,
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
+				wasDBFetchDataSourceCalled(0),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorSQLCalled(0),
 				wasExecutorSQLQueryLabelsCalled(0),
 			),
 		},
@@ -74,6 +82,10 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 			ID:     _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasDBFetchDataSourceCalled(1),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorSQLCalled(0),
 				wasExecutorSQLQueryLabelsCalled(0),
 			),
 		},
@@ -83,6 +95,10 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 			ID:     _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"query.required","message":"Query parameter is required."}`),
+				wasDBFetchDataSourceCalled(1),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorSQLCalled(0),
 				wasExecutorSQLQueryLabelsCalled(0),
 			),
 		},
@@ -92,10 +108,14 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 			ID:     _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"From parameter must be a valid RFC3339 timestamp."}`),
+				wasDBFetchDataSourceCalled(1),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorSQLCalled(0),
 				wasExecutorSQLQueryLabelsCalled(0),
 			),
 		},
-		"Error returned by executor.SQLQueryLabels": {
+		"Error returned by SQL.QueryLabels": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
 			Clients: stubClients("", nil, assert.AnError),
 			Target:  _testQueryTarget,
@@ -103,9 +123,14 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBUpdateDataSourceCalled(0),
+				wasDBFetchDataSourceCalled(1),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(1),
+				wasExecutorSQLCalled(1),
+				wasExecutorSQLQueryLabelsCalled(1),
 			),
 		},
-		"A connection the data source refused": {
+		"Error returned by Runner.SQL": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
 			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
 			Target:  _testQueryTarget,
@@ -113,6 +138,11 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
 				wasDBUpdateDataSourceCalled(0),
+				wasDBFetchDataSourceCalled(1),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(1),
+				wasExecutorSQLCalled(1),
+				wasExecutorSQLQueryLabelsCalled(0),
 			),
 		},
 		"Nil labels return an empty map": {
@@ -123,6 +153,11 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusOK, `{"labels":{}}`),
 				wasDBUpdateDataSourceCalled(0),
+				wasDBFetchDataSourceCalled(1),
+				wasVariableManagerFetchTreeCalled(0),
+				wasRunnersRunnerCalled(1),
+				wasExecutorSQLCalled(1),
+				wasExecutorSQLQueryLabelsCalled(1),
 			),
 		},
 		"Successful retrieval": {
@@ -135,6 +170,9 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 				wasDBUpdateDataSourceCalled(0),
 				wasExecutorSQLQueryLabelsCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorSQLCalled(1),
 			),
 		},
 		"Error returned by VariableManager.FetchTree": {
@@ -146,6 +184,9 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasExecutorSQLQueryLabelsCalled(0),
 				wasVariableManagerFetchTreeCalled(1),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(0),
+				wasExecutorSQLCalled(0),
 			),
 		},
 		"Substituted variables": {
@@ -159,6 +200,9 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 				wasDBUpdateDataSourceCalled(0),
 				wasExecutorSQLQueryLabelsCalled(1),
 				wasVariableManagerFetchTreeCalled(1),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorSQLCalled(1),
 			),
 		},
 	}
@@ -195,8 +239,8 @@ func Test_Handler_FetchSQLMetadata(t *testing.T) {
 		}
 	}
 
-	// stubExec returns an executor mock whose SQLMetadata yields the
-	// provided values.
+	// stubClients returns clients whose accessors fail with the error of cs
+	// and whose SQL Metadata returns the given values.
 	stubClients := func(cs processor.ConnectionStatus, result *processor.SQLMetadataResult, err error) *clientMocks {
 		return &clientMocks{
 			err: cs.Error(),
@@ -220,12 +264,18 @@ func Test_Handler_FetchSQLMetadata(t *testing.T) {
 			ID:          _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
+				wasDBFetchDataSourceCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorSQLCalled(0),
 				wasExecutorSQLMetadataCalled(0),
 			),
 		},
 		"Missing data source id": {
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
+				wasDBFetchDataSourceCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorSQLCalled(0),
 				wasExecutorSQLMetadataCalled(0),
 			),
 		},
@@ -234,25 +284,36 @@ func Test_Handler_FetchSQLMetadata(t *testing.T) {
 			ID: _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(0),
+				wasExecutorSQLCalled(0),
 				wasExecutorSQLMetadataCalled(0),
 			),
 		},
-		"Error returned by executor.SQLMetadata": {
+		"Error returned by SQL.Metadata": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
 			Clients: stubClients("", nil, assert.AnError),
 			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBUpdateDataSourceCalled(0),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorSQLCalled(1),
+				wasExecutorSQLMetadataCalled(1),
 			),
 		},
-		"A connection the data source refused": {
+		"Error returned by Runner.SQL": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
 			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
 			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
 				wasDBUpdateDataSourceCalled(0),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorSQLCalled(1),
+				wasExecutorSQLMetadataCalled(0),
 			),
 		},
 		"Successful metadata retrieval": {
@@ -268,6 +329,9 @@ func Test_Handler_FetchSQLMetadata(t *testing.T) {
 				hasResp(http.StatusOK, `{"tables":{"public.users":{"columns":[{"name":"id"}]}},"defaultSchema":"public"}`),
 				wasDBUpdateDataSourceCalled(0),
 				wasExecutorSQLMetadataCalled(1),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorSQLCalled(1),
 			),
 		},
 	}

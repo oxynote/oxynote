@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,13 +66,6 @@ func stubDocument(name, text string) document.Document {
 	}
 }
 
-// indexPath returns a fresh index path that does not exist yet.
-func indexPath(t *testing.T) string {
-	t.Helper()
-
-	return filepath.Join(t.TempDir(), "index")
-}
-
 // openIndex opens or builds an index at path from src.
 func openIndex(t *testing.T, path string, src Source) *Index {
 	t.Helper()
@@ -91,23 +85,7 @@ func texts(t *testing.T, idx *Index, q string) []string {
 	blocks, err := idx.SearchDocumentBlocks(context.Background(), "org-1", q, 50)
 	require.NoError(t, err)
 
-	res := make([]string, 0, len(blocks))
-
-	for _, b := range blocks {
-		res = append(res, b.Text)
-	}
-
-	return res
-}
-
-// entryIDs returns the ids of every entry under the field's value.
-func entryIDs(t *testing.T, idx *Index, field, value string) []string {
-	t.Helper()
-
-	ids, err := idx.ids(context.Background(), field, value)
-	require.NoError(t, err)
-
-	return ids
+	return blockTexts(blocks)
 }
 
 func Test_Open(t *testing.T) {
@@ -126,16 +104,21 @@ func Test_Open(t *testing.T) {
 				Path:   "",
 				Source: &stubSource{},
 				Err:    assert.AnError,
+				Check: func(t *testing.T, _ *Index, _ string, src *stubSource) {
+					assert.Equal(t, 0, src.calls)
+				},
 			}
 		},
 		"Error returned by Source.FetchDocumentBranchesAfter": func(t *testing.T) tcase {
-			path := indexPath(t)
+			path := filepath.Join(t.TempDir(), "index")
 
 			return tcase{
 				Path:   path,
 				Source: &stubSource{err: assert.AnError},
 				Err:    assert.AnError,
-				Check: func(t *testing.T, _ *Index, path string, _ *stubSource) {
+				Check: func(t *testing.T, _ *Index, path string, src *stubSource) {
+					assert.Equal(t, 1, src.calls)
+
 					_, err := os.Stat(path)
 					assert.True(t, os.IsNotExist(err), "a failed build leaves no index behind")
 				},
@@ -143,7 +126,7 @@ func Test_Open(t *testing.T) {
 		},
 		"Missing index is built from the source": func(t *testing.T) tcase {
 			return tcase{
-				Path:   indexPath(t),
+				Path:   filepath.Join(t.TempDir(), "index"),
 				Source: &stubSource{docs: []document.Document{stubDocument("Runbook", "restart the pods")}},
 				Check: func(t *testing.T, idx *Index, path string, src *stubSource) {
 					assert.Equal(t, 1, src.calls)
@@ -159,7 +142,7 @@ func Test_Open(t *testing.T) {
 			}
 		},
 		"Index with the current mapping version opens as is": func(t *testing.T) tcase {
-			path := indexPath(t)
+			path := filepath.Join(t.TempDir(), "index")
 
 			prev := openIndex(t, path, &stubSource{docs: []document.Document{stubDocument("Runbook", "restart the pods")}})
 			require.NoError(t, prev.Close())
@@ -175,7 +158,7 @@ func Test_Open(t *testing.T) {
 			}
 		},
 		"Index with another mapping version is rebuilt": func(t *testing.T) tcase {
-			path := indexPath(t)
+			path := filepath.Join(t.TempDir(), "index")
 
 			prev := openIndex(t, path, &stubSource{docs: []document.Document{stubDocument("Runbook", "restart the pods")}})
 			require.NoError(t, prev.idx.SetInternal([]byte(_mappingVersionKey), []byte("0")))
@@ -192,7 +175,7 @@ func Test_Open(t *testing.T) {
 			}
 		},
 		"Index without a mapping version is rebuilt": func(t *testing.T) tcase {
-			path := indexPath(t)
+			path := filepath.Join(t.TempDir(), "index")
 
 			prev := openIndex(t, path, &stubSource{})
 			require.NoError(t, prev.idx.DeleteInternal([]byte(_mappingVersionKey)))
@@ -207,7 +190,7 @@ func Test_Open(t *testing.T) {
 			}
 		},
 		"Unreadable index is rebuilt": func(t *testing.T) tcase {
-			path := indexPath(t)
+			path := filepath.Join(t.TempDir(), "index")
 			require.NoError(t, os.WriteFile(path, []byte("not an index"), 0o600))
 
 			return tcase{
@@ -223,14 +206,16 @@ func Test_Open(t *testing.T) {
 			}
 		},
 		"Stale build directory is replaced": func(t *testing.T) tcase {
-			path := indexPath(t)
+			path := filepath.Join(t.TempDir(), "index")
 			require.NoError(t, os.MkdirAll(path+_buildSuffix, 0o750))
 			require.NoError(t, os.WriteFile(filepath.Join(path+_buildSuffix, "junk"), []byte("junk"), 0o600))
 
 			return tcase{
 				Path:   path,
 				Source: &stubSource{},
-				Check: func(t *testing.T, _ *Index, path string, _ *stubSource) {
+				Check: func(t *testing.T, _ *Index, path string, src *stubSource) {
+					assert.Equal(t, 1, src.calls)
+
 					_, err := os.Stat(filepath.Join(path, "junk"))
 					assert.True(t, os.IsNotExist(err))
 				},
@@ -266,40 +251,56 @@ func Test_Open(t *testing.T) {
 func Test_openCurrent(t *testing.T) {
 	t.Parallel()
 
-	log := slog.New(slog.DiscardHandler)
+	type tcase struct {
+		Path   string
+		Opened bool
+	}
 
-	// missing path
-	idx, err := openCurrent(log, indexPath(t))
-	require.NoError(t, err)
-	assert.Nil(t, idx)
+	cc := map[string]tcase{
+		"Missing path": {
+			Path: filepath.Join(t.TempDir(), "index"),
+		},
+		"Path that is not an index": func() tcase {
+			path := filepath.Join(t.TempDir(), "index")
+			require.NoError(t, os.WriteFile(path, []byte("not an index"), 0o600))
 
-	// path that is not an index
-	path := indexPath(t)
-	require.NoError(t, os.WriteFile(path, []byte("not an index"), 0o600))
+			return tcase{Path: path}
+		}(),
+		"Current index": func() tcase {
+			path := filepath.Join(t.TempDir(), "index")
 
-	idx, err = openCurrent(log, path)
-	require.NoError(t, err)
-	assert.Nil(t, idx)
+			built := openIndex(t, path, &stubSource{})
+			require.NoError(t, built.Close())
 
-	// current index
-	path = indexPath(t)
+			return tcase{Path: path, Opened: true}
+		}(),
+		"Outdated index": func() tcase {
+			path := filepath.Join(t.TempDir(), "index")
 
-	built := openIndex(t, path, &stubSource{})
-	require.NoError(t, built.Close())
+			built := openIndex(t, path, &stubSource{})
+			require.NoError(t, built.idx.SetInternal([]byte(_mappingVersionKey), []byte("0")))
+			require.NoError(t, built.Close())
 
-	idx, err = openCurrent(log, path)
-	require.NoError(t, err)
-	require.NotNil(t, idx)
-	require.NoError(t, idx.Close())
+			return tcase{Path: path}
+		}(),
+	}
 
-	// outdated index
-	built = openIndex(t, path, &stubSource{})
-	require.NoError(t, built.idx.SetInternal([]byte(_mappingVersionKey), []byte("0")))
-	require.NoError(t, built.Close())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	idx, err = openCurrent(log, path)
-	require.NoError(t, err)
-	assert.Nil(t, idx)
+			idx, err := openCurrent(slog.New(slog.DiscardHandler), c.Path)
+			require.NoError(t, err)
+
+			if !c.Opened {
+				assert.Nil(t, idx)
+				return
+			}
+
+			require.NotNil(t, idx)
+			require.NoError(t, idx.Close())
+		})
+	}
 }
 
 func Test_build(t *testing.T) {
@@ -308,11 +309,13 @@ func Test_build(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 
 	// error
-	path := indexPath(t)
+	path := filepath.Join(t.TempDir(), "index")
+	src := &stubSource{err: assert.AnError}
 
-	idx, err := build(context.Background(), log, path, &stubSource{err: assert.AnError})
+	idx, err := build(context.Background(), log, path, src)
 	require.Error(t, err)
 	assert.Nil(t, idx)
+	assert.Equal(t, 1, src.calls)
 
 	_, err = os.Stat(path)
 	assert.True(t, os.IsNotExist(err))
@@ -320,10 +323,13 @@ func Test_build(t *testing.T) {
 	// success, replacing whatever was at the path
 	require.NoError(t, os.WriteFile(path, []byte("previous"), 0o600))
 
-	idx, err = build(context.Background(), log, path, &stubSource{})
+	src = &stubSource{}
+
+	idx, err = build(context.Background(), log, path, src)
 	require.NoError(t, err)
 	require.NotNil(t, idx)
 	require.NoError(t, idx.Close())
+	assert.Equal(t, 1, src.calls)
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)
@@ -337,10 +343,13 @@ func Test_fill(t *testing.T) {
 	t.Parallel()
 
 	// error
-	idx := openIndex(t, indexPath(t), &stubSource{})
+	idx := openIndex(t, filepath.Join(t.TempDir(), "index"), &stubSource{})
 	defer func() { require.NoError(t, idx.Close()) }()
 
-	require.Error(t, fill(context.Background(), slog.New(slog.DiscardHandler), idx.idx, &stubSource{err: assert.AnError}))
+	src := &stubSource{err: assert.AnError}
+
+	require.Error(t, fill(context.Background(), slog.New(slog.DiscardHandler), idx.idx, src))
+	assert.Equal(t, 1, src.calls)
 
 	// success: every page is read until a short one, and the version is
 	// stamped last.
@@ -350,7 +359,7 @@ func Test_fill(t *testing.T) {
 		docs = append(docs, stubDocument("Doc "+strconv.Itoa(i), "page filler"))
 	}
 
-	src := &stubSource{docs: docs}
+	src = &stubSource{docs: docs}
 
 	require.NoError(t, idx.idx.DeleteInternal([]byte(_mappingVersionKey)))
 	require.NoError(t, fill(context.Background(), slog.New(slog.DiscardHandler), idx.idx, src))
@@ -358,7 +367,9 @@ func Test_fill(t *testing.T) {
 	assert.Equal(t, 2, src.calls)
 
 	// one paragraph and one document-name entry per branch.
-	assert.Len(t, entryIDs(t, idx, _fieldOrganizationID, "org-1"), 2*(_buildPage+1))
+	ids, err := idx.ids(context.Background(), _fieldOrganizationID, "org-1")
+	require.NoError(t, err)
+	assert.Len(t, ids, 2*(_buildPage+1))
 
 	version, err := idx.idx.GetInternal([]byte(_mappingVersionKey))
 	require.NoError(t, err)
@@ -368,7 +379,7 @@ func Test_fill(t *testing.T) {
 func Test_indexSynonyms(t *testing.T) {
 	t.Parallel()
 
-	idx := openIndex(t, indexPath(t), &stubSource{})
+	idx := openIndex(t, filepath.Join(t.TempDir(), "index"), &stubSource{})
 
 	// a build already loaded the synonyms; loading them again is an error
 	// only once the index is closed.
@@ -380,7 +391,7 @@ func Test_indexSynonyms(t *testing.T) {
 func Test_Index_Close(t *testing.T) {
 	t.Parallel()
 
-	idx := openIndex(t, indexPath(t), &stubSource{})
+	idx := openIndex(t, filepath.Join(t.TempDir(), "index"), &stubSource{})
 
 	require.NoError(t, idx.Close())
 }
@@ -388,48 +399,102 @@ func Test_Index_Close(t *testing.T) {
 func Test_Index_ReplaceBranch(t *testing.T) {
 	t.Parallel()
 
-	idx := openIndex(t, indexPath(t), &stubSource{})
-	defer func() { require.NoError(t, idx.Close()) }()
+	type tcase struct {
+		Index    *Index
+		BranchID xid.ID
+		Entries  map[string]Block
+		Err      error
+		Check    func(t *testing.T, idx *Index)
+	}
 
-	one, two := stubScope(), stubScope()
+	cc := map[string]tcase{
+		// a closed index fails the lookup.
+		"Error returned by ids": func() tcase {
+			idx := openIndex(t, filepath.Join(t.TempDir(), "index"), &stubSource{})
+			require.NoError(t, idx.Close())
 
-	require.NoError(t, idx.ReplaceBranch(context.Background(), one.BranchID, map[string]Block{
-		"a": one.Block("a", "paragraph", "alpha"),
-		"b": one.Block("b", "paragraph", "beta"),
-	}))
-	require.NoError(t, idx.ReplaceBranch(context.Background(), two.BranchID, map[string]Block{
-		"c": two.Block("c", "paragraph", "gamma"),
-	}))
+			return tcase{
+				Index:    idx,
+				BranchID: stubScope().BranchID,
+				Err:      assert.AnError,
+			}
+		}(),
+		// an entry without an id is refused before anything is written.
+		"Error returned by Batch.Index": func() tcase {
+			idx := openIndex(t, filepath.Join(t.TempDir(), "index"), &stubSource{})
+			t.Cleanup(func() { require.NoError(t, idx.Close()) })
 
-	// the replacement updates, adds and removes, and leaves the other
-	// branch alone.
-	require.NoError(t, idx.ReplaceBranch(context.Background(), one.BranchID, map[string]Block{
-		"a": one.Block("a", "paragraph", "alpha changed"),
-		"d": one.Block("d", "paragraph", "delta"),
-	}))
+			one := stubScope()
 
-	assert.ElementsMatch(t, []string{one.BranchID.String() + "-a", one.BranchID.String() + "-d"}, entryIDs(t, idx, _fieldBranchID, one.BranchID.String()))
-	assert.Equal(t, []string{"alpha changed"}, texts(t, idx, "alpha"))
-	assert.Empty(t, texts(t, idx, "beta"))
-	assert.Equal(t, []string{"gamma"}, texts(t, idx, "gamma"))
+			require.NoError(t, idx.ReplaceBranch(context.Background(), one.BranchID, map[string]Block{
+				"a": one.Block("a", "paragraph", "alpha"),
+			}))
 
-	// an entry without an id is refused before anything is written.
-	require.Error(t, idx.ReplaceBranch(context.Background(), one.BranchID, map[string]Block{
-		"e": {Text: "epsilon"},
-	}))
-	assert.Equal(t, []string{"alpha changed"}, texts(t, idx, "alpha"))
+			return tcase{
+				Index:    idx,
+				BranchID: one.BranchID,
+				Entries: map[string]Block{
+					"e": {Text: "epsilon"},
+				},
+				Err: assert.AnError,
+				Check: func(t *testing.T, idx *Index) {
+					assert.Equal(t, []string{"alpha"}, texts(t, idx, "alpha"))
+				},
+			}
+		}(),
+		// the replacement updates, adds and removes, and leaves the other
+		// branch alone.
+		"Successful replacement": func() tcase {
+			idx := openIndex(t, filepath.Join(t.TempDir(), "index"), &stubSource{})
+			t.Cleanup(func() { require.NoError(t, idx.Close()) })
 
-	// a closed index fails the lookup.
-	require.NoError(t, idx.idx.Close())
-	require.Error(t, idx.ReplaceBranch(context.Background(), one.BranchID, nil))
+			one, two := stubScope(), stubScope()
 
-	idx.idx = openIndex(t, indexPath(t), &stubSource{}).idx
+			require.NoError(t, idx.ReplaceBranch(context.Background(), one.BranchID, map[string]Block{
+				"a": one.Block("a", "paragraph", "alpha"),
+				"b": one.Block("b", "paragraph", "beta"),
+			}))
+			require.NoError(t, idx.ReplaceBranch(context.Background(), two.BranchID, map[string]Block{
+				"c": two.Block("c", "paragraph", "gamma"),
+			}))
+
+			return tcase{
+				Index:    idx,
+				BranchID: one.BranchID,
+				Entries: map[string]Block{
+					"a": one.Block("a", "paragraph", "alpha changed"),
+					"d": one.Block("d", "paragraph", "delta"),
+				},
+				Check: func(t *testing.T, idx *Index) {
+					ids, err := idx.ids(context.Background(), _fieldBranchID, one.BranchID.String())
+					require.NoError(t, err)
+					assert.ElementsMatch(t, []string{one.BranchID.String() + "-a", one.BranchID.String() + "-d"}, ids)
+					assert.Equal(t, []string{"alpha changed"}, texts(t, idx, "alpha"))
+					assert.Empty(t, texts(t, idx, "beta"))
+					assert.Equal(t, []string{"gamma"}, texts(t, idx, "gamma"))
+				},
+			}
+		}(),
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			err := c.Index.ReplaceBranch(context.Background(), c.BranchID, c.Entries)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if c.Check != nil {
+				c.Check(t, c.Index)
+			}
+		})
+	}
 }
 
 func Test_Index_DeleteBranch(t *testing.T) {
 	t.Parallel()
 
-	idx := openIndex(t, indexPath(t), &stubSource{})
+	idx := openIndex(t, filepath.Join(t.TempDir(), "index"), &stubSource{})
 	defer func() { require.NoError(t, idx.Close()) }()
 
 	one, two := stubScope(), stubScope()
@@ -439,14 +504,19 @@ func Test_Index_DeleteBranch(t *testing.T) {
 
 	require.NoError(t, idx.DeleteBranch(context.Background(), one.BranchID))
 
-	assert.Empty(t, entryIDs(t, idx, _fieldBranchID, one.BranchID.String()))
-	assert.Len(t, entryIDs(t, idx, _fieldBranchID, two.BranchID.String()), 1)
+	ids, err := idx.ids(context.Background(), _fieldBranchID, one.BranchID.String())
+	require.NoError(t, err)
+	assert.Empty(t, ids)
+
+	ids, err = idx.ids(context.Background(), _fieldBranchID, two.BranchID.String())
+	require.NoError(t, err)
+	assert.Len(t, ids, 1)
 }
 
 func Test_Index_DeleteDocument(t *testing.T) {
 	t.Parallel()
 
-	idx := openIndex(t, indexPath(t), &stubSource{})
+	idx := openIndex(t, filepath.Join(t.TempDir(), "index"), &stubSource{})
 	defer func() { require.NoError(t, idx.Close()) }()
 
 	one, two := stubScope(), stubScope()
@@ -459,14 +529,19 @@ func Test_Index_DeleteDocument(t *testing.T) {
 
 	require.NoError(t, idx.DeleteDocument(context.Background(), one.DocumentID))
 
-	assert.Empty(t, entryIDs(t, idx, _fieldDocumentID, one.DocumentID.String()))
-	assert.Len(t, entryIDs(t, idx, _fieldDocumentID, two.DocumentID.String()), 1)
+	ids, err := idx.ids(context.Background(), _fieldDocumentID, one.DocumentID.String())
+	require.NoError(t, err)
+	assert.Empty(t, ids)
+
+	ids, err = idx.ids(context.Background(), _fieldDocumentID, two.DocumentID.String())
+	require.NoError(t, err)
+	assert.Len(t, ids, 1)
 }
 
 func Test_Index_DeleteOrganization(t *testing.T) {
 	t.Parallel()
 
-	idx := openIndex(t, indexPath(t), &stubSource{})
+	idx := openIndex(t, filepath.Join(t.TempDir(), "index"), &stubSource{})
 	defer func() { require.NoError(t, idx.Close()) }()
 
 	one, two := stubScope(), stubScope()
@@ -477,39 +552,94 @@ func Test_Index_DeleteOrganization(t *testing.T) {
 
 	require.NoError(t, idx.DeleteOrganization(context.Background(), "org-1"))
 
-	assert.Empty(t, entryIDs(t, idx, _fieldOrganizationID, "org-1"))
-	assert.Len(t, entryIDs(t, idx, _fieldOrganizationID, "org-2"), 1)
+	ids, err := idx.ids(context.Background(), _fieldOrganizationID, "org-1")
+	require.NoError(t, err)
+	assert.Empty(t, ids)
+
+	ids, err = idx.ids(context.Background(), _fieldOrganizationID, "org-2")
+	require.NoError(t, err)
+	assert.Len(t, ids, 1)
 }
 
 func Test_Index_deleteByTerm(t *testing.T) {
 	t.Parallel()
 
-	idx := openIndex(t, indexPath(t), &stubSource{})
-	defer func() { require.NoError(t, idx.Close()) }()
+	type tcase struct {
+		Index *Index
+		Value string
+		Err   error
+		Check func(t *testing.T, idx *Index)
+	}
 
-	scope := stubScope()
+	cc := map[string]tcase{
+		// a closed index fails the lookup.
+		"Error returned by ids": func() tcase {
+			idx := openIndex(t, filepath.Join(t.TempDir(), "index"), &stubSource{})
+			require.NoError(t, idx.Close())
 
-	require.NoError(t, idx.ReplaceBranch(context.Background(), scope.BranchID, map[string]Block{"a": scope.Block("a", "paragraph", "alpha")}))
+			return tcase{
+				Index: idx,
+				Value: stubScope().BranchID.String(),
+				Err:   assert.AnError,
+			}
+		}(),
+		// nothing under the value: no batch is written.
+		"Nothing under the value": func() tcase {
+			idx := openIndex(t, filepath.Join(t.TempDir(), "index"), &stubSource{})
+			t.Cleanup(func() { require.NoError(t, idx.Close()) })
 
-	// nothing under the value: no batch is written.
-	require.NoError(t, idx.deleteByTerm(context.Background(), _fieldBranchID, "missing"))
-	assert.Len(t, entryIDs(t, idx, _fieldBranchID, scope.BranchID.String()), 1)
+			scope := stubScope()
 
-	// success
-	require.NoError(t, idx.deleteByTerm(context.Background(), _fieldBranchID, scope.BranchID.String()))
-	assert.Empty(t, entryIDs(t, idx, _fieldBranchID, scope.BranchID.String()))
+			require.NoError(t, idx.ReplaceBranch(context.Background(), scope.BranchID, map[string]Block{"a": scope.Block("a", "paragraph", "alpha")}))
 
-	// a closed index fails the lookup.
-	require.NoError(t, idx.idx.Close())
-	require.Error(t, idx.deleteByTerm(context.Background(), _fieldBranchID, scope.BranchID.String()))
+			return tcase{
+				Index: idx,
+				Value: "missing",
+				Check: func(t *testing.T, idx *Index) {
+					ids, err := idx.ids(context.Background(), _fieldBranchID, scope.BranchID.String())
+					require.NoError(t, err)
+					assert.Len(t, ids, 1)
+				},
+			}
+		}(),
+		"Successful deletion": func() tcase {
+			idx := openIndex(t, filepath.Join(t.TempDir(), "index"), &stubSource{})
+			t.Cleanup(func() { require.NoError(t, idx.Close()) })
 
-	idx.idx = openIndex(t, indexPath(t), &stubSource{}).idx
+			scope := stubScope()
+
+			require.NoError(t, idx.ReplaceBranch(context.Background(), scope.BranchID, map[string]Block{"a": scope.Block("a", "paragraph", "alpha")}))
+
+			return tcase{
+				Index: idx,
+				Value: scope.BranchID.String(),
+				Check: func(t *testing.T, idx *Index) {
+					ids, err := idx.ids(context.Background(), _fieldBranchID, scope.BranchID.String())
+					require.NoError(t, err)
+					assert.Empty(t, ids)
+				},
+			}
+		}(),
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			err := c.Index.deleteByTerm(context.Background(), _fieldBranchID, c.Value)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if c.Check != nil {
+				c.Check(t, c.Index)
+			}
+		})
+	}
 }
 
 func Test_Index_ids(t *testing.T) {
 	t.Parallel()
 
-	idx := openIndex(t, indexPath(t), &stubSource{})
+	idx := openIndex(t, filepath.Join(t.TempDir(), "index"), &stubSource{})
 	defer func() { require.NoError(t, idx.Close()) }()
 
 	scope := stubScope()
@@ -523,7 +653,8 @@ func Test_Index_ids(t *testing.T) {
 	require.NoError(t, idx.ReplaceBranch(context.Background(), scope.BranchID, entries))
 
 	// every page is read, without duplicates.
-	ids := entryIDs(t, idx, _fieldBranchID, scope.BranchID.String())
+	ids, err := idx.ids(context.Background(), _fieldBranchID, scope.BranchID.String())
+	require.NoError(t, err)
 	assert.Len(t, ids, _idsPage+1)
 
 	seen := make(map[string]struct{}, len(ids))
@@ -538,6 +669,6 @@ func Test_Index_ids(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := idx.ids(ctx, _fieldBranchID, scope.BranchID.String())
+	_, err = idx.ids(ctx, _fieldBranchID, scope.BranchID.String())
 	require.Error(t, err)
 }

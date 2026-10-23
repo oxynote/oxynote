@@ -2,26 +2,19 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// gatedTool returns the named tool as the registry stored it, wrapper
-// and all, so a test exercises what the agent actually runs.
-func gatedTool(t *testing.T, s *Set, name Name) tool.InvokableTool {
-	t.Helper()
-
-	it, ok := s.tools[name]
-	require.True(t, ok, "%s is not in the registry", name)
-
-	return it
-}
 
 // gateCase is one Test_confirming_InvokableRun scenario.
 type gateCase struct {
@@ -55,6 +48,15 @@ type gateCase struct {
 	// RespJSON is the final tool result when the run completes.
 	RespJSON string
 
+	// FetchDocumentCalls is the number of default branch reads.
+	FetchDocumentCalls int
+
+	// FetchDocumentByBranchIDCalls is the number of branch reads.
+	FetchDocumentByBranchIDCalls int
+
+	// FetchDocumentTreeCalls is the number of document tree reads.
+	FetchDocumentTreeCalls int
+
 	// ApplyCalls is the number of edits that must have reached the
 	// applier.
 	ApplyCalls int
@@ -72,53 +74,80 @@ func Test_confirming_InvokableRun(t *testing.T) {
 	// edit before interrupting would apply it a second time.
 	cc := map[string]gateCase{
 		"Insert blocks asks first": {
-			Name:        NameInsertBlocks,
-			Args:        `{` + targetArgs(_stubMainBranchID) + `,"reference_block_uid":"b","position":"after","content":"<p>x</p>"}`,
-			Interrupted: true,
+			Name:                         NameInsertBlocks,
+			Args:                         `{` + targetArgs(_stubMainBranchID) + `,"reference_block_uid":"b","position":"after","content":"<p>x</p>"}`,
+			Interrupted:                  true,
+			FetchDocumentByBranchIDCalls: 1,
 		},
-		"Delete block asks first":    {Name: NameDeleteBlock, Args: deleteArgs, Interrupted: true},
-		"Delete document asks first": {Name: NameDeleteDocument, Args: `{"document_id":"` + docID.String() + `"}`, Interrupted: true},
-		"Update document asks first": {Name: NameUpdateDocument, Args: `{"document_id":"` + docID.String() + `","name":"n"}`, Interrupted: true},
+		"Delete block asks first": {
+			Name:                         NameDeleteBlock,
+			Args:                         deleteArgs,
+			Interrupted:                  true,
+			FetchDocumentByBranchIDCalls: 1,
+		},
+		"Delete document asks first": {
+			Name:                   NameDeleteDocument,
+			Args:                   `{"document_id":"` + docID.String() + `"}`,
+			Interrupted:            true,
+			FetchDocumentCalls:     1,
+			FetchDocumentTreeCalls: 1,
+		},
+		"Update document asks first": {
+			Name:               NameUpdateDocument,
+			Args:               `{"document_id":"` + docID.String() + `","name":"n"}`,
+			Interrupted:        true,
+			FetchDocumentCalls: 1,
+		},
 		"Create document asks first": {Name: NameCreateDocument, Args: `{"name":"n"}`, Interrupted: true},
-		"Replace blocks asks first":  {Name: NameReplaceBlocks, Args: writeArgs, Interrupted: true},
+		"Replace blocks asks first": {
+			Name:                         NameReplaceBlocks,
+			Args:                         writeArgs,
+			Interrupted:                  true,
+			FetchDocumentByBranchIDCalls: 1,
+		},
 		"Approve-all covers a later non-destructive write": {
-			Name:        NameReplaceBlocks,
-			Args:        writeArgs,
-			AutoApprove: true,
-			RespJSON:    `{"content":"<p id=\"a\">hi</p>\n"}`,
-			ApplyCalls:  1,
+			Name:                         NameReplaceBlocks,
+			Args:                         writeArgs,
+			AutoApprove:                  true,
+			RespJSON:                     `{"content":"<p id=\"a\">hi</p>\n"}`,
+			FetchDocumentByBranchIDCalls: 1,
+			ApplyCalls:                   1,
 		},
 		"Approve-all never covers a destructive write": {
-			Name:        NameDeleteBlock,
-			Args:        deleteArgs,
-			AutoApprove: true,
-			Interrupted: true,
+			Name:                         NameDeleteBlock,
+			Args:                         deleteArgs,
+			AutoApprove:                  true,
+			Interrupted:                  true,
+			FetchDocumentByBranchIDCalls: 1,
 		},
 		"Approved confirmation reruns the tool": {
-			Name:       NameReplaceBlocks,
-			Args:       writeArgs,
-			Decision:   &Decision{Approved: true},
-			RespJSON:   `{"content":"<p id=\"a\">hi</p>\n"}`,
-			ApplyCalls: 1,
+			Name:                         NameReplaceBlocks,
+			Args:                         writeArgs,
+			Decision:                     &Decision{Approved: true},
+			RespJSON:                     `{"content":"<p id=\"a\">hi</p>\n"}`,
+			FetchDocumentByBranchIDCalls: 2,
+			ApplyCalls:                   1,
 		},
 		"Declined confirmation reports the refusal": {
-			Name:     NameReplaceBlocks,
-			Args:     writeArgs,
-			Decision: &Decision{Approved: false},
-			RespJSON: `{"approved":false,"reason":"user declined"}`,
+			Name:                         NameReplaceBlocks,
+			Args:                         writeArgs,
+			Decision:                     &Decision{Approved: false},
+			RespJSON:                     `{"approved":false,"reason":"user declined"}`,
+			FetchDocumentByBranchIDCalls: 1,
 		},
 		"Resume of another interrupt point re-interrupts": {
-			Name:        NameReplaceBlocks,
-			Args:        writeArgs,
-			ResumeOther: true,
-			Interrupted: true,
+			Name:                         NameReplaceBlocks,
+			Args:                         writeArgs,
+			ResumeOther:                  true,
+			Interrupted:                  true,
+			FetchDocumentByBranchIDCalls: 2,
 		},
-		"Unreadable arguments are refused, never confirmed": {
+		"Unreadable arguments are refused and never confirmed": {
 			Name:     NameReplaceBlocks,
 			Args:     `{`,
 			Rejected: "replace_blocks: invalid input",
 		},
-		"Missing arguments are refused, never confirmed": {
+		"Missing arguments are refused and never confirmed": {
 			Name:     NameReplaceBlocks,
 			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"b"}`,
 			Rejected: "replace_blocks: content is required",
@@ -129,41 +158,100 @@ func Test_confirming_InvokableRun(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			db := stubContentDB(nil)
 			applier := stubApplier()
-			ct := gatedTool(t, New(testDeps(stubContentDB(nil), applier, nil)), c.Name)
 
-			if c.Rejected != "" {
-				// the same payload would be rejected by the tool on
-				// resume, so the run must not spend a confirmation on
-				// it. The rejection is the call's result, not an
-				// error: an error would end the turn, and the payload
-				// is the model's to fix.
-				res, rerr := ct.InvokableRun(context.Background(), c.Args)
-				require.NoError(t, rerr, "bad arguments must not end the turn")
-				assert.Contains(t, res, c.Rejected)
-				assert.Empty(t, applier.ApplyCalls())
-
-				return
-			}
+			// the tool as the registry stored it, wrapper and all, so the
+			// test exercises what the agent actually runs.
+			ct, ok := New(testDeps(db, applier, nil)).tools[c.Name]
+			require.True(t, ok, "%s is not in the registry", c.Name)
 
 			var (
 				res string
 				err error
 			)
 
-			if c.AutoApprove {
-				res, err = runGateInSession(ct, c.Args)
-			} else {
-				res, err = runGateParked(t, ct, c)
+			switch {
+			case c.Rejected != "":
+				// the same payload would be rejected by the tool on
+				// resume, so the run must not spend a confirmation on
+				// it. The rejection is the call's result, not an
+				// error: an error would end the turn, and the payload
+				// is the model's to fix.
+				res, err = ct.InvokableRun(context.Background(), c.Args)
+				require.NoError(t, err, "bad arguments must not end the turn")
+				assert.Contains(t, res, c.Rejected)
+			case c.AutoApprove:
+				// the approve-all answer travels as a session value of an
+				// adk run.
+				ag := &sessionAgent{tool: ct, args: c.Args}
+
+				iter := adk.NewRunner(context.Background(), adk.RunnerConfig{Agent: ag}).Run(
+					context.Background(),
+					[]adk.Message{schema.UserMessage("go")},
+					adk.WithSessionValues(map[string]any{SessionKeyAutoApprove: true}),
+				)
+
+				for {
+					if _, ok := iter.Next(); !ok {
+						break
+					}
+				}
+
+				res, err = ag.res, ag.err
+			default:
+				// a one-node checkpointed graph is the smallest host that
+				// can park the gate on its interrupt and resume it with the
+				// case's answer.
+				g := compose.NewGraph[string, string]()
+				require.NoError(t, g.AddLambdaNode("gate", compose.InvokableLambda(
+					func(ctx context.Context, _ string) (string, error) {
+						return ct.InvokableRun(ctx, c.Args)
+					},
+				)))
+				require.NoError(t, g.AddEdge(compose.START, "gate"))
+				require.NoError(t, g.AddEdge("gate", compose.END))
+
+				r, cerr := g.Compile(
+					context.Background(),
+					compose.WithCheckPointStore(&memStore{m: map[string][]byte{}}),
+				)
+				require.NoError(t, cerr)
+
+				_, err = r.Invoke(context.Background(), "go", compose.WithCheckPointID("cp"))
+				id := requireConfirmInterrupt(t, err, c.Name)
+
+				// a case without an answer leaves the confirmation pending.
+				switch {
+				case c.ResumeOther:
+					ctx := compose.ResumeWithData(context.Background(), "not-this-confirmation", Decision{Approved: true})
+					res, err = r.Invoke(ctx, "go", compose.WithCheckPointID("cp"))
+				case c.Decision != nil:
+					ctx := compose.ResumeWithData(context.Background(), id, *c.Decision)
+					res, err = r.Invoke(ctx, "go", compose.WithCheckPointID("cp"))
+				}
 			}
 
 			if c.Interrupted {
 				requireConfirmInterrupt(t, err, c.Name)
 			}
 
+			assert.Len(t, db.FetchDocumentCalls(), c.FetchDocumentCalls)
+			assert.Len(t, db.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchIDCalls)
+			assert.Len(t, db.FetchDocumentTreeCalls(), c.FetchDocumentTreeCalls)
 			assert.Len(t, applier.ApplyCalls(), c.ApplyCalls)
 
-			if c.Interrupted {
+			// no case fails a branch lookup, names a data source or a
+			// parent, or runs create_document or delete_document past
+			// the gate.
+			assert.Empty(t, db.FetchDocumentBranchesCalls())
+			assert.Empty(t, db.FetchDataSourceCalls())
+			assert.Empty(t, db.CheckDocumentExistsCalls())
+			assert.Empty(t, db.CheckDocumentCycleCalls())
+			assert.Empty(t, db.UpdateDocumentParentIDCalls())
+			assert.Empty(t, db.BeginTxCalls())
+
+			if c.Interrupted || c.Rejected != "" {
 				return
 			}
 
@@ -171,78 +259,6 @@ func Test_confirming_InvokableRun(t *testing.T) {
 			assert.JSONEq(t, c.RespJSON, res)
 		})
 	}
-}
-
-// runGateInSession runs one gated tool call inside an adk run carrying
-// an approve-all answer, which is the only host whose context has
-// session values, and returns the captured outcome.
-func runGateInSession(ct tool.InvokableTool, args string) (string, error) {
-	ag := &sessionAgent{tool: ct, args: args}
-
-	iter := adk.NewRunner(context.Background(), adk.RunnerConfig{Agent: ag}).Run(
-		context.Background(),
-		[]adk.Message{schema.UserMessage("go")},
-		adk.WithSessionValues(map[string]any{SessionKeyAutoApprove: true}),
-	)
-
-	for {
-		if _, ok := iter.Next(); !ok {
-			break
-		}
-	}
-
-	return ag.res, ag.err
-}
-
-// runGateParked hosts the gated tool in a checkpointed graph, asserts
-// the run parks on the tool's confirmation, and replays the case's
-// answer — or leaves the confirmation unanswered when the case gives
-// none.
-func runGateParked(t *testing.T, ct tool.InvokableTool, c gateCase) (string, error) {
-	t.Helper()
-
-	r := gateHost(t, ct, c.Args)
-
-	_, err := r.Invoke(context.Background(), "go", compose.WithCheckPointID("cp"))
-	id := requireConfirmInterrupt(t, err, c.Name)
-
-	if c.Decision == nil && !c.ResumeOther {
-		return "", err
-	}
-
-	ctx := context.Background()
-
-	if c.ResumeOther {
-		ctx = compose.ResumeWithData(ctx, "not-this-confirmation", Decision{Approved: true})
-	} else {
-		ctx = compose.ResumeWithData(ctx, id, *c.Decision)
-	}
-
-	return r.Invoke(ctx, "go", compose.WithCheckPointID("cp"))
-}
-
-// gateHost compiles a one-node graph around the gated tool, the
-// smallest host that can park the gate on its interrupt and resume it
-// with the user's answer.
-func gateHost(t *testing.T, ct tool.InvokableTool, args string) compose.Runnable[string, string] {
-	t.Helper()
-
-	g := compose.NewGraph[string, string]()
-	require.NoError(t, g.AddLambdaNode("gate", compose.InvokableLambda(
-		func(ctx context.Context, _ string) (string, error) {
-			return ct.InvokableRun(ctx, args)
-		},
-	)))
-	require.NoError(t, g.AddEdge(compose.START, "gate"))
-	require.NoError(t, g.AddEdge("gate", compose.END))
-
-	r, err := g.Compile(
-		context.Background(),
-		compose.WithCheckPointStore(&memStore{m: map[string][]byte{}}),
-	)
-	require.NoError(t, err)
-
-	return r
 }
 
 // requireConfirmInterrupt asserts that err is an interrupt carrying the
@@ -333,10 +349,128 @@ func (s *memStore) Set(_ context.Context, id string, data []byte) error {
 	return nil
 }
 
+func Test_confirming_interrupt(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Args string
+
+		// FetchDocumentByBranchIDCalls is how many times the summary
+		// reads the branch.
+		FetchDocumentByBranchIDCalls int
+
+		// Interrupted expects the run to park on a pending confirmation.
+		Interrupted bool
+
+		// Rejected is the text the refusal carries when the arguments
+		// cannot be described.
+		Rejected string
+	}{
+		"Unreadable arguments are refused": {
+			Args:     `{`,
+			Rejected: "replace_blocks: invalid input",
+		},
+		"Block the document does not hold is refused": {
+			Args:                         `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"zzz","content":"<p>x</p>"}`,
+			FetchDocumentByBranchIDCalls: 1,
+			Rejected:                     fmt.Sprintf("%s: block zzz: %v", NameReplaceBlocks, errUnknownBlock),
+		},
+		"Described write is parked": {
+			Args:                         `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","content":"<p id=\"a\">hi</p>"}`,
+			FetchDocumentByBranchIDCalls: 1,
+			Interrupted:                  true,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := stubContentDB(nil)
+			applier := stubApplier()
+			gate := &confirming{einoTool: newEinoTool(replaceBlocks{}, testDeps(db, applier, nil))}
+
+			res, err := gate.interrupt(context.Background(), json.RawMessage(c.Args))
+
+			assert.Len(t, db.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchIDCalls)
+			assert.Empty(t, db.FetchDocumentBranchesCalls())
+			assert.Empty(t, applier.ApplyCalls())
+
+			if c.Interrupted {
+				requireConfirmInterrupt(t, err, NameReplaceBlocks)
+
+				return
+			}
+
+			// a refusal is the call's result, so the model can fix the
+			// payload instead of the turn ending.
+			require.NoError(t, err)
+			assert.Contains(t, res, c.Rejected)
+		})
+	}
+}
+
 func Test_autoApproved(t *testing.T) {
 	t.Parallel()
 
-	// outside an agent run there is no session, so nothing is
-	// auto-approved and the gate always prompts.
-	assert.False(t, autoApproved(context.Background()))
+	cc := map[string]struct {
+		// Session holds the session values of the adk run the check runs
+		// in. Nil runs it outside any run.
+		Session map[string]any
+		Result  bool
+	}{
+		// outside an agent run there is no session, so nothing is
+		// auto-approved and the gate always prompts.
+		"Outside an agent run": {
+			Result: false,
+		},
+		"Every write approved for the turn": {
+			Session: map[string]any{SessionKeyAutoApprove: true},
+			Result:  true,
+		},
+		"Approval withdrawn": {
+			Session: map[string]any{SessionKeyAutoApprove: false},
+			Result:  false,
+		},
+		"Session value that is not a bool": {
+			Session: map[string]any{SessionKeyAutoApprove: "true"},
+			Result:  false,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			if c.Session == nil {
+				assert.Equal(t, c.Result, autoApproved(context.Background()))
+
+				return
+			}
+
+			// session values exist only inside an adk run, so the check
+			// runs there as a tool call.
+			ag := &sessionAgent{
+				tool: utils.NewTool(&schema.ToolInfo{Name: "probe"}, func(ctx context.Context, _ struct{}) (bool, error) {
+					return autoApproved(ctx), nil
+				}),
+				args: `{}`,
+			}
+
+			iter := adk.NewRunner(context.Background(), adk.RunnerConfig{Agent: ag}).Run(
+				context.Background(),
+				[]adk.Message{schema.UserMessage("go")},
+				adk.WithSessionValues(c.Session),
+			)
+
+			for {
+				if _, ok := iter.Next(); !ok {
+					break
+				}
+			}
+
+			require.NoError(t, ag.err)
+			assert.Equal(t, strconv.FormatBool(c.Result), ag.res)
+		})
+	}
 }

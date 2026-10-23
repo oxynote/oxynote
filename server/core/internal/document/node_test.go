@@ -99,24 +99,51 @@ func Test_Block_FirstChild(t *testing.T) {
 
 	item := stubTree().Content[1].Content[0]
 
-	assert.Equal(t, item.Content[0], item.FirstChild(BlockNodeParagraph))
-	assert.Equal(t, Block{}, item.FirstChild(BlockNodeHeading))
+	cc := map[string]struct {
+		Type   BlockNodeType
+		Result Block
+	}{
+		"Child of the type":    {Type: BlockNodeParagraph, Result: item.Content[0]},
+		"No child of the type": {Type: BlockNodeHeading, Result: Block{}},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, item.FirstChild(c.Type))
+		})
+	}
 }
 
 func Test_Block_PlainText(t *testing.T) {
 	t.Parallel()
 
-	b := Block{
-		Type: BlockNodeParagraph,
-		Content: []Block{
-			{Type: BlockNodeText, Text: "a "},
-			{Type: BlockNodeImageBlock},
-			{Type: BlockNodeText, Text: "b", Marks: []Mark{{Type: "bold"}}},
+	cc := map[string]struct {
+		Block  Block
+		Result string
+	}{
+		"Text and other children": {
+			Block: Block{
+				Type: BlockNodeParagraph,
+				Content: []Block{
+					{Type: BlockNodeText, Text: "a "},
+					{Type: BlockNodeImageBlock},
+					{Type: BlockNodeText, Text: "b", Marks: []Mark{{Type: "bold"}}},
+				},
+			},
+			Result: "a b",
 		},
+		"No children": {Block: Block{}, Result: ""},
 	}
 
-	assert.Equal(t, "a b", b.PlainText())
-	assert.Empty(t, Block{}.PlainText())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Block.PlainText())
+		})
+	}
 }
 
 func Test_Mark_Equal(t *testing.T) {
@@ -124,10 +151,24 @@ func Test_Mark_Equal(t *testing.T) {
 
 	link := Mark{Type: "link", Attrs: Attributes{"href": "https://x.test", "title": nil}}
 
-	assert.True(t, link.Equal(Mark{Type: "link", Attrs: Attributes{"href": "https://x.test", "title": nil}}))
-	assert.False(t, link.Equal(Mark{Type: "link", Attrs: Attributes{"href": "https://y.test", "title": nil}}))
-	assert.False(t, link.Equal(Mark{Type: "bold"}))
-	assert.True(t, Mark{Type: "bold"}.Equal(Mark{Type: "bold", Attrs: Attributes{}}))
+	cc := map[string]struct {
+		Mark   Mark
+		Other  Mark
+		Result bool
+	}{
+		"Same attributes":          {Mark: link, Other: Mark{Type: "link", Attrs: Attributes{"href": "https://x.test", "title": nil}}, Result: true},
+		"Different attributes":     {Mark: link, Other: Mark{Type: "link", Attrs: Attributes{"href": "https://y.test", "title": nil}}},
+		"Different type":           {Mark: link, Other: Mark{Type: "bold"}},
+		"Nil and empty attributes": {Mark: Mark{Type: "bold"}, Other: Mark{Type: "bold", Attrs: Attributes{}}, Result: true},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Mark.Equal(c.Other))
+		})
+	}
 }
 
 // stubMarkedTree builds a tree with comment marks, nodeCommentId
@@ -481,21 +522,36 @@ func Test_RootBlock_Scan(t *testing.T) {
 	val, err := orig.Value()
 	require.NoError(t, err)
 
-	var decoded RootBlock
-
-	require.NoError(t, decoded.Scan(val))
-	assert.Equal(t, orig, decoded)
-
 	data, ok := val.([]byte)
 	require.True(t, ok)
 
-	var fromString RootBlock
+	cc := map[string]struct {
+		Src    any
+		Result RootBlock
+		Err    error
+	}{
+		"Bytes source":            {Src: val, Result: orig},
+		"String source":           {Src: string(data), Result: orig},
+		"Unsupported source type": {Src: 42, Err: assert.AnError},
+		"Malformed JSON":          {Src: []byte(`{not json`), Err: assert.AnError},
+	}
 
-	require.NoError(t, fromString.Scan(string(data)))
-	assert.Equal(t, orig, fromString)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	assert.Error(t, decoded.Scan(42))
-	assert.Error(t, decoded.Scan([]byte(`{not json`)))
+			var rb RootBlock
+
+			err := rb.Scan(c.Src)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, rb)
+		})
+	}
 }
 
 // assertUIDsRemapped checks that the uid map pairs every block uid of the

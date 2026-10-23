@@ -2,7 +2,6 @@ package datasource
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -24,11 +23,6 @@ var _testTimeRange = processor.TimeRange{
 	To:   time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
 }
 
-// discardLog returns a logger that writes nowhere.
-func discardLog() *slog.Logger {
-	return slog.New(slog.DiscardHandler)
-}
-
 // prepPrometheusServer starts a fake Prometheus API server serving the
 // provided handler. Its cleanup also drops the Prometheus client's shared
 // keep-alive connections so goleak stays clean.
@@ -43,20 +37,6 @@ func prepPrometheusServer(t *testing.T, h http.Handler) *httptest.Server {
 	})
 
 	return srv
-}
-
-// prometheusBuildinfoHandler serves the Prometheus buildinfo endpoint with
-// the given status code and version, 404-ing every other path.
-func prometheusBuildinfoHandler(code int, version string) http.Handler {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/api/v1/status/buildinfo", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(code)
-		fmt.Fprintf(w, `{"status":"success","data":{"version":"%s"}}`, version) //nolint:errcheck // error provides no meaningful info
-	})
-
-	return mux
 }
 
 // prometheusAPIHandler serves canned successful responses for every
@@ -87,7 +67,7 @@ func prepRunner(typ Type, url string, store *StatusStoreMock) *runner {
 		store = &StatusStoreMock{}
 	}
 
-	m := NewManager(discardLog(), store)
+	m := NewManager(slog.New(slog.DiscardHandler), store)
 
 	r, ok := m.Runner(DataSource{
 		ID:             xid.New(),
@@ -109,10 +89,11 @@ func Test_NewManager(t *testing.T) {
 
 	store := &StatusStoreMock{}
 
-	m := NewManager(discardLog(), store)
+	m := NewManager(slog.New(slog.DiscardHandler), store)
 	require.NotNil(t, m)
 	assert.NotNil(t, m.log)
 	assert.Same(t, store, m.store)
+	assert.NotNil(t, m.demo)
 }
 
 func Test_Manager_Runner(t *testing.T) {
@@ -121,7 +102,7 @@ func Test_Manager_Runner(t *testing.T) {
 	store := &StatusStoreMock{}
 	ds := DataSource{Type: TypePrometheus, URL: "http://prometheus.test"}
 
-	m := NewManager(discardLog(), store)
+	m := NewManager(slog.New(slog.DiscardHandler), store)
 
 	r, ok := m.Runner(ds).(*runner)
 	require.True(t, ok)
@@ -170,12 +151,12 @@ func Test_runner_TestConnection(t *testing.T) {
 		},
 		"A connection that answers": {
 			Type:    TypePrometheus,
-			Handler: prometheusBuildinfoHandler(http.StatusOK, "2.50.0"),
+			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusOK, `{"status":"success","data":{"version":"2.50.0"}}`),
 			Result:  processor.ConnectionStatusSuccess,
 		},
 		"A connection that does not": {
 			Type:    TypePrometheus,
-			Handler: prometheusBuildinfoHandler(http.StatusInternalServerError, ""),
+			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusInternalServerError, `{}`),
 			Result:  processor.ConnectionStatusUnreachable,
 		},
 	}
@@ -201,16 +182,16 @@ func Test_runner_TestConnection(t *testing.T) {
 
 			testutil.AssertEqualError(t, c.Err, err)
 
+			// an explicit test is asked about a data source that is
+			// being created or changed, so what it finds is reported and
+			// not recorded.
+			assert.Empty(t, store.UpdateDataSourceStatusCalls())
+
 			if c.Err != nil {
 				return
 			}
 
 			assert.Equal(t, c.Result, cs)
-
-			// an explicit test is asked about a data source that is
-			// being created or changed, so what it finds is reported and
-			// not recorded.
-			assert.Empty(t, store.UpdateDataSourceStatusCalls())
 		})
 	}
 }
@@ -221,6 +202,7 @@ func Test_runner_Prometheus(t *testing.T) {
 	cc := map[string]struct {
 		Type    Type
 		Handler http.Handler
+		Written int
 		Err     error
 	}{
 		"A Prometheus data source hands out its client": {
@@ -231,13 +213,15 @@ func Test_runner_Prometheus(t *testing.T) {
 			Type: TypePostgreSQL,
 			Err:  assert.AnError,
 		},
-		"A type with no processor behind it": {
-			Type: TypePrometheus,
-			Err:  assert.AnError,
+		"A Prometheus data source with no address": {
+			Type:    TypePrometheus,
+			Written: 1,
+			Err:     assert.AnError,
 		},
 		"A connection the data source refused": {
 			Type:    TypePrometheus,
-			Handler: prometheusBuildinfoHandler(http.StatusInternalServerError, ""),
+			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusInternalServerError, `{}`),
+			Written: 1,
 			Err:     assert.AnError,
 		},
 	}
@@ -251,9 +235,12 @@ func Test_runner_Prometheus(t *testing.T) {
 				url = prepPrometheusServer(t, c.Handler).URL
 			}
 
-			client, err := prepRunner(c.Type, url, nil).Prometheus(context.Background())
+			store := &StatusStoreMock{}
+
+			client, err := prepRunner(c.Type, url, store).Prometheus(context.Background())
 
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, store.UpdateDataSourceStatusCalls(), c.Written)
 
 			if c.Err != nil {
 				assert.Nil(t, client)
@@ -290,40 +277,121 @@ func Test_runner_Prometheus(t *testing.T) {
 func Test_runner_PostgreSQL(t *testing.T) {
 	t.Parallel()
 
-	// a PostgreSQL data source pointed nowhere still resolves its
-	// processor; what fails is the connection, which the accessor
-	// reports as the error it is.
-	_, err := prepRunner(TypePostgreSQL, "postgres://user:pass@127.0.0.1:1/db", nil).
-		PostgreSQL(context.Background())
-	require.Error(t, err)
+	cc := map[string]struct {
+		Type    Type
+		URL     string
+		Written int
+		Err     error
+	}{
+		// a PostgreSQL data source pointed nowhere still resolves its
+		// processor; what fails is the connection, which the accessor
+		// reports as the error it is.
+		"A connection the data source refused": { //nolint:gosec // static test credentials
+			Type:    TypePostgreSQL,
+			URL:     "postgres://user:pass@127.0.0.1:1/db",
+			Written: 1,
+			Err:     assert.AnError,
+		},
+		"A data source of another type": {
+			Type: TypePrometheus,
+			Err:  assert.AnError,
+		},
+	}
 
-	_, err = prepRunner(TypePrometheus, "", nil).PostgreSQL(context.Background())
-	require.Error(t, err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			store := &StatusStoreMock{}
+
+			_, err := prepRunner(c.Type, c.URL, store).PostgreSQL(context.Background())
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, store.UpdateDataSourceStatusCalls(), c.Written)
+		})
+	}
 }
 
 func Test_runner_MySQL(t *testing.T) {
 	t.Parallel()
 
-	for _, typ := range []Type{TypeMySQL, TypeMariaDB} {
-		_, err := prepRunner(typ, "user:pass@tcp(127.0.0.1:1)/db", nil).MySQL(context.Background())
-		require.Error(t, err, "type %s", typ)
+	cc := map[string]struct {
+		Type    Type
+		URL     string
+		Written int
+		Err     error
+	}{
+		"A connection the MySQL data source refused": {
+			Type:    TypeMySQL,
+			URL:     "user:pass@tcp(127.0.0.1:1)/db",
+			Written: 1,
+			Err:     assert.AnError,
+		},
+		"A connection the MariaDB data source refused": {
+			Type:    TypeMariaDB,
+			URL:     "user:pass@tcp(127.0.0.1:1)/db",
+			Written: 1,
+			Err:     assert.AnError,
+		},
+		"A data source of another type": {
+			Type: TypePrometheus,
+			Err:  assert.AnError,
+		},
 	}
 
-	_, err := prepRunner(TypePrometheus, "", nil).MySQL(context.Background())
-	require.Error(t, err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			store := &StatusStoreMock{}
+
+			_, err := prepRunner(c.Type, c.URL, store).MySQL(context.Background())
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, store.UpdateDataSourceStatusCalls(), c.Written)
+		})
+	}
 }
 
 func Test_runner_SQL(t *testing.T) {
 	t.Parallel()
 
 	// every SQL dialect resolves through the same accessor
-	for _, typ := range []Type{TypePostgreSQL, TypeMySQL, TypeMariaDB} {
-		_, err := prepRunner(typ, "", nil).SQL(context.Background())
-		require.Error(t, err, "type %s", typ)
+	cc := map[string]struct {
+		Type    Type
+		Written int
+		Err     error
+	}{
+		"A PostgreSQL data source with no address": {
+			Type:    TypePostgreSQL,
+			Written: 1,
+			Err:     assert.AnError,
+		},
+		"A MySQL data source with no address": {
+			Type:    TypeMySQL,
+			Written: 1,
+			Err:     assert.AnError,
+		},
+		"A MariaDB data source with no address": {
+			Type:    TypeMariaDB,
+			Written: 1,
+			Err:     assert.AnError,
+		},
+		"A data source of another type": {
+			Type: TypePrometheus,
+			Err:  assert.AnError,
+		},
 	}
 
-	_, err := prepRunner(TypePrometheus, "", nil).SQL(context.Background())
-	require.Error(t, err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			store := &StatusStoreMock{}
+
+			_, err := prepRunner(c.Type, "", store).SQL(context.Background())
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, store.UpdateDataSourceStatusCalls(), c.Written)
+		})
+	}
 }
 
 func Test_connect(t *testing.T) {
@@ -331,43 +399,81 @@ func Test_connect(t *testing.T) {
 
 	srv := prepPrometheusServer(t, prometheusAPIHandler())
 
-	// a status the connection reported is recorded on the way through,
-	// so a data source read only by the assistant still has an honest
-	// row.
-	store := &StatusStoreMock{}
-	r := prepRunner(TypePrometheus, srv.URL, store)
-	r.ds.Status = processor.ConnectionStatusUnreachable
+	cc := map[string]struct {
+		Type          Type
+		URL           string
+		Allowed       []Type
+		Stored        processor.ConnectionStatus
+		Undecryptable bool
+		Recorded      []processor.ConnectionStatus
+		Err           error
+	}{
+		// a status the connection reported is recorded on the way
+		// through, so a data source read only by the assistant still has
+		// an honest row.
+		"A status the connection reported is recorded": {
+			Type:     TypePrometheus,
+			URL:      srv.URL,
+			Allowed:  []Type{TypePrometheus},
+			Stored:   processor.ConnectionStatusUnreachable,
+			Recorded: []processor.ConnectionStatus{processor.ConnectionStatusSuccess},
+		},
+		// credentials that cannot be decrypted end the call with the
+		// reason, which is recorded on the way out like any other status.
+		"Credentials that cannot be decrypted": {
+			Type:          TypePrometheus,
+			URL:           srv.URL,
+			Allowed:       []Type{TypePrometheus},
+			Stored:        processor.ConnectionStatusSuccess,
+			Undecryptable: true,
+			Recorded:      []processor.ConnectionStatus{processor.ConnectionStatusInvalidEncryptionKey},
+			Err:           processor.ConnectionStatusInvalidEncryptionKey.Error(),
+		},
+		"The wanted client is not one this data source serves": {
+			Type:    TypePostgreSQL,
+			Allowed: []Type{TypePrometheus},
+			Stored:  processor.ConnectionStatusSuccess,
+			Err:     assert.AnError,
+		},
+		"The data source has no processor at all": {
+			Type:    Type("bogus"),
+			Allowed: []Type{Type("bogus")},
+			Stored:  processor.ConnectionStatusSuccess,
+			Err:     assert.AnError,
+		},
+	}
 
-	client, err := connect[Prometheus](context.Background(), r, TypePrometheus)
-	require.NoError(t, err)
-	assert.NotNil(t, client)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	ff := store.UpdateDataSourceStatusCalls()
-	require.Len(t, ff, 1)
-	assert.Equal(t, r.ds.ID, ff[0].ID)
-	assert.Equal(t, "org", ff[0].OrganizationID)
-	assert.Equal(t, processor.ConnectionStatusSuccess, ff[0].Status)
+			store := &StatusStoreMock{}
+			r := prepRunner(c.Type, c.URL, store)
+			r.ds.Status = c.Stored
 
-	// credentials that cannot be decrypted end the call with the reason,
-	// which is recorded on the way out like any other status.
-	store = &StatusStoreMock{}
-	r = prepRunner(TypePrometheus, srv.URL, store)
-	r.ds.Credentials = undecryptableCredentials(t)
+			if c.Undecryptable {
+				r.ds.Credentials = undecryptableCredentials(t)
+			}
 
-	_, err = connect[Prometheus](context.Background(), r, TypePrometheus)
-	assert.Equal(t, processor.ConnectionStatusInvalidEncryptionKey.Error(), err)
+			client, err := connect[Prometheus](context.Background(), r, c.Allowed...)
+			testutil.AssertEqualError(t, c.Err, err)
 
-	ff = store.UpdateDataSourceStatusCalls()
-	require.Len(t, ff, 1)
-	assert.Equal(t, processor.ConnectionStatusInvalidEncryptionKey, ff[0].Status)
+			ff := store.UpdateDataSourceStatusCalls()
+			require.Len(t, ff, len(c.Recorded))
 
-	// the wanted client is not one this data source serves
-	_, err = connect[Prometheus](context.Background(), prepRunner(TypePostgreSQL, "", nil), TypePrometheus)
-	require.Error(t, err)
+			for i, status := range c.Recorded {
+				assert.Equal(t, r.ds.ID, ff[i].ID)
+				assert.Equal(t, "org", ff[i].OrganizationID)
+				assert.Equal(t, status, ff[i].Status)
+			}
 
-	// the data source has no processor at all
-	_, err = connect[Prometheus](context.Background(), prepRunner(Type("bogus"), "", nil), Type("bogus"))
-	require.Error(t, err)
+			if err != nil {
+				return
+			}
+
+			assert.NotNil(t, client)
+		})
+	}
 }
 
 func Test_runner_recordStatus(t *testing.T) {
@@ -377,6 +483,7 @@ func Test_runner_recordStatus(t *testing.T) {
 		Stored   processor.ConnectionStatus
 		Observed processor.ConnectionStatus
 		Store    *StatusStoreMock
+		NoStore  bool
 		Written  int
 	}{
 		"A status that changed is written": {
@@ -400,6 +507,13 @@ func Test_runner_recordStatus(t *testing.T) {
 			},
 			Written: 1,
 		},
+		// a runner built without a store has nowhere to record and says
+		// so by doing nothing.
+		"A runner without a store records nothing": {
+			Stored:   processor.ConnectionStatusSuccess,
+			Observed: processor.ConnectionStatusUnreachable,
+			NoStore:  true,
+		},
 	}
 
 	for cn, c := range cc {
@@ -414,16 +528,15 @@ func Test_runner_recordStatus(t *testing.T) {
 			r := prepRunner(TypePrometheus, "", store)
 			r.ds.Status = c.Stored
 
+			if c.NoStore {
+				r.store = nil
+			}
+
 			r.recordStatus(context.Background(), c.Observed)
 
 			assert.Len(t, store.UpdateDataSourceStatusCalls(), c.Written)
 		})
 	}
-
-	// a runner built without a store has nowhere to record and says so
-	// by doing nothing.
-	r := &runner{log: discardLog(), ds: DataSource{Status: processor.ConnectionStatusSuccess}}
-	r.recordStatus(context.Background(), processor.ConnectionStatusUnreachable)
 }
 
 func Test_runner_ensurePrepared(t *testing.T) {

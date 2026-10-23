@@ -1,10 +1,15 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -17,7 +22,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/provider"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
-	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	wsMock "github.com/oxynote/wetsocks/wsserver/_mock"
@@ -34,16 +38,27 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m, goleak.IgnoreCurrent())
 }
 
-// discardLog returns a logger that swallows all output.
-func discardLog() *slog.Logger {
-	return slog.New(slog.DiscardHandler)
+// stubListener blocks Accept until it is closed, and its Close returns err.
+// It embeds the interface, so any other call is a test bug.
+type stubListener struct {
+	net.Listener
+
+	closed chan struct{}
+	err    error
 }
 
-// bufferLog returns a logger writing JSON lines into the returned buffer.
-func bufferLog() (*slog.Logger, *testutil.Writer, func() string) {
-	wr, buf := testutil.NewBuffer()
+// Accept blocks until the listener is closed.
+func (l stubListener) Accept() (net.Conn, error) {
+	<-l.closed
 
-	return slog.New(slog.NewJSONHandler(wr, nil)), wr, buf.String
+	return nil, net.ErrClosed
+}
+
+// Close unblocks Accept and returns the stubbed error.
+func (l stubListener) Close() error {
+	close(l.closed)
+
+	return l.err
 }
 
 func Test_Options_validate(t *testing.T) {
@@ -54,38 +69,46 @@ func Test_Options_validate(t *testing.T) {
 		ResourceURL: "http://test.com/core/api/mcp",
 	}
 
-	assert.NoError(t, Options{Port: 0, MCP: mcpOpts}.validate())
-	assert.NoError(t, Options{Port: 8080, MCP: mcpOpts}.validate())
-	assert.EqualError(t, Options{Port: 999}.validate(), "invalid port")
-	assert.NoError(t, Options{}.validate())
-	assert.EqualError(t, Options{MCP: MCPOptions{ResourceURL: "http://test.com/core/api/mcp"}}.validate(), "missing mcp session url")
-}
+	cc := map[string]struct {
+		Opts Options
+		Err  error
+	}{
+		"Invalid port": {
+			Opts: Options{Port: 999},
+			Err:  errors.New("invalid port"),
+		},
+		"Missing MCP session URL": {
+			Opts: Options{MCP: MCPOptions{ResourceURL: "http://test.com/core/api/mcp"}},
+			Err:  errors.New("missing mcp session url"),
+		},
+		"Successful validation without MCP": {
+			Opts: Options{},
+		},
+		"Successful validation with an unset port": {
+			Opts: Options{Port: 0, MCP: mcpOpts},
+		},
+		"Successful validation with a port": {
+			Opts: Options{Port: 8080, MCP: mcpOpts},
+		},
+	}
 
-// stubSearcher satisfies the document handler's Searcher.
-type stubSearcher struct{}
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-func (stubSearcher) SearchDocuments(context.Context, string, string) ([]byte, error) {
-	return nil, nil
-}
-
-func (stubSearcher) SearchGroups(context.Context, search.GroupQuery) (search.GroupPage, error) {
-	return search.GroupPage{}, nil
-}
-
-func (stubSearcher) SearchBranch(context.Context, search.BranchQuery) (search.BranchPage, error) {
-	return search.BranchPage{}, nil
+			testutil.AssertEqualError(t, c.Err, c.Opts.validate())
+		})
+	}
 }
 
 func Test_NewServer(t *testing.T) {
 	t.Parallel()
 
-	log := discardLog()
+	log := slog.New(slog.DiscardHandler)
 	fc := metricutil.NewFactory("test", prometheus.NewRegistry())
 
 	githubMan, err := github.NewManager(nil, github.Options{})
 	require.NoError(t, err)
-
-	assistantMan := assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, &SearchQueueMock{}, nil, githubMan, nil, nil, nil, "claude")
 
 	slackMan, err := slack.NewManager(log, nil, nil, nil, nil, slack.Options{})
 	require.NoError(t, err)
@@ -94,78 +117,35 @@ func Test_NewServer(t *testing.T) {
 	storer := &StorerMock{}
 	notifier := &NotifierMock{}
 
-	t.Run("Invalid options", func(t *testing.T) {
-		t.Parallel()
-
-		srv, err := NewServer(
-			log,
-			Options{Port: 999},
-			db,
-			fc,
-			storer,
-			assistantMan,
-			datasourceCore.NewManager(log, nil),
-			nil,
-			githubMan,
-			slackMan,
-			webchange.NewClient("", ""),
-			&HookManagerMock{},
-			&VariableManagerMock{},
-			stubSearcher{},
-			&SearchQueueMock{},
-			notifier,
-			nil,
-			http.DefaultClient,
-		)
-		require.EqualError(t, err, "invalid port")
-		assert.Nil(t, srv)
-	})
-
-	t.Run("Error returned by mcp.NewHandler", func(t *testing.T) {
-		t.Parallel()
-
-		srv, err := NewServer(
-			log,
-			Options{
+	cc := map[string]struct {
+		Opts                Options
+		WebchangeURL        string
+		BindHookChangeCalls int
+		BindChangeCalls     int
+		Capabilities        Capabilities
+		Err                 error
+	}{
+		"Invalid options": {
+			Opts: Options{Port: 999},
+			Err:  errors.New("invalid port"),
+		},
+		"Error returned by mcp.NewHandler": {
+			Opts: Options{
 				Port: 8080,
 				MCP: MCPOptions{
 					SessionURL:  "http://auth.test/api/internal/mcp/session",
 					ResourceURL: "://bad",
 				},
 			},
-			db,
-			fc,
-			storer,
-			// a manager of this subtest's own: NewServer calls
-			// SetTreeNotifier, which must not race the parallel
-			// success case's identical call on a shared manager.
-			assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, &SearchQueueMock{}, nil, githubMan, nil, nil, nil, "claude"),
-			datasourceCore.NewManager(log, nil),
-			nil,
-			githubMan,
-			slackMan,
-			webchange.NewClient("", ""),
-			&HookManagerMock{},
-			&VariableManagerMock{},
-			stubSearcher{},
-			&SearchQueueMock{},
-			notifier,
-			nil,
-			http.DefaultClient,
-		)
-		require.ErrorContains(t, err, "building mcp handler")
-		assert.Nil(t, srv)
-	})
-
-	t.Run("Successful construction", func(t *testing.T) {
-		t.Parallel()
-
-		hookMan := &HookManagerMock{}
-		variableMan := &VariableManagerMock{}
-
-		srv, err := NewServer(
-			log,
-			Options{
+			BindHookChangeCalls: 1,
+			BindChangeCalls:     1,
+			Err: fmt.Errorf("building mcp handler: %w", fmt.Errorf(
+				"deriving resource metadata url: %w",
+				&url.Error{Op: "parse", URL: "://bad", Err: errors.New("missing protocol scheme")},
+			)),
+		},
+		"Successful construction": {
+			Opts: Options{
 				PublicURL: "http://test.com",
 				Port:      8080,
 				Origins:   []string{"http://localhost:3000"},
@@ -175,104 +155,19 @@ func Test_NewServer(t *testing.T) {
 					ResourceURL: "http://test.com/core/api/mcp",
 				},
 			},
-			db,
-			fc,
-			storer,
-			assistantMan,
-			datasourceCore.NewManager(log, nil),
-			nil,
-			githubMan,
-			slackMan,
-			webchange.NewClient("", ""),
-			hookMan,
-			variableMan,
-			stubSearcher{},
-			&SearchQueueMock{},
-			notifier,
-			nil,
-			http.DefaultClient,
-		)
-		require.NoError(t, err)
-		require.NotNil(t, srv)
-
-		t.Cleanup(func() {
-			srv.ws.Close()
-			assert.NoError(t, srv.Close())
-		})
-
-		assert.NotNil(t, srv.log)
-		assert.Same(t, fc, srv.fc)
-		assert.Same(t, http.DefaultClient, srv.client)
-		assert.Equal(t, ":8080", srv.http.Addr)
-		assert.NotNil(t, srv.http.Handler)
-		assert.NotNil(t, srv.ws)
-
-		assert.NotNil(t, srv.handlers.user)
-		assert.NotNil(t, srv.handlers.organization)
-		assert.NotNil(t, srv.handlers.document)
-		assert.NotNil(t, srv.handlers.comment)
-		assert.NotNil(t, srv.handlers.files)
-		assert.NotNil(t, srv.handlers.hook)
-		assert.NotNil(t, srv.handlers.github)
-		assert.NotNil(t, srv.handlers.slack)
-		assert.NotNil(t, srv.handlers.notification)
-		assert.NotNil(t, srv.handlers.datasource)
-		assert.NotNil(t, srv.handlers.email)
-		assert.NotNil(t, srv.handlers.ai)
-		assert.NotNil(t, srv.handlers.mcp)
-		assert.Len(t, hookMan.BindHookChangeCalls(), 1)
-		assert.NotNil(t, srv.handlers.variable)
-		assert.Len(t, variableMan.BindChangeCalls(), 1)
-
-		// nothing above is configured but MCP, so every other capability
-		// reports false.
-		assert.Equal(t, Capabilities{MCP: true}, srv.capabilities)
-	})
-
-	t.Run("MCP off without a resource URL", func(t *testing.T) {
-		t.Parallel()
-
-		srv, err := NewServer(
-			log,
-			Options{Port: 8080},
-			db,
-			fc,
-			storer,
-			// a manager of this subtest's own: NewServer calls
-			// SetTreeNotifier, which must not race the parallel
-			// success case's identical call on a shared manager.
-			assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, &SearchQueueMock{}, nil, githubMan, nil, nil, nil, "claude"),
-			datasourceCore.NewManager(log, nil),
-			nil,
-			githubMan,
-			slackMan,
-			webchange.NewClient("", ""),
-			&HookManagerMock{},
-			&VariableManagerMock{},
-			stubSearcher{},
-			&SearchQueueMock{},
-			notifier,
-			nil,
-			http.DefaultClient,
-		)
-		require.NoError(t, err)
-		require.NotNil(t, srv)
-
-		t.Cleanup(func() {
-			srv.ws.Close()
-			assert.NoError(t, srv.Close())
-		})
-
-		assert.Nil(t, srv.handlers.mcp)
-		assert.False(t, srv.capabilities.MCP)
-	})
-
-	t.Run("Capabilities reflect the configured services", func(t *testing.T) {
-		t.Parallel()
-
-		srv, err := NewServer(
-			log,
-			Options{
+			BindHookChangeCalls: 1,
+			BindChangeCalls:     1,
+			// nothing above is configured but MCP, so every other
+			// capability reports false.
+			Capabilities: Capabilities{MCP: true},
+		},
+		"MCP off without a resource URL": {
+			Opts:                Options{Port: 8080},
+			BindHookChangeCalls: 1,
+			BindChangeCalls:     1,
+		},
+		"Capabilities reflect the configured services": {
+			Opts: Options{
 				Port: 8080,
 				Assistant: AssistantCapability{
 					Status: provider.StatusActive,
@@ -283,96 +178,221 @@ func Test_NewServer(t *testing.T) {
 					ResourceURL: "http://test.com/core/api/mcp",
 				},
 			},
-			db,
-			fc,
-			storer,
-			assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, &SearchQueueMock{}, nil, githubMan, nil, nil, nil, "claude"),
-			datasourceCore.NewManager(log, nil),
-			nil,
-			githubMan,
-			slackMan,
-			webchange.NewClient("http://changedetection.test", ""),
-			&HookManagerMock{},
-			&VariableManagerMock{},
-			stubSearcher{},
-			&SearchQueueMock{},
-			notifier,
-			nil,
-			http.DefaultClient,
-		)
-		require.NoError(t, err)
-		require.NotNil(t, srv)
-
-		t.Cleanup(func() {
-			srv.ws.Close()
-			assert.NoError(t, srv.Close())
-		})
-
-		assert.Equal(t, Capabilities{
-			AIAssistant: AssistantCapability{
-				Status: provider.StatusActive,
-				Model:  "claude-opus-5",
+			WebchangeURL:        "http://changedetection.test",
+			BindHookChangeCalls: 1,
+			BindChangeCalls:     1,
+			Capabilities: Capabilities{
+				AIAssistant: AssistantCapability{
+					Status: provider.StatusActive,
+					Model:  "claude-opus-5",
+				},
+				ChangeDetection: true,
+				MCP:             true,
 			},
-			ChangeDetection: true,
-			MCP:             true,
-		}, srv.capabilities)
-	})
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hookMan := &HookManagerMock{}
+			variableMan := &VariableManagerMock{}
+
+			srv, err := NewServer(
+				log,
+				c.Opts,
+				db,
+				fc,
+				storer,
+				// a manager of this subtest's own: NewServer calls
+				// SetTreeNotifier, which must not race another parallel
+				// case's identical call on a shared manager.
+				assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, &SearchQueueMock{}, nil, githubMan, nil, nil, nil, "claude", false),
+				datasourceCore.NewManager(log, nil),
+				nil,
+				githubMan,
+				slackMan,
+				webchange.NewClient(c.WebchangeURL, ""),
+				hookMan,
+				variableMan,
+				nil,
+				&SearchQueueMock{},
+				notifier,
+				nil,
+				http.DefaultClient,
+			)
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, hookMan.BindHookChangeCalls(), c.BindHookChangeCalls)
+			assert.Len(t, variableMan.BindChangeCalls(), c.BindChangeCalls)
+
+			if err != nil {
+				assert.Nil(t, srv)
+				return
+			}
+
+			require.NotNil(t, srv)
+
+			t.Cleanup(func() {
+				srv.ws.Close()
+				assert.NoError(t, srv.Close())
+			})
+
+			assert.NotNil(t, srv.log)
+			assert.Same(t, fc, srv.fc)
+			assert.Same(t, http.DefaultClient, srv.client)
+			assert.Equal(t, ":8080", srv.http.Addr)
+			assert.NotNil(t, srv.http.Handler)
+			assert.NotNil(t, srv.ws)
+
+			assert.NotNil(t, srv.handlers.user)
+			assert.NotNil(t, srv.handlers.organization)
+			assert.NotNil(t, srv.handlers.document)
+			assert.NotNil(t, srv.handlers.comment)
+			assert.NotNil(t, srv.handlers.files)
+			assert.NotNil(t, srv.handlers.hook)
+			assert.NotNil(t, srv.handlers.github)
+			assert.NotNil(t, srv.handlers.slack)
+			assert.NotNil(t, srv.handlers.notification)
+			assert.NotNil(t, srv.handlers.datasource)
+			assert.NotNil(t, srv.handlers.email)
+			assert.NotNil(t, srv.handlers.ai)
+			assert.NotNil(t, srv.handlers.variable)
+
+			if c.Capabilities.MCP {
+				assert.NotNil(t, srv.handlers.mcp)
+			} else {
+				assert.Nil(t, srv.handlers.mcp)
+			}
+
+			assert.Equal(t, c.Capabilities, srv.capabilities)
+		})
+	}
 }
 
 func Test_Server_Listen(t *testing.T) {
 	t.Parallel()
 
-	log, wr, content := bufferLog()
-
-	s := Server{
-		log:  log,
-		http: &http.Server{Addr: ":a", ReadHeaderTimeout: time.Minute},
+	cc := map[string]struct {
+		Addr     string
+		Shutdown bool
+	}{
+		"Error returned by http.Server.ListenAndServe": {
+			// an invalid port makes ListenAndServe fail immediately.
+			Addr: ":a",
+		},
+		"Successful graceful shutdown": {
+			Addr:     "127.0.0.1:0",
+			Shutdown: true,
+		},
 	}
 
-	// an invalid port makes ListenAndServe fail immediately.
-	s.Listen()
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	require.NoError(t, wr.Flush())
-	assert.Contains(t, content(), `"msg":"listening"`)
-	assert.Contains(t, content(), "cannot terminate gracefully")
+			wr, buf := testutil.NewBuffer()
 
-	// a graceful shutdown ends Listen without the error log.
-	log2, wr2, content2 := bufferLog()
-	s2 := Server{
-		log:  log2,
-		http: &http.Server{Addr: "127.0.0.1:0", ReadHeaderTimeout: time.Minute},
+			s := Server{
+				log:  slog.New(slog.NewJSONHandler(wr, nil)),
+				http: &http.Server{Addr: c.Addr, ReadHeaderTimeout: time.Minute},
+			}
+
+			if c.Shutdown {
+				go func() {
+					// give ListenAndServe a moment to start before shutting down.
+					time.Sleep(50 * time.Millisecond)
+
+					s.http.Shutdown(context.Background()) //nolint:errcheck,gosec // error provides no meaningful info
+				}()
+			}
+
+			s.Listen()
+
+			require.NoError(t, wr.Flush())
+			assert.Contains(t, buf.String(), `"msg":"listening"`)
+
+			// a graceful shutdown ends Listen without the error log.
+			if c.Shutdown {
+				assert.NotContains(t, buf.String(), "cannot terminate gracefully")
+				return
+			}
+
+			assert.Contains(t, buf.String(), "cannot terminate gracefully")
+		})
 	}
-
-	go func() {
-		// give ListenAndServe a moment to start before shutting down.
-		time.Sleep(50 * time.Millisecond)
-
-		s2.http.Shutdown(context.Background()) //nolint:errcheck,gosec // error provides no meaningful info
-	}()
-
-	s2.Listen()
-
-	require.NoError(t, wr2.Flush())
-	assert.Contains(t, content2(), `"msg":"listening"`)
-	assert.NotContains(t, content2(), "cannot terminate gracefully")
 }
 
 func Test_Server_Close(t *testing.T) {
 	t.Parallel()
 
-	s := Server{
-		log:  discardLog(),
-		http: &http.Server{},
+	cc := map[string]struct {
+		ListenerErr error
+		Err         error
+	}{
+		"Error returned by http.Server.Shutdown": {
+			// Shutdown returns the error of closing a listener.
+			ListenerErr: assert.AnError,
+			Err:         assert.AnError,
+		},
+		"Successful close": {},
 	}
 
-	assert.NoError(t, s.Close())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+
+			serving := make(chan struct{})
+
+			s := Server{
+				log: slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})),
+				http: &http.Server{
+					ReadHeaderTimeout: time.Minute,
+					// Serve calls this only after it tracks the listener, so
+					// Shutdown is sure to close it.
+					BaseContext: func(net.Listener) context.Context {
+						close(serving)
+
+						return context.Background()
+					},
+				},
+			}
+
+			served := make(chan struct{})
+
+			go func() {
+				defer close(served)
+
+				testutil.AssertEqualError(t, http.ErrServerClosed, s.http.Serve(stubListener{
+					closed: make(chan struct{}),
+					err:    c.ListenerErr,
+				}))
+			}()
+
+			<-serving
+
+			err := s.Close()
+			testutil.AssertEqualError(t, c.Err, err)
+
+			<-served
+
+			if err != nil {
+				assert.Empty(t, buf.String())
+				return
+			}
+
+			assert.Contains(t, buf.String(), "msg=closed")
+		})
+	}
 }
 
 func Test_Server_fetchVersion(t *testing.T) {
 	t.Parallel()
 
 	s := Server{
-		log: discardLog(),
+		log: slog.New(slog.DiscardHandler),
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
@@ -387,113 +407,96 @@ func Test_Server_fetchVersion(t *testing.T) {
 func Test_Server_bindVersionPing(t *testing.T) {
 	t.Parallel()
 
-	s := Server{
-		log: discardLog(),
-	}
-
-	tpc := &wsMock.Topic{}
-
-	published := make(chan struct{})
-	tpc.PublishManyFunc = func(ctx context.Context, _ any, _ func(context.Context, string) bool) {
-		// stop the cron from the first tick so the test does not
-		// depend on additional firings.
-		tpc.OnLastUnsubCalls()[0].Fn(ctx)
-		close(published)
-	}
-
-	s.bindVersionPing(tpc)
-
-	require.Len(t, tpc.OnFirstSubCalls(), 1)
-	require.Len(t, tpc.OnLastUnsubCalls(), 1)
-	assert.Empty(t, tpc.PublishManyCalls())
-
-	// the first subscriber starts the 5-second cron.
-	tpc.OnFirstSubCalls()[0].Fn(context.Background())
-
-	select {
-	case <-published:
-	case <-time.After(7 * time.Second):
-		t.Fatal("version ping was not published")
-	}
-
-	ff := tpc.PublishManyCalls()
-	require.NotEmpty(t, ff)
-	assert.Equal(t, struct {
-		Version semver.Version `json:"version"`
+	cc := map[string]struct {
+		// Events lists the lifecycle callbacks in delivery order: "sub"
+		// for the first subscribe, "unsub" for the last unsubscribe.
+		Events    []string
+		Published bool
 	}{
-		Version: buildinfo.Full().Version,
-	}, ff[0].Payload)
+		"Successful version ping": {
+			// the first subscriber starts the 5-second cron.
+			Events:    []string{"sub"},
+			Published: true,
+		},
+		"Unsubscribe before the first subscribe": {
+			// the lifecycle callbacks are dispatched as independent
+			// goroutines, so an unsubscribe can land before the first
+			// subscribe ever ran. The overtaken subscribe pairing with it
+			// must not start the cron. A cron erroneously left running
+			// here is caught by the package's goroutine-leak check.
+			Events: []string{"unsub", "sub"},
+		},
+		"Stale unsubscribe keeps the newer subscription cron": {
+			// emitted sub/unsub/sub, delivered sub/sub/unsub: the stale
+			// unsubscribe pairs with the first subscribe and must leave
+			// the second subscribe's cron running.
+			Events:    []string{"sub", "sub", "unsub"},
+			Published: true,
+		},
+	}
 
-	t.Run("Unsubscribe before the first subscribe", func(t *testing.T) {
-		t.Parallel()
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-		s := Server{
-			log: discardLog(),
-		}
+			s := Server{
+				log: slog.New(slog.DiscardHandler),
+			}
 
-		tpc := &wsMock.Topic{}
+			published := make(chan struct{}, 16)
+			tpc := &wsMock.Topic{
+				PublishManyFunc: func(context.Context, any, func(context.Context, string) bool) {
+					published <- struct{}{}
+				},
+			}
 
-		s.bindVersionPing(tpc)
+			s.bindVersionPing(tpc)
 
-		// the lifecycle callbacks are dispatched as independent goroutines, so
-		// an unsubscribe can land before the first subscribe ever ran.
-		require.Len(t, tpc.OnLastUnsubCalls(), 1)
-		require.Len(t, tpc.OnFirstSubCalls(), 1)
+			require.Len(t, tpc.OnFirstSubCalls(), 1)
+			require.Len(t, tpc.OnLastUnsubCalls(), 1)
+			assert.Empty(t, tpc.PublishManyCalls())
 
-		assert.NotPanics(t, func() {
-			tpc.OnLastUnsubCalls()[0].Fn(context.Background())
+			first := tpc.OnFirstSubCalls()[0].Fn
+			last := tpc.OnLastUnsubCalls()[0].Fn
+
+			for _, evt := range c.Events {
+				assert.NotPanics(t, func() {
+					if evt == "sub" {
+						first(context.Background())
+						return
+					}
+
+					last(context.Background())
+				})
+			}
+
+			if !c.Published {
+				assert.Empty(t, tpc.PublishManyCalls())
+				return
+			}
+
+			// drain ticks that may have fired before the last event
+			// landed. A fresh one can only arrive if the cron survived it.
+			for len(published) > 0 {
+				<-published
+			}
+
+			select {
+			case <-published:
+			case <-time.After(7 * time.Second):
+				t.Fatal("version ping was not published")
+			}
+
+			// the balancing unsubscribe stops the cron.
+			last(context.Background())
+
+			ff := tpc.PublishManyCalls()
+			require.NotEmpty(t, ff)
+			assert.Equal(t, struct {
+				Version semver.Version `json:"version"`
+			}{
+				Version: buildinfo.Full().Version,
+			}, ff[0].Payload)
 		})
-
-		// the overtaken subscribe pairing with that unsubscribe must not
-		// start the cron; a cron erroneously left running here is caught
-		// by the package's goroutine-leak check.
-		assert.NotPanics(t, func() {
-			tpc.OnFirstSubCalls()[0].Fn(context.Background())
-		})
-	})
-
-	t.Run("Stale unsubscribe keeps the newer subscription's cron", func(t *testing.T) {
-		t.Parallel()
-
-		s := Server{
-			log: discardLog(),
-		}
-
-		tpc := &wsMock.Topic{}
-
-		published := make(chan struct{}, 16)
-		tpc.PublishManyFunc = func(context.Context, any, func(context.Context, string) bool) {
-			published <- struct{}{}
-		}
-
-		s.bindVersionPing(tpc)
-
-		require.Len(t, tpc.OnFirstSubCalls(), 1)
-		require.Len(t, tpc.OnLastUnsubCalls(), 1)
-
-		first := tpc.OnFirstSubCalls()[0].Fn
-		last := tpc.OnLastUnsubCalls()[0].Fn
-
-		// emitted sub/unsub/sub, delivered sub/sub/unsub: the stale
-		// unsubscribe pairs with the first subscribe and must leave the
-		// second subscribe's cron running.
-		first(context.Background())
-		first(context.Background())
-		last(context.Background())
-
-		// drain ticks that may have fired before the stale unsubscribe
-		// landed; a fresh one can only arrive if the cron survived it.
-		for len(published) > 0 {
-			<-published
-		}
-
-		select {
-		case <-published:
-		case <-time.After(7 * time.Second):
-			t.Fatal("version ping stopped after a stale unsubscribe")
-		}
-
-		// the balancing unsubscribe stops the cron.
-		last(context.Background())
-	})
+	}
 }

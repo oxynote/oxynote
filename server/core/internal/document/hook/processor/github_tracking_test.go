@@ -13,23 +13,41 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// githubErrInput is a test Input whose Github method always fails with the
-// configured error.
-type githubErrInput struct {
-	state State
-	err   error
+// fakeGithubInput is a test Input that hands itself out as the Github
+// client. Github fails with clientErr, FetchRepositoryTree returns tree and
+// treeErr, and both count their calls.
+type fakeGithubInput struct {
+	state     State
+	clientErr error
+	tree      github.Tree
+	treeErr   error
+
+	githubCalls int
+	fetchCalls  int
 }
 
-func (i githubErrInput) State() State {
-	return i.state
+func (f *fakeGithubInput) State() State {
+	return f.state
 }
 
-func (i githubErrInput) Github(_ context.Context) (Github, error) {
-	return nil, i.err
+func (f *fakeGithubInput) Github(_ context.Context) (Github, error) {
+	f.githubCalls++
+
+	if f.clientErr != nil {
+		return nil, f.clientErr
+	}
+
+	return f, nil
 }
 
-func (i githubErrInput) ChangeDetection() ChangeDetection {
+func (f *fakeGithubInput) ChangeDetection() ChangeDetection {
 	return nil
+}
+
+func (f *fakeGithubInput) FetchRepositoryTree(_ context.Context, _, _ string) (github.Tree, error) {
+	f.fetchCalls++
+
+	return f.tree, f.treeErr
 }
 
 func Test_GithubTracking_Validate(t *testing.T) {
@@ -69,88 +87,107 @@ func Test_GithubTracking_Process(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Inp         Input
-		Paths       []string
-		WantScore   decimal.Decimal
-		WantStatus  Status
-		WantChanged int
-		WantErr     bool
+		Inp             *fakeGithubInput
+		Paths           []string
+		WantScore       decimal.Decimal
+		WantStatus      Status
+		WantChanged     int
+		WantGithubCalls int
+		WantFetchCalls  int
+		Err             error
 	}{
 		"Installation not found is a status": {
-			Inp:        githubErrInput{state: State("{}"), err: github.ErrInstallationNotFound},
-			WantStatus: StatusMissingInstallation,
+			Inp:             &fakeGithubInput{state: State("{}"), clientErr: github.ErrInstallationNotFound},
+			WantStatus:      StatusMissingInstallation,
+			WantGithubCalls: 1,
 		},
 		"Github app not configured is a status": {
-			Inp:        githubErrInput{state: State("{}"), err: github.ErrNotConfigured},
-			WantStatus: StatusUnconfigured,
+			Inp:             &fakeGithubInput{state: State("{}"), clientErr: github.ErrNotConfigured},
+			WantStatus:      StatusUnconfigured,
+			WantGithubCalls: 1,
 		},
-		"Client failure is propagated": {
-			Inp:     githubErrInput{state: State("{}"), err: assert.AnError},
-			WantErr: true,
+		"Error returned by Input.Github": {
+			Inp:             &fakeGithubInput{state: State("{}"), clientErr: assert.AnError},
+			WantGithubCalls: 1,
+			Err:             assert.AnError,
 		},
 		"Malformed state fails": {
-			Inp:     githubErrInput{state: State("{not json")},
-			WantErr: true,
+			Inp: &fakeGithubInput{state: State("{not json")},
+			Err: assert.AnError,
 		},
 		"Unchanged path scores full": {
-			Inp: githubTreeInput{
-				state:  State(`{"pathsChecksums":{"doc.md":"sum"}}`),
-				client: githubTreeClient{tree: github.Tree{{Name: "doc.md", Checksum: "sum"}}},
+			Inp: &fakeGithubInput{
+				state: State(`{"pathsChecksums":{"doc.md":"sum"}}`),
+				tree:  github.Tree{{Name: "doc.md", Checksum: "sum"}},
 			},
-			WantScore:  mathutil.Hundred,
-			WantStatus: StatusActive,
+			WantScore:       mathutil.Hundred,
+			WantStatus:      StatusActive,
+			WantGithubCalls: 1,
+			WantFetchCalls:  1,
 		},
 		"Changed checksum scores zero": {
-			Inp: githubTreeInput{
-				state:  State(`{"pathsChecksums":{"doc.md":"old"}}`),
-				client: githubTreeClient{tree: github.Tree{{Name: "doc.md", Checksum: "sum"}}},
+			Inp: &fakeGithubInput{
+				state: State(`{"pathsChecksums":{"doc.md":"old"}}`),
+				tree:  github.Tree{{Name: "doc.md", Checksum: "sum"}},
 			},
-			WantStatus:  StatusActive,
-			WantChanged: 1,
+			WantStatus:      StatusActive,
+			WantChanged:     1,
+			WantGithubCalls: 1,
+			WantFetchCalls:  1,
 		},
 		"Every changed path is counted": {
-			Inp: githubTreeInput{
+			Inp: &fakeGithubInput{
 				state: State(`{"pathsChecksums":{"doc.md":"old","api.md":"sum","gone.md":"sum"}}`),
-				client: githubTreeClient{tree: github.Tree{
+				tree: github.Tree{
 					{Name: "doc.md", Checksum: "sum"},
 					{Name: "api.md", Checksum: "sum"},
-				}},
+				},
 			},
-			Paths:       []string{"doc.md", "api.md", "gone.md"},
-			WantStatus:  StatusActive,
-			WantChanged: 2,
+			Paths:           []string{"doc.md", "api.md", "gone.md"},
+			WantStatus:      StatusActive,
+			WantChanged:     2,
+			WantGithubCalls: 1,
+			WantFetchCalls:  1,
 		},
 		"Count from the previous run is replaced": {
-			Inp: githubTreeInput{
-				state:  State(`{"pathsChecksums":{"doc.md":"sum"},"changedPaths":3}`),
-				client: githubTreeClient{tree: github.Tree{{Name: "doc.md", Checksum: "sum"}}},
+			Inp: &fakeGithubInput{
+				state: State(`{"pathsChecksums":{"doc.md":"sum"},"changedPaths":3}`),
+				tree:  github.Tree{{Name: "doc.md", Checksum: "sum"}},
 			},
-			WantScore:  mathutil.Hundred,
-			WantStatus: StatusActive,
+			WantScore:       mathutil.Hundred,
+			WantStatus:      StatusActive,
+			WantGithubCalls: 1,
+			WantFetchCalls:  1,
 		},
 		"Path deleted since reset scores zero": {
-			Inp: githubTreeInput{
-				state:  State(`{"pathsChecksums":{"doc.md":"sum"}}`),
-				client: githubTreeClient{tree: github.Tree{}},
+			Inp: &fakeGithubInput{
+				state: State(`{"pathsChecksums":{"doc.md":"sum"}}`),
+				tree:  github.Tree{},
 			},
-			WantStatus:  StatusActive,
-			WantChanged: 1,
+			WantStatus:      StatusActive,
+			WantChanged:     1,
+			WantGithubCalls: 1,
+			WantFetchCalls:  1,
 		},
 		"Path absent since reset scores full": {
-			Inp: githubTreeInput{
-				state:  State(`{"pathsChecksums":{}}`),
-				client: githubTreeClient{tree: github.Tree{}},
+			Inp: &fakeGithubInput{
+				state: State(`{"pathsChecksums":{}}`),
+				tree:  github.Tree{},
 			},
-			WantScore:  mathutil.Hundred,
-			WantStatus: StatusActive,
+			WantScore:       mathutil.Hundred,
+			WantStatus:      StatusActive,
+			WantGithubCalls: 1,
+			WantFetchCalls:  1,
 		},
 		"Path appeared after reset scores zero": {
-			Inp: githubTreeInput{
-				state:  State(`{"pathsChecksums":{}}`),
-				client: githubTreeClient{tree: github.Tree{{Name: "doc.md", Checksum: "sum"}}},
+			Inp: &fakeGithubInput{
+				state: State(`{"pathsChecksums":{}}`),
+				tree:  github.Tree{{Name: "doc.md", Checksum: "sum"}},
 			},
-			WantStatus:  StatusActive,
-			WantChanged: 1,
+			WantStatus:      StatusActive,
+			WantChanged:     1,
+			WantGithubCalls: 1,
+			WantFetchCalls:  1,
 		},
 	}
 
@@ -170,13 +207,15 @@ func Test_GithubTracking_Process(t *testing.T) {
 			}
 
 			res, err := gt.Process(context.Background(), c.Inp)
-			if c.WantErr {
-				assert.Error(t, err)
+			testutil.AssertEqualError(t, c.Err, err)
 
+			assert.Equal(t, c.WantGithubCalls, c.Inp.githubCalls)
+			assert.Equal(t, c.WantFetchCalls, c.Inp.fetchCalls)
+
+			if err != nil {
 				return
 			}
 
-			assert.NoError(t, err)
 			assert.Equal(t, c.WantStatus, res.Status)
 			assert.True(t, res.Score.Equal(c.WantScore), "score = %s, want %s", res.Score, c.WantScore)
 
@@ -198,25 +237,31 @@ func Test_GithubTracking_Reset(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Inp        Input
-		WantStatus Status
-		WantState  string
-		WantErr    bool
+		Inp             *fakeGithubInput
+		WantStatus      Status
+		WantState       string
+		WantGithubCalls int
+		WantFetchCalls  int
+		Err             error
 	}{
-		"Present paths are recorded, absent ones left out": {
-			Inp: githubTreeInput{
-				client: githubTreeClient{tree: github.Tree{{Name: "doc.md", Checksum: "sum"}}},
+		"Present paths are recorded and absent ones left out": {
+			Inp: &fakeGithubInput{
+				tree: github.Tree{{Name: "doc.md", Checksum: "sum"}},
 			},
-			WantStatus: StatusActive,
-			WantState:  `{"pathsChecksums":{"doc.md":"sum"},"changedPaths":0}`,
+			WantStatus:      StatusActive,
+			WantState:       `{"pathsChecksums":{"doc.md":"sum"},"changedPaths":0}`,
+			WantGithubCalls: 1,
+			WantFetchCalls:  1,
 		},
 		"Missing installation is a status": {
-			Inp:        githubErrInput{err: github.ErrInstallationNotFound},
-			WantStatus: StatusMissingInstallation,
+			Inp:             &fakeGithubInput{clientErr: github.ErrInstallationNotFound},
+			WantStatus:      StatusMissingInstallation,
+			WantGithubCalls: 1,
 		},
-		"Client failure is propagated": {
-			Inp:     githubErrInput{err: assert.AnError},
-			WantErr: true,
+		"Error returned by Input.Github": {
+			Inp:             &fakeGithubInput{clientErr: assert.AnError},
+			WantGithubCalls: 1,
+			Err:             assert.AnError,
 		},
 	}
 
@@ -231,13 +276,15 @@ func Test_GithubTracking_Reset(t *testing.T) {
 			}
 
 			res, err := gt.Reset(context.Background(), c.Inp)
-			if c.WantErr {
-				assert.Error(t, err)
+			testutil.AssertEqualError(t, c.Err, err)
 
+			assert.Equal(t, c.WantGithubCalls, c.Inp.githubCalls)
+			assert.Equal(t, c.WantFetchCalls, c.Inp.fetchCalls)
+
+			if err != nil {
 				return
 			}
 
-			assert.NoError(t, err)
 			assert.Equal(t, c.WantStatus, res.Status)
 
 			if c.WantState != "" {
@@ -246,36 +293,6 @@ func Test_GithubTracking_Reset(t *testing.T) {
 			}
 		})
 	}
-}
-
-// githubTreeClient is a test Github client returning the configured tree
-// or error.
-type githubTreeClient struct {
-	tree github.Tree
-	err  error
-}
-
-func (c githubTreeClient) FetchRepositoryTree(_ context.Context, _, _ string) (github.Tree, error) {
-	return c.tree, c.err
-}
-
-// githubTreeInput is a test Input handing out a Github client that returns
-// the configured tree or error.
-type githubTreeInput struct {
-	state  State
-	client githubTreeClient
-}
-
-func (i githubTreeInput) State() State {
-	return i.state
-}
-
-func (i githubTreeInput) Github(_ context.Context) (Github, error) {
-	return i.client, nil
-}
-
-func (i githubTreeInput) ChangeDetection() ChangeDetection {
-	return nil
 }
 
 func Test_GithubTracking_Summary(t *testing.T) {
@@ -313,46 +330,63 @@ func Test_GithubTracking_Summary(t *testing.T) {
 }
 
 func Test_GithubTracking_fetchTree(t *testing.T) {
+	t.Parallel()
+
 	tree := github.Tree{{Name: "doc.md", Checksum: "sum"}}
 
 	cc := map[string]struct {
-		Inp    Input
-		Result github.Tree
-		Status Status
-		Err    error
+		Inp         *fakeGithubInput
+		Result      github.Tree
+		Status      Status
+		GithubCalls int
+		FetchCalls  int
+		Err         error
 	}{
 		"Error returned by Input.Github": {
-			Inp: githubErrInput{err: assert.AnError},
-			Err: assert.AnError,
+			Inp:         &fakeGithubInput{clientErr: assert.AnError},
+			GithubCalls: 1,
+			Err:         assert.AnError,
 		},
 		"Installation not found is reported as state": {
-			Inp:    githubErrInput{err: github.ErrInstallationNotFound},
-			Status: StatusMissingInstallation,
+			Inp:         &fakeGithubInput{clientErr: github.ErrInstallationNotFound},
+			Status:      StatusMissingInstallation,
+			GithubCalls: 1,
 		},
 		"Github app not configured is reported as state": {
-			Inp:    githubErrInput{err: github.ErrNotConfigured},
-			Status: StatusUnconfigured,
+			Inp:         &fakeGithubInput{clientErr: github.ErrNotConfigured},
+			Status:      StatusUnconfigured,
+			GithubCalls: 1,
 		},
 		"Error returned by Github.FetchRepositoryTree": {
-			Inp: githubTreeInput{client: githubTreeClient{err: assert.AnError}},
-			Err: assert.AnError,
+			Inp:         &fakeGithubInput{treeErr: assert.AnError},
+			GithubCalls: 1,
+			FetchCalls:  1,
+			Err:         assert.AnError,
 		},
 		"Repository not found is reported as state": {
-			Inp:    githubTreeInput{client: githubTreeClient{err: github.ErrRepositoryNotFound}},
-			Status: StatusMissingRepository,
+			Inp:         &fakeGithubInput{treeErr: github.ErrRepositoryNotFound},
+			Status:      StatusMissingRepository,
+			GithubCalls: 1,
+			FetchCalls:  1,
 		},
 		"Branch not found is reported as state": {
-			Inp:    githubTreeInput{client: githubTreeClient{err: github.ErrRepositoryBranchNotFound}},
-			Status: StatusMissingBranch,
+			Inp:         &fakeGithubInput{treeErr: github.ErrRepositoryBranchNotFound},
+			Status:      StatusMissingBranch,
+			GithubCalls: 1,
+			FetchCalls:  1,
 		},
 		"Truncated tree is reported as state": {
-			Inp:    githubTreeInput{client: githubTreeClient{err: github.ErrTreeTruncated}},
-			Status: StatusTreeTruncated,
+			Inp:         &fakeGithubInput{treeErr: github.ErrTreeTruncated},
+			Status:      StatusTreeTruncated,
+			GithubCalls: 1,
+			FetchCalls:  1,
 		},
 		"Successful fetch": {
-			Inp:    githubTreeInput{client: githubTreeClient{tree: tree}},
-			Result: tree,
-			Status: StatusActive,
+			Inp:         &fakeGithubInput{tree: tree},
+			Result:      tree,
+			Status:      StatusActive,
+			GithubCalls: 1,
+			FetchCalls:  1,
 		},
 	}
 
@@ -367,6 +401,9 @@ func Test_GithubTracking_fetchTree(t *testing.T) {
 
 			res, status, err := gt.fetchTree(context.Background(), c.Inp)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Equal(t, c.GithubCalls, c.Inp.githubCalls)
+			assert.Equal(t, c.FetchCalls, c.Inp.fetchCalls)
 
 			if err != nil {
 				return

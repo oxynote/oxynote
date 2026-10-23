@@ -2,7 +2,6 @@ package notification
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"testing"
 
@@ -15,14 +14,16 @@ import (
 )
 
 // fakeReceiver captures the notification callback and counts
-// unsubscriptions.
+// subscriptions and unsubscriptions.
 type fakeReceiver struct {
 	fn      func(context.Context, notificationCore.Notification)
+	subbd   int
 	unsubbd int
 }
 
 func (r *fakeReceiver) OnNotification(fn func(context.Context, notificationCore.Notification)) notificationCore.Unsubscribe {
 	r.fn = fn
+	r.subbd++
 
 	return func() { r.unsubbd++ }
 }
@@ -30,17 +31,33 @@ func (r *fakeReceiver) OnNotification(fn func(context.Context, notificationCore.
 func Test_Handler_BindNotifications(t *testing.T) {
 	t.Parallel()
 
+	// subscribeOnce runs one subscribe and unsubscribe pair.
+	subscribeOnce := func(t *testing.T, first, last func(context.Context), rcv *fakeReceiver) {
+		t.Helper()
+
+		first(context.Background())
+		last(context.Background())
+
+		require.NotNil(t, rcv.fn)
+		assert.Equal(t, 1, rcv.subbd)
+		assert.Equal(t, 1, rcv.unsubbd)
+	}
+
 	cc := map[string]struct {
-		DB    *DBMock
-		Count uint64
+		DB        *DBMock
+		Lifecycle func(t *testing.T, first, last func(context.Context), rcv *fakeReceiver)
+		Notify    bool
+		Count     uint64
 	}{
-		"Count fetch error publishes zero count": {
+		"Error returned by DB.FetchNotificationCount publishes zero count": {
 			DB: &DBMock{
 				FetchNotificationCountFunc: func(context.Context, string, string, bool) (uint64, error) {
-					return 0, errors.New("boom")
+					return 0, assert.AnError
 				},
 			},
-			Count: 0,
+			Lifecycle: subscribeOnce,
+			Notify:    true,
+			Count:     0,
 		},
 		"Successful publish with unread count": {
 			DB: &DBMock{
@@ -48,7 +65,42 @@ func Test_Handler_BindNotifications(t *testing.T) {
 					return 7, nil
 				},
 			},
-			Count: 7,
+			Lifecycle: subscribeOnce,
+			Notify:    true,
+			Count:     7,
+		},
+		"Lifecycle callbacks arrive out of order": {
+			DB: &DBMock{},
+			// the lifecycle callbacks are dispatched as independent goroutines,
+			// so an unsubscribe can land before any subscribe and a
+			// re-subscribe can overtake a pending unsubscribe.
+			Lifecycle: func(t *testing.T, first, last func(context.Context), rcv *fakeReceiver) {
+				// an unsubscribe overtaken by the subscribe it pairs with leaves
+				// the registration down: the topic is not subscribed once both
+				// land.
+				assert.NotPanics(t, func() {
+					last(context.Background())
+					first(context.Background())
+				})
+
+				assert.Nil(t, rcv.fn)
+
+				// a stale unsubscribe arriving after a newer subscribe must not
+				// release the live registration.
+				first(context.Background())
+				require.NotNil(t, rcv.fn)
+
+				first(context.Background())
+				last(context.Background())
+
+				assert.Equal(t, 0, rcv.unsubbd)
+
+				// the balancing unsubscribe releases the registration exactly
+				// once.
+				last(context.Background())
+				assert.Equal(t, 1, rcv.subbd)
+				assert.Equal(t, 1, rcv.unsubbd)
+			},
 		},
 	}
 
@@ -64,17 +116,27 @@ func Test_Handler_BindNotifications(t *testing.T) {
 				notifier: rcv,
 			}
 
-			// invoke lifecycle callbacks immediately so the domain
-			// subscription is active by the time the test fires it.
+			var first, last func(context.Context)
+
 			tpc := &wsMock.Topic{
-				OnFirstSubFunc:  func(fn func(context.Context)) { fn(context.Background()) },
-				OnLastUnsubFunc: func(fn func(context.Context)) { fn(context.Background()) },
+				OnFirstSubFunc:  func(fn func(context.Context)) { first = fn },
+				OnLastUnsubFunc: func(fn func(context.Context)) { last = fn },
 			}
 
 			hdl.BindNotifications(tpc)
+			require.NotNil(t, first)
+			require.NotNil(t, last)
+			assert.Len(t, tpc.OnFirstSubCalls(), 1)
+			assert.Len(t, tpc.OnLastUnsubCalls(), 1)
 
-			require.NotNil(t, rcv.fn)
-			assert.Equal(t, 1, rcv.unsubbd)
+			c.Lifecycle(t, first, last, rcv)
+
+			if !c.Notify {
+				assert.Empty(t, c.DB.FetchNotificationCountCalls())
+				assert.Empty(t, tpc.PublishManyCalls())
+
+				return
+			}
 
 			nt := notificationCore.Notification{
 				ID:             xid.New(),
@@ -118,57 +180,4 @@ func Test_Handler_BindNotifications(t *testing.T) {
 			assert.False(t, pubs[0].Filter(stranger, "topic"))
 		})
 	}
-
-	t.Run("Lifecycle callbacks arrive out of order", func(t *testing.T) {
-		t.Parallel()
-
-		rcv := &fakeReceiver{}
-
-		hdl := Handler{
-			log:      slog.New(slog.DiscardHandler),
-			db:       &DBMock{},
-			notifier: rcv,
-		}
-
-		// the lifecycle callbacks are dispatched as independent goroutines, so
-		// an unsubscribe can land before any subscribe and a re-subscribe can
-		// overtake a pending unsubscribe.
-		var first, last func(context.Context)
-
-		tpc := &wsMock.Topic{
-			OnFirstSubFunc:  func(fn func(context.Context)) { first = fn },
-			OnLastUnsubFunc: func(fn func(context.Context)) { last = fn },
-		}
-
-		hdl.BindNotifications(tpc)
-		require.NotNil(t, first)
-		require.NotNil(t, last)
-
-		// an unsubscribe overtaken by the subscribe it pairs with leaves the
-		// registration down: the topic is not subscribed once both land.
-		assert.NotPanics(t, func() {
-			last(context.Background())
-			first(context.Background())
-		})
-
-		assert.Nil(t, rcv.fn)
-
-		// a stale unsubscribe arriving after a newer subscribe must not
-		// release the live registration.
-		first(context.Background())
-		require.NotNil(t, rcv.fn)
-
-		first(context.Background())
-		last(context.Background())
-
-		assert.Equal(t, 0, rcv.unsubbd)
-
-		// the balancing unsubscribe releases the registration exactly once.
-		last(context.Background())
-		assert.Equal(t, 1, rcv.unsubbd)
-	})
 }
-
-// ensure the domain DB interface keeps satisfying the handler's narrow
-// DB contract mirrored from it.
-var _ DB = notificationCore.DB(nil)

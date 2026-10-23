@@ -157,29 +157,48 @@ func Test_agent_FetchDocumentFile(t *testing.T) {
 }
 
 func Test_agent_FetchPaginatedDocumentFiles(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		OffsetID string
+		Limit    int64
+		Result   []string
+	}
 
-	// empty
-	res, err := db.FetchPaginatedDocumentFiles(context.Background(), "", 10)
-	require.NoError(t, err)
-	assert.Empty(t, res)
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Empty": func(_ *testing.T, _ *DB) tcase {
+			return tcase{Limit: 10}
+		},
+		"First page": func(t *testing.T, db *DB) tcase {
+			ff := prepDocumentFiles(t, db, 3, func(i int, f *file.File) {
+				f.ID = "file-" + strconv.Itoa(i)
+			})
 
-	ff := prepDocumentFiles(t, db, 3, func(i int, f *file.File) {
-		f.ID = "file-" + strconv.Itoa(i)
-	})
+			return tcase{Limit: 2, Result: []string{ff[0].ID, ff[1].ID}}
+		},
+		"Second page excludes everything up to the offset id": func(t *testing.T, db *DB) tcase {
+			ff := prepDocumentFiles(t, db, 3, func(i int, f *file.File) {
+				f.ID = "file-" + strconv.Itoa(i)
+			})
 
-	// first page
-	res, err = db.FetchPaginatedDocumentFiles(context.Background(), "", 2)
-	require.NoError(t, err)
-	require.Len(t, res, 2)
-	assert.Equal(t, ff[0].ID, res[0].ID)
-	assert.Equal(t, ff[1].ID, res[1].ID)
+			return tcase{OffsetID: ff[1].ID, Limit: 2, Result: []string{ff[2].ID}}
+		},
+	}
 
-	// second page, offset excludes everything up to the given id
-	res, err = db.FetchPaginatedDocumentFiles(context.Background(), res[1].ID, 2)
-	require.NoError(t, err)
-	require.Len(t, res, 1)
-	assert.Equal(t, ff[2].ID, res[0].ID)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			res, err := db.FetchPaginatedDocumentFiles(context.Background(), c.OffsetID, c.Limit)
+			require.NoError(t, err)
+			require.Len(t, res, len(c.Result))
+
+			for i, id := range c.Result {
+				assert.Equal(t, id, res[i].ID)
+			}
+		})
+	}
 }
 
 func Test_agent_UpdateDocumentFileUnreferencedAt(t *testing.T) {
@@ -215,15 +234,21 @@ func Test_agent_DeleteDocumentFile(t *testing.T) {
 }
 
 func Test_agent_CheckDocumentFileReferenced(t *testing.T) {
-	cc := map[string]func(*testing.T, *DB) (string, xid.ID, bool){
-		"Referenced by branch content": func(t *testing.T, db *DB) (string, xid.ID, bool) {
+	type tcase struct {
+		ID         string
+		DocumentID xid.ID
+		Result     bool
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Referenced by branch content": func(t *testing.T, db *DB) tcase {
 			doc := prepDocuments(t, db, 1, func(_ int, doc *document.Document) {
 				doc.Content.Content[0].Attrs = document.Attributes{"uid": "file-ref"}
 			})[0]
 
-			return "file-ref", doc.ID, true
+			return tcase{ID: "file-ref", DocumentID: doc.ID, Result: true}
 		},
-		"Referenced by a file block in branch content": func(t *testing.T, db *DB) (string, xid.ID, bool) {
+		"Referenced by a file block in branch content": func(t *testing.T, db *DB) tcase {
 			doc := prepDocuments(t, db, 1, func(_ int, doc *document.Document) {
 				doc.Content.Content = append(doc.Content.Content, document.Block{
 					Type: document.BlockNodeFileBlock,
@@ -237,24 +262,24 @@ func Test_agent_CheckDocumentFileReferenced(t *testing.T) {
 				})
 			})[0]
 
-			return "file-ref", doc.ID, true
+			return tcase{ID: "file-ref", DocumentID: doc.ID, Result: true}
 		},
-		"Referenced by a history entry": func(t *testing.T, db *DB) (string, xid.ID, bool) {
+		"Referenced by a history entry": func(t *testing.T, db *DB) tcase {
 			doc := prepDocuments(t, db, 1, nil)[0]
 			doc.Content.Content[0].Attrs = document.Attributes{"uid": "file-ref"}
 
 			insertHistoryEntry(t, db, history.NewEntry(*doc, timeutil.Now(), null.String{}, nil, false))
 
-			return "file-ref", doc.ID, true
+			return tcase{ID: "file-ref", DocumentID: doc.ID, Result: true}
 		},
-		"Referenced by a comment": func(t *testing.T, db *DB) (string, xid.ID, bool) {
+		"Referenced by a comment": func(t *testing.T, db *DB) tcase {
 			c := prepDocumentComments(t, db, 1, func(_ int, c *comment.Comment) {
 				c.Content = comment.Content{"uid": "file-ref"}
 			})[0]
 
-			return "file-ref", c.DocumentID, true
+			return tcase{ID: "file-ref", DocumentID: c.DocumentID, Result: true}
 		},
-		"Referenced by a comment reply": func(t *testing.T, db *DB) (string, xid.ID, bool) {
+		"Referenced by a comment reply": func(t *testing.T, db *DB) tcase {
 			c := prepDocumentComments(t, db, 1, nil)[0]
 
 			prepDocumentCommentReplies(t, db, 1, func(_ int, r *comment.Reply) {
@@ -263,21 +288,21 @@ func Test_agent_CheckDocumentFileReferenced(t *testing.T) {
 				r.Content = comment.Content{"uid": "file-ref"}
 			})
 
-			return "file-ref", c.DocumentID, true
+			return tcase{ID: "file-ref", DocumentID: c.DocumentID, Result: true}
 		},
-		"Referenced by another document": func(t *testing.T, db *DB) (string, xid.ID, bool) {
+		"Referenced by another document": func(t *testing.T, db *DB) tcase {
 			prepDocuments(t, db, 1, func(_ int, doc *document.Document) {
 				doc.Content.Content[0].Attrs = document.Attributes{"uid": "file-ref"}
 			})
 
 			other := prepDocuments(t, db, 1, nil)[0]
 
-			return "file-ref", other.ID, false
+			return tcase{ID: "file-ref", DocumentID: other.ID, Result: false}
 		},
-		"Not referenced": func(t *testing.T, db *DB) (string, xid.ID, bool) {
+		"Not referenced": func(t *testing.T, db *DB) tcase {
 			doc := prepDocuments(t, db, 1, nil)[0]
 
-			return "file-ref", doc.ID, false
+			return tcase{ID: "file-ref", DocumentID: doc.ID, Result: false}
 		},
 	}
 
@@ -286,11 +311,83 @@ func Test_agent_CheckDocumentFileReferenced(t *testing.T) {
 			t.Parallel()
 
 			db := prepTempDB(t)
-			id, documentID, exp := cfn(t, db)
+			c := cfn(t, db)
 
-			res, err := db.CheckDocumentFileReferenced(context.Background(), id, documentID)
+			res, err := db.CheckDocumentFileReferenced(context.Background(), c.ID, c.DocumentID)
 			require.NoError(t, err)
-			assert.Equal(t, exp, res)
+			assert.Equal(t, c.Result, res)
+		})
+	}
+}
+
+func Test_agent_DeleteExpiredDocumentBranchHistoryEntries(t *testing.T) {
+	type tcase struct {
+		Before time.Time
+		// Rows maps each branch to how many entries it holds afterwards.
+		Rows map[xid.ID]int
+		// Newest maps each branch to its newest entry afterwards.
+		Newest map[xid.ID]xid.ID
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Nothing expired": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+			entries := prepHistoryEntries(t, db, doc, 4)
+
+			return tcase{
+				Before: entries[0].CreatedAt.Add(-time.Second),
+				Rows:   map[xid.ID]int{doc.BranchID: 4},
+				Newest: map[xid.ID]xid.ID{doc.BranchID: entries[3].ID},
+			}
+		},
+		"Expired entries go": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+			entries := prepHistoryEntries(t, db, doc, 4)
+
+			return tcase{
+				Before: entries[2].CreatedAt,
+				Rows:   map[xid.ID]int{doc.BranchID: 2},
+				Newest: map[xid.ID]xid.ID{doc.BranchID: entries[3].ID},
+			}
+		},
+		"Newest entry of each branch stays": func(t *testing.T, db *DB) tcase {
+			docs := prepDocuments(t, db, 2, nil)
+			entries := prepHistoryEntries(t, db, docs[0], 4)
+			other := prepHistoryEntries(t, db, docs[1], 2)
+
+			return tcase{
+				Before: entries[3].CreatedAt.Add(time.Hour),
+				Rows: map[xid.ID]int{
+					docs[0].BranchID: 1,
+					docs[1].BranchID: 1,
+				},
+				Newest: map[xid.ID]xid.ID{
+					docs[0].BranchID: entries[3].ID,
+					docs[1].BranchID: other[1].ID,
+				},
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			require.NoError(t, db.DeleteExpiredDocumentBranchHistoryEntries(context.Background(), c.Before))
+
+			for branchID, rows := range c.Rows {
+				assert.Equal(t, rows, countHistoryEntries(t, db, branchID))
+			}
+
+			for branchID, id := range c.Newest {
+				newest, err := db.fetchNewestDocumentBranchHistoryEntry(context.Background(), db.sql, branchID)
+				require.NoError(t, err)
+				require.NotNil(t, newest)
+				assert.Equal(t, id, newest.ID)
+			}
 		})
 	}
 }

@@ -134,21 +134,6 @@ func tagOrder(t *testing.T, db *DB, organizationID string) []xid.ID {
 	return ids
 }
 
-// tagSortIndex reads the stored position of a tag.
-func tagSortIndex(t *testing.T, db *DB, id xid.ID) int {
-	t.Helper()
-
-	q, args := db.builder.Select("sort_index").
-		From("tags").
-		Where(sq.Eq{"id": id}).
-		MustSql()
-
-	var index int
-	require.NoError(t, sqlx.Get(db.sql, &index, q, args...))
-
-	return index
-}
-
 // tagSettings reads every user's stored visibility setting for a tag.
 func tagSettings(t *testing.T, db *DB, tagID xid.ID) map[string]bool {
 	t.Helper()
@@ -217,21 +202,25 @@ func Test_agent_InsertTag(t *testing.T) {
 		Err              error
 	}
 
-	stubTag := func(t *testing.T, db *DB, organizationID, name string) tag.Tag {
-		return tag.NewTag(tag.CreateInput{TagName: name, Color: "#3b82f6"}, organizationID, prepUsers(t, db, 1)[0])
-	}
-
 	cc := map[string]func(*testing.T, *DB) tcase{
 		"Cancelled context": func(t *testing.T, db *DB) tcase {
 			return tcase{
 				CancelledContext: true,
-				Tag:              stubTag(t, db, prepOrganizations(t, db, 1)[0], "Release"),
-				Err:              assert.AnError,
+				Tag: tag.NewTag(
+					tag.CreateInput{TagName: "Release", Color: "#3b82f6"},
+					prepOrganizations(t, db, 1)[0],
+					prepUsers(t, db, 1)[0],
+				),
+				Err: assert.AnError,
 			}
 		},
 		"First tag starts at zero": func(t *testing.T, db *DB) tcase {
 			return tcase{
-				Tag: stubTag(t, db, prepOrganizations(t, db, 1)[0], "Release"),
+				Tag: tag.NewTag(
+					tag.CreateInput{TagName: "Release", Color: "#3b82f6"},
+					prepOrganizations(t, db, 1)[0],
+					prepUsers(t, db, 1)[0],
+				),
 			}
 		},
 		"Placed after the highest index": func(t *testing.T, db *DB) tcase {
@@ -240,7 +229,11 @@ func Test_agent_InsertTag(t *testing.T) {
 			})[0]
 
 			return tcase{
-				Tag:       stubTag(t, db, existing.OrganizationID, "Release"),
+				Tag: tag.NewTag(
+					tag.CreateInput{TagName: "Release", Color: "#3b82f6"},
+					existing.OrganizationID,
+					prepUsers(t, db, 1)[0],
+				),
 				SortIndex: 5,
 			}
 		},
@@ -248,7 +241,11 @@ func Test_agent_InsertTag(t *testing.T) {
 			existing := prepTags(t, db, 1, nil)[0]
 
 			return tcase{
-				Tag: stubTag(t, db, existing.OrganizationID, existing.TagName),
+				Tag: tag.NewTag(
+					tag.CreateInput{TagName: existing.TagName, Color: "#3b82f6"},
+					existing.OrganizationID,
+					prepUsers(t, db, 1)[0],
+				),
 				Err: tag.ErrDuplicateTagName,
 			}
 		},
@@ -256,7 +253,11 @@ func Test_agent_InsertTag(t *testing.T) {
 			existing := prepTags(t, db, 1, nil)[0]
 
 			return tcase{
-				Tag: stubTag(t, db, prepOrganizations(t, db, 1)[0], existing.TagName),
+				Tag: tag.NewTag(
+					tag.CreateInput{TagName: existing.TagName, Color: "#3b82f6"},
+					prepOrganizations(t, db, 1)[0],
+					prepUsers(t, db, 1)[0],
+				),
 			}
 		},
 	}
@@ -282,7 +283,14 @@ func Test_agent_InsertTag(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, c.SortIndex, tagSortIndex(t, db, c.Tag.ID))
+			q, args := db.builder.Select("sort_index").
+				From("tags").
+				Where(sq.Eq{"id": c.Tag.ID}).
+				MustSql()
+
+			var index int
+			require.NoError(t, sqlx.Get(db.sql, &index, q, args...))
+			assert.Equal(t, c.SortIndex, index)
 		})
 	}
 }
@@ -326,7 +334,7 @@ func Test_agent_FetchTagTree(t *testing.T) {
 				},
 			}
 		},
-		"Documents listed under each tag they carry, with their subtrees": func(t *testing.T, db *DB) tcase {
+		"Documents listed under each tag they carry with their subtrees": func(t *testing.T, db *DB) tcase {
 			tags := prepTags(t, db, 2, nil)
 			orgID := tags[0].OrganizationID
 
@@ -380,7 +388,7 @@ func Test_agent_FetchTagTree(t *testing.T) {
 				Result:         tag.Summaries{tagSummary(tg, false)},
 			}
 		},
-		"Another organization's assignment is ignored": func(t *testing.T, db *DB) tcase {
+		"Assignment in another organization is ignored": func(t *testing.T, db *DB) tcase {
 			tg := prepTags(t, db, 1, nil)[0]
 			other := prepDocuments(t, db, 1, nil)[0]
 
@@ -392,7 +400,7 @@ func Test_agent_FetchTagTree(t *testing.T) {
 				Result:         tag.Summaries{tagSummary(tg, false)},
 			}
 		},
-		"Hidden reflects the requesting user's own setting": func(t *testing.T, db *DB) tcase {
+		"Hidden reflects only the setting of the requesting user": func(t *testing.T, db *DB) tcase {
 			tags := prepTags(t, db, 3, nil)
 			users := prepUsers(t, db, 2)
 
@@ -489,7 +497,7 @@ func Test_agent_FetchBranchTagIDs(t *testing.T) {
 				Result:         []xid.ID{},
 			}
 		},
-		"Ids in the tags' display order": func(t *testing.T, db *DB) tcase {
+		"Ids in the display order of the tags": func(t *testing.T, db *DB) tcase {
 			tags := prepTags(t, db, 3, func(i int, tg *tag.Tag) {
 				tg.SortIndex = (i + 2) % 3
 			})
@@ -861,6 +869,7 @@ func Test_agent_SetTagVisibility(t *testing.T) {
 		TagID            xid.ID
 		Input            tag.VisibilityInput
 		Settings         map[string]bool
+		Check            func(t *testing.T, db *DB)
 		Err              error
 	}
 
@@ -910,7 +919,7 @@ func Test_agent_SetTagVisibility(t *testing.T) {
 				Settings:       map[string]bool{users[0]: true, users[1]: false},
 			}
 		},
-		"Overwrites the caller's existing setting": func(t *testing.T, db *DB) tcase {
+		"Overwrites the existing setting of the caller": func(t *testing.T, db *DB) tcase {
 			tg := prepTags(t, db, 1, nil)[0]
 			user := prepUsers(t, db, 1)[0]
 
@@ -928,6 +937,26 @@ func Test_agent_SetTagVisibility(t *testing.T) {
 				TagID:          tg.ID,
 				Input:          tag.VisibilityInput{Hidden: false},
 				Settings:       map[string]bool{user: false},
+			}
+		},
+		"Setting goes with the user": func(t *testing.T, db *DB) tcase {
+			tg := prepTags(t, db, 1, nil)[0]
+			user := prepUsers(t, db, 1)[0]
+
+			return tcase{
+				OrganizationID: tg.OrganizationID,
+				UserID:         user,
+				TagID:          tg.ID,
+				Input:          tag.VisibilityInput{Hidden: true},
+				Settings:       map[string]bool{user: true},
+				Check: func(t *testing.T, db *DB) {
+					q, args := db.builder.Delete("users").Where(sq.Eq{"id": user}).MustSql()
+
+					_, err := db.sql.Exec(q, args...)
+					require.NoError(t, err)
+
+					assert.Empty(t, tagSettings(t, db, tg.ID))
+				},
 			}
 		},
 	}
@@ -950,31 +979,12 @@ func Test_agent_SetTagVisibility(t *testing.T) {
 			testutil.RequireEqualError(t, c.Err, err)
 
 			assert.Equal(t, c.Settings, tagSettings(t, db, c.TagID))
+
+			if c.Check != nil {
+				c.Check(t, db)
+			}
 		})
 	}
-
-	t.Run("Setting goes with the user", func(t *testing.T) {
-		t.Parallel()
-
-		db := prepTempDB(t)
-		tg := prepTags(t, db, 1, nil)[0]
-		user := prepUsers(t, db, 1)[0]
-
-		require.NoError(t, db.SetTagVisibility(
-			context.Background(),
-			tg.OrganizationID,
-			user,
-			tg.ID,
-			tag.VisibilityInput{Hidden: true},
-		))
-
-		q, args := db.builder.Delete("users").Where(sq.Eq{"id": user}).MustSql()
-
-		_, err := db.sql.Exec(q, args...)
-		require.NoError(t, err)
-
-		assert.Empty(t, tagSettings(t, db, tg.ID))
-	})
 }
 
 func Test_agent_DeleteTag(t *testing.T) {
@@ -1072,6 +1082,7 @@ func Test_agent_AssignBranchTag(t *testing.T) {
 		BranchID         xid.ID
 		TagID            xid.ID
 		Result           []xid.ID
+		Check            func(t *testing.T, db *DB)
 		Err              error
 	}
 
@@ -1159,6 +1170,47 @@ func Test_agent_AssignBranchTag(t *testing.T) {
 				Err:            errutil.ErrNotFound,
 			}
 		},
+		"Assignment goes with the branch": func(t *testing.T, db *DB) tcase {
+			tg := prepTags(t, db, 1, nil)[0]
+			doc := prepDocuments(t, db, 1, func(_ int, doc *document.Document) {
+				doc.OrganizationID = tg.OrganizationID
+			})[0]
+
+			return tcase{
+				OrganizationID: tg.OrganizationID,
+				DocumentID:     doc.ID,
+				BranchID:       doc.BranchID,
+				TagID:          tg.ID,
+				Result:         []xid.ID{tg.ID},
+				Check: func(t *testing.T, db *DB) {
+					require.NoError(t, db.DeleteDocumentBranchByID(context.Background(), doc.BranchID, doc.OrganizationID))
+
+					assert.Empty(t, branchTagIDs(t, db, doc.BranchID))
+					assert.Equal(t, []xid.ID{tg.ID}, tagOrder(t, db, tg.OrganizationID))
+				},
+			}
+		},
+		"Assignment goes with the document": func(t *testing.T, db *DB) tcase {
+			tg := prepTags(t, db, 1, nil)[0]
+			doc := prepDocuments(t, db, 1, func(_ int, doc *document.Document) {
+				doc.OrganizationID = tg.OrganizationID
+			})[0]
+
+			return tcase{
+				OrganizationID: tg.OrganizationID,
+				DocumentID:     doc.ID,
+				BranchID:       doc.BranchID,
+				TagID:          tg.ID,
+				Result:         []xid.ID{tg.ID},
+				Check: func(t *testing.T, db *DB) {
+					_, err := db.DeleteDocument(context.Background(), doc.ID, doc.OrganizationID)
+					require.NoError(t, err)
+
+					assert.Empty(t, branchTagIDs(t, db, doc.BranchID))
+					assert.Equal(t, []xid.ID{tg.ID}, tagOrder(t, db, tg.OrganizationID))
+				},
+			}
+		},
 	}
 
 	for cn, cfn := range cc {
@@ -1179,35 +1231,12 @@ func Test_agent_AssignBranchTag(t *testing.T) {
 			testutil.RequireEqualError(t, c.Err, err)
 
 			assert.Equal(t, c.Result, branchTagIDs(t, db, c.BranchID))
+
+			if c.Check != nil {
+				c.Check(t, db)
+			}
 		})
 	}
-
-	t.Run("Assignment goes with the branch", func(t *testing.T) {
-		t.Parallel()
-
-		db := prepTempDB(t)
-		tg := prepTags(t, db, 1, nil)[0]
-		doc := prepTaggedDocument(t, db, tg)
-
-		require.NoError(t, db.DeleteDocumentBranchByID(context.Background(), doc.BranchID, doc.OrganizationID))
-
-		assert.Empty(t, branchTagIDs(t, db, doc.BranchID))
-		assert.Equal(t, []xid.ID{tg.ID}, tagOrder(t, db, tg.OrganizationID))
-	})
-
-	t.Run("Assignment goes with the document", func(t *testing.T) {
-		t.Parallel()
-
-		db := prepTempDB(t)
-		tg := prepTags(t, db, 1, nil)[0]
-		doc := prepTaggedDocument(t, db, tg)
-
-		_, err := db.DeleteDocument(context.Background(), doc.ID, doc.OrganizationID)
-		require.NoError(t, err)
-
-		assert.Empty(t, branchTagIDs(t, db, doc.BranchID))
-		assert.Equal(t, []xid.ID{tg.ID}, tagOrder(t, db, tg.OrganizationID))
-	})
 }
 
 func Test_agent_UnassignBranchTag(t *testing.T) {
@@ -1345,7 +1374,7 @@ func Test_agent_CopyBranchTags(t *testing.T) {
 				Err:              assert.AnError,
 			}
 		},
-		"Adds the source's tags to the target's own": func(t *testing.T, db *DB) tcase {
+		"Adds the source tags to the target tags": func(t *testing.T, db *DB) tcase {
 			tags, from, to := prepBranchPair(t, db,
 				func(tags []tag.Tag) []xid.ID { return []xid.ID{tags[1].ID} },
 				func(tags []tag.Tag) []xid.ID { return []xid.ID{tags[0].ID} },
@@ -1434,7 +1463,7 @@ func Test_agent_ReplaceBranchTags(t *testing.T) {
 				Err:              assert.AnError,
 			}
 		},
-		"Target carries exactly the source's tags": func(t *testing.T, db *DB) tcase {
+		"Target carries exactly the source tags": func(t *testing.T, db *DB) tcase {
 			tags, from, to := prepBranchPair(t, db,
 				func(tags []tag.Tag) []xid.ID { return []xid.ID{tags[1].ID} },
 				func(tags []tag.Tag) []xid.ID { return []xid.ID{tags[0].ID} },

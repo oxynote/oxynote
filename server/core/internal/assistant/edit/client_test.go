@@ -22,16 +22,31 @@ func TestMain(m *testing.M) {
 func Test_NewClient(t *testing.T) {
 	t.Parallel()
 
-	// nil http client falls back to the default client
-	c := NewClient(nil, "http://test.com")
-	require.NotNil(t, c)
-	assert.Same(t, http.DefaultClient, c.httpClient)
-	assert.Equal(t, "http://test.com", c.baseURL)
-
-	// explicit http client is kept
 	hc := &http.Client{}
-	c = NewClient(hc, "http://test.com")
-	assert.Same(t, hc, c.httpClient)
+
+	cc := map[string]struct {
+		HTTPClient *http.Client
+		Result     *http.Client
+	}{
+		"Nil http client falls back to the default client": {
+			Result: http.DefaultClient,
+		},
+		"Given http client is kept": {
+			HTTPClient: hc,
+			Result:     hc,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			client := NewClient(c.HTTPClient, "http://test.com")
+			require.NotNil(t, client)
+			assert.Same(t, c.Result, client.httpClient)
+			assert.Equal(t, "http://test.com", client.baseURL)
+		})
+	}
 }
 
 func Test_Client_Apply(t *testing.T) {
@@ -57,10 +72,8 @@ func Test_Client_Apply(t *testing.T) {
 		ResponseBody   string
 		ExpectedErrors []OpError
 		ExpectedPath   string
+		Requests       int
 		Err            error
-
-		// NoRequest asserts Apply returned before any HTTP round trip.
-		NoRequest bool
 	}{
 		"Successful batch": {
 			Ops: []Operation{
@@ -71,6 +84,7 @@ func Test_Client_Apply(t *testing.T) {
 			ResponseBody:   `{"errors": []}`,
 			ExpectedErrors: []OpError{},
 			ExpectedPath:   path,
+			Requests:       1,
 		},
 		// the mark is what a protected branch accepts a persist on, so
 		// it has to reach the wire rather than stay a caller's intent.
@@ -83,6 +97,7 @@ func Test_Client_Apply(t *testing.T) {
 			ResponseBody:   `{"errors": []}`,
 			ExpectedErrors: []OpError{},
 			ExpectedPath:   path,
+			Requests:       1,
 		},
 		"An ordinary batch names its user": {
 			Ops: []Operation{
@@ -93,6 +108,7 @@ func Test_Client_Apply(t *testing.T) {
 			ResponseBody:   `{"errors": []}`,
 			ExpectedErrors: []OpError{},
 			ExpectedPath:   path,
+			Requests:       1,
 		},
 		"Partial failure surfaces per-op errors": {
 			Ops: []Operation{
@@ -105,6 +121,7 @@ func Test_Client_Apply(t *testing.T) {
 				{Index: 0, Message: "block_uid not found: missing"},
 			},
 			ExpectedPath: path,
+			Requests:     1,
 		},
 		"HTTP error becomes a Go error": {
 			Ops: []Operation{
@@ -112,41 +129,45 @@ func Test_Client_Apply(t *testing.T) {
 			},
 			StatusCode:   500,
 			ResponseBody: `{"error": "boom"}`,
+			Requests:     1,
 			Err:          assert.AnError,
 		},
 		"Empty ops returns empty result without HTTP call": {
 			Ops:        nil,
 			StatusCode: 0,
-			NoRequest:  true,
+			Requests:   0,
 		},
 		"Invalid base URL fails before the request": {
-			Ops:       []Operation{Delete("x")},
-			BaseURL:   "://bad",
-			Err:       assert.AnError,
-			NoRequest: true,
+			Ops:      []Operation{Delete("x")},
+			BaseURL:  "://bad",
+			Requests: 0,
+			Err:      assert.AnError,
 		},
 		"Unencodable attrs fail at marshal time": {
 			Ops: []Operation{
 				UpdateAttrs("uid", map[string]any{"bad": make(chan int)}),
 			},
-			Err:       assert.AnError,
-			NoRequest: true,
+			Requests: 0,
+			Err:      assert.AnError,
 		},
 		"Transport failure becomes a Go error": {
 			Ops:        []Operation{Delete("x")},
 			CloseEarly: true,
+			Requests:   0,
 			Err:        assert.AnError,
 		},
 		"Unreadable error body still reports the status": {
 			Ops:          []Operation{Delete("x")},
 			StatusCode:   500,
 			TruncateBody: true,
+			Requests:     1,
 			Err:          assert.AnError,
 		},
 		"Malformed success response fails decoding": {
 			Ops:          []Operation{Delete("x")},
 			StatusCode:   200,
 			ResponseBody: `{not json`,
+			Requests:     1,
 			Err:          assert.AnError,
 		},
 	}
@@ -155,9 +176,13 @@ func Test_Client_Apply(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			var captured capture
+			var (
+				captured capture
+				requests int
+			)
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
 				captured.path = r.URL.Path
 				captured.method = r.Method
 
@@ -191,10 +216,7 @@ func Test_Client_Apply(t *testing.T) {
 
 			res, err := client.Apply(context.Background(), docID, branchID, c.Ops, c.UserID, c.System)
 			testutil.AssertEqualError(t, c.Err, err)
-
-			if c.NoRequest {
-				assert.Empty(t, captured.method, "Apply must return before any HTTP request is made")
-			}
+			assert.Equal(t, c.Requests, requests)
 
 			if c.Err != nil {
 				return
@@ -233,28 +255,34 @@ func Test_Client_Flush(t *testing.T) {
 		StatusCode   int
 		Body         string
 		TruncateBody bool
+		Requests     int
 		Err          error
 	}{
 		"Invalid base URL": {
-			BaseURL: "://bad",
-			Err:     assert.AnError,
+			BaseURL:  "://bad",
+			Requests: 0,
+			Err:      assert.AnError,
 		},
 		"Transport error": {
 			CloseEarly: true,
+			Requests:   0,
 			Err:        assert.AnError,
 		},
 		"Non-204 status surfaces the body": {
 			StatusCode: http.StatusInternalServerError,
 			Body:       `{"error":"pending changes could not be stored"}`,
+			Requests:   1,
 			Err:        assert.AnError,
 		},
 		"Unreadable error body": {
 			StatusCode:   http.StatusInternalServerError,
 			TruncateBody: true,
+			Requests:     1,
 			Err:          assert.AnError,
 		},
 		"Successful flush": {
 			StatusCode: http.StatusNoContent,
+			Requests:   1,
 		},
 	}
 
@@ -262,9 +290,13 @@ func Test_Client_Flush(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			var gotPath, gotMethod string
+			var (
+				gotPath, gotMethod string
+				requests           int
+			)
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
 				gotPath, gotMethod = r.URL.Path, r.Method
 
 				// declare a longer body than is written, so the client's
@@ -290,6 +322,7 @@ func Test_Client_Flush(t *testing.T) {
 
 			err := NewClient(srv.Client(), base).Flush(context.Background(), docID, branchID)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Requests, requests)
 
 			if c.StatusCode == 0 {
 				return

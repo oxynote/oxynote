@@ -287,82 +287,230 @@ func Test_agent_InsertDocumentBranch(t *testing.T) {
 }
 
 func Test_agent_FetchDocumentBranches(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		CancelledContext bool
+		DocumentID       xid.ID
+		OrganizationID   string
+		Result           []document.BranchSummary
+		Err              error
+	}
 
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	res, err := db.FetchDocumentBranches(ctx, xid.New(), "org-id")
-	require.Error(t, err)
-	assert.Nil(t, res)
-
-	// success - no branches
-	res, err = db.FetchDocumentBranches(context.Background(), xid.New(), "non-existent-org-id")
-	require.NoError(t, err)
-	assert.Empty(t, res)
-
-	// success
-	doc := prepDocuments(t, db, 1, nil)[0]
-	branch := prepDocumentBranches(t, db, 1, func(_ int, ndoc *document.Document) {
-		ndoc.ID = doc.ID
-		ndoc.OrganizationID = doc.OrganizationID
-	})[0]
-
-	exp := []document.BranchSummary{
-		{
-			BranchID:     doc.BranchID,
-			BranchName:   doc.BranchName,
-			DocumentName: doc.DocumentName,
-			Icon:         doc.Icon,
-			Protected:    doc.Protected,
-			Default:      doc.Default,
-			CreatedAt:    doc.CreatedAt,
-			UpdatedAt:    doc.UpdatedAt,
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				DocumentID:       xid.New(),
+				OrganizationID:   "org-id",
+				Err:              assert.AnError,
+			}
 		},
-		{
-			BranchID:     branch.BranchID,
-			BranchName:   branch.BranchName,
-			DocumentName: branch.DocumentName,
-			Icon:         branch.Icon,
-			Protected:    branch.Protected,
-			Default:      branch.Default,
-			CreatedAt:    branch.CreatedAt,
-			UpdatedAt:    branch.UpdatedAt,
+		"No branches": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				DocumentID:     xid.New(),
+				OrganizationID: "non-existent-org-id",
+				Result:         []document.BranchSummary{},
+			}
+		},
+		"Successful fetch": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+			branch := prepDocumentBranches(t, db, 1, func(_ int, ndoc *document.Document) {
+				ndoc.ID = doc.ID
+				ndoc.OrganizationID = doc.OrganizationID
+			})[0]
+
+			return tcase{
+				DocumentID:     doc.ID,
+				OrganizationID: doc.OrganizationID,
+				Result: []document.BranchSummary{
+					{
+						BranchID:     doc.BranchID,
+						DocumentID:   doc.ID,
+						BranchName:   doc.BranchName,
+						DocumentName: doc.DocumentName,
+						Icon:         doc.Icon,
+						Protected:    doc.Protected,
+						Default:      doc.Default,
+						CreatedAt:    doc.CreatedAt,
+						UpdatedAt:    doc.UpdatedAt,
+					},
+					{
+						BranchID:     branch.BranchID,
+						DocumentID:   doc.ID,
+						BranchName:   branch.BranchName,
+						DocumentName: branch.DocumentName,
+						Icon:         branch.Icon,
+						Protected:    branch.Protected,
+						Default:      branch.Default,
+						CreatedAt:    branch.CreatedAt,
+						UpdatedAt:    branch.UpdatedAt,
+					},
+				},
+			}
 		},
 	}
 
-	res, err = db.FetchDocumentBranches(context.Background(), doc.ID, doc.OrganizationID)
-	assert.NoError(t, err)
-	testutil.AssertFilterEqual(t, exp, res)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchDocumentBranches(ctx, c.DocumentID, c.OrganizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+			testutil.AssertFilterEqual(t, c.Result, res)
+		})
+	}
+}
+
+func Test_agent_FetchDocumentBranchesByOrganizationID(t *testing.T) {
+	type tcase struct {
+		CancelledContext bool
+		OrganizationID   string
+		Result           []document.BranchSummary
+		Err              error
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				OrganizationID:   "org-id",
+				Err:              assert.AnError,
+			}
+		},
+		"No branches": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				OrganizationID: "non-existent-org-id",
+				Result:         []document.BranchSummary{},
+			}
+		},
+		"Successful fetch": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+			branch := prepDocumentBranches(t, db, 1, func(_ int, ndoc *document.Document) {
+				ndoc.ID = doc.ID
+				ndoc.OrganizationID = doc.OrganizationID
+			})[0]
+
+			// a document of another organization is left out.
+			prepDocuments(t, db, 1, nil)
+
+			return tcase{
+				OrganizationID: doc.OrganizationID,
+				Result: []document.BranchSummary{
+					{
+						BranchID:     doc.BranchID,
+						DocumentID:   doc.ID,
+						BranchName:   doc.BranchName,
+						DocumentName: doc.DocumentName,
+						Icon:         doc.Icon,
+						Protected:    doc.Protected,
+						Default:      doc.Default,
+						CreatedAt:    doc.CreatedAt,
+						UpdatedAt:    doc.UpdatedAt,
+					},
+					{
+						BranchID:     branch.BranchID,
+						DocumentID:   doc.ID,
+						BranchName:   branch.BranchName,
+						DocumentName: branch.DocumentName,
+						Icon:         branch.Icon,
+						Protected:    branch.Protected,
+						Default:      branch.Default,
+						CreatedAt:    branch.CreatedAt,
+						UpdatedAt:    branch.UpdatedAt,
+					},
+				},
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchDocumentBranchesByOrganizationID(ctx, c.OrganizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+			testutil.AssertFilterEqual(t, c.Result, res)
+		})
+	}
 }
 
 func Test_agent_CountDocumentBranches(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		CancelledContext bool
+		DocumentID       xid.ID
+		OrganizationID   string
+		Result           int
+		Err              error
+	}
 
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				DocumentID:       xid.New(),
+				OrganizationID:   "org-id",
+				Err:              assert.AnError,
+			}
+		},
+		"No branches": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				DocumentID:     xid.New(),
+				OrganizationID: "non-existent-org-id",
+			}
+		},
+		"Successful count": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+			prepDocumentBranches(t, db, 2, func(_ int, ndoc *document.Document) {
+				ndoc.ID = doc.ID
+				ndoc.OrganizationID = doc.OrganizationID
+			})
 
-	count, err := db.CountDocumentBranches(ctx, xid.New(), "org-id")
-	require.Error(t, err)
-	assert.Zero(t, count)
+			return tcase{
+				DocumentID:     doc.ID,
+				OrganizationID: doc.OrganizationID,
+				Result:         3,
+			}
+		},
+	}
 
-	// success - no branches
-	count, err = db.CountDocumentBranches(context.Background(), xid.New(), "non-existent-org-id")
-	require.NoError(t, err)
-	assert.Zero(t, count)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// success
-	doc := prepDocuments(t, db, 1, nil)[0]
-	prepDocumentBranches(t, db, 2, func(_ int, ndoc *document.Document) {
-		ndoc.ID = doc.ID
-		ndoc.OrganizationID = doc.OrganizationID
-	})
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-	count, err = db.CountDocumentBranches(context.Background(), doc.ID, doc.OrganizationID)
-	assert.NoError(t, err)
-	assert.Equal(t, 3, count)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			count, err := db.CountDocumentBranches(ctx, c.DocumentID, c.OrganizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Result, count)
+		})
+	}
 }
 
 func Test_agent_DeleteDocumentBranchByID(t *testing.T) {
@@ -535,165 +683,305 @@ func Test_agent_UpdateDocumentBranchMetadata(t *testing.T) {
 }
 
 func Test_agent_FetchDocumentByBranchID(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		BranchID       xid.ID
+		OrganizationID string
+		Result         *document.Document
+		Err            error
+	}
 
-	// error - not found
-	res, err := db.FetchDocumentByBranchID(context.Background(), xid.New(), "non-existent-org-id")
-	testutil.AssertEqualError(t, sql.ErrNoRows, err)
-	assert.Nil(t, res)
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Non-existent branch": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				BranchID:       xid.New(),
+				OrganizationID: "non-existent-org-id",
+				Err:            sql.ErrNoRows,
+			}
+		},
+		"Successful fetch": func(t *testing.T, db *DB) tcase {
+			branch := prepDocumentBranches(t, db, 1, nil)[0]
 
-	// success
-	branch := prepDocumentBranches(t, db, 1, nil)[0]
+			return tcase{
+				BranchID:       branch.BranchID,
+				OrganizationID: branch.OrganizationID,
+				Result:         branch,
+			}
+		},
+	}
 
-	res, err = db.FetchDocumentByBranchID(context.Background(), branch.BranchID, branch.OrganizationID)
-	assert.NoError(t, err)
-	testutil.AssertFilterEqual(t, branch, res)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			res, err := db.FetchDocumentByBranchID(context.Background(), c.BranchID, c.OrganizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+			testutil.AssertFilterEqual(t, c.Result, res)
+		})
+	}
 }
 
 func Test_agent_FetchDocumentsByBranchIDs(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		CancelledContext bool
+		BranchIDs        []xid.ID
+		OrganizationID   string
+		Result           []document.Document
+		Err              error
+	}
 
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	res, err := db.FetchDocumentsByBranchIDs(ctx, []xid.ID{xid.New()}, "org")
-	require.Error(t, err)
-	assert.Nil(t, res)
-
-	// success - no ids
-	res, err = db.FetchDocumentsByBranchIDs(context.Background(), nil, "org")
-	require.NoError(t, err)
-	assert.Empty(t, res)
-	assert.NotNil(t, res)
-
-	// success - other organizations and unknown ids are left out
-	branches := prepDocumentBranches(t, db, 2, nil)
-	other := prepDocuments(t, db, 1, nil)[0]
-
-	res, err = db.FetchDocumentsByBranchIDs(
-		context.Background(),
-		[]xid.ID{
-			branches[0].BranchID,
-			branches[1].BranchID,
-			other.BranchID,
-			xid.New(),
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				BranchIDs:        []xid.ID{xid.New()},
+				OrganizationID:   "org",
+				Err:              assert.AnError,
+			}
 		},
-		branches[0].OrganizationID,
-	)
-	require.NoError(t, err)
+		"No ids": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				OrganizationID: "org",
+				Result:         []document.Document{},
+			}
+		},
+		"Other organizations and unknown ids are left out": func(t *testing.T, db *DB) tcase {
+			branches := prepDocumentBranches(t, db, 2, nil)
+			other := prepDocuments(t, db, 1, nil)[0]
 
-	slices.SortFunc(res, func(a, b document.Document) int {
-		return a.BranchID.Compare(b.BranchID)
-	})
+			return tcase{
+				BranchIDs: []xid.ID{
+					branches[0].BranchID,
+					branches[1].BranchID,
+					other.BranchID,
+					xid.New(),
+				},
+				OrganizationID: branches[0].OrganizationID,
+				Result:         []document.Document{*branches[0], *branches[1]},
+			}
+		},
+	}
 
-	testutil.AssertFilterEqual(t, []document.Document{*branches[0], *branches[1]}, res)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchDocumentsByBranchIDs(ctx, c.BranchIDs, c.OrganizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			slices.SortFunc(res, func(a, b document.Document) int {
+				return a.BranchID.Compare(b.BranchID)
+			})
+
+			testutil.AssertFilterEqual(t, c.Result, res)
+		})
+	}
 }
 
 func Test_agent_FetchDocumentBranchesUnsafe(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		CancelledContext bool
+		DocumentID       xid.ID
+		Result           []document.BranchSummary
+		Err              error
+	}
 
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				DocumentID:       xid.New(),
+				Err:              assert.AnError,
+			}
+		},
+		"No branches": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				DocumentID: xid.New(),
+				Result:     []document.BranchSummary{},
+			}
+		},
+		"No organization scoping applied": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
 
-	res, err := db.FetchDocumentBranchesUnsafe(ctx, xid.New())
-	require.Error(t, err)
-	assert.Nil(t, res)
-
-	// success - no branches
-	res, err = db.FetchDocumentBranchesUnsafe(context.Background(), xid.New())
-	require.NoError(t, err)
-	assert.Empty(t, res)
-
-	// success - no organization scoping applied
-	doc := prepDocuments(t, db, 1, nil)[0]
-
-	exp := []document.BranchSummary{
-		{
-			BranchID:     doc.BranchID,
-			BranchName:   doc.BranchName,
-			DocumentName: doc.DocumentName,
-			Icon:         doc.Icon,
-			Protected:    doc.Protected,
-			Default:      doc.Default,
-			CreatedAt:    doc.CreatedAt,
-			UpdatedAt:    doc.UpdatedAt,
+			return tcase{
+				DocumentID: doc.ID,
+				Result: []document.BranchSummary{
+					{
+						BranchID:     doc.BranchID,
+						DocumentID:   doc.ID,
+						BranchName:   doc.BranchName,
+						DocumentName: doc.DocumentName,
+						Icon:         doc.Icon,
+						Protected:    doc.Protected,
+						Default:      doc.Default,
+						CreatedAt:    doc.CreatedAt,
+						UpdatedAt:    doc.UpdatedAt,
+					},
+				},
+			}
 		},
 	}
 
-	res, err = db.FetchDocumentBranchesUnsafe(context.Background(), doc.ID)
-	assert.NoError(t, err)
-	testutil.AssertFilterEqual(t, exp, res)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchDocumentBranchesUnsafe(ctx, c.DocumentID)
+			testutil.AssertEqualError(t, c.Err, err)
+			testutil.AssertFilterEqual(t, c.Result, res)
+		})
+	}
 }
 
 func Test_agent_FetchDocumentUnsafeByBranchID(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		BranchID xid.ID
+		Result   *document.Document
+		Err      error
+	}
 
-	// error - not found
-	res, err := db.FetchDocumentUnsafeByBranchID(context.Background(), xid.New())
-	testutil.AssertEqualError(t, sql.ErrNoRows, err)
-	assert.Nil(t, res)
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Non-existent branch": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				BranchID: xid.New(),
+				Err:      sql.ErrNoRows,
+			}
+		},
+		"No organization scoping applied": func(t *testing.T, db *DB) tcase {
+			branch := prepDocumentBranches(t, db, 1, nil)[0]
 
-	// success - no organization scoping applied
-	branch := prepDocumentBranches(t, db, 1, nil)[0]
+			return tcase{
+				BranchID: branch.BranchID,
+				Result:   branch,
+			}
+		},
+	}
 
-	res, err = db.FetchDocumentUnsafeByBranchID(context.Background(), branch.BranchID)
-	assert.NoError(t, err)
-	testutil.AssertFilterEqual(t, branch, res)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			res, err := db.FetchDocumentUnsafeByBranchID(context.Background(), c.BranchID)
+			testutil.AssertEqualError(t, c.Err, err)
+			testutil.AssertFilterEqual(t, c.Result, res)
+		})
+	}
 }
 
 func Test_agent_FetchDocumentBranchesAfter(t *testing.T) {
-	db := prepTempDB(t)
-
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	res, err := db.FetchDocumentBranchesAfter(ctx, xid.ID{}, 10)
-	require.Error(t, err)
-	assert.Nil(t, res)
-
-	// success - no branches
-	res, err = db.FetchDocumentBranchesAfter(context.Background(), xid.ID{}, 10)
-	require.NoError(t, err)
-	assert.Empty(t, res)
-
-	// success - every branch across organizations, in id order. Each
-	// prepared document comes with its own default branch, so two documents
-	// and three extra branches make five.
-	branches := prepDocumentBranches(t, db, 3, func(i int, doc *document.Document) {
-		if i == 2 {
-			other := prepDocuments(t, db, 1, nil)[0]
-			doc.ID = other.ID
-			doc.OrganizationID = other.OrganizationID
-		}
-	})
-
-	all, err := db.FetchDocumentBranchesAfter(context.Background(), xid.ID{}, 10)
-	require.NoError(t, err)
-	require.Len(t, all, 5)
-
-	ids := make([]string, 0, len(all))
-
-	for _, doc := range all {
-		ids = append(ids, doc.BranchID.String())
+	type tcase struct {
+		CancelledContext bool
+		After            xid.ID
+		Limit            int
+		Result           []document.Document
+		Err              error
 	}
 
-	assert.IsIncreasing(t, ids)
+	// prepBranches prepares two documents of different organizations and
+	// three extra branches across them. Each document comes with its own
+	// default branch, so it returns five, in id order.
+	prepBranches := func(t *testing.T, db *DB) []document.Document {
+		t.Helper()
 
-	for _, branch := range branches {
-		assert.Contains(t, ids, branch.BranchID.String())
+		docs := prepDocuments(t, db, 2, nil)
+
+		branches := prepDocumentBranches(t, db, 3, func(i int, doc *document.Document) {
+			doc.ID = docs[i/2].ID
+			doc.OrganizationID = docs[i/2].OrganizationID
+		})
+
+		res := []document.Document{*docs[0], *docs[1], *branches[0], *branches[1], *branches[2]}
+
+		slices.SortFunc(res, func(a, b document.Document) int {
+			return a.BranchID.Compare(b.BranchID)
+		})
+
+		return res
 	}
 
-	// success - a page, then the rest after the page's last id
-	res, err = db.FetchDocumentBranchesAfter(context.Background(), xid.ID{}, 2)
-	require.NoError(t, err)
-	testutil.AssertFilterEqual(t, all[:2], res, null.Value[xid.ID]{})
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				Limit:            10,
+				Err:              assert.AnError,
+			}
+		},
+		"No branches": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				Limit:  10,
+				Result: []document.Document{},
+			}
+		},
+		"Every branch across organizations in id order": func(t *testing.T, db *DB) tcase {
+			return tcase{
+				Limit:  10,
+				Result: prepBranches(t, db),
+			}
+		},
+		"First page": func(t *testing.T, db *DB) tcase {
+			all := prepBranches(t, db)
 
-	res, err = db.FetchDocumentBranchesAfter(context.Background(), all[1].BranchID, 10)
-	require.NoError(t, err)
-	testutil.AssertFilterEqual(t, all[2:], res, null.Value[xid.ID]{})
+			return tcase{
+				Limit:  2,
+				Result: all[:2],
+			}
+		},
+		"Rest after the last id of a page": func(t *testing.T, db *DB) tcase {
+			all := prepBranches(t, db)
+
+			return tcase{
+				After:  all[1].BranchID,
+				Limit:  10,
+				Result: all[2:],
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchDocumentBranchesAfter(ctx, c.After, c.Limit)
+			testutil.AssertEqualError(t, c.Err, err)
+			testutil.AssertFilterEqual(t, c.Result, res)
+		})
+	}
 }
 
 // prepHistoryEntries writes count ordinary entries of the document's branch,
@@ -824,78 +1112,6 @@ func Test_agent_trimDocumentBranchHistoryEntries(t *testing.T) {
 
 			require.NoError(t, db.sql.Select(&ids, q, args...))
 			assert.ElementsMatch(t, []xid.ID{entries[2].ID, entries[3].ID}, ids)
-		})
-	}
-}
-
-func Test_agent_DeleteExpiredDocumentBranchHistoryEntries(t *testing.T) {
-	type tcase struct {
-		Before time.Time
-		// Rows maps each branch to how many entries it holds afterwards.
-		Rows map[xid.ID]int
-		// Newest maps each branch to its newest entry afterwards.
-		Newest map[xid.ID]xid.ID
-	}
-
-	cc := map[string]func(*testing.T, *DB) tcase{
-		"Nothing expired": func(t *testing.T, db *DB) tcase {
-			doc := prepDocuments(t, db, 1, nil)[0]
-			entries := prepHistoryEntries(t, db, doc, 4)
-
-			return tcase{
-				Before: entries[0].CreatedAt.Add(-time.Second),
-				Rows:   map[xid.ID]int{doc.BranchID: 4},
-				Newest: map[xid.ID]xid.ID{doc.BranchID: entries[3].ID},
-			}
-		},
-		"Expired entries go": func(t *testing.T, db *DB) tcase {
-			doc := prepDocuments(t, db, 1, nil)[0]
-			entries := prepHistoryEntries(t, db, doc, 4)
-
-			return tcase{
-				Before: entries[2].CreatedAt,
-				Rows:   map[xid.ID]int{doc.BranchID: 2},
-				Newest: map[xid.ID]xid.ID{doc.BranchID: entries[3].ID},
-			}
-		},
-		"Newest entry of each branch stays": func(t *testing.T, db *DB) tcase {
-			docs := prepDocuments(t, db, 2, nil)
-			entries := prepHistoryEntries(t, db, docs[0], 4)
-			other := prepHistoryEntries(t, db, docs[1], 2)
-
-			return tcase{
-				Before: entries[3].CreatedAt.Add(time.Hour),
-				Rows: map[xid.ID]int{
-					docs[0].BranchID: 1,
-					docs[1].BranchID: 1,
-				},
-				Newest: map[xid.ID]xid.ID{
-					docs[0].BranchID: entries[3].ID,
-					docs[1].BranchID: other[1].ID,
-				},
-			}
-		},
-	}
-
-	for cn, cfn := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			db := prepTempDB(t)
-			c := cfn(t, db)
-
-			require.NoError(t, db.DeleteExpiredDocumentBranchHistoryEntries(context.Background(), c.Before))
-
-			for branchID, rows := range c.Rows {
-				assert.Equal(t, rows, countHistoryEntries(t, db, branchID))
-			}
-
-			for branchID, id := range c.Newest {
-				newest, err := db.fetchNewestDocumentBranchHistoryEntry(context.Background(), db.sql, branchID)
-				require.NoError(t, err)
-				require.NotNil(t, newest)
-				assert.Equal(t, id, newest.ID)
-			}
 		})
 	}
 }
@@ -1374,21 +1590,47 @@ func Test_agent_fetchDocumentBranchHistoryHooks(t *testing.T) {
 }
 
 func Test_agent_fetchNewestDocumentBranchHistoryEntry(t *testing.T) {
-	t.Parallel()
+	type tcase struct {
+		BranchID xid.ID
+		Result   *history.Entry
+	}
 
-	db := prepTempDB(t)
-	doc := prepDocuments(t, db, 1, nil)[0]
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"No entries": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
 
-	// no entries
-	res, err := db.fetchNewestDocumentBranchHistoryEntry(context.Background(), db.sql, doc.BranchID)
-	require.NoError(t, err)
-	assert.Nil(t, res)
+			return tcase{
+				BranchID: doc.BranchID,
+			}
+		},
+		"Newest of several": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+			entries := prepHistoryEntries(t, db, doc, 3)
 
-	// the newest of several
-	entries := prepHistoryEntries(t, db, doc, 3)
+			return tcase{
+				BranchID: doc.BranchID,
+				Result:   &entries[2],
+			}
+		},
+	}
 
-	res, err = db.fetchNewestDocumentBranchHistoryEntry(context.Background(), db.sql, doc.BranchID)
-	require.NoError(t, err)
-	require.NotNil(t, res)
-	assertHistoryEntryEqual(t, entries[2], *res)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			res, err := db.fetchNewestDocumentBranchHistoryEntry(context.Background(), db.sql, c.BranchID)
+			require.NoError(t, err)
+
+			if c.Result == nil {
+				assert.Nil(t, res)
+				return
+			}
+
+			require.NotNil(t, res)
+			assertHistoryEntryEqual(t, *c.Result, *res)
+		})
+	}
 }

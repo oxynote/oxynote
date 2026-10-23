@@ -8,6 +8,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/apps/state"
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,106 +33,133 @@ func newTestManager(t *testing.T, db DB) *Manager {
 	return man
 }
 
-// encryptState encrypts the given payload as an installation state string.
-func encryptState[T state.Stamped](t *testing.T, secret string, payload T) string {
-	t.Helper()
-
-	token, err := state.Encode(payload, _installationStatePurpose, secret)
-	require.NoError(t, err)
-
-	return token
-}
-
 func Test_Manager_CreateInstallationURL(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Unconfigured manager fails", func(t *testing.T) {
-		t.Parallel()
+	cc := map[string]struct {
+		Unconfigured bool
+		Err          error
+	}{
+		"Unconfigured manager fails": {
+			Unconfigured: true,
+			Err:          ErrNotConfigured,
+		},
+		"Configured manager produces a URL with an encrypted state": {},
+	}
 
-		man, err := NewManager(nil, Options{})
-		require.NoError(t, err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-		_, err = man.CreateInstallationURL("org")
-		assert.ErrorIs(t, err, ErrNotConfigured)
-	})
+			man := newTestManager(t, nil)
 
-	t.Run("Configured manager produces a URL with an encrypted state", func(t *testing.T) {
-		t.Parallel()
+			if c.Unconfigured {
+				var err error
 
-		rawURL, err := newTestManager(t, nil).CreateInstallationURL("org-1")
-		require.NoError(t, err)
+				man, err = NewManager(nil, Options{})
+				require.NoError(t, err)
+			}
 
-		u, err := url.Parse(rawURL)
-		require.NoError(t, err)
+			rawURL, err := man.CreateInstallationURL("org-1")
+			testutil.AssertEqualError(t, c.Err, err)
 
-		assert.Equal(t, "https", u.Scheme)
-		assert.Equal(t, "github.com", u.Host)
-		assert.Equal(t, "/apps/test-app/installations/new", u.Path)
+			if err != nil {
+				return
+			}
 
-		is, err := state.Decode[InstallationState](
-			u.Query().Get("state"),
-			_installationStatePurpose,
-			_testSigningSecret,
-			_installationStateTTL,
-		)
-		require.NoError(t, err)
+			u, err := url.Parse(rawURL)
+			require.NoError(t, err)
 
-		assert.Equal(t, "org-1", is.OrganizationID)
-		assert.WithinDuration(t, time.Now(), is.CreatedAt, time.Minute)
-	})
+			assert.Equal(t, "https", u.Scheme)
+			assert.Equal(t, "github.com", u.Host)
+			assert.Equal(t, "/apps/test-app/installations/new", u.Path)
+
+			is, err := state.Decode[InstallationState](
+				u.Query().Get("state"),
+				_installationStatePurpose,
+				_testSigningSecret,
+				_installationStateTTL,
+			)
+			require.NoError(t, err)
+
+			assert.Equal(t, "org-1", is.OrganizationID)
+			assert.WithinDuration(t, time.Now(), is.CreatedAt, time.Minute)
+		})
+	}
 }
 
 func Test_Manager_VerifyInstallationState(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct {
+	cc := map[string]struct {
 		Configured  bool
 		State       func(t *testing.T) string
-		ExpectedErr string
 		ExpectedOrg string
+		Err         error
 	}{
 		"Unconfigured manager fails": {
 			State: func(*testing.T) string {
 				return "state"
 			},
-			ExpectedErr: ErrNotConfigured.Error(),
+			Err: ErrNotConfigured,
 		},
 		"Fresh state returns the organization ID": {
 			Configured: true,
 			State: func(t *testing.T) string {
-				return encryptState(t, _testSigningSecret, InstallationState{
-					OrganizationID: "org-1",
-					CreatedAt:      time.Now(),
-				})
+				token, err := state.Encode(
+					InstallationState{
+						OrganizationID: "org-1",
+						CreatedAt:      time.Now(),
+					},
+					_installationStatePurpose,
+					_testSigningSecret,
+				)
+				require.NoError(t, err)
+
+				return token
 			},
 			ExpectedOrg: "org-1",
 		},
 		"Expired state fails": {
 			Configured: true,
 			State: func(t *testing.T) string {
-				return encryptState(t, _testSigningSecret, InstallationState{
-					OrganizationID: "org-1",
-					CreatedAt:      time.Now().Add(-_installationStateTTL - time.Minute),
-				})
+				token, err := state.Encode(
+					InstallationState{
+						OrganizationID: "org-1",
+						CreatedAt:      time.Now().Add(-_installationStateTTL - time.Minute),
+					},
+					_installationStatePurpose,
+					_testSigningSecret,
+				)
+				require.NoError(t, err)
+
+				return token
 			},
-			ExpectedErr: "installation state has expired",
+			Err: ErrInstallationStateExpired,
 		},
 		"Garbage state fails decryption": {
 			Configured: true,
 			State: func(*testing.T) string {
 				return "not-a-state"
 			},
-			ExpectedErr: "installation state is invalid",
+			Err: ErrInvalidInstallationState,
 		},
 		"State encrypted with another key fails decryption": {
 			Configured: true,
 			State: func(t *testing.T) string {
-				return encryptState(t, strings.Repeat("x", 32), InstallationState{
-					OrganizationID: "org-1",
-					CreatedAt:      time.Now(),
-				})
+				token, err := state.Encode(
+					InstallationState{
+						OrganizationID: "org-1",
+						CreatedAt:      time.Now(),
+					},
+					_installationStatePurpose,
+					strings.Repeat("x", 32),
+				)
+				require.NoError(t, err)
+
+				return token
 			},
-			ExpectedErr: "installation state is invalid",
+			Err: ErrInvalidInstallationState,
 		},
 		"Non-JSON state payload fails unmarshalling": {
 			Configured: true,
@@ -141,34 +169,31 @@ func Test_Manager_VerifyInstallationState(t *testing.T) {
 
 				return state
 			},
-			ExpectedErr: "installation state is invalid",
+			Err: ErrInvalidInstallationState,
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
 			man := newTestManager(t, nil)
 
-			if !tc.Configured {
+			if !c.Configured {
 				var err error
 
 				man, err = NewManager(nil, Options{})
 				require.NoError(t, err)
 			}
 
-			is, err := man.VerifyInstallationState(tc.State(t))
+			is, err := man.VerifyInstallationState(c.State(t))
+			testutil.AssertEqualError(t, c.Err, err)
 
-			if tc.ExpectedErr != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.ExpectedErr)
-
+			if err != nil {
 				return
 			}
 
-			require.NoError(t, err)
-			assert.Equal(t, tc.ExpectedOrg, is.OrganizationID)
+			assert.Equal(t, c.ExpectedOrg, is.OrganizationID)
 		})
 	}
 }

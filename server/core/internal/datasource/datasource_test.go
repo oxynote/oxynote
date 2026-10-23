@@ -194,7 +194,7 @@ func Test_DataSource_updateCredentials(t *testing.T) {
 			},
 			Creds: processor.NewCredentials([]byte(`{"username":"old","password":""}`)),
 		},
-		"Error returned by processor.UpdatePrometheusCredentials": {
+		"Error returned by processor.UpdateBasicCredentials for prometheus": {
 			DataSource: &DataSource{Type: TypePrometheus},
 			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{`)),
 			Err:        assert.AnError,
@@ -204,7 +204,7 @@ func Test_DataSource_updateCredentials(t *testing.T) {
 			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
 			Creds:      processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
 		},
-		"Error returned by processor.UpdatePostgreSQLCredentials": {
+		"Error returned by processor.UpdateBasicCredentials for postgresql": {
 			DataSource: &DataSource{Type: TypePostgreSQL},
 			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{`)),
 			Err:        assert.AnError,
@@ -214,7 +214,7 @@ func Test_DataSource_updateCredentials(t *testing.T) {
 			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
 			Creds:      processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
 		},
-		"Error returned by processor.UpdateMySQLCredentials": {
+		"Error returned by processor.UpdateBasicCredentials for mariadb": {
 			DataSource: &DataSource{Type: TypeMariaDB},
 			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{`)),
 			Err:        assert.AnError,

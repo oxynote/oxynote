@@ -23,16 +23,6 @@ import (
 // whose queries this package has to be able to answer.
 const _availableMetricsPath = "../../document/files/available_metrics.json"
 
-// lastThreeHours returns the range a chart asks for by default.
-func lastThreeHours() processor.TimeRange {
-	now := timeutil.Now()
-
-	return processor.TimeRange{
-		From: now.Add(-3 * time.Hour),
-		To:   now,
-	}
-}
-
 // resultMatrix returns the matrix a query result carries, failing the
 // test if it carries anything else.
 func resultMatrix(t *testing.T, res *processor.PrometheusQueryResult) model.Matrix {
@@ -51,6 +41,30 @@ func Test_newEngine(t *testing.T) {
 	t.Parallel()
 
 	assert.NotNil(t, newEngine())
+
+	// a subquery with no step of its own is evaluated at the tick, so a
+	// ten minute window holds ten points.
+	q, err := newEngine().NewInstantQuery(
+		context.Background(),
+		queryable{registry: newRegistry()},
+		nil,
+		"count_over_time("+_namespace+"deploy_confidence_index[10m:])",
+		timeAt(1_000),
+	)
+	require.NoError(t, err)
+
+	defer q.Close()
+
+	res := q.Exec(context.Background())
+	require.NoError(t, res.Err)
+
+	v, ok := res.Value.(promql.Vector)
+	require.True(t, ok, "result is %T, not a vector", res.Value)
+	require.Len(t, v, 3)
+
+	for _, s := range v {
+		assert.Equal(t, 10.0, s.F)
+	}
 }
 
 func Test_NewClient(t *testing.T) {
@@ -65,6 +79,23 @@ func Test_NewClient(t *testing.T) {
 	assert.NotNil(t, c.engine)
 	assert.NotNil(t, c.parser)
 	assert.Len(t, c.registry, 15)
+
+	// the client holds one registry for its lifetime: the walks behind it
+	// cache the history they replay, and rebuilding it per query would
+	// walk every tick since the epoch again.
+	first := c.registry
+	require.NotEmpty(t, first)
+
+	assert.Equal(t, first[0].buckets[0].value(7), c.registry[0].buckets[0].value(7))
+
+	// a separate client is a separate cache, reading the same history.
+	other := NewClient()
+	require.Len(t, other.registry, len(first))
+
+	for i := range first {
+		assert.Equal(t, first[i].name, other.registry[i].name)
+		assert.Equal(t, first[i].buckets[0].value(7), other.registry[i].buckets[0].value(7))
+	}
 }
 
 func Test_Client_TestConnection(t *testing.T) {
@@ -108,6 +139,11 @@ func Test_Client_QueryRange(t *testing.T) {
 
 	c := _client
 	name := _namespace + "deploy_confidence_index"
+	stale := _namespace + "stale_branches_total"
+	tr := processor.TimeRange{
+		From: timeutil.Now().Add(-3 * time.Hour),
+		To:   timeutil.Now(),
+	}
 
 	cc := map[string]struct {
 		Query   string
@@ -115,10 +151,11 @@ func Test_Client_QueryRange(t *testing.T) {
 		Context context.Context //nolint:containedctx // the case states which context the query runs under
 		Series  int
 		Err     error
+		Check   func(t *testing.T, res *processor.PrometheusQueryResult)
 	}{
 		"An abandoned evaluation is not blamed on the query": {
 			Query: name,
-			Range: lastThreeHours(),
+			Range: tr,
 			Context: func() context.Context {
 				ctx, cancel := context.WithCancel(context.Background())
 				cancel()
@@ -129,27 +166,27 @@ func Test_Client_QueryRange(t *testing.T) {
 		},
 		"A plain selector returns every series of the family": {
 			Query:  name,
-			Range:  lastThreeHours(),
+			Range:  tr,
 			Series: 3,
 		},
 		"A selector narrowed by a label returns the one series": {
 			Query:  name + `{vibe="nervous"}`,
-			Range:  lastThreeHours(),
+			Range:  tr,
 			Series: 1,
 		},
 		"An aggregation collapses the family": {
 			Query:  "sum(" + name + ")",
-			Range:  lastThreeHours(),
+			Range:  tr,
 			Series: 1,
 		},
 		"A function over a window reads the history behind each point": {
 			Query:  "avg_over_time(" + name + "[30m])",
-			Range:  lastThreeHours(),
+			Range:  tr,
 			Series: 3,
 		},
 		"A macro is expanded before the query runs": {
 			Query:  "max_over_time(" + name + "[$__interval])",
-			Range:  lastThreeHours(),
+			Range:  tr,
 			Series: 3,
 		},
 		"A year of history backfills for free": {
@@ -159,17 +196,48 @@ func Test_Client_QueryRange(t *testing.T) {
 		},
 		"A selector naming nothing returns no series": {
 			Query: "not_a_metric",
-			Range: lastThreeHours(),
+			Range: tr,
 		},
-		"A query that does not parse is reported as the user's": {
+		"A query that does not parse is reported as invalid": {
 			Query: "sum(",
-			Range: lastThreeHours(),
+			Range: tr,
 			Err:   assert.AnError,
 		},
 		"A query of the wrong type is reported too": {
 			Query: `"a string"`,
-			Range: lastThreeHours(),
+			Range: tr,
 			Err:   assert.AnError,
+		},
+		"The same window answers the same history every time": {
+			Query:  stale,
+			Range:  tr,
+			Series: 3,
+			Check: func(t *testing.T, first *processor.PrometheusQueryResult) {
+				second, err := c.QueryRange(context.Background(), stale, tr)
+				require.NoError(t, err)
+
+				// the same window answers bit-identically, which is what
+				// keeps a drawn line from rewriting itself under the reader.
+				firstJSON, err := json.Marshal(first.Result)
+				require.NoError(t, err)
+
+				secondJSON, err := json.Marshal(second.Result)
+				require.NoError(t, err)
+
+				assert.JSONEq(t, string(firstJSON), string(secondJSON))
+
+				// and a window inside it answers the same values for the
+				// timestamps the two share: history does not depend on how
+				// it was asked for.
+				inner, err := c.QueryRange(context.Background(), stale, processor.TimeRange{
+					From: tr.From.Add(time.Hour),
+					To:   tr.To,
+				})
+				require.NoError(t, err)
+
+				outer := resultMatrix(t, first)
+				require.Len(t, resultMatrix(t, inner), len(outer))
+			},
 		},
 	}
 
@@ -216,166 +284,231 @@ func Test_Client_QueryRange(t *testing.T) {
 				// of them and still draws a few hundred points.
 				assert.Less(t, len(s.Values), 1_000)
 			}
+
+			if c2.Check != nil {
+				c2.Check(t, res)
+			}
 		})
 	}
-}
-
-func Test_Client_QueryRange_isFrozen(t *testing.T) {
-	t.Parallel()
-
-	c := _client
-	tr := lastThreeHours()
-	q := _namespace + "stale_branches_total"
-
-	first, err := c.QueryRange(context.Background(), q, tr)
-	require.NoError(t, err)
-
-	second, err := c.QueryRange(context.Background(), q, tr)
-	require.NoError(t, err)
-
-	// the same window answers bit-identically, which is what keeps a
-	// drawn line from rewriting itself under the reader.
-	firstJSON, err := json.Marshal(first.Result)
-	require.NoError(t, err)
-
-	secondJSON, err := json.Marshal(second.Result)
-	require.NoError(t, err)
-
-	assert.JSONEq(t, string(firstJSON), string(secondJSON))
-
-	// and a window inside it answers the same values for the timestamps
-	// the two share: history does not depend on how it was asked for.
-	inner, err := c.QueryRange(context.Background(), q, processor.TimeRange{
-		From: tr.From.Add(time.Hour),
-		To:   tr.To,
-	})
-	require.NoError(t, err)
-
-	outer := resultMatrix(t, first)
-	require.Len(t, resultMatrix(t, inner), len(outer))
 }
 
 func Test_Client_LabelNames(t *testing.T) {
 	t.Parallel()
 
-	c := _client
+	tr := processor.TimeRange{
+		From: timeutil.Now().Add(-3 * time.Hour),
+		To:   timeutil.Now(),
+	}
 
-	res, err := c.LabelNames(context.Background(), nil, lastThreeHours())
-	require.NoError(t, err)
-	require.NotNil(t, res)
+	cc := map[string]struct {
+		Matchers []string
+		Result   *processor.PrometheusLabelNamesResult
+		Err      error
+	}{
+		"No selector names every label": {
+			Result: &processor.PrometheusLabelNamesResult{Result: []string{
+				model.MetricNameLabel,
+				"confidence",
+				"duration",
+				"excuse",
+				"original_comment",
+				"outcome",
+				"owner_status",
+				"pizza_count",
+				"platform",
+				"removal_likelihood",
+				"reviewer_state",
+				"root_cause",
+				"severity",
+				"vibe",
+			}},
+		},
+		"A selector narrows the answer": {
+			Matchers: []string{_namespace + "deploy_confidence_index"},
+			Result:   &processor.PrometheusLabelNamesResult{Result: []string{model.MetricNameLabel, "vibe"}},
+		},
+		"A selector that does not parse": {
+			Matchers: []string{"{{"},
+			Err:      assert.AnError,
+		},
+	}
 
-	assert.Contains(t, res.Result, model.MetricNameLabel)
-	assert.Contains(t, res.Result, "vibe")
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// a selector narrows the answer.
-	res, err = c.LabelNames(
-		context.Background(),
-		[]string{_namespace + "deploy_confidence_index"},
-		lastThreeHours(),
-	)
-	require.NoError(t, err)
-	assert.Equal(t, []string{model.MetricNameLabel, "vibe"}, res.Result)
-
-	// a selector that does not parse is the caller's mistake.
-	res, err = c.LabelNames(context.Background(), []string{"{{"}, lastThreeHours())
-	require.Error(t, err)
-	assert.Nil(t, res)
+			res, err := _client.LabelNames(context.Background(), c.Matchers, tr)
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Result, res)
+		})
+	}
 }
 
 func Test_Client_LabelValues(t *testing.T) {
 	t.Parallel()
 
-	c := _client
+	tr := processor.TimeRange{
+		From: timeutil.Now().Add(-3 * time.Hour),
+		To:   timeutil.Now(),
+	}
 
-	// the metric names are what the editor completes on.
-	res, err := c.LabelValues(context.Background(), model.MetricNameLabel, nil, lastThreeHours())
-	require.NoError(t, err)
-	assert.Len(t, res.Result, 15)
+	cc := map[string]struct {
+		Label    string
+		Matchers []string
+		Result   *processor.PrometheusLabelValuesResult
+		Err      error
+	}{
+		"The metric names are what the editor completes on": {
+			Label: model.MetricNameLabel,
+			Result: &processor.PrometheusLabelValuesResult{Result: []string{
+				_namespace + "circle_back_count",
+				_namespace + "deploy_confidence_index",
+				_namespace + "feature_flag_graveyard_size",
+				_namespace + "friday_deploys_count",
+				_namespace + "hotfixes_per_release",
+				_namespace + "meetings_could_be_doc_count",
+				_namespace + "pizza_fridays_next_30_days",
+				_namespace + "pr_time_to_first_review_minutes",
+				_namespace + "prs_merged_friday_afternoon_count",
+				_namespace + "quick_sync_meetings_same_day_count",
+				_namespace + "secrets_detected_commits_count",
+				_namespace + "ship_it_approvals_after_5pm_count",
+				_namespace + "stale_branches_total",
+				_namespace + "temporary_fix_age_days",
+				_namespace + "works_on_my_machine_rate",
+			}},
+		},
+		"Every value of a label": {
+			Label:  "vibe",
+			Result: &processor.PrometheusLabelValuesResult{Result: []string{"feeling_lucky", "nervous", "oncall_already_paged"}},
+		},
+		"A selector whose series lack the label": {
+			Label:    "vibe",
+			Matchers: []string{_namespace + "secrets_detected_commits_count"},
+			Result:   &processor.PrometheusLabelValuesResult{Result: []string{}},
+		},
+		"A selector that does not parse": {
+			Label:    "vibe",
+			Matchers: []string{"{{"},
+			Err:      assert.AnError,
+		},
+	}
 
-	res, err = c.LabelValues(context.Background(), "vibe", nil, lastThreeHours())
-	require.NoError(t, err)
-	assert.Equal(t, []string{"feeling_lucky", "nervous", "oncall_already_paged"}, res.Result)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	res, err = c.LabelValues(
-		context.Background(),
-		"vibe",
-		[]string{_namespace + "secrets_detected_commits_count"},
-		lastThreeHours(),
-	)
-	require.NoError(t, err)
-	assert.Empty(t, res.Result)
-
-	res, err = c.LabelValues(context.Background(), "vibe", []string{"{{"}, lastThreeHours())
-	require.Error(t, err)
-	assert.Nil(t, res)
+			res, err := _client.LabelValues(context.Background(), c.Label, c.Matchers, tr)
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Result, res)
+		})
+	}
 }
 
 func Test_Client_Series(t *testing.T) {
 	t.Parallel()
 
-	c := _client
-
-	res, err := c.Series(
-		context.Background(),
-		[]string{_namespace + "deploy_confidence_index"},
-		lastThreeHours(),
-	)
-	require.NoError(t, err)
-	require.Len(t, res.Result, 3)
-
-	for _, ls := range res.Result {
-		assert.Equal(t, model.LabelValue(_namespace+"deploy_confidence_index"), ls[model.MetricNameLabel])
-		assert.NotEmpty(t, ls["vibe"])
+	name := _namespace + "deploy_confidence_index"
+	tr := processor.TimeRange{
+		From: timeutil.Now().Add(-3 * time.Hour),
+		To:   timeutil.Now(),
 	}
-
-	// selectors that overlap answer each series once.
-	res, err = c.Series(
-		context.Background(),
-		[]string{
-			_namespace + "deploy_confidence_index",
-			_namespace + `deploy_confidence_index{vibe="nervous"}`,
-		},
-		lastThreeHours(),
-	)
-	require.NoError(t, err)
-	assert.Len(t, res.Result, 3)
-
-	// no selector at all names every series there is.
-	res, err = c.Series(context.Background(), nil, lastThreeHours())
-	require.NoError(t, err)
 
 	var buckets int
 
-	for _, f := range c.registry {
+	for _, f := range _client.registry {
 		buckets += len(f.buckets)
 	}
 
-	assert.Len(t, res.Result, buckets)
+	cc := map[string]struct {
+		Matchers []string
+		Err      error
+		Check    func(t *testing.T, res []model.LabelSet)
+	}{
+		"A selector names the series of its family": {
+			Matchers: []string{name},
+			Check: func(t *testing.T, res []model.LabelSet) {
+				require.Len(t, res, 3)
 
-	res, err = c.Series(context.Background(), []string{"{{"}, lastThreeHours())
-	require.Error(t, err)
-	assert.Nil(t, res)
+				for _, ls := range res {
+					assert.Equal(t, model.LabelValue(name), ls[model.MetricNameLabel])
+					assert.NotEmpty(t, ls["vibe"])
+				}
+			},
+		},
+		"Selectors that overlap answer each series once": {
+			Matchers: []string{name, name + `{vibe="nervous"}`},
+			Check: func(t *testing.T, res []model.LabelSet) {
+				assert.Len(t, res, 3)
+			},
+		},
+		"No selector at all names every series there is": {
+			Check: func(t *testing.T, res []model.LabelSet) {
+				assert.Len(t, res, buckets)
+			},
+		},
+		"A selector that does not parse": {
+			Matchers: []string{"{{"},
+			Err:      assert.AnError,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := _client.Series(context.Background(), c.Matchers, tr)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, res)
+				return
+			}
+
+			require.NotNil(t, res)
+			c.Check(t, res.Result)
+		})
+	}
 }
 
 func Test_Client_parseMatchers(t *testing.T) {
 	t.Parallel()
 
-	c := _client
+	cc := map[string]struct {
+		Matchers []string
+		Result   [][]*labels.Matcher
+		Err      error
+	}{
+		"No selector means one empty set which selects everything": {
+			Result: [][]*labels.Matcher{nil},
+		},
+		"Each selector is a set of its own": {
+			Matchers: []string{`metric{a="b"}`, "other"},
+			Result: [][]*labels.Matcher{
+				{
+					labels.MustNewMatcher(labels.MatchEqual, "a", "b"),
+					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
+				},
+				{
+					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "other"),
+				},
+			},
+		},
+		"A selector that does not parse": {
+			Matchers: []string{"{{"},
+			Err:      assert.AnError,
+		},
+	}
 
-	// no selector means one empty set, which selects everything.
-	sets, err := c.parseMatchers(nil)
-	require.NoError(t, err)
-	assert.Equal(t, [][]*labels.Matcher{nil}, sets)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	sets, err = c.parseMatchers([]string{`metric{a="b"}`, "other"})
-	require.NoError(t, err)
-	require.Len(t, sets, 2)
-	assert.Len(t, sets[0], 2)
-	assert.Len(t, sets[1], 1)
-
-	sets, err = c.parseMatchers([]string{"{{"})
-	require.Error(t, err)
-	assert.Nil(t, sets)
+			sets, err := _client.parseMatchers(c.Matchers)
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Result, sets)
+		})
+	}
 }
 
 func Test_toModelMatrix(t *testing.T) {
@@ -435,7 +568,10 @@ func Test_welcomeDocumentQueries(t *testing.T) {
 	require.NotEmpty(t, blocks)
 
 	c := _client
-	tr := lastThreeHours()
+	tr := processor.TimeRange{
+		From: timeutil.Now().Add(-3 * time.Hour),
+		To:   timeutil.Now(),
+	}
 
 	var queries int
 

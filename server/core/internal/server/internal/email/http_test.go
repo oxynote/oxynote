@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	emailCore "github.com/oxynote/oxynote/server/core/internal/email"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -35,14 +36,7 @@ func Test_Handler_SendEmail(t *testing.T) {
 
 	hasResp := func(code int, body string) check {
 		return func(t *testing.T, _ *SenderMock, rec *httptest.ResponseRecorder) {
-			assert.Equal(t, code, rec.Code)
-
-			if body == "" {
-				assert.Zero(t, rec.Body.Len(), rec.Body.String())
-				return
-			}
-
-			assert.JSONEq(t, body, rec.Body.String())
+			testutil.AssertResponse(t, rec, code, body)
 		}
 	}
 

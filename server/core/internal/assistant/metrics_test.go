@@ -5,52 +5,11 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// gatherValue returns the sample value of the named metric whose
-// labels are a superset of want, or -1 when absent. Histograms
-// report their sample count.
-func gatherValue(t *testing.T, rg prometheus.Gatherer, name string, want map[string]string) float64 {
-	t.Helper()
-
-	families, err := rg.Gather()
-	require.NoError(t, err)
-
-	for _, mf := range families {
-		if mf.GetName() != name {
-			continue
-		}
-
-	metric:
-		for _, m := range mf.GetMetric() {
-			labels := map[string]string{}
-			for _, lp := range m.GetLabel() {
-				labels[lp.GetName()] = lp.GetValue()
-			}
-
-			for k, v := range want {
-				if labels[k] != v {
-					continue metric
-				}
-			}
-
-			switch mf.GetType() {
-			case dto.MetricType_COUNTER:
-				return m.GetCounter().GetValue()
-			case dto.MetricType_HISTOGRAM:
-				return float64(m.GetHistogram().GetSampleCount())
-			default:
-				return -1
-			}
-		}
-	}
-
-	return -1
-}
 
 func Test_newMetrics(t *testing.T) {
 	t.Parallel()
@@ -72,9 +31,9 @@ func Test_metrics_observeToolCall(t *testing.T) {
 
 	m.observeToolCall("get_document", "success", 0.25)
 
-	assert.InEpsilon(t, 1.0, gatherValue(t, rg, "test_assistant_tool_calls_total",
+	assert.InEpsilon(t, 1.0, testutil.MetricValue(t, rg, "test_assistant_tool_calls_total",
 		map[string]string{"tool": "get_document", "status": "success"}), 0.0001)
-	assert.InEpsilon(t, 1.0, gatherValue(t, rg, "test_assistant_tool_call_duration_seconds",
+	assert.InEpsilon(t, 1.0, testutil.MetricValue(t, rg, "test_assistant_tool_call_duration_seconds",
 		map[string]string{"tool": "get_document"}), 0.0001)
 }
 
@@ -88,9 +47,9 @@ func Test_metrics_recordToolCall(t *testing.T) {
 	m.recordToolCall("get_document", "success")
 	m.recordToolCall("get_document", "error")
 
-	assert.InEpsilon(t, 2.0, gatherValue(t, rg, "test_assistant_tool_calls_total",
+	assert.InEpsilon(t, 2.0, testutil.MetricValue(t, rg, "test_assistant_tool_calls_total",
 		map[string]string{"tool": "get_document", "status": "success"}), 0.0001)
-	assert.InEpsilon(t, 1.0, gatherValue(t, rg, "test_assistant_tool_calls_total",
+	assert.InEpsilon(t, 1.0, testutil.MetricValue(t, rg, "test_assistant_tool_calls_total",
 		map[string]string{"tool": "get_document", "status": "error"}), 0.0001)
 }
 
@@ -103,58 +62,106 @@ func Test_metrics_recordToolDuration(t *testing.T) {
 	m.recordToolDuration("get_document", 0.25)
 	m.recordToolDuration("get_document", 0.5)
 
-	assert.InEpsilon(t, 2.0, gatherValue(t, rg, "test_assistant_tool_call_duration_seconds",
+	assert.InEpsilon(t, 2.0, testutil.MetricValue(t, rg, "test_assistant_tool_call_duration_seconds",
 		map[string]string{"tool": "get_document"}), 0.0001)
 }
 
 func Test_metrics_recordTokenUsage(t *testing.T) {
 	t.Parallel()
 
-	rg := prometheus.NewRegistry()
-	m := newMetrics(metricutil.NewFactory("test", rg), "claude")
+	cachedUsage := &schema.TokenUsage{PromptTokens: 1, CompletionTokens: 1}
+	cachedUsage.PromptTokenDetails.CachedTokens = 9
+	cachedUsage.CompletionTokensDetails.ReasoningTokens = 4
 
-	// nothing to record must not panic or invent series.
-	m.recordTokenUsage(nil)
+	// Tokens maps each token type to its counter, or -1 when no series
+	// exists for it.
+	cc := map[string]struct {
+		Usage  *schema.TokenUsage
+		Tokens map[string]float64
+	}{
+		"Nothing to record": {
+			// nothing to record must not panic or invent series.
+			Tokens: map[string]float64{
+				"input":      -1,
+				"output":     -1,
+				"cache_read": -1,
+				"reasoning":  -1,
+			},
+		},
+		"Provider without prompt caching": {
+			// a provider without prompt caching reports no cache series
+			// at all, rather than a permanent zero that reads as "caching
+			// never hits".
+			Usage: &schema.TokenUsage{PromptTokens: 3, CompletionTokens: 5},
+			Tokens: map[string]float64{
+				"input":      3,
+				"output":     5,
+				"cache_read": -1,
+				"reasoning":  -1,
+			},
+		},
+		"Provider reporting caching": {
+			// a provider that does report caching registers the series.
+			Usage: cachedUsage,
+			Tokens: map[string]float64{
+				"input":      1,
+				"output":     1,
+				"cache_read": 9,
+				"reasoning":  4,
+			},
+		},
+	}
 
-	// a provider without prompt caching reports no cache series at all,
-	// rather than a permanent zero that reads as "caching never hits".
-	m.recordTokenUsage(&schema.TokenUsage{PromptTokens: 3, CompletionTokens: 5})
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	assert.InEpsilon(t, 3.0, gatherValue(t, rg, "test_assistant_token_usage_total",
-		map[string]string{"type": "input", "provider": "claude"}), 0.0001)
-	assert.InEpsilon(t, 5.0, gatherValue(t, rg, "test_assistant_token_usage_total",
-		map[string]string{"type": "output", "provider": "claude"}), 0.0001)
-	assert.InDelta(t, -1.0, gatherValue(t, rg, "test_assistant_token_usage_total",
-		map[string]string{"type": "cache_read"}), 0.0001)
+			rg := prometheus.NewRegistry()
+			m := newMetrics(metricutil.NewFactory("test", rg), "claude")
 
-	// a provider that does report caching registers the series.
-	usage := &schema.TokenUsage{PromptTokens: 1, CompletionTokens: 1}
-	usage.PromptTokenDetails.CachedTokens = 9
-	usage.CompletionTokensDetails.ReasoningTokens = 4
+			m.recordTokenUsage(c.Usage)
 
-	m.recordTokenUsage(usage)
-
-	assert.InEpsilon(t, 9.0, gatherValue(t, rg, "test_assistant_token_usage_total",
-		map[string]string{"type": "cache_read", "provider": "claude"}), 0.0001)
-	assert.InEpsilon(t, 4.0, gatherValue(t, rg, "test_assistant_token_usage_total",
-		map[string]string{"type": "reasoning", "provider": "claude"}), 0.0001)
+			for kind, exp := range c.Tokens {
+				assert.InDelta(t, exp, testutil.MetricValue(t, rg, "test_assistant_token_usage_total",
+					map[string]string{"type": kind, "provider": "claude"}), 0.0001, kind)
+			}
+		})
+	}
 }
 
 func Test_metrics_addTokens(t *testing.T) {
 	t.Parallel()
 
-	rg := prometheus.NewRegistry()
-	m := newMetrics(metricutil.NewFactory("test", rg), "openai")
+	// non-positive counts never create a series. Result is the input
+	// counter, or -1 when no series exists for it.
+	cc := map[string]struct {
+		Count  int
+		Result float64
+	}{
+		"Zero count creates no series": {
+			Result: -1,
+		},
+		"Negative count creates no series": {
+			Count:  -1,
+			Result: -1,
+		},
+		"Positive count is added": {
+			Count:  6,
+			Result: 6,
+		},
+	}
 
-	// non-positive counts never create a series.
-	m.addTokens("input", 0)
-	m.addTokens("input", -1)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	assert.InDelta(t, -1.0, gatherValue(t, rg, "test_assistant_token_usage_total",
-		map[string]string{"type": "input"}), 0.0001)
+			rg := prometheus.NewRegistry()
+			m := newMetrics(metricutil.NewFactory("test", rg), "openai")
 
-	m.addTokens("input", 6)
+			m.addTokens("input", c.Count)
 
-	assert.InEpsilon(t, 6.0, gatherValue(t, rg, "test_assistant_token_usage_total",
-		map[string]string{"type": "input", "provider": "openai"}), 0.0001)
+			assert.InDelta(t, c.Result, testutil.MetricValue(t, rg, "test_assistant_token_usage_total",
+				map[string]string{"type": "input", "provider": "openai"}), 0.0001)
+		})
+	}
 }

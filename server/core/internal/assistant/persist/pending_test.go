@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
-	"sync"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
@@ -13,62 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// stubPendingStore builds a pending-confirmation store backed by
-// memory, so a question asked in one session can be read back by the
-// next one.
-func stubPendingStore() *PendingStoreMock {
-	var (
-		mu   sync.Mutex
-		data = map[string]PendingConfirm{}
-	)
-
-	return &PendingStoreMock{
-		GetFunc: func(_ context.Context, key string) (*PendingConfirm, error) {
-			mu.Lock()
-			defer mu.Unlock()
-
-			value, ok := data[key]
-			if !ok {
-				return nil, errutil.ErrNotFound
-			}
-
-			return &value, nil
-		},
-		SetFunc: func(_ context.Context, key string, value PendingConfirm) error {
-			mu.Lock()
-			defer mu.Unlock()
-
-			data[key] = value
-
-			return nil
-		},
-		DeleteFunc: func(_ context.Context, key string) error {
-			mu.Lock()
-			defer mu.Unlock()
-
-			delete(data, key)
-
-			return nil
-		},
-	}
-}
-
-// stubPending is the confirmation these tests store and read back.
-func stubPending() PendingConfirm {
-	return PendingConfirm{
-		TurnID:       "t1",
-		InterruptIDs: []string{"a"},
-		Actions: []protocol.ConfirmAction{
-			{Tool: "insert_block", DocumentID: "d", Summary: "Insert a callout"},
-		},
-	}
-}
-
 func Test_NewPendings(t *testing.T) {
 	t.Parallel()
 
-	store := stubPendingStore()
-	log := discardLog()
+	store := &PendingStoreMock{}
+	log := slog.New(slog.DiscardHandler)
 
 	p := NewPendings(log, store)
 	require.NotNil(t, p)
@@ -80,7 +28,13 @@ func Test_NewPendings(t *testing.T) {
 func Test_Pendings_Load(t *testing.T) {
 	t.Parallel()
 
-	pending := stubPending()
+	pending := PendingConfirm{
+		TurnID:       "t1",
+		InterruptIDs: []string{"a"},
+		Actions: []protocol.ConfirmAction{
+			{Tool: "insert_block", DocumentID: "d", Summary: "Insert a callout"},
+		},
+	}
 
 	cc := map[string]struct {
 		Store  *PendingStoreMock
@@ -116,7 +70,7 @@ func Test_Pendings_Load(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got := NewPendings(discardLog(), c.Store).Load(context.Background(), SessionKey("org", "user"))
+			got := NewPendings(slog.New(slog.DiscardHandler), c.Store).Load(context.Background(), SessionKey("org", "user"))
 			assert.Equal(t, c.Result, got)
 
 			ff := c.Store.GetCalls()
@@ -129,11 +83,19 @@ func Test_Pendings_Load(t *testing.T) {
 func Test_Pendings_Save(t *testing.T) {
 	t.Parallel()
 
+	pending := PendingConfirm{
+		TurnID:       "t1",
+		InterruptIDs: []string{"a"},
+		Actions: []protocol.ConfirmAction{
+			{Tool: "insert_block", DocumentID: "d", Summary: "Insert a callout"},
+		},
+	}
+
 	cc := map[string]struct {
 		Store  *PendingStoreMock
 		Logged string
 	}{
-		"Confirmation is stored": {Store: stubPendingStore()},
+		"Confirmation is stored": {Store: &PendingStoreMock{}},
 		"Error returned by store.Set": {
 			// a failed save is logged, never fatal: the turn is already
 			// parked and the user still has to be asked.
@@ -153,12 +115,12 @@ func Test_Pendings_Save(t *testing.T) {
 			var buf bytes.Buffer
 
 			NewPendings(slog.New(slog.NewTextHandler(&buf, nil)), c.Store).
-				Save(context.Background(), SessionKey("org", "user"), stubPending())
+				Save(context.Background(), SessionKey("org", "user"), pending)
 
 			ff := c.Store.SetCalls()
 			require.Len(t, ff, 1)
 			assert.Equal(t, "assistant:session:org:user:pending", ff[0].Key)
-			assert.Equal(t, stubPending(), ff[0].Value)
+			assert.Equal(t, pending, ff[0].Value)
 
 			if c.Logged == "" {
 				assert.Empty(t, buf.String())
@@ -178,7 +140,7 @@ func Test_Pendings_Clear(t *testing.T) {
 		Store  *PendingStoreMock
 		Logged string
 	}{
-		"Confirmation is forgotten": {Store: stubPendingStore()},
+		"Confirmation is forgotten": {Store: &PendingStoreMock{}},
 		"Error returned by store.Delete": {
 			Store: &PendingStoreMock{
 				DeleteFunc: func(_ context.Context, _ string) error {

@@ -2,10 +2,13 @@ package mcp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -29,10 +32,10 @@ const _testSessionURL = "http://auth.test/api/internal/mcp/session"
 // _testResourceURL is the canonical MCP resource URL used across tests.
 const _testResourceURL = "http://front.test/core/api/mcp"
 
-// discardLog returns a logger that swallows all output.
-func discardLog() *slog.Logger {
-	return slog.New(slog.DiscardHandler)
-}
+// _serverBuilds is how many times the stateless transport builds the
+// server for one request: once to check the protocol version and once to
+// serve the call.
+const _serverBuilds = 2
 
 // stubSearchQueue satisfies the tools' SearchQueue. Its methods are never
 // called.
@@ -40,17 +43,11 @@ type stubSearchQueue struct {
 	tools.SearchQueue
 }
 
-// stubToolsDB builds the tools-package DB mock every test tool set
-// runs against.
-func stubToolsDB() *toolsMock.DB {
-	return &toolsMock.DB{}
-}
-
 // stubSet builds a real tool set over the given tools DB mock, so the
 // bridged tools behave exactly as the assistant's would.
 func stubSet(db *toolsMock.DB) *tools.Set {
 	return tools.New(tools.NewDeps(
-		discardLog(),
+		slog.New(slog.DiscardHandler),
 		db,
 		&toolsMock.Searcher{},
 		stubSearchQueue{},
@@ -68,38 +65,44 @@ func stubSet(db *toolsMock.DB) *tools.Set {
 	))
 }
 
-// prepHandler builds a Handler whose bearer middleware talks to a
-// mocked session endpoint answering with the given scopes, and whose
-// tool set runs over the given tools DB mock.
-func prepHandler(t *testing.T, scopes []string, toolsDB *toolsMock.DB, db *DBMock) *Handler {
+// stubSession answers the session endpoint with a valid session
+// carrying the given scopes.
+func stubSession(t *testing.T, scopes []string) httpmock.Responder {
 	t.Helper()
-
-	client, mt := testutil.MockHTTP()
 
 	scopesJSON, err := json.Marshal(scopes)
 	require.NoError(t, err)
 
-	mt.RegisterResponder(http.MethodGet, _testSessionURL, httpmock.NewStringResponder(
+	return httpmock.NewStringResponder(
 		http.StatusOK,
 		fmt.Sprintf(
 			`{"userId":"user1","organizationId":"org1","clientId":"client1","scopes":%s,"expiresAt":32503680000}`,
 			scopesJSON,
 		),
-	))
+	)
+}
 
-	man := &ManagerMock{
-		ToolSetFunc: func(string, string) *tools.Set {
-			return stubSet(toolsDB)
-		},
-	}
+// prepHandler builds a Handler whose bearer middleware talks to a
+// mocked session endpoint answering with the given responder. The
+// returned transport counts the session endpoint calls.
+func prepHandler(
+	t *testing.T,
+	session httpmock.Responder,
+	man *ManagerMock,
+	db *DBMock,
+) (*Handler, *httpmock.MockTransport) {
+	t.Helper()
 
-	hdl, err := NewHandler(discardLog(), man, db, client, Options{
+	client, mt := testutil.MockHTTP()
+	mt.RegisterResponder(http.MethodGet, _testSessionURL, session)
+
+	hdl, err := NewHandler(slog.New(slog.DiscardHandler), man, db, client, Options{
 		SessionURL:  _testSessionURL,
 		ResourceURL: _testResourceURL,
 	})
 	require.NoError(t, err)
 
-	return hdl
+	return hdl, mt
 }
 
 // rpc posts one JSON-RPC message to the handler with a bearer token and
@@ -116,7 +119,15 @@ func rpc(t *testing.T, hdl http.Handler, body string) (int, map[string]any) {
 	rec := httptest.NewRecorder()
 	hdl.ServeHTTP(rec, req)
 
-	for line := range strings.SplitSeq(rec.Body.String(), "\n") {
+	return rec.Code, ssePayload(t, rec.Body.String())
+}
+
+// ssePayload decodes the first JSON-RPC message of an SSE stream, or
+// returns nil when the stream carried no data.
+func ssePayload(t *testing.T, body string) map[string]any {
+	t.Helper()
+
+	for line := range strings.SplitSeq(body, "\n") {
 		data, ok := strings.CutPrefix(line, "data: ")
 		if !ok {
 			continue
@@ -126,48 +137,38 @@ func rpc(t *testing.T, hdl http.Handler, body string) (int, map[string]any) {
 
 		require.NoError(t, json.Unmarshal([]byte(data), &payload))
 
-		return rec.Code, payload
+		return payload
 	}
 
-	return rec.Code, nil
-}
-
-// listedTools runs tools/list through the handler and returns each
-// definition exactly as it went over the wire, keyed by tool name.
-func listedTools(t *testing.T, hdl http.Handler) map[string]map[string]any {
-	t.Helper()
-
-	code, payload := rpc(t, hdl, `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
-	require.Equal(t, http.StatusOK, code)
-	require.NotNil(t, payload)
-
-	result, ok := payload["result"].(map[string]any)
-	require.True(t, ok, "payload: %v", payload)
-
-	rawTools, ok := result["tools"].([]any)
-	require.True(t, ok)
-
-	defs := make(map[string]map[string]any, len(rawTools))
-
-	for _, rt := range rawTools {
-		tm, tok := rt.(map[string]any)
-		require.True(t, tok)
-
-		name, nok := tm["name"].(string)
-		require.True(t, nok)
-
-		defs[name] = tm
-	}
-
-	return defs
+	return nil
 }
 
 func Test_Options_Validate(t *testing.T) {
 	t.Parallel()
 
-	assert.EqualError(t, Options{}.Validate(), "missing mcp session url")
-	assert.EqualError(t, Options{SessionURL: _testSessionURL}.Validate(), "missing mcp resource url")
-	assert.NoError(t, Options{SessionURL: _testSessionURL, ResourceURL: _testResourceURL}.Validate())
+	cc := map[string]struct {
+		Options Options
+		Err     error
+	}{
+		"Missing session url": {
+			Err: errors.New("missing mcp session url"),
+		},
+		"Missing resource url": {
+			Options: Options{SessionURL: _testSessionURL},
+			Err:     errors.New("missing mcp resource url"),
+		},
+		"Valid options": {
+			Options: Options{SessionURL: _testSessionURL, ResourceURL: _testResourceURL},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Options.Validate())
+		})
+	}
 }
 
 func Test_Options_Enabled(t *testing.T) {
@@ -180,107 +181,160 @@ func Test_Options_Enabled(t *testing.T) {
 func Test_NewHandler(t *testing.T) {
 	t.Parallel()
 
-	// error: invalid options
-	hdl, err := NewHandler(discardLog(), &ManagerMock{}, &DBMock{}, http.DefaultClient, Options{})
-	require.Error(t, err)
-	assert.Nil(t, hdl)
+	cc := map[string]struct {
+		Options Options
+		Err     error
+	}{
+		"Invalid options": {
+			Err: errors.New("missing mcp session url"),
+		},
+		"Underivable metadata url": {
+			Options: Options{SessionURL: _testSessionURL, ResourceURL: "://bad"},
+			Err: fmt.Errorf(
+				"deriving resource metadata url: %w",
+				&url.Error{Op: "parse", URL: "://bad", Err: errors.New("missing protocol scheme")},
+			),
+		},
+		"Successful creation": {
+			Options: Options{SessionURL: _testSessionURL, ResourceURL: _testResourceURL},
+		},
+	}
 
-	// error: underivable metadata url
-	hdl, err = NewHandler(discardLog(), &ManagerMock{}, &DBMock{}, http.DefaultClient, Options{
-		SessionURL:  _testSessionURL,
-		ResourceURL: "://bad",
-	})
-	require.ErrorContains(t, err, "deriving resource metadata url")
-	assert.Nil(t, hdl)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// success
-	man := &ManagerMock{}
-	db := &DBMock{}
+			man := &ManagerMock{}
+			db := &DBMock{}
 
-	hdl, err = NewHandler(discardLog(), man, db, http.DefaultClient, Options{
-		SessionURL:  _testSessionURL,
-		ResourceURL: _testResourceURL,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, hdl)
+			hdl, err := NewHandler(slog.New(slog.DiscardHandler), man, db, http.DefaultClient, c.Options)
+			testutil.AssertEqualError(t, c.Err, err)
 
-	assert.NotNil(t, hdl.log)
-	assert.Same(t, man, hdl.man)
-	assert.Same(t, db, hdl.db)
-	assert.NotNil(t, hdl.handler)
+			if err != nil {
+				assert.Nil(t, hdl)
+
+				return
+			}
+
+			require.NotNil(t, hdl)
+
+			assert.NotNil(t, hdl.log)
+			assert.Same(t, man, hdl.man)
+			assert.Same(t, db, hdl.db)
+			assert.NotNil(t, hdl.handler)
+		})
+	}
 }
 
 func Test_Handler_ServeHTTP(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Missing bearer token", func(t *testing.T) {
-		t.Parallel()
+	cc := map[string]struct {
+		Session                httpmock.Responder
+		Header                 http.Header
+		Body                   string
+		Code                   int
+		Check                  func(t *testing.T, rec *httptest.ResponseRecorder)
+		SessionCalls           int
+		ToolSetCalls           int
+		FetchDocumentTreeCalls int
+	}{
+		"Missing bearer token": {
+			Session: stubSession(t, []string{ScopeDocumentRead}),
+			Body:    "{}",
+			Code:    http.StatusUnauthorized,
+			Check: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				t.Helper()
 
-		hdl := prepHandler(t, []string{ScopeDocumentRead}, stubToolsDB(), &DBMock{})
+				assert.Contains(
+					t,
+					rec.Header().Get("WWW-Authenticate"),
+					`resource_metadata="http://front.test/.well-known/oauth-protected-resource/core/api/mcp"`,
+				)
+			},
+		},
+		"Rejected bearer token": {
+			Session: httpmock.NewStringResponder(http.StatusUnauthorized, ""),
+			Header:  http.Header{"Authorization": {"Bearer tok"}},
+			Body:    "{}",
+			Code:    http.StatusUnauthorized,
+			Check: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				t.Helper()
 
-		req := httptest.NewRequest(http.MethodPost, "http://test.com/", strings.NewReader("{}"))
-		rec := httptest.NewRecorder()
+				assert.Contains(t, rec.Header().Get("WWW-Authenticate"), "resource_metadata")
+			},
+			SessionCalls: 1,
+		},
+		"Successful initialize": {
+			Session: stubSession(t, []string{ScopeDocumentRead}),
+			Header: http.Header{
+				"Content-Type":  {"application/json"},
+				"Accept":        {"application/json, text/event-stream"},
+				"Authorization": {"Bearer tok"},
+			},
+			Body: `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`,
+			Code: http.StatusOK,
+			Check: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				t.Helper()
 
-		hdl.ServeHTTP(rec, req)
+				payload := ssePayload(t, rec.Body.String())
+				require.NotNil(t, payload)
 
-		assert.Equal(t, http.StatusUnauthorized, rec.Code)
-		assert.Contains(
-			t,
-			rec.Header().Get("WWW-Authenticate"),
-			`resource_metadata="http://front.test/.well-known/oauth-protected-resource/core/api/mcp"`,
-		)
-	})
+				result, ok := payload["result"].(map[string]any)
+				require.True(t, ok, "payload: %v", payload)
 
-	t.Run("Rejected bearer token", func(t *testing.T) {
-		t.Parallel()
+				info, ok := result["serverInfo"].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, "oxynote", info["name"])
 
-		client, mt := testutil.MockHTTP()
-		mt.RegisterResponder(http.MethodGet, _testSessionURL, httpmock.NewStringResponder(http.StatusUnauthorized, ""))
+				// the instructions are how a connecting agent learns what it is
+				// working with; an initialize without them leaves the client
+				// with bare tool descriptions.
+				instructions, ok := result["instructions"].(string)
+				require.True(t, ok, "instructions: %v", result["instructions"])
+				assert.Contains(t, instructions, "Oxynote")
+				assert.Contains(t, instructions, "## Content")
+			},
+			SessionCalls:           1,
+			ToolSetCalls:           _serverBuilds,
+			FetchDocumentTreeCalls: _serverBuilds,
+		},
+	}
 
-		hdl, err := NewHandler(discardLog(), &ManagerMock{}, &DBMock{}, client, Options{
-			SessionURL:  _testSessionURL,
-			ResourceURL: _testResourceURL,
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			man := &ManagerMock{
+				ToolSetFunc: func(string, string) *tools.Set {
+					return stubSet(&toolsMock.DB{})
+				},
+			}
+			db := &DBMock{}
+			hdl, mt := prepHandler(t, c.Session, man, db)
+
+			req := httptest.NewRequest(http.MethodPost, "http://test.com/", strings.NewReader(c.Body))
+			maps.Copy(req.Header, c.Header)
+
+			rec := httptest.NewRecorder()
+			hdl.ServeHTTP(rec, req)
+
+			require.Equal(t, c.Code, rec.Code)
+			c.Check(t, rec)
+
+			assert.Equal(t, c.SessionCalls, mt.GetTotalCallCount())
+
+			toolSetCalls := man.ToolSetCalls()
+			require.Len(t, toolSetCalls, c.ToolSetCalls)
+
+			for _, call := range toolSetCalls {
+				assert.Equal(t, "org1", call.OrgID)
+				assert.Equal(t, "user1", call.UserID)
+			}
+
+			assert.Len(t, db.FetchDocumentTreeCalls(), c.FetchDocumentTreeCalls)
 		})
-		require.NoError(t, err)
-
-		req := httptest.NewRequest(http.MethodPost, "http://test.com/", strings.NewReader("{}"))
-		req.Header.Set("Authorization", "Bearer tok")
-
-		rec := httptest.NewRecorder()
-		hdl.ServeHTTP(rec, req)
-
-		assert.Equal(t, http.StatusUnauthorized, rec.Code)
-		assert.Contains(t, rec.Header().Get("WWW-Authenticate"), "resource_metadata")
-	})
-
-	t.Run("Successful initialize", func(t *testing.T) {
-		t.Parallel()
-
-		hdl := prepHandler(t, []string{ScopeDocumentRead}, stubToolsDB(), &DBMock{})
-
-		code, payload := rpc(
-			t,
-			hdl,
-			`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`,
-		)
-		require.Equal(t, http.StatusOK, code)
-		require.NotNil(t, payload)
-
-		result, ok := payload["result"].(map[string]any)
-		require.True(t, ok, "payload: %v", payload)
-
-		info, ok := result["serverInfo"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "oxynote", info["name"])
-
-		// the instructions are how a connecting agent learns what it is
-		// working with; an initialize without them leaves the client
-		// with bare tool descriptions.
-		instructions, ok := result["instructions"].(string)
-		require.True(t, ok, "instructions: %v", result["instructions"])
-		assert.Contains(t, instructions, "Oxynote")
-		assert.Contains(t, instructions, "## Content")
-	})
+	}
 }
 
 func Test_resourceMetadataURL(t *testing.T) {

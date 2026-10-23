@@ -14,6 +14,15 @@ import (
 // the realtime service names in its messages.
 var _nodeName = regexp.MustCompile(`\b[a-z][A-Za-z]*\b`)
 
+// _placementHints says where a block that fits one kind of container
+// belongs, keyed by its node type. The realtime service only says the
+// block does not fit where it was sent.
+var _placementHints = map[document.BlockNodeType]string{
+	document.BlockNodeTitledCodeBlock: "A titled <pre> goes only in a <split_doc>'s <right>; leave the title out for code anywhere else.",
+	document.BlockNodeParamList:       "<params> go only in a <split_doc>'s <left>, after its heading and text.",
+	document.BlockNodeMetricBlock:     "A <metric> goes only in <metrics> or a <split_doc>'s <right>.",
+}
+
 // OpError describes one operation's failure on the Node side.
 type OpError struct {
 	// Index is the position of the failing op in the request's
@@ -40,9 +49,23 @@ func (e OpError) describe() string {
 		return fmt.Sprintf("reference block %s sits inside the block being moved; choose a reference outside it", uid)
 	}
 
-	return _nodeName.ReplaceAllStringFunc(e.Message, func(w string) string {
+	msg := _nodeName.ReplaceAllStringFunc(e.Message, func(w string) string {
 		return markup.DescribeNode(document.BlockNodeType(w))
 	})
+
+	if node, rest, ok := strings.Cut(e.Message, " "); ok && strings.HasPrefix(rest, "is not allowed there") {
+		if hint, known := _placementHints[document.BlockNodeType(node)]; known {
+			msg += " " + hint
+		}
+	}
+
+	// once a split doc's left side has its params, only more params
+	// fit, which reads as if the text sent were wrong rather than late.
+	if strings.Contains(e.Message, "there in "+string(document.BlockNodeSplitDocLeft)+", which takes "+string(document.BlockNodeParamList)+" at that point") {
+		msg += " In <left>, text, lists and callouts go before the <params>."
+	}
+
+	return msg
 }
 
 // Err renders the failed operation as an error, or returns nil when

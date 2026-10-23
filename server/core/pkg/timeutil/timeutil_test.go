@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -15,28 +16,43 @@ func TestMain(m *testing.M) {
 }
 
 func Test_Parse(t *testing.T) {
-	// error
-	tim, err := Parse("F")
-	assert.Error(t, err)
-	assert.Zero(t, tim)
+	tim := Now().Round(time.Second)
 
-	// success
-	tim = Now()
+	cc := map[string]struct {
+		Inp    string
+		Result time.Time
+		Err    error
+	}{
+		"Error returned by time.Parse": {
+			Inp: "F",
+			Err: assert.AnError,
+		},
+		"Successful parse": {
+			Inp:    tim.Format(time.RFC3339),
+			Result: tim,
+		},
+		"Offset input is normalised to UTC": {
+			Inp:    "2026-01-02T10:00:00+02:00",
+			Result: time.Date(2026, 1, 2, 8, 0, 0, 0, time.UTC),
+		},
+	}
 
-	tim = tim.Round(time.Second)
-	tim1, err := Parse(tim.Format(time.RFC3339))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	assert.NoError(t, err)
-	assert.Equal(t, tim, tim1)
+			res, err := Parse(c.Inp)
+			testutil.AssertEqualError(t, c.Err, err)
 
-	t.Run("Offset input is normalised to UTC", func(t *testing.T) {
-		t.Parallel()
+			if err != nil {
+				assert.Zero(t, res)
+				return
+			}
 
-		tim, err := Parse("2026-01-02T10:00:00+02:00")
-		require.NoError(t, err)
-		assert.Equal(t, time.UTC, tim.Location())
-		assert.Equal(t, time.Date(2026, 1, 2, 8, 0, 0, 0, time.UTC), tim)
-	})
+			assert.Equal(t, time.UTC, res.Location())
+			assert.Equal(t, c.Result, res)
+		})
+	}
 }
 
 func Test_Now(t *testing.T) {

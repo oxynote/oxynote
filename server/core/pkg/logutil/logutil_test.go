@@ -38,49 +38,68 @@ func Test_Critical(t *testing.T) {
 }
 
 func Test_CriticalSkipFrames(t *testing.T) {
-	out, b := testutil.NewBuffer()
-	log := slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{
-		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
-			if a.Key == "time" {
-				return slog.Attr{}
-			}
-
-			return a
+	cc := map[string]struct {
+		Frames uint
+		Result string
+	}{
+		"Successful capture with more skipped frames than the stacktrace has": {
+			Frames: 10000,
+			Result: `{
+				"level":"ERROR",
+				"error":"internal error",
+				"msg":"test"
+			}`,
 		},
-	}))
+		"Successful capture without skipped frames": {
+			Frames: 0,
+			Result: `{
+				"level":"ERROR",
+				"error":"internal error",
+				"msg":"test"
+			}`,
+		},
+	}
 
-	require.NotPanics(t, func() {
-		CriticalSkipFrames(log, errors.New("error"), 10000).Error("test")
-	})
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	require.NoError(t, out.Flush())
-	assert.JSONEq(t, `{
-		"level":"ERROR", 
-		"error":"internal error",
-		"msg":"test"
-	}`, b.String())
+			out, b := testutil.NewBuffer()
+			log := slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{
+				ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
+					if a.Key == "time" {
+						return slog.Attr{}
+					}
 
-	b.Reset()
+					return a
+				},
+			}))
 
-	require.NotPanics(t, func() {
-		CriticalSkipFrames(log, errors.New("error"), 0).Error("test")
-	})
+			require.NotPanics(t, func() {
+				CriticalSkipFrames(log, errors.New("error"), c.Frames).Error("test")
+			})
 
-	require.NoError(t, out.Flush())
-	assert.JSONEq(t, `{
-		"level":"ERROR", 
-		"error":"internal error",
-		"msg":"test"
-	}`, b.String())
+			require.NoError(t, out.Flush())
+			assert.JSONEq(t, c.Result, b.String())
+		})
+	}
 }
 
 func Test_Recover(t *testing.T) {
 	cc := map[string]struct {
-		Panic        any
-		Plan         *RecoveryPlan
-		ShowCritical bool
-		Result       string
+		Panic           any
+		Plan            *RecoveryPlan
+		ShowCritical    bool
+		Result          string
+		BeforeSendCalls int
 	}{
+		"Nothing logged or sent without panic": {
+			Plan: &RecoveryPlan{
+				msg:          "test",
+				localFields:  map[string]any{"hello": "world"},
+				beforeSendFn: func() {},
+			},
+		},
 		"Successful recovery from string type panic": {
 			Panic: "error",
 			Plan: &RecoveryPlan{
@@ -94,6 +113,7 @@ func Test_Recover(t *testing.T) {
 				"msg":"test",
 				"hello": "world"
 			}`,
+			BeforeSendCalls: 1,
 		},
 		"Successful recovery from error type panic": {
 			Panic: errors.New("error"),
@@ -108,6 +128,7 @@ func Test_Recover(t *testing.T) {
 				"msg":"test",
 				"hello": "world"
 			}`,
+			BeforeSendCalls: 1,
 		},
 		"Successful recovery from unknown type panic": {
 			Panic: 123,
@@ -122,6 +143,7 @@ func Test_Recover(t *testing.T) {
 				"msg":"test",
 				"hello": "world"
 			}`,
+			BeforeSendCalls: 1,
 		},
 		"Successful recovery from panic without beforeSendFn": {
 			Panic: "error",
@@ -161,8 +183,10 @@ func Test_Recover(t *testing.T) {
 	}
 
 	for cn, c := range cc {
+		// the cases write ShowCritical, a package var that
+		// CriticalSkipFrames reads, so they cannot run in parallel.
 		t.Run(cn, func(t *testing.T) {
-			var calledBefore bool
+			var beforeSendCalls int
 
 			out, b := testutil.NewBuffer()
 			log := slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{
@@ -177,7 +201,7 @@ func Test_Recover(t *testing.T) {
 
 			if c.Plan != nil && c.Plan.beforeSendFn != nil {
 				c.Plan.beforeSendFn = func() {
-					calledBefore = true
+					beforeSendCalls++
 				}
 			}
 
@@ -186,17 +210,20 @@ func Test_Recover(t *testing.T) {
 			assert.NotPanics(t, func() {
 				defer Recover(log, c.Plan)
 
-				panic(c.Panic)
+				if c.Panic != nil {
+					panic(c.Panic)
+				}
 			})
 
+			assert.Equal(t, c.BeforeSendCalls, beforeSendCalls)
 			require.NoError(t, out.Flush())
-			assert.JSONEq(t, c.Result, b.String())
 
-			if c.Plan == nil {
+			if c.Result == "" {
+				assert.Empty(t, b.String())
 				return
 			}
 
-			assert.Equal(t, c.Plan.beforeSendFn != nil, calledBefore)
+			assert.JSONEq(t, c.Result, b.String())
 		})
 	}
 
@@ -207,25 +234,41 @@ func Test_RecoveryValue(t *testing.T) {
 	// the nil plan branch inside the returned closure is reachable
 	// only through a direct call, since Recover replaces a nil plan
 	// before invoking this helper.
-	out, b := testutil.NewBuffer()
-	log := slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{
-		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
-			if a.Key == "time" {
-				return slog.Attr{}
-			}
-
-			return a
+	cc := map[string]struct {
+		Panic  any
+		Result string
+	}{
+		"Successful recovery from panic without recovery plan": {
+			Panic: "error",
+			Result: `{
+				"level":"ERROR",
+				"error":"internal error",
+				"msg":"recovered from panic"
+			}`,
 		},
-	}))
+	}
 
-	RecoveryValue(log, nil)("error")
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	require.NoError(t, out.Flush())
-	assert.JSONEq(t, `{
-		"level":"ERROR",
-		"error":"internal error",
-		"msg":"recovered from panic"
-	}`, b.String())
+			out, b := testutil.NewBuffer()
+			log := slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{
+				ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
+					if a.Key == "time" {
+						return slog.Attr{}
+					}
+
+					return a
+				},
+			}))
+
+			RecoveryValue(log, nil)(c.Panic)
+
+			require.NoError(t, out.Flush())
+			assert.JSONEq(t, c.Result, b.String())
+		})
+	}
 }
 
 func Test_NewRecoveryPlan(t *testing.T) {
@@ -255,32 +298,48 @@ func Test_NewDebugWriter(t *testing.T) {
 }
 
 func Test_DebugWriter_Write(t *testing.T) {
-	out, b := testutil.NewBuffer()
-	log := slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
-	w := DebugWriter{log: log, exclude: []string{"test", "123"}}
+	cc := map[string]struct {
+		Inp    string
+		Logged bool
+	}{
+		"Message excluded by the first keyword": {
+			Inp: "testhello",
+		},
+		"Message excluded by the second keyword": {
+			Inp: "123hello456",
+		},
+		"Successful write": {
+			Inp:    "hello",
+			Logged: true,
+		},
+	}
 
-	n, err := w.Write([]byte("testhello"))
-	assert.NoError(t, err)
-	assert.Equal(t, len("testhello"), n)
-	assert.NoError(t, out.Flush())
-	assert.NotContains(t, b.String(), `"level":"DEBUG"`)
-	assert.NotContains(t, b.String(), `"msg":"testhello"`)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	n, err = w.Write([]byte("123hello456"))
-	assert.NoError(t, err)
-	assert.Equal(t, len("123hello456"), n)
-	assert.NoError(t, out.Flush())
-	assert.NotContains(t, b.String(), `"level":"DEBUG"`)
-	assert.NotContains(t, b.String(), `"msg":"123hello456"`)
+			out, b := testutil.NewBuffer()
+			log := slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{
+				Level: slog.LevelDebug,
+			}))
+			w := DebugWriter{log: log, exclude: []string{"test", "123"}}
 
-	n, err = w.Write([]byte("hello"))
-	assert.NoError(t, err)
-	assert.Equal(t, len("hello"), n)
-	assert.NoError(t, out.Flush())
-	assert.Contains(t, b.String(), `"level":"DEBUG"`)
-	assert.Contains(t, b.String(), `"msg":"hello"`)
+			n, err := w.Write([]byte(c.Inp))
+			assert.NoError(t, err)
+			assert.Equal(t, len(c.Inp), n)
+			assert.NoError(t, out.Flush())
+
+			if !c.Logged {
+				assert.NotContains(t, b.String(), `"level":"DEBUG"`)
+				assert.NotContains(t, b.String(), `"msg":"`+c.Inp+`"`)
+
+				return
+			}
+
+			assert.Contains(t, b.String(), `"level":"DEBUG"`)
+			assert.Contains(t, b.String(), `"msg":"`+c.Inp+`"`)
+		})
+	}
 }
 
 func Test_DebugWriter_StdLogger(t *testing.T) {

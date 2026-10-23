@@ -85,6 +85,26 @@ func (a *agent) FetchDocumentBranches(ctx context.Context, docID xid.ID, organiz
 	return branches, nil
 }
 
+// FetchDocumentBranchesByOrganizationID fetches every branch of the
+// organization's documents as lightweight summaries, grouped by document
+// with each document's default branch first.
+func (a *agent) FetchDocumentBranchesByOrganizationID(ctx context.Context, organizationID string) ([]document.BranchSummary, error) {
+	q, args := a.selectBranchSummary(a.builder.Select()).
+		Where(sq.Eq{
+			"fk_organization_id": organizationID,
+		}).
+		OrderBy("fk_document_id", `"default" DESC`, "created_at", "id").
+		MustSql()
+
+	branches := []document.BranchSummary{}
+
+	if err := sqlx.SelectContext(ctx, a.sql, &branches, q, args...); err != nil {
+		return nil, err
+	}
+
+	return branches, nil
+}
+
 // CountDocumentBranches returns the number of branches for a document.
 // Used to enforce the minimum of one branch before deletion.
 func (a *agent) CountDocumentBranches(ctx context.Context, docID xid.ID, organizationID string) (int, error) {
@@ -276,6 +296,7 @@ func (a *agent) selectDocumentBranch(b sq.SelectBuilder) sq.SelectBuilder {
 func (a *agent) selectBranchSummary(b sq.SelectBuilder) sq.SelectBuilder {
 	return b.Columns(
 		`id AS "branch_id"`,
+		`fk_document_id AS "document_id"`,
 		`branch_name AS "branch_name"`,
 		`document_name AS "document_name"`,
 		`icon AS "icon"`,

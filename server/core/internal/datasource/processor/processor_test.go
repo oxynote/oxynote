@@ -79,7 +79,21 @@ func TestMain(m *testing.M) {
 		gnomock.DefaultTCP(3306),
 		gnomock.WithEnv("MARIADB_ROOT_PASSWORD="+_mysqlRootPass),
 		gnomock.WithEnv("MARIADB_DATABASE="+_testDB),
-		gnomock.WithHealthCheck(mysqlHealthcheck),
+		gnomock.WithHealthCheck(func(ctx context.Context, c *gnomock.Container) error {
+			db, err := sql.Open("mysql", fmt.Sprintf(
+				"%s:%s@tcp(%s)/%s",
+				_mysqlRootUser,
+				_mysqlRootPass,
+				c.Address(gnomock.DefaultPort),
+				_testDB,
+			))
+			if err != nil {
+				return err
+			}
+			defer db.Close() //nolint:errcheck // error provides no meaningful info
+
+			return db.PingContext(ctx)
+		}),
 	)
 	if err != nil {
 		panic("cannot set up mariadb: " + err.Error())
@@ -94,8 +108,34 @@ func TestMain(m *testing.M) {
 
 	_mysqlAddr = mysqlContainer.Host + ":" + strconv.Itoa(mysqlContainer.DefaultPort())
 
-	if err = seedMySQL(_mysqlAddr); err != nil {
-		panic("cannot seed mariadb: " + err.Error())
+	mysqlDB, err := sql.Open("mysql", fmt.Sprintf(
+		"%s:%s@tcp(%s)/%s",
+		_mysqlRootUser,
+		_mysqlRootPass,
+		_mysqlAddr,
+		_testDB,
+	))
+	if err != nil {
+		panic("cannot open mariadb: " + err.Error())
+	}
+
+	qq := []string{
+		"CREATE TABLE metrics (time BIGINT, host VARCHAR(64), value DOUBLE)",
+		"INSERT INTO metrics VALUES (1700000000, 'web-1', 10.5), (1700000060, 'web-2', 20.5)",
+		"CREATE TABLE typed_metrics (time BIGINT, code VARCHAR(8), total DECIMAL(10,2))",
+		"INSERT INTO typed_metrics VALUES (1700000000, '200', 10.50)",
+		fmt.Sprintf("CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", _readerUser, _readerPass),
+		fmt.Sprintf("GRANT SELECT ON *.* TO '%s'@'%%'", _readerUser),
+	}
+
+	for _, q := range qq {
+		if _, err = mysqlDB.Exec(q); err != nil {
+			panic("cannot seed mariadb: " + err.Error())
+		}
+	}
+
+	if err = mysqlDB.Close(); err != nil {
+		panic("cannot close mariadb: " + err.Error())
 	}
 
 	pgContainer, err := gnomock.Start(pgDocker.Preset(
@@ -125,67 +165,6 @@ func TestMain(m *testing.M) {
 	_pgAddr = pgContainer.Host + ":" + strconv.Itoa(pgContainer.DefaultPort())
 
 	goleak.VerifyTestMain(m, goleak.IgnoreCurrent())
-}
-
-// mysqlHealthcheck reports whether the MariaDB container accepts root
-// connections.
-func mysqlHealthcheck(ctx context.Context, c *gnomock.Container) error {
-	db, err := sql.Open("mysql", fmt.Sprintf(
-		"%s:%s@tcp(%s)/%s",
-		_mysqlRootUser,
-		_mysqlRootPass,
-		c.Address(gnomock.DefaultPort),
-		_testDB,
-	))
-	if err != nil {
-		return err
-	}
-	defer db.Close() //nolint:errcheck // error provides no meaningful info
-
-	return db.PingContext(ctx)
-}
-
-// seedMySQL populates the MariaDB container with test data and a
-// read-only user.
-func seedMySQL(addr string) error {
-	db, err := sql.Open("mysql", fmt.Sprintf(
-		"%s:%s@tcp(%s)/%s",
-		_mysqlRootUser,
-		_mysqlRootPass,
-		addr,
-		_testDB,
-	))
-	if err != nil {
-		return err
-	}
-	defer db.Close() //nolint:errcheck // error provides no meaningful info
-
-	qq := []string{
-		"CREATE TABLE metrics (time BIGINT, host VARCHAR(64), value DOUBLE)",
-		"INSERT INTO metrics VALUES (1700000000, 'web-1', 10.5), (1700000060, 'web-2', 20.5)",
-		"CREATE TABLE typed_metrics (time BIGINT, code VARCHAR(8), total DECIMAL(10,2))",
-		"INSERT INTO typed_metrics VALUES (1700000000, '200', 10.50)",
-		fmt.Sprintf("CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", _readerUser, _readerPass),
-		fmt.Sprintf("GRANT SELECT ON *.* TO '%s'@'%%'", _readerUser),
-	}
-
-	for _, q := range qq {
-		if _, err := db.Exec(q); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// mysqlTestURL builds a MariaDB data source URL for the given user.
-func mysqlTestURL(user, pass string) string {
-	return fmt.Sprintf("mysql://%s:%s@%s/%s", user, pass, _mysqlAddr, _testDB)
-}
-
-// pgTestURL builds a PostgreSQL data source URL for the given user.
-func pgTestURL(user, pass string) string {
-	return fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", user, pass, _pgAddr, _testDB)
 }
 
 func Test_ConnectionStatus_Error(t *testing.T) {
@@ -235,29 +214,55 @@ func Test_ConnectionStatus_Error(t *testing.T) {
 }
 
 func Test_Credentials_MarshalJSON(t *testing.T) {
-	t.Parallel()
+	cc := map[string]struct {
+		Creds Credentials
 
-	c := NewCredentials([]byte(`{"username":"user"}`))
+		// ByValue marshals the credentials as a field held by value in
+		// another struct.
+		ByValue bool
+		Result  string
+	}{
+		"Credentials with a payload": {
+			Creds:  NewCredentials([]byte(`{"username":"user"}`)),
+			Result: `{"username":"user"}`,
+		},
+		// empty credentials marshal as null rather than as the zero bytes
+		// that make every enclosing struct fail with "unexpected end of JSON
+		// input".
+		"Empty credentials": {
+			Result: `null`,
+		},
+		// the payload is unexported, so a struct that marshals credentials
+		// it should not emits nothing of them rather than the secret
+		// itself.
+		"Credentials held by value": {
+			Creds:   NewCredentials([]byte(`{"username":"user"}`)),
+			ByValue: true,
+			Result:  `{"credentials":{}}`,
+		},
+	}
 
-	data, err := c.MarshalJSON()
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"username":"user"}`, string(data))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// empty credentials marshal as null rather than as the zero bytes that
-	// make every enclosing struct fail with "unexpected end of JSON input".
-	var empty Credentials
+			var (
+				data []byte
+				err  error
+			)
 
-	data, err = empty.MarshalJSON()
-	require.NoError(t, err)
-	assert.JSONEq(t, `null`, string(data))
+			if c.ByValue {
+				data, err = json.Marshal(struct {
+					Credentials Credentials `json:"credentials"`
+				}{Credentials: c.Creds})
+			} else {
+				data, err = c.Creds.MarshalJSON()
+			}
 
-	// the payload is unexported, so a struct that marshals credentials it
-	// should not emits nothing of them rather than the secret itself.
-	out, err := json.Marshal(struct {
-		Credentials Credentials `json:"credentials"`
-	}{Credentials: c})
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"credentials":{}}`, string(out))
+			require.NoError(t, err)
+			assert.JSONEq(t, c.Result, string(data))
+		})
+	}
 }
 
 func Test_Credentials_IsValid(t *testing.T) {
@@ -327,54 +332,94 @@ func Test_Credentials_UnmarshalJSON(t *testing.T) {
 }
 
 func Test_Credentials_Encrypt(t *testing.T) {
-	t.Parallel()
+	type tcase struct {
+		Creds Credentials
+		Err   error
+	}
 
-	c := NewCredentials([]byte(`{"username":"user"}`))
+	cc := map[string]tcase{
+		// credentials a decrypt could not read are refused, so the
+		// ciphertext they came from is never overwritten by an encryption
+		// of nothing.
+		"Unreadable credentials": func() tcase {
+			creds := NewCredentials([]byte("not-sealed"))
+			require.Error(t, creds.Decrypt(_testKeys, _testAAD))
 
-	// success
-	data, err := c.Encrypt(_testKeys, _testAAD)
-	require.NoError(t, err)
-	require.NotEmpty(t, data)
+			return tcase{
+				Creds: creds,
+				Err:   assert.AnError,
+			}
+		}(),
+		"Successful encryption": {
+			Creds: NewCredentials([]byte(`{"username":"user"}`)),
+		},
+	}
 
-	decrypted := NewCredentials(data)
-	require.NoError(t, decrypted.Decrypt(_testKeys, _testAAD))
-	assert.Equal(t, c, decrypted)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// credentials a decrypt could not read are refused, so the ciphertext
-	// they came from is never overwritten by an encryption of nothing.
-	unreadable := NewCredentials([]byte("not-sealed"))
-	require.Error(t, unreadable.Decrypt(_testKeys, _testAAD))
+			data, err := c.Creds.Encrypt(_testKeys, _testAAD)
+			testutil.AssertEqualError(t, c.Err, err)
 
-	_, err = unreadable.Encrypt(_testKeys, _testAAD)
-	assert.Error(t, err)
+			if err != nil {
+				return
+			}
+
+			require.NotEmpty(t, data)
+
+			decrypted := NewCredentials(data)
+			require.NoError(t, decrypted.Decrypt(_testKeys, _testAAD))
+			assert.Equal(t, c.Creds, decrypted)
+		})
+	}
 }
 
 func Test_Credentials_Decrypt(t *testing.T) {
-	t.Parallel()
-
-	// error
-	c := NewCredentials([]byte("not-sealed"))
-	assert.Error(t, c.Decrypt(_testKeys, _testAAD))
-
-	// what it could not read is dropped rather than left as ciphertext
-	// nobody can use, and says so to every later reader.
-	assert.False(t, c.IsValid())
-	assert.Equal(t, Credentials{unreadable: true}, c)
-
-	// error - sealed for another row
 	original := NewCredentials([]byte(`{"username":"user"}`))
 
-	data, err := original.Encrypt(_testKeys, _testAAD)
+	sealed, err := original.Encrypt(_testKeys, _testAAD)
 	require.NoError(t, err)
 
-	c = NewCredentials(data)
-	assert.Error(t, c.Decrypt(_testKeys, []byte("other-id")))
-	assert.False(t, c.IsValid())
+	cc := map[string]struct {
+		Data   []byte
+		AAD    []byte
+		Result Credentials
+		Err    error
+	}{
+		// what it could not read is dropped rather than left as ciphertext
+		// nobody can use, and says so to every later reader.
+		"Error returned by Keyring.Decrypt": {
+			Data:   []byte("not-sealed"),
+			AAD:    _testAAD,
+			Result: Credentials{unreadable: true},
+			Err:    assert.AnError,
+		},
+		"Credentials sealed for another row": {
+			Data:   sealed,
+			AAD:    []byte("other-id"),
+			Result: Credentials{unreadable: true},
+			Err:    assert.AnError,
+		},
+		"Successful decryption": {
+			Data:   sealed,
+			AAD:    _testAAD,
+			Result: original,
+		},
+	}
 
-	// success
-	c = NewCredentials(data)
-	require.NoError(t, c.Decrypt(_testKeys, _testAAD))
-	assert.Equal(t, original, c)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			creds := NewCredentials(c.Data)
+
+			err := creds.Decrypt(_testKeys, c.AAD)
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, err == nil, creds.IsValid())
+			assert.Equal(t, c.Result, creds)
+		})
+	}
 }
 
 func Test_CredentialsUpdateInput_UnmarshalJSON(t *testing.T) {
@@ -393,12 +438,12 @@ func Test_UpdateBasicCredentials(t *testing.T) {
 		Result Credentials
 		Err    error
 	}{
-		"Error returned by unmarshaling credentials": {
+		"Error returned by json.Unmarshal of credentials": {
 			Creds: NewCredentials([]byte(`{`)),
 			Inp:   CredentialsUpdateInput(`{"username":"user"}`),
 			Err:   assert.AnError,
 		},
-		"Error returned by unmarshaling update input": {
+		"Error returned by json.Unmarshal of update input": {
 			Inp: CredentialsUpdateInput(`{`),
 			Err: assert.AnError,
 		},

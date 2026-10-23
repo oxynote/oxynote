@@ -14,20 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// prepTurn builds a session and a turn within it, wired to a recorder
-// capturing everything the turn writes back.
-func prepTurn(t *testing.T, m *Manager) (*turn, *recorder) {
-	t.Helper()
-
-	s, rec := prepSession(t, m)
-
-	return s.newTurn(), rec
-}
-
 func Test_session_newTurn(t *testing.T) {
 	t.Parallel()
 
-	s, _ := prepSession(t, testManager())
+	m, _ := testManagerStores()
+	s, _ := prepSession(t, m)
 
 	tn := s.newTurn()
 	require.NotNil(t, tn)
@@ -42,9 +33,13 @@ func Test_session_newTurn(t *testing.T) {
 func Test_turn_fail(t *testing.T) {
 	t.Parallel()
 
-	tn, rec := prepTurn(t, testManager())
+	m, _ := testManagerStores()
+	s, rec := prepSession(t, m)
+	tn := s.newTurn()
 
 	tn.fail(context.Background(), "assistant run failed", assert.AnError)
+
+	assert.Len(t, rec.types(), 2)
 
 	msg, ok := find[protocol.ErrorMessage](rec)
 	require.True(t, ok)
@@ -61,21 +56,29 @@ func Test_turn_run(t *testing.T) {
 	cc := map[string]struct {
 		Events  []*adk.AgentEvent
 		Pending bool
+		Stores  storeCalls
+		Writes  int
 		Expect  func(t *testing.T, rec *recorder)
 	}{
 		"Exhausted run finishes the turn": {
+			Stores: storeCalls{HistoryGet: 1, HistorySet: 1, BlobDelete: 1, PendingGet: 1},
+			Writes: 1,
 			Expect: func(t *testing.T, rec *recorder) {
 				assert.Equal(t, []string{string(protocol.ServerTypeDone)}, rec.types())
 			},
 		},
 		"Empty events are skipped": {
 			Events: []*adk.AgentEvent{nil, {}},
+			Stores: storeCalls{HistoryGet: 1, HistorySet: 1, BlobDelete: 1, PendingGet: 1},
+			Writes: 1,
 			Expect: func(t *testing.T, rec *recorder) {
 				assert.Equal(t, []string{string(protocol.ServerTypeDone)}, rec.types())
 			},
 		},
 		"Failed run is reported": {
 			Events: []*adk.AgentEvent{{Err: assert.AnError}},
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
+			Writes: 2,
 			Expect: func(t *testing.T, rec *recorder) {
 				msg, ok := find[protocol.ErrorMessage](rec)
 				require.True(t, ok)
@@ -91,6 +94,8 @@ func Test_turn_run(t *testing.T) {
 					},
 				},
 			}},
+			Stores: storeCalls{HistoryGet: 1, HistorySet: 1, BlobDelete: 1, PendingGet: 1},
+			Writes: 3,
 			Expect: func(t *testing.T, rec *recorder) {
 				assert.Equal(t, "here you go", rec.deltaText())
 				assert.Contains(t, rec.types(), string(protocol.ServerTypeDone))
@@ -111,6 +116,7 @@ func Test_turn_run(t *testing.T) {
 				},
 			}},
 			Pending: true,
+			Stores:  storeCalls{HistoryGet: 1, PendingGet: 1},
 			Expect: func(t *testing.T, rec *recorder) {
 				// the caller asks the user once the session is free, so
 				// consume itself sends nothing terminal.
@@ -123,7 +129,9 @@ func Test_turn_run(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			tn, rec := prepTurn(t, testManager())
+			m, st := testManagerStores()
+			s, rec := prepSession(t, m)
+			tn := s.newTurn()
 
 			iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
 
@@ -136,6 +144,8 @@ func Test_turn_run(t *testing.T) {
 			pending := tn.run(context.Background(), iter)
 
 			assert.Equal(t, c.Pending, pending != nil)
+			st.assertCalls(t, c.Stores)
+			assert.Len(t, rec.types(), c.Writes)
 			c.Expect(t, rec)
 		})
 	}
@@ -145,10 +155,12 @@ func Test_turn_finish(t *testing.T) {
 	t.Parallel()
 
 	m, st := testManagerStores()
-	tn, rec := prepTurn(t, m)
+	s, rec := prepSession(t, m)
+	tn := s.newTurn()
 
 	tn.finish(context.Background())
 
+	assert.Len(t, rec.types(), 1)
 	assert.Contains(t, rec.types(), string(protocol.ServerTypeDone))
 	assert.Len(t, st.history.SetCalls(), 1)
 
@@ -163,6 +175,7 @@ func Test_turn_relayOutput(t *testing.T) {
 	cc := map[string]struct {
 		Out    *adk.AgentOutput
 		Result string
+		Writes int
 	}{
 		"Nothing to relay": {},
 		"Output without a message": {
@@ -184,6 +197,7 @@ func Test_turn_relayOutput(t *testing.T) {
 				},
 			},
 			Result: "done reading",
+			Writes: 2,
 		},
 		"Streamed message is forwarded": {
 			Out: &adk.AgentOutput{
@@ -197,6 +211,7 @@ func Test_turn_relayOutput(t *testing.T) {
 				},
 			},
 			Result: "done reading",
+			Writes: 3,
 		},
 	}
 
@@ -204,11 +219,14 @@ func Test_turn_relayOutput(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			tn, rec := prepTurn(t, testManager())
+			m, _ := testManagerStores()
+			s, rec := prepSession(t, m)
+			tn := s.newTurn()
 
 			tn.relayOutput(context.Background(), c.Out)
 
 			assert.Equal(t, c.Result, rec.deltaText())
+			assert.Len(t, rec.types(), c.Writes)
 		})
 	}
 }
@@ -220,6 +238,7 @@ func Test_turn_relayMessage(t *testing.T) {
 		Msg    *schema.Message
 		Result string
 		Kind   protocol.TextEndKind
+		Writes int
 	}{
 		"Nothing to relay": {},
 		"Empty content is not shown": {
@@ -229,6 +248,7 @@ func Test_turn_relayMessage(t *testing.T) {
 			Msg:    schema.AssistantMessage("the limit is 100", nil),
 			Result: "the limit is 100",
 			Kind:   protocol.TextEndKindMessage,
+			Writes: 2,
 		},
 		"Narration before a tool call is transient": {
 			Msg: schema.AssistantMessage("let me look", []schema.ToolCall{
@@ -236,6 +256,7 @@ func Test_turn_relayMessage(t *testing.T) {
 			}),
 			Result: "let me look",
 			Kind:   protocol.TextEndKindStatus,
+			Writes: 2,
 		},
 	}
 
@@ -243,11 +264,14 @@ func Test_turn_relayMessage(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			tn, rec := prepTurn(t, testManager())
+			m, _ := testManagerStores()
+			s, rec := prepSession(t, m)
+			tn := s.newTurn()
 
 			tn.relayMessage(context.Background(), c.Msg)
 
 			assert.Equal(t, c.Result, rec.deltaText())
+			assert.Len(t, rec.types(), c.Writes)
 
 			end, ok := find[protocol.TextEndMessage](rec)
 			assert.Equal(t, c.Result != "", ok)
@@ -267,6 +291,7 @@ func Test_turn_relayStream(t *testing.T) {
 		Result string
 		Ended  bool
 		Kind   protocol.TextEndKind
+		Writes int
 	}{
 		"Nothing to relay": {},
 		"Empty chunks are skipped": {
@@ -283,6 +308,7 @@ func Test_turn_relayStream(t *testing.T) {
 			Result: "the limit is 100",
 			Ended:  true,
 			Kind:   protocol.TextEndKindMessage,
+			Writes: 3,
 		},
 		"Narration before a tool call is transient": {
 			Stream: schema.StreamReaderFromArray([]*schema.Message{
@@ -293,6 +319,7 @@ func Test_turn_relayStream(t *testing.T) {
 			Result: "let me look",
 			Ended:  true,
 			Kind:   protocol.TextEndKindStatus,
+			Writes: 2,
 		},
 		"Broken stream keeps what arrived": {
 			Stream: func() *schema.StreamReader[*schema.Message] {
@@ -306,6 +333,7 @@ func Test_turn_relayStream(t *testing.T) {
 			Result: "partial",
 			Ended:  true,
 			Kind:   protocol.TextEndKindMessage,
+			Writes: 2,
 		},
 	}
 
@@ -313,11 +341,14 @@ func Test_turn_relayStream(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			tn, rec := prepTurn(t, testManager())
+			m, _ := testManagerStores()
+			s, rec := prepSession(t, m)
+			tn := s.newTurn()
 
 			tn.relayStream(context.Background(), c.Stream)
 
 			assert.Equal(t, c.Result, rec.deltaText())
+			assert.Len(t, rec.types(), c.Writes)
 
 			end, ok := find[protocol.TextEndMessage](rec)
 			require.Equal(t, c.Ended, ok)
@@ -354,7 +385,9 @@ func Test_turn_recordUsage(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			tn, _ := prepTurn(t, testManager())
+			m, _ := testManagerStores()
+			s, _ := prepSession(t, m)
+			tn := s.newTurn()
 
 			// usage reporting is fire-and-forget; the metric itself is
 			// covered where it is defined.
@@ -373,6 +406,8 @@ func Test_turn_confirmation(t *testing.T) {
 		IDs     []string
 		Actions []protocol.ConfirmAction
 		Done    bool
+		Stores  storeCalls
+		Writes  int
 	}{
 		"Writes are described for the user": {
 			Info: &adk.InterruptInfo{
@@ -393,6 +428,7 @@ func Test_turn_confirmation(t *testing.T) {
 				DocumentName: "Runbook",
 				Summary:      "Reword the intro",
 			}},
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
 		},
 		"A write naming no document carries no id": {
 			Info: &adk.InterruptInfo{
@@ -406,6 +442,7 @@ func Test_turn_confirmation(t *testing.T) {
 				Tool:    string(tools.NameCreateDocument),
 				Summary: "Create document \"Runbook\"",
 			}},
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
 		},
 		"Foreign interrupt is still resumable": {
 			// an interrupt this package did not raise has no user-facing
@@ -418,10 +455,13 @@ func Test_turn_confirmation(t *testing.T) {
 			},
 			IDs:     []string{"i2"},
 			Actions: []protocol.ConfirmAction{},
+			Stores:  storeCalls{HistoryGet: 1, PendingGet: 1},
 		},
 		"Nothing resumable ends the turn": {
-			Info: &adk.InterruptInfo{},
-			Done: true,
+			Info:   &adk.InterruptInfo{},
+			Done:   true,
+			Stores: storeCalls{HistoryGet: 1, HistorySet: 1, BlobDelete: 1, PendingGet: 1},
+			Writes: 1,
 		},
 	}
 
@@ -429,9 +469,14 @@ func Test_turn_confirmation(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			tn, rec := prepTurn(t, testManager())
+			m, st := testManagerStores()
+			s, rec := prepSession(t, m)
+			tn := s.newTurn()
 
 			pending := tn.confirmation(context.Background(), c.Info)
+
+			st.assertCalls(t, c.Stores)
+			assert.Len(t, rec.types(), c.Writes)
 
 			if c.Done {
 				assert.Nil(t, pending)
@@ -455,6 +500,24 @@ func Test_textEndKind(t *testing.T) {
 
 	// text preceding a tool call is narration the client shows and
 	// discards; text that ends a turn is the answer and is committed.
-	assert.Equal(t, protocol.TextEndKindStatus, textEndKind(true))
-	assert.Equal(t, protocol.TextEndKindMessage, textEndKind(false))
+	cc := map[string]struct {
+		PrecedesToolCall bool
+		Result           protocol.TextEndKind
+	}{
+		"Text before a tool call is a status": {
+			PrecedesToolCall: true,
+			Result:           protocol.TextEndKindStatus,
+		},
+		"Text ending the turn is a message": {
+			Result: protocol.TextEndKindMessage,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, textEndKind(c.PrecedesToolCall))
+		})
+	}
 }

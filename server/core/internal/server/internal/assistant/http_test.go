@@ -2,12 +2,12 @@ package assistant
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,23 +23,6 @@ import (
 
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m, testutil.IgnoreBleveWorkers())
-}
-
-// chatServer serves HandleChat with a test session on every request and
-// returns the server ready for WebSocket dials.
-func chatServer(t *testing.T, hdl *Handler) *httptest.Server {
-	t.Helper()
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hdl.HandleChat(w, r.WithContext(auth.AddSessionToContext(r.Context(), auth.Session{
-			UserID:               "u1",
-			ActiveOrganizationID: "org1",
-		})))
-	}))
-
-	t.Cleanup(srv.Close)
-
-	return srv
 }
 
 // dial opens a WebSocket connection against the chat server.
@@ -114,10 +97,10 @@ func Test_Handler_HandleChat(t *testing.T) {
 				assert.NotEqual(t, http.StatusSwitchingProtocols, rec.Code)
 			},
 		},
-		"Chat failure closes the socket": {
+		"Error returned by Manager.Chat": {
 			Man: &ManagerMock{
 				ChatFunc: func(context.Context, string, string, protocol.SessionConn) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			Chats: 1,
@@ -151,11 +134,7 @@ func Test_Handler_HandleChat(t *testing.T) {
 						_, err = conn.Read(ctx)
 						readErrs <- err
 
-						if errors.Is(err, io.EOF) {
-							return nil
-						}
-
-						return err
+						return nil
 					},
 				},
 				Chats: 1,
@@ -171,19 +150,12 @@ func Test_Handler_HandleChat(t *testing.T) {
 					assert.JSONEq(t, `{"type":"hello"}`, reply["echo"])
 
 					require.NoError(t, conn.Close(websocket.StatusNormalClosure, "bye"))
-
-					select {
-					case err := <-readErrs:
-						assert.ErrorIs(t, err, io.EOF)
-					case <-time.After(5 * time.Second):
-						t.Fatal("chat loop did not observe the client close")
-					}
+					testutil.AssertEqualError(t, io.EOF, <-readErrs)
 				},
 			}
 		}(),
 		// an abrupt transport drop surfaces as a raw io.EOF, which counts as
-		// a clean end — matching the pre-rework handler, which treated
-		// io.EOF like a normal closure.
+		// a clean end.
 		"Abrupt client close": func() tcase {
 			readErrs := make(chan error, 1)
 
@@ -193,23 +165,13 @@ func Test_Handler_HandleChat(t *testing.T) {
 						_, err := conn.Read(ctx)
 						readErrs <- err
 
-						if errors.Is(err, io.EOF) {
-							return nil
-						}
-
-						return err
+						return nil
 					},
 				},
 				Chats: 1,
 				Client: func(t *testing.T, conn *websocket.Conn) {
 					require.NoError(t, conn.CloseNow())
-
-					select {
-					case err := <-readErrs:
-						assert.ErrorIs(t, err, io.EOF)
-					case <-time.After(5 * time.Second):
-						t.Fatal("chat loop did not observe the dropped connection")
-					}
+					testutil.AssertEqualError(t, io.EOF, <-readErrs)
 				},
 			}
 		}(),
@@ -232,7 +194,16 @@ func Test_Handler_HandleChat(t *testing.T) {
 			}
 
 			if c.Client != nil {
-				c.Client(t, dial(t, chatServer(t, hdl)))
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					hdl.HandleChat(w, r.WithContext(auth.AddSessionToContext(r.Context(), auth.Session{
+						UserID:               "u1",
+						ActiveOrganizationID: "org1",
+					})))
+				}))
+
+				t.Cleanup(srv.Close)
+
+				c.Client(t, dial(t, srv))
 			} else {
 				req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
 
@@ -248,6 +219,8 @@ func Test_Handler_HandleChat(t *testing.T) {
 				hdl.HandleChat(rec, req)
 				c.Resp(t, rec)
 			}
+
+			assert.Len(t, c.Man.ConfiguredCalls(), 1)
 
 			ff := c.Man.ChatCalls()
 			require.Len(t, ff, c.Chats)
@@ -383,17 +356,11 @@ func Test_wsConn_WriteJSON(t *testing.T) {
 		N int `json:"n"`
 	}
 
-	type tcase struct {
-		// Cancelled receives one value when the connection's cancel
-		// callback fires.
-		Cancelled chan struct{}
-
-		Do func(t *testing.T, wc *wsConn, conn *websocket.Conn)
-	}
-
-	cc := map[string]tcase{
+	cc := map[string]struct {
+		Do      func(t *testing.T, wc *wsConn, conn *websocket.Conn)
+		Cancels int32
+	}{
 		"Concurrent writes all arrive intact": {
-			Cancelled: make(chan struct{}, 1),
 			Do: func(t *testing.T, wc *wsConn, conn *websocket.Conn) {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
@@ -422,31 +389,21 @@ func Test_wsConn_WriteJSON(t *testing.T) {
 				require.NoError(t, conn.Close(websocket.StatusNormalClosure, ""))
 			},
 		},
-		"A write error cancels the connection": func() tcase {
-			cancelled := make(chan struct{}, 1)
+		"A write error cancels the connection": {
+			Do: func(t *testing.T, wc *wsConn, conn *websocket.Conn) {
+				defer conn.CloseNow() //nolint:errcheck // error provides no meaningful info
 
-			return tcase{
-				Cancelled: cancelled,
-				Do: func(t *testing.T, wc *wsConn, conn *websocket.Conn) {
-					defer conn.CloseNow() //nolint:errcheck // error provides no meaningful info
+				// writing on a closed connection must trip the cancel
+				// callback, which is what ends the chat loop above it.
+				require.NoError(t, wc.conn.CloseNow())
 
-					// writing on a closed connection must trip the cancel
-					// callback, which is what ends the chat loop above it.
-					require.NoError(t, wc.conn.CloseNow())
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
 
-					ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-					defer cancel()
-
-					wc.WriteJSON(ctx, struct{}{})
-
-					select {
-					case <-cancelled:
-					case <-time.After(5 * time.Second):
-						t.Fatal("the write failure did not cancel the connection")
-					}
-				},
-			}
-		}(),
+				wc.WriteJSON(ctx, struct{}{})
+			},
+			Cancels: 1,
+		},
 	}
 
 	for cn, c := range cc {
@@ -455,6 +412,7 @@ func Test_wsConn_WriteJSON(t *testing.T) {
 
 			var (
 				wc       *wsConn
+				cancels  atomic.Int32
 				accepted = make(chan struct{})
 			)
 
@@ -465,14 +423,9 @@ func Test_wsConn_WriteJSON(t *testing.T) {
 				}
 
 				wc = &wsConn{
-					log:  slog.New(slog.DiscardHandler),
-					conn: conn,
-					cancel: func() {
-						select {
-						case c.Cancelled <- struct{}{}:
-						default:
-						}
-					},
+					log:    slog.New(slog.DiscardHandler),
+					conn:   conn,
+					cancel: func() { cancels.Add(1) },
 				}
 
 				close(accepted)
@@ -490,7 +443,10 @@ func Test_wsConn_WriteJSON(t *testing.T) {
 
 			<-accepted
 
+			// Do returns only after its WriteJSON calls, which call cancel
+			// before they return.
 			c.Do(t, wc, conn)
+			assert.Equal(t, c.Cancels, cancels.Load())
 		})
 	}
 }

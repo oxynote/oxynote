@@ -62,24 +62,11 @@ func Test_Schema(t *testing.T) {
 	out, err := cmd.Output()
 	require.NoError(t, err, stderr.String())
 
-	got := _schemaHeader + normaliseDump(string(out))
-
-	if os.Getenv("UPDATE_GOLDEN") != "" {
-		require.NoError(t, os.WriteFile("schema.sql", []byte(got), 0o600))
-		return
-	}
-
-	want, err := os.ReadFile("schema.sql")
-	require.NoError(t, err)
-	assert.Equal(t, string(want), got, "schema.sql is stale: run `make schema` in server/core")
-}
-
-// normaliseDump strips pg_dump output down to its statements and moves
-// each table's sequences, constraints and indexes right after the table.
-// pg_dump separates statements with a blank line, so a function body with
-// blank lines would be split apart.
-func normaliseDump(dump string) string {
-	dump = _dumpNoise.ReplaceAllString(dump, "")
+	// the dump is stripped down to its statements, and each table's
+	// sequences, constraints and indexes move right after the table.
+	// pg_dump separates statements with a blank line, so a function body
+	// with blank lines would be split apart.
+	dump := _dumpNoise.ReplaceAllString(string(out), "")
 	dump = _blankRuns.ReplaceAllString(dump, "\n\n")
 	stmts := strings.Split(strings.TrimSpace(dump), "\n\n")
 
@@ -115,11 +102,20 @@ func normaliseDump(dump string) string {
 		groups[table] = append(groups[table], stmt)
 	}
 
-	var res []string
+	var ordered []string
 
 	for _, table := range tables {
-		res = append(res, groups[table]...)
+		ordered = append(ordered, groups[table]...)
 	}
 
-	return strings.Join(res, "\n\n") + "\n"
+	got := _schemaHeader + strings.Join(ordered, "\n\n") + "\n"
+
+	if os.Getenv("UPDATE_GOLDEN") != "" {
+		require.NoError(t, os.WriteFile("schema.sql", []byte(got), 0o600))
+		return
+	}
+
+	want, err := os.ReadFile("schema.sql")
+	require.NoError(t, err)
+	assert.Equal(t, string(want), got, "schema.sql is stale: run `make schema` in server/core")
 }

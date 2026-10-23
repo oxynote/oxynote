@@ -105,6 +105,31 @@ func Test_Options_requiresAPIKey(t *testing.T) {
 	}
 }
 
+func Test_Options_ExpandsToolReferences(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Opts   Options
+		Result bool
+	}{
+		"Claude does when direct":      {Opts: Options{Provider: ProviderAnthropic}, Result: true},
+		"Claude does not with bedrock": {Opts: Options{Provider: ProviderAnthropic, Bedrock: BedrockOptions{Enabled: true}}},
+		"Claude does not with vertex":  {Opts: Options{Provider: ProviderAnthropic, Vertex: VertexOptions{Enabled: true}}},
+		"OpenAI does not":              {Opts: Options{Provider: ProviderOpenAI}},
+		"Gemini does not":              {Opts: Options{Provider: ProviderGoogle}},
+		"Ollama does not":              {Opts: Options{Provider: ProviderOllama}},
+		"OpenRouter does not":          {Opts: Options{Provider: ProviderOpenRouter}},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Opts.ExpandsToolReferences())
+		})
+	}
+}
+
 func Test_Options_timeout(t *testing.T) {
 	t.Parallel()
 

@@ -36,7 +36,8 @@ type listVariables struct{}
 func (listVariables) Info() Info {
 	return Info{
 		Name:        NameListVariables,
-		Description: "List the global variables by group as [{id, name, color, builtin, variables: [{id, key, name, description, type, builtin, default, value, options}]}]. Queries and metrics reference a variable as $key, so one change updates every metric using it; each user picks their own. default is what anyone without their own sees; for a list, its first option's id. value is the user's own, or null. Every metric follows the built-ins metric_range and metric_refresh unless pinned to a preset. A built-in's definition cannot change; set_variable_value sets its value or default.",
+		Traits:      Traits{Group: GroupVariables},
+		Description: "List the global variables by group as [{id, name, color, builtin, variables: [{id, key, name, description, type, builtin, default, value, options}]}]. Queries and metrics reference a variable as $key, so one change updates every metric using it; each user picks their own. default is what anyone without their own sees; for a list, its first option's id. value is the user's own, or null. A built-in's definition cannot change; set_variable_value sets its value or default.",
 		Properties:  map[string]any{},
 	}
 }
@@ -194,7 +195,7 @@ type createVariableGroup struct{}
 func (createVariableGroup) Info() Info {
 	return Info{
 		Name:        NameCreateVariableGroup,
-		Traits:      Traits{Write: true},
+		Traits:      Traits{Group: GroupVariables, Write: true},
 		Description: "Create a variable group, last in order, and return {group_id}. The name has to be unused.",
 		Properties: map[string]any{
 			"name":  map[string]any{"type": "string", "description": "The display name."},
@@ -290,7 +291,7 @@ type updateVariableGroup struct{}
 func (updateVariableGroup) Info() Info {
 	return Info{
 		Name:        NameUpdateVariableGroup,
-		Traits:      Traits{Write: true},
+		Traits:      Traits{Group: GroupVariables, Write: true, Idempotent: true},
 		Description: "Rename or recolour a variable group other than the built-in one; give only what changes. Returns {group_id}.",
 		Properties: map[string]any{
 			"group_id": map[string]any{"type": "string", "description": _variableGroupIDDescription},
@@ -367,7 +368,7 @@ type deleteVariableGroup struct{}
 func (deleteVariableGroup) Info() Info {
 	return Info{
 		Name:        NameDeleteVariableGroup,
-		Traits:      Traits{Write: true, Destructive: true},
+		Traits:      Traits{Group: GroupVariables, Write: true, Destructive: true},
 		Description: "Delete an empty variable group other than the built-in one. Returns {group_id, deleted}.",
 		Properties: map[string]any{
 			"group_id": map[string]any{"type": "string", "description": _variableGroupIDDescription},
@@ -493,7 +494,7 @@ type createVariable struct{}
 func (createVariable) Info() Info {
 	return Info{
 		Name:        NameCreateVariable,
-		Traits:      Traits{Write: true},
+		Traits:      Traits{Group: GroupVariables, Write: true},
 		Description: "Create a global variable, last in its group, and return {variable_id}. The key has to be unused and match ^[a-z][a-z0-9_]*$. A list takes options, the first being the default; other types take a default instead, required for a time range.",
 		Properties: map[string]any{
 			"group_id":    map[string]any{"type": "string", "description": _variableGroupIDDescription},
@@ -653,7 +654,7 @@ type updateVariable struct{}
 func (updateVariable) Info() Info {
 	return Info{
 		Name:        NameUpdateVariable,
-		Traits:      Traits{Write: true},
+		Traits:      Traits{Group: GroupVariables, Write: true, Overwrites: true, Idempotent: true},
 		Description: "Change a global variable other than a built-in one, whose default set_variable_value sets; give only what changes. group_id moves it to the end of that group. options replace a list's; users who picked a removed value see the default again. A type change resets everyone's value. Returns {variable_id}.",
 		Properties: map[string]any{
 			"variable_id": map[string]any{"type": "string", "description": _variableIDDescription},
@@ -736,7 +737,7 @@ type deleteVariable struct{}
 func (deleteVariable) Info() Info {
 	return Info{
 		Name:        NameDeleteVariable,
-		Traits:      Traits{Write: true, Destructive: true},
+		Traits:      Traits{Group: GroupVariables, Write: true, Destructive: true},
 		Description: "Delete a global variable other than a built-in one, with everyone's value. Returns {variable_id, deleted}.",
 		Properties: map[string]any{
 			"variable_id": map[string]any{"type": "string", "description": _variableIDDescription},
@@ -822,7 +823,7 @@ type setVariableValue struct{}
 func (setVariableValue) Info() Info {
 	return Info{
 		Name:        NameSetVariableValue,
-		Traits:      Traits{Write: true},
+		Traits:      Traits{Group: GroupVariables, Write: true, Idempotent: true},
 		Description: "Set the current user's own value of a global variable, built-ins included, or with default its organisation-wide default; prefer the user's own. Set metric_range to show every chart another period. A list takes an option id, a number a decimal, a time range a preset such as last_24_hours, text anything. Returns {variable_id, value, default}.",
 		Properties: map[string]any{
 			"variable_id": map[string]any{"type": "string", "description": _variableIDDescription},

@@ -72,7 +72,9 @@ for free.
   `Overwrites` means content the caller did not name is replaced
   (`replace_blocks`). `DataSource` reads an outbound
   connection (own MCP scope, open-world). `Internal` keeps it off other
-  surfaces (`read_tool_output`). The registry applies the confirmation gate
+  surfaces (`read_tool_output`). `Group` puts it behind `load_tools`
+  (`middleware.Loader`) in chat, when the model expands tool references
+  (Anthropic's own API). The registry applies the confirmation gate
   from traits; MCP serves the registry ungated and maps traits to scopes
   and annotations.
 

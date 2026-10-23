@@ -16,19 +16,27 @@ func Test_Attributes_Value(t *testing.T) {
 
 	attrs := Attributes{"set": 1, "null": nil}
 
-	v, ok := attrs.Value("set")
-	assert.True(t, ok)
-	assert.Equal(t, 1, v)
+	cc := map[string]struct {
+		Name   string
+		Result any
+		OK     bool
+	}{
+		"Set value": {Name: "set", Result: 1, OK: true},
+		// the editor writes null for a field nobody filled in, so a key
+		// present with a null value is as unset as one that is absent.
+		"Null value":  {Name: "null"},
+		"Missing key": {Name: "missing"},
+	}
 
-	// the editor writes null for a field nobody filled in, so a key
-	// present with a null value is as unset as one that is absent.
-	v, ok = attrs.Value("null")
-	assert.False(t, ok)
-	assert.Nil(t, v)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	v, ok = attrs.Value("missing")
-	assert.False(t, ok)
-	assert.Nil(t, v)
+			v, ok := attrs.Value(c.Name)
+			assert.Equal(t, c.OK, ok)
+			assert.Equal(t, c.Result, v)
+		})
+	}
 }
 
 func Test_Attributes_Get(t *testing.T) {

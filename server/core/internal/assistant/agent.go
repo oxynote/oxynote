@@ -41,6 +41,17 @@ func (m *Manager) newAgent(
 	// compaction middlewares left it.
 	handlers := append([]adk.ChatModelAgentMiddleware{obs}, compaction...)
 
+	// the loader runs last, so it rewrites the conversation the model is
+	// about to see rather than one compaction may still change.
+	if m.loadToolsOnRequest {
+		loader, lerr := middleware.NewLoader(ctx, toolSet.Grouped())
+		if lerr != nil {
+			return nil, fmt.Errorf("building the tool loader: %w", lerr)
+		}
+
+		handlers = append(handlers, loader)
+	}
+
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          _agentName,
 		Description:   _agentDescription,

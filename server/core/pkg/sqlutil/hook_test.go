@@ -2,11 +2,14 @@ package sqlutil
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	metricMock "github.com/oxynote/oxynote/server/core/pkg/metricutil/_mock"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -30,9 +33,10 @@ func Test_NewHooks(t *testing.T) {
 }
 
 func Test_Hooks_Before(t *testing.T) {
+	cnt := &metricMock.Counter{}
 	cv := &metricMock.CounterVec{
 		WithFunc: func(_ prometheus.Labels) metricutil.Counter {
-			return &metricMock.Counter{}
+			return cnt
 		},
 	}
 
@@ -50,45 +54,81 @@ func Test_Hooks_Before(t *testing.T) {
 
 	assert.WithinDuration(t, timeutil.Now(), tstamp, time.Second*5)
 	assert.Len(t, cv.WithCalls(), 1)
+	assert.Len(t, cnt.IncCalls(), 1)
 }
 
 func Test_Hooks_OnError(t *testing.T) {
-	h := Hooks{}
-
-	assert.NoError(t, h.OnError(context.Background(), nil, "query"))
-
-	h.errorHandler = func(_ error) error {
-		return assert.AnError
-	}
-
-	assert.Equal(t, assert.AnError, h.OnError(context.Background(), nil, "query"))
-}
-
-func Test_Hooks_After(t *testing.T) {
-	hv := &metricMock.HistogramVec{
-		WithFunc: func(_ prometheus.Labels) metricutil.Observer {
-			return &metricMock.Observer{}
+	cc := map[string]struct {
+		ErrorHandler func(error) error
+		Inp          error
+		Err          error
+	}{
+		"Without error handler": {
+			Inp: sql.ErrNoRows,
+			Err: sql.ErrNoRows,
+		},
+		"With error handler": {
+			ErrorHandler: func(err error) error {
+				return fmt.Errorf("handled: %w", err)
+			},
+			Inp: sql.ErrNoRows,
+			Err: fmt.Errorf("handled: %w", sql.ErrNoRows),
 		},
 	}
 
-	h := Hooks{
-		queriesDuration:   hv,
-		durationThreshold: time.Hour,
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			h := Hooks{
+				errorHandler: c.ErrorHandler,
+			}
+
+			testutil.AssertEqualError(t, c.Err, h.OnError(context.Background(), c.Inp, "query"))
+		})
+	}
+}
+
+func Test_Hooks_After(t *testing.T) {
+	cc := map[string]struct {
+		Context context.Context
+		Calls   int
+	}{
+		"Context without start time": {
+			Context: context.Background(),
+		},
+		"Duration below threshold": {
+			Context: context.WithValue(context.Background(), timeKey, timeutil.Now()),
+		},
+		"Duration above threshold": {
+			Context: context.WithValue(context.Background(), timeKey, timeutil.Now().Add(-time.Hour*2)),
+			Calls:   1,
+		},
 	}
 
-	ctx := context.WithValue(context.Background(), timeKey, timeutil.Now())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	_, err := h.After(ctx, "query")
-	require.NoError(t, err)
+			obs := &metricMock.Observer{}
+			hv := &metricMock.HistogramVec{
+				WithFunc: func(_ prometheus.Labels) metricutil.Observer {
+					return obs
+				},
+			}
 
-	assert.Empty(t, hv.WithCalls())
+			h := Hooks{
+				queriesDuration:   hv,
+				durationThreshold: time.Hour,
+			}
 
-	ctx = context.WithValue(context.Background(), timeKey, timeutil.Now().Add(-time.Hour*2))
+			_, err := h.After(c.Context, "query")
+			require.NoError(t, err)
 
-	_, err = h.After(ctx, "query")
-	require.NoError(t, err)
-
-	assert.Len(t, hv.WithCalls(), 1)
+			assert.Len(t, hv.WithCalls(), c.Calls)
+			assert.Len(t, obs.ObserveCalls(), c.Calls)
+		})
+	}
 }
 
 func Test_normalizeQuery(t *testing.T) {

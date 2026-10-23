@@ -113,8 +113,22 @@ func Test_Generator_Run(t *testing.T) {
 		// check fails against a real connection.
 		DropTable string
 
+		// Seed indicates whether one tick is inserted before the run, so the
+		// database already counts as populated.
+		Seed bool
+
+		// Interval overrides the tick interval when set.
+		Interval time.Duration
+
+		// Running is called while the generator runs. The run is cancelled
+		// once it returns. Without it the run must return by itself.
+		Running func(t *testing.T, g *Generator, seeded int, wr *testutil.Writer, content func() string)
+
 		// Err is the expected outcome of the run.
 		Err error
+
+		// Check is called once the run has returned.
+		Check func(t *testing.T, wr *testutil.Writer, content func() string)
 	}{
 		"Error returned by pgx.Connect": {
 			DSN: "postgres://nobody@127.0.0.1:1/nothing",
@@ -128,151 +142,126 @@ func Test_Generator_Run(t *testing.T) {
 			DropTable: "incidents",
 			Err:       assert.AnError,
 		},
+		// an empty database is backfilled before the tick loop starts.
+		"Successful run backfills an empty database": {
+			// a wide interval keeps the backfill to a handful of ticks; the
+			// periodic loop then never fires before the context is cancelled.
+			Interval: 6 * time.Hour,
+			Running: func(t *testing.T, g *Generator, _ int, wr *testutil.Writer, content func() string) {
+				t.Helper()
+
+				// cancelling mid-backfill would abort it, so wait for the run to
+				// announce that it finished.
+				require.Eventually(t, func() bool {
+					require.NoError(t, wr.Flush())
+
+					return strings.Contains(content(), "backfill complete")
+				}, 60*time.Second, 50*time.Millisecond)
+
+				assert.Positive(t, count(t, g.dsn, "deployments"))
+			},
+		},
+		// a populated database skips the backfill and goes straight to
+		// appending a tick per interval.
+		"Successful run appends to a populated database": {
+			Seed:     true,
+			Interval: 10 * time.Millisecond,
+			Running: func(t *testing.T, g *Generator, seeded int, _ *testutil.Writer, _ func() string) {
+				t.Helper()
+
+				require.Eventually(t, func() bool {
+					return count(t, g.dsn, "deployments") > seeded
+				}, 60*time.Second, 50*time.Millisecond)
+			},
+			Check: func(t *testing.T, wr *testutil.Writer, content func() string) {
+				t.Helper()
+
+				require.NoError(t, wr.Flush())
+				assert.NotContains(t, content(), "backfilling historical data")
+			},
+		},
+		// a failure inside the tick loop is logged and the loop carries on.
+		"Tick insert failure is logged": {
+			Seed:     true,
+			Interval: 10 * time.Millisecond,
+			Running: func(t *testing.T, g *Generator, seeded int, wr *testutil.Writer, content func() string) {
+				t.Helper()
+
+				// the table can only be pulled out from under the loop once the
+				// loop is running, which its first successful insert proves.
+				require.Eventually(t, func() bool {
+					return count(t, g.dsn, "deployments") > seeded
+				}, 60*time.Second, 50*time.Millisecond)
+
+				_, err := connect(t, g.dsn).Exec(context.Background(), "DROP TABLE deployments")
+				require.NoError(t, err)
+
+				require.Eventually(t, func() bool {
+					require.NoError(t, wr.Flush())
+
+					return strings.Contains(content(), "tick insert failed")
+				}, 60*time.Second, 50*time.Millisecond)
+			},
+		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			wr, buf := testutil.NewBuffer()
+
 			g := prepGenerator(t)
+			g.log = slog.New(slog.NewJSONHandler(wr, nil))
+
 			if c.DSN != "" {
 				g.dsn = c.DSN
 			}
 
 			if c.DropTable != "" {
-				exec(t, g.dsn, "DROP TABLE "+c.DropTable)
+				_, err := connect(t, g.dsn).Exec(context.Background(), "DROP TABLE "+c.DropTable)
+				require.NoError(t, err)
 			}
 
-			ctx := t.Context()
+			var seeded int
 
-			testutil.AssertEqualError(t, c.Err, g.Run(ctx))
+			if c.Seed {
+				require.NoError(t, g.insertTick(context.Background(), connect(t, g.dsn), _tick))
+
+				seeded = count(t, g.dsn, "deployments")
+				require.Positive(t, seeded)
+			}
+
+			if c.Interval != 0 {
+				g.interval = c.Interval
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			errCh := make(chan error, 1)
+
+			go func() {
+				errCh <- g.Run(ctx)
+			}()
+
+			if c.Running != nil {
+				c.Running(t, g, seeded, wr, buf.String)
+				cancel()
+			}
+
+			err := <-errCh
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			if c.Check != nil {
+				c.Check(t, wr, buf.String)
+			}
 		})
 	}
-
-	// an empty database is backfilled before the tick loop starts.
-	t.Run("Successful run backfills an empty database", func(t *testing.T) {
-		t.Parallel()
-
-		log, wr, content := bufferLog()
-
-		g := prepGenerator(t)
-		g.log = log
-
-		// a wide interval keeps the backfill to a handful of ticks; the
-		// periodic loop then never fires before the context is cancelled.
-		g.interval = 6 * time.Hour
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		stopCh := make(chan struct{})
-
-		go func() {
-			defer close(stopCh)
-
-			assert.NoError(t, g.Run(ctx))
-		}()
-
-		// cancelling mid-backfill would abort it, so wait for the run to
-		// announce that it finished.
-		require.Eventually(t, func() bool {
-			require.NoError(t, wr.Flush())
-
-			return strings.Contains(content(), "backfill complete")
-		}, 60*time.Second, 50*time.Millisecond)
-
-		assert.Positive(t, count(t, g.dsn, "deployments"))
-
-		cancel()
-
-		<-stopCh
-	})
-
-	// a populated database skips the backfill and goes straight to
-	// appending a tick per interval.
-	t.Run("Successful run appends to a populated database", func(t *testing.T) {
-		t.Parallel()
-
-		log, wr, content := bufferLog()
-
-		g := prepGenerator(t)
-		g.log = log
-
-		require.NoError(t, g.insertTick(context.Background(), connect(t, g.dsn), _tick))
-
-		seeded := count(t, g.dsn, "deployments")
-		require.Positive(t, seeded)
-
-		g.interval = 10 * time.Millisecond
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		stopCh := make(chan struct{})
-
-		go func() {
-			defer close(stopCh)
-
-			assert.NoError(t, g.Run(ctx))
-		}()
-
-		require.Eventually(t, func() bool {
-			return count(t, g.dsn, "deployments") > seeded
-		}, 60*time.Second, 50*time.Millisecond)
-
-		cancel()
-
-		<-stopCh
-
-		require.NoError(t, wr.Flush())
-		assert.NotContains(t, content(), "backfilling historical data")
-	})
-
-	// a failure inside the tick loop is logged and the loop carries on.
-	t.Run("Tick insert failure is logged", func(t *testing.T) {
-		t.Parallel()
-
-		lg, wr, content := bufferLog()
-
-		g := prepGenerator(t)
-		g.log = lg
-
-		require.NoError(t, g.insertTick(context.Background(), connect(t, g.dsn), _tick))
-
-		seeded := count(t, g.dsn, "deployments")
-		require.Positive(t, seeded)
-
-		g.interval = 10 * time.Millisecond
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		stopCh := make(chan struct{})
-
-		go func() {
-			defer close(stopCh)
-
-			assert.NoError(t, g.Run(ctx))
-		}()
-
-		// the table can only be pulled out from under the loop once the
-		// loop is running, which its first successful insert proves.
-		require.Eventually(t, func() bool {
-			return count(t, g.dsn, "deployments") > seeded
-		}, 60*time.Second, 50*time.Millisecond)
-
-		exec(t, g.dsn, "DROP TABLE deployments")
-
-		require.Eventually(t, func() bool {
-			require.NoError(t, wr.Flush())
-
-			return strings.Contains(content(), "tick insert failed")
-		}, 60*time.Second, 50*time.Millisecond)
-
-		cancel()
-
-		<-stopCh
-	})
 }
 
 func Test_Generator_needsBackfill(t *testing.T) {
@@ -293,7 +282,7 @@ func Test_Generator_needsBackfill(t *testing.T) {
 			Seed:   true,
 			Result: true,
 		},
-		"Error returned by the query": {
+		"Error returned by Row.Scan": {
 			DropTable: true,
 			Err:       assert.AnError,
 		},
@@ -310,7 +299,8 @@ func Test_Generator_needsBackfill(t *testing.T) {
 			}
 
 			if c.DropTable {
-				exec(t, g.dsn, "DROP TABLE deployments")
+				_, err := connect(t, g.dsn).Exec(context.Background(), "DROP TABLE deployments")
+				require.NoError(t, err)
 			}
 
 			res, err := g.needsBackfill(context.Background(), connect(t, g.dsn))
@@ -348,7 +338,8 @@ func Test_Generator_backfill(t *testing.T) {
 			g := prepGenerator(t)
 
 			if c.DropTable != "" {
-				exec(t, g.dsn, "DROP TABLE "+c.DropTable)
+				_, err := connect(t, g.dsn).Exec(context.Background(), "DROP TABLE "+c.DropTable)
+				require.NoError(t, err)
 			}
 
 			err := g.backfill(context.Background(), connect(t, g.dsn))
@@ -384,7 +375,7 @@ func Test_Generator_insertTick(t *testing.T) {
 		"A tick with no rows sends no batch": {
 			EmptyTick: true,
 		},
-		"Error returned by the batch": {
+		"Error returned by BatchResults.Exec": {
 			DropTable: "deployments",
 			Err:       assert.AnError,
 		},
@@ -397,7 +388,8 @@ func Test_Generator_insertTick(t *testing.T) {
 			g := prepGenerator(t)
 
 			if c.DropTable != "" {
-				exec(t, g.dsn, "DROP TABLE "+c.DropTable)
+				_, err := connect(t, g.dsn).Exec(context.Background(), "DROP TABLE "+c.DropTable)
+				require.NoError(t, err)
 			}
 
 			at := _tick
@@ -405,9 +397,15 @@ func Test_Generator_insertTick(t *testing.T) {
 			// the early return needs a tick that generates nothing, which
 			// only a specific seed at a quiet instant produces.
 			if c.EmptyTick {
-				seed, quiet := emptyDraw()
-				g.r = mockmetrics.NewRand(seed)
-				at = quiet
+				at = time.Date(2024, time.January, 7, 3, 0, 0, 0, time.UTC)
+
+				for seed := int64(1); ; seed++ {
+					tick := demodata.GenerateTick(mockmetrics.NewRand(seed), at)
+					if len(tick.Deployments)+len(tick.Incidents)+len(tick.BuildMetrics) == 0 {
+						g.r = mockmetrics.NewRand(seed)
+						break
+					}
+				}
 			}
 
 			err := g.insertTick(context.Background(), connect(t, g.dsn), at)
@@ -441,18 +439,19 @@ func prepGenerator(t *testing.T) *Generator {
 	t.Helper()
 
 	name := "demo_" + strconv.FormatInt(time.Now().UnixNano(), 36) + strconv.Itoa(len(t.Name()))
+	dsn := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", _pgUser, _pgPass, _pgAddr, name)
 
-	admin := connect(t, dsn(_testDB))
+	admin := connect(t, fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", _pgUser, _pgPass, _pgAddr, _testDB))
 	_, err := admin.Exec(context.Background(), "CREATE DATABASE "+name)
 	require.NoError(t, err)
 
-	conn := connect(t, dsn(name))
+	conn := connect(t, dsn)
 	for _, q := range _schema {
 		_, err = conn.Exec(context.Background(), q)
 		require.NoError(t, err)
 	}
 
-	g := NewGenerator(dsn(name), slog.New(slog.DiscardHandler))
+	g := NewGenerator(dsn, slog.New(slog.DiscardHandler))
 
 	// a single day keeps the backfill loop to a few hundred ticks instead
 	// of the month the generator runs with in production.
@@ -463,11 +462,6 @@ func prepGenerator(t *testing.T) *Generator {
 	g.r = mockmetrics.NewRand(_fullDrawSeed)
 
 	return g
-}
-
-// dsn builds a connection string for one database in the container.
-func dsn(db string) string {
-	return fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", _pgUser, _pgPass, _pgAddr, db)
 }
 
 // connect opens a connection that is closed when the test ends.
@@ -482,14 +476,6 @@ func connect(t *testing.T, dsn string) *pgx.Conn {
 	})
 
 	return conn
-}
-
-// exec runs a single statement against the given database.
-func exec(t *testing.T, dsn, query string) {
-	t.Helper()
-
-	_, err := connect(t, dsn).Exec(context.Background(), query)
-	require.NoError(t, err)
 }
 
 // count returns the number of rows in a table over a connection of its own,
@@ -511,37 +497,13 @@ func count(t *testing.T, dsn, table string) int {
 	return n
 }
 
-// emptyDraw finds a seed and a quiet instant that together generate nothing
-// at all, so the empty-tick early return can be reached deterministically.
-func emptyDraw() (int64, time.Time) {
-	at := time.Date(2024, time.January, 7, 3, 0, 0, 0, time.UTC)
-
-	for seed := int64(1); ; seed++ {
-		tick := demodata.GenerateTick(mockmetrics.NewRand(seed), at)
-		if len(tick.Deployments)+len(tick.Incidents)+len(tick.BuildMetrics) == 0 {
-			return seed, at
-		}
-	}
-}
-
-// bufferLog creates a logger writing into a buffer whose contents the caller
-// can read back once flushed.
-func bufferLog() (*slog.Logger, *testutil.Writer, func() string) {
-	wr, buf := testutil.NewBuffer()
-
-	return slog.New(slog.NewJSONHandler(wr, nil)), wr, buf.String
-}
-
 // _fullDrawSeed is a seed whose first draw at _tick fills every table, so a
 // dropped table reliably breaks the batch.
-var _fullDrawSeed = fullDraw()
-
-// fullDraw searches for that seed.
-func fullDraw() int64 {
+var _fullDrawSeed = func() int64 {
 	for seed := int64(1); ; seed++ {
 		tick := demodata.GenerateTick(mockmetrics.NewRand(seed), _tick)
 		if len(tick.Deployments) > 0 && len(tick.Incidents) > 0 && len(tick.BuildMetrics) > 0 {
 			return seed
 		}
 	}
-}
+}()

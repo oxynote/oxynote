@@ -49,18 +49,41 @@ func TestMain(m *testing.M) {
 func Test_Encode(t *testing.T) {
 	t.Parallel()
 
-	// marshaling error
-	_, err := Encode(unmarshalableState{Fn: func() {}}, _testPurpose, _testSecret)
-	assert.Error(t, err)
+	cc := map[string]struct {
+		State  Stamped
+		Secret string
+		Err    error
+	}{
+		"Error returned by json.Marshal": {
+			State:  unmarshalableState{Fn: func() {}},
+			Secret: _testSecret,
+			Err:    assert.AnError,
+		},
+		"Error returned by cryptoutil.EncryptText": {
+			State:  testState{},
+			Secret: "short-secret",
+			Err:    assert.AnError,
+		},
+		"Successful encoding": {
+			State:  testState{OrganizationID: "org-1"},
+			Secret: _testSecret,
+		},
+	}
 
-	// encryption error
-	_, err = Encode(testState{}, _testPurpose, "short-secret")
-	assert.Error(t, err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// success
-	token, err := Encode(testState{OrganizationID: "org-1"}, _testPurpose, _testSecret)
-	require.NoError(t, err)
-	assert.NotEmpty(t, token)
+			token, err := Encode(c.State, _testPurpose, c.Secret)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.NotEmpty(t, token)
+		})
+	}
 }
 
 func Test_Decode(t *testing.T) {

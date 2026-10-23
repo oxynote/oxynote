@@ -289,9 +289,15 @@ func renderAttrs(b document.Block, attrs []attr) string {
 // escapeRaw escapes the one sequence raw text cannot hold as is: its
 // element's closing tag, in any case. A closing tag the text already
 // holds escaped gets one more amp; so that reading it back undoes
-// exactly one level.
+// exactly one level. Reading decodes text with no < whole, so when that
+// would change the text, all of it is escaped.
 func escapeRaw(s, name string) string {
-	s = _rawElements[name].ReplaceAllString(s, "&amp;${1}lt;/${2}")
+	escaped := _rawElements[name].ReplaceAllString(s, "&amp;${1}lt;/${2}")
+	escaped = _rawCloseTags[name].ReplaceAllString(escaped, "&lt;/${1}")
 
-	return _rawCloseTags[name].ReplaceAllString(s, "&lt;/${1}")
+	if !strings.Contains(escaped, "<") && _entityDecoder.Replace(escaped) != s {
+		return _textEscaper.Replace(s)
+	}
+
+	return escaped
 }

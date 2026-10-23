@@ -137,59 +137,34 @@ func Test_newRegistry(t *testing.T) {
 	assert.Len(t, seen, buckets)
 }
 
-func Test_registry_isCachedPerClient(t *testing.T) {
-	t.Parallel()
-
-	// the client holds one registry for its lifetime: the walks behind it
-	// cache the history they replay, and rebuilding it per query would
-	// walk every tick since the epoch again.
-	c := NewClient()
-
-	first := c.registry
-	require.NotEmpty(t, first)
-
-	assert.Equal(t, first[0].buckets[0].value(7), c.registry[0].buckets[0].value(7))
-
-	// a separate client is a separate cache, reading the same history.
-	other := NewClient()
-	require.Len(t, other.registry, len(first))
-
-	for i := range first {
-		assert.Equal(t, first[i].name, other.registry[i].name)
-		assert.Equal(t, first[i].buckets[0].value(7), other.registry[i].buckets[0].value(7))
-	}
-}
-
-// nameMatcher builds a matcher selecting one metric by name, failing
-// the test if it cannot.
-func nameMatcher(t *testing.T, name string) *labels.Matcher {
-	t.Helper()
-
-	m, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, name)
-	require.NoError(t, err)
-
-	return m
-}
-
 func Test_seriesLabels(t *testing.T) {
 	t.Parallel()
 
-	// a labelled family carries its breakdown alongside the metric name.
-	lbls := seriesLabels(
-		family{name: "metric", label: "colour"},
-		bucket{label: "red"},
-	)
+	cc := map[string]struct {
+		Family family
+		Bucket bucket
+		Result labels.Labels
+	}{
+		"A labelled family carries its breakdown alongside the metric name": {
+			Family: family{name: "metric", label: "colour"},
+			Bucket: bucket{label: "red"},
+			Result: labels.FromStrings(model.MetricNameLabel, "metric", "colour", "red"),
+		},
+		// not an empty label, which would show up in autocomplete as a
+		// real dimension.
+		"An unlabelled family carries nothing but the name": {
+			Family: family{name: "metric"},
+			Result: labels.FromStrings(model.MetricNameLabel, "metric"),
+		},
+	}
 
-	assert.Equal(t, "metric", lbls.Get(model.MetricNameLabel))
-	assert.Equal(t, "red", lbls.Get("colour"))
-	assert.Equal(t, 2, lbls.Len())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// an unlabelled one carries nothing but the name — not an empty
-	// label, which would show up in autocomplete as a real dimension.
-	lbls = seriesLabels(family{name: "metric"}, bucket{})
-
-	assert.Equal(t, "metric", lbls.Get(model.MetricNameLabel))
-	assert.Equal(t, 1, lbls.Len())
+			assert.Equal(t, c.Result, seriesLabels(c.Family, c.Bucket))
+		})
+	}
 }
 
 func Test_matches(t *testing.T) {
@@ -230,41 +205,55 @@ func Test_matches(t *testing.T) {
 func Test_registry_forEach(t *testing.T) {
 	t.Parallel()
 
-	// no matchers reaches every series the registry declares.
-	var all int
-
-	newRegistry().forEach(nil, func(labels.Labels, func(int64) float64) { all++ })
-
 	var buckets int
 
 	for _, f := range newRegistry() {
 		buckets += len(f.buckets)
 	}
 
-	assert.Equal(t, buckets, all)
-
-	// a matcher narrows to the family it names, and every series handed
-	// over carries a reading.
-	var named int
-
-	newRegistry().forEach(
-		[]*labels.Matcher{nameMatcher(t, _namespace+"deploy_confidence_index")},
-		func(lbls labels.Labels, value func(int64) float64) {
-			named++
-
-			assert.Equal(t, _namespace+"deploy_confidence_index", lbls.Get(model.MetricNameLabel))
-			require.NotNil(t, value)
-			assert.NotZero(t, value(500))
+	cc := map[string]struct {
+		Matchers []*labels.Matcher
+		Result   int
+		Check    func(t *testing.T, lbls labels.Labels, value func(int64) float64)
+	}{
+		"No matchers reach every series the registry declares": {
+			Result: buckets,
 		},
-	)
+		"A matcher narrows to the family it names": {
+			Matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, _namespace+"deploy_confidence_index")},
+			Result:   3,
+			Check: func(t *testing.T, lbls labels.Labels, value func(int64) float64) {
+				// every series handed over carries a reading.
+				assert.Equal(t, _namespace+"deploy_confidence_index", lbls.Get(model.MetricNameLabel))
+				require.NotNil(t, value)
+				assert.NotZero(t, value(500))
+			},
+		},
+		"A matcher naming nothing reaches nothing": {
+			Matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "not_a_metric")},
+			Check: func(t *testing.T, _ labels.Labels, _ func(int64) float64) {
+				t.Fatal("matched a series that does not exist")
+			},
+		},
+	}
 
-	assert.Equal(t, 3, named)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// a matcher naming nothing reaches nothing.
-	newRegistry().forEach(
-		[]*labels.Matcher{nameMatcher(t, "not_a_metric")},
-		func(labels.Labels, func(int64) float64) { t.Fatal("matched a series that does not exist") },
-	)
+			var got int
+
+			newRegistry().forEach(c.Matchers, func(lbls labels.Labels, value func(int64) float64) {
+				got++
+
+				if c.Check != nil {
+					c.Check(t, lbls, value)
+				}
+			})
+
+			assert.Equal(t, c.Result, got)
+		})
+	}
 }
 
 func Test_sortedKeys(t *testing.T) {
@@ -293,7 +282,7 @@ func Test_registry_labelNames(t *testing.T) {
 
 	// narrowing to one family leaves only that family's dimension.
 	names = newRegistry().labelNames([][]*labels.Matcher{
-		{nameMatcher(t, _namespace+"deploy_confidence_index")},
+		{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, _namespace+"deploy_confidence_index")},
 	})
 
 	assert.Equal(t, []string{model.MetricNameLabel, "vibe"}, names)
@@ -301,8 +290,8 @@ func Test_registry_labelNames(t *testing.T) {
 	// several selectors are unioned, the way the endpoint answers when
 	// handed more than one.
 	names = newRegistry().labelNames([][]*labels.Matcher{
-		{nameMatcher(t, _namespace+"deploy_confidence_index")},
-		{nameMatcher(t, _namespace+"secrets_detected_commits_count")},
+		{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, _namespace+"deploy_confidence_index")},
+		{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, _namespace+"secrets_detected_commits_count")},
 	})
 
 	assert.Equal(t, []string{model.MetricNameLabel, "severity", "vibe"}, names)
@@ -311,20 +300,46 @@ func Test_registry_labelNames(t *testing.T) {
 func Test_registry_labelValues(t *testing.T) {
 	t.Parallel()
 
-	// the metric names are a label value like any other, which is what
-	// the editor's metric autocomplete reads.
-	names := newRegistry().labelValues(model.MetricNameLabel, [][]*labels.Matcher{nil})
+	cc := map[string]struct {
+		Name   string
+		Result []string
+	}{
+		// the editor's metric autocomplete reads these.
+		"The metric names are a label value like any other": {
+			Name: model.MetricNameLabel,
+			Result: []string{
+				_namespace + "circle_back_count",
+				_namespace + "deploy_confidence_index",
+				_namespace + "feature_flag_graveyard_size",
+				_namespace + "friday_deploys_count",
+				_namespace + "hotfixes_per_release",
+				_namespace + "meetings_could_be_doc_count",
+				_namespace + "pizza_fridays_next_30_days",
+				_namespace + "pr_time_to_first_review_minutes",
+				_namespace + "prs_merged_friday_afternoon_count",
+				_namespace + "quick_sync_meetings_same_day_count",
+				_namespace + "secrets_detected_commits_count",
+				_namespace + "ship_it_approvals_after_5pm_count",
+				_namespace + "stale_branches_total",
+				_namespace + "temporary_fix_age_days",
+				_namespace + "works_on_my_machine_rate",
+			},
+		},
+		"Every value of a label": {
+			Name:   "vibe",
+			Result: []string{"feeling_lucky", "nervous", "oncall_already_paged"},
+		},
+		"A label no series carries answers empty rather than a blank value": {
+			Name:   "nonexistent",
+			Result: []string{},
+		},
+	}
 
-	assert.Len(t, names, 15)
-	assert.Contains(t, names, _namespace+"pizza_fridays_next_30_days")
-	assert.IsIncreasing(t, names)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	assert.Equal(
-		t,
-		[]string{"feeling_lucky", "nervous", "oncall_already_paged"},
-		newRegistry().labelValues("vibe", [][]*labels.Matcher{nil}),
-	)
-
-	// a label no series carries answers empty rather than a blank value.
-	assert.Empty(t, newRegistry().labelValues("nonexistent", [][]*labels.Matcher{nil}))
+			assert.Equal(t, c.Result, newRegistry().labelValues(c.Name, [][]*labels.Matcher{nil}))
+		})
+	}
 }

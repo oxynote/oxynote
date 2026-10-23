@@ -14,10 +14,11 @@ import (
 // insert_blocks carries it; the others refer to it there.
 var _contentDescription = "The blocks as XML, one element per block. " +
 	"Elements: <p>; <h1> to <h3>, plain text; <ul> and <ol start> of <li>, and <tasks> of <task checked>, where an entry holds its text and then any blocks nested under it; " +
-	"<blockquote> and <callout icon> holding blocks; <pre language> with raw code, or with a title the titled code a split_doc's right side takes; <mermaid> with raw source; " +
+	"<blockquote> and <callout icon> holding blocks; <pre language> with raw code, taking a title only on a split_doc's right side; <mermaid> with raw source; " +
 	"<hr/>; <img src alt title width/>; <figma src width height/>; <metrics> of <metric>, which holds a JSON object of its attributes; " +
 	"<split_doc inversed> holding <left>, an <h1> then <p>, lists or <callout> then any <params header> of <param name type>description</param>, and <right>, a titled <pre>, <metric> or <mermaid>. " +
-	"Inline text takes <b>, <i>, <u>, <s>, <code> and <a href>; outside <pre>, <mermaid> and <metric>, whose content is raw, write & as &amp; and < as &lt;. " +
+	"Inline text takes <b>, <i>, <u>, <s>, <code> and <a href>; outside <pre>, <mermaid> and <metric>, write & as &amp; and < as &lt;. " +
+	"Content inside them is raw, so write it as it is. Raw content with no < at all is decoded as escaped text, so write a literal &lt; there as &amp;lt;. " +
 	"A callout's icon takes the ids create_document's icon does. " +
 	"Mermaid ends a gantt task name or timeline period at its first colon, so write a colon inside one as #58;. " +
 	"A metric's attributes: " + markup.MetricReference() + "."
@@ -156,7 +157,7 @@ func (insertBlocks) Info() Info {
 		Description: "Insert blocks into a document, written as XML, all in one call: at its start or end, or before or after the block reference_block_uid names. Every element is a new block, so leave id out; replace_blocks changes existing ones. A block not allowed where it lands is refused, naming what the place takes. Returns the written blocks as XML with their ids.",
 		Properties: map[string]any{
 			"document_id":         map[string]any{"type": "string", "description": _documentIDDescription},
-			"branch_id":           map[string]any{"type": "string", "description": _branchIDDescription},
+			"branch_id":           map[string]any{"type": "string", "description": _writeBranchIDDescription},
 			"reference_block_uid": map[string]any{"type": "string", "description": "The id of the block to insert beside. Required with before and after; leave it out with start and end."},
 			"position": map[string]any{
 				"type":        "string",
@@ -271,7 +272,7 @@ func (replaceBlocks) Info() Info {
 		Description: "Replace one block with the blocks content holds, in the XML insert_blocks describes. To change a block, read it with get_document (block_uid narrows the read), edit the XML and send it back. Keep the id of every element that stays: it keeps its comments, hooks and files, and unchanged content stays exactly as stored. An element without an id is new; an id from outside the replaced block is refused. Returns the written blocks as XML.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
-			"branch_id":   map[string]any{"type": "string", "description": _branchIDDescription},
+			"branch_id":   map[string]any{"type": "string", "description": _writeBranchIDDescription},
 			"block_uid":   map[string]any{"type": "string", "description": "The id of the block being replaced."},
 			"content":     map[string]any{"type": "string", "description": "The blocks taking its place, as XML in the format insert_blocks describes."},
 		},
@@ -376,7 +377,7 @@ func (deleteBlock) Info() Info {
 		Description: "Delete one block by id, including anything nested inside it. Its comments, hooks and files go with it and cannot be restored, so use move_block when the aim is to reorder and replace_blocks when the aim is new content. Returns {deleted: id}.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
-			"branch_id":   map[string]any{"type": "string", "description": _branchIDDescription},
+			"branch_id":   map[string]any{"type": "string", "description": _writeBranchIDDescription},
 			"block_uid":   map[string]any{"type": "string", "description": "The id of the block to delete."},
 		},
 		Required: []string{"document_id", "branch_id", "block_uid"},
@@ -476,7 +477,7 @@ func (moveBlock) Info() Info {
 		Description: "Move a block before or after another block of the same document. It keeps its id and nested content, and with them its comments, hooks and files, which a delete and insert would lose. The landing spot has to accept the block. Returns the moved block as XML.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
-			"branch_id":   map[string]any{"type": "string", "description": _branchIDDescription},
+			"branch_id":   map[string]any{"type": "string", "description": _writeBranchIDDescription},
 			"block_uid":   map[string]any{"type": "string", "description": "The id of the block to move."},
 			"position": map[string]any{
 				"type":        "string",

@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,16 +16,18 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/jarcoal/httpmock"
-	"github.com/oxynote/oxynote/server/core/internal/apps/state"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/notification/interpreter"
+	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 // _testSigningSecret is a 32-byte AES key for installation and link state
@@ -37,22 +40,17 @@ const _testRedirectURL = "http://localhost/slack/redirect"
 // _testSignatureSecret is the signature secret configured on test managers.
 const _testSignatureSecret = "sig"
 
-// fakeReceiver is a no-op notification receiver for tests.
-type fakeReceiver struct{}
-
-func (fakeReceiver) OnNotification(_ func(context.Context, notification.Notification)) notification.Unsubscribe {
-	return func() {}
-}
-
 // recordingReceiver captures the subscribed callback and counts
-// unsubscribe calls.
+// subscribe and unsubscribe calls.
 type recordingReceiver struct {
 	fn           func(context.Context, notification.Notification)
+	subscribed   int
 	unsubscribed int
 }
 
 func (rr *recordingReceiver) OnNotification(fn func(context.Context, notification.Notification)) notification.Unsubscribe {
 	rr.fn = fn
+	rr.subscribed++
 
 	return func() {
 		rr.unsubscribed++
@@ -85,7 +83,7 @@ func newTestManager(t *testing.T, db DB, interp Interpreter) *Manager {
 		slog.New(slog.DiscardHandler),
 		db,
 		interp,
-		fakeReceiver{},
+		&recordingReceiver{},
 		nil,
 		Options{
 			ClientID:                  "id",
@@ -100,15 +98,8 @@ func newTestManager(t *testing.T, db DB, interp Interpreter) *Manager {
 	return man
 }
 
-// encryptState encrypts the given payload as a state string minted for the
-// given purpose using the test signing secret.
-func encryptState[T state.Stamped](t *testing.T, purpose string, payload T) string {
-	t.Helper()
-
-	token, err := state.Encode(payload, purpose, _testSigningSecret)
-	require.NoError(t, err)
-
-	return token
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
 }
 
 func Test_Options_Validate(t *testing.T) {
@@ -122,9 +113,9 @@ func Test_Options_Validate(t *testing.T) {
 		InstallationSigningSecret: _testSigningSecret,
 	}
 
-	tests := map[string]struct {
-		Mutate      func(o *Options)
-		ExpectedErr string
+	cc := map[string]struct {
+		Mutate func(o *Options)
+		Err    error
 	}{
 		"Full options are valid": {
 			Mutate: func(*Options) {},
@@ -133,31 +124,31 @@ func Test_Options_Validate(t *testing.T) {
 			Mutate: func(o *Options) {
 				o.ClientID = ""
 			},
-			ExpectedErr: "client id is required",
+			Err: errors.New("client id is required"),
 		},
 		"Missing client secret fails": {
 			Mutate: func(o *Options) {
 				o.ClientSecret = ""
 			},
-			ExpectedErr: "client secret is required",
+			Err: errors.New("client secret is required"),
 		},
 		"Missing signature secret fails": {
 			Mutate: func(o *Options) {
 				o.SignatureSecret = ""
 			},
-			ExpectedErr: "signature secret is required",
+			Err: errors.New("signature secret is required"),
 		},
 		"Missing redirect URL fails": {
 			Mutate: func(o *Options) {
 				o.RedirectURL = ""
 			},
-			ExpectedErr: "redirect URL is required",
+			Err: errors.New("redirect URL is required"),
 		},
 		"Missing installation signing secret fails": {
 			Mutate: func(o *Options) {
 				o.InstallationSigningSecret = ""
 			},
-			ExpectedErr: "installation signing secret is required",
+			Err: errors.New("installation signing secret is required"),
 		},
 		// the secret is an AES key: a wrong-length one used to boot fine and
 		// then fail every install, link and verify call.
@@ -165,26 +156,18 @@ func Test_Options_Validate(t *testing.T) {
 			Mutate: func(o *Options) {
 				o.InstallationSigningSecret = "too-short"
 			},
-			ExpectedErr: "installation signing secret: key must be 32 bytes long",
+			Err: fmt.Errorf("installation signing secret: %w", cryptoutil.ErrInvalidKeySize),
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
 			opt := valid
-			tc.Mutate(&opt)
+			c.Mutate(&opt)
 
-			err := opt.Validate()
-
-			if tc.ExpectedErr != "" {
-				assert.EqualError(t, err, tc.ExpectedErr)
-
-				return
-			}
-
-			assert.NoError(t, err)
+			testutil.AssertEqualError(t, c.Err, opt.Validate())
 		})
 	}
 }
@@ -192,10 +175,11 @@ func Test_Options_Validate(t *testing.T) {
 func Test_NewManager(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct {
+	cc := map[string]struct {
 		Opt            Options
-		ExpectErr      bool
+		Subscriptions  int
 		WantConfigured bool
+		Err            error
 	}{
 		"Empty client ID creates an unconfigured manager": {
 			Opt: Options{},
@@ -204,7 +188,7 @@ func Test_NewManager(t *testing.T) {
 			Opt: Options{
 				ClientID: "id",
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Full options create a configured manager": {
 			Opt: Options{
@@ -214,31 +198,33 @@ func Test_NewManager(t *testing.T) {
 				RedirectURL:               _testRedirectURL,
 				InstallationSigningSecret: _testSigningSecret,
 			},
+			Subscriptions:  1,
 			WantConfigured: true,
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
+
+			rr := &recordingReceiver{}
 
 			man, err := NewManager(
 				slog.New(slog.DiscardHandler),
 				nil,
 				nil,
-				fakeReceiver{},
+				rr,
 				nil,
-				tc.Opt,
+				c.Opt,
 			)
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Subscriptions, rr.subscribed)
 
-			if tc.ExpectErr {
-				require.Error(t, err)
-
+			if err != nil {
 				return
 			}
 
-			require.NoError(t, err)
-			assert.Equal(t, tc.WantConfigured, man.Configured())
+			assert.Equal(t, c.WantConfigured, man.Configured())
 		})
 	}
 }
@@ -246,68 +232,74 @@ func Test_NewManager(t *testing.T) {
 func Test_Manager_Close(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Unconfigured manager has no subscription to clean up", func(t *testing.T) {
-		t.Parallel()
-
-		rr := &recordingReceiver{}
-
-		man, err := NewManager(slog.New(slog.DiscardHandler), nil, nil, rr, nil, Options{})
-		require.NoError(t, err)
-
-		assert.Nil(t, rr.fn)
-		require.NoError(t, man.Close())
-		assert.Zero(t, rr.unsubscribed)
-	})
-
-	t.Run("Configured manager subscribes and unsubscribes", func(t *testing.T) {
-		t.Parallel()
-
-		rr := &recordingReceiver{}
-
-		man, err := NewManager(
-			slog.New(slog.DiscardHandler),
-			nil,
-			nil,
-			rr,
-			nil,
-			Options{
+	cc := map[string]struct {
+		Opt          Options
+		Subscribed   bool
+		Unsubscribed int
+	}{
+		"Unconfigured manager has no subscription to clean up": {
+			Opt: Options{},
+		},
+		"Configured manager subscribes and unsubscribes": {
+			Opt: Options{
 				ClientID:                  "id",
 				ClientSecret:              "secret",
 				SignatureSecret:           "sig",
 				RedirectURL:               _testRedirectURL,
 				InstallationSigningSecret: _testSigningSecret,
 			},
-		)
-		require.NoError(t, err)
+			Subscribed:   true,
+			Unsubscribed: 1,
+		},
+	}
 
-		assert.NotNil(t, rr.fn)
-		require.NoError(t, man.Close())
-		assert.Equal(t, 1, rr.unsubscribed)
-	})
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			rr := &recordingReceiver{}
+
+			man, err := NewManager(slog.New(slog.DiscardHandler), nil, nil, rr, nil, c.Opt)
+			require.NoError(t, err)
+
+			assert.Equal(t, c.Subscribed, rr.fn != nil)
+			require.NoError(t, man.Close())
+			assert.Equal(t, c.Unsubscribed, rr.unsubscribed)
+		})
+	}
 }
 
 func Test_Manager_ExchangeCode(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Unconfigured bool
-		Resp         httpmock.Responder
-		Result       *AppAccess
-		Err          error
+		Unconfigured  bool
+		Resp          httpmock.Responder
+		ExchangeCalls int
+		Result        *AppAccess
+		Err           error
 	}{
+		// the responder is registered so that a stray exchange call would be
+		// counted. Without one the transport does not count the call.
 		"Unconfigured manager fails": {
 			Unconfigured: true,
-			Err:          ErrNotConfigured,
+			Resp: httpmock.NewStringResponder(
+				http.StatusOK,
+				`{"ok":true,"access_token":"token","app_id":"A1","team":{"id":"T1"}}`,
+			),
+			Err: ErrNotConfigured,
 		},
 		"Error returned by the exchange": {
-			Resp: httpmock.NewStringResponder(http.StatusOK, `{"ok":false,"error":"invalid_code"}`),
-			Err:  assert.AnError,
+			Resp:          httpmock.NewStringResponder(http.StatusOK, `{"ok":false,"error":"invalid_code"}`),
+			ExchangeCalls: 1,
+			Err:           assert.AnError,
 		},
 		"Successful exchange": {
 			Resp: httpmock.NewStringResponder(
 				http.StatusOK,
 				`{"ok":true,"access_token":"token","app_id":"A1","team":{"id":"T1"}}`,
 			),
+			ExchangeCalls: 1,
 			Result: &AppAccess{
 				TeamID:      "T1",
 				AccessToken: "token",
@@ -333,6 +325,7 @@ func Test_Manager_ExchangeCode(t *testing.T) {
 
 			res, err := man.ExchangeCode(context.Background(), "code")
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.ExchangeCalls, mt.GetTotalCallCount())
 
 			if err != nil {
 				return
@@ -346,13 +339,15 @@ func Test_Manager_ExchangeCode(t *testing.T) {
 func Test_Manager_GetClient(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct {
-		Configured  bool
-		DB          *DBMock
-		ExpectedErr error
+	cc := map[string]struct {
+		Configured bool
+		DB         *DBMock
+		FetchCalls int
+		Err        error
 	}{
 		"Unconfigured manager fails": {
-			ExpectedErr: ErrNotConfigured,
+			DB:  &DBMock{},
+			Err: ErrNotConfigured,
 		},
 		"Missing app fails": {
 			Configured: true,
@@ -361,16 +356,18 @@ func Test_Manager_GetClient(t *testing.T) {
 					return nil, sql.ErrNoRows
 				},
 			},
-			ExpectedErr: ErrAppNotFound,
+			FetchCalls: 1,
+			Err:        ErrAppNotFound,
 		},
-		"Database error is propagated": {
+		"Error returned by DB.FetchSlackAppByTeamID": {
 			Configured: true,
 			DB: &DBMock{
 				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*App, error) {
 					return nil, assert.AnError
 				},
 			},
-			ExpectedErr: assert.AnError,
+			FetchCalls: 1,
+			Err:        assert.AnError,
 		},
 		"Existing app returns a client": {
 			Configured: true,
@@ -379,32 +376,32 @@ func Test_Manager_GetClient(t *testing.T) {
 					return &App{TeamID: "team-1", Token: "token"}, nil
 				},
 			},
+			FetchCalls: 1,
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			man := newTestManager(t, tc.DB, nil)
+			man := newTestManager(t, c.DB, nil)
 
-			if !tc.Configured {
+			if !c.Configured {
 				man = newDisabledManager(t)
+				man.db = c.DB
 			}
 
 			client, err := man.GetClient(context.Background(), "team-1")
+			testutil.AssertEqualError(t, c.Err, err)
 
-			if tc.ExpectedErr != nil {
-				assert.Equal(t, tc.ExpectedErr, err)
+			ff := c.DB.FetchSlackAppByTeamIDCalls()
+			require.Len(t, ff, c.FetchCalls)
 
+			if err != nil {
 				return
 			}
 
-			require.NoError(t, err)
 			assert.NotNil(t, client)
-
-			ff := tc.DB.FetchSlackAppByTeamIDCalls()
-			require.Len(t, ff, 1)
 			assert.Equal(t, "team-1", ff[0].TeamID)
 		})
 	}
@@ -470,7 +467,7 @@ func Test_Manager_VerifyMiddleware(t *testing.T) {
 		// form-encoded in the first place.
 		"Body read failure is a form error": {
 			Request: func(_ *testing.T) *http.Request {
-				r := httptest.NewRequest(http.MethodPost, "/slack/events", &failingReader{})
+				r := httptest.NewRequest(http.MethodPost, "/slack/events", iotest.ErrReader(assert.AnError))
 				r.Header.Set("X-Slack-Request-Timestamp", strconv.FormatInt(time.Now().Unix(), 10))
 				r.Header.Set("X-Slack-Signature", "v0=deadbeef")
 
@@ -531,19 +528,7 @@ func Test_Manager_ProcessNotification(t *testing.T) {
 		}
 	}
 
-	// userLink builds a user link with notifications toggled.
-	userLink := func(notifications bool) *UserLink {
-		return &UserLink{
-			SlackUserID: "slack-user",
-			TeamID:      "team-1",
-			UserID:      "user-1",
-			Settings: UserLinkSettings{
-				Notifications: notifications,
-			},
-		}
-	}
-
-	tests := map[string]struct {
+	cc := map[string]struct {
 		LinkErr   error
 		Link      *UserLink
 		AppErr    error
@@ -558,7 +543,7 @@ func Test_Manager_ProcessNotification(t *testing.T) {
 				wasInterpretCalled(0),
 			),
 		},
-		"User link fetch failure is logged and ignored": {
+		"Error returned by DB.FetchSlackUserLinkByUserID": {
 			LinkErr: assert.AnError,
 			Checks: checks(
 				wasDBFetchUserLinkCalled(1),
@@ -567,7 +552,12 @@ func Test_Manager_ProcessNotification(t *testing.T) {
 			),
 		},
 		"Disabled notifications short-circuit": {
-			Link: userLink(false),
+			Link: &UserLink{
+				SlackUserID: "slack-user",
+				TeamID:      "team-1",
+				UserID:      "user-1",
+				Settings:    UserLinkSettings{Notifications: false},
+			},
 			Checks: checks(
 				wasDBFetchUserLinkCalled(1),
 				wasDBFetchAppCalled(0),
@@ -575,7 +565,12 @@ func Test_Manager_ProcessNotification(t *testing.T) {
 			),
 		},
 		"Missing app is logged and ignored": {
-			Link:   userLink(true),
+			Link: &UserLink{
+				SlackUserID: "slack-user",
+				TeamID:      "team-1",
+				UserID:      "user-1",
+				Settings:    UserLinkSettings{Notifications: true},
+			},
 			AppErr: sql.ErrNoRows,
 			Checks: checks(
 				wasDBFetchUserLinkCalled(1),
@@ -583,8 +578,13 @@ func Test_Manager_ProcessNotification(t *testing.T) {
 				wasInterpretCalled(0),
 			),
 		},
-		"Interpreter failure is logged and ignored": {
-			Link:      userLink(true),
+		"Error returned by Interpreter.InterpretNotification": {
+			Link: &UserLink{
+				SlackUserID: "slack-user",
+				TeamID:      "team-1",
+				UserID:      "user-1",
+				Settings:    UserLinkSettings{Notifications: true},
+			},
 			InterpErr: assert.AnError,
 			Checks: checks(
 				wasDBFetchUserLinkCalled(1),
@@ -594,22 +594,22 @@ func Test_Manager_ProcessNotification(t *testing.T) {
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
 			db := &DBMock{
 				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*UserLink, error) {
-					return tc.Link, tc.LinkErr
+					return c.Link, c.LinkErr
 				},
 				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*App, error) {
-					return &App{TeamID: "team-1", Token: "token"}, tc.AppErr
+					return &App{TeamID: "team-1", Token: "token"}, c.AppErr
 				},
 			}
 
 			interp := &InterpreterMock{
 				InterpretNotificationFunc: func(context.Context, notification.Notification) (*interpreter.Message, error) {
-					return &interpreter.Message{Text: "hi"}, tc.InterpErr
+					return &interpreter.Message{Text: "hi"}, c.InterpErr
 				},
 			}
 
@@ -620,18 +620,9 @@ func Test_Manager_ProcessNotification(t *testing.T) {
 				OrganizationID: "org-1",
 			})
 
-			for _, ch := range tc.Checks {
+			for _, ch := range c.Checks {
 				ch(t, db, interp)
 			}
 		})
 	}
-}
-
-// failingReader always fails, standing in for a request body that dies
-// mid-transport.
-type failingReader struct{}
-
-// Read always returns an error.
-func (failingReader) Read([]byte) (int, error) {
-	return 0, assert.AnError
 }

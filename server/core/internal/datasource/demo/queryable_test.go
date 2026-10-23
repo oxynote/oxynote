@@ -9,15 +9,10 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// countingValue returns a value function reporting the tick it was asked
-// about, so a caller can tell which tick produced a sample.
-func countingValue(tick int64) float64 {
-	return float64(tick)
-}
 
 func Test_selectStep(t *testing.T) {
 	t.Parallel()
@@ -75,48 +70,80 @@ func Test_selectStep(t *testing.T) {
 func Test_samplesIn(t *testing.T) {
 	t.Parallel()
 
-	startMs := _epoch.Add(time.Hour).UnixMilli()
-	endMs := _epoch.Add(2 * time.Hour).UnixMilli()
+	var (
+		startMs = _epoch.Add(time.Hour).UnixMilli()
+		endMs   = _epoch.Add(2 * time.Hour).UnixMilli()
+		lastMs  = timeAt(latestTick()).UnixMilli()
+	)
 
-	ss := samplesIn(countingValue, startMs, endMs, _tickMillis)
+	cc := map[string]struct {
+		Start int64
+		End   int64
+		Check func(t *testing.T, ss []chunks.Sample)
+	}{
+		"A window is covered from its start to its end": {
+			Start: startMs,
+			End:   endMs,
+			Check: func(t *testing.T, ss []chunks.Sample) {
+				require.NotEmpty(t, ss)
 
-	require.NotEmpty(t, ss)
+				// one sample a step apart, each carrying the value of the
+				// tick it lands in.
+				assert.Len(t, ss, 61)
+				assert.Equal(t, startMs, ss[0].T())
+				assert.Equal(t, endMs, ss[len(ss)-1].T())
 
-	// the window is covered endMs to endMs, one sample a step apart, and
-	// each carries the value of the tick it lands in.
-	assert.Len(t, ss, 61)
-	assert.Equal(t, startMs, ss[0].T())
-	assert.Equal(t, endMs, ss[len(ss)-1].T())
+				for i, s := range ss {
+					assert.Equal(t, float64(tickAtMillis(s.T())), s.F())
 
-	for i, s := range ss {
-		assert.Equal(t, float64(tickAtMillis(s.T())), s.F())
+					if i > 0 {
+						assert.Equal(t, _tickMillis, s.T()-ss[i-1].T())
+					}
+				}
+			},
+		},
+		"A window starting mid tick starts on the sample before it": {
+			Start: startMs + 30_000,
+			End:   endMs,
+			Check: func(t *testing.T, ss []chunks.Sample) {
+				// the first point of the evaluation grid has something to
+				// look back at.
+				require.NotEmpty(t, ss)
+				assert.LessOrEqual(t, ss[0].T(), startMs+30_000)
+			},
+		},
+		"A window reaching past the present stops at it": {
+			Start: lastMs - 10*_tickMillis,
+			End:   lastMs + time.Hour.Milliseconds(),
+			Check: func(t *testing.T, ss []chunks.Sample) {
+				// the present is read after sampling, because the minute
+				// may have turned since the window was built.
+				require.NotEmpty(t, ss)
+				assert.LessOrEqual(t, ss[len(ss)-1].T(), timeAt(latestTick()).UnixMilli())
 
-		if i > 0 {
-			assert.Equal(t, _tickMillis, s.T()-ss[i-1].T())
-		}
+				// it still reaches the present the window was built from.
+				assert.GreaterOrEqual(t, ss[len(ss)-1].T(), lastMs)
+			},
+		},
+		"A window before the epoch produces nothing": {
+			Start: _epoch.Add(-10 * time.Hour).UnixMilli(),
+			End:   _epoch.Add(-5 * time.Hour).UnixMilli(),
+			Check: func(t *testing.T, ss []chunks.Sample) {
+				// rather than running the timeline backwards.
+				assert.Empty(t, ss)
+			},
+		},
 	}
 
-	// the first sample sits at or before the window's startMs, so the
-	// first point of the evaluation grid has something to look back at.
-	ss = samplesIn(countingValue, startMs+30_000, endMs, _tickMillis)
-	require.NotEmpty(t, ss)
-	assert.LessOrEqual(t, ss[0].T(), startMs+30_000)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// nothing past the present is ever sampled.
-	lastMs := timeAt(latestTick()).UnixMilli()
-
-	ss = samplesIn(countingValue, lastMs-10*_tickMillis, lastMs+time.Hour.Milliseconds(), _tickMillis)
-	require.NotEmpty(t, ss)
-	assert.LessOrEqual(t, ss[len(ss)-1].T(), lastMs)
-
-	// a window that lands entirely before the epoch produces nothing
-	// rather than running the timeline backwards.
-	assert.Empty(t, samplesIn(
-		countingValue,
-		_epoch.Add(-10*time.Hour).UnixMilli(),
-		_epoch.Add(-5*time.Hour).UnixMilli(),
-		_tickMillis,
-	))
+			// the value is the tick itself, so a check can tell which tick
+			// produced a sample.
+			c.Check(t, samplesIn(func(tick int64) float64 { return float64(tick) }, c.Start, c.End, _tickMillis))
+		})
+	}
 }
 
 func Test_queryable_Querier(t *testing.T) {
@@ -144,57 +171,65 @@ func Test_querier_Select(t *testing.T) {
 
 	q := &querier{registry: newRegistry(), mint: startMs, maxt: endMs}
 
-	// the matchers narrow the set, and every series in it carries the
-	// samples of the window the hints asked about.
-	set := q.Select(
-		context.Background(),
-		true,
-		&storage.SelectHints{Start: startMs, End: endMs, Step: _tickMillis},
-		nameMatcher(t, name),
-	)
-
-	require.NoError(t, set.Err())
-	assert.Empty(t, set.Warnings())
-
-	var got []string
-
-	for set.Next() {
-		s := set.At()
-		got = append(got, s.Labels().Get("vibe"))
-
-		assert.Equal(t, name, s.Labels().Get(model.MetricNameLabel))
-
-		var samples int
-
-		it := s.Iterator(nil)
-		for it.Next() == chunkenc.ValFloat {
-			ts, _ := it.At()
-
-			assert.GreaterOrEqual(t, ts, startMs)
-			assert.LessOrEqual(t, ts, endMs)
-
-			samples++
-		}
-
-		require.NoError(t, it.Err())
-		assert.Equal(t, 61, samples)
+	cc := map[string]struct {
+		Sort   bool
+		Hints  *storage.SelectHints
+		Name   string
+		Result []string
+	}{
+		"Sorted series sampled across the hinted window": {
+			Sort:   true,
+			Hints:  &storage.SelectHints{Start: startMs, End: endMs, Step: _tickMillis},
+			Name:   name,
+			Result: []string{"feeling_lucky", "nervous", "oncall_already_paged"},
+		},
+		"No hints fall back to the querier bounds": {
+			Name:   name,
+			Result: []string{"feeling_lucky", "nervous", "oncall_already_paged"},
+		},
+		"A matcher naming nothing yields an empty set": {
+			Name: "nope",
+		},
 	}
 
-	// sorting was asked for, so the series arrive in label order.
-	assert.Equal(t, []string{"feeling_lucky", "nervous", "oncall_already_paged"}, got)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// with no hints the querier falls back to its own bounds rather than
-	// answering with nothing.
-	set = q.Select(context.Background(), false, nil, nameMatcher(t, name))
+			set := q.Select(context.Background(), c.Sort, c.Hints, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, c.Name))
 
-	require.True(t, set.Next())
-	assert.NotNil(t, set.At())
+			require.NoError(t, set.Err())
+			assert.Empty(t, set.Warnings())
 
-	// a matcher naming nothing yields an empty set, not an error.
-	set = q.Select(context.Background(), false, nil, nameMatcher(t, "nope"))
+			var got []string
 
-	assert.False(t, set.Next())
-	require.NoError(t, set.Err())
+			for set.Next() {
+				s := set.At()
+				got = append(got, s.Labels().Get("vibe"))
+
+				assert.Equal(t, c.Name, s.Labels().Get(model.MetricNameLabel))
+
+				// every series carries the samples of the window the
+				// hints or the bounds ask about.
+				var samples int
+
+				it := s.Iterator(nil)
+				for it.Next() == chunkenc.ValFloat {
+					ts, _ := it.At()
+
+					assert.GreaterOrEqual(t, ts, startMs)
+					assert.LessOrEqual(t, ts, endMs)
+
+					samples++
+				}
+
+				require.NoError(t, it.Err())
+				assert.Equal(t, 61, samples)
+			}
+
+			assert.Equal(t, c.Result, got)
+		})
+	}
 }
 
 func Test_querier_LabelNames(t *testing.T) {
@@ -203,7 +238,7 @@ func Test_querier_LabelNames(t *testing.T) {
 	names, annos, err := (&querier{registry: newRegistry()}).LabelNames(
 		context.Background(),
 		nil,
-		nameMatcher(t, _namespace+"deploy_confidence_index"),
+		labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, _namespace+"deploy_confidence_index"),
 	)
 
 	require.NoError(t, err)
@@ -218,7 +253,7 @@ func Test_querier_LabelValues(t *testing.T) {
 		context.Background(),
 		"vibe",
 		nil,
-		nameMatcher(t, _namespace+"deploy_confidence_index"),
+		labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, _namespace+"deploy_confidence_index"),
 	)
 
 	require.NoError(t, err)
@@ -232,7 +267,7 @@ func Test_querier_Close(t *testing.T) {
 	assert.NoError(t, (&querier{}).Close())
 }
 
-func Test_seriesSet(t *testing.T) {
+func Test_seriesSet_Next(t *testing.T) {
 	t.Parallel()
 
 	one := storage.NewListSeries(labels.FromStrings(model.MetricNameLabel, "one"), nil)
@@ -241,17 +276,14 @@ func Test_seriesSet(t *testing.T) {
 	ss := &seriesSet{series: []storage.Series{one, two}, index: -1}
 
 	require.True(t, ss.Next())
-	assert.Same(t, one, ss.At())
+	assert.Equal(t, 0, ss.index)
 
 	require.True(t, ss.Next())
-	assert.Same(t, two, ss.At())
+	assert.Equal(t, 1, ss.index)
 
 	// the set ends, and stays ended.
 	assert.False(t, ss.Next())
 	assert.False(t, ss.Next())
-
-	assert.NoError(t, ss.Err())
-	assert.Empty(t, ss.Warnings())
 
 	// an empty set reports nothing rather than panicking on the first
 	// read.
@@ -259,20 +291,73 @@ func Test_seriesSet(t *testing.T) {
 	assert.False(t, empty.Next())
 }
 
-func Test_floatSample(t *testing.T) {
+func Test_seriesSet_At(t *testing.T) {
+	t.Parallel()
+
+	one := storage.NewListSeries(labels.FromStrings(model.MetricNameLabel, "one"), nil)
+	two := storage.NewListSeries(labels.FromStrings(model.MetricNameLabel, "two"), nil)
+
+	ss := &seriesSet{series: []storage.Series{one, two}, index: 0}
+	assert.Same(t, one, ss.At())
+
+	ss.index = 1
+	assert.Same(t, two, ss.At())
+}
+
+func Test_seriesSet_Err(t *testing.T) {
+	t.Parallel()
+
+	assert.NoError(t, (&seriesSet{index: -1}).Err())
+}
+
+func Test_seriesSet_Warnings(t *testing.T) {
+	t.Parallel()
+
+	assert.Empty(t, (&seriesSet{index: -1}).Warnings())
+}
+
+func Test_floatSample_T(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, int64(1_700_000_000_000), floatSample{t: 1_700_000_000_000, f: 42.5}.T())
+}
+
+func Test_floatSample_ST(t *testing.T) {
+	t.Parallel()
+
+	// a synthesized gauge reading carries no start timestamp.
+	assert.Zero(t, floatSample{t: 1_700_000_000_000, f: 42.5}.ST())
+}
+
+func Test_floatSample_F(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, 42.5, floatSample{t: 1_700_000_000_000, f: 42.5}.F())
+}
+
+func Test_floatSample_H(t *testing.T) {
+	t.Parallel()
+
+	// a gauge reading carries no histogram of either shape.
+	assert.Nil(t, floatSample{t: 1_700_000_000_000, f: 42.5}.H())
+}
+
+func Test_floatSample_FH(t *testing.T) {
+	t.Parallel()
+
+	assert.Nil(t, floatSample{t: 1_700_000_000_000, f: 42.5}.FH())
+}
+
+func Test_floatSample_Type(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, chunkenc.ValFloat, floatSample{t: 1_700_000_000_000, f: 42.5}.Type())
+}
+
+func Test_floatSample_Copy(t *testing.T) {
 	t.Parallel()
 
 	s := floatSample{t: 1_700_000_000_000, f: 42.5}
-
-	assert.Equal(t, int64(1_700_000_000_000), s.T())
-	assert.Equal(t, 42.5, s.F())
-	assert.Equal(t, chunkenc.ValFloat, s.Type())
-
-	// a synthesized gauge reading carries no start timestamp and no
-	// histogram of either shape.
-	assert.Zero(t, s.ST())
-	assert.Nil(t, s.H())
-	assert.Nil(t, s.FH())
 
 	// it holds no references, so a copy is the value itself.
 	assert.Equal(t, s, s.Copy())

@@ -53,15 +53,6 @@ func (f *fakePublisher) PublishNotifications(organizationID string, core notific
 	f.userIDs = append(f.userIDs, userIDs)
 }
 
-// changeRecorder records the hooks a manager announces as changed.
-type changeRecorder struct {
-	hooks []hook.Hook
-}
-
-func (r *changeRecorder) record(h hook.Hook) {
-	r.hooks = append(r.hooks, h)
-}
-
 // fakeChangeDetection is a changedetection.io server that creates the
 // watcher "w-new" and records the watchers it deletes.
 type fakeChangeDetection struct {
@@ -212,7 +203,8 @@ func Test_Manager_Start(t *testing.T) {
 		},
 	}
 
-	man := newTestManager(t, db, &fakePublisher{}, nil)
+	pub := &fakePublisher{}
+	man := newTestManager(t, db, pub, nil)
 
 	stopped := make(chan struct{})
 
@@ -226,6 +218,12 @@ func Test_Manager_Start(t *testing.T) {
 	<-stopped
 
 	assert.Len(t, db.FetchPaginatedDocumentHooksCalls(), 1)
+	assert.Empty(t, db.FetchDocumentHookCalls())
+	assert.Empty(t, db.FetchDocumentByBranchIDCalls())
+	assert.Empty(t, db.UpdateDocumentHookCalls())
+	assert.Empty(t, db.DeleteDocumentHookCalls())
+	assert.Empty(t, db.FetchDocumentMaintainersCalls())
+	assert.Empty(t, pub.codes)
 }
 
 func Test_Manager_SetUpBranch(t *testing.T) {
@@ -234,7 +232,9 @@ func Test_Manager_SetUpBranch(t *testing.T) {
 	branchID := xid.New()
 
 	cc := map[string]struct {
-		FetchErr error
+		FetchErr        error
+		HookFetches     int
+		DocumentFetches int
 		// Updated is the hooks the set up stores, by their place in the
 		// branch.
 		Updated []int
@@ -243,7 +243,9 @@ func Test_Manager_SetUpBranch(t *testing.T) {
 			FetchErr: assert.AnError,
 		},
 		"Only the hooks not set up yet are set up": {
-			Updated: []int{1},
+			HookFetches:     1,
+			DocumentFetches: 1,
+			Updated:         []int{1},
 		},
 	}
 
@@ -270,12 +272,20 @@ func Test_Manager_SetUpBranch(t *testing.T) {
 				},
 			}, hooks)
 
-			newTestManager(t, db, &fakePublisher{}, nil).SetUpBranch(context.Background(), branchID, "org-1")
+			pub := &fakePublisher{}
+
+			newTestManager(t, db, pub, nil).SetUpBranch(context.Background(), branchID, "org-1")
 
 			ff := db.FetchDocumentHooksByBranchIDCalls()
 			require.Len(t, ff, 1)
 			assert.Equal(t, branchID, ff[0].BranchID)
 			assert.Equal(t, "org-1", ff[0].OrganizationID)
+
+			assert.Len(t, db.FetchDocumentHookCalls(), c.HookFetches)
+			assert.Len(t, db.FetchDocumentByBranchIDCalls(), c.DocumentFetches)
+			assert.Empty(t, db.DeleteDocumentHookCalls())
+			assert.Empty(t, db.FetchDocumentMaintainersCalls())
+			assert.Empty(t, pub.codes)
 
 			uu := db.UpdateDocumentHookCalls()
 			require.Len(t, uu, len(c.Updated))
@@ -293,12 +303,12 @@ func Test_Manager_processHooks(t *testing.T) {
 
 	branchID := xid.New()
 
-	type check func(*testing.T, *DBMock, *changeRecorder, *fakePublisher, error)
+	type check func(*testing.T, *DBMock, []hook.Hook, *fakePublisher, error)
 
 	checks := func(cc ...check) []check { return cc }
 
 	hasError := func(expect bool) check {
-		return func(t *testing.T, _ *DBMock, _ *changeRecorder, _ *fakePublisher, err error) {
+		return func(t *testing.T, _ *DBMock, _ []hook.Hook, _ *fakePublisher, err error) {
 			if expect {
 				require.Error(t, err)
 				return
@@ -309,37 +319,55 @@ func Test_Manager_processHooks(t *testing.T) {
 	}
 
 	wasDeleteCalled := func(count int) check {
-		return func(t *testing.T, db *DBMock, _ *changeRecorder, _ *fakePublisher, _ error) {
+		return func(t *testing.T, db *DBMock, _ []hook.Hook, _ *fakePublisher, _ error) {
 			require.Len(t, db.DeleteDocumentHookCalls(), count)
 		}
 	}
 
 	wasUpdateCalled := func(count int) check {
-		return func(t *testing.T, db *DBMock, _ *changeRecorder, _ *fakePublisher, _ error) {
+		return func(t *testing.T, db *DBMock, _ []hook.Hook, _ *fakePublisher, _ error) {
 			require.Len(t, db.UpdateDocumentHookCalls(), count)
 		}
 	}
 
 	wasChangeCalled := func(count int) check {
-		return func(t *testing.T, _ *DBMock, changes *changeRecorder, _ *fakePublisher, _ error) {
-			require.Len(t, changes.hooks, count)
+		return func(t *testing.T, _ *DBMock, changes []hook.Hook, _ *fakePublisher, _ error) {
+			require.Len(t, changes, count)
 		}
 	}
 
 	wasFetchDocumentCalled := func(count int) check {
-		return func(t *testing.T, db *DBMock, _ *changeRecorder, _ *fakePublisher, _ error) {
+		return func(t *testing.T, db *DBMock, _ []hook.Hook, _ *fakePublisher, _ error) {
 			require.Len(t, db.FetchDocumentByBranchIDCalls(), count)
 		}
 	}
 
+	wasFetchPaginatedCalled := func(count int) check {
+		return func(t *testing.T, db *DBMock, _ []hook.Hook, _ *fakePublisher, _ error) {
+			require.Len(t, db.FetchPaginatedDocumentHooksCalls(), count)
+		}
+	}
+
+	wasFetchHookCalled := func(count int) check {
+		return func(t *testing.T, db *DBMock, _ []hook.Hook, _ *fakePublisher, _ error) {
+			require.Len(t, db.FetchDocumentHookCalls(), count)
+		}
+	}
+
+	wasFetchMaintainersCalled := func(count int) check {
+		return func(t *testing.T, db *DBMock, _ []hook.Hook, _ *fakePublisher, _ error) {
+			require.Len(t, db.FetchDocumentMaintainersCalls(), count)
+		}
+	}
+
 	wasPublished := func(codes ...notification.Code) check {
-		return func(t *testing.T, _ *DBMock, _ *changeRecorder, pub *fakePublisher, _ error) {
+		return func(t *testing.T, _ *DBMock, _ []hook.Hook, pub *fakePublisher, _ error) {
 			assert.Equal(t, codes, pub.codes)
 		}
 	}
 
 	hasUpdated := func(fn func(*testing.T, hook.Hook)) check {
-		return func(t *testing.T, db *DBMock, _ *changeRecorder, _ *fakePublisher, _ error) {
+		return func(t *testing.T, db *DBMock, _ []hook.Hook, _ *fakePublisher, _ error) {
 			ff := db.UpdateDocumentHookCalls()
 			require.NotEmpty(t, ff)
 			fn(t, ff[0].Hk)
@@ -355,12 +383,6 @@ func Test_Manager_processHooks(t *testing.T) {
 	hasUpdatedStatus := func(expected processor.Status) check {
 		return hasUpdated(func(t *testing.T, h hook.Hook) {
 			assert.Equal(t, expected, h.Status)
-		})
-	}
-
-	hasUpdatedSettings := func(expected processor.Settings) check {
-		return hasUpdated(func(t *testing.T, h hook.Hook) {
-			assert.JSONEq(t, string(expected), string(h.Settings))
 		})
 	}
 
@@ -393,6 +415,13 @@ func Test_Manager_processHooks(t *testing.T) {
 			Checks: checks(
 				hasError(true),
 				wasUpdateCalled(0),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(0),
+				wasFetchDocumentCalled(0),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(0),
 			),
 		},
 		"Error returned by db.FetchDocumentHook skips the hook": {
@@ -404,6 +433,12 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasFetchDocumentCalled(0),
 				wasUpdateCalled(0),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(0),
 			),
 		},
 		"Hook a write holds is run as the write stored it": {
@@ -419,7 +454,16 @@ func Test_Manager_processHooks(t *testing.T) {
 			Checks: checks(
 				hasError(false),
 				wasUpdateCalled(1),
-				hasUpdatedSettings(processor.Settings(`{"scale":"linear","schedule":"2999-01-01T00:00:00Z"}`)),
+				hasUpdated(func(t *testing.T, h hook.Hook) {
+					assert.JSONEq(t, `{"scale":"linear","schedule":"2999-01-01T00:00:00Z"}`, string(h.Settings))
+				}),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(0),
 			),
 		},
 		"Hook deleted meanwhile is skipped": {
@@ -431,6 +475,12 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasFetchDocumentCalled(0),
 				wasUpdateCalled(0),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(0),
 			),
 		},
 		"Orphaned hook without a branch is deleted": {
@@ -446,6 +496,10 @@ func Test_Manager_processHooks(t *testing.T) {
 				wasFetchDocumentCalled(0),
 				wasUpdateCalled(0),
 				wasChangeCalled(1),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
 			),
 		},
 		"Orphaned hook without a document is deleted": {
@@ -460,6 +514,11 @@ func Test_Manager_processHooks(t *testing.T) {
 				wasDeleteCalled(1),
 				wasFetchDocumentCalled(0),
 				wasUpdateCalled(0),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(1),
 			),
 		},
 		// the organization row is deleted outside of core, taking the
@@ -476,6 +535,11 @@ func Test_Manager_processHooks(t *testing.T) {
 				wasDeleteCalled(1),
 				wasFetchDocumentCalled(0),
 				wasUpdateCalled(0),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(1),
 			),
 		},
 		"Orphaned URL watcher has its watcher torn down": {
@@ -490,6 +554,13 @@ func Test_Manager_processHooks(t *testing.T) {
 			Checks: checks(
 				hasError(false),
 				wasDeleteCalled(1),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(0),
+				wasUpdateCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(1),
 			),
 		},
 		// a copy cut loose before it was set up holds nothing outside.
@@ -505,6 +576,13 @@ func Test_Manager_processHooks(t *testing.T) {
 			Checks: checks(
 				hasError(false),
 				wasDeleteCalled(1),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(0),
+				wasUpdateCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(1),
 			),
 		},
 		"Hook never set up is set up": {
@@ -526,6 +604,12 @@ func Test_Manager_processHooks(t *testing.T) {
 					assert.JSONEq(t, `{"watcherId":"w-new","lastChangedAt":null}`, string(h.State.V))
 				}),
 				wasPublished(),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasChangeCalled(1),
 			),
 		},
 		// the copy's source may well check its target, so the copy's own
@@ -547,6 +631,12 @@ func Test_Manager_processHooks(t *testing.T) {
 					assert.False(t, h.State.Valid)
 				}),
 				wasPublished(),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasChangeCalled(1),
 			),
 		},
 		"Failed update of a setup tears down the new watcher": {
@@ -562,6 +652,14 @@ func Test_Manager_processHooks(t *testing.T) {
 			Watchers:  []string{"w-new"},
 			Checks: checks(
 				hasError(false),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasUpdateCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(0),
 			),
 		},
 		"Processing failure still persists the cleared soft deletion": {
@@ -579,6 +677,13 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasUpdateCalled(1),
 				hasUpdatedSoftDeletion(false),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(1),
 			),
 		},
 		"Unconfigured integration is a status and notifies once": {
@@ -595,6 +700,12 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasUpdatedStatus(processor.StatusUnconfigured),
 				hasUpdatedScore(decimal.NewFromInt(40)),
 				wasPublished(notification.NotificationDocumentHookNeedsAttention),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(1),
+				wasChangeCalled(1),
 			),
 		},
 		"Hook already not active is not re-notified": {
@@ -609,6 +720,12 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasUpdateCalled(1),
 				wasPublished(),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasChangeCalled(0),
 			),
 		},
 		"Missing document deletes the hook": {
@@ -620,6 +737,12 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasDeleteCalled(1),
 				wasUpdateCalled(0),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(1),
 			),
 		},
 		"Document fetch failure skips the hook": {
@@ -631,6 +754,12 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasDeleteCalled(0),
 				wasUpdateCalled(0),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(0),
 			),
 		},
 		"Healthy hook is processed and updated": {
@@ -644,6 +773,11 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasUpdatedScore(decimal.NewFromInt(100)),
 				wasPublished(),
 				wasChangeCalled(0),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
 			),
 		},
 		"Full-to-zero score drop notifies the maintainers": {
@@ -657,6 +791,11 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasUpdatedScore(decimal.Zero),
 				wasPublished(notification.NotificationDocumentHookTriggered),
 				wasChangeCalled(1),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(1),
 			),
 		},
 		// the score decays gradually, so by the time it reaches zero the
@@ -674,6 +813,13 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				hasUpdatedScore(decimal.Zero),
 				wasPublished(notification.NotificationDocumentHookTriggered),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasUpdateCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(1),
+				wasChangeCalled(1),
 			),
 		},
 		"Already zero score is not re-notified": {
@@ -688,6 +834,12 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasUpdateCalled(1),
 				wasPublished(),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasChangeCalled(0),
 			),
 		},
 		// the unpersisted score would be recomputed into the same
@@ -702,6 +854,12 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasUpdateCalled(1),
 				wasPublished(),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasChangeCalled(0),
 			),
 		},
 		// the hook kept its score while it could not check, so its return at
@@ -721,6 +879,12 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasUpdatedScore(decimal.Zero),
 				wasPublished(notification.NotificationDocumentHookTriggered),
 				wasChangeCalled(1),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasUpdateCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(1),
 			),
 		},
 		"Maintainer fetch failure suppresses the notification": {
@@ -733,6 +897,12 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasUpdateCalled(1),
 				wasPublished(),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(1),
+				wasChangeCalled(1),
 			),
 		},
 		"Documents are fetched once per branch": {
@@ -747,6 +917,12 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasFetchDocumentCalled(1),
 				wasUpdateCalled(2),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(2),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(0),
 			),
 		},
 		"Missing block soft-deletes the hook": {
@@ -761,6 +937,13 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasUpdateCalled(1),
 				hasUpdatedSoftDeletion(true),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(1),
 			),
 		},
 		// the hook's block is gone, so its score would describe nothing: the
@@ -780,6 +963,12 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasUpdatedScore(decimal.NewFromInt(100)),
 				hasUpdatedSoftDeletion(true),
 				wasPublished(),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasChangeCalled(1),
 			),
 		},
 		"Reappearing block clears the soft deletion": {
@@ -795,6 +984,13 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasUpdateCalled(1),
 				hasUpdatedSoftDeletion(false),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasDeleteCalled(0),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(1),
 			),
 		},
 		"Retention-expired soft-deleted hook is deleted": {
@@ -810,6 +1006,12 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasDeleteCalled(1),
 				wasUpdateCalled(0),
+				wasFetchPaginatedCalled(1),
+				wasFetchHookCalled(1),
+				wasFetchDocumentCalled(1),
+				wasFetchMaintainersCalled(0),
+				wasPublished(),
+				wasChangeCalled(1),
 			),
 		},
 	}
@@ -855,18 +1057,39 @@ func Test_Manager_processHooks(t *testing.T) {
 			}
 
 			pub := &fakePublisher{}
-			changes := &changeRecorder{}
+
+			var changes []hook.Hook
 
 			man := newTestManager(t, db, pub, wc)
-			man.BindHookChange(changes.record)
+			man.BindHookChange(func(h hook.Hook) { changes = append(changes, h) })
 
-			var err error
+			if c.Write != nil {
+				var mu sync.Mutex
 
-			if c.Write == nil {
-				err = man.processHooks(context.Background())
-			} else {
-				err = runAroundWrite(t, man, db, hooks[0], c.Write)
+				stored := hooks[0]
+
+				db.FetchDocumentHookFunc = func(context.Context, xid.ID, string) (*hook.Hook, error) {
+					mu.Lock()
+					defer mu.Unlock()
+
+					hk := stored
+
+					return &hk, nil
+				}
+
+				unlock, err := man.hookMu.Lock(context.Background(), stored.ID)
+				require.NoError(t, err)
+
+				go func() {
+					mu.Lock()
+					stored = c.Write(stored)
+					mu.Unlock()
+
+					unlock()
+				}()
 			}
+
+			err := man.processHooks(context.Background())
 
 			for _, ch := range c.Checks {
 				ch(t, db, changes, pub, err)
@@ -904,11 +1127,12 @@ func Test_Manager_notifyTransition(t *testing.T) {
 	malformedGithubHook.State = null.ValueFrom(processor.State(`{`))
 
 	cc := map[string]struct {
-		DB    *DBMock
-		Prev  hook.Hook
-		Hook  hook.Hook
-		Cores []notification.Core
-		Log   string
+		DB      *DBMock
+		Prev    hook.Hook
+		Hook    hook.Hook
+		Fetches int
+		Cores   []notification.Core
+		Log     string
 	}{
 		"Hook that keeps its status and score": {
 			DB:   &DBMock{},
@@ -921,13 +1145,15 @@ func Test_Manager_notifyTransition(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			Prev: urlHook,
-			Hook: triggeredHook,
+			Prev:    urlHook,
+			Hook:    triggeredHook,
+			Fetches: 1,
 		},
 		"Hook that can no longer check its target": {
-			DB:   &DBMock{},
-			Prev: urlHook,
-			Hook: failedHook,
+			DB:      &DBMock{},
+			Prev:    urlHook,
+			Hook:    failedHook,
+			Fetches: 1,
 			Cores: []notification.Core{
 				notification.NewDocumentHookNeedsAttentionNotification(
 					urlHook.DocumentID.V,
@@ -940,9 +1166,10 @@ func Test_Manager_notifyTransition(t *testing.T) {
 			},
 		},
 		"Hook that ran out of freshness": {
-			DB:   &DBMock{},
-			Prev: urlHook,
-			Hook: triggeredHook,
+			DB:      &DBMock{},
+			Prev:    urlHook,
+			Hook:    triggeredHook,
+			Fetches: 1,
 			Cores: []notification.Core{
 				notification.NewDocumentHookTriggeredNotification(
 					urlHook.DocumentID.V,
@@ -955,9 +1182,10 @@ func Test_Manager_notifyTransition(t *testing.T) {
 			},
 		},
 		"GitHub hook that ran out of freshness": {
-			DB:   &DBMock{},
-			Prev: githubHook,
-			Hook: triggeredGithubHook,
+			DB:      &DBMock{},
+			Prev:    githubHook,
+			Hook:    triggeredGithubHook,
+			Fetches: 1,
 			Cores: []notification.Core{
 				notification.NewDocumentHookTriggeredNotification(
 					urlHook.DocumentID.V,
@@ -970,9 +1198,10 @@ func Test_Manager_notifyTransition(t *testing.T) {
 			},
 		},
 		"GitHub hook that ran out of freshness with a malformed state": {
-			DB:   &DBMock{},
-			Prev: githubHook,
-			Hook: malformedGithubHook,
+			DB:      &DBMock{},
+			Prev:    githubHook,
+			Hook:    malformedGithubHook,
+			Fetches: 1,
 			Cores: []notification.Core{
 				notification.NewDocumentHookTriggeredNotification(
 					urlHook.DocumentID.V,
@@ -1000,6 +1229,7 @@ func Test_Manager_notifyTransition(t *testing.T) {
 
 			man.notifyTransition(context.Background(), c.Prev, c.Hook)
 
+			assert.Len(t, c.DB.FetchDocumentMaintainersCalls(), c.Fetches)
 			assert.Equal(t, c.Cores, pub.cores)
 
 			if c.Log == "" {
@@ -1027,40 +1257,4 @@ func Test_Manager_input(t *testing.T) {
 
 	_, err := got.Github(context.Background())
 	testutil.AssertEqualError(t, github.ErrNotConfigured, err)
-}
-
-// runAroundWrite runs a pass while a write holds the hook's lock, and has
-// the write store what write returns before it lets go.
-func runAroundWrite(t *testing.T, man *Manager, db *DBMock, h hook.Hook, write func(hook.Hook) hook.Hook) error {
-	t.Helper()
-
-	var mu sync.Mutex
-
-	stored := h
-
-	db.FetchDocumentHookFunc = func(context.Context, xid.ID, string) (*hook.Hook, error) {
-		mu.Lock()
-		defer mu.Unlock()
-
-		hk := stored
-
-		return &hk, nil
-	}
-
-	unlock, err := man.hookMu.Lock(context.Background(), h.ID)
-	require.NoError(t, err)
-
-	done := make(chan error)
-
-	go func() {
-		done <- man.processHooks(context.Background())
-	}()
-
-	mu.Lock()
-	stored = write(stored)
-	mu.Unlock()
-
-	unlock()
-
-	return <-done
 }

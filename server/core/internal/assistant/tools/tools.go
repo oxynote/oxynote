@@ -70,6 +70,20 @@ const (
 	NameDeleteHook          Name = "delete_hook"
 )
 
+// The groups of tools the chat assistant loads on request.
+const (
+	GroupTags        Group = "tags"
+	GroupVariables   Group = "variables"
+	GroupHooks       Group = "hooks"
+	GroupDataSources Group = "data_sources"
+)
+
+// Group is a set of tools the chat assistant loads on request. Most
+// conversations never use them, and their definitions are over half of
+// the tool list. Values are snake_case like tool names, because the
+// model names a group to load it.
+type Group string
+
 // Set is the tools one session offers the model: an immutable registry
 // built once from the session's wiring and handed straight to the agent.
 //
@@ -207,6 +221,20 @@ func (s *Set) Tools() []tool.BaseTool {
 	out := make([]tool.BaseTool, 0, len(s.ordered))
 	for _, t := range s.ordered {
 		out = append(out, t)
+	}
+
+	return out
+}
+
+// Grouped returns the tools of each group in registration order, as
+// Tools returns them.
+func (s *Set) Grouped() map[Group][]tool.BaseTool {
+	out := make(map[Group][]tool.BaseTool)
+
+	for i, e := range s.entries {
+		if g := e.Info.Traits.Group; g != "" {
+			out[g] = append(out[g], s.ordered[i])
+		}
 	}
 
 	return out

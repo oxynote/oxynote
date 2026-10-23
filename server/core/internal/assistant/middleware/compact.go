@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/cloudwego/eino/adk"
@@ -40,6 +41,8 @@ const _maxToolResultChars = 50_000
 // Write results are never cleared. The model has to remember what it
 // changed in order to talk about it in a later turn, and re-reading a
 // document cannot recover the fact that it was the one who edited it.
+// Nor are load_tools results: their references are what keeps a loaded
+// group's tools callable.
 func NewCompaction(
 	ctx context.Context,
 	summaryModel model.ToolCallingChatModel,
@@ -53,12 +56,14 @@ func NewCompaction(
 		return nil, errors.New("offload backend is required")
 	}
 
+	kept := append(slices.Clone(writeNames), _loadToolsName)
+
 	red, err := reduction.New(ctx, &reduction.Config{
 		Backend:              backend,
 		ReadFileToolName:     string(tools.NameReadToolOutput),
 		MaxLengthForTrunc:    _maxToolResultChars,
-		ClearExcludeTools:    writeNames,
-		ClearMessageRewriter: newClearRewriter(writeNames),
+		ClearExcludeTools:    kept,
+		ClearMessageRewriter: newClearRewriter(kept),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("building context reduction: %w", err)

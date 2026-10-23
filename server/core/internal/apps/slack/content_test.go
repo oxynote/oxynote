@@ -3,6 +3,7 @@ package slack
 import (
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,10 +46,10 @@ func Test_UserLinkSettings_Value(t *testing.T) {
 func Test_UserLinkSettings_Scan(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct {
-		Value     any
-		ExpectErr bool
-		Expected  UserLinkSettings
+	cc := map[string]struct {
+		Value    any
+		Err      error
+		Expected UserLinkSettings
 
 		// FromValue scans what Value produced for the given settings,
 		// instead of a hand-written payload.
@@ -67,44 +68,42 @@ func Test_UserLinkSettings_Scan(t *testing.T) {
 			Expected: UserLinkSettings{Notifications: true},
 		},
 		"Nil fails": {
-			Value:     nil,
-			ExpectErr: true,
+			Value: nil,
+			Err:   assert.AnError,
 		},
 		"Unsupported type fails": {
-			Value:     42,
-			ExpectErr: true,
+			Value: 42,
+			Err:   assert.AnError,
 		},
 		"Malformed JSON fails": {
-			Value:     []byte(`{not json`),
-			ExpectErr: true,
+			Value: []byte(`{not json`),
+			Err:   assert.AnError,
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			value := tc.Value
+			value := c.Value
 
-			if tc.FromValue != nil {
+			if c.FromValue != nil {
 				var verr error
 
-				value, verr = tc.FromValue.Value()
+				value, verr = c.FromValue.Value()
 				require.NoError(t, verr)
 			}
 
 			var uls UserLinkSettings
 
 			err := uls.Scan(value)
+			testutil.AssertEqualError(t, c.Err, err)
 
-			if tc.ExpectErr {
-				require.Error(t, err)
-
+			if err != nil {
 				return
 			}
 
-			require.NoError(t, err)
-			assert.Equal(t, tc.Expected, uls)
+			assert.Equal(t, c.Expected, uls)
 		})
 	}
 }

@@ -14,7 +14,11 @@ const (
 	_documentIDDescription = "The document id."
 
 	// _branchIDDescription describes a branch_id argument.
-	_branchIDDescription = "The branch id, from list_documents, search_documents or get_document. A protected branch refuses writes."
+	_branchIDDescription = "The branch id, from list_documents, search_documents or get_document."
+
+	// _writeBranchIDDescription describes the branch_id argument of a tool
+	// that writes to the branch.
+	_writeBranchIDDescription = _branchIDDescription + " A protected branch refuses writes."
 
 	// _dataSourceIDDescription describes a data_source_id argument.
 	_dataSourceIDDescription = "The data source id, from list_data_sources."

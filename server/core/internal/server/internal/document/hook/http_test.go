@@ -32,38 +32,6 @@ var (
 	_hookID     = xid.New()
 )
 
-// addSession stores a test session on the request context.
-func addSession(ctx context.Context) context.Context {
-	return auth.AddSessionToContext(ctx, auth.Session{
-		UserID:               "u1",
-		ActiveOrganizationID: "org1",
-	})
-}
-
-// scheduledHook builds a stored hook of the request's document.
-func scheduledHook() *hookCore.Hook {
-	return &hookCore.Hook{
-		ID:             _hookID,
-		Type:           hookCore.TypeScheduledReminder,
-		DocumentID:     null.ValueFrom(_documentID),
-		OrganizationID: null.StringFrom("org1"),
-		BranchID:       null.ValueFrom(_branchID),
-		Settings:       processor.Settings(`{"scale":"linear"}`),
-	}
-}
-
-// storedHookManager answers an update or reset with the stored hook.
-func storedHookManager() *ManagerMock {
-	return &ManagerMock{
-		UpdateHookFunc: func(context.Context, xid.ID, xid.ID, string, hookCore.UpdateInput, string) (*hookCore.Hook, error) {
-			return scheduledHook(), nil
-		},
-		ResetHookFunc: func(context.Context, xid.ID, xid.ID, string) (*hookCore.Hook, error) {
-			return scheduledHook(), nil
-		},
-	}
-}
-
 func Test_NewHandler(t *testing.T) {
 	t.Parallel()
 
@@ -85,14 +53,21 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 
 	hasResp := func(code int, body string) check {
 		return func(t *testing.T, _ *DBMock, rec *httptest.ResponseRecorder) {
-			assert.Equal(t, code, rec.Code)
+			testutil.AssertResponse(t, rec, code, body)
+		}
+	}
 
-			if body == "" {
-				assert.Zero(t, rec.Body.Len(), rec.Body.String())
+	wasFetchDocumentCalled := func(count int) check {
+		return func(t *testing.T, db *DBMock, _ *httptest.ResponseRecorder) {
+			ff := db.FetchDocumentByBranchIDCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
 				return
 			}
 
-			assert.JSONEq(t, body, rec.Body.String())
+			assert.Equal(t, _branchID, ff[0].BranchID)
+			assert.Equal(t, "org1", ff[0].OrganizationID)
 		}
 	}
 
@@ -123,6 +98,7 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 			Query:     "?branchId=" + _branchID.String(),
 			Checks: checks(
 				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
+				wasFetchDocumentCalled(0),
 				wasFetchCalled(0),
 			),
 		},
@@ -132,6 +108,7 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 			Query:  "?branchId=" + _branchID.String(),
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
+				wasFetchDocumentCalled(0),
 				wasFetchCalled(0),
 			),
 		},
@@ -140,10 +117,11 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 			Query: "?branchId=bogus",
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"request.invalid_form","message":"invalid form data"}`),
+				wasFetchDocumentCalled(0),
 				wasFetchCalled(0),
 			),
 		},
-		"Branch document fetch error": {
+		"Error returned by DB.FetchDocumentByBranchID": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
 					return nil, errors.New("boom")
@@ -152,6 +130,7 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 			Query: "?branchId=" + _branchID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasFetchDocumentCalled(1),
 				wasFetchCalled(0),
 			),
 		},
@@ -164,10 +143,11 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 			Query: "?branchId=" + _branchID.String(),
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"document.branch_mismatch","message":"branch does not belong to the document"}`),
+				wasFetchDocumentCalled(1),
 				wasFetchCalled(0),
 			),
 		},
-		"Hook fetch error": {
+		"Error returned by DB.FetchDocumentHooksByBranchID": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
 					return &document.Document{ID: _documentID}, nil
@@ -179,6 +159,7 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 			Query: "?branchId=" + _branchID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasFetchDocumentCalled(1),
 				wasFetchCalled(1),
 			),
 		},
@@ -188,7 +169,16 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 					return &document.Document{ID: _documentID}, nil
 				},
 				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return []hookCore.Hook{*scheduledHook()}, nil
+					return []hookCore.Hook{
+						{
+							ID:             _hookID,
+							Type:           hookCore.TypeScheduledReminder,
+							DocumentID:     null.ValueFrom(_documentID),
+							OrganizationID: null.StringFrom("org1"),
+							BranchID:       null.ValueFrom(_branchID),
+							Settings:       processor.Settings(`{"scale":"linear"}`),
+						},
+					}, nil
 				},
 			},
 			Query: "?branchId=" + _branchID.String(),
@@ -197,6 +187,7 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 					assert.Equal(t, http.StatusOK, rec.Code)
 					assert.Contains(t, rec.Body.String(), _hookID.String())
 				},
+				wasFetchDocumentCalled(1),
 				wasFetchCalled(1),
 			),
 		},
@@ -216,7 +207,10 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 			ctx := req.Context()
 
 			if !c.NoSession {
-				ctx = addSession(ctx)
+				ctx = auth.AddSessionToContext(ctx, auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				})
 			}
 
 			if !c.OmitID {
@@ -242,7 +236,10 @@ func hookRequest(method, body string, noSession, omitDoc, omitHook bool) *http.R
 	ctx := req.Context()
 
 	if !noSession {
-		ctx = addSession(ctx)
+		ctx = auth.AddSessionToContext(ctx, auth.Session{
+			UserID:               "u1",
+			ActiveOrganizationID: "org1",
+		})
 	}
 
 	if !omitDoc {
@@ -258,10 +255,6 @@ func hookRequest(method, body string, noSession, omitDoc, omitHook bool) *http.R
 
 func Test_Handler_CreateDocumentHook(t *testing.T) {
 	validBody := `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","settings":{"scale":"linear"}}`
-
-	created := func(context.Context, hookCore.CreateInput, xid.ID, string, string) (*hookCore.Hook, error) {
-		return scheduledHook(), nil
-	}
 
 	cc := map[string]struct {
 		Man       *ManagerMock
@@ -297,7 +290,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			RespCode: http.StatusBadRequest,
 			RespBody: `{"code":"document_hook.invalid_type","message":"invalid hook type"}`,
 		},
-		"Error returned by man.CreateHook": {
+		"Error returned by Manager.CreateHook": {
 			Man: &ManagerMock{
 				CreateHookFunc: func(context.Context, hookCore.CreateInput, xid.ID, string, string) (*hookCore.Hook, error) {
 					return nil, errors.New("boom")
@@ -308,13 +301,35 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			Creates:  1,
 		},
 		"Successful creation on a block": {
-			Man:      &ManagerMock{CreateHookFunc: created},
+			Man: &ManagerMock{
+				CreateHookFunc: func(context.Context, hookCore.CreateInput, xid.ID, string, string) (*hookCore.Hook, error) {
+					return &hookCore.Hook{
+						ID:             _hookID,
+						Type:           hookCore.TypeScheduledReminder,
+						DocumentID:     null.ValueFrom(_documentID),
+						OrganizationID: null.StringFrom("org1"),
+						BranchID:       null.ValueFrom(_branchID),
+						Settings:       processor.Settings(`{"scale":"linear"}`),
+					}, nil
+				},
+			},
 			Body:     `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","blockId":"b1","settings":{"scale":"linear"}}`,
 			RespCode: http.StatusCreated,
 			Creates:  1,
 		},
 		"Successful creation": {
-			Man:      &ManagerMock{CreateHookFunc: created},
+			Man: &ManagerMock{
+				CreateHookFunc: func(context.Context, hookCore.CreateInput, xid.ID, string, string) (*hookCore.Hook, error) {
+					return &hookCore.Hook{
+						ID:             _hookID,
+						Type:           hookCore.TypeScheduledReminder,
+						DocumentID:     null.ValueFrom(_documentID),
+						OrganizationID: null.StringFrom("org1"),
+						BranchID:       null.ValueFrom(_branchID),
+						Settings:       processor.Settings(`{"scale":"linear"}`),
+					}, nil
+				},
+			},
 			Body:     validBody,
 			RespCode: http.StatusCreated,
 			Creates:  1,
@@ -398,7 +413,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			Body:     "{",
 			RespCode: http.StatusBadRequest,
 		},
-		"Error returned by man.UpdateHook": {
+		"Error returned by Manager.UpdateHook": {
 			Man: &ManagerMock{
 				UpdateHookFunc: func(context.Context, xid.ID, xid.ID, string, hookCore.UpdateInput, string) (*hookCore.Hook, error) {
 					return nil, hookCore.ErrUpstreamUnavailable
@@ -410,7 +425,18 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			Updates:  1,
 		},
 		"Successful update": {
-			Man:      storedHookManager(),
+			Man: &ManagerMock{
+				UpdateHookFunc: func(context.Context, xid.ID, xid.ID, string, hookCore.UpdateInput, string) (*hookCore.Hook, error) {
+					return &hookCore.Hook{
+						ID:             _hookID,
+						Type:           hookCore.TypeScheduledReminder,
+						DocumentID:     null.ValueFrom(_documentID),
+						OrganizationID: null.StringFrom("org1"),
+						BranchID:       null.ValueFrom(_branchID),
+						Settings:       processor.Settings(`{"scale":"linear"}`),
+					}, nil
+				},
+			},
 			Body:     validBody,
 			RespCode: http.StatusOK,
 			Updates:  1,
@@ -480,7 +506,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 			RespCode: http.StatusNotFound,
 			Resets:   1,
 		},
-		"Error returned by man.ResetHook": {
+		"Error returned by Manager.ResetHook": {
 			Man: &ManagerMock{
 				ResetHookFunc: func(context.Context, xid.ID, xid.ID, string) (*hookCore.Hook, error) {
 					return nil, errors.New("boom")
@@ -490,7 +516,18 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 			Resets:   1,
 		},
 		"Successful reset": {
-			Man:      storedHookManager(),
+			Man: &ManagerMock{
+				ResetHookFunc: func(context.Context, xid.ID, xid.ID, string) (*hookCore.Hook, error) {
+					return &hookCore.Hook{
+						ID:             _hookID,
+						Type:           hookCore.TypeScheduledReminder,
+						DocumentID:     null.ValueFrom(_documentID),
+						OrganizationID: null.StringFrom("org1"),
+						BranchID:       null.ValueFrom(_branchID),
+						Settings:       processor.Settings(`{"scale":"linear"}`),
+					}, nil
+				},
+			},
 			RespCode: http.StatusOK,
 			Resets:   1,
 		},
@@ -553,7 +590,7 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 			RespCode: http.StatusNotFound,
 			Deletes:  1,
 		},
-		"Error returned by man.DeleteHook": {
+		"Error returned by Manager.DeleteHook": {
 			Man: &ManagerMock{
 				DeleteHookFunc: func(context.Context, xid.ID, xid.ID, string, string) error {
 					return errors.New("boom")

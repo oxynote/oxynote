@@ -188,7 +188,7 @@ func (b *builder) build(n node, stored document.Block) (document.Block, error) {
 	case _elemLeft, _elemRight:
 		return document.Block{}, fmt.Errorf("line %d: <%s> belongs inside <%s>", n.line, n.name, _elemSplitDoc)
 	case _elemParam:
-		return document.Block{}, fmt.Errorf("line %d: <%s> belongs inside <%s>", n.line, n.name, _elemParams)
+		return document.Block{}, fmt.Errorf("line %d: <%s> belongs inside <%s>; to add one, send the whole <%s> to replace_blocks", n.line, n.name, _elemParams, _elemParams)
 	default:
 		return document.Block{}, fmt.Errorf("line %d: <%s> is inline; put it inside a <p>", n.line, n.name)
 	}
@@ -356,6 +356,12 @@ func (b *builder) buildSplitDoc(n node, stored document.Block) (document.Block, 
 	left, err := b.blocks(sides[0].children, "<left>")
 	if err != nil {
 		return document.Block{}, err
+	}
+
+	// the editor gives a new split doc an h1 and offers no other level,
+	// so a left side opening with anything else could not be made there.
+	if len(left) == 0 || left[0].Type != document.BlockNodeHeading || left[0].Attrs.Get(document.AttrLevel).Int() != 1 {
+		return document.Block{}, fmt.Errorf("line %d: <left> opens with an <h1>, the title of the split doc", sides[0].line)
 	}
 
 	right, err := b.blocks(sides[1].children, "<right>")

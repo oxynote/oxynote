@@ -22,7 +22,7 @@ func Test_RequireConfigured(t *testing.T) {
 	cc := map[string]struct {
 		Configured bool
 		Err        error
-		Called     bool
+		NextCalls  int
 		RespCode   int
 		RespJSON   string
 	}{
@@ -39,7 +39,7 @@ func Test_RequireConfigured(t *testing.T) {
 		"Configured": {
 			Configured: true,
 			Err:        errutil.NewPlain(http.StatusNotFound),
-			Called:     true,
+			NextCalls:  1,
 			RespCode:   http.StatusOK,
 		},
 	}
@@ -48,10 +48,10 @@ func Test_RequireConfigured(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			var called bool
+			var configuredCalls, nextCalls int
 
 			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				called = true
+				nextCalls++
 
 				w.WriteHeader(http.StatusOK)
 			})
@@ -60,19 +60,17 @@ func Test_RequireConfigured(t *testing.T) {
 
 			RequireConfigured(
 				slog.New(slog.DiscardHandler),
-				func() bool { return c.Configured },
+				func() bool {
+					configuredCalls++
+
+					return c.Configured
+				},
 				c.Err,
 			)(next).ServeHTTP(rec, httptest.NewRequest("GET", "http://test.com/", http.NoBody))
 
-			assert.Equal(t, c.Called, called)
-			assert.Equal(t, c.RespCode, rec.Code)
-
-			if c.RespJSON == "" {
-				assert.Zero(t, rec.Body.Len(), rec.Body.String())
-				return
-			}
-
-			assert.JSONEq(t, c.RespJSON, rec.Body.String())
+			assert.Equal(t, 1, configuredCalls)
+			assert.Equal(t, c.NextCalls, nextCalls)
+			testutil.AssertResponse(t, rec, c.RespCode, c.RespJSON)
 		})
 	}
 }
@@ -81,27 +79,27 @@ func Test_Connected(t *testing.T) {
 	cc := map[string]struct {
 		Configured bool
 		FetchErr   error
-		Fetched    bool
+		FetchCalls int
 		Result     bool
 		Err        error
 	}{
 		"Not configured skips the lookup": {
 			FetchErr: assert.AnError,
 		},
-		"Error returned by the lookup": {
+		"Error returned by fetch": {
 			Configured: true,
 			FetchErr:   assert.AnError,
-			Fetched:    true,
+			FetchCalls: 1,
 			Err:        assert.AnError,
 		},
 		"Missing row is not connected": {
 			Configured: true,
 			FetchErr:   errutil.ErrNotFound,
-			Fetched:    true,
+			FetchCalls: 1,
 		},
 		"Connected": {
 			Configured: true,
-			Fetched:    true,
+			FetchCalls: 1,
 			Result:     true,
 		},
 	}
@@ -110,16 +108,16 @@ func Test_Connected(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			var fetched bool
+			var fetchCalls int
 
 			res, err := Connected(context.Background(), c.Configured, func(_ context.Context) error {
-				fetched = true
+				fetchCalls++
 
 				return c.FetchErr
 			})
 
 			testutil.AssertEqualError(t, c.Err, err)
-			assert.Equal(t, c.Fetched, fetched)
+			assert.Equal(t, c.FetchCalls, fetchCalls)
 
 			if err != nil {
 				return

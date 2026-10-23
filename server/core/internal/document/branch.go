@@ -23,6 +23,10 @@ var (
 	// ErrLastBranchDelete is returned when a delete targets the only branch
 	// a document has left.
 	ErrLastBranchDelete = errutil.New(http.StatusConflict, "document.last_branch", "cannot delete the last branch")
+
+	// ErrBranchProtected is returned when a protected branch, or what
+	// hangs off it, would change.
+	ErrBranchProtected = errutil.New(http.StatusForbidden, "document.branch_protected", "a protected branch cannot be changed")
 )
 
 // AllowsBranchRename reports whether the branch may take the given name.
@@ -42,6 +46,17 @@ func (d Document) AllowsBranchRename(name null.String) error {
 func (d Document) AllowsBranchDelete() error {
 	if d.Default {
 		return ErrDefaultBranchDelete
+	}
+
+	return nil
+}
+
+// AllowsDocumentChange reports whether the branch, or what hangs off it
+// such as its tags and hooks, may change. A protected branch may not,
+// though its hooks can still be updated or reset.
+func (d Document) AllowsDocumentChange() error {
+	if d.Protected {
+		return ErrBranchProtected
 	}
 
 	return nil

@@ -2,7 +2,6 @@ package notification
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -12,22 +11,19 @@ import (
 	notificationCore "github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
 
+// ensure the domain DB interface keeps satisfying the handler's narrow
+// DB contract mirrored from it.
+var _ DB = notificationCore.DB(nil)
+
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
-}
-
-// addSession stores a test session on the request context.
-func addSession(ctx context.Context) context.Context {
-	return auth.AddSessionToContext(ctx, auth.Session{
-		UserID:               "u1",
-		ActiveOrganizationID: "org1",
-	})
 }
 
 func Test_NewHandler(t *testing.T) {
@@ -44,20 +40,15 @@ func Test_NewHandler(t *testing.T) {
 }
 
 func Test_Handler_FetchManyNotifications(t *testing.T) {
+	t.Parallel()
+
 	type check func(*testing.T, *DBMock, *httptest.ResponseRecorder)
 
 	checks := func(cc ...check) []check { return cc }
 
 	hasResp := func(code int, body string) check {
 		return func(t *testing.T, _ *DBMock, rec *httptest.ResponseRecorder) {
-			assert.Equal(t, code, rec.Code)
-
-			if body == "" {
-				assert.Zero(t, rec.Body.Len(), rec.Body.String())
-				return
-			}
-
-			assert.JSONEq(t, body, rec.Body.String())
+			testutil.AssertResponse(t, rec, code, body)
 		}
 	}
 
@@ -97,10 +88,10 @@ func Test_Handler_FetchManyNotifications(t *testing.T) {
 				wasFetchCalled(0),
 			),
 		},
-		"Notification fetch error": {
+		"Error returned by DB.FetchManyNotifications": {
 			DB: &DBMock{
 				FetchManyNotificationsFunc: func(context.Context, string, string, httpserver.Query) ([]*notificationCore.Notification, uint64, error) {
-					return nil, 0, errors.New("boom")
+					return nil, 0, assert.AnError
 				},
 			},
 			Checks: checks(
@@ -143,7 +134,10 @@ func Test_Handler_FetchManyNotifications(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/"+c.Query, http.NoBody)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
 			}
 
 			rec := httptest.NewRecorder()
@@ -158,20 +152,15 @@ func Test_Handler_FetchManyNotifications(t *testing.T) {
 }
 
 func Test_Handler_FetchNotificationsCount(t *testing.T) {
+	t.Parallel()
+
 	type check func(*testing.T, *DBMock, *httptest.ResponseRecorder)
 
 	checks := func(cc ...check) []check { return cc }
 
 	hasResp := func(code int, body string) check {
 		return func(t *testing.T, _ *DBMock, rec *httptest.ResponseRecorder) {
-			assert.Equal(t, code, rec.Code)
-
-			if body == "" {
-				assert.Zero(t, rec.Body.Len(), rec.Body.String())
-				return
-			}
-
-			assert.JSONEq(t, body, rec.Body.String())
+			testutil.AssertResponse(t, rec, code, body)
 		}
 	}
 
@@ -212,10 +201,10 @@ func Test_Handler_FetchNotificationsCount(t *testing.T) {
 				wasCountCalled(0, false),
 			),
 		},
-		"Count fetch error": {
+		"Error returned by DB.FetchNotificationCount": {
 			DB: &DBMock{
 				FetchNotificationCountFunc: func(context.Context, string, string, bool) (uint64, error) {
-					return 0, errors.New("boom")
+					return 0, assert.AnError
 				},
 			},
 			Checks: checks(
@@ -249,7 +238,10 @@ func Test_Handler_FetchNotificationsCount(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/"+c.Query, http.NoBody)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
 			}
 
 			rec := httptest.NewRecorder()
@@ -264,20 +256,15 @@ func Test_Handler_FetchNotificationsCount(t *testing.T) {
 }
 
 func Test_Handler_MarkReadManyNotifications(t *testing.T) {
+	t.Parallel()
+
 	type check func(*testing.T, *DBMock, *httptest.ResponseRecorder)
 
 	checks := func(cc ...check) []check { return cc }
 
 	hasResp := func(code int, body string) check {
 		return func(t *testing.T, _ *DBMock, rec *httptest.ResponseRecorder) {
-			assert.Equal(t, code, rec.Code)
-
-			if body == "" {
-				assert.Zero(t, rec.Body.Len(), rec.Body.String())
-				return
-			}
-
-			assert.JSONEq(t, body, rec.Body.String())
+			testutil.AssertResponse(t, rec, code, body)
 		}
 	}
 
@@ -325,10 +312,10 @@ func Test_Handler_MarkReadManyNotifications(t *testing.T) {
 				wasMarkReadCalled(0, 0),
 			),
 		},
-		"Mark read error": {
+		"Error returned by DB.MarkReadByNotificationsIDs": {
 			DB: &DBMock{
 				MarkReadByNotificationsIDsFunc: func(context.Context, string, string, []xid.ID) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			Body: `{"ids":["` + ntID.String() + `"]}`,
@@ -367,7 +354,10 @@ func Test_Handler_MarkReadManyNotifications(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPut, "http://test.com/", strings.NewReader(c.Body))
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
 			}
 
 			rec := httptest.NewRecorder()

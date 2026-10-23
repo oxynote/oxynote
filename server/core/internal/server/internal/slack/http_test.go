@@ -3,7 +3,6 @@ package slack
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +16,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/rs/xid"
-	goslack "github.com/slack-go/slack"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -32,32 +30,6 @@ type fakeReceiver struct{}
 
 func (fakeReceiver) OnNotification(_ func(context.Context, notification.Notification)) notification.Unsubscribe {
 	return func() {}
-}
-
-// newTestHandler creates a Handler backed by a Slack manager that is either
-// configured with dummy credentials or fully unconfigured.
-func newTestHandler(t *testing.T, configured bool) *Handler {
-	t.Helper()
-
-	log := slog.New(slog.DiscardHandler)
-	opt := slack.Options{}
-
-	if configured {
-		opt = slack.Options{
-			ClientID:                  "id",
-			ClientSecret:              "secret",
-			SignatureSecret:           "sig",
-			RedirectURL:               "http://localhost/slack",
-			InstallationSigningSecret: "0123456789abcdef0123456789abcdef",
-		}
-	}
-
-	man, err := slack.NewManager(log, nil, nil, fakeReceiver{}, nil, opt)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	return NewHandler(log, nil, nil, man)
 }
 
 // notFoundManagerDB is a slack.DB that never finds anything, keeping
@@ -103,90 +75,61 @@ func newMockedHandler(t *testing.T, configured bool, db *DBMock, client *http.Cl
 	return NewHandler(log, db, client, man)
 }
 
-// addSession stores a test session on the request context.
-func addSession(ctx context.Context) context.Context {
-	return auth.AddSessionToContext(ctx, auth.Session{
-		UserID:               "u1",
-		ActiveOrganizationID: "org1",
-	})
-}
-
-// responseServer starts a local server standing in for Slack response
-// URLs and returns it with a counter of received posts.
-func responseServer(t *testing.T) (*httptest.Server, *int) {
-	t.Helper()
-
-	var hits int
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Content-Type") != "application/json" {
-			w.WriteHeader(http.StatusBadRequest)
-
-			return
-		}
-
-		var body struct {
-			ResponseType string `json:"response_type"` //nolint:tagliatelle // slack wire format
-		}
-
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil ||
-			body.ResponseType != goslack.ResponseTypeEphemeral {
-			w.WriteHeader(http.StatusBadRequest)
-
-			return
-		}
-
-		hits++
-
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	t.Cleanup(func() {
-		srv.Close()
-		http.DefaultClient.CloseIdleConnections()
-	})
-
-	return srv, &hits
-}
-
 func Test_Handler_CheckInstallation(t *testing.T) {
 	t.Parallel()
 
-	h := newTestHandler(t, false)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/slack", http.NoBody)
-	req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
-		UserID:               "user",
-		ActiveOrganizationID: "org",
-	}))
-
-	rec := httptest.NewRecorder()
-	h.CheckInstallation(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	cc := map[string]struct {
+		DB      *DBMock
+		Fetched int
+	}{
+		"Slack app not configured": {
+			DB: &DBMock{},
+		},
 	}
 
-	var body map[string]bool
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+			h := newMockedHandler(t, false, c.DB, nil)
 
-	if body["connected"] || body["configured"] {
-		t.Fatalf("body = %v, want connected=false configured=false", body)
+			req := httptest.NewRequest(http.MethodGet, "/api/slack", http.NoBody)
+			req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+				UserID:               "user",
+				ActiveOrganizationID: "org",
+			}))
+
+			rec := httptest.NewRecorder()
+			h.CheckInstallation(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+			}
+
+			var body map[string]bool
+
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if body["connected"] || body["configured"] {
+				t.Fatalf("body = %v, want connected=false configured=false", body)
+			}
+
+			assert.Len(t, c.DB.FetchSlackAppByOrganizationIDCalls(), c.Fetched)
+		})
 	}
 }
 
 func Test_Handler_RequireConfigured(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct {
+	cc := map[string]struct {
 		Configured bool
 		WantStatus int
 		WantCode   string
 	}{
-		"Not configured responds with slack.not_configured": {
+		"Slack app not configured": {
 			Configured: false,
 			WantStatus: http.StatusConflict,
 			WantCode:   "slack.not_configured",
@@ -197,11 +140,11 @@ func Test_Handler_RequireConfigured(t *testing.T) {
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			h := newTestHandler(t, tc.Configured)
+			h := newMockedHandler(t, c.Configured, &DBMock{}, nil)
 
 			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusNoContent)
@@ -212,11 +155,11 @@ func Test_Handler_RequireConfigured(t *testing.T) {
 
 			h.RequireConfigured(next).ServeHTTP(rec, req)
 
-			if rec.Code != tc.WantStatus {
-				t.Fatalf("status = %d, want %d", rec.Code, tc.WantStatus)
+			if rec.Code != c.WantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, c.WantStatus)
 			}
 
-			if tc.WantCode == "" {
+			if c.WantCode == "" {
 				return
 			}
 
@@ -226,8 +169,8 @@ func Test_Handler_RequireConfigured(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if body["code"] != tc.WantCode {
-				t.Fatalf("code = %q, want %q", body["code"], tc.WantCode)
+			if body["code"] != c.WantCode {
+				t.Fatalf("code = %q, want %q", body["code"], c.WantCode)
 			}
 		})
 	}
@@ -236,71 +179,67 @@ func Test_Handler_RequireConfigured(t *testing.T) {
 func Test_Handler_VerifySignature(t *testing.T) {
 	t.Parallel()
 
-	h := newTestHandler(t, false)
+	cc := map[string]struct {
+		RespCode int
+	}{
+		"Slack app not configured": {
+			RespCode: http.StatusNotFound,
+		},
+	}
 
-	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/apps/slack/events", http.NoBody)
-	rec := httptest.NewRecorder()
+			h := newMockedHandler(t, false, &DBMock{}, nil)
 
-	h.VerifySignature(next).ServeHTTP(rec, req)
+			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNoContent)
+			})
 
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+			req := httptest.NewRequest(http.MethodPost, "/api/apps/slack/events", http.NoBody)
+			rec := httptest.NewRecorder()
+
+			h.VerifySignature(next).ServeHTTP(rec, req)
+
+			if rec.Code != c.RespCode {
+				t.Fatalf("status = %d, want %d", rec.Code, c.RespCode)
+			}
+		})
 	}
 }
 
 func Test_Handler_InstallApp(t *testing.T) {
 	t.Parallel()
 
-	h := newTestHandler(t, false)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/apps/slack/install?code=abc", http.NoBody)
-	rec := httptest.NewRecorder()
-
-	h.InstallApp(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	cc := map[string]struct {
+		DB       *DBMock
+		RespCode int
+		Inserted int
+	}{
+		"Slack app not configured": {
+			DB:       &DBMock{},
+			RespCode: http.StatusNotFound,
+		},
 	}
-}
 
-// stateFrom extracts the encrypted state parameter from a manager URL.
-func stateFrom(t *testing.T, rawURL string) string {
-	t.Helper()
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	u, err := url.Parse(rawURL)
-	require.NoError(t, err)
+			h := newMockedHandler(t, false, c.DB, nil)
 
-	return u.Query().Get("state")
-}
+			req := httptest.NewRequest(http.MethodGet, "/api/apps/slack/install?code=abc", http.NoBody)
+			rec := httptest.NewRecorder()
 
-// connectedApp returns a Slack app assigned to org1.
-func connectedApp() *slack.App {
-	return &slack.App{
-		TeamID:         "team1",
-		OrganizationID: null.StringFrom("org1"),
-		Token:          "tkn",
-	}
-}
+			h.InstallApp(rec, req)
 
-// unassignedApp returns a Slack app without an organization.
-func unassignedApp() *slack.App {
-	return &slack.App{
-		TeamID: "team1",
-		Token:  "tkn",
-	}
-}
+			if rec.Code != c.RespCode {
+				t.Fatalf("status = %d, want %d", rec.Code, c.RespCode)
+			}
 
-// userLink returns a stored Slack user link for u1.
-func userLink() *slack.UserLink {
-	return &slack.UserLink{
-		SlackUserID: "slack-u1",
-		TeamID:      "team1",
-		UserID:      "u1",
-		Settings:    slack.UserLinkSettings{Notifications: true},
+			assert.Len(t, c.DB.InsertSlackAppCalls(), c.Inserted)
+		})
 	}
 }
 
@@ -312,6 +251,7 @@ func Test_Handler_FetchInstall(t *testing.T) {
 		DB         *DBMock
 		NoSession  bool
 		RespCode   int
+		Fetched    int
 	}{
 		"No session in context": {
 			Configured: true,
@@ -319,23 +259,25 @@ func Test_Handler_FetchInstall(t *testing.T) {
 			NoSession:  true,
 			RespCode:   http.StatusUnauthorized,
 		},
-		"App lookup error": {
+		"Error returned by DB.FetchSlackAppByOrganizationID": {
 			Configured: true,
 			DB: &DBMock{
 				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slack.App, error) {
-					return nil, errors.New("boom")
+					return nil, assert.AnError
 				},
 			},
 			RespCode: http.StatusInternalServerError,
+			Fetched:  1,
 		},
 		"Organization already connected": {
 			Configured: true,
 			DB: &DBMock{
 				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slack.App, error) {
-					return connectedApp(), nil
+					return &slack.App{TeamID: "team1", OrganizationID: null.StringFrom("org1"), Token: "tkn"}, nil
 				},
 			},
 			RespCode: http.StatusBadRequest,
+			Fetched:  1,
 		},
 		"Slack app not configured": {
 			DB: &DBMock{
@@ -344,6 +286,7 @@ func Test_Handler_FetchInstall(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusConflict,
+			Fetched:  1,
 		},
 		"Successful URL creation": {
 			Configured: true,
@@ -353,6 +296,7 @@ func Test_Handler_FetchInstall(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusOK,
+			Fetched:  1,
 		},
 	}
 
@@ -365,7 +309,10 @@ func Test_Handler_FetchInstall(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
 			}
 
 			rec := httptest.NewRecorder()
@@ -373,6 +320,7 @@ func Test_Handler_FetchInstall(t *testing.T) {
 			hdl.FetchInstall(rec, req)
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchSlackAppByOrganizationIDCalls(), c.Fetched)
 
 			if c.RespCode == http.StatusOK {
 				assert.Contains(t, rec.Body.String(), "state=")
@@ -391,7 +339,9 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 		RawState  string
 		RespCode  int
 		RespJSON  string
+		Fetched   int
 		Updated   int
+		Inserted  int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -422,45 +372,49 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 			StateFor: "org1",
 			RespCode: http.StatusBadRequest,
 		},
-		"Internal state app lookup error": {
+		"Error returned by DB.FetchSlackAppByTeamID": {
 			DB: &DBMock{
 				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return nil, errors.New("boom")
+					return nil, assert.AnError
 				},
 			},
 			StateFor: "internal",
 			RespCode: http.StatusInternalServerError,
+			Fetched:  1,
 		},
 		"Internal state app already assigned": {
 			DB: &DBMock{
 				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return connectedApp(), nil
+					return &slack.App{TeamID: "team1", OrganizationID: null.StringFrom("org1"), Token: "tkn"}, nil
 				},
 			},
 			StateFor: "internal",
 			RespCode: http.StatusBadRequest,
+			Fetched:  1,
 		},
-		"Internal state assignment error": {
+		"Error returned by DB.UpdateSlackAppOrganizationID": {
 			DB: &DBMock{
 				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return unassignedApp(), nil
+					return &slack.App{TeamID: "team1", Token: "tkn"}, nil
 				},
 				UpdateSlackAppOrganizationIDFunc: func(context.Context, string, string) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			StateFor: "internal",
 			RespCode: http.StatusInternalServerError,
+			Fetched:  1,
 			Updated:  1,
 		},
 		"Successful internal connection": {
 			DB: &DBMock{
 				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return unassignedApp(), nil
+					return &slack.App{TeamID: "team1", Token: "tkn"}, nil
 				},
 			},
 			StateFor: "internal",
 			RespCode: http.StatusNoContent,
+			Fetched:  1,
 			Updated:  1,
 		},
 	}
@@ -488,7 +442,10 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 
 				require.NoError(t, err)
 
-				state = stateFrom(t, rawURL)
+				u, err := url.Parse(rawURL)
+				require.NoError(t, err)
+
+				state = u.Query().Get("state")
 			case "-":
 				state = ""
 			}
@@ -502,7 +459,10 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/?"+q.Encode(), http.NoBody)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
 			}
 
 			rec := httptest.NewRecorder()
@@ -515,7 +475,9 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 				assert.JSONEq(t, c.RespJSON, rec.Body.String())
 			}
 
+			assert.Len(t, c.DB.FetchSlackAppByTeamIDCalls(), c.Fetched)
 			assert.Len(t, c.DB.UpdateSlackAppOrganizationIDCalls(), c.Updated)
+			assert.Len(t, c.DB.InsertSlackAppCalls(), c.Inserted)
 
 			if c.Updated > 0 {
 				assert.Equal(t, "team1", c.DB.UpdateSlackAppOrganizationIDCalls()[0].TeamID)
@@ -532,19 +494,21 @@ func Test_Handler_FetchMessages(t *testing.T) {
 		DB        *DBMock
 		NoSession bool
 		RespCode  int
+		Fetched   int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
 			NoSession: true,
 			RespCode:  http.StatusUnauthorized,
 		},
-		"Message fetch error": {
+		"Error returned by DB.FetchSlackMessages": {
 			DB: &DBMock{
 				FetchSlackMessagesFunc: func(context.Context, string) ([]slack.Message, error) {
-					return nil, errors.New("boom")
+					return nil, assert.AnError
 				},
 			},
 			RespCode: http.StatusInternalServerError,
+			Fetched:  1,
 		},
 		"Successful fetch": {
 			DB: &DBMock{
@@ -553,6 +517,7 @@ func Test_Handler_FetchMessages(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusOK,
+			Fetched:  1,
 		},
 	}
 
@@ -565,7 +530,10 @@ func Test_Handler_FetchMessages(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
 			}
 
 			rec := httptest.NewRecorder()
@@ -573,6 +541,7 @@ func Test_Handler_FetchMessages(t *testing.T) {
 			hdl.FetchMessages(rec, req)
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchSlackMessagesCalls(), c.Fetched)
 		})
 	}
 }
@@ -584,12 +553,22 @@ func Test_Handler_DisconnectOrganization(t *testing.T) {
 		DB         *DBMock
 		NoSession  bool
 		RespCode   int
+		Fetched    int
 		Unassigned int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
 			NoSession: true,
 			RespCode:  http.StatusUnauthorized,
+		},
+		"Error returned by DB.FetchSlackAppByOrganizationID": {
+			DB: &DBMock{
+				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slack.App, error) {
+					return nil, assert.AnError
+				},
+			},
+			RespCode: http.StatusInternalServerError,
+			Fetched:  1,
 		},
 		"App not connected": {
 			DB: &DBMock{
@@ -598,26 +577,29 @@ func Test_Handler_DisconnectOrganization(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusNotFound,
+			Fetched:  1,
 		},
-		"Unassignment error": {
+		"Error returned by DB.UnassignSlackAppOrganization": {
 			DB: &DBMock{
 				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slack.App, error) {
-					return connectedApp(), nil
+					return &slack.App{TeamID: "team1", OrganizationID: null.StringFrom("org1"), Token: "tkn"}, nil
 				},
 				UnassignSlackAppOrganizationFunc: func(context.Context, string) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			RespCode:   http.StatusInternalServerError,
+			Fetched:    1,
 			Unassigned: 1,
 		},
 		"Successful disconnection": {
 			DB: &DBMock{
 				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slack.App, error) {
-					return connectedApp(), nil
+					return &slack.App{TeamID: "team1", OrganizationID: null.StringFrom("org1"), Token: "tkn"}, nil
 				},
 			},
 			RespCode:   http.StatusNoContent,
+			Fetched:    1,
 			Unassigned: 1,
 		},
 	}
@@ -631,7 +613,10 @@ func Test_Handler_DisconnectOrganization(t *testing.T) {
 			req := httptest.NewRequest(http.MethodDelete, "http://test.com/", http.NoBody)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
 			}
 
 			rec := httptest.NewRecorder()
@@ -639,6 +624,7 @@ func Test_Handler_DisconnectOrganization(t *testing.T) {
 			hdl.DisconnectOrganization(rec, req)
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchSlackAppByOrganizationIDCalls(), c.Fetched)
 			assert.Len(t, c.DB.UnassignSlackAppOrganizationCalls(), c.Unassigned)
 		})
 	}
@@ -653,6 +639,7 @@ func Test_Handler_HandleEvent(t *testing.T) {
 		RespCode int
 		RespJSON string
 		Deleted  int
+		Fetched  int
 	}{
 		"Unparseable event payload": {
 			DB:       &DBMock{},
@@ -671,10 +658,10 @@ func Test_Handler_HandleEvent(t *testing.T) {
 			RespCode: http.StatusNoContent,
 			Deleted:  1,
 		},
-		"App uninstall deletion error": {
+		"Error returned by DB.DeleteSlackApp": {
 			DB: &DBMock{
 				DeleteSlackAppFunc: func(context.Context, string) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			Body:     `{"type":"event_callback","team_id":"team1","event":{"type":"app_uninstalled"}}`,
@@ -684,20 +671,22 @@ func Test_Handler_HandleEvent(t *testing.T) {
 		"Channel open for connected workspace": {
 			DB: &DBMock{
 				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return connectedApp(), nil
+					return &slack.App{TeamID: "team1", OrganizationID: null.StringFrom("org1"), Token: "tkn"}, nil
 				},
 			},
 			Body:     `{"type":"event_callback","team_id":"team1","event":{"type":"im_open","user":"slack-u1","channel":"chan1"}}`,
 			RespCode: http.StatusNoContent,
+			Fetched:  1,
 		},
-		"Channel open app lookup error": {
+		"Error returned by DB.FetchSlackAppByTeamID": {
 			DB: &DBMock{
 				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return nil, errors.New("boom")
+					return nil, assert.AnError
 				},
 			},
 			Body:     `{"type":"event_callback","team_id":"team1","event":{"type":"im_open","user":"slack-u1","channel":"chan1"}}`,
 			RespCode: http.StatusInternalServerError,
+			Fetched:  1,
 		},
 		"Ignored event type": {
 			DB:       &DBMock{},
@@ -724,6 +713,7 @@ func Test_Handler_HandleEvent(t *testing.T) {
 			}
 
 			assert.Len(t, c.DB.DeleteSlackAppCalls(), c.Deleted)
+			assert.Len(t, c.DB.FetchSlackAppByTeamIDCalls(), c.Fetched)
 		})
 	}
 }
@@ -740,6 +730,7 @@ func Test_Handler_HandleCommand(t *testing.T) {
 		RawBody  string
 		Payload  string
 		RespCode int
+		Fetched  int
 		Inserted int
 		Posted   int
 	}{
@@ -753,47 +744,51 @@ func Test_Handler_HandleCommand(t *testing.T) {
 			Payload:  "{",
 			RespCode: http.StatusBadRequest,
 		},
-		"App lookup error": {
+		"Error returned by DB.FetchSlackAppByTeamID": {
 			DB: &DBMock{
 				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return nil, errors.New("boom")
+					return nil, assert.AnError
 				},
 			},
 			Payload:  interaction("view_submission"),
 			RespCode: http.StatusInternalServerError,
+			Fetched:  1,
 		},
-		"Message submission insert error": {
+		"Error returned by DB.InsertSlackMessage": {
 			DB: &DBMock{
 				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return connectedApp(), nil
+					return &slack.App{TeamID: "team1", OrganizationID: null.StringFrom("org1"), Token: "tkn"}, nil
 				},
 				InsertSlackMessageFunc: func(context.Context, slack.Message) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			Payload:  interaction("view_submission"),
 			RespCode: http.StatusInternalServerError,
+			Fetched:  1,
 			Inserted: 1,
 		},
 		"Successful message submission": {
 			DB: &DBMock{
 				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return connectedApp(), nil
+					return &slack.App{TeamID: "team1", OrganizationID: null.StringFrom("org1"), Token: "tkn"}, nil
 				},
 			},
 			Payload:  interaction("view_submission"),
 			RespCode: http.StatusNoContent,
+			Fetched:  1,
 			Inserted: 1,
 			Posted:   1,
 		},
 		"Ignored interaction type": {
 			DB: &DBMock{
 				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return connectedApp(), nil
+					return &slack.App{TeamID: "team1", OrganizationID: null.StringFrom("org1"), Token: "tkn"}, nil
 				},
 			},
 			Payload:  interaction("shortcut"),
 			RespCode: http.StatusNoContent,
+			Fetched:  1,
 		},
 	}
 
@@ -821,520 +816,13 @@ func Test_Handler_HandleCommand(t *testing.T) {
 			hdl.HandleCommand(rec, req)
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchSlackAppByTeamIDCalls(), c.Fetched)
 			assert.Len(t, c.DB.InsertSlackMessageCalls(), c.Inserted)
 			assert.Equal(t, c.Posted, posted)
 
 			if c.Inserted > 0 {
 				assert.Equal(t, "saved message", c.DB.InsertSlackMessageCalls()[0].Msg.Text)
 				assert.Equal(t, "org1", c.DB.InsertSlackMessageCalls()[0].Msg.OrganizationID)
-			}
-		})
-	}
-}
-
-func Test_Handler_HandleSlashCommand(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		DB       *DBMock
-		Command  string
-		RespCode int
-		Hits     int
-		Deleted  int
-	}{
-		"Unknown command sends ephemeral response": {
-			DB:       &DBMock{},
-			Command:  "/bogus",
-			RespCode: http.StatusNoContent,
-			Hits:     1,
-		},
-		"Link with app lookup error": {
-			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return nil, errors.New("boom")
-				},
-			},
-			Command:  _linkCommand,
-			RespCode: http.StatusInternalServerError,
-		},
-		"Link on unconnected workspace": {
-			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return unassignedApp(), nil
-				},
-			},
-			Command:  _linkCommand,
-			RespCode: http.StatusNoContent,
-			Hits:     1,
-		},
-		"Link with lookup error on user link": {
-			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return connectedApp(), nil
-				},
-				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return nil, errors.New("boom")
-				},
-			},
-			Command:  _linkCommand,
-			RespCode: http.StatusInternalServerError,
-		},
-		"Link when already linked": {
-			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return connectedApp(), nil
-				},
-				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return userLink(), nil
-				},
-			},
-			Command:  _linkCommand,
-			RespCode: http.StatusNoContent,
-			Hits:     1,
-		},
-		"Successful link invitation": {
-			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return connectedApp(), nil
-				},
-				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return nil, errutil.ErrNotFound
-				},
-			},
-			Command:  _linkCommand,
-			RespCode: http.StatusNoContent,
-			Hits:     1,
-		},
-		"Unlink when not linked": {
-			DB: &DBMock{
-				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return nil, errutil.ErrNotFound
-				},
-			},
-			Command:  _unlinkCommand,
-			RespCode: http.StatusNoContent,
-			Hits:     1,
-		},
-		"Unlink with lookup error": {
-			DB: &DBMock{
-				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return nil, errors.New("boom")
-				},
-			},
-			Command:  _unlinkCommand,
-			RespCode: http.StatusInternalServerError,
-		},
-		"Unlink with deletion error": {
-			DB: &DBMock{
-				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return userLink(), nil
-				},
-				DeleteSlackUserLinkFunc: func(context.Context, string, string) error {
-					return errors.New("boom")
-				},
-			},
-			Command:  _unlinkCommand,
-			RespCode: http.StatusInternalServerError,
-			Deleted:  1,
-		},
-		"Successful unlink": {
-			DB: &DBMock{
-				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return userLink(), nil
-				},
-			},
-			Command:  _unlinkCommand,
-			RespCode: http.StatusNoContent,
-			Hits:     1,
-			Deleted:  1,
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			srv, hits := responseServer(t)
-
-			hdl := newMockedHandler(t, true, c.DB, srv.Client())
-
-			form := url.Values{
-				"command":      {c.Command},
-				"user_id":      {"slack-u1"},
-				"team_id":      {"team1"},
-				"response_url": {srv.URL},
-			}
-
-			req := httptest.NewRequest(http.MethodPost, "http://test.com/", strings.NewReader(form.Encode()))
-			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-			rec := httptest.NewRecorder()
-
-			hdl.HandleSlashCommand(rec, req)
-
-			assert.Equal(t, c.RespCode, rec.Code)
-			assert.Equal(t, c.Hits, *hits)
-			assert.Len(t, c.DB.DeleteSlackUserLinkCalls(), c.Deleted)
-		})
-	}
-}
-
-func Test_Handler_FetchUserLink(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		DB        *DBMock
-		NoSession bool
-		RespCode  int
-		RespJSON  string
-	}{
-		"No session in context": {
-			DB:        &DBMock{},
-			NoSession: true,
-			RespCode:  http.StatusUnauthorized,
-		},
-		"Link fetch error": {
-			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return nil, errutil.ErrNotFound
-				},
-			},
-			RespCode: http.StatusNotFound,
-		},
-		"Successful fetch": {
-			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return userLink(), nil
-				},
-			},
-			RespCode: http.StatusOK,
-			RespJSON: `{"notifications":true}`,
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			hdl := newMockedHandler(t, true, c.DB, nil)
-
-			req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
-
-			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
-			}
-
-			rec := httptest.NewRecorder()
-
-			hdl.FetchUserLink(rec, req)
-
-			assert.Equal(t, c.RespCode, rec.Code)
-
-			if c.RespJSON != "" {
-				assert.JSONEq(t, c.RespJSON, rec.Body.String())
-			}
-		})
-	}
-}
-
-func Test_Handler_UpdateUserLink(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		DB        *DBMock
-		NoSession bool
-		Body      string
-		RespCode  int
-		Updated   int
-	}{
-		"No session in context": {
-			DB:        &DBMock{},
-			NoSession: true,
-			Body:      `{"notifications":false}`,
-			RespCode:  http.StatusUnauthorized,
-		},
-		"Invalid JSON body": {
-			DB:       &DBMock{},
-			Body:     "{",
-			RespCode: http.StatusBadRequest,
-		},
-		"Link fetch error": {
-			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return nil, errutil.ErrNotFound
-				},
-			},
-			Body:     `{"notifications":false}`,
-			RespCode: http.StatusNotFound,
-		},
-		"Link update error": {
-			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return userLink(), nil
-				},
-				UpdateSlackUserLinkFunc: func(context.Context, slack.UserLink) error {
-					return errors.New("boom")
-				},
-			},
-			Body:     `{"notifications":false}`,
-			RespCode: http.StatusInternalServerError,
-			Updated:  1,
-		},
-		"Successful update": {
-			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return userLink(), nil
-				},
-			},
-			Body:     `{"notifications":false}`,
-			RespCode: http.StatusOK,
-			Updated:  1,
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			hdl := newMockedHandler(t, true, c.DB, nil)
-
-			req := httptest.NewRequest(http.MethodPut, "http://test.com/", strings.NewReader(c.Body))
-
-			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
-			}
-
-			rec := httptest.NewRecorder()
-
-			hdl.UpdateUserLink(rec, req)
-
-			assert.Equal(t, c.RespCode, rec.Code)
-			assert.Len(t, c.DB.UpdateSlackUserLinkCalls(), c.Updated)
-
-			if c.Updated > 0 {
-				assert.False(t, c.DB.UpdateSlackUserLinkCalls()[0].Link.Settings.Notifications)
-			}
-		})
-	}
-}
-
-func Test_Handler_DeleteUserLink(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		DB        *DBMock
-		NoSession bool
-		RespCode  int
-		Deleted   int
-	}{
-		"No session in context": {
-			DB:        &DBMock{},
-			NoSession: true,
-			RespCode:  http.StatusUnauthorized,
-		},
-		"Link not found": {
-			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return nil, errutil.ErrNotFound
-				},
-			},
-			RespCode: http.StatusBadRequest,
-		},
-		"Link fetch error": {
-			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return nil, errors.New("boom")
-				},
-			},
-			RespCode: http.StatusInternalServerError,
-		},
-		"Link deletion error": {
-			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return userLink(), nil
-				},
-				DeleteSlackUserLinkFunc: func(context.Context, string, string) error {
-					return errors.New("boom")
-				},
-			},
-			RespCode: http.StatusInternalServerError,
-			Deleted:  1,
-		},
-		"Successful deletion": {
-			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
-					return userLink(), nil
-				},
-			},
-			RespCode: http.StatusNoContent,
-			Deleted:  1,
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			hdl := newMockedHandler(t, true, c.DB, nil)
-
-			req := httptest.NewRequest(http.MethodDelete, "http://test.com/", http.NoBody)
-
-			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
-			}
-
-			rec := httptest.NewRecorder()
-
-			hdl.DeleteUserLink(rec, req)
-
-			assert.Equal(t, c.RespCode, rec.Code)
-			assert.Len(t, c.DB.DeleteSlackUserLinkCalls(), c.Deleted)
-		})
-	}
-}
-
-func Test_Handler_LinkUser(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		DB        *DBMock
-		NoSession bool
-		RawState  string
-		StateOrg  string
-		RespCode  int
-		Inserted  int
-	}{
-		"No session in context": {
-			DB:        &DBMock{},
-			NoSession: true,
-			StateOrg:  "org1",
-			RespCode:  http.StatusUnauthorized,
-		},
-		"Missing link state": {
-			DB:       &DBMock{},
-			RawState: "-",
-			RespCode: http.StatusBadRequest,
-		},
-		"Invalid link state": {
-			DB:       &DBMock{},
-			RawState: "garbage",
-			RespCode: http.StatusBadRequest,
-		},
-		"App lookup error": {
-			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return nil, errors.New("boom")
-				},
-			},
-			StateOrg: "org1",
-			RespCode: http.StatusInternalServerError,
-		},
-		"Workspace connected to another organization": {
-			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					app := connectedApp()
-					app.OrganizationID = null.StringFrom("org9")
-
-					return app, nil
-				},
-			},
-			StateOrg: "org1",
-			RespCode: http.StatusBadRequest,
-		},
-		"Member fetch error": {
-			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return connectedApp(), nil
-				},
-				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
-					return nil, errors.New("boom")
-				},
-			},
-			StateOrg: "org1",
-			RespCode: http.StatusInternalServerError,
-		},
-		"User not an organization member": {
-			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return connectedApp(), nil
-				},
-				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
-					return []string{"u2"}, nil
-				},
-			},
-			StateOrg: "org1",
-			RespCode: http.StatusForbidden,
-		},
-		"Link insertion error": {
-			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return connectedApp(), nil
-				},
-				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
-					return []string{"u1"}, nil
-				},
-				InsertSlackUserLinkFunc: func(context.Context, slack.UserLink) error {
-					return errors.New("boom")
-				},
-			},
-			StateOrg: "org1",
-			RespCode: http.StatusInternalServerError,
-			Inserted: 1,
-		},
-		"Successful link with unavailable confirmation client": {
-			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
-					return connectedApp(), nil
-				},
-				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
-					return []string{"u1"}, nil
-				},
-			},
-			StateOrg: "org1",
-			RespCode: http.StatusOK,
-			Inserted: 1,
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			hdl := newMockedHandler(t, true, c.DB, nil)
-
-			state := c.RawState
-
-			switch state {
-			case "":
-				linkURL, err := hdl.man.CreateLinkURL("slack-u1", "team1", c.StateOrg)
-				require.NoError(t, err)
-
-				state = stateFrom(t, linkURL)
-			case "-":
-				state = ""
-			}
-
-			q := url.Values{}
-
-			if state != "" {
-				q.Set("state", state)
-			}
-
-			req := httptest.NewRequest(http.MethodGet, "http://test.com/?"+q.Encode(), http.NoBody)
-
-			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
-			}
-
-			rec := httptest.NewRecorder()
-
-			hdl.LinkUser(rec, req)
-
-			assert.Equal(t, c.RespCode, rec.Code)
-			assert.Len(t, c.DB.InsertSlackUserLinkCalls(), c.Inserted)
-
-			if c.RespCode == http.StatusOK {
-				assert.JSONEq(t, `{"linked":true}`, rec.Body.String())
 			}
 		})
 	}

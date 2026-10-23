@@ -262,6 +262,38 @@ func Test_Document_ApplyBranchUpdate(t *testing.T) {
 	}
 }
 
+func Test_Document_Title(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		BranchName string
+		Default    bool
+		Result     string
+	}{
+		"Default branch shows the name only": {
+			BranchName: DefaultBranch,
+			Default:    true,
+			Result:     "Runbook",
+		},
+		"Other branch appends the branch name": {
+			BranchName: "feature-x",
+			Result:     "Runbook on branch feature-x",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			doc := stubDocument()
+			doc.BranchName = c.BranchName
+			doc.Default = c.Default
+
+			assert.Equal(t, c.Result, doc.Title())
+		})
+	}
+}
+
 func Test_Document_SnapshotEqual(t *testing.T) {
 	t.Parallel()
 
@@ -449,59 +481,75 @@ func Test_InitialDocumentContent(t *testing.T) {
 
 	dataSourceID := xid.New()
 
-	rb, err := InitialDocumentContent(null.ValueFrom(dataSourceID))
-	require.NoError(t, err)
+	cc := map[string]struct {
+		DataSourceID null.Value[xid.ID]
+		Check        func(t *testing.T, rb RootBlock)
+	}{
+		"Charts read the data source": {
+			DataSourceID: null.ValueFrom(dataSourceID),
+			Check: func(t *testing.T, rb RootBlock) {
+				assert.Equal(t, BlockNodeDoc, rb.Type)
 
-	assert.Equal(t, BlockNodeDoc, rb.Type)
-	assert.NotEmpty(t, rb.Content)
+				// every dataSourceId attribute in the tree points at the given
+				// data source, and every uid is regenerated (21 chars).
+				var (
+					dataSourceAttrs int
+					metrics         int
+					checkBlock      func(b Block)
+				)
 
-	// every dataSourceId attribute in the tree points at the given
-	// data source, and every uid is regenerated (21 chars).
-	var (
-		dataSourceAttrs int
-		metrics         int
-		checkBlock      func(b Block)
-	)
+				checkBlock = func(b Block) {
+					if v, ok := b.Attrs["dataSourceId"]; ok {
+						dataSourceAttrs++
 
-	checkBlock = func(b Block) {
-		if v, ok := b.Attrs["dataSourceId"]; ok {
-			dataSourceAttrs++
+						assert.Equal(t, dataSourceID.String(), v)
+					}
 
-			assert.Equal(t, dataSourceID.String(), v)
-		}
+					if uid, ok := b.UID(); ok {
+						assert.Len(t, uid, 21)
+					}
 
-		if uid, ok := b.UID(); ok {
-			assert.Len(t, uid, 21)
-		}
+					// every chart follows the built-in metric variables.
+					if b.Type == BlockNodeMetricBlock {
+						metrics++
 
-		// every chart follows the built-in metric variables.
-		if b.Type == BlockNodeMetricBlock {
-			metrics++
+						assert.Equal(t, "$metric_range", b.Attrs[AttrTimeRange])
+						assert.Equal(t, "$metric_refresh", b.Attrs[AttrRefreshInterval])
+					}
 
-			assert.Equal(t, "$metric_range", b.Attrs[AttrTimeRange])
-			assert.Equal(t, "$metric_refresh", b.Attrs[AttrRefreshInterval])
-		}
+					for _, cb := range b.Content {
+						checkBlock(cb)
+					}
+				}
 
-		for _, cb := range b.Content {
-			checkBlock(cb)
-		}
+				for _, b := range rb.Content {
+					checkBlock(b)
+				}
+
+				assert.NotZero(t, dataSourceAttrs, "the seeded content should reference the data source")
+				assert.NotZero(t, metrics)
+			},
+		},
+		// without a data source the charts have nothing to read, so they are
+		// dropped instead of pointing at an id that was never stored.
+		"Charts dropped without a data source": {
+			Check: func(t *testing.T, rb RootBlock) {
+				for _, b := range rb.Content {
+					assert.NotEqual(t, BlockNodeMetricBlock, b.Type)
+				}
+			},
+		},
 	}
 
-	for _, b := range rb.Content {
-		checkBlock(b)
-	}
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	assert.NotZero(t, dataSourceAttrs, "the seeded content should reference the data source")
-	assert.NotZero(t, metrics)
+			rb, err := InitialDocumentContent(c.DataSourceID)
+			require.NoError(t, err)
 
-	// without a data source the charts have nothing to read, so they are
-	// dropped instead of pointing at an id that was never stored.
-	rb, err = InitialDocumentContent(null.Value[xid.ID]{})
-	require.NoError(t, err)
-
-	assert.NotEmpty(t, rb.Content)
-
-	for _, b := range rb.Content {
-		assert.NotEqual(t, BlockNodeMetricBlock, b.Type)
+			assert.NotEmpty(t, rb.Content)
+			c.Check(t, rb)
+		})
 	}
 }

@@ -354,8 +354,14 @@ func (p *parser) line() int {
 }
 
 // unescapeRaw undoes escapeRaw: an escaped closing tag reads as the tag,
-// and one with more amp; loses one.
+// and one with more amp; loses one. Text with no < was escaped whole,
+// by escapeRaw or by a model writing it as XML text, so all of it is
+// decoded.
 func unescapeRaw(s, name string) string {
+	if !strings.Contains(s, "<") {
+		return _entityDecoder.Replace(s)
+	}
+
 	return _rawElements[name].ReplaceAllStringFunc(s, func(m string) string {
 		if tagName, ok := strings.CutPrefix(m, "&lt;/"); ok {
 			return "</" + tagName

@@ -1,16 +1,23 @@
 package comment
 
 import (
+	"database/sql/driver"
 	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 // stubComment builds a fully populated comment for tests.
 func stubComment() Comment {
@@ -111,32 +118,49 @@ func Test_Comment_Unresolve(t *testing.T) {
 func Test_Comment_Replace(t *testing.T) {
 	t.Parallel()
 
-	c := stubComment()
-	head := c.Replies[0]
+	cmt := stubComment()
+	head := cmt.Replies[0]
 
-	nc, ok := c.Replace()
-	require.True(t, ok)
-
-	// the head reply's content and author take over the comment.
-	assert.Equal(t, c.ID, nc.ID)
-	assert.Equal(t, head.UserID, nc.UserID)
-	assert.Equal(t, head.Content, nc.Content)
-	assert.Equal(t, head.CreatedAt, nc.CreatedAt)
-	assert.Equal(t, head.UpdatedAt, nc.UpdatedAt)
-	assert.Equal(t, c.BranchID, nc.BranchID)
-
-	// the promoted reply drops out of the reply list.
-	require.Len(t, nc.Replies, 1)
-	assert.Equal(t, c.Replies[1], nc.Replies[0])
-
-	// a comment with no replies has nothing to promote and is returned
-	// unchanged rather than panicking on an empty list.
-	empty := c
+	empty := cmt
 	empty.Replies = nil
 
-	same, ok := empty.Replace()
-	assert.False(t, ok)
-	assert.Equal(t, empty, same)
+	cc := map[string]struct {
+		Comment Comment
+		Result  Comment
+		OK      bool
+	}{
+		"Head reply takes over the comment": {
+			Comment: cmt,
+			Result: Comment{
+				ID:                  cmt.ID,
+				DocumentID:          cmt.DocumentID,
+				OrganizationID:      cmt.OrganizationID,
+				BranchID:            cmt.BranchID,
+				AnchorBlockID:       cmt.AnchorBlockID,
+				UserID:              head.UserID,
+				Content:             head.Content,
+				DiffDeletionContext: cmt.DiffDeletionContext,
+				CreatedAt:           head.CreatedAt,
+				UpdatedAt:           head.UpdatedAt,
+				Replies:             []Reply{cmt.Replies[1]},
+			},
+			OK: true,
+		},
+		"Comment without replies is returned unchanged": {
+			Comment: empty,
+			Result:  empty,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			nc, ok := c.Comment.Replace()
+			assert.Equal(t, c.OK, ok)
+			assert.Equal(t, c.Result, nc)
+		})
+	}
 }
 
 func Test_Comment_Participants(t *testing.T) {
@@ -228,6 +252,35 @@ func Test_Reply_ApplyUpdate(t *testing.T) {
 	assert.True(t, nr.UpdatedAt.Valid)
 }
 
+func Test_Input_Validate(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Input Input
+		Err   error
+	}{
+		"Missing content": {
+			Input: Input{AnchorBlockID: null.StringFrom("block-1")},
+			Err:   ErrMissingContent,
+		},
+		"Empty content": {
+			Input: Input{Content: Content{}},
+			Err:   ErrMissingContent,
+		},
+		"Valid input": {
+			Input: Input{Content: Content{"text": "hello"}},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Input.Validate())
+		})
+	}
+}
+
 func Test_StatusInput_Validate(t *testing.T) {
 	t.Parallel()
 
@@ -251,7 +304,36 @@ func Test_StatusInput_Validate(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, c.Err, c.Input.Validate())
+			testutil.AssertEqualError(t, c.Err, c.Input.Validate())
+		})
+	}
+}
+
+func Test_ReplyInput_Validate(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Input ReplyInput
+		Err   error
+	}{
+		"Missing content": {
+			Input: ReplyInput{},
+			Err:   ErrMissingContent,
+		},
+		"Empty content": {
+			Input: ReplyInput{Content: Content{}},
+			Err:   ErrMissingContent,
+		},
+		"Valid input": {
+			Input: ReplyInput{Content: Content{"text": "reply"}},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Input.Validate())
 		})
 	}
 }
@@ -260,28 +342,28 @@ func Test_Content_Scan(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Value     any
-		ExpectErr bool
-		Expected  Content
+		Value  any
+		Result Content
+		Err    error
 	}{
 		"Byte slice is decoded": {
-			Value:    []byte(`{"text": "hello"}`),
-			Expected: Content{"text": "hello"},
+			Value:  []byte(`{"text": "hello"}`),
+			Result: Content{"text": "hello"},
 		},
 		"String is decoded": {
-			Value:    `{"text": "hello"}`,
-			Expected: Content{"text": "hello"},
+			Value:  `{"text": "hello"}`,
+			Result: Content{"text": "hello"},
 		},
 		"Nil clears the content": {
 			Value: nil,
 		},
 		"Unsupported type fails": {
-			Value:     42,
-			ExpectErr: true,
+			Value: 42,
+			Err:   assert.AnError,
 		},
 		"Malformed JSON fails": {
-			Value:     []byte(`{not json`),
-			ExpectErr: true,
+			Value: []byte(`{not json`),
+			Err:   assert.AnError,
 		},
 	}
 
@@ -292,15 +374,13 @@ func Test_Content_Scan(t *testing.T) {
 			decoded := Content{"stale": true}
 
 			err := decoded.Scan(c.Value)
+			testutil.AssertEqualError(t, c.Err, err)
 
-			if c.ExpectErr {
-				require.Error(t, err)
-
+			if err != nil {
 				return
 			}
 
-			require.NoError(t, err)
-			assert.Equal(t, c.Expected, decoded)
+			assert.Equal(t, c.Result, decoded)
 		})
 	}
 }
@@ -308,27 +388,36 @@ func Test_Content_Scan(t *testing.T) {
 func Test_Content_Value(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Value round-trips through Scan", func(t *testing.T) {
-		t.Parallel()
+	cc := map[string]struct {
+		Content Content
+		Check   func(t *testing.T, val driver.Value)
+	}{
+		"Value round-trips through Scan": {
+			Content: Content{"text": "hello"},
+			Check: func(t *testing.T, val driver.Value) {
+				var decoded Content
 
-		orig := Content{"text": "hello"}
+				require.NoError(t, decoded.Scan(val))
+				assert.Equal(t, Content{"text": "hello"}, decoded)
+			},
+		},
+		"Nil content stores SQL NULL": {
+			Check: func(t *testing.T, val driver.Value) {
+				assert.Nil(t, val)
+			},
+		},
+	}
 
-		val, err := orig.Value()
-		require.NoError(t, err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-		var decoded Content
+			val, err := c.Content.Value()
+			require.NoError(t, err)
 
-		require.NoError(t, decoded.Scan(val))
-		assert.Equal(t, orig, decoded)
-	})
-
-	t.Run("Nil content stores SQL NULL", func(t *testing.T) {
-		t.Parallel()
-
-		val, err := Content(nil).Value()
-		require.NoError(t, err)
-		assert.Nil(t, val)
-	})
+			c.Check(t, val)
+		})
+	}
 }
 
 func Test_Content_Excerpt(t *testing.T) {
@@ -406,15 +495,30 @@ func Test_Content_Excerpt(t *testing.T) {
 func Test_writeText(t *testing.T) {
 	t.Parallel()
 
-	var sb strings.Builder
-
-	writeText(&sb, map[string]any{
-		"type": "paragraph",
-		"content": []any{
-			map[string]any{"type": "text", "text": "one"},
-			map[string]any{"type": "text", "text": "two"},
+	cc := map[string]struct {
+		Node   map[string]any
+		Result string
+	}{
+		"Text runs join and the node is set apart": {
+			Node: map[string]any{
+				"type": "paragraph",
+				"content": []any{
+					map[string]any{"type": "text", "text": "one"},
+					map[string]any{"type": "text", "text": "two"},
+				},
+			},
+			Result: "onetwo ",
 		},
-	})
+	}
 
-	assert.Equal(t, "onetwo ", sb.String())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var sb strings.Builder
+
+			writeText(&sb, c.Node)
+			assert.Equal(t, c.Result, sb.String())
+		})
+	}
 }

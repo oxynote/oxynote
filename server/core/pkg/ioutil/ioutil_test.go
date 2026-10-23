@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -27,33 +28,69 @@ func Test_MultiCloser(t *testing.T) {
 }
 
 func Test_multiCloser_Close(t *testing.T) {
-	// error
-	c1, c2 := &closerMock{err: assert.AnError}, &closerMock{}
-	mc := &multiCloser{closers: []io.Closer{c1, c2}}
-	err := mc.Close()
-	require.Error(t, err)
+	cc := map[string]struct {
+		Closers []*closerMock
+		Force   bool
+		Err     error
+		Errs    int
+		Calls   []int
+	}{
+		"Error returned by Closer.Close": {
+			Closers: []*closerMock{{err: assert.AnError}, {}},
+			Err:     assert.AnError,
+			Calls:   []int{1, 0},
+		},
+		"Errors returned by Closer.Close with force": {
+			Closers: []*closerMock{{err: assert.AnError}, {err: assert.AnError}},
+			Force:   true,
+			Err:     assert.AnError,
+			Errs:    2,
+			Calls:   []int{1, 1},
+		},
+		"Successful close": {
+			Closers: []*closerMock{{}, {}},
+			Calls:   []int{1, 1},
+		},
+	}
 
-	_, ok := err.(*multierror.Error) //nolint:errorlint // it's a test
-	require.False(t, ok)
-	assert.True(t, c1.called)
-	assert.False(t, c2.called)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// multi error
-	c1, c2 = &closerMock{err: assert.AnError}, &closerMock{err: assert.AnError}
-	mc = &multiCloser{closers: []io.Closer{c1, c2}, force: true}
-	err = mc.Close()
-	require.Error(t, err)
-	require.IsType(t, &multierror.Error{}, err)      //nolint:testifylint // a direct type check is needed
-	assert.Len(t, err.(*multierror.Error).Errors, 2) //nolint:errorlint // it's a test
-	assert.True(t, c1.called)
-	assert.True(t, c2.called)
+			closers := make([]io.Closer, len(c.Closers))
+			for i, cl := range c.Closers {
+				closers[i] = cl
+			}
 
-	// success
-	c1, c2 = &closerMock{}, &closerMock{}
-	mc = &multiCloser{closers: []io.Closer{c1, c2}}
-	assert.NoError(t, mc.Close())
-	assert.True(t, c1.called)
-	assert.True(t, c2.called)
+			mc := &multiCloser{closers: closers, force: c.Force}
+			err := mc.Close()
+
+			calls := make([]int, len(c.Closers))
+			for i, cl := range c.Closers {
+				calls[i] = cl.calls
+			}
+
+			assert.Equal(t, c.Calls, calls)
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err == nil {
+				return
+			}
+
+			// Errs counts the errors a forced close collects. Zero means
+			// the first error is returned as is.
+			if c.Errs == 0 {
+				_, ok := err.(*multierror.Error) //nolint:errorlint // it's a test
+				assert.False(t, ok)
+
+				return
+			}
+
+			require.IsType(t, &multierror.Error{}, err)           //nolint:testifylint // a direct type check is needed
+			assert.Len(t, err.(*multierror.Error).Errors, c.Errs) //nolint:errorlint // it's a test
+		})
+	}
 }
 
 func Test_CloserFunc_Close(t *testing.T) {
@@ -71,30 +108,40 @@ func Test_CloserFunc_Close(t *testing.T) {
 }
 
 func Test_AppendCloseErr(t *testing.T) {
-	// closer error
-	err1 := errors.New("err1")
-	err2 := errors.New("err2")
-
-	cl := &closerMock{
-		err: err2,
+	cc := map[string]struct {
+		Closer *closerMock
+		Inp    error
+		ErrMsg string
+	}{
+		"Error returned by Closer.Close": {
+			Closer: &closerMock{err: errors.New("err2")},
+			Inp:    errors.New("err1"),
+			ErrMsg: "2 errors occurred:\n\t* err1\n\t* err2\n\n",
+		},
+		"Successful close": {
+			Closer: &closerMock{},
+			Inp:    errors.New("err1"),
+			ErrMsg: "err1",
+		},
 	}
 
-	err := AppendCloseErr(cl, err1)
-	assert.EqualError(t, err, "2 errors occurred:\n\t* err1\n\t* err2\n\n")
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// closer no error
-	cl = &closerMock{}
-	err = AppendCloseErr(cl, err1)
-
-	assert.EqualError(t, err, "err1")
+			err := AppendCloseErr(c.Closer, c.Inp)
+			assert.Equal(t, 1, c.Closer.calls)
+			assert.EqualError(t, err, c.ErrMsg)
+		})
+	}
 }
 
 type closerMock struct {
-	called bool
-	err    error
+	calls int
+	err   error
 }
 
 func (c *closerMock) Close() error {
-	c.called = true
+	c.calls++
 	return c.err
 }

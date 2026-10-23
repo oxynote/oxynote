@@ -33,7 +33,7 @@ type listDocuments struct{}
 func (listDocuments) Info() Info {
 	return Info{
 		Name:        NameListDocuments,
-		Description: "List the organisation's documents as a tree of {id, name, default_branch_id, children}. Use it to find a document by title; search_documents finds content. parent_id narrows it to that document's children.",
+		Description: "List the organisation's documents as a tree of {id, name, branches: [{id, name, protected, default}], children}. parent_id narrows it to that document's children. search_documents finds a document by title or content.",
 		Properties: map[string]any{
 			"parent_id": map[string]any{"type": "string", "description": "Optional. A document whose direct children to list; omit it for the whole tree."},
 		},
@@ -63,8 +63,13 @@ func (listDocuments) Execute(inp *input) (string, error) {
 		return "", fmt.Errorf("fetch tree: %w", err)
 	}
 
+	branches, err := inp.FetchBranchesByDocument()
+	if err != nil {
+		return "", err
+	}
+
 	return result(documentTreeResult{
-		Documents: summariesToTree(tree),
+		Documents: summariesToTree(tree, branches),
 	})
 }
 
@@ -110,7 +115,7 @@ type getDocument struct{}
 func (getDocument) Info() Info {
 	return Info{
 		Name:        NameGetDocument,
-		Description: "Read one document on one branch: its name, icon, parent_id and updated_at, every branch it has as {id, name, protected, default, updated_at}, the tags on the branch read, and content: its blocks as XML, one element per block with its id, in the format insert_blocks describes. Read a document this way before editing it. A protected branch refuses writes, so write to an unprotected one.",
+		Description: "Read one document on one branch: its name, icon, parent_id and updated_at, every branch it has as {id, name, protected, default, updated_at}, the tags on the branch read, and content: its blocks as XML, one element per block with its id, in the format insert_blocks describes. Read a document this way before editing it.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
 			"branch_id":   map[string]any{"type": "string", "description": _branchIDDescription},
@@ -517,7 +522,7 @@ type updateDocument struct{}
 func (updateDocument) Info() Info {
 	return Info{
 		Name:        NameUpdateDocument,
-		Traits:      Traits{Write: true},
+		Traits:      Traits{Write: true, Idempotent: true},
 		Description: "Change a document's name, icon or parent; give only what changes, and a call changing nothing is refused. Content is untouched, and a parent that is the document itself or one of its descendants is refused. Returns {document_id} with what changed.",
 		Properties: map[string]any{
 			"document_id":     map[string]any{"type": "string", "description": _documentIDDescription},
@@ -593,28 +598,40 @@ type updatedDocumentResult struct {
 	ParentID *string `json:"parent_id,omitempty"`
 }
 
-// docTreeNode is the shape returned by list_documents. It mirrors
-// document.Summary but uses snake_case keys so the AI consumes a
-// consistent vocabulary with the rest of the tool surface.
+// docTreeNode is the shape returned by list_documents: a document with
+// every branch it has, so a caller can pick a branch, and see which ones
+// refuse writes, without reading each document first.
 type docTreeNode struct {
-	ID              xid.ID        `json:"id"`
-	Name            string        `json:"name"`
-	DefaultBranchID xid.ID        `json:"default_branch_id"`
-	Children        []docTreeNode `json:"children,omitempty"`
+	ID       xid.ID        `json:"id"`
+	Name     string        `json:"name"`
+	Branches []branchInfo  `json:"branches"`
+	Children []docTreeNode `json:"children,omitempty"`
 }
 
 // summariesToTree converts the document package's nested Summary tree
-// into the snake_case shape returned by list_documents.
-func summariesToTree(ss document.Summaries) []docTreeNode {
+// into list_documents' shape, with each document's branches taken from
+// branches, keyed by document.
+func summariesToTree(ss document.Summaries, branches map[xid.ID][]document.BranchSummary) []docTreeNode {
 	out := make([]docTreeNode, 0, len(ss))
 
 	for _, s := range ss {
-		out = append(out, docTreeNode{
-			ID:              s.ID,
-			Name:            s.DocumentName,
-			DefaultBranchID: s.DefaultBranchID,
-			Children:        summariesToTree(s.Children),
-		})
+		node := docTreeNode{
+			ID:       s.ID,
+			Name:     s.DocumentName,
+			Branches: make([]branchInfo, 0, len(branches[s.ID])),
+			Children: summariesToTree(s.Children, branches),
+		}
+
+		for _, b := range branches[s.ID] {
+			node.Branches = append(node.Branches, branchInfo{
+				ID:        b.BranchID,
+				Name:      b.BranchName,
+				Protected: b.Protected,
+				Default:   b.Default,
+			})
+		}
+
+		out = append(out, node)
 	}
 
 	return out

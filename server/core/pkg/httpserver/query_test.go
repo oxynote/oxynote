@@ -51,7 +51,7 @@ func Test_ParseQuery(t *testing.T) {
 		Result      Query
 		Err         error
 	}{
-		"DecodeForm returns an error": {
+		"Error returned by DecodeForm": {
 			NilPostBody: true,
 			Err:         assert.AnError,
 		},
@@ -61,7 +61,7 @@ func Test_ParseQuery(t *testing.T) {
 			},
 			Err: assert.AnError,
 		},
-		"Invalid sorting order priority index": {
+		"Error returned by strconv.ParseUint": {
 			Input: map[string][]string{
 				"limit":          {"10"},
 				"page":           {"15"},

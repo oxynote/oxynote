@@ -2,19 +2,18 @@ package tag
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	tagCore "github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	wsMock "github.com/oxynote/wetsocks/wsserver/_mock"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -37,47 +36,6 @@ var (
 	// on.
 	_branchID = xid.New()
 )
-
-// addSession stores a test session on the request context.
-func addSession(ctx context.Context) context.Context {
-	return auth.AddSessionToContext(ctx, auth.Session{
-		UserID:               "u1",
-		ActiveOrganizationID: "org1",
-	})
-}
-
-// otherUserCtx returns a subscriber context for a different member of the
-// same organization.
-func otherUserCtx() context.Context {
-	return auth.AddSessionToContext(context.Background(), auth.Session{
-		UserID:               "u2",
-		ActiveOrganizationID: "org1",
-	})
-}
-
-// withParams puts chi path parameters on the request, which is where
-// httpserver.ExtractNamedID reads them from.
-func withParams(r *http.Request, params map[string]string) *http.Request {
-	rctx := chi.NewRouteContext()
-
-	for k, v := range params {
-		rctx.URLParams.Add(k, v)
-	}
-
-	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
-}
-
-// summary builds a tag summary carrying one document.
-func summary(id xid.ID, name string) tagCore.Summary {
-	return tagCore.Summary{
-		ID:      id,
-		TagName: name,
-		Color:   "#22c55e",
-		Documents: documentCore.Summaries{
-			{ID: _documentID, DocumentName: "Runbook", Icon: "lucide:file"},
-		},
-	}
-}
 
 func Test_NewHandler(t *testing.T) {
 	t.Parallel()
@@ -106,10 +64,10 @@ func Test_Handler_FetchTagTree(t *testing.T) {
 			Code:      http.StatusUnauthorized,
 			Body:      `{"code":"account.not_authenticated","message":"not authenticated"}`,
 		},
-		"Tree fetch error": {
+		"Error returned by DB.FetchTagTree": {
 			DB: &DBMock{
 				FetchTagTreeFunc: func(context.Context, string, string) (tagCore.Summaries, error) {
-					return nil, errors.New("boom")
+					return nil, assert.AnError
 				},
 			},
 			Code:    http.StatusInternalServerError,
@@ -119,7 +77,16 @@ func Test_Handler_FetchTagTree(t *testing.T) {
 		"Successful fetch": {
 			DB: &DBMock{
 				FetchTagTreeFunc: func(context.Context, string, string) (tagCore.Summaries, error) {
-					return tagCore.Summaries{summary(_tagID, "Production")}, nil
+					return tagCore.Summaries{
+						{
+							ID:      _tagID,
+							TagName: "Production",
+							Color:   "#22c55e",
+							Documents: documentCore.Summaries{
+								{ID: _documentID, DocumentName: "Runbook", Icon: "lucide:file"},
+							},
+						},
+					}, nil
 				},
 			},
 			Code:    http.StatusOK,
@@ -135,7 +102,10 @@ func Test_Handler_FetchTagTree(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
 			}
 
 			rec := httptest.NewRecorder()
@@ -165,8 +135,23 @@ func Test_Handler_FetchTagTree(t *testing.T) {
 func Test_Handler_UpdateTagTree(t *testing.T) {
 	t.Parallel()
 
-	tree := func() tagCore.Summaries {
-		return tagCore.Summaries{summary(_tagID, "Production"), summary(xid.New(), "Staging")}
+	tree := tagCore.Summaries{
+		{
+			ID:      _tagID,
+			TagName: "Production",
+			Color:   "#22c55e",
+			Documents: documentCore.Summaries{
+				{ID: _documentID, DocumentName: "Runbook", Icon: "lucide:file"},
+			},
+		},
+		{
+			ID:      xid.New(),
+			TagName: "Staging",
+			Color:   "#22c55e",
+			Documents: documentCore.Summaries{
+				{ID: _documentID, DocumentName: "Runbook", Icon: "lucide:file"},
+			},
+		},
 	}
 
 	cc := map[string]struct {
@@ -175,6 +160,7 @@ func Test_Handler_UpdateTagTree(t *testing.T) {
 		Payload   string
 		Code      int
 		Body      string
+		Fetches   int
 		Updates   int
 		Notifies  int
 	}{
@@ -191,58 +177,63 @@ func Test_Handler_UpdateTagTree(t *testing.T) {
 			Code:    http.StatusBadRequest,
 			Body:    `{"code":"request.invalid_json","message":"invalid JSON body"}`,
 		},
-		"Tree fetch error": {
+		"Error returned by DB.FetchTagTree": {
 			DB: &DBMock{
 				FetchTagTreeFunc: func(context.Context, string, string) (tagCore.Summaries, error) {
-					return nil, errors.New("boom")
+					return nil, assert.AnError
 				},
 			},
 			Payload: `{"id":"` + _tagID.String() + `","sortIndex":0}`,
 			Code:    http.StatusInternalServerError,
 			Body:    `{"code":"general","message":"internal server error"}`,
+			Fetches: 1,
 		},
 		"Sort index out of range": {
 			DB: &DBMock{
 				FetchTagTreeFunc: func(context.Context, string, string) (tagCore.Summaries, error) {
-					return tree(), nil
+					return tree, nil
 				},
 			},
 			Payload: `{"id":"` + _tagID.String() + `","sortIndex":9}`,
 			Code:    http.StatusBadRequest,
 			Body:    `{"code":"tag_summary.invalid_sort_index","message":"sort index is out of range"}`,
+			Fetches: 1,
 		},
 		"Unknown tag": {
 			DB: &DBMock{
 				FetchTagTreeFunc: func(context.Context, string, string) (tagCore.Summaries, error) {
-					return tree(), nil
+					return tree, nil
 				},
 			},
 			Payload: `{"id":"` + xid.New().String() + `","sortIndex":0}`,
 			Code:    http.StatusNotFound,
 			Body:    `{"code":"general","message":"not found"}`,
+			Fetches: 1,
 		},
-		"Tree update error": {
+		"Error returned by DB.UpdateTagTree": {
 			DB: &DBMock{
 				FetchTagTreeFunc: func(context.Context, string, string) (tagCore.Summaries, error) {
-					return tree(), nil
+					return tree, nil
 				},
 				UpdateTagTreeFunc: func(context.Context, tagCore.Summaries, string) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			Payload: `{"id":"` + _tagID.String() + `","sortIndex":1}`,
 			Code:    http.StatusInternalServerError,
 			Body:    `{"code":"general","message":"internal server error"}`,
+			Fetches: 1,
 			Updates: 1,
 		},
 		"Successful swap": {
 			DB: &DBMock{
 				FetchTagTreeFunc: func(context.Context, string, string) (tagCore.Summaries, error) {
-					return tree(), nil
+					return tree, nil
 				},
 			},
 			Payload:  `{"id":"` + _tagID.String() + `","sortIndex":1}`,
 			Code:     http.StatusOK,
+			Fetches:  1,
 			Updates:  1,
 			Notifies: 1,
 		},
@@ -259,13 +250,17 @@ func Test_Handler_UpdateTagTree(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPut, "http://test.com/", strings.NewReader(c.Payload))
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
 			}
 
 			rec := httptest.NewRecorder()
 			hdl.UpdateTagTree(rec, req)
 
 			assert.Equal(t, c.Code, rec.Code)
+			assert.Len(t, c.DB.FetchTagTreeCalls(), c.Fetches)
 			assert.Len(t, c.DB.UpdateTagTreeCalls(), c.Updates)
 			assert.Len(t, tpc.PublishManyCalls(), c.Notifies)
 
@@ -315,7 +310,7 @@ func Test_Handler_CreateTag(t *testing.T) {
 			Code:    http.StatusBadRequest,
 			Body:    `{"code":"tag.invalid_name","message":"tag name cannot be empty"}`,
 		},
-		"Off-palette colour": {
+		"Off palette colour": {
 			DB:      &DBMock{},
 			Payload: `{"tagName":"Production","color":"#22c55e"}`,
 			Code:    http.StatusBadRequest,
@@ -327,10 +322,10 @@ func Test_Handler_CreateTag(t *testing.T) {
 			Code:    http.StatusBadRequest,
 			Body:    `{"code":"tag.invalid_color","message":"tag colour must be one of the palette"}`,
 		},
-		"Tag insert error": {
+		"Error returned by DB.InsertTag": {
 			DB: &DBMock{
 				InsertTagFunc: func(context.Context, tagCore.Tag) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			Payload: `{"tagName":"Production","color":"#00a63e"}`,
@@ -358,7 +353,10 @@ func Test_Handler_CreateTag(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "http://test.com/", strings.NewReader(c.Payload))
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
 			}
 
 			rec := httptest.NewRecorder()
@@ -545,17 +543,18 @@ func Test_Handler_UpdateTag(t *testing.T) {
 			}
 			hdl.BindTreeChange(tpc)
 
-			req := withParams(
-				httptest.NewRequest(http.MethodPut, "http://test.com/", strings.NewReader(c.JSON)),
-				map[string]string{"tagId": c.TagID},
-			)
+			req := httptest.NewRequest(http.MethodPut, "http://test.com/", strings.NewReader(c.JSON))
+			ctx := testutil.AddChiCtx(req.Context(), "tagId", c.TagID)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				ctx = auth.AddSessionToContext(ctx, auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				})
 			}
 
 			rec := httptest.NewRecorder()
-			hdl.UpdateTag(rec, req)
+			hdl.UpdateTag(rec, req.WithContext(ctx))
 
 			for _, check := range c.Checks {
 				check(t, c.DB, tpc, rec)
@@ -599,10 +598,10 @@ func Test_Handler_SetTagVisibility(t *testing.T) {
 			Code:    http.StatusBadRequest,
 			Body:    `{"code":"request.invalid_json","message":"invalid JSON body"}`,
 		},
-		"Visibility write error": {
+		"Error returned by DB.SetTagVisibility": {
 			DB: &DBMock{
 				SetTagVisibilityFunc: func(context.Context, string, string, xid.ID, tagCore.VisibilityInput) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			TagID:   _tagID.String(),
@@ -629,17 +628,18 @@ func Test_Handler_SetTagVisibility(t *testing.T) {
 			hdl := Handler{log: slog.New(slog.DiscardHandler), db: c.DB}
 			hdl.BindTreeChange(tpc)
 
-			req := withParams(
-				httptest.NewRequest(http.MethodPut, "http://test.com/", strings.NewReader(c.Payload)),
-				map[string]string{"tagId": c.TagID},
-			)
+			req := httptest.NewRequest(http.MethodPut, "http://test.com/", strings.NewReader(c.Payload))
+			ctx := testutil.AddChiCtx(req.Context(), "tagId", c.TagID)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				ctx = auth.AddSessionToContext(ctx, auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				})
 			}
 
 			rec := httptest.NewRecorder()
-			hdl.SetTagVisibility(rec, req)
+			hdl.SetTagVisibility(rec, req.WithContext(ctx))
 
 			assert.Equal(t, c.Code, rec.Code)
 			assert.Len(t, c.DB.SetTagVisibilityCalls(), c.Updates)
@@ -659,9 +659,18 @@ func Test_Handler_SetTagVisibility(t *testing.T) {
 			assert.True(t, call.Inp.Hidden)
 
 			// the change is one user's own, so only their sessions hear it
+			owner := auth.AddSessionToContext(context.Background(), auth.Session{
+				UserID:               "u1",
+				ActiveOrganizationID: "org1",
+			})
+			other := auth.AddSessionToContext(context.Background(), auth.Session{
+				UserID:               "u2",
+				ActiveOrganizationID: "org1",
+			})
+
 			pubs := tpc.PublishManyCalls()
-			assert.True(t, pubs[0].Filter(sessionCtx(), "topic"))
-			assert.False(t, pubs[0].Filter(otherUserCtx(), "topic"))
+			assert.True(t, pubs[0].Filter(owner, "topic"))
+			assert.False(t, pubs[0].Filter(other, "topic"))
 		})
 	}
 }
@@ -691,10 +700,10 @@ func Test_Handler_DeleteTag(t *testing.T) {
 			Code:  http.StatusNotFound,
 			Body:  `{"code":"general","message":"not found"}`,
 		},
-		"Tag delete error": {
+		"Error returned by DB.DeleteTag": {
 			DB: &DBMock{
 				DeleteTagFunc: func(context.Context, xid.ID, string) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			TagID:   _tagID.String(),
@@ -719,17 +728,18 @@ func Test_Handler_DeleteTag(t *testing.T) {
 			hdl := Handler{log: slog.New(slog.DiscardHandler), db: c.DB}
 			hdl.BindTreeChange(tpc)
 
-			req := withParams(
-				httptest.NewRequest(http.MethodDelete, "http://test.com/", http.NoBody),
-				map[string]string{"tagId": c.TagID},
-			)
+			req := httptest.NewRequest(http.MethodDelete, "http://test.com/", http.NoBody)
+			ctx := testutil.AddChiCtx(req.Context(), "tagId", c.TagID)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				ctx = auth.AddSessionToContext(ctx, auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				})
 			}
 
 			rec := httptest.NewRecorder()
-			hdl.DeleteTag(rec, req)
+			hdl.DeleteTag(rec, req.WithContext(ctx))
 
 			assert.Equal(t, c.Code, rec.Code)
 			assert.Len(t, c.DB.DeleteTagCalls(), c.Deletes)
@@ -781,10 +791,10 @@ func Test_Handler_FetchBranchTags(t *testing.T) {
 			Code:       http.StatusNotFound,
 			Body:       `{"code":"general","message":"not found"}`,
 		},
-		"Fetch error": {
+		"Error returned by DB.FetchBranchTagIDs": {
 			DB: &DBMock{
 				FetchBranchTagIDsFunc: func(context.Context, string, xid.ID, xid.ID) ([]xid.ID, error) {
-					return nil, errors.New("boom")
+					return nil, assert.AnError
 				},
 			},
 			DocumentID: _documentID.String(),
@@ -813,17 +823,19 @@ func Test_Handler_FetchBranchTags(t *testing.T) {
 
 			hdl := Handler{log: slog.New(slog.DiscardHandler), db: c.DB}
 
-			req := withParams(
-				httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody),
-				map[string]string{"documentId": c.DocumentID, "branchId": c.BranchID},
-			)
+			req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
+			ctx := testutil.AddChiCtx(req.Context(), "documentId", c.DocumentID)
+			ctx = testutil.AddChiCtx(ctx, "branchId", c.BranchID)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				ctx = auth.AddSessionToContext(ctx, auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				})
 			}
 
 			rec := httptest.NewRecorder()
-			hdl.FetchBranchTags(rec, req)
+			hdl.FetchBranchTags(rec, req.WithContext(ctx))
 
 			assert.Equal(t, c.Code, rec.Code)
 			assert.JSONEq(t, c.Body, rec.Body.String())
@@ -852,6 +864,7 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 		Payload    string
 		Code       int
 		Body       string
+		Fetches    int
 		Assigns    int
 		Notifies   int
 	}{
@@ -888,10 +901,29 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 			Code:       http.StatusBadRequest,
 			Body:       `{"code":"request.invalid_json","message":"invalid JSON body"}`,
 		},
-		"Assignment error": {
+		"Error returned by DB.FetchDocumentByBranchID": {
+			DB:         &DBMock{FetchDocumentByBranchIDFunc: stubBranch(false, assert.AnError)},
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			Payload:    `{"tagId":"` + _tagID.String() + `"}`,
+			Code:       http.StatusInternalServerError,
+			Body:       `{"code":"general","message":"internal server error"}`,
+			Fetches:    1,
+		},
+		"Protected branch is refused": {
+			DB:         &DBMock{FetchDocumentByBranchIDFunc: stubBranch(true, nil)},
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			Payload:    `{"tagId":"` + _tagID.String() + `"}`,
+			Code:       http.StatusForbidden,
+			Body:       `{"code":"document.branch_protected","message":"a protected branch cannot be changed"}`,
+			Fetches:    1,
+		},
+		"Error returned by DB.AssignBranchTag": {
 			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
 				AssignBranchTagFunc: func(context.Context, string, xid.ID, xid.ID, xid.ID) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			DocumentID: _documentID.String(),
@@ -899,14 +931,16 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 			Payload:    `{"tagId":"` + _tagID.String() + `"}`,
 			Code:       http.StatusInternalServerError,
 			Body:       `{"code":"general","message":"internal server error"}`,
+			Fetches:    1,
 			Assigns:    1,
 		},
 		"Successful assignment": {
-			DB:         &DBMock{},
+			DB:         &DBMock{FetchDocumentByBranchIDFunc: stubBranch(false, nil)},
 			DocumentID: _documentID.String(),
 			BranchID:   _branchID.String(),
 			Payload:    `{"tagId":"` + _tagID.String() + `"}`,
 			Code:       http.StatusNoContent,
+			Fetches:    1,
 			Assigns:    1,
 			Notifies:   1,
 		},
@@ -922,19 +956,22 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 			hdl.BindTreeChange(tpc)
 			hdl.BindBranchTagsChange(branchTpc)
 
-			req := withParams(
-				httptest.NewRequest(http.MethodPost, "http://test.com/", strings.NewReader(c.Payload)),
-				map[string]string{"documentId": c.DocumentID, "branchId": c.BranchID},
-			)
+			req := httptest.NewRequest(http.MethodPost, "http://test.com/", strings.NewReader(c.Payload))
+			ctx := testutil.AddChiCtx(req.Context(), "documentId", c.DocumentID)
+			ctx = testutil.AddChiCtx(ctx, "branchId", c.BranchID)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				ctx = auth.AddSessionToContext(ctx, auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				})
 			}
 
 			rec := httptest.NewRecorder()
-			hdl.AssignBranchTag(rec, req)
+			hdl.AssignBranchTag(rec, req.WithContext(ctx))
 
 			assert.Equal(t, c.Code, rec.Code)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.Fetches)
 			assert.Len(t, c.DB.AssignBranchTagCalls(), c.Assigns)
 			assert.Len(t, tpc.PublishManyCalls(), c.Notifies)
 			assert.Len(t, branchTpc.PublishManyCalls(), c.Notifies)
@@ -966,6 +1003,7 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 		TagID      string
 		Code       int
 		Body       string
+		Fetches    int
 		Unassigns  int
 		Notifies   int
 	}{
@@ -1002,10 +1040,29 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 			Code:       http.StatusNotFound,
 			Body:       `{"code":"general","message":"not found"}`,
 		},
-		"Unassignment error": {
+		"Error returned by DB.FetchDocumentByBranchID": {
+			DB:         &DBMock{FetchDocumentByBranchIDFunc: stubBranch(false, assert.AnError)},
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			TagID:      _tagID.String(),
+			Code:       http.StatusInternalServerError,
+			Body:       `{"code":"general","message":"internal server error"}`,
+			Fetches:    1,
+		},
+		"Protected branch is refused": {
+			DB:         &DBMock{FetchDocumentByBranchIDFunc: stubBranch(true, nil)},
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			TagID:      _tagID.String(),
+			Code:       http.StatusForbidden,
+			Body:       `{"code":"document.branch_protected","message":"a protected branch cannot be changed"}`,
+			Fetches:    1,
+		},
+		"Error returned by DB.UnassignBranchTag": {
 			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
 				UnassignBranchTagFunc: func(context.Context, string, xid.ID, xid.ID, xid.ID) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			DocumentID: _documentID.String(),
@@ -1013,14 +1070,16 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 			TagID:      _tagID.String(),
 			Code:       http.StatusInternalServerError,
 			Body:       `{"code":"general","message":"internal server error"}`,
+			Fetches:    1,
 			Unassigns:  1,
 		},
 		"Successful unassignment": {
-			DB:         &DBMock{},
+			DB:         &DBMock{FetchDocumentByBranchIDFunc: stubBranch(false, nil)},
 			DocumentID: _documentID.String(),
 			BranchID:   _branchID.String(),
 			TagID:      _tagID.String(),
 			Code:       http.StatusNoContent,
+			Fetches:    1,
 			Unassigns:  1,
 			Notifies:   1,
 		},
@@ -1036,19 +1095,23 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 			hdl.BindTreeChange(tpc)
 			hdl.BindBranchTagsChange(branchTpc)
 
-			req := withParams(
-				httptest.NewRequest(http.MethodDelete, "http://test.com/", http.NoBody),
-				map[string]string{"documentId": c.DocumentID, "branchId": c.BranchID, "tagId": c.TagID},
-			)
+			req := httptest.NewRequest(http.MethodDelete, "http://test.com/", http.NoBody)
+			ctx := testutil.AddChiCtx(req.Context(), "documentId", c.DocumentID)
+			ctx = testutil.AddChiCtx(ctx, "branchId", c.BranchID)
+			ctx = testutil.AddChiCtx(ctx, "tagId", c.TagID)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				ctx = auth.AddSessionToContext(ctx, auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				})
 			}
 
 			rec := httptest.NewRecorder()
-			hdl.UnassignBranchTag(rec, req)
+			hdl.UnassignBranchTag(rec, req.WithContext(ctx))
 
 			assert.Equal(t, c.Code, rec.Code)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.Fetches)
 			assert.Len(t, c.DB.UnassignBranchTagCalls(), c.Unassigns)
 			assert.Len(t, tpc.PublishManyCalls(), c.Notifies)
 			assert.Len(t, branchTpc.PublishManyCalls(), c.Notifies)
@@ -1066,5 +1129,66 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 			assert.Equal(t, _branchID, call.BranchID)
 			assert.Equal(t, _tagID, call.TagID)
 		})
+	}
+}
+
+func Test_extractBranchPath(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		DocumentID       string
+		BranchID         string
+		ResultDocumentID xid.ID
+		ResultBranchID   xid.ID
+		Err              error
+	}{
+		"Malformed document id": {
+			DocumentID: "not-an-xid",
+			BranchID:   _branchID.String(),
+			Err:        errutil.ErrNotFound,
+		},
+		"Malformed branch id": {
+			DocumentID: _documentID.String(),
+			BranchID:   "not-an-xid",
+			Err:        errutil.ErrNotFound,
+		},
+		"Successful extraction": {
+			DocumentID:       _documentID.String(),
+			BranchID:         _branchID.String(),
+			ResultDocumentID: _documentID,
+			ResultBranchID:   _branchID,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
+			ctx := testutil.AddChiCtx(req.Context(), "documentId", c.DocumentID)
+			ctx = testutil.AddChiCtx(ctx, "branchId", c.BranchID)
+
+			documentID, branchID, err := extractBranchPath(req.WithContext(ctx))
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.ResultDocumentID, documentID)
+			assert.Equal(t, c.ResultBranchID, branchID)
+		})
+	}
+}
+
+// stubBranch returns a DB.FetchDocumentByBranchID that finds a branch,
+// protected or not, or fails with err.
+func stubBranch(protected bool, err error) func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+	return func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+		if err != nil {
+			return nil, err
+		}
+
+		return &documentCore.Document{ID: _documentID, BranchID: _branchID, Protected: protected}, nil
 	}
 }

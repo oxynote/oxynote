@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -203,6 +204,16 @@ func (i *input) Decode(dst Args) error {
 	}
 
 	if err := jsonv2.Unmarshal(args, dst); err != nil {
+		// a malformed id is nearly always a miscopied one, so the
+		// message says how to get it right rather than naming Go types.
+		var serr *jsonv2.SemanticError
+		if errors.As(err, &serr) && serr.GoType == reflect.TypeFor[xid.ID]() {
+			return fmt.Errorf(
+				"%s is not an id; copy all 20 characters exactly from the result that gave it",
+				strings.TrimPrefix(string(serr.JSONPointer), "/"),
+			)
+		}
+
 		return fmt.Errorf("invalid input: %w", err)
 	}
 
@@ -389,9 +400,45 @@ func (i *input) FetchDocumentTree() (document.Summaries, error) {
 	return i.db.FetchDocumentTree(i.ctx, i.orgID)
 }
 
-// FetchDocumentChildren returns the direct children of parentID.
+// FetchBranchesByDocument returns every branch of the organisation's
+// documents, keyed by document, each document's default branch first.
+func (i *input) FetchBranchesByDocument() (map[xid.ID][]document.BranchSummary, error) {
+	branches, err := i.db.FetchDocumentBranchesByOrganizationID(i.ctx, i.orgID)
+	if err != nil {
+		return nil, fmt.Errorf("fetching branches: %w", err)
+	}
+
+	out := make(map[xid.ID][]document.BranchSummary)
+
+	for _, b := range branches {
+		out[b.DocumentID] = append(out[b.DocumentID], b)
+	}
+
+	return out, nil
+}
+
+// FetchDocumentChildren returns the direct children of parentID. A
+// parent the organisation does not have is refused rather than listed as
+// childless; only an empty listing needs the check.
 func (i *input) FetchDocumentChildren(parentID null.Value[xid.ID]) (document.Summaries, error) {
-	return i.db.FetchDocumentTreeByDocumentParentID(i.ctx, parentID, i.orgID)
+	children, err := i.db.FetchDocumentTreeByDocumentParentID(i.ctx, parentID, i.orgID)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(children) > 0 {
+		return children, nil
+	}
+
+	if cerr := i.db.CheckDocumentExists(i.ctx, parentID.V, i.orgID); cerr != nil {
+		if errutil.IsNotFound(cerr) {
+			return nil, fmt.Errorf("parent %s: %w", parentID.V, ErrUnknownDocument)
+		}
+
+		return nil, fmt.Errorf("checking parent: %w", cerr)
+	}
+
+	return children, nil
 }
 
 // CreateDocument inserts the document, its maintainer row and its
@@ -933,6 +980,10 @@ func (i *input) AssignTag(documentID, branchID, tagID xid.ID) error {
 		return err
 	}
 
+	if err = doc.AllowsDocumentChange(); err != nil {
+		return i.protectedBranch(doc)
+	}
+
 	if err := i.db.AssignBranchTag(i.ctx, i.orgID, doc.ID, doc.BranchID, tagID); err != nil {
 		if errutil.IsNotFound(err) {
 			return fmt.Errorf("tag %s: %w", tagID, ErrUnknownTag)
@@ -955,6 +1006,10 @@ func (i *input) UnassignTag(documentID, branchID, tagID xid.ID) error {
 	doc, err := i.FetchBranch(documentID, branchID)
 	if err != nil {
 		return err
+	}
+
+	if err = doc.AllowsDocumentChange(); err != nil {
+		return i.protectedBranch(doc)
 	}
 
 	if _, err := i.FetchTag(tagID); err != nil {
@@ -1065,6 +1120,12 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 		return nil, err
 	}
 
+	// the manager refuses this too, but this error names the branches
+	// that take the change.
+	if err = doc.AllowsDocumentChange(); err != nil {
+		return nil, i.protectedBranch(doc)
+	}
+
 	// the manager would refuse this too, but the integration's own error
 	// tells the model what is missing.
 	switch tp {
@@ -1123,8 +1184,20 @@ func (i *input) ResetHook(hk *hook.Hook) error {
 }
 
 // DeleteHook tears down what the hook holds outside the document and
-// removes its row.
+// removes its row. A hook on a protected branch stays, as the manager
+// would keep it, and the error names the branches that take changes.
 func (i *input) DeleteHook(hk *hook.Hook) error {
+	if hk.BranchID.Valid {
+		doc, err := i.FetchBranch(hk.DocumentID.V, hk.BranchID.V)
+		if err != nil {
+			return err
+		}
+
+		if err = doc.AllowsDocumentChange(); err != nil {
+			return i.protectedBranch(doc)
+		}
+	}
+
 	if err := i.hookMan.DeleteHook(i.ctx, hk.ID, hk.DocumentID.V, i.orgID, i.userID); err != nil {
 		return err
 	}
@@ -1176,6 +1249,11 @@ type DocumentDB interface {
 	// by get_document, and to tell an unknown branch from an unknown
 	// document.
 	FetchDocumentBranches(ctx context.Context, docID xid.ID, organizationID string) ([]document.BranchSummary, error)
+
+	// FetchDocumentBranchesByOrganizationID should list every branch of
+	// the organisation's documents, each document's default branch first.
+	// Used by list_documents and search_documents.
+	FetchDocumentBranchesByOrganizationID(ctx context.Context, organizationID string) ([]document.BranchSummary, error)
 
 	// FetchDocumentByBranchID should return the document the branch id
 	// names, on that branch. Used for every branch-targeted call.

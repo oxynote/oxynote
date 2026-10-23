@@ -50,14 +50,7 @@ func checks(cc ...check) []check { return cc }
 // empty body asserts an empty response.
 func hasResp(code int, body string) check {
 	return func(t *testing.T, _ *DBMock, _ *runnerMock, _ *VariableManagerMock, rec *httptest.ResponseRecorder, _ *bytes.Buffer) {
-		assert.Equal(t, code, rec.Code)
-
-		if body == "" {
-			assert.Zero(t, rec.Body.Len(), rec.Body.String())
-			return
-		}
-
-		assert.JSONEq(t, body, rec.Body.String())
+		testutil.AssertResponse(t, rec, code, body)
 	}
 }
 
@@ -153,6 +146,30 @@ func wasExecutorTestConnectionCalled(count int) check {
 	}
 }
 
+// wasRunnersRunnerCalled returns a check asserting the number of Runner
+// calls.
+func wasRunnersRunnerCalled(count int) check {
+	return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+		require.Len(t, exec.dataSources, count)
+	}
+}
+
+// wasExecutorPrometheusCalled returns a check asserting the number of
+// Runner.Prometheus calls.
+func wasExecutorPrometheusCalled(count int) check {
+	return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+		require.Len(t, exec.runner.PrometheusCalls(), count)
+	}
+}
+
+// wasExecutorSQLCalled returns a check asserting the number of Runner.SQL
+// calls.
+func wasExecutorSQLCalled(count int) check {
+	return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+		require.Len(t, exec.runner.SQLCalls(), count)
+	}
+}
+
 // stubDataSource returns a data source owned by the test organization.
 func stubDataSource(typ datasourceCore.Type) *datasourceCore.DataSource {
 	return &datasourceCore.DataSource{
@@ -239,8 +256,43 @@ type runnerMock struct {
 	dataSources []datasourceCore.DataSource
 }
 
-// newRunnerMock wires one runner over the given clients.
-func newRunnerMock(clients *clientMocks) *runnerMock {
+// Runner records the data source and hands back the one runner.
+func (m *runnerMock) Runner(ds datasourceCore.DataSource) datasourceCore.Runner {
+	m.dataSources = append(m.dataSources, ds)
+
+	return m.runner
+}
+
+// stubVariables returns a variable manager whose tree resolves $metric to
+// up, but only for the test session's organization and user.
+func stubVariables(err error) *VariableManagerMock {
+	return &VariableManagerMock{
+		FetchTreeFunc: func(_ context.Context, organizationID, userID string) (variable.Tree, error) {
+			if err != nil {
+				return nil, err
+			}
+
+			if organizationID != _testSession.ActiveOrganizationID || userID != _testSession.UserID {
+				return variable.Tree{}, nil
+			}
+
+			return variable.Tree{{Variables: []variable.Entry{{
+				Key:   "metric",
+				Type:  variable.TypeText,
+				Value: null.StringFrom("up"),
+			}}}}, nil
+		},
+	}
+}
+
+// prepHandler builds a handler around the provided mocks, wiring one
+// runner over the clients and defaulting nil mocks to empty stubs, and
+// returns the buffer its log writes to.
+func prepHandler(db *DBMock, clients *clientMocks, vars *VariableManagerMock) (*Handler, *DBMock, *runnerMock, *VariableManagerMock, *bytes.Buffer) {
+	if db == nil {
+		db = &DBMock{}
+	}
+
 	if clients == nil {
 		clients = &clientMocks{}
 	}
@@ -261,11 +313,15 @@ func newRunnerMock(clients *clientMocks) *runnerMock {
 		clients.mySQL = &datasourceMock.MySQL{}
 	}
 
-	m := &runnerMock{clientMocks: clients}
+	if vars == nil {
+		vars = &VariableManagerMock{}
+	}
 
-	m.runner = &datasourceMock.Runner{
+	exec := &runnerMock{clientMocks: clients}
+
+	exec.runner = &datasourceMock.Runner{
 		TypeFunc: func() datasourceCore.Type {
-			return m.dataSources[len(m.dataSources)-1].Type
+			return exec.dataSources[len(exec.dataSources)-1].Type
 		},
 		TestConnectionFunc: func(context.Context) (processor.ConnectionStatus, error) {
 			return clients.status, clients.statusErr
@@ -300,60 +356,16 @@ func newRunnerMock(clients *clientMocks) *runnerMock {
 		},
 	}
 
-	return m
-}
-
-// Runner records the data source and hands back the one runner.
-func (m *runnerMock) Runner(ds datasourceCore.DataSource) datasourceCore.Runner {
-	m.dataSources = append(m.dataSources, ds)
-
-	return m.runner
-}
-
-// stubVariables returns a variable manager whose tree resolves $metric to
-// up, but only for the test session's organization and user.
-func stubVariables(err error) *VariableManagerMock {
-	return &VariableManagerMock{
-		FetchTreeFunc: func(_ context.Context, organizationID, userID string) (variable.Tree, error) {
-			if err != nil {
-				return nil, err
-			}
-
-			if organizationID != _testSession.ActiveOrganizationID || userID != _testSession.UserID {
-				return variable.Tree{}, nil
-			}
-
-			return variable.Tree{{Variables: []variable.Entry{{
-				Key:   "metric",
-				Type:  variable.TypeText,
-				Value: null.StringFrom("up"),
-			}}}}, nil
-		},
-	}
-}
-
-// prepHandler builds a handler around the provided mocks, defaulting nil
-// mocks to empty stubs, and returns the buffer its log writes to.
-func prepHandler(db *DBMock, clients *clientMocks, vars *VariableManagerMock) (*Handler, *DBMock, *runnerMock, *VariableManagerMock, *bytes.Buffer) {
-	if db == nil {
-		db = &DBMock{}
-	}
-
-	if vars == nil {
-		vars = &VariableManagerMock{}
-	}
-
-	runner := newRunnerMock(clients)
 	logs := &bytes.Buffer{}
 
 	hdl := &Handler{
 		log:       slog.New(slog.NewTextHandler(logs, nil)),
 		db:        db,
-		runners:   runner,
+		runners:   exec,
 		variables: vars,
 	}
 
-	return hdl, db, runner, vars, logs
+	return hdl, db, exec, vars, logs
 }
 
 func Test_NewHandler(t *testing.T) {
@@ -375,32 +387,6 @@ func Test_NewHandler(t *testing.T) {
 }
 
 func Test_Handler_CreateDataSource(t *testing.T) {
-	hasCreatedDataSourceResp := func() check {
-		return func(t *testing.T, db *DBMock, exec *runnerMock, _ *VariableManagerMock, rec *httptest.ResponseRecorder, _ *bytes.Buffer) {
-			ff := db.InsertDataSourceCalls()
-			require.Len(t, ff, 1)
-
-			ds := ff[0].Ds
-			require.NotNil(t, ds)
-			assert.False(t, ds.ID.IsNil())
-			assert.Equal(t, _testSession.ActiveOrganizationID, ds.OrganizationID)
-			assert.Equal(t, "test-source", ds.Name)
-			assert.Equal(t, datasourceCore.TypePrometheus, ds.Type)
-			assert.Equal(t, "http://source.test", ds.URL)
-			assert.Equal(t, processor.ConnectionStatusSuccess, ds.Status)
-
-			require.Len(t, exec.runner.TestConnectionCalls(), 1)
-			require.Len(t, exec.dataSources, 1)
-			assert.Equal(t, ds.Name, exec.dataSources[0].Name)
-
-			assert.Equal(t, http.StatusCreated, rec.Code)
-
-			exp, err := json.Marshal(ds)
-			require.NoError(t, err)
-			assert.JSONEq(t, string(exp), rec.Body.String())
-		}
-	}
-
 	body := `{"type":"prometheus","name":"test-source","url":"http://source.test","credentials":{"username":"user"}}`
 
 	cc := map[string]struct {
@@ -415,6 +401,7 @@ func Test_Handler_CreateDataSource(t *testing.T) {
 			OmitSession: true,
 			Checks: checks(
 				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
+				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
 				wasDBInsertDataSourceCalled(0),
 			),
@@ -423,15 +410,18 @@ func Test_Handler_CreateDataSource(t *testing.T) {
 			Body: "{",
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"request.invalid_json","message":"invalid JSON body"}`),
+				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
 				wasDBInsertDataSourceCalled(0),
 			),
 		},
-		"Error returned by executor.TestConnection": {
+		"Error returned by Runner.TestConnection": {
 			Clients: &clientMocks{status: "", statusErr: assert.AnError},
 			Body:    body,
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTestConnectionCalled(1),
 				wasDBInsertDataSourceCalled(0),
 			),
 		},
@@ -440,6 +430,7 @@ func Test_Handler_CreateDataSource(t *testing.T) {
 			Body:    body,
 			Checks: checks(
 				hasResp(http.StatusUnauthorized, `{"code":"data_source.unauthorized","message":"Unauthorized access to the data source."}`),
+				wasRunnersRunnerCalled(1),
 				wasExecutorTestConnectionCalled(1),
 				wasDBInsertDataSourceCalled(0),
 			),
@@ -454,6 +445,8 @@ func Test_Handler_CreateDataSource(t *testing.T) {
 			Body:    body,
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTestConnectionCalled(1),
 				wasDBInsertDataSourceCalled(1),
 			),
 		},
@@ -461,7 +454,29 @@ func Test_Handler_CreateDataSource(t *testing.T) {
 			Clients: &clientMocks{status: processor.ConnectionStatusSuccess, statusErr: nil},
 			Body:    body,
 			Checks: checks(
-				hasCreatedDataSourceResp(),
+				func(t *testing.T, db *DBMock, exec *runnerMock, _ *VariableManagerMock, rec *httptest.ResponseRecorder, _ *bytes.Buffer) {
+					ff := db.InsertDataSourceCalls()
+					require.Len(t, ff, 1)
+
+					ds := ff[0].Ds
+					require.NotNil(t, ds)
+					assert.False(t, ds.ID.IsNil())
+					assert.Equal(t, _testSession.ActiveOrganizationID, ds.OrganizationID)
+					assert.Equal(t, "test-source", ds.Name)
+					assert.Equal(t, datasourceCore.TypePrometheus, ds.Type)
+					assert.Equal(t, "http://source.test", ds.URL)
+					assert.Equal(t, processor.ConnectionStatusSuccess, ds.Status)
+
+					require.Len(t, exec.runner.TestConnectionCalls(), 1)
+					require.Len(t, exec.dataSources, 1)
+					assert.Equal(t, ds.Name, exec.dataSources[0].Name)
+
+					assert.Equal(t, http.StatusCreated, rec.Code)
+
+					exp, err := json.Marshal(ds)
+					require.NoError(t, err)
+					assert.JSONEq(t, string(exp), rec.Body.String())
+				},
 			),
 		},
 	}
@@ -561,13 +576,19 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 			ID:          _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
+				wasDBFetchDataSourceCalled(0),
+				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Missing data source id": {
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
+				wasDBFetchDataSourceCalled(0),
+				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Error returned by db.FetchDataSource": {
@@ -575,15 +596,21 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 			ID: _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
-		"Error returned by executor.TestConnection": {
+		"Error returned by Runner.TestConnection": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: &clientMocks{status: "", statusErr: assert.AnError},
 			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTestConnectionCalled(1),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
@@ -593,6 +620,9 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"status":"success"}`),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTestConnectionCalled(1),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
@@ -602,6 +632,9 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"status":"unreachable"}`),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTestConnectionCalled(1),
 				wasDBUpdateDataSourceCalled(1),
 			),
 		},
@@ -616,6 +649,9 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"status":"invalid_encryption_key"}`),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTestConnectionCalled(1),
 				// the read already recorded the status, and a write here
 				// would store an encryption of the credentials it could
 				// not read in place of the ones it could not.
@@ -635,6 +671,9 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"status":"unreachable"}`),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTestConnectionCalled(1),
 				wasDBUpdateDataSourceCalled(1),
 				hasUpdateFailedLog(),
 			),
@@ -728,24 +767,6 @@ func Test_Handler_FetchDataSources(t *testing.T) {
 }
 
 func Test_Handler_UpdateDataSource(t *testing.T) {
-	hasUpdatedDataSourceResp := func() check {
-		return func(t *testing.T, db *DBMock, _ *runnerMock, _ *VariableManagerMock, rec *httptest.ResponseRecorder, _ *bytes.Buffer) {
-			ff := db.UpdateDataSourceCalls()
-			require.Len(t, ff, 1)
-
-			ds := ff[0].Ds
-			require.NotNil(t, ds)
-			assert.Equal(t, "renamed-source", ds.Name)
-			assert.True(t, ds.UpdatedAt.Valid)
-
-			assert.Equal(t, http.StatusOK, rec.Code)
-
-			exp, err := json.Marshal(ds)
-			require.NoError(t, err)
-			assert.JSONEq(t, string(exp), rec.Body.String())
-		}
-	}
-
 	body := `{"name":"renamed-source"}`
 
 	cc := map[string]struct {
@@ -763,6 +784,9 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
 				wasDBFetchDataSourceCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorTestConnectionCalled(0),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Missing data source id": {
@@ -770,6 +794,9 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
 				wasDBFetchDataSourceCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorTestConnectionCalled(0),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Invalid JSON body": {
@@ -778,6 +805,9 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"request.invalid_json","message":"invalid JSON body"}`),
 				wasDBFetchDataSourceCalled(0),
+				wasRunnersRunnerCalled(0),
+				wasExecutorTestConnectionCalled(0),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Error returned by db.FetchDataSource": {
@@ -786,7 +816,10 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 			ID:   _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Error returned by DataSource.ApplyUpdate": {
@@ -795,16 +828,22 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 			ID:   _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
-		"Error returned by executor.TestConnection": {
+		"Error returned by Runner.TestConnection": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: &clientMocks{status: "", statusErr: assert.AnError},
 			Body:    body,
 			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTestConnectionCalled(1),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
@@ -815,6 +854,9 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTestConnectionCalled(1),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
@@ -832,6 +874,9 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTestConnectionCalled(1),
 				wasDBUpdateDataSourceCalled(1),
 			),
 		},
@@ -841,7 +886,24 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 			Body:    body,
 			ID:      _testID.String(),
 			Checks: checks(
-				hasUpdatedDataSourceResp(),
+				func(t *testing.T, db *DBMock, _ *runnerMock, _ *VariableManagerMock, rec *httptest.ResponseRecorder, _ *bytes.Buffer) {
+					ff := db.UpdateDataSourceCalls()
+					require.Len(t, ff, 1)
+
+					ds := ff[0].Ds
+					require.NotNil(t, ds)
+					assert.Equal(t, "renamed-source", ds.Name)
+					assert.True(t, ds.UpdatedAt.Valid)
+
+					assert.Equal(t, http.StatusOK, rec.Code)
+
+					exp, err := json.Marshal(ds)
+					require.NoError(t, err)
+					assert.JSONEq(t, string(exp), rec.Body.String())
+				},
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTestConnectionCalled(1),
 			),
 		},
 	}

@@ -200,6 +200,7 @@ type listHooks struct{}
 func (listHooks) Info() Info {
 	return Info{
 		Name:        NameListHooks,
+		Traits:      Traits{Group: GroupHooks},
 		Description: "List the freshness hooks on one branch of a document as [{id, type, block_uid, settings, score, state, status, created_at, updated_at}]. A hook watches something outside the document and lowers its score from 100 as that thing changes or a date approaches. block_uid is the block it is anchored to, or null for the whole document.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
@@ -317,11 +318,11 @@ type createHook struct{}
 func (createHook) Info() Info {
 	return Info{
 		Name:        NameCreateHook,
-		Traits:      Traits{Write: true},
-		Description: "Add a freshness hook to one branch of a document and return it as list_hooks would. github-tracking and url-watcher need the deployment's GitHub App and changedetection.io integrations, and are refused without them. A new hook starts at score 100.",
+		Traits:      Traits{Group: GroupHooks, Write: true},
+		Description: "Add a freshness hook, such as a review reminder, to one branch of a document and return it as list_hooks would. github-tracking and url-watcher need the deployment's GitHub App and changedetection.io integrations, and are refused without them. A new hook starts at score 100.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
-			"branch_id":   map[string]any{"type": "string", "description": _branchIDDescription},
+			"branch_id":   map[string]any{"type": "string", "description": _writeBranchIDDescription},
 			"block_uid":   map[string]any{"type": "string", "description": "Optional. The id of a block on the branch to anchor the hook to; omit it for the whole document."},
 			"settings":    hookSettingsSchema(),
 		},
@@ -437,8 +438,8 @@ type updateHook struct{}
 func (updateHook) Info() Info {
 	return Info{
 		Name:        NameUpdateHook,
-		Traits:      Traits{Write: true},
-		Description: "Reset a hook's score to 100 and its state to a fresh hook's, and return it as list_hooks would. Without settings the hook keeps them: use that once the document is brought up to date with what the hook flagged. With settings they replace the old ones; the hook keeps its type, so to change it delete the hook and create another.",
+		Traits:      Traits{Group: GroupHooks, Write: true, Overwrites: true},
+		Description: "Reset a hook's state to a fresh hook's and return it as list_hooks would. Its score restarts at 100, except a reminder already past its schedule, which stays at 0 until settings give it a later one. Without settings the hook keeps them: use that once the document is brought up to date with what the hook flagged. With settings they replace the old ones; the hook keeps its type, so to change it delete the hook and create another.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
 			"hook_id":     map[string]any{"type": "string", "description": _hookIDDescription},
@@ -544,8 +545,8 @@ type deleteHook struct{}
 func (deleteHook) Info() Info {
 	return Info{
 		Name:        NameDeleteHook,
-		Traits:      Traits{Write: true, Destructive: true},
-		Description: "Delete a hook, tearing down whatever it watches outside the document. It cannot be restored; update_hook without settings clears what it flagged instead. Returns {hook_id, deleted}.",
+		Traits:      Traits{Group: GroupHooks, Write: true, Destructive: true},
+		Description: "Delete a hook, tearing down whatever it watches outside the document. A protected branch keeps its hooks. It cannot be restored; update_hook without settings clears what it flagged instead. Returns {hook_id, deleted}.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
 			"hook_id":     map[string]any{"type": "string", "description": _hookIDDescription},

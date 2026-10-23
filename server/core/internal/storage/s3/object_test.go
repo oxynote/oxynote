@@ -48,6 +48,7 @@ func Test_Client_Upload(t *testing.T) {
 
 			err := client.Upload(context.Background(), "folder", "object-id", c.Data, c.ContentType)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, fakeS3Calls{PutObject: 1}, c.Fake.calls)
 
 			if err != nil {
 				return
@@ -89,6 +90,7 @@ func Test_Client_Retrieve(t *testing.T) {
 
 			info, found, err := client.Retrieve(context.Background(), "folder", "object-id")
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, fakeS3Calls{GetObject: 1}, c.Fake.calls)
 
 			if err != nil {
 				return
@@ -146,6 +148,7 @@ func Test_Client_Copy(t *testing.T) {
 
 			err := client.Copy(context.Background(), "folder", "object-id", "other-folder", "copy-id")
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, fakeS3Calls{CopyObject: 1}, c.Fake.calls)
 
 			if err != nil {
 				return
@@ -162,7 +165,7 @@ func Test_Client_Delete(t *testing.T) {
 		Fake *fakeS3
 		Err  error
 	}{
-		"Error returned by RemoveObject": {
+		"Error returned by DeleteObject": {
 			Fake: &fakeS3{
 				objects:    map[string][]byte{"folder/object-id": _testPNG},
 				failDelete: true,
@@ -189,6 +192,7 @@ func Test_Client_Delete(t *testing.T) {
 
 			err := client.Delete(context.Background(), "folder", "object-id")
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, fakeS3Calls{DeleteObject: 1}, c.Fake.calls)
 
 			if err != nil {
 				return

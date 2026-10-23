@@ -3,10 +3,8 @@ package user
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"log/slog"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,35 +22,9 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-// addSession stores a test session on the request context.
-func addSession(ctx context.Context) context.Context {
-	return auth.AddSessionToContext(ctx, auth.Session{
-		UserID:               "u1",
-		ActiveOrganizationID: "org1",
-	})
-}
-
 // _testPNG is a data prefix carrying the PNG magic bytes so content
 // type sniffing detects image/png.
 var _testPNG = append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{1}, 1024)...)
-
-// multipartBody builds a multipart form body carrying a single file field.
-func multipartBody(t *testing.T, field string, content []byte) (io.Reader, string) {
-	t.Helper()
-
-	var buf bytes.Buffer
-
-	mw := multipart.NewWriter(&buf)
-
-	fw, err := mw.CreateFormFile(field, "img.png")
-	require.NoError(t, err)
-
-	_, err = fw.Write(content)
-	require.NoError(t, err)
-	require.NoError(t, mw.Close())
-
-	return &buf, mw.FormDataContentType()
-}
 
 func Test_NewHandler(t *testing.T) {
 	t.Parallel()
@@ -75,14 +47,7 @@ func Test_Handler_RetrieveUserImage(t *testing.T) {
 
 	hasResp := func(code int, body string) check {
 		return func(t *testing.T, _ *StorerMock, rec *httptest.ResponseRecorder) {
-			assert.Equal(t, code, rec.Code)
-
-			if body == "" {
-				assert.Zero(t, rec.Body.Len(), rec.Body.String())
-				return
-			}
-
-			assert.JSONEq(t, body, rec.Body.String())
+			testutil.AssertResponse(t, rec, code, body)
 		}
 	}
 
@@ -123,10 +88,10 @@ func Test_Handler_RetrieveUserImage(t *testing.T) {
 				wasRetrieveCalled(0),
 			),
 		},
-		"Storer retrieval error": {
+		"Error returned by Storer.Retrieve": {
 			Storer: &StorerMock{
 				RetrieveFunc: func(context.Context, string, string) (*storage.ObjectInfo, bool, error) {
-					return nil, false, errors.New("boom")
+					return nil, false, assert.AnError
 				},
 			},
 			Checks: checks(
@@ -147,7 +112,7 @@ func Test_Handler_RetrieveUserImage(t *testing.T) {
 				wasRetrieveCalled(1),
 			),
 		},
-		"Matching If-None-Match": {
+		"Image not modified": {
 			Storer: &StorerMock{
 				RetrieveFunc: func(context.Context, string, string) (*storage.ObjectInfo, bool, error) {
 					return &storage.ObjectInfo{
@@ -198,7 +163,10 @@ func Test_Handler_RetrieveUserImage(t *testing.T) {
 			ctx := req.Context()
 
 			if !c.NoSession {
-				ctx = addSession(ctx)
+				ctx = auth.AddSessionToContext(ctx, auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				})
 			}
 
 			if !c.OmitID {
@@ -227,14 +195,7 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 
 	hasResp := func(code int, body string) check {
 		return func(t *testing.T, _ *DBMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
-			assert.Equal(t, code, rec.Code)
-
-			if body == "" {
-				assert.Zero(t, rec.Body.Len(), rec.Body.String())
-				return
-			}
-
-			assert.JSONEq(t, body, rec.Body.String())
+			testutil.AssertResponse(t, rec, code, body)
 		}
 	}
 
@@ -299,6 +260,7 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
 				wasUploadCalled(0),
 				wasUpdateUserImageCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		"Missing multipart image field": {
@@ -309,6 +271,7 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 				hasResp(http.StatusBadRequest, `{"code":"request.invalid_form","message":"invalid form data"}`),
 				wasUploadCalled(0),
 				wasUpdateUserImageCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		"Error returned by storage.ReadObject": {
@@ -319,13 +282,14 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 				hasResp(http.StatusBadRequest, `{"code":"storage.invalid_content_type","message":"invalid content type"}`),
 				wasUploadCalled(0),
 				wasUpdateUserImageCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
-		"Storer upload error": {
+		"Error returned by Storer.Upload": {
 			DB: &DBMock{},
 			Storer: &StorerMock{
 				UploadFunc: func(context.Context, string, string, []byte, string) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			Checks: checks(
@@ -335,10 +299,10 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 				wasDeleteCalled(0),
 			),
 		},
-		"DB update error triggers cleanup": {
+		"Error returned by DB.UpdateUserImage": {
 			DB: &DBMock{
 				UpdateUserImageFunc: func(context.Context, string, string) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			Storer: &StorerMock{},
@@ -349,15 +313,15 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 				wasDeleteCalled(1),
 			),
 		},
-		"DB update error with failing cleanup": {
+		"Error returned by Storer.Delete": {
 			DB: &DBMock{
 				UpdateUserImageFunc: func(context.Context, string, string) error {
-					return errors.New("boom")
+					return assert.AnError
 				},
 			},
 			Storer: &StorerMock{
 				DeleteFunc: func(context.Context, string, string) error {
-					return errors.New("cleanup boom")
+					return assert.AnError
 				},
 			},
 			Checks: checks(
@@ -405,7 +369,7 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 					content = _testPNG
 				}
 
-				body, contentType = multipartBody(t, "image", content)
+				body, contentType = testutil.MultipartBody(t, "image", "img.png", content)
 			}
 
 			req := httptest.NewRequest(http.MethodPut, "http://test.com/", body)
@@ -415,7 +379,10 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 			}
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
 			}
 
 			rec := httptest.NewRecorder()

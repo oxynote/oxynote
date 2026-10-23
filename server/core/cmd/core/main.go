@@ -342,6 +342,7 @@ func main() { //nolint:maintidx,cyclop // main performs linear wiring of all com
 		hooksMan,
 		variablesMan,
 		string(assistantOpts.Provider),
+		assistantOpts.ExpandsToolReferences(),
 	)
 
 	// a disabled integration is a deliberate state, but it is also the

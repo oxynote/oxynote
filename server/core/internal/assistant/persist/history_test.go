@@ -16,7 +16,7 @@ func Test_NewHistory(t *testing.T) {
 	t.Parallel()
 
 	store := &HistoryStoreMock{}
-	log := discardLog()
+	log := slog.New(slog.DiscardHandler)
 
 	h := NewHistory(log, store)
 	require.NotNil(t, h)
@@ -72,7 +72,8 @@ func Test_History_Load(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, c.Result, NewHistory(discardLog(), c.Store).Load(context.Background(), "k"))
+			assert.Equal(t, c.Result, NewHistory(slog.New(slog.DiscardHandler), c.Store).Load(context.Background(), "k"))
+			assert.Len(t, c.Store.GetCalls(), 1)
 		})
 	}
 }

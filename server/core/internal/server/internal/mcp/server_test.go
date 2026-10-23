@@ -1,10 +1,12 @@
 package mcp
 
 import (
+	"net/http"
 	"slices"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
+	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -56,96 +58,97 @@ var _dataSourceToolNames = []string{
 	"query_data_source",
 }
 
-// checkDataSourceToolShape asserts a data-source tool reaches the wire
-// as a read that reaches outside Oxynote.
-func checkDataSourceToolShape(t *testing.T, defs map[string]map[string]any) {
-	t.Helper()
-
-	query := defs["query_data_source"]
-	require.NotNil(t, query)
-
-	assert.NotEmpty(t, query["description"])
-
-	schema, ok := query["inputSchema"].(map[string]any)
-	require.True(t, ok, "inputSchema: %v", query["inputSchema"])
-	assert.Contains(t, schema["properties"], "data_source_id")
-	assert.Equal(t, []any{"data_source_id", "query"}, schema["required"])
-
-	ann, ok := query["annotations"].(map[string]any)
-	require.True(t, ok, "annotations: %v", query["annotations"])
-	assert.Equal(t, true, ann["readOnlyHint"])
-
-	// the connection points at a system Oxynote does not own, so the
-	// world a data-source tool works in is open.
-	assert.Equal(t, true, ann["openWorldHint"])
-}
-
-// checkReadToolShape asserts a listed tool reaches the wire as its own
-// description: the tool's prose, the tool's argument schema, and the
-// annotations a client gates calls on.
-func checkReadToolShape(t *testing.T, defs map[string]map[string]any) {
-	t.Helper()
-
-	get := defs["get_document"]
-	require.NotNil(t, get)
-
-	assert.NotEmpty(t, get["description"])
-
-	schema, ok := get["inputSchema"].(map[string]any)
-	require.True(t, ok, "inputSchema: %v", get["inputSchema"])
-	assert.Equal(t, "object", schema["type"])
-	assert.Contains(t, schema["properties"], "document_id")
-	assert.Contains(t, schema["properties"], "branch_id")
-	assert.Equal(t, []any{"document_id", "branch_id"}, schema["required"])
-
-	ann, ok := get["annotations"].(map[string]any)
-	require.True(t, ok, "annotations: %v", get["annotations"])
-	assert.Equal(t, true, ann["readOnlyHint"])
-	assert.Equal(t, false, ann["openWorldHint"])
-
-	// a tool with no required arguments says nothing about them. A null
-	// here is not a valid "required" and a strict client may reject it.
-	list := defs["list_documents"]
-	require.NotNil(t, list)
-
-	schema, ok = list["inputSchema"].(map[string]any)
-	require.True(t, ok)
-	assert.NotContains(t, schema, "required")
-}
-
 func Test_Handler_server(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Scopes []string
-		Names  []string
-		Check  func(t *testing.T, defs map[string]map[string]any)
+		Scopes                 []string
+		Names                  []string
+		Check                  func(t *testing.T, defs map[string]map[string]any)
+		FetchDocumentTreeCalls int
 	}{
 		"No scopes lists nothing": {
 			Scopes: []string{},
 			Names:  []string{},
 		},
+		// a listed tool reaches the wire as its own description: the
+		// tool's prose, the tool's argument schema, and the annotations a
+		// client gates calls on.
 		"Read scope lists the read tools": {
 			Scopes: []string{ScopeDocumentRead},
 			Names:  _readToolNames,
-			Check:  checkReadToolShape,
+			Check: func(t *testing.T, defs map[string]map[string]any) {
+				t.Helper()
+
+				get := defs["get_document"]
+				require.NotNil(t, get)
+
+				assert.NotEmpty(t, get["description"])
+
+				schema, ok := get["inputSchema"].(map[string]any)
+				require.True(t, ok, "inputSchema: %v", get["inputSchema"])
+				assert.Equal(t, "object", schema["type"])
+				assert.Contains(t, schema["properties"], "document_id")
+				assert.Contains(t, schema["properties"], "branch_id")
+				assert.Equal(t, []any{"document_id", "branch_id"}, schema["required"])
+
+				ann, ok := get["annotations"].(map[string]any)
+				require.True(t, ok, "annotations: %v", get["annotations"])
+				assert.Equal(t, true, ann["readOnlyHint"])
+				assert.Equal(t, false, ann["openWorldHint"])
+
+				// a tool with no required arguments says nothing about
+				// them. A null here is not a valid "required" and a strict
+				// client may reject it.
+				list := defs["list_documents"]
+				require.NotNil(t, list)
+
+				schema, ok = list["inputSchema"].(map[string]any)
+				require.True(t, ok)
+				assert.NotContains(t, schema, "required")
+			},
+			FetchDocumentTreeCalls: _serverBuilds,
 		},
 		"Write scope lists the write tools": {
 			Scopes: []string{ScopeDocumentWrite},
 			Names:  _writeToolNames,
 		},
 		"Both document scopes list every document and tag tool and no data-source tool": {
-			Scopes: []string{ScopeDocumentRead, ScopeDocumentWrite},
-			Names:  slices.Concat(_readToolNames, _writeToolNames),
+			Scopes:                 []string{ScopeDocumentRead, ScopeDocumentWrite},
+			Names:                  slices.Concat(_readToolNames, _writeToolNames),
+			FetchDocumentTreeCalls: _serverBuilds,
 		},
+		// a data-source tool reaches the wire as a read that reaches
+		// outside Oxynote.
 		"Data-source scope lists only the data-source tools": {
 			Scopes: []string{ScopeDataSourceRead},
 			Names:  _dataSourceToolNames,
-			Check:  checkDataSourceToolShape,
+			Check: func(t *testing.T, defs map[string]map[string]any) {
+				t.Helper()
+
+				query := defs["query_data_source"]
+				require.NotNil(t, query)
+
+				assert.NotEmpty(t, query["description"])
+
+				schema, ok := query["inputSchema"].(map[string]any)
+				require.True(t, ok, "inputSchema: %v", query["inputSchema"])
+				assert.Contains(t, schema["properties"], "data_source_id")
+				assert.Equal(t, []any{"data_source_id", "query"}, schema["required"])
+
+				ann, ok := query["annotations"].(map[string]any)
+				require.True(t, ok, "annotations: %v", query["annotations"])
+				assert.Equal(t, true, ann["readOnlyHint"])
+
+				// the connection points at a system Oxynote does not own,
+				// so the world a data-source tool works in is open.
+				assert.Equal(t, true, ann["openWorldHint"])
+			},
 		},
 		"Read and data-source scopes list both groups": {
-			Scopes: []string{ScopeDocumentRead, ScopeDataSourceRead},
-			Names:  slices.Concat(_readToolNames, _dataSourceToolNames),
+			Scopes:                 []string{ScopeDocumentRead, ScopeDataSourceRead},
+			Names:                  slices.Concat(_readToolNames, _dataSourceToolNames),
+			FetchDocumentTreeCalls: _serverBuilds,
 		},
 	}
 
@@ -153,9 +156,35 @@ func Test_Handler_server(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl := prepHandler(t, c.Scopes, stubToolsDB(), &DBMock{})
+			man := &ManagerMock{
+				ToolSetFunc: func(string, string) *tools.Set {
+					return stubSet(&toolsMock.DB{})
+				},
+			}
+			db := &DBMock{}
+			hdl, _ := prepHandler(t, stubSession(t, c.Scopes), man, db)
 
-			defs := listedTools(t, hdl)
+			code, payload := rpc(t, hdl, `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
+			require.Equal(t, http.StatusOK, code)
+			require.NotNil(t, payload)
+
+			result, ok := payload["result"].(map[string]any)
+			require.True(t, ok, "payload: %v", payload)
+
+			rawTools, ok := result["tools"].([]any)
+			require.True(t, ok)
+
+			defs := make(map[string]map[string]any, len(rawTools))
+
+			for _, rt := range rawTools {
+				tm, tok := rt.(map[string]any)
+				require.True(t, tok)
+
+				name, nok := tm["name"].(string)
+				require.True(t, nok)
+
+				defs[name] = tm
+			}
 
 			names := make([]string, 0, len(defs))
 			for name := range defs {
@@ -166,6 +195,21 @@ func Test_Handler_server(t *testing.T) {
 
 			if c.Check != nil {
 				c.Check(t, defs)
+			}
+
+			toolSetCalls := man.ToolSetCalls()
+			require.Len(t, toolSetCalls, _serverBuilds)
+
+			for _, call := range toolSetCalls {
+				assert.Equal(t, "org1", call.OrgID)
+				assert.Equal(t, "user1", call.UserID)
+			}
+
+			calls := db.FetchDocumentTreeCalls()
+			require.Len(t, calls, c.FetchDocumentTreeCalls)
+
+			for _, call := range calls {
+				assert.Equal(t, "org1", call.OrganizationID)
 			}
 		})
 	}

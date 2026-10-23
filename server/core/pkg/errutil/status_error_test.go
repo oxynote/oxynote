@@ -39,41 +39,73 @@ func Test_NewPlain(t *testing.T) {
 }
 
 func Test_wrap(t *testing.T) {
-	err := wrap(assert.AnError, http.StatusBadRequest, "hello", "bad request %s", "123")
-	require.IsType(t, &statusError{}, err) //nolint:testifylint // a direct type check is needed
-	sErr, _ := err.(*statusError)          //nolint:errorlint // we need a direct check
-	assert.Equal(t, "bad request 123", sErr.Message)
-	assert.Equal(t, "hello", sErr.InternalCode)
-	assert.Equal(t, http.StatusBadRequest, sErr.statusCode)
-	assert.Equal(t, assert.AnError, sErr.err)
+	cc := map[string]struct {
+		Err     error
+		Msg     string
+		Args    []any
+		Message string
+	}{
+		"Message formatted with args": {
+			Err:     assert.AnError,
+			Msg:     "bad request %s",
+			Args:    []any{"123"},
+			Message: "bad request 123",
+		},
+		// without args the message is used verbatim, so a literal percent
+		// sign is not treated as a format verb.
+		"Message without args": {
+			Msg:     "usage above 90% threshold",
+			Message: "usage above 90% threshold",
+		},
+		"Empty message": {
+			Err:     assert.AnError,
+			Message: "bad request",
+		},
+	}
 
-	// without args the message is used verbatim, so a literal percent
-	// sign is not treated as a format verb.
-	err = wrap(nil, http.StatusBadRequest, "hello", "usage above 90% threshold")
-	sErr, _ = err.(*statusError) //nolint:errorlint // a direct check is needed
-	assert.Equal(t, "usage above 90% threshold", sErr.Message)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	err = wrap(assert.AnError, http.StatusBadRequest, "hello", "")
-	require.IsType(t, &statusError{}, err) //nolint:testifylint // a direct type check is needed
-	sErr, _ = err.(*statusError)           //nolint:errorlint // it's a test
-	assert.Equal(t, "bad request", sErr.Message)
-	assert.Equal(t, "hello", sErr.InternalCode)
-	assert.Equal(t, http.StatusBadRequest, sErr.statusCode)
-	assert.Equal(t, assert.AnError, sErr.err)
+			err := wrap(c.Err, http.StatusBadRequest, "hello", c.Msg, c.Args...)
+			require.IsType(t, &statusError{}, err) //nolint:testifylint // a direct type check is needed
+			sErr, _ := err.(*statusError)          //nolint:errorlint // we need a direct check
+			assert.Equal(t, c.Message, sErr.Message)
+			assert.Equal(t, "hello", sErr.InternalCode)
+			assert.Equal(t, http.StatusBadRequest, sErr.statusCode)
+			assert.Equal(t, c.Err, sErr.err)
+		})
+	}
 }
 
 func Test_statusError_Error(t *testing.T) {
-	sErr := statusError{
-		statusCode:   400,
-		Message:      "bad request",
-		InternalCode: "test",
+	cc := map[string]struct {
+		Err    error
+		Result string
+	}{
+		"Without wrapped error": {
+			Result: "bad request",
+		},
+		"With wrapped error": {
+			Err:    errors.New("invalid JSON body"),
+			Result: "bad request: invalid JSON body",
+		},
 	}
 
-	assert.Equal(t, "bad request", sErr.Error())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	sErr.err = errors.New("invalid JSON body")
+			sErr := statusError{
+				statusCode:   400,
+				Message:      "bad request",
+				InternalCode: "test",
+				err:          c.Err,
+			}
 
-	assert.Equal(t, "bad request: invalid JSON body", sErr.Error())
+			assert.Equal(t, c.Result, sErr.Error())
+		})
+	}
 }
 
 func Test_statusError_Unwrap(t *testing.T) {
@@ -82,10 +114,35 @@ func Test_statusError_Unwrap(t *testing.T) {
 }
 
 func Test_IsNotFound(t *testing.T) {
-	assert.False(t, IsNotFound(nil))
-	assert.False(t, IsNotFound(assert.AnError))
-	assert.True(t, IsNotFound(sql.ErrNoRows))
-	assert.True(t, IsNotFound(ErrNotFound))
+	cc := map[string]struct {
+		Err    error
+		Result bool
+	}{
+		"Nil error": {
+			Err:    nil,
+			Result: false,
+		},
+		"Other error": {
+			Err:    assert.AnError,
+			Result: false,
+		},
+		"No rows error": {
+			Err:    sql.ErrNoRows,
+			Result: true,
+		},
+		"Not found error": {
+			Err:    ErrNotFound,
+			Result: true,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, IsNotFound(c.Err))
+		})
+	}
 }
 
 func Test_Detect(t *testing.T) {
@@ -168,7 +225,31 @@ func Test_Detect(t *testing.T) {
 }
 
 func Test_StatusCode(t *testing.T) {
-	assert.Equal(t, http.StatusInternalServerError, StatusCode(errors.New("error"), false))
-	assert.Equal(t, 400, StatusCode(New(400, "hello", "error"), false))
-	assert.Equal(t, 404, StatusCode(sql.ErrNoRows, true))
+	cc := map[string]struct {
+		Err    error
+		Detect bool
+		Result int
+	}{
+		"Undefined error": {
+			Err:    errors.New("error"),
+			Result: http.StatusInternalServerError,
+		},
+		"Status error": {
+			Err:    New(400, "hello", "error"),
+			Result: 400,
+		},
+		"Detected no rows error": {
+			Err:    sql.ErrNoRows,
+			Detect: true,
+			Result: 404,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, StatusCode(c.Err, c.Detect))
+		})
+	}
 }

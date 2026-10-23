@@ -2,10 +2,12 @@ package auth
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/iotest"
 
 	"github.com/jarcoal/httpmock"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
@@ -25,13 +27,14 @@ func Test_Middleware(t *testing.T) {
 	t.Parallel()
 
 	type tcase struct {
-		URL      string
-		Resp     httpmock.Responder
-		Cookies  []*http.Cookie
-		NextCode int
-		RespCode int
-		RespJSON string
-		Session  Session
+		URL       string
+		Resp      httpmock.Responder
+		Cookies   []*http.Cookie
+		NextCode  int
+		AuthCalls int
+		RespCode  int
+		RespJSON  string
+		Session   Session
 
 		// After runs once the response is asserted, for a case that has to
 		// inspect what the middleware sent upstream.
@@ -39,48 +42,66 @@ func Test_Middleware(t *testing.T) {
 	}
 
 	cc := map[string]tcase{
-		"Invalid request creation": {
+		"Error returned by http.NewRequestWithContext": {
 			URL:      "http://test.com/\x7f",
 			RespCode: http.StatusInternalServerError,
 			RespJSON: `{"code":"general","message":"internal server error"}`,
 		},
-		"Transport error": {
-			URL:      "http://test.com/get-session",
-			Resp:     httpmock.ConnectionFailure,
-			RespCode: http.StatusInternalServerError,
-			RespJSON: `{"code":"general","message":"internal server error"}`,
+		"Error returned by http.Client.Do": {
+			URL:       "http://test.com/get-session",
+			Resp:      httpmock.ConnectionFailure,
+			AuthCalls: 1,
+			RespCode:  http.StatusInternalServerError,
+			RespJSON:  `{"code":"general","message":"internal server error"}`,
 		},
-		"Non-200 response": {
-			URL:      "http://test.com/get-session",
-			Resp:     httpmock.NewStringResponder(http.StatusUnauthorized, ""),
-			RespCode: http.StatusUnauthorized,
-			RespJSON: `{"code":"account.not_authenticated","message":"not authenticated"}`,
+		"Non-200 status returned by http.Client.Do": {
+			URL:       "http://test.com/get-session",
+			Resp:      httpmock.NewStringResponder(http.StatusUnauthorized, ""),
+			AuthCalls: 1,
+			RespCode:  http.StatusUnauthorized,
+			RespJSON:  `{"code":"account.not_authenticated","message":"not authenticated"}`,
 		},
-		"Malformed response body": {
-			URL:      "http://test.com/get-session",
-			Resp:     httpmock.NewStringResponder(http.StatusOK, "{"),
-			RespCode: http.StatusInternalServerError,
-			RespJSON: `{"code":"general","message":"internal server error"}`,
+		"Error returned by io.ReadAll": {
+			URL: "http://test.com/get-session",
+			Resp: func(*http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(iotest.ErrReader(assert.AnError)),
+				}, nil
+			},
+			AuthCalls: 1,
+			RespCode:  http.StatusInternalServerError,
+			RespJSON:  `{"code":"general","message":"internal server error"}`,
+		},
+		"Error returned by json.Unmarshal": {
+			URL:       "http://test.com/get-session",
+			Resp:      httpmock.NewStringResponder(http.StatusOK, "{"),
+			AuthCalls: 1,
+			RespCode:  http.StatusInternalServerError,
+			RespJSON:  `{"code":"general","message":"internal server error"}`,
 		},
 		"Empty user ID": {
-			URL:      "http://test.com/get-session",
-			Resp:     httpmock.NewStringResponder(http.StatusOK, `{"session":{"userId":"","activeOrganizationId":"org1"}}`),
-			RespCode: http.StatusUnauthorized,
-			RespJSON: `{"code":"account.not_authenticated","message":"not authenticated"}`,
+			URL:       "http://test.com/get-session",
+			Resp:      httpmock.NewStringResponder(http.StatusOK, `{"session":{"userId":"","activeOrganizationId":"org1"}}`),
+			AuthCalls: 1,
+			RespCode:  http.StatusUnauthorized,
+			RespJSON:  `{"code":"account.not_authenticated","message":"not authenticated"}`,
 		},
 		// a session can lack an active organization before the user picks
 		// one; every handler scopes by it, so it must read as unauthenticated.
 		"Empty active organization ID": {
-			URL:      "http://test.com/get-session",
-			Resp:     httpmock.NewStringResponder(http.StatusOK, `{"session":{"userId":"u1","activeOrganizationId":""}}`),
-			RespCode: http.StatusUnauthorized,
-			RespJSON: `{"code":"account.not_authenticated","message":"not authenticated"}`,
+			URL:       "http://test.com/get-session",
+			Resp:      httpmock.NewStringResponder(http.StatusOK, `{"session":{"userId":"u1","activeOrganizationId":""}}`),
+			AuthCalls: 1,
+			RespCode:  http.StatusUnauthorized,
+			RespJSON:  `{"code":"account.not_authenticated","message":"not authenticated"}`,
 		},
 		"Successful authentication": {
-			URL:      "http://test.com/get-session",
-			Resp:     httpmock.NewStringResponder(http.StatusOK, `{"session":{"userId":"u1","activeOrganizationId":"org1"}}`),
-			NextCode: http.StatusNoContent,
-			RespCode: http.StatusNoContent,
+			URL:       "http://test.com/get-session",
+			Resp:      httpmock.NewStringResponder(http.StatusOK, `{"session":{"userId":"u1","activeOrganizationId":"org1"}}`),
+			NextCode:  http.StatusNoContent,
+			AuthCalls: 1,
+			RespCode:  http.StatusNoContent,
 			Session: Session{
 				UserID:               "u1",
 				ActiveOrganizationID: "org1",
@@ -103,8 +124,9 @@ func Test_Middleware(t *testing.T) {
 					{Name: "session_token", Value: "tkn", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode},
 					{Name: "other", Value: "val", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode},
 				},
-				NextCode: http.StatusNoContent,
-				RespCode: http.StatusNoContent,
+				NextCode:  http.StatusNoContent,
+				AuthCalls: 1,
+				RespCode:  http.StatusNoContent,
 				Session: Session{
 					UserID:               "u1",
 					ActiveOrganizationID: "org1",
@@ -126,17 +148,21 @@ func Test_Middleware(t *testing.T) {
 
 			client, mt := testutil.MockHTTP()
 
+			// httpmock counts only calls a responder handles. The fallback
+			// makes a call to an unregistered URL count too.
+			mt.RegisterNoResponder(httpmock.ConnectionFailure)
+
 			if c.Resp != nil {
 				mt.RegisterResponder(http.MethodGet, c.URL, c.Resp)
 			}
 
 			var (
-				nextCalled bool
+				nextCalls  int
 				gotSession Session
 			)
 
 			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				nextCalled = true
+				nextCalls++
 
 				var err error
 
@@ -162,20 +188,15 @@ func Test_Middleware(t *testing.T) {
 
 			hdl.ServeHTTP(rec, req)
 
-			assert.Equal(t, c.RespCode, rec.Code)
-
-			if c.RespJSON == "" {
-				assert.Zero(t, rec.Body.Len(), rec.Body.String())
-			} else {
-				assert.JSONEq(t, c.RespJSON, rec.Body.String())
-			}
+			testutil.AssertResponse(t, rec, c.RespCode, c.RespJSON)
+			assert.Equal(t, c.AuthCalls, mt.GetTotalCallCount())
 
 			if c.NextCode == 0 {
-				assert.False(t, nextCalled)
+				assert.Zero(t, nextCalls)
 				return
 			}
 
-			assert.True(t, nextCalled)
+			assert.Equal(t, 1, nextCalls)
 			assert.Equal(t, c.Session, gotSession)
 
 			if c.After != nil {
@@ -186,6 +207,8 @@ func Test_Middleware(t *testing.T) {
 }
 
 func Test_HasActiveOrganization(t *testing.T) {
+	t.Parallel()
+
 	cc := map[string]struct {
 		UserID         string
 		OrganizationID string
@@ -247,12 +270,6 @@ func Test_FilterOrganizationDocument(t *testing.T) {
 
 	docID := xid.New()
 
-	// withDocument puts the topic parameter a subscriber's context carries
-	// next to the session, the way the topic does when it publishes.
-	withDocument := func(ctx context.Context, id string) context.Context {
-		return wsserver.NewTopicParamsContext(ctx, map[string]string{"documentId": id})
-	}
-
 	session := AddSessionToContext(context.Background(), Session{
 		UserID:               "u1",
 		ActiveOrganizationID: "org1",
@@ -263,22 +280,22 @@ func Test_FilterOrganizationDocument(t *testing.T) {
 		Result bool
 	}{
 		"No session in context": {
-			Ctx: withDocument(context.Background(), docID.String()),
+			Ctx: wsserver.NewTopicParamsContext(context.Background(), map[string]string{"documentId": docID.String()}),
 		},
 		"No document in context": {
 			Ctx: session,
 		},
 		"Another document": {
-			Ctx: withDocument(session, xid.New().String()),
+			Ctx: wsserver.NewTopicParamsContext(session, map[string]string{"documentId": xid.New().String()}),
 		},
 		"Another organization": {
-			Ctx: withDocument(AddSessionToContext(context.Background(), Session{
+			Ctx: wsserver.NewTopicParamsContext(AddSessionToContext(context.Background(), Session{
 				UserID:               "u1",
 				ActiveOrganizationID: "org2",
-			}), docID.String()),
+			}), map[string]string{"documentId": docID.String()}),
 		},
 		"Matching organization and document": {
-			Ctx:    withDocument(session, docID.String()),
+			Ctx:    wsserver.NewTopicParamsContext(session, map[string]string{"documentId": docID.String()}),
 			Result: true,
 		},
 	}
@@ -387,13 +404,7 @@ func Test_RequireSession(t *testing.T) {
 			got, ok := RequireSession(slog.New(slog.DiscardHandler), rec, req)
 			assert.Equal(t, c.OK, ok)
 			assert.Equal(t, c.Result, got)
-			assert.Equal(t, c.RespCode, rec.Code)
-
-			if c.RespJSON == "" {
-				assert.Zero(t, rec.Body.Len(), rec.Body.String())
-			} else {
-				assert.JSONEq(t, c.RespJSON, rec.Body.String())
-			}
+			testutil.AssertResponse(t, rec, c.RespCode, c.RespJSON)
 		})
 	}
 }
@@ -401,16 +412,38 @@ func Test_RequireSession(t *testing.T) {
 func Test_ExtractSessionFromContext(t *testing.T) {
 	t.Parallel()
 
-	// a context without a session is the unauthenticated case.
-	_, err := ExtractSessionFromContext(context.Background())
-	testutil.AssertEqualError(t, httpserver.ErrNotAuthenticated, err)
-
 	session := Session{
 		UserID:               "u1",
 		ActiveOrganizationID: "org1",
 	}
 
-	got, err := ExtractSessionFromContext(AddSessionToContext(context.Background(), session))
-	require.NoError(t, err)
-	assert.Equal(t, session, got)
+	cc := map[string]struct {
+		Ctx    context.Context
+		Result Session
+		Err    error
+	}{
+		"No session in context": {
+			Ctx: context.Background(),
+			Err: httpserver.ErrNotAuthenticated,
+		},
+		"Session present": {
+			Ctx:    AddSessionToContext(context.Background(), session),
+			Result: session,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := ExtractSessionFromContext(c.Ctx)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, got)
+		})
+	}
 }

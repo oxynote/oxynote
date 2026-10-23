@@ -23,6 +23,7 @@ func annotations(e tools.Entry) *mcp.ToolAnnotations {
 
 	if tr.Write {
 		out.DestructiveHint = new(tr.Destructive || tr.Overwrites)
+		out.IdempotentHint = tr.Idempotent
 	}
 
 	return out

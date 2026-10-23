@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -71,68 +72,65 @@ func newTestManager(t *testing.T, configured bool, db github.DB) *github.Manager
 	return man
 }
 
-func newTestHandler(t *testing.T, configured bool) *Handler {
-	t.Helper()
-
-	log := slog.New(slog.DiscardHandler)
-
-	return NewHandler(log, nil, newTestManager(t, configured, nil))
-}
-
-// newMockedHandler builds a Handler whose DB (and the manager's DB) is
-// the given mock.
-func newMockedHandler(t *testing.T, configured bool, db *DBMock) *Handler {
-	t.Helper()
-
-	return NewHandler(slog.New(slog.DiscardHandler), db, newTestManager(t, configured, db))
-}
-
-// addSession stores a test session on the request context.
-func addSession(ctx context.Context) context.Context {
-	return auth.AddSessionToContext(ctx, auth.Session{
-		UserID:               "u1",
-		ActiveOrganizationID: "org1",
-	})
-}
-
 func Test_Handler_CheckInstallation(t *testing.T) {
 	t.Parallel()
 
-	h := newTestHandler(t, false)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/github", http.NoBody)
-	req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
-		UserID:               "user",
-		ActiveOrganizationID: "org",
-	}))
-
-	rec := httptest.NewRecorder()
-	h.CheckInstallation(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	cc := map[string]struct {
+		DB         *DBMock
+		RespCode   int
+		Connected  bool
+		Configured bool
+		Fetched    int
+	}{
+		"Github app not configured": {
+			DB:       &DBMock{},
+			RespCode: http.StatusOK,
+		},
 	}
 
-	var body map[string]bool
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+			h := NewHandler(slog.New(slog.DiscardHandler), c.DB, newTestManager(t, false, c.DB))
 
-	if body["connected"] || body["configured"] {
-		t.Fatalf("body = %v, want connected=false configured=false", body)
+			req := httptest.NewRequest(http.MethodGet, "/api/github", http.NoBody)
+			req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+				UserID:               "user",
+				ActiveOrganizationID: "org",
+			}))
+
+			rec := httptest.NewRecorder()
+			h.CheckInstallation(rec, req)
+
+			if rec.Code != c.RespCode {
+				t.Fatalf("status = %d, want %d", rec.Code, c.RespCode)
+			}
+
+			var body map[string]bool
+
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if body["connected"] != c.Connected || body["configured"] != c.Configured {
+				t.Fatalf("body = %v, want connected=%t configured=%t", body, c.Connected, c.Configured)
+			}
+
+			assert.Len(t, c.DB.FetchGithubInstallationByOrganizationIDCalls(), c.Fetched)
+		})
 	}
 }
 
 func Test_Handler_RequireConfigured(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct {
+	cc := map[string]struct {
 		Configured bool
 		WantStatus int
 		WantCode   string
 	}{
-		"Not configured responds with github.not_configured": {
+		"Github app not configured": {
 			Configured: false,
 			WantStatus: http.StatusConflict,
 			WantCode:   "github.not_configured",
@@ -143,11 +141,11 @@ func Test_Handler_RequireConfigured(t *testing.T) {
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			h := newTestHandler(t, tc.Configured)
+			h := NewHandler(slog.New(slog.DiscardHandler), nil, newTestManager(t, c.Configured, nil))
 
 			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusNoContent)
@@ -158,11 +156,11 @@ func Test_Handler_RequireConfigured(t *testing.T) {
 
 			h.RequireConfigured(next).ServeHTTP(rec, req)
 
-			if rec.Code != tc.WantStatus {
-				t.Fatalf("status = %d, want %d", rec.Code, tc.WantStatus)
+			if rec.Code != c.WantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, c.WantStatus)
 			}
 
-			if tc.WantCode == "" {
+			if c.WantCode == "" {
 				return
 			}
 
@@ -172,8 +170,8 @@ func Test_Handler_RequireConfigured(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if body["code"] != tc.WantCode {
-				t.Fatalf("code = %q, want %q", body["code"], tc.WantCode)
+			if body["code"] != c.WantCode {
+				t.Fatalf("code = %q, want %q", body["code"], c.WantCode)
 			}
 		})
 	}
@@ -182,19 +180,35 @@ func Test_Handler_RequireConfigured(t *testing.T) {
 func Test_Handler_VerifySignature(t *testing.T) {
 	t.Parallel()
 
-	h := newTestHandler(t, false)
+	cc := map[string]struct {
+		Configured bool
+		RespCode   int
+	}{
+		"Github app not configured": {
+			Configured: false,
+			RespCode:   http.StatusNotFound,
+		},
+	}
 
-	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/apps/github/events", http.NoBody)
-	rec := httptest.NewRecorder()
+			h := NewHandler(slog.New(slog.DiscardHandler), nil, newTestManager(t, c.Configured, nil))
 
-	h.VerifySignature(next).ServeHTTP(rec, req)
+			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNoContent)
+			})
 
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+			req := httptest.NewRequest(http.MethodPost, "/api/apps/github/events", http.NoBody)
+			rec := httptest.NewRecorder()
+
+			h.VerifySignature(next).ServeHTTP(rec, req)
+
+			if rec.Code != c.RespCode {
+				t.Fatalf("status = %d, want %d", rec.Code, c.RespCode)
+			}
+		})
 	}
 }
 
@@ -206,6 +220,7 @@ func Test_Handler_FetchInstall(t *testing.T) {
 		DB         *DBMock
 		NoSession  bool
 		RespCode   int
+		Fetched    int
 	}{
 		"No session in context": {
 			Configured: true,
@@ -213,7 +228,7 @@ func Test_Handler_FetchInstall(t *testing.T) {
 			NoSession:  true,
 			RespCode:   http.StatusUnauthorized,
 		},
-		"Installation lookup error": {
+		"Error returned by DB.FetchGithubInstallationByOrganizationID": {
 			Configured: true,
 			DB: &DBMock{
 				FetchGithubInstallationByOrganizationIDFunc: func(context.Context, string) (int64, error) {
@@ -221,6 +236,7 @@ func Test_Handler_FetchInstall(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusInternalServerError,
+			Fetched:  1,
 		},
 		"Organization already connected": {
 			Configured: true,
@@ -230,6 +246,7 @@ func Test_Handler_FetchInstall(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusConflict,
+			Fetched:  1,
 		},
 		"Github app not configured": {
 			DB: &DBMock{
@@ -238,6 +255,7 @@ func Test_Handler_FetchInstall(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusConflict,
+			Fetched:  1,
 		},
 		"Successful URL creation": {
 			Configured: true,
@@ -247,6 +265,7 @@ func Test_Handler_FetchInstall(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusOK,
+			Fetched:  1,
 		},
 	}
 
@@ -254,12 +273,15 @@ func Test_Handler_FetchInstall(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl := newMockedHandler(t, c.Configured, c.DB)
+			hdl := NewHandler(slog.New(slog.DiscardHandler), c.DB, newTestManager(t, c.Configured, c.DB))
 
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
 			}
 
 			rec := httptest.NewRecorder()
@@ -267,26 +289,13 @@ func Test_Handler_FetchInstall(t *testing.T) {
 			hdl.FetchInstall(rec, req)
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchGithubInstallationByOrganizationIDCalls(), c.Fetched)
 
 			if c.RespCode == http.StatusOK {
 				assert.Contains(t, rec.Body.String(), "state=")
 			}
 		})
 	}
-}
-
-// installationState builds a valid encrypted installation state for the
-// given organization by round-tripping through the manager's URL builder.
-func installationState(t *testing.T, man *github.Manager, orgID string) string {
-	t.Helper()
-
-	rawURL, err := man.CreateInstallationURL(orgID)
-	require.NoError(t, err)
-
-	u, err := url.Parse(rawURL)
-	require.NoError(t, err)
-
-	return u.Query().Get("state")
 }
 
 func Test_Handler_ConnectOrganization(t *testing.T) {
@@ -300,6 +309,7 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 		OmitID    bool
 		RawID     string
 		RespCode  int
+		Fetched   int
 		Updated   int
 	}{
 		"No session in context": {
@@ -319,7 +329,7 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 			RawState: "-",
 			RespCode: http.StatusBadRequest,
 		},
-		"Non-numeric installation ID": {
+		"Non numeric installation ID": {
 			DB:       &DBMock{},
 			StateOrg: "org1",
 			RawID:    "abc",
@@ -337,7 +347,7 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 			StateOrg: "org2",
 			RespCode: http.StatusBadRequest,
 		},
-		"Installation organization lookup error": {
+		"Error returned by DB.FetchGithubInstallationOrganizationID": {
 			DB: &DBMock{
 				FetchGithubInstallationOrganizationIDFunc: func(context.Context, int64) (null.String, error) {
 					return null.String{}, errors.New("boom")
@@ -345,6 +355,7 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 			},
 			StateOrg: "org1",
 			RespCode: http.StatusInternalServerError,
+			Fetched:  1,
 		},
 		"Installation already assigned": {
 			DB: &DBMock{
@@ -354,8 +365,9 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 			},
 			StateOrg: "org1",
 			RespCode: http.StatusConflict,
+			Fetched:  1,
 		},
-		"Assignment update error": {
+		"Error returned by DB.UpdateGithubInstallationOrganizationID": {
 			DB: &DBMock{
 				UpdateGithubInstallationOrganizationIDFunc: func(context.Context, int64, string) error {
 					return errors.New("boom")
@@ -363,12 +375,14 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 			},
 			StateOrg: "org1",
 			RespCode: http.StatusInternalServerError,
+			Fetched:  1,
 			Updated:  1,
 		},
 		"Successful connection": {
 			DB:       &DBMock{},
 			StateOrg: "org1",
 			RespCode: http.StatusNoContent,
+			Fetched:  1,
 			Updated:  1,
 		},
 	}
@@ -377,13 +391,19 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl := newMockedHandler(t, true, c.DB)
+			hdl := NewHandler(slog.New(slog.DiscardHandler), c.DB, newTestManager(t, true, c.DB))
 
 			state := c.RawState
 
 			switch state {
 			case "":
-				state = installationState(t, hdl.man, c.StateOrg)
+				rawURL, err := hdl.man.CreateInstallationURL(c.StateOrg)
+				require.NoError(t, err)
+
+				u, err := url.Parse(rawURL)
+				require.NoError(t, err)
+
+				state = u.Query().Get("state")
 			case "-":
 				state = ""
 			}
@@ -406,7 +426,10 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/?"+q.Encode(), http.NoBody)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
 			}
 
 			rec := httptest.NewRecorder()
@@ -414,6 +437,7 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 			hdl.ConnectOrganization(rec, req)
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchGithubInstallationOrganizationIDCalls(), c.Fetched)
 			assert.Len(t, c.DB.UpdateGithubInstallationOrganizationIDCalls(), c.Updated)
 
 			if c.Updated > 0 {
@@ -454,7 +478,7 @@ func Test_Handler_HandleEvent(t *testing.T) {
 			RespCode:  http.StatusNoContent,
 			Inserted:  1,
 		},
-		"Installation creation insert error": {
+		"Error returned by DB.InsertGithubInstallation": {
 			DB: &DBMock{
 				InsertGithubInstallationFunc: func(context.Context, int64) error {
 					return errors.New("boom")
@@ -472,7 +496,7 @@ func Test_Handler_HandleEvent(t *testing.T) {
 			RespCode:  http.StatusNoContent,
 			Deleted:   1,
 		},
-		"Installation deletion error": {
+		"Error returned by DB.DeleteGithubInstallation": {
 			DB: &DBMock{
 				DeleteGithubInstallationFunc: func(context.Context, int64) error {
 					return errors.New("boom")
@@ -501,7 +525,7 @@ func Test_Handler_HandleEvent(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl := newMockedHandler(t, true, c.DB)
+			hdl := NewHandler(slog.New(slog.DiscardHandler), c.DB, newTestManager(t, true, c.DB))
 
 			req := httptest.NewRequest(http.MethodPost, "http://test.com/", http.NoBody)
 			req.Header.Set("X-Github-Event", c.EventType)
@@ -532,6 +556,7 @@ func Test_Handler_DisconnectOrganization(t *testing.T) {
 		DB         *DBMock
 		NoSession  bool
 		RespCode   int
+		Fetched    int
 		Unassigned int
 	}{
 		"No session in context": {
@@ -546,19 +571,22 @@ func Test_Handler_DisconnectOrganization(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusNotFound,
+			Fetched:  1,
 		},
-		"Unassignment error": {
+		"Error returned by DB.UnassignGithubInstallationOrganization": {
 			DB: &DBMock{
 				UnassignGithubInstallationOrganizationFunc: func(context.Context, string) error {
 					return errors.New("boom")
 				},
 			},
 			RespCode:   http.StatusInternalServerError,
+			Fetched:    1,
 			Unassigned: 1,
 		},
 		"Successful disconnection": {
 			DB:         &DBMock{},
 			RespCode:   http.StatusNoContent,
+			Fetched:    1,
 			Unassigned: 1,
 		},
 	}
@@ -567,12 +595,15 @@ func Test_Handler_DisconnectOrganization(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl := newMockedHandler(t, true, c.DB)
+			hdl := NewHandler(slog.New(slog.DiscardHandler), c.DB, newTestManager(t, true, c.DB))
 
 			req := httptest.NewRequest(http.MethodDelete, "http://test.com/", http.NoBody)
 
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
 			}
 
 			rec := httptest.NewRecorder()
@@ -580,24 +611,28 @@ func Test_Handler_DisconnectOrganization(t *testing.T) {
 			hdl.DisconnectOrganization(rec, req)
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchGithubInstallationByOrganizationIDCalls(), c.Fetched)
 			assert.Len(t, c.DB.UnassignGithubInstallationOrganizationCalls(), c.Unassigned)
 		})
 	}
 }
 
+// installationClientCase is a case for an endpoint that needs a GitHub
+// installation client.
+type installationClientCase struct {
+	Configured   bool
+	DB           *DBMock
+	NoSession    bool
+	NoRepository bool
+	RespCode     int
+	Fetched      int
+}
+
 // installationClientCases are the manager-level failure paths shared by
 // every endpoint that needs a GitHub installation client. The success
 // path requires a live GitHub API and is intentionally not covered here.
-func installationClientCases() map[string]struct {
-	Configured bool
-	DB         *DBMock
-	RespCode   int
-} {
-	return map[string]struct {
-		Configured bool
-		DB         *DBMock
-		RespCode   int
-	}{
+func installationClientCases() map[string]installationClientCase {
+	return map[string]installationClientCase{
 		"Github app not configured": {
 			DB:       &DBMock{},
 			RespCode: http.StatusConflict,
@@ -610,8 +645,9 @@ func installationClientCases() map[string]struct {
 				},
 			},
 			RespCode: http.StatusNotFound,
+			Fetched:  1,
 		},
-		"Installation lookup error": {
+		"Error returned by DB.FetchGithubInstallationByOrganizationID": {
 			Configured: true,
 			DB: &DBMock{
 				FetchGithubInstallationByOrganizationIDFunc: func(context.Context, string) (int64, error) {
@@ -619,6 +655,7 @@ func installationClientCases() map[string]struct {
 				},
 			},
 			RespCode: http.StatusInternalServerError,
+			Fetched:  1,
 		},
 	}
 }
@@ -626,32 +663,38 @@ func installationClientCases() map[string]struct {
 func Test_Handler_FetchRepositories(t *testing.T) {
 	t.Parallel()
 
-	t.Run("No session in context", func(t *testing.T) {
-		t.Parallel()
+	cc := map[string]installationClientCase{
+		"No session in context": {
+			Configured: true,
+			DB:         &DBMock{},
+			NoSession:  true,
+			RespCode:   http.StatusUnauthorized,
+		},
+	}
 
-		hdl := newMockedHandler(t, true, &DBMock{})
+	maps.Copy(cc, installationClientCases())
 
-		rec := httptest.NewRecorder()
-
-		hdl.FetchRepositories(rec, httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody))
-
-		assert.Equal(t, http.StatusUnauthorized, rec.Code)
-	})
-
-	for cn, c := range installationClientCases() {
+	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl := newMockedHandler(t, c.Configured, c.DB)
+			hdl := NewHandler(slog.New(slog.DiscardHandler), c.DB, newTestManager(t, c.Configured, c.DB))
 
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
-			req = req.WithContext(addSession(req.Context()))
+
+			if !c.NoSession {
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
+			}
 
 			rec := httptest.NewRecorder()
 
 			hdl.FetchRepositories(rec, req)
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchGithubInstallationByOrganizationIDCalls(), c.Fetched)
 		})
 	}
 }
@@ -659,36 +702,43 @@ func Test_Handler_FetchRepositories(t *testing.T) {
 func Test_Handler_FetchRepositoryBranches(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Missing repository parameter", func(t *testing.T) {
-		t.Parallel()
+	cc := map[string]installationClientCase{
+		"Missing repository parameter": {
+			Configured:   true,
+			DB:           &DBMock{},
+			NoRepository: true,
+			RespCode:     http.StatusNotFound,
+		},
+	}
 
-		hdl := newMockedHandler(t, true, &DBMock{})
+	maps.Copy(cc, installationClientCases())
 
-		req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
-		req = req.WithContext(addSession(req.Context()))
-
-		rec := httptest.NewRecorder()
-
-		hdl.FetchRepositoryBranches(rec, req)
-
-		assert.Equal(t, http.StatusNotFound, rec.Code)
-	})
-
-	for cn, c := range installationClientCases() {
+	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl := newMockedHandler(t, c.Configured, c.DB)
+			hdl := NewHandler(slog.New(slog.DiscardHandler), c.DB, newTestManager(t, c.Configured, c.DB))
 
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
-			ctx := addSession(req.Context())
-			ctx = testutil.AddChiCtx(ctx, "repository", "repo1")
+			ctx := req.Context()
+
+			if !c.NoSession {
+				ctx = auth.AddSessionToContext(ctx, auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				})
+			}
+
+			if !c.NoRepository {
+				ctx = testutil.AddChiCtx(ctx, "repository", "repo1")
+			}
 
 			rec := httptest.NewRecorder()
 
 			hdl.FetchRepositoryBranches(rec, req.WithContext(ctx))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchGithubInstallationByOrganizationIDCalls(), c.Fetched)
 		})
 	}
 }
@@ -696,36 +746,43 @@ func Test_Handler_FetchRepositoryBranches(t *testing.T) {
 func Test_Handler_FetchRepositoryTree(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Missing repository parameter", func(t *testing.T) {
-		t.Parallel()
+	cc := map[string]installationClientCase{
+		"Missing repository parameter": {
+			Configured:   true,
+			DB:           &DBMock{},
+			NoRepository: true,
+			RespCode:     http.StatusNotFound,
+		},
+	}
 
-		hdl := newMockedHandler(t, true, &DBMock{})
+	maps.Copy(cc, installationClientCases())
 
-		req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
-		req = req.WithContext(addSession(req.Context()))
-
-		rec := httptest.NewRecorder()
-
-		hdl.FetchRepositoryTree(rec, req)
-
-		assert.Equal(t, http.StatusNotFound, rec.Code)
-	})
-
-	for cn, c := range installationClientCases() {
+	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl := newMockedHandler(t, c.Configured, c.DB)
+			hdl := NewHandler(slog.New(slog.DiscardHandler), c.DB, newTestManager(t, c.Configured, c.DB))
 
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/?branch=main", http.NoBody)
-			ctx := addSession(req.Context())
-			ctx = testutil.AddChiCtx(ctx, "repository", "repo1")
+			ctx := req.Context()
+
+			if !c.NoSession {
+				ctx = auth.AddSessionToContext(ctx, auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				})
+			}
+
+			if !c.NoRepository {
+				ctx = testutil.AddChiCtx(ctx, "repository", "repo1")
+			}
 
 			rec := httptest.NewRecorder()
 
 			hdl.FetchRepositoryTree(rec, req.WithContext(ctx))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchGithubInstallationByOrganizationIDCalls(), c.Fetched)
 		})
 	}
 }

@@ -155,11 +155,13 @@ func Test_agent_UpsertDocumentBranchView(t *testing.T) {
 
 func Test_agent_FetchRecentlyViewedDocuments(t *testing.T) {
 	type tcase struct {
-		UserID         string
-		OrganizationID string
-		From           search.ViewFrom
-		Limit          int
-		Result         []search.RecentDocument
+		CancelledContext bool
+		UserID           string
+		OrganizationID   string
+		From             search.ViewFrom
+		Limit            int
+		Result           []search.RecentDocument
+		Err              error
 	}
 
 	now := timeutil.Now().Truncate(time.Second)
@@ -182,6 +184,16 @@ func Test_agent_FetchRecentlyViewedDocuments(t *testing.T) {
 	}
 
 	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				UserID:           "user",
+				OrganizationID:   "org",
+				From:             search.ViewFromAll,
+				Limit:            10,
+				Err:              assert.AnError,
+			}
+		},
 		"No views": func(t *testing.T, db *DB) tcase {
 			doc := prepDocuments(t, db, 1, nil)[0]
 
@@ -272,19 +284,23 @@ func Test_agent_FetchRecentlyViewedDocuments(t *testing.T) {
 			db := prepTempDB(t)
 			c := cfn(t, db)
 
-			res, err := db.FetchRecentlyViewedDocuments(context.Background(), c.UserID, c.OrganizationID, c.From, c.Limit)
-			require.NoError(t, err)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchRecentlyViewedDocuments(ctx, c.UserID, c.OrganizationID, c.From, c.Limit)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, res)
+
+				return
+			}
+
 			testutil.AssertFilterEqual(t, c.Result, res)
 		})
 	}
-
-	// error - cancelled context
-	db := prepTempDB(t)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	res, err := db.FetchRecentlyViewedDocuments(ctx, "user", "org", search.ViewFromAll, 10)
-	require.Error(t, err)
-	assert.Nil(t, res)
 }

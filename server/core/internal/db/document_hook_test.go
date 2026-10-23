@@ -144,66 +144,144 @@ func Test_agent_InsertDocumentHook(t *testing.T) {
 }
 
 func Test_agent_FetchDocumentHook(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		ID             xid.ID
+		OrganizationID string
+		Result         *hook.Hook
+		Err            error
+	}
 
-	// error - not found
-	res, err := db.FetchDocumentHook(context.Background(), xid.New(), "non-existent-org-id")
-	testutil.AssertEqualError(t, sql.ErrNoRows, err)
-	assert.Nil(t, res)
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Hook not found": func(*testing.T, *DB) tcase {
+			return tcase{
+				ID:             xid.New(),
+				OrganizationID: "non-existent-org-id",
+				Err:            sql.ErrNoRows,
+			}
+		},
+		"Successful fetch": func(t *testing.T, db *DB) tcase {
+			hk := prepDocumentHooks(t, db, 1, nil)[0]
 
-	// success
-	hk := prepDocumentHooks(t, db, 1, nil)[0]
+			return tcase{
+				ID:             hk.ID,
+				OrganizationID: hk.OrganizationID.String,
+				Result:         &hk,
+			}
+		},
+	}
 
-	res, err = db.FetchDocumentHook(context.Background(), hk.ID, hk.OrganizationID.String)
-	assert.NoError(t, err)
-	testutil.AssertFilterEqual(t, &hk, res)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			res, err := db.FetchDocumentHook(context.Background(), c.ID, c.OrganizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+			testutil.AssertFilterEqual(t, c.Result, res)
+		})
+	}
 }
 
 func Test_agent_FetchPaginatedDocumentHooks(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		CancelledContext bool
+		OffsetID         xid.ID
+		Limit            int64
+		Result           []hook.Hook
+		Err              error
+		// Check inspects the result in place of Result.
+		Check func(t *testing.T, res []hook.Hook)
+	}
 
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(*testing.T, *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				OffsetID:         xid.NilID(),
+				Limit:            10,
+				Err:              assert.AnError,
+			}
+		},
+		"No hooks": func(*testing.T, *DB) tcase {
+			return tcase{
+				OffsetID: xid.NilID(),
+				Limit:    10,
+				Result:   []hook.Hook{},
+			}
+		},
+		"First page": func(t *testing.T, db *DB) tcase {
+			hooks := prepDocumentHooks(t, db, 3, nil)
 
-	res, err := db.FetchPaginatedDocumentHooks(ctx, xid.NilID(), 10)
-	require.Error(t, err)
-	assert.Nil(t, res)
+			return tcase{
+				OffsetID: xid.NilID(),
+				Limit:    2,
+				Result:   hooks[:2],
+			}
+		},
+		"Second page": func(t *testing.T, db *DB) tcase {
+			hooks := prepDocumentHooks(t, db, 3, nil)
 
-	// success - no hooks
-	res, err = db.FetchPaginatedDocumentHooks(context.Background(), xid.NilID(), 10)
-	require.NoError(t, err)
-	assert.Empty(t, res)
+			return tcase{
+				OffsetID: hooks[1].ID,
+				Limit:    2,
+				Result:   hooks[2:],
+			}
+		},
+		// the organization is deleted by the auth service, outside of core,
+		// and the rows it leaves behind are the only trace of the external
+		// watchers: the sweep has to keep finding them.
+		"Hooks outlive their organization": func(t *testing.T, db *DB) tcase {
+			hooks := prepDocumentHooks(t, db, 3, nil)
 
-	// success - first page
-	hooks := prepDocumentHooks(t, db, 3, nil)
+			q, args := db.builder.Delete("organizations").
+				Where(sq.Eq{"id": hooks[0].OrganizationID}).
+				MustSql()
 
-	res, err = db.FetchPaginatedDocumentHooks(context.Background(), xid.NilID(), 2)
-	assert.NoError(t, err)
-	testutil.AssertFilterEqual(t, hooks[:2], res)
+			_, err := db.sql.Exec(q, args...)
+			require.NoError(t, err)
 
-	// success - second page
-	res, err = db.FetchPaginatedDocumentHooks(context.Background(), hooks[1].ID, 2)
-	assert.NoError(t, err)
-	testutil.AssertFilterEqual(t, hooks[2:], res)
+			return tcase{
+				OffsetID: xid.NilID(),
+				Limit:    10,
+				Check: func(t *testing.T, res []hook.Hook) {
+					require.Len(t, res, len(hooks))
 
-	// success - the organization is deleted by the auth service, outside of
-	// core, and the rows it leaves behind are the only trace of the external
-	// watchers: the sweep has to keep finding them.
-	q, args := db.builder.Delete("organizations").
-		Where(sq.Eq{"id": hooks[0].OrganizationID}).
-		MustSql()
+					for _, hk := range res {
+						assert.False(t, hk.OrganizationID.Valid)
+						assert.True(t, hk.State.Valid, "the watcher stays addressable without its organization")
+					}
+				},
+			}
+		},
+	}
 
-	_, err = db.sql.Exec(q, args...)
-	require.NoError(t, err)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	res, err = db.FetchPaginatedDocumentHooks(context.Background(), xid.NilID(), 10)
-	require.NoError(t, err)
-	require.Len(t, res, len(hooks))
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-	for _, hk := range res {
-		assert.False(t, hk.OrganizationID.Valid)
-		assert.True(t, hk.State.Valid, "the watcher stays addressable without its organization")
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchPaginatedDocumentHooks(ctx, c.OffsetID, c.Limit)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if c.Check != nil {
+				c.Check(t, res)
+
+				return
+			}
+
+			testutil.AssertFilterEqual(t, c.Result, res)
+		})
 	}
 }
 
@@ -322,121 +400,235 @@ func Test_agent_DeleteDocumentHook(t *testing.T) {
 }
 
 func Test_agent_FetchDocumentHooksByBranchID(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		CancelledContext bool
+		BranchID         xid.ID
+		OrganizationID   string
+		Result           []hook.Hook
+		Err              error
+	}
 
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(*testing.T, *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				BranchID:         xid.New(),
+				OrganizationID:   "org-id",
+				Err:              assert.AnError,
+			}
+		},
+		"No hooks": func(*testing.T, *DB) tcase {
+			return tcase{
+				BranchID:       xid.New(),
+				OrganizationID: "non-existent-org-id",
+				Result:         []hook.Hook{},
+			}
+		},
+		"Soft deleted hooks are excluded": func(t *testing.T, db *DB) tcase {
+			hooks := prepDocumentHooks(t, db, 2, func(i int, hk *hook.Hook) {
+				if i == 1 {
+					hk.SoftDeletedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))
+				}
+			})
 
-	res, err := db.FetchDocumentHooksByBranchID(ctx, xid.New(), "org-id")
-	require.Error(t, err)
-	assert.Nil(t, res)
+			return tcase{
+				BranchID:       hooks[0].BranchID.V,
+				OrganizationID: hooks[0].OrganizationID.String,
+				Result:         hooks[:1],
+			}
+		},
+	}
 
-	// success - no hooks
-	res, err = db.FetchDocumentHooksByBranchID(context.Background(), xid.New(), "non-existent-org-id")
-	require.NoError(t, err)
-	assert.Empty(t, res)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// success - soft-deleted hooks are excluded
-	hooks := prepDocumentHooks(t, db, 2, func(i int, hk *hook.Hook) {
-		if i == 1 {
-			hk.SoftDeletedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))
-		}
-	})
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-	res, err = db.FetchDocumentHooksByBranchID(context.Background(), hooks[0].BranchID.V, hooks[0].OrganizationID.String)
-	assert.NoError(t, err)
-	testutil.AssertFilterEqual(t, hooks[:1], res)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchDocumentHooksByBranchID(ctx, c.BranchID, c.OrganizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+			testutil.AssertFilterEqual(t, c.Result, res)
+		})
+	}
 }
 
 func Test_agent_DetachDocumentHooksByBranchID(t *testing.T) {
-	db := prepTempDB(t)
-
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := db.DetachDocumentHooksByBranchID(ctx, xid.New(), "org-id")
-	require.Error(t, err)
-
-	// success - the branch's hooks lose their branch and document, a hook
-	// of another branch keeps both
-	hooks := prepDocumentHooks(t, db, 2, nil)
-	other := prepDocumentHooks(t, db, 1, nil)[0]
-
-	err = db.DetachDocumentHooksByBranchID(context.Background(), hooks[0].BranchID.V, hooks[0].OrganizationID.String)
-	require.NoError(t, err)
-
-	type refs struct {
-		BranchID   null.Value[xid.ID] `db:"fk_branch_id"`
-		DocumentID null.Value[xid.ID] `db:"fk_document_id"`
+	type tcase struct {
+		CancelledContext bool
+		BranchID         xid.ID
+		OrganizationID   string
+		Err              error
+		// Check inspects the rows the detach left behind.
+		Check func(t *testing.T, db *DB)
 	}
 
-	var rows []refs
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(*testing.T, *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				BranchID:         xid.New(),
+				OrganizationID:   "org-id",
+				Err:              assert.AnError,
+			}
+		},
+		// the branch's hooks lose their branch and document, a hook of
+		// another branch keeps both.
+		"Successful detach": func(t *testing.T, db *DB) tcase {
+			hooks := prepDocumentHooks(t, db, 2, nil)
+			other := prepDocumentHooks(t, db, 1, nil)[0]
 
-	q, args := db.builder.Select("fk_branch_id", "fk_document_id").
-		From("document_hooks").
-		Where(sq.Eq{
-			"id": []xid.ID{hooks[0].ID, hooks[1].ID},
-		}).
-		MustSql()
+			return tcase{
+				BranchID:       hooks[0].BranchID.V,
+				OrganizationID: hooks[0].OrganizationID.String,
+				Check: func(t *testing.T, db *DB) {
+					type refs struct {
+						BranchID   null.Value[xid.ID] `db:"fk_branch_id"`
+						DocumentID null.Value[xid.ID] `db:"fk_document_id"`
+					}
 
-	err = db.sql.Select(&rows, q, args...)
-	require.NoError(t, err)
-	require.Len(t, rows, 2)
+					var rows []refs
 
-	for _, r := range rows {
-		assert.False(t, r.BranchID.Valid)
-		assert.False(t, r.DocumentID.Valid)
+					q, args := db.builder.Select("fk_branch_id", "fk_document_id").
+						From("document_hooks").
+						Where(sq.Eq{
+							"id": []xid.ID{hooks[0].ID, hooks[1].ID},
+						}).
+						MustSql()
+
+					err := db.sql.Select(&rows, q, args...)
+					require.NoError(t, err)
+					require.Len(t, rows, 2)
+
+					for _, r := range rows {
+						assert.False(t, r.BranchID.Valid)
+						assert.False(t, r.DocumentID.Valid)
+					}
+
+					var kept refs
+
+					q, args = db.builder.Select("fk_branch_id", "fk_document_id").
+						From("document_hooks").
+						Where(sq.Eq{"id": other.ID}).
+						MustSql()
+
+					err = db.sql.Get(&kept, q, args...)
+					require.NoError(t, err)
+					assert.Equal(t, other.BranchID, kept.BranchID)
+					assert.Equal(t, other.DocumentID, kept.DocumentID)
+				},
+			}
+		},
 	}
 
-	var kept refs
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	q, args = db.builder.Select("fk_branch_id", "fk_document_id").
-		From("document_hooks").
-		Where(sq.Eq{"id": other.ID}).
-		MustSql()
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-	err = db.sql.Get(&kept, q, args...)
-	require.NoError(t, err)
-	assert.Equal(t, other.BranchID, kept.BranchID)
-	assert.Equal(t, other.DocumentID, kept.DocumentID)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			err := db.DetachDocumentHooksByBranchID(ctx, c.BranchID, c.OrganizationID)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			if c.Check != nil {
+				c.Check(t, db)
+			}
+		})
+	}
 }
 
 func Test_agent_FetchDocumentHooksByOrganizationID(t *testing.T) {
-	t.Parallel()
+	type tcase struct {
+		CancelledContext bool
+		OrganizationID   string
+		Result           []xid.ID
+		Err              error
+	}
 
-	db := prepTempDB(t)
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(t *testing.T, db *DB) tcase {
+			hk := prepDocumentHooks(t, db, 1, nil)[0]
 
-	branch := prepDocumentBranches(t, db, 1, nil)[0]
+			return tcase{
+				CancelledContext: true,
+				OrganizationID:   hk.OrganizationID.String,
+				Err:              assert.AnError,
+			}
+		},
+		"Successful fetch": func(t *testing.T, db *DB) tcase {
+			branch := prepDocumentBranches(t, db, 1, nil)[0]
 
-	hooks := prepDocumentHooks(t, db, 2, func(_ int, hk *hook.Hook) {
-		hk.DocumentID = null.ValueFrom(branch.ID)
-		hk.OrganizationID = null.StringFrom(branch.OrganizationID)
-		hk.BranchID = null.ValueFrom(branch.BranchID)
-	})
+			hooks := prepDocumentHooks(t, db, 2, func(_ int, hk *hook.Hook) {
+				hk.DocumentID = null.ValueFrom(branch.ID)
+				hk.OrganizationID = null.StringFrom(branch.OrganizationID)
+				hk.BranchID = null.ValueFrom(branch.BranchID)
+			})
 
-	other := prepDocumentBranches(t, db, 1, nil)[0]
+			other := prepDocumentBranches(t, db, 1, nil)[0]
 
-	prepDocumentHooks(t, db, 1, func(_ int, hk *hook.Hook) {
-		hk.DocumentID = null.ValueFrom(other.ID)
-		hk.OrganizationID = null.StringFrom(other.OrganizationID)
-		hk.BranchID = null.ValueFrom(other.BranchID)
-	})
+			prepDocumentHooks(t, db, 1, func(_ int, hk *hook.Hook) {
+				hk.DocumentID = null.ValueFrom(other.ID)
+				hk.OrganizationID = null.StringFrom(other.OrganizationID)
+				hk.BranchID = null.ValueFrom(other.BranchID)
+			})
 
-	// cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+			return tcase{
+				OrganizationID: branch.OrganizationID,
+				Result:         []xid.ID{hooks[0].ID, hooks[1].ID},
+			}
+		},
+	}
 
-	res, err := db.FetchDocumentHooksByOrganizationID(ctx, branch.OrganizationID)
-	require.Error(t, err)
-	assert.Nil(t, res)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// success
-	res, err = db.FetchDocumentHooksByOrganizationID(context.Background(), branch.OrganizationID)
-	require.NoError(t, err)
-	require.Len(t, res, 2)
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-	ids := []xid.ID{res[0].ID, res[1].ID}
-	assert.ElementsMatch(t, []xid.ID{hooks[0].ID, hooks[1].ID}, ids)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchDocumentHooksByOrganizationID(ctx, c.OrganizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, res)
+
+				return
+			}
+
+			require.Len(t, res, len(c.Result))
+
+			ids := make([]xid.ID, len(res))
+			for i, hk := range res {
+				ids[i] = hk.ID
+			}
+
+			assert.ElementsMatch(t, c.Result, ids)
+		})
+	}
 }

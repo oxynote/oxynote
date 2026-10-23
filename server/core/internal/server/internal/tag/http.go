@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	tagCore "github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
@@ -263,6 +264,17 @@ func (h *Handler) AssignBranchTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	doc, err := h.db.FetchDocumentByBranchID(r.Context(), branchID, session.ActiveOrganizationID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err = doc.AllowsDocumentChange(); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	err = h.db.AssignBranchTag(r.Context(), session.ActiveOrganizationID, documentID, branchID, inp.TagID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -290,6 +302,17 @@ func (h *Handler) UnassignBranchTag(w http.ResponseWriter, r *http.Request) {
 
 	tagID, err := httpserver.ExtractNamedID(r, "tagId")
 	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	doc, err := h.db.FetchDocumentByBranchID(r.Context(), branchID, session.ActiveOrganizationID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err = doc.AllowsDocumentChange(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -366,4 +389,8 @@ type DB interface {
 	// UnassignBranchTag should stop a document's branch carrying a tag.
 	// Removing a tag the branch does not carry should change nothing.
 	UnassignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) error
+
+	// FetchDocumentByBranchID should fetch a document joined against the
+	// branch identified by branchID.
+	FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, organizationID string) (*documentCore.Document, error)
 }

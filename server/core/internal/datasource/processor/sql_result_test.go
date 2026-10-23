@@ -78,7 +78,7 @@ func Test_sqlQueryResult_identifyColumns(t *testing.T) {
 			TimeIdx:   0,
 			ValueIdxs: []int{1},
 		},
-		"Undeclared types fall back to the values' shape": {
+		"Undeclared types fall back to the shape of the values": {
 			Result: sqlQueryResult{
 				Columns: []string{"time", "value", "host"},
 				Rows:    [][]any{{"2023-11-14T22:13:20Z", float64(1), "a"}},

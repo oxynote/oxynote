@@ -3,7 +3,6 @@ package manager
 import (
 	"context"
 	"log/slog"
-	"reflect"
 	"testing"
 
 	"github.com/guregu/null/v5"
@@ -115,19 +114,6 @@ func newTestManager(db DB) (*Manager, *recorder) {
 	return m, rec
 }
 
-// stubBeginTx returns a BeginTx that hands out the transaction, or fails.
-func stubBeginTx(tx *TxMock, beginErr error) func(context.Context, any) error {
-	return func(_ context.Context, dest any) error {
-		if beginErr != nil {
-			return beginErr
-		}
-
-		reflect.ValueOf(dest).Elem().Set(reflect.ValueOf(tx))
-
-		return nil
-	}
-}
-
 // stubFetchVariable returns a FetchVariable that answers with the
 // variable or the error.
 func stubFetchVariable(v variable.Variable, err error) func(context.Context, xid.ID, string) (*variable.Variable, error) {
@@ -236,6 +222,8 @@ func Test_Manager_CreateGroup(t *testing.T) {
 		DB      *DBMock
 		Inp     variable.GroupCreateInput
 		Result  *variable.Group
+		Creates int
+		Fetches int
 		Changes int
 		Err     error
 	}{
@@ -250,15 +238,18 @@ func Test_Manager_CreateGroup(t *testing.T) {
 					return assert.AnError
 				},
 			},
-			Inp: inp,
-			Err: assert.AnError,
+			Inp:     inp,
+			Creates: 1,
+			Err:     assert.AnError,
 		},
 		"Error returned by DB.FetchVariableGroup": {
 			DB: &DBMock{
 				FetchVariableGroupFunc: stubFetchGroup(variable.Group{}, assert.AnError),
 			},
-			Inp: inp,
-			Err: assert.AnError,
+			Inp:     inp,
+			Creates: 1,
+			Fetches: 1,
+			Err:     assert.AnError,
 		},
 		"Successful creation": {
 			DB: &DBMock{
@@ -266,6 +257,8 @@ func Test_Manager_CreateGroup(t *testing.T) {
 			},
 			Inp:     inp,
 			Result:  &_group,
+			Creates: 1,
+			Fetches: 1,
 			Changes: 1,
 		},
 	}
@@ -279,6 +272,8 @@ func Test_Manager_CreateGroup(t *testing.T) {
 			res, err := m.CreateGroup(context.Background(), c.Inp, _org, _user)
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Equal(t, c.Result, res)
+			assert.Len(t, c.DB.CreateVariableGroupCalls(), c.Creates)
+			assert.Len(t, c.DB.FetchVariableGroupCalls(), c.Fetches)
 			assert.Len(t, rec.changes, c.Changes)
 
 			if err != nil {
@@ -303,6 +298,7 @@ func Test_Manager_UpdateGroup(t *testing.T) {
 	cc := map[string]struct {
 		DB      *DBMock
 		Inp     variable.GroupUpdateInput
+		Fetches int
 		Updates int
 		Changes int
 		Err     error
@@ -312,14 +308,16 @@ func Test_Manager_UpdateGroup(t *testing.T) {
 			Err: variable.ErrEmptyGroupUpdate,
 		},
 		"Error returned by DB.FetchVariableGroup": {
-			DB:  &DBMock{FetchVariableGroupFunc: stubFetchGroup(variable.Group{}, assert.AnError)},
-			Inp: inp,
-			Err: assert.AnError,
+			DB:      &DBMock{FetchVariableGroupFunc: stubFetchGroup(variable.Group{}, assert.AnError)},
+			Inp:     inp,
+			Fetches: 1,
+			Err:     assert.AnError,
 		},
 		"Built-in group": {
-			DB:  &DBMock{FetchVariableGroupFunc: stubFetchGroup(_builtinGroup, nil)},
-			Inp: inp,
-			Err: variable.ErrBuiltinGroup,
+			DB:      &DBMock{FetchVariableGroupFunc: stubFetchGroup(_builtinGroup, nil)},
+			Inp:     inp,
+			Fetches: 1,
+			Err:     variable.ErrBuiltinGroup,
 		},
 		"Error returned by DB.UpdateVariableGroup": {
 			DB: &DBMock{
@@ -329,12 +327,14 @@ func Test_Manager_UpdateGroup(t *testing.T) {
 				},
 			},
 			Inp:     inp,
+			Fetches: 1,
 			Updates: 1,
 			Err:     assert.AnError,
 		},
 		"Successful update": {
 			DB:      &DBMock{FetchVariableGroupFunc: stubFetchGroup(_group, nil)},
 			Inp:     inp,
+			Fetches: 1,
 			Updates: 1,
 			Changes: 1,
 		},
@@ -348,6 +348,7 @@ func Test_Manager_UpdateGroup(t *testing.T) {
 
 			err := m.UpdateGroup(context.Background(), _group.ID, c.Inp, _org)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, c.DB.FetchVariableGroupCalls(), c.Fetches)
 			assert.Len(t, c.DB.UpdateVariableGroupCalls(), c.Updates)
 			assert.Len(t, rec.changes, c.Changes)
 		})
@@ -430,6 +431,7 @@ func Test_Manager_MoveGroup(t *testing.T) {
 
 			err := m.MoveGroup(context.Background(), c.Inp, _org)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, c.DB.FetchVariableGroupsCalls(), 1)
 			assert.Len(t, rec.changes, c.Changes)
 
 			calls := c.DB.UpdateVariableGroupOrderCalls()
@@ -486,6 +488,7 @@ func Test_Manager_DeleteGroup(t *testing.T) {
 
 			err := m.DeleteGroup(context.Background(), _group.ID, _org)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, c.DB.FetchVariableGroupCalls(), 1)
 			assert.Len(t, c.DB.DeleteVariableGroupCalls(), c.Deletes)
 			assert.Len(t, rec.changes, c.Changes)
 		})
@@ -504,11 +507,13 @@ func Test_Manager_CreateVariable(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		DB      *DBMock
-		Inp     variable.Input
-		Creates int
-		Changes int
-		Err     error
+		DB           *DBMock
+		Inp          variable.Input
+		GroupFetches int
+		Creates      int
+		Fetches      int
+		Changes      int
+		Err          error
 	}{
 		"Invalid input": {
 			DB:  &DBMock{},
@@ -516,14 +521,16 @@ func Test_Manager_CreateVariable(t *testing.T) {
 			Err: variable.ErrInvalidKey,
 		},
 		"Error returned by DB.FetchVariableGroup": {
-			DB:  &DBMock{FetchVariableGroupFunc: stubFetchGroup(variable.Group{}, assert.AnError)},
-			Inp: inp,
-			Err: assert.AnError,
+			DB:           &DBMock{FetchVariableGroupFunc: stubFetchGroup(variable.Group{}, assert.AnError)},
+			Inp:          inp,
+			GroupFetches: 1,
+			Err:          assert.AnError,
 		},
 		"Built-in group": {
-			DB:  &DBMock{FetchVariableGroupFunc: stubFetchGroup(_builtinGroup, nil)},
-			Inp: inp,
-			Err: variable.ErrBuiltinGroup,
+			DB:           &DBMock{FetchVariableGroupFunc: stubFetchGroup(_builtinGroup, nil)},
+			Inp:          inp,
+			GroupFetches: 1,
+			Err:          variable.ErrBuiltinGroup,
 		},
 		"Error returned by DB.CreateVariable": {
 			DB: &DBMock{
@@ -532,27 +539,32 @@ func Test_Manager_CreateVariable(t *testing.T) {
 					return assert.AnError
 				},
 			},
-			Inp:     inp,
-			Creates: 1,
-			Err:     assert.AnError,
+			Inp:          inp,
+			GroupFetches: 1,
+			Creates:      1,
+			Err:          assert.AnError,
 		},
 		"Error returned by DB.FetchVariable": {
 			DB: &DBMock{
 				FetchVariableGroupFunc: stubFetchGroup(_group, nil),
 				FetchVariableFunc:      stubFetchVariable(variable.Variable{}, assert.AnError),
 			},
-			Inp:     inp,
-			Creates: 1,
-			Err:     assert.AnError,
+			Inp:          inp,
+			GroupFetches: 1,
+			Creates:      1,
+			Fetches:      1,
+			Err:          assert.AnError,
 		},
 		"Successful creation": {
 			DB: &DBMock{
 				FetchVariableGroupFunc: stubFetchGroup(_group, nil),
 				FetchVariableFunc:      stubFetchVariable(_listVariable, nil),
 			},
-			Inp:     inp,
-			Creates: 1,
-			Changes: 1,
+			Inp:          inp,
+			GroupFetches: 1,
+			Creates:      1,
+			Fetches:      1,
+			Changes:      1,
 		},
 	}
 
@@ -564,6 +576,8 @@ func Test_Manager_CreateVariable(t *testing.T) {
 
 			res, err := m.CreateVariable(context.Background(), c.Inp, _org, _user)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, c.DB.FetchVariableGroupCalls(), c.GroupFetches)
+			assert.Len(t, c.DB.FetchVariableCalls(), c.Fetches)
 			assert.Len(t, rec.changes, c.Changes)
 
 			calls := c.DB.CreateVariableCalls()
@@ -613,6 +627,9 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 		DB            *DBMock
 		Tx            *TxMock
 		Inp           variable.Input
+		Fetches       int
+		GroupFetches  int
+		Begins        int
 		Updated       bool
 		ClearedValues bool
 		Options       []variable.Option
@@ -632,16 +649,18 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 		}(),
 		"Error returned by DB.FetchVariable": func() tcase {
 			return tcase{
-				DB:  &DBMock{FetchVariableFunc: stubFetchVariable(variable.Variable{}, assert.AnError)},
-				Inp: textInp,
-				Err: assert.AnError,
+				DB:      &DBMock{FetchVariableFunc: stubFetchVariable(variable.Variable{}, assert.AnError)},
+				Inp:     textInp,
+				Fetches: 1,
+				Err:     assert.AnError,
 			}
 		}(),
 		"Built-in variable": func() tcase {
 			return tcase{
-				DB:  &DBMock{FetchVariableFunc: stubFetchVariable(_builtinVariable, nil)},
-				Inp: textInp,
-				Err: variable.ErrBuiltinVariable,
+				DB:      &DBMock{FetchVariableFunc: stubFetchVariable(_builtinVariable, nil)},
+				Inp:     textInp,
+				Fetches: 1,
+				Err:     variable.ErrBuiltinVariable,
 			}
 		}(),
 		"Error returned by DB.FetchVariableGroup": func() tcase {
@@ -653,8 +672,10 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 					FetchVariableFunc:      stubFetchVariable(_textVariable, nil),
 					FetchVariableGroupFunc: stubFetchGroup(variable.Group{}, assert.AnError),
 				},
-				Inp: inp,
-				Err: assert.AnError,
+				Inp:          inp,
+				Fetches:      1,
+				GroupFetches: 1,
+				Err:          assert.AnError,
 			}
 		}(),
 		"Moved into the built-in group": func() tcase {
@@ -666,8 +687,10 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 					FetchVariableFunc:      stubFetchVariable(_textVariable, nil),
 					FetchVariableGroupFunc: stubFetchGroup(_builtinGroup, nil),
 				},
-				Inp: inp,
-				Err: variable.ErrBuiltinGroup,
+				Inp:          inp,
+				Fetches:      1,
+				GroupFetches: 1,
+				Err:          variable.ErrBuiltinGroup,
 			}
 		}(),
 		"Unknown option": func() tcase {
@@ -678,18 +701,21 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_listVariable, nil),
 				},
-				Inp: inp,
-				Err: variable.ErrUnknownOption,
+				Inp:     inp,
+				Fetches: 1,
+				Err:     variable.ErrUnknownOption,
 			}
 		}(),
 		"Error returned by DB.BeginTx": func() tcase {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_textVariable, nil),
-					BeginTxFunc:       stubBeginTx(nil, assert.AnError),
+					BeginTxFunc:       testutil.StubBeginTx(nil, assert.AnError),
 				},
-				Inp: textInp,
-				Err: assert.AnError,
+				Inp:     textInp,
+				Fetches: 1,
+				Begins:  1,
+				Err:     assert.AnError,
 			}
 		}(),
 		"Error returned by Tx.UpdateVariable": func() tcase {
@@ -702,10 +728,12 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_textVariable, nil),
-					BeginTxFunc:       stubBeginTx(tx, nil),
+					BeginTxFunc:       testutil.StubBeginTx(tx, nil),
 				},
 				Tx:      tx,
 				Inp:     textInp,
+				Fetches: 1,
+				Begins:  1,
 				Updated: true,
 				Err:     assert.AnError,
 			}
@@ -720,10 +748,12 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_listVariable, nil),
-					BeginTxFunc:       stubBeginTx(tx, nil),
+					BeginTxFunc:       testutil.StubBeginTx(tx, nil),
 				},
 				Tx:            tx,
 				Inp:           textInp,
+				Fetches:       1,
+				Begins:        1,
 				Updated:       true,
 				ClearedValues: true,
 				Err:           assert.AnError,
@@ -739,10 +769,12 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_listVariable, nil),
-					BeginTxFunc:       stubBeginTx(tx, nil),
+					BeginTxFunc:       testutil.StubBeginTx(tx, nil),
 				},
 				Tx:       tx,
 				Inp:      listInp,
+				Fetches:  1,
+				Begins:   1,
 				Updated:  true,
 				Replaced: true,
 				Err:      assert.AnError,
@@ -758,10 +790,12 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_textVariable, nil),
-					BeginTxFunc:       stubBeginTx(tx, nil),
+					BeginTxFunc:       testutil.StubBeginTx(tx, nil),
 				},
 				Tx:      tx,
 				Inp:     textInp,
+				Fetches: 1,
+				Begins:  1,
 				Updated: true,
 				Commits: 1,
 				Err:     assert.AnError,
@@ -773,10 +807,12 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_textVariable, nil),
-					BeginTxFunc:       stubBeginTx(tx, nil),
+					BeginTxFunc:       testutil.StubBeginTx(tx, nil),
 				},
 				Tx:      tx,
 				Inp:     textInp,
+				Fetches: 1,
+				Begins:  1,
 				Updated: true,
 				Commits: 1,
 				Changes: 1,
@@ -788,10 +824,12 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_listVariable, nil),
-					BeginTxFunc:       stubBeginTx(tx, nil),
+					BeginTxFunc:       testutil.StubBeginTx(tx, nil),
 				},
 				Tx:       tx,
 				Inp:      listInp,
+				Fetches:  1,
+				Begins:   1,
 				Updated:  true,
 				Replaced: true,
 				Commits:  1,
@@ -804,10 +842,12 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_listVariable, nil),
-					BeginTxFunc:       stubBeginTx(tx, nil),
+					BeginTxFunc:       testutil.StubBeginTx(tx, nil),
 				},
 				Tx:            tx,
 				Inp:           textInp,
+				Fetches:       1,
+				Begins:        1,
 				Updated:       true,
 				ClearedValues: true,
 				Replaced:      true,
@@ -825,13 +865,16 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 				DB: &DBMock{
 					FetchVariableFunc:      stubFetchVariable(_textVariable, nil),
 					FetchVariableGroupFunc: stubFetchGroup(otherGroup, nil),
-					BeginTxFunc:            stubBeginTx(tx, nil),
+					BeginTxFunc:            testutil.StubBeginTx(tx, nil),
 				},
-				Tx:      tx,
-				Inp:     inp,
-				Updated: true,
-				Commits: 1,
-				Changes: 1,
+				Tx:           tx,
+				Inp:          inp,
+				Fetches:      1,
+				GroupFetches: 1,
+				Begins:       1,
+				Updated:      true,
+				Commits:      1,
+				Changes:      1,
 			}
 		}(),
 	}
@@ -844,6 +887,9 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 
 			err := m.UpdateVariable(context.Background(), _textVariable.ID, c.Inp, _org)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, c.DB.FetchVariableCalls(), c.Fetches)
+			assert.Len(t, c.DB.FetchVariableGroupCalls(), c.GroupFetches)
+			assert.Len(t, c.DB.BeginTxCalls(), c.Begins)
 			assert.Len(t, rec.changes, c.Changes)
 
 			if c.Tx == nil {
@@ -894,11 +940,13 @@ func Test_Manager_MoveVariable(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		DB      *DBMock
-		Inp     variable.MoveInput
-		Order   []xid.ID
-		Changes int
-		Err     error
+		DB             *DBMock
+		Inp            variable.MoveInput
+		GroupFetches   int
+		SiblingFetches int
+		Order          []xid.ID
+		Changes        int
+		Err            error
 	}{
 		"Error returned by DB.FetchVariable": {
 			DB:  &DBMock{FetchVariableFunc: stubFetchVariable(variable.Variable{}, assert.AnError)},
@@ -913,14 +961,16 @@ func Test_Manager_MoveVariable(t *testing.T) {
 				FetchVariableFunc:      stubFetchVariable(_textVariable, nil),
 				FetchVariableGroupFunc: stubFetchGroup(variable.Group{}, assert.AnError),
 			},
-			Err: assert.AnError,
+			GroupFetches: 1,
+			Err:          assert.AnError,
 		},
 		"Into the built-in group": {
 			DB: &DBMock{
 				FetchVariableFunc:      stubFetchVariable(_textVariable, nil),
 				FetchVariableGroupFunc: stubFetchGroup(_builtinGroup, nil),
 			},
-			Err: variable.ErrBuiltinGroup,
+			GroupFetches: 1,
+			Err:          variable.ErrBuiltinGroup,
 		},
 		"Error returned by DB.FetchVariablesByGroupID": {
 			DB: &DBMock{
@@ -928,7 +978,9 @@ func Test_Manager_MoveVariable(t *testing.T) {
 				FetchVariableGroupFunc:      stubFetchGroup(_group, nil),
 				FetchVariablesByGroupIDFunc: stubSiblings(assert.AnError),
 			},
-			Err: assert.AnError,
+			GroupFetches:   1,
+			SiblingFetches: 1,
+			Err:            assert.AnError,
 		},
 		"Index out of range": {
 			DB: &DBMock{
@@ -936,8 +988,10 @@ func Test_Manager_MoveVariable(t *testing.T) {
 				FetchVariableGroupFunc:      stubFetchGroup(_group, nil),
 				FetchVariablesByGroupIDFunc: stubSiblings(nil),
 			},
-			Inp: variable.MoveInput{ID: _textVariable.ID, GroupID: _group.ID, SortIndex: 2},
-			Err: variable.ErrInvalidSortIndex,
+			Inp:            variable.MoveInput{ID: _textVariable.ID, GroupID: _group.ID, SortIndex: 2},
+			GroupFetches:   1,
+			SiblingFetches: 1,
+			Err:            variable.ErrInvalidSortIndex,
 		},
 		"Error returned by DB.UpdateVariableOrder": {
 			DB: &DBMock{
@@ -948,9 +1002,11 @@ func Test_Manager_MoveVariable(t *testing.T) {
 					return assert.AnError
 				},
 			},
-			Inp:   variable.MoveInput{ID: _textVariable.ID, GroupID: _group.ID},
-			Order: []xid.ID{_textVariable.ID, sibling.ID},
-			Err:   assert.AnError,
+			Inp:            variable.MoveInput{ID: _textVariable.ID, GroupID: _group.ID},
+			GroupFetches:   1,
+			SiblingFetches: 1,
+			Order:          []xid.ID{_textVariable.ID, sibling.ID},
+			Err:            assert.AnError,
 		},
 		"Successful move into another group": {
 			DB: &DBMock{
@@ -958,9 +1014,11 @@ func Test_Manager_MoveVariable(t *testing.T) {
 				FetchVariableGroupFunc:      stubFetchGroup(_group, nil),
 				FetchVariablesByGroupIDFunc: stubSiblings(nil),
 			},
-			Inp:     variable.MoveInput{ID: _textVariable.ID, GroupID: _group.ID, SortIndex: 1},
-			Order:   []xid.ID{sibling.ID, _textVariable.ID},
-			Changes: 1,
+			Inp:            variable.MoveInput{ID: _textVariable.ID, GroupID: _group.ID, SortIndex: 1},
+			GroupFetches:   1,
+			SiblingFetches: 1,
+			Order:          []xid.ID{sibling.ID, _textVariable.ID},
+			Changes:        1,
 		},
 	}
 
@@ -972,6 +1030,9 @@ func Test_Manager_MoveVariable(t *testing.T) {
 
 			err := m.MoveVariable(context.Background(), c.Inp, _org)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, c.DB.FetchVariableCalls(), 1)
+			assert.Len(t, c.DB.FetchVariableGroupCalls(), c.GroupFetches)
+			assert.Len(t, c.DB.FetchVariablesByGroupIDCalls(), c.SiblingFetches)
 			assert.Len(t, rec.changes, c.Changes)
 
 			calls := c.DB.UpdateVariableOrderCalls()
@@ -1029,6 +1090,7 @@ func Test_Manager_DeleteVariable(t *testing.T) {
 
 			err := m.DeleteVariable(context.Background(), _textVariable.ID, _org)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, c.DB.FetchVariableCalls(), 1)
 			assert.Len(t, c.DB.DeleteVariableCalls(), c.Deletes)
 			assert.Len(t, rec.changes, c.Changes)
 		})
@@ -1108,6 +1170,7 @@ func Test_Manager_SetDefaultValue(t *testing.T) {
 
 			err := m.SetDefaultValue(context.Background(), _builtinVariable.ID, c.Value, _org)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, c.DB.FetchVariableCalls(), 1)
 			assert.Len(t, rec.changes, c.Changes)
 
 			var written []variable.Variable
@@ -1172,6 +1235,7 @@ func Test_Manager_SetValue(t *testing.T) {
 
 			err := m.SetValue(context.Background(), _listVariable.ID, c.Value, _org, _user)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, c.DB.FetchVariableCalls(), 1)
 			assert.Empty(t, rec.changes)
 			assert.Len(t, rec.values, c.Values)
 
@@ -1226,6 +1290,7 @@ func Test_Manager_ResetValue(t *testing.T) {
 
 			err := m.ResetValue(context.Background(), _textVariable.ID, _org, _user)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, c.DB.FetchVariableCalls(), 1)
 			assert.Len(t, c.DB.DeleteVariableValueCalls(), c.Deletes)
 			assert.Empty(t, rec.changes)
 			assert.Equal(t, c.Values, rec.values)

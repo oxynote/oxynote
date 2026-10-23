@@ -1,6 +1,7 @@
 package markup
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
@@ -12,15 +13,41 @@ import (
 func Test_inline(t *testing.T) {
 	t.Parallel()
 
-	nodes, err := parse("<p>\n  Hi <b>there</b>\n</p>")
-	require.NoError(t, err)
+	cc := map[string]struct {
+		Markup string
+		Result []document.Block
+		Err    error
+	}{
+		"Text with a tag across line breaks": {
+			Markup: "<p>\n  Hi <b>there</b>\n</p>",
+			Result: []document.Block{
+				{Type: document.BlockNodeText, Text: "Hi "},
+				{Type: document.BlockNodeText, Text: "there", Marks: []document.Mark{{Type: "bold"}}},
+			},
+		},
+		"Block inside text": {
+			Markup: "<p><hr/></p>",
+			Err:    errors.New("line 1: <hr> is a block; it cannot sit inside text"),
+		},
+	}
 
-	got, err := inline(nodes[0].children, nil)
-	require.NoError(t, err)
-	assert.Equal(t, []document.Block{
-		{Type: document.BlockNodeText, Text: "Hi "},
-		{Type: document.BlockNodeText, Text: "there", Marks: []document.Mark{{Type: "bold"}}},
-	}, got)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			nodes, err := parse(c.Markup)
+			require.NoError(t, err)
+
+			got, err := inline(nodes[0].children, nil)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, got)
+		})
+	}
 }
 
 func Test_textRuns(t *testing.T) {
@@ -67,19 +94,47 @@ func Test_textRuns(t *testing.T) {
 func Test_linkScheme(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "https", linkScheme("HTTPS://x.test"))
-	assert.Equal(t, "javascript", linkScheme(" java\nscript:alert(1)"))
-	assert.Equal(t, "tel", linkScheme("tel:+1"))
-	assert.Empty(t, linkScheme("/docs/a:b"))
-	assert.Empty(t, linkScheme("#top"))
+	cc := map[string]struct {
+		Href   string
+		Result string
+	}{
+		"Scheme in upper case":        {Href: "HTTPS://x.test", Result: "https"},
+		"Scheme split by white space": {Href: " java\nscript:alert(1)", Result: "javascript"},
+		"Scheme without slashes":      {Href: "tel:+1", Result: "tel"},
+		"Path holding a colon":        {Href: "/docs/a:b"},
+		"Fragment":                    {Href: "#top"},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, linkScheme(c.Href))
+		})
+	}
 }
 
 func Test_collapseWhiteSpace(t *testing.T) {
 	t.Parallel()
 
-	got := collapseWhiteSpace([]run{{text: "\n  a\n    b "}, {text: " c \n  "}})
-	assert.Equal(t, []run{{text: "a b "}, {text: " c "}}, got)
-	assert.Empty(t, collapseWhiteSpace(nil))
+	cc := map[string]struct {
+		Runs   []run
+		Result []run
+	}{
+		"Line breaks at the ends dropped and inside read as spaces": {
+			Runs:   []run{{text: "\n  a\n    b "}, {text: " c \n  "}},
+			Result: []run{{text: "a b "}, {text: " c "}},
+		},
+		"No runs": {},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, collapseWhiteSpace(c.Runs))
+		})
+	}
 }
 
 func Test_textNodes(t *testing.T) {

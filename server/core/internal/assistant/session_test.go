@@ -18,6 +18,7 @@ import (
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -143,56 +144,6 @@ func toolCall(id, name, args string) *schema.Message {
 	})
 }
 
-// stubDocumentDB answers every document lookup with the same document,
-// so an edit tool can name what it is about to change, and every branch
-// read with the two paragraphs the edits target.
-func stubDocumentDB() *toolsMock.DB {
-	content := document.RootBlock{
-		Content: []document.Block{
-			{Type: document.BlockNodeParagraph, Attrs: document.Attributes{document.AttrUID: "a"}},
-			{Type: document.BlockNodeParagraph, Attrs: document.Attributes{document.AttrUID: "b"}},
-		},
-	}
-
-	return &toolsMock.DB{
-		FetchDocumentFunc: func(_ context.Context, id xid.ID, orgID, _ string) (*document.Document, error) {
-			return &document.Document{
-				BranchID:       _stubBranchID,
-				DocumentName:   "Runbook",
-				Default:        true,
-				ID:             id,
-				OrganizationID: orgID,
-			}, nil
-		},
-		FetchDocumentByBranchIDFunc: func(_ context.Context, branchID xid.ID, orgID string) (*document.Document, error) {
-			return &document.Document{
-				BranchID:       branchID,
-				DocumentName:   "Runbook",
-				Default:        true,
-				Content:        content,
-				ID:             _stubDocID,
-				OrganizationID: orgID,
-			}, nil
-		},
-	}
-}
-
-// _stubDocID and _stubBranchID name the document and branch the stubs
-// answer for; an edit has to name both.
-var (
-	_stubDocID    = xid.New()
-	_stubBranchID = xid.New()
-)
-
-// stubEditApplier accepts every edit it is handed.
-func stubEditApplier() *toolsMock.EditApplier {
-	return &toolsMock.EditApplier{
-		ApplyFunc: func(_ context.Context, _, _ xid.ID, _ []edit.Operation, _ string, _ bool) (edit.Result, error) {
-			return edit.Result{Errors: []edit.OpError{}}, nil
-		},
-	}
-}
-
 // prepSession builds a session over the given manager, wired to a
 // recorder capturing everything the session writes back.
 func prepSession(t *testing.T, m *Manager) (*session, *recorder) {
@@ -213,42 +164,80 @@ func prepSession(t *testing.T, m *Manager) (*session, *recorder) {
 func Test_Manager_newSession(t *testing.T) {
 	t.Parallel()
 
-	m, st := testManagerStores()
-	st.history.GetFunc = func(_ context.Context, _ string) (*[]*schema.Message, error) {
-		return &[]*schema.Message{schema.UserMessage("earlier question")}, nil
+	cc := map[string]struct {
+		OmitSummary bool
+		Stores      storeCalls
+		Writes      int
+		Err         error
+	}{
+		"Error returned by newAgent": {
+			OmitSummary: true,
+			Err:         assert.AnError,
+		},
+		"Session restores the conversation": {
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
+			Writes: 1,
+		},
 	}
 
-	rec, writer := newRecorder()
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	s, err := m.newSession(context.Background(), "org", "user", writer)
-	require.NoError(t, err)
+			cm := stubChatModel()
 
-	t.Cleanup(func() {
-		require.NoError(t, s.Close())
-	})
+			m, st := testManagerStores()
+			m.model = cm
+			st.history.GetFunc = func(_ context.Context, _ string) (*[]*schema.Message, error) {
+				return &[]*schema.Message{schema.UserMessage("earlier question")}, nil
+			}
 
-	assert.Equal(t, persist.SessionKey("org", "user"), s.key)
-	assert.Same(t, m, s.man)
-	assert.Same(t, writer, s.writer)
-	assert.NotNil(t, s.runner)
-	assert.NotNil(t, s.supv)
-	assert.Empty(t, s.activeDocumentID)
-	require.Len(t, s.messages, 1)
+			if c.OmitSummary {
+				m.summary = nil
+			}
 
-	// a reconnecting client is handed the conversation it lost, so the
-	// chat pane is not empty after a reload.
-	msg, ok := find[protocol.HistoryMessage](rec)
-	require.True(t, ok)
-	require.Len(t, msg.Messages, 1)
-	assert.Equal(t, "earlier question", msg.Messages[0].Content)
+			rec, writer := newRecorder()
+
+			s, err := m.newSession(context.Background(), "org", "user", writer)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			st.assertCalls(t, c.Stores)
+			assert.Len(t, rec.types(), c.Writes)
+			assert.Empty(t, cm.StreamCalls())
+
+			if err != nil {
+				return
+			}
+
+			t.Cleanup(func() {
+				require.NoError(t, s.Close())
+			})
+
+			assert.Equal(t, persist.SessionKey("org", "user"), s.key)
+			assert.Same(t, m, s.man)
+			assert.Same(t, writer, s.writer)
+			assert.NotNil(t, s.runner)
+			assert.NotNil(t, s.supv)
+			assert.Empty(t, s.activeDocumentID)
+			require.Len(t, s.messages, 1)
+
+			// a reconnecting client is handed the conversation it lost, so
+			// the chat pane is not empty after a reload.
+			msg, ok := find[protocol.HistoryMessage](rec)
+			require.True(t, ok)
+			require.Len(t, msg.Messages, 1)
+			assert.Equal(t, "earlier question", msg.Messages[0].Content)
+		})
+	}
 }
 
 func Test_session_Close(t *testing.T) {
 	t.Parallel()
 
+	m, _ := testManagerStores()
 	rec, writer := newRecorder()
 
-	s, err := testManager().newSession(context.Background(), "org", "user", writer)
+	s, err := m.newSession(context.Background(), "org", "user", writer)
 	require.NoError(t, err)
 
 	require.NoError(t, s.Close())
@@ -258,7 +247,8 @@ func Test_session_Close(t *testing.T) {
 func Test_session_SetActiveDocument(t *testing.T) {
 	t.Parallel()
 
-	s, _ := prepSession(t, testManager())
+	m, _ := testManagerStores()
+	s, _ := prepSession(t, m)
 
 	// both halves are kept as reported; a branch that turns out not to
 	// exist is the next call's to refuse.
@@ -274,7 +264,8 @@ func Test_session_SetActiveDocument(t *testing.T) {
 func Test_session_rememberMessages(t *testing.T) {
 	t.Parallel()
 
-	s, _ := prepSession(t, testManager())
+	m, _ := testManagerStores()
+	s, _ := prepSession(t, m)
 
 	msgs := []*schema.Message{schema.UserMessage("hi")}
 	s.rememberMessages(msgs)
@@ -290,19 +281,107 @@ func Test_session_rememberMessages(t *testing.T) {
 func Test_session_sendHistory(t *testing.T) {
 	t.Parallel()
 
-	s, rec := prepSession(t, testManager())
+	cc := map[string]struct {
+		Messages []*schema.Message
+		Result   []protocol.HistoryEntry
+		Writes   int
+	}{
+		"Nothing to restore sends nothing": {},
+		"Restored conversation is sent": {
+			Messages: []*schema.Message{schema.UserMessage("hi")},
+			Result: []protocol.HistoryEntry{{
+				Role:    string(schema.User),
+				Content: "hi",
+			}},
+			Writes: 1,
+		},
+	}
 
-	// nothing to restore sends nothing.
-	s.sendHistory(context.Background())
-	assert.Empty(t, rec.types())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	s.messages = []*schema.Message{schema.UserMessage("hi")}
-	s.sendHistory(context.Background())
+			m, _ := testManagerStores()
+			s, rec := prepSession(t, m)
 
-	msg, ok := find[protocol.HistoryMessage](rec)
-	require.True(t, ok)
-	require.Len(t, msg.Messages, 1)
-	assert.Equal(t, "hi", msg.Messages[0].Content)
+			s.messages = c.Messages
+			s.sendHistory(context.Background())
+
+			assert.Len(t, rec.types(), c.Writes)
+
+			msg, ok := find[protocol.HistoryMessage](rec)
+			require.Equal(t, c.Writes > 0, ok)
+			assert.Equal(t, c.Result, msg.Messages)
+		})
+	}
+}
+
+func Test_buildHistory(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Messages []*schema.Message
+		Result   []protocol.HistoryEntry
+	}{
+		"Empty conversation has no entries": {
+			Result: []protocol.HistoryEntry{},
+		},
+		"User and assistant messages are kept in order": {
+			Messages: []*schema.Message{
+				schema.UserMessage("what is this"),
+				schema.AssistantMessage("a runbook", nil),
+			},
+			Result: []protocol.HistoryEntry{
+				{Role: string(schema.User), Content: "what is this"},
+				{Role: string(schema.Assistant), Content: "a runbook"},
+			},
+		},
+		"Nil and empty messages are skipped": {
+			Messages: []*schema.Message{
+				nil,
+				schema.UserMessage(""),
+				schema.UserMessage("hi"),
+			},
+			Result: []protocol.HistoryEntry{
+				{Role: string(schema.User), Content: "hi"},
+			},
+		},
+		"Tool calls and their results are left out": {
+			// the narration that accompanies a tool call is machinery
+			// too, even though it carries text.
+			Messages: []*schema.Message{
+				schema.UserMessage("find the runbook"),
+				{
+					Role:      schema.Assistant,
+					Content:   "let me look",
+					ToolCalls: []schema.ToolCall{{ID: "1"}},
+				},
+				schema.ToolMessage(`{"documents":[]}`, "1"),
+				schema.AssistantMessage("there is none", nil),
+			},
+			Result: []protocol.HistoryEntry{
+				{Role: string(schema.User), Content: "find the runbook"},
+				{Role: string(schema.Assistant), Content: "there is none"},
+			},
+		},
+		"System messages are left out": {
+			Messages: []*schema.Message{
+				schema.SystemMessage("prompt"),
+				schema.UserMessage("hi"),
+			},
+			Result: []protocol.HistoryEntry{
+				{Role: string(schema.User), Content: "hi"},
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, buildHistory(c.Messages))
+		})
+	}
 }
 
 func Test_session_Process(t *testing.T) {
@@ -310,10 +389,14 @@ func Test_session_Process(t *testing.T) {
 
 	cc := map[string]struct {
 		JSON   string
+		Stores storeCalls
+		Writes int
 		Expect func(t *testing.T, s *session, rec *recorder)
 	}{
 		"Unknown message type is reported": {
-			JSON: `{"type":"nonsense"}`,
+			JSON:   `{"type":"nonsense"}`,
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
+			Writes: 1,
 			Expect: func(t *testing.T, _ *session, rec *recorder) {
 				msg, ok := find[protocol.ErrorMessage](rec)
 				require.True(t, ok)
@@ -321,7 +404,8 @@ func Test_session_Process(t *testing.T) {
 			},
 		},
 		"Active document is recorded": {
-			JSON: `{"type":"set_active_document","documentId":"doc-1"}`,
+			JSON:   `{"type":"set_active_document","documentId":"doc-1"}`,
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
 			Expect: func(t *testing.T, s *session, _ *recorder) {
 				s.mu.Lock()
 				defer s.mu.Unlock()
@@ -331,7 +415,8 @@ func Test_session_Process(t *testing.T) {
 			},
 		},
 		"Active branch is recorded": {
-			JSON: `{"type":"set_active_document","documentId":"doc-1","branchId":"branch-1"}`,
+			JSON:   `{"type":"set_active_document","documentId":"doc-1","branchId":"branch-1"}`,
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
 			Expect: func(t *testing.T, s *session, _ *recorder) {
 				s.mu.Lock()
 				defer s.mu.Unlock()
@@ -341,20 +426,25 @@ func Test_session_Process(t *testing.T) {
 			},
 		},
 		"Empty message content is refused": {
-			JSON: `{"type":"message","content":""}`,
+			JSON:   `{"type":"message","content":""}`,
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
+			Writes: 1,
 			Expect: func(t *testing.T, _ *session, rec *recorder) {
 				_, ok := find[protocol.ErrorMessage](rec)
 				assert.True(t, ok)
 			},
 		},
 		"Stale confirm response is ignored": {
-			JSON: `{"type":"confirm_response","turnId":"gone","approved":true}`,
+			JSON:   `{"type":"confirm_response","turnId":"gone","approved":true}`,
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 2},
 			Expect: func(t *testing.T, _ *session, rec *recorder) {
 				assert.Empty(t, rec.types())
 			},
 		},
 		"Malformed confirm response is refused": {
-			JSON: `{"type":"confirm_response","approved":"yes"}`,
+			JSON:   `{"type":"confirm_response","approved":"yes"}`,
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
+			Writes: 1,
 			Expect: func(t *testing.T, _ *session, rec *recorder) {
 				msg, ok := find[protocol.ErrorMessage](rec)
 				require.True(t, ok)
@@ -363,6 +453,13 @@ func Test_session_Process(t *testing.T) {
 		},
 		"Reset clears the conversation": {
 			JSON: `{"type":"reset"}`,
+			Stores: storeCalls{
+				HistoryGet:    1,
+				HistoryDelete: 1,
+				BlobDelete:    1,
+				PendingGet:    1,
+				PendingDelete: 1,
+			},
 			Expect: func(t *testing.T, s *session, _ *recorder) {
 				s.mu.Lock()
 				defer s.mu.Unlock()
@@ -376,10 +473,18 @@ func Test_session_Process(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			s, rec := prepSession(t, testManager())
+			cm := stubChatModel()
+
+			m, st := testManagerStores()
+			m.model = cm
+
+			s, rec := prepSession(t, m)
 
 			s.Process(context.Background(), []byte(c.JSON))
 
+			st.assertCalls(t, c.Stores)
+			assert.Len(t, rec.types(), c.Writes)
+			assert.Empty(t, cm.StreamCalls())
 			c.Expect(t, s, rec)
 		})
 	}
@@ -394,6 +499,10 @@ func Test_session_handleMessage(t *testing.T) {
 		Stored    []*schema.Message
 		Pending   bool
 		Settles   bool
+		Stores    storeCalls
+		Writes    int
+		Streams   int
+		Searches  int
 		Expect    func(t *testing.T, rec *recorder, cm *mock.ChatModel, st *stores)
 	}{
 		"Turn builds on the stored conversation": {
@@ -403,6 +512,9 @@ func Test_session_handleMessage(t *testing.T) {
 				schema.AssistantMessage("noted", nil),
 			},
 			Settles: true,
+			Stores:  storeCalls{HistoryGet: 2, HistorySet: 1, BlobDelete: 1, PendingGet: 2},
+			Writes:  3,
+			Streams: 1,
 			Expect: func(t *testing.T, _ *recorder, cm *mock.ChatModel, _ *stores) {
 				// the turn starts from what the store holds, not from this
 				// session's copy: another connection of the same user may
@@ -429,6 +541,16 @@ func Test_session_handleMessage(t *testing.T) {
 			Content: "actually, do something else",
 			Pending: true,
 			Settles: true,
+			Stores: storeCalls{
+				HistoryGet:    2,
+				HistorySet:    1,
+				BlobDelete:    2,
+				PendingGet:    2,
+				PendingSet:    1,
+				PendingDelete: 1,
+			},
+			Writes:  3,
+			Streams: 1,
 			Expect: func(t *testing.T, rec *recorder, _ *mock.ChatModel, st *stores) {
 				// the unanswered confirmation is treated as declined:
 				// its record is cleared rather than left pointing at a
@@ -443,8 +565,12 @@ func Test_session_handleMessage(t *testing.T) {
 				toolCall("1", string(tools.NameSearchDocuments), `{"query":"rate limit"}`),
 				schema.AssistantMessage("there are no documents yet", nil),
 			},
-			Content: "what documents do we have",
-			Settles: true,
+			Content:  "what documents do we have",
+			Settles:  true,
+			Stores:   storeCalls{HistoryGet: 2, HistorySet: 1, BlobDelete: 1, PendingGet: 2},
+			Writes:   4,
+			Streams:  2,
+			Searches: 1,
 			Expect: func(t *testing.T, rec *recorder, cm *mock.ChatModel, _ *stores) {
 				// the user is told which tool is running before it runs,
 				// sees the answer stream in, and the turn closes cleanly.
@@ -462,6 +588,8 @@ func Test_session_handleMessage(t *testing.T) {
 		},
 		"Empty content is refused": {
 			Content: "   ",
+			Stores:  storeCalls{HistoryGet: 1, PendingGet: 1},
+			Writes:  1,
 			Expect: func(t *testing.T, rec *recorder, cm *mock.ChatModel, _ *stores) {
 				msg, ok := find[protocol.ErrorMessage](rec)
 				require.True(t, ok)
@@ -479,6 +607,9 @@ func Test_session_handleMessage(t *testing.T) {
 			},
 			Content: "make a runbook",
 			Settles: true,
+			Stores:  storeCalls{HistoryGet: 2, BlobSet: 1, PendingGet: 2, PendingSet: 1},
+			Writes:  2,
+			Streams: 1,
 			Expect: func(t *testing.T, rec *recorder, _ *mock.ChatModel, _ *stores) {
 				req, ok := find[protocol.ConfirmRequest](rec)
 				require.True(t, ok, "a write must prompt, got %v", rec.types())
@@ -497,9 +628,13 @@ func Test_session_handleMessage(t *testing.T) {
 			t.Parallel()
 
 			cm := stubChatModel(c.Responses...)
+			searcher := &toolsMock.Searcher{}
+			db := &toolsMock.DB{}
 
 			m, st := testManagerStores()
 			m.model = cm
+			m.search = searcher
+			m.db = db
 
 			s, rec := prepSession(t, m)
 
@@ -526,6 +661,15 @@ func Test_session_handleMessage(t *testing.T) {
 				rec.wait(t)
 			}
 
+			st.assertCalls(t, c.Stores)
+			assert.Len(t, rec.types(), c.Writes)
+			assert.Len(t, cm.StreamCalls(), c.Streams)
+			assert.Len(t, searcher.SearchDocumentBlocksCalls(), c.Searches)
+
+			// the searches find nothing, so no document names are looked
+			// up, and a parked write creates nothing.
+			assert.Empty(t, db.FetchDocumentTreeCalls())
+			assert.Empty(t, db.BeginTxCalls())
 			c.Expect(t, rec, cm, st)
 		})
 	}
@@ -538,18 +682,36 @@ func Test_session_handleReset(t *testing.T) {
 		Processing bool
 		DeleteErr  error
 		Cleared    bool
+		Stores     storeCalls
+		Writes     int
 	}{
 		"Conversation is cleared": {
 			Cleared: true,
+			Stores: storeCalls{
+				HistoryGet:    1,
+				HistoryDelete: 1,
+				BlobDelete:    1,
+				PendingGet:    1,
+				PendingDelete: 1,
+			},
 		},
 		"Error returned by history.Delete": {
 			// a failed delete still clears the session's own copy, so
 			// the user gets the fresh start they asked for.
 			DeleteErr: assert.AnError,
 			Cleared:   true,
+			Stores: storeCalls{
+				HistoryGet:    1,
+				HistoryDelete: 1,
+				BlobDelete:    1,
+				PendingGet:    1,
+				PendingDelete: 1,
+			},
 		},
 		"Reset is refused mid-turn": {
 			Processing: true,
+			Stores:     storeCalls{HistoryGet: 1, PendingGet: 1},
+			Writes:     1,
 		},
 	}
 
@@ -579,6 +741,9 @@ func Test_session_handleReset(t *testing.T) {
 			}
 
 			s.handleReset(context.Background())
+
+			st.assertCalls(t, c.Stores)
+			assert.Len(t, rec.types(), c.Writes)
 
 			s.mu.Lock()
 			left := s.messages
@@ -613,9 +778,10 @@ func Test_session_handleReset(t *testing.T) {
 func Test_session_handleConfirmResponse(t *testing.T) {
 	t.Parallel()
 
-	docID := _stubDocID.String()
-	edit1 := `{"document_id":"` + docID + `","branch_id":"` + _stubBranchID.String() + `","block_uid":"a","content":"<p id=\"a\">one</p>"}`
-	edit2 := `{"document_id":"` + docID + `","branch_id":"` + _stubBranchID.String() + `","block_uid":"b","content":"<p id=\"b\">two</p>"}`
+	docID := xid.New()
+	branchID := xid.New()
+	edit1 := `{"document_id":"` + docID.String() + `","branch_id":"` + branchID.String() + `","block_uid":"a","content":"<p id=\"a\">one</p>"}`
+	edit2 := `{"document_id":"` + docID.String() + `","branch_id":"` + branchID.String() + `","block_uid":"b","content":"<p id=\"b\">two</p>"}`
 
 	oneWrite := []*schema.Message{
 		toolCall("1", string(tools.NameReplaceBlocks), edit1),
@@ -630,6 +796,10 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 		Approved            bool
 		All                 bool
 		Applied             int
+		Stores              storeCalls
+		Writes              int
+		Streams             int
+		Fetches             int
 	}{
 		"Answer abandoned between the look and the claim is dropped": {
 			// between the answer's first look at the pending record and
@@ -641,11 +811,33 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 			Responses:           oneWrite,
 			AbandonedUnderClaim: true,
 			Approved:            true,
+			Stores: storeCalls{
+				HistoryGet: 2,
+				BlobSet:    1,
+				PendingGet: 4,
+				PendingSet: 1,
+			},
+			Writes:  2,
+			Streams: 1,
+			Fetches: 2,
 		},
 		"Approving resumes the parked write": {
 			Responses: oneWrite,
 			Approved:  true,
 			Applied:   1,
+			Stores: storeCalls{
+				HistoryGet:    2,
+				HistorySet:    1,
+				BlobGet:       1,
+				BlobSet:       1,
+				BlobDelete:    1,
+				PendingGet:    4,
+				PendingSet:    1,
+				PendingDelete: 1,
+			},
+			Writes:  6,
+			Streams: 2,
+			Fetches: 4,
 		},
 		"Unresumable checkpoint fails the turn": {
 			// the pending record is the only route back to a checkpoint,
@@ -656,9 +848,34 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 			Responses:         oneWrite,
 			CorruptCheckpoint: true,
 			Approved:          true,
+			Stores: storeCalls{
+				HistoryGet:    2,
+				BlobGet:       1,
+				BlobSet:       2,
+				BlobDelete:    1,
+				PendingGet:    4,
+				PendingSet:    1,
+				PendingDelete: 1,
+			},
+			Writes:  4,
+			Streams: 1,
+			Fetches: 2,
 		},
 		"Declining finishes the turn without writing": {
 			Responses: oneWrite,
+			Stores: storeCalls{
+				HistoryGet:    2,
+				HistorySet:    1,
+				BlobGet:       1,
+				BlobSet:       1,
+				BlobDelete:    1,
+				PendingGet:    4,
+				PendingSet:    1,
+				PendingDelete: 1,
+			},
+			Writes:  6,
+			Streams: 2,
+			Fetches: 3,
 		},
 		"Approving all covers later writes in the same turn": {
 			// two separate write batches: the first is confirmed, the
@@ -671,6 +888,19 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 			Approved: true,
 			All:      true,
 			Applied:  2,
+			Stores: storeCalls{
+				HistoryGet:    2,
+				HistorySet:    1,
+				BlobGet:       1,
+				BlobSet:       1,
+				BlobDelete:    1,
+				PendingGet:    4,
+				PendingSet:    1,
+				PendingDelete: 1,
+			},
+			Writes:  7,
+			Streams: 3,
+			Fetches: 6,
 		},
 		"Answer to another turn is ignored": {
 			// only the outstanding confirmation can be answered, or a
@@ -678,6 +908,15 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 			Responses: oneWrite,
 			StaleTurn: true,
 			Approved:  true,
+			Stores: storeCalls{
+				HistoryGet: 2,
+				BlobSet:    1,
+				PendingGet: 3,
+				PendingSet: 1,
+			},
+			Writes:  2,
+			Streams: 1,
+			Fetches: 2,
 		},
 	}
 
@@ -685,16 +924,43 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			applier := stubEditApplier()
+			applier := &toolsMock.EditApplier{
+				ApplyFunc: func(_ context.Context, _, _ xid.ID, _ []edit.Operation, _ string, _ bool) (edit.Result, error) {
+					return edit.Result{Errors: []edit.OpError{}}, nil
+				},
+			}
 			cm := stubChatModel(c.Responses...)
+
+			// every branch read answers with the same document, holding
+			// the two paragraphs the edits target, so an edit tool can
+			// name what it is about to change.
+			content := document.RootBlock{
+				Content: []document.Block{
+					{Type: document.BlockNodeParagraph, Attrs: document.Attributes{document.AttrUID: "a"}},
+					{Type: document.BlockNodeParagraph, Attrs: document.Attributes{document.AttrUID: "b"}},
+				},
+			}
+
+			db := &toolsMock.DB{
+				FetchDocumentByBranchIDFunc: func(_ context.Context, id xid.ID, orgID string) (*document.Document, error) {
+					return &document.Document{
+						BranchID:       id,
+						DocumentName:   "Runbook",
+						Default:        true,
+						Content:        content,
+						ID:             docID,
+						OrganizationID: orgID,
+					}, nil
+				},
+			}
 
 			m, st := testManagerStores()
 			m.model = cm
-			m.db = stubDocumentDB()
+			m.db = db
 			m.applier = applier
 
 			s, rec := prepSession(t, m)
-			s.SetActiveDocument(docID, _stubBranchID.String())
+			s.SetActiveDocument(docID.String(), branchID.String())
 
 			s.handleMessage(context.Background(), "reword the intro")
 			rec.wait(t)
@@ -734,6 +1000,22 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 
 			s.handleConfirmResponse(context.Background(), turnID, c.Approved, c.All)
 
+			// a dropped answer starts no turn, so there is nothing to
+			// wait for.
+			if !c.AbandonedUnderClaim && !c.StaleTurn {
+				rec.wait(t)
+			}
+
+			st.assertCalls(t, c.Stores)
+			assert.Len(t, rec.types(), c.Writes)
+			assert.Len(t, cm.StreamCalls(), c.Streams)
+			assert.Len(t, db.FetchDocumentByBranchIDCalls(), c.Fetches)
+
+			// the branch resolves and the edits hold no metric, so no
+			// branch list or data source is read.
+			assert.Empty(t, db.FetchDocumentBranchesCalls())
+			assert.Empty(t, db.FetchDataSourceCalls())
+
 			if c.AbandonedUnderClaim {
 				// nothing resumed and nothing was applied — and the claim
 				// was handed back, so the abandoning turn's successor can
@@ -754,8 +1036,6 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 				return
 			}
 
-			rec.wait(t)
-
 			assert.Len(t, applier.ApplyCalls(), c.Applied)
 			assert.Contains(t, rec.types(), string(protocol.ServerTypeDone))
 
@@ -775,7 +1055,7 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 			// answer must not displace it from the session values.
 			for _, call := range cm.StreamCalls() {
 				require.NotEmpty(t, call.Input)
-				assert.Contains(t, call.Input[0].Content, docID)
+				assert.Contains(t, call.Input[0].Content, docID.String())
 			}
 		})
 	}
@@ -784,33 +1064,70 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 func Test_session_beginTurn(t *testing.T) {
 	t.Parallel()
 
-	m := testManager()
-	s, rec := prepSession(t, m)
-
-	require.True(t, s.beginTurn(context.Background()))
-
-	// a second turn is refused while the first runs, so two messages
-	// cannot interleave in one conversation.
-	assert.False(t, s.beginTurn(context.Background()))
-
-	msg, ok := find[protocol.ErrorMessage](rec)
-	require.True(t, ok)
-	assert.Equal(t, "already processing a message", msg.Message)
-
 	// the claim covers every connection of the same (org, user): a
 	// second session over the same conversation shares the one history
 	// and checkpoint, so its turn is refused just the same.
-	other, otherRec := prepSession(t, m)
+	cc := map[string]struct {
+		Held      bool
+		Elsewhere bool
+		Released  bool
+		Result    bool
+		Message   string
+		Writes    int
+	}{
+		"Free conversation is claimed": {
+			Result: true,
+		},
+		"Second turn is refused while the first runs": {
+			// a second turn is refused while the first runs, so two
+			// messages cannot interleave in one conversation.
+			Held:    true,
+			Message: "already processing a message",
+			Writes:  1,
+		},
+		"Turn on another connection is refused": {
+			Held:      true,
+			Elsewhere: true,
+			Message:   "already processing a message",
+			Writes:    1,
+		},
+		"Released claim lets another connection begin": {
+			// once released, either connection may begin the next turn.
+			Held:      true,
+			Elsewhere: true,
+			Released:  true,
+			Result:    true,
+		},
+	}
 
-	assert.False(t, other.beginTurn(context.Background()))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	msg, ok = find[protocol.ErrorMessage](otherRec)
-	require.True(t, ok)
-	assert.Equal(t, "already processing a message", msg.Message)
+			m, _ := testManagerStores()
+			s, rec := prepSession(t, m)
 
-	// once released, either connection may begin the next turn.
-	m.releaseTurn(s.key)
-	assert.True(t, other.beginTurn(context.Background()))
+			holder := s
+			if c.Elsewhere {
+				holder, _ = prepSession(t, m)
+			}
+
+			if c.Held {
+				require.True(t, holder.beginTurn(context.Background()))
+			}
+
+			if c.Released {
+				m.releaseTurn(holder.key)
+			}
+
+			assert.Equal(t, c.Result, s.beginTurn(context.Background()))
+			assert.Len(t, rec.types(), c.Writes)
+
+			msg, ok := find[protocol.ErrorMessage](rec)
+			require.Equal(t, c.Message != "", ok)
+			assert.Equal(t, c.Message, msg.Message)
+		})
+	}
 }
 
 func Test_session_goTurn(t *testing.T) {
@@ -820,17 +1137,27 @@ func Test_session_goTurn(t *testing.T) {
 		Pending   *persist.PendingConfirm
 		CancelCtx bool
 		Panic     bool
+		Stores    storeCalls
+		Writes    int
 	}{
-		"Finished turn releases the session": {},
+		"Finished turn releases the session": {
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
+		},
 		"Parked turn asks the user once the session is free": {
 			Pending: &persist.PendingConfirm{TurnID: "t1"},
+			Stores:  storeCalls{HistoryGet: 1, PendingGet: 1, PendingSet: 1},
+			Writes:  1,
 		},
 		"Parked turn is persisted past a dead connection": {
 			Pending:   &persist.PendingConfirm{TurnID: "t1"},
 			CancelCtx: true,
+			Stores:    storeCalls{HistoryGet: 1, PendingGet: 1, PendingSet: 1},
+			Writes:    1,
 		},
 		"Panicking turn still closes the turn out": {
-			Panic: true,
+			Panic:  true,
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
+			Writes: 2,
 		},
 	}
 
@@ -882,6 +1209,8 @@ func Test_session_goTurn(t *testing.T) {
 				// client must still hear that the turn ended.
 				s.supv.CloseAndWait()
 
+				st.assertCalls(t, c.Stores)
+				assert.Len(t, rec.types(), c.Writes)
 				assert.Contains(t, rec.types(), string(protocol.ServerTypeError))
 				assert.Contains(t, rec.types(), string(protocol.ServerTypeDone))
 
@@ -893,6 +1222,9 @@ func Test_session_goTurn(t *testing.T) {
 			} else {
 				s.supv.Wait()
 			}
+
+			st.assertCalls(t, c.Stores)
+			assert.Len(t, rec.types(), c.Writes)
 
 			// the claim is released before the question is asked, so an
 			// immediate answer is not refused as a second turn.
@@ -928,7 +1260,8 @@ func Test_session_goTurn(t *testing.T) {
 func Test_session_runOptions(t *testing.T) {
 	t.Parallel()
 
-	s, _ := prepSession(t, testManager())
+	m, _ := testManagerStores()
+	s, _ := prepSession(t, m)
 	s.SetActiveDocument("doc-3", "")
 
 	// the checkpoint id and the active document snapshot, so a mid-turn
@@ -939,29 +1272,65 @@ func Test_session_runOptions(t *testing.T) {
 func Test_session_resendPendingConfirmation(t *testing.T) {
 	t.Parallel()
 
-	m := testManager()
-	m.model = stubChatModel(
-		toolCall("1", string(tools.NameCreateDocument), `{"name":"Runbook"}`),
-		schema.AssistantMessage("created", nil),
-	)
+	cc := map[string]struct {
+		Parked bool
+		Stores storeCalls
+		Writes int
+	}{
+		"Nothing pending sends nothing": {
+			Stores: storeCalls{HistoryGet: 2, PendingGet: 2},
+		},
+		"Pending confirmation is re-delivered": {
+			Parked: true,
+			Stores: storeCalls{
+				HistoryGet: 3,
+				BlobSet:    1,
+				PendingGet: 3,
+				PendingSet: 1,
+			},
+			Writes: 1,
+		},
+	}
 
-	s, rec := prepSession(t, m)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	s.handleMessage(context.Background(), "make a runbook")
-	rec.wait(t)
+			m, st := testManagerStores()
+			m.model = stubChatModel(
+				toolCall("1", string(tools.NameCreateDocument), `{"name":"Runbook"}`),
+				schema.AssistantMessage("created", nil),
+			)
 
-	first, ok := find[protocol.ConfirmRequest](rec)
-	require.True(t, ok, "the write did not prompt, got %v", rec.types())
+			s, rec := prepSession(t, m)
 
-	// a new connection for the same conversation, as though the user had
-	// reloaded the page while the assistant waited on them.
-	_, second := prepSession(t, m)
+			var first protocol.ConfirmRequest
 
-	again, ok := find[protocol.ConfirmRequest](second)
-	require.True(t, ok, "the pending confirmation was not re-delivered")
+			if c.Parked {
+				s.handleMessage(context.Background(), "make a runbook")
+				rec.wait(t)
 
-	// the same question, so the answer the user gives still addresses
-	// the writes the original turn parked on.
-	assert.Equal(t, first.TurnID, again.TurnID)
-	assert.Equal(t, first.Actions, again.Actions)
+				var ok bool
+
+				first, ok = find[protocol.ConfirmRequest](rec)
+				require.True(t, ok, "the write did not prompt, got %v", rec.types())
+			}
+
+			// a new connection for the same conversation, as though the
+			// user had reloaded the page while the assistant waited on
+			// them.
+			_, second := prepSession(t, m)
+
+			st.assertCalls(t, c.Stores)
+			assert.Len(t, second.types(), c.Writes)
+
+			again, ok := find[protocol.ConfirmRequest](second)
+			require.Equal(t, c.Parked, ok, "the pending confirmation was not re-delivered")
+
+			// the same question, so the answer the user gives still
+			// addresses the writes the original turn parked on.
+			assert.Equal(t, first.TurnID, again.TurnID)
+			assert.Equal(t, first.Actions, again.Actions)
+		})
+	}
 }

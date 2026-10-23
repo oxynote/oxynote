@@ -2,22 +2,27 @@ package redkit
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/gomodule/redigo/redis"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rafaeljusto/redigomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func Test_NewValueStore(t *testing.T) {
 	pool := &redis.Pool{}
 	vs := NewValueStore[string](pool, time.Hour*168)
 	require.NotNil(t, vs)
-	assert.Equal(t, vs.pool, pool)
+	assert.Equal(t, pool, vs.pool)
 	assert.Equal(t, time.Hour*168, vs.expireAfter)
 }
 
@@ -84,11 +89,12 @@ func Test_ValueStore_Set(t *testing.T) {
 		"SET returns an error": {
 			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("SET", "test", []byte(`"123"`), "EX", int((time.Hour * 168).Seconds())).ExpectError(assert.AnError)
+				cmd := conn.Command("SET", "test", []byte(`"123"`), "EX", int((time.Hour * 168).Seconds())).ExpectError(assert.AnError)
 
 				return conn, func(t *testing.T) {
 					err := conn.ExpectationsWereMet()
 					assert.NoError(t, err)
+					assert.Equal(t, 1, conn.Stats(cmd))
 				}
 			},
 			Value: "123",
@@ -98,11 +104,12 @@ func Test_ValueStore_Set(t *testing.T) {
 			ExpireAfter: time.Millisecond,
 			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("SET", "test", []byte(`"123"`))
+				cmd := conn.Command("SET", "test", []byte(`"123"`))
 
 				return conn, func(t *testing.T) {
 					err := conn.ExpectationsWereMet()
 					assert.NoError(t, err)
+					assert.Equal(t, 1, conn.Stats(cmd))
 				}
 			},
 			Value: "123",
@@ -110,11 +117,12 @@ func Test_ValueStore_Set(t *testing.T) {
 		"Successfully set element": {
 			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("SET", "test", []byte(`"123"`), "EX", int((time.Hour * 168).Seconds()))
+				cmd := conn.Command("SET", "test", []byte(`"123"`), "EX", int((time.Hour * 168).Seconds()))
 
 				return conn, func(t *testing.T) {
 					err := conn.ExpectationsWereMet()
 					assert.NoError(t, err)
+					assert.Equal(t, 1, conn.Stats(cmd))
 				}
 			},
 			Value: "123",
@@ -153,19 +161,7 @@ func Test_ValueStore_Set(t *testing.T) {
 			err := vs.Set(ctx, "test", c.Value)
 
 			check(t)
-
-			if c.Err != nil {
-				if errors.Is(c.Err, assert.AnError) {
-					assert.Error(t, err)
-					return
-				}
-
-				assert.Equal(t, c.Err, err)
-
-				return
-			}
-
-			assert.NoError(t, err)
+			testutil.AssertEqualError(t, c.Err, err)
 		})
 	}
 }
@@ -196,11 +192,12 @@ func Test_ValueStore_Get(t *testing.T) {
 		"GET returns an error": {
 			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("GET", "test").ExpectError(assert.AnError)
+				cmd := conn.Command("GET", "test").ExpectError(assert.AnError)
 
 				return conn, func(t *testing.T) {
 					err := conn.ExpectationsWereMet()
 					assert.NoError(t, err)
+					assert.Equal(t, 1, conn.Stats(cmd))
 				}
 			},
 			Err: assert.AnError,
@@ -208,11 +205,12 @@ func Test_ValueStore_Get(t *testing.T) {
 		"Invalid value": {
 			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("GET", "test").Expect(`{"value":"123"`)
+				cmd := conn.Command("GET", "test").Expect(`{"value":"123"`)
 
 				return conn, func(t *testing.T) {
 					err := conn.ExpectationsWereMet()
 					assert.NoError(t, err)
+					assert.Equal(t, 1, conn.Stats(cmd))
 				}
 			},
 			Err: assert.AnError,
@@ -220,11 +218,12 @@ func Test_ValueStore_Get(t *testing.T) {
 		"Key is not found": {
 			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("GET", "test").ExpectError(redis.ErrNil)
+				cmd := conn.Command("GET", "test").ExpectError(redis.ErrNil)
 
 				return conn, func(t *testing.T) {
 					err := conn.ExpectationsWereMet()
 					assert.NoError(t, err)
+					assert.Equal(t, 1, conn.Stats(cmd))
 				}
 			},
 			Err: errutil.ErrNotFound,
@@ -232,11 +231,12 @@ func Test_ValueStore_Get(t *testing.T) {
 		"Successfully retrieved value": {
 			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("GET", "test").Expect(`{"value":"123"}`)
+				cmd := conn.Command("GET", "test").Expect(`{"value":"123"}`)
 
 				return conn, func(t *testing.T) {
 					err := conn.ExpectationsWereMet()
 					assert.NoError(t, err)
+					assert.Equal(t, 1, conn.Stats(cmd))
 				}
 			},
 			Result: testStruct{
@@ -272,21 +272,15 @@ func Test_ValueStore_Get(t *testing.T) {
 			res, err := vs.Get(ctx, "test")
 
 			check(t)
+			testutil.AssertEqualError(t, c.Err, err)
 
-			if c.Err != nil {
+			if err != nil {
 				assert.Nil(t, res)
-
-				if errors.Is(c.Err, assert.AnError) {
-					assert.Error(t, err)
-					return
-				}
-
-				assert.Equal(t, c.Err, err)
 
 				return
 			}
 
-			assert.NoError(t, err)
+			require.NotNil(t, res)
 			assert.Equal(t, c.Result, *res)
 		})
 	}
@@ -313,11 +307,12 @@ func Test_ValueStore_Delete(t *testing.T) {
 		"DEL returns an error": {
 			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("DEL", "test").ExpectError(assert.AnError)
+				cmd := conn.Command("DEL", "test").ExpectError(assert.AnError)
 
 				return conn, func(t *testing.T) {
 					err := conn.ExpectationsWereMet()
 					assert.NoError(t, err)
+					assert.Equal(t, 1, conn.Stats(cmd))
 				}
 			},
 			Err: assert.AnError,
@@ -325,11 +320,12 @@ func Test_ValueStore_Delete(t *testing.T) {
 		"Successfully deleted element": {
 			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("DEL", "test").Expect(int64(1))
+				cmd := conn.Command("DEL", "test").Expect(int64(1))
 
 				return conn, func(t *testing.T) {
 					err := conn.ExpectationsWereMet()
 					assert.NoError(t, err)
+					assert.Equal(t, 1, conn.Stats(cmd))
 				}
 			},
 		},
@@ -362,19 +358,7 @@ func Test_ValueStore_Delete(t *testing.T) {
 			err := vs.Delete(ctx, "test")
 
 			check(t)
-
-			if c.Err != nil {
-				if errors.Is(c.Err, assert.AnError) {
-					assert.Error(t, err)
-					return
-				}
-
-				assert.Equal(t, c.Err, err)
-
-				return
-			}
-
-			assert.NoError(t, err)
+			testutil.AssertEqualError(t, c.Err, err)
 		})
 	}
 }

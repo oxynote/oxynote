@@ -148,6 +148,9 @@ func Test_agent_UpdateDataSource(t *testing.T) {
 	type tcase struct {
 		DataSource *datasource.DataSource
 		Err        error
+		// Check, when set, inspects the stored rows in place of comparing
+		// DataSource with its row.
+		Check func(t *testing.T, db *DB)
 	}
 
 	cc := map[string]func(*testing.T, *DB) tcase{
@@ -161,6 +164,68 @@ func Test_agent_UpdateDataSource(t *testing.T) {
 
 			return tcase{
 				DataSource: ds,
+			}
+		},
+		"Row owned by another organization is untouched": func(t *testing.T, db *DB) tcase {
+			ds := prepDataSources(t, db, 1, nil)[0]
+
+			// the update must not reach a row owned by a different organization,
+			// whatever identifier it is handed.
+			foreign := *ds
+			foreign.OrganizationID = prepOrganizations(t, db, 1)[0]
+			foreign.Name = "renamed-by-another-org"
+
+			return tcase{
+				DataSource: &foreign,
+				Check: func(t *testing.T, db *DB) {
+					res, err := db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
+					require.NoError(t, err)
+					assert.Equal(t, ds.Name, res.Name)
+				},
+			}
+		},
+		"Credentials that could not be read are not written back": func(t *testing.T, db *DB) tcase {
+			ds := prepDataSources(t, db, 1, nil)[0]
+			poisonDataSourceCredentials(t, db, ds.ID)
+
+			broken, err := db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
+			require.NoError(t, err)
+			require.False(t, broken.Credentials.IsValid())
+
+			// storing the data source as it came back would replace the
+			// ciphertext with an encryption of the nothing left in its place.
+			return tcase{
+				DataSource: broken,
+				Err:        assert.AnError,
+			}
+		},
+		"Credentials that could not be read are replaced by new ones": func(t *testing.T, db *DB) tcase {
+			ds := prepDataSources(t, db, 1, nil)[0]
+			poisonDataSourceCredentials(t, db, ds.ID)
+
+			broken, err := db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
+			require.NoError(t, err)
+
+			// what the user re-enters becomes the whole pair: there was nothing
+			// readable left to merge onto.
+			require.NoError(t, broken.ApplyUpdate(datasource.UpdateInput{
+				Credentials: null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user","password":"pass"}`)),
+			}))
+			broken.Status = processor.ConnectionStatusSuccess
+
+			return tcase{
+				DataSource: broken,
+				Check: func(t *testing.T, db *DB) {
+					res, err := db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
+					require.NoError(t, err)
+					assert.True(t, res.Credentials.IsValid())
+					assert.Equal(
+						t,
+						processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+						res.Credentials,
+					)
+					assert.Equal(t, processor.ConnectionStatusSuccess, res.Status)
+				},
 			}
 		},
 	}
@@ -179,76 +244,101 @@ func Test_agent_UpdateDataSource(t *testing.T) {
 				return
 			}
 
+			if c.Check != nil {
+				c.Check(t, db)
+
+				return
+			}
+
 			res, err := db.FetchDataSource(context.Background(), c.DataSource.ID, c.DataSource.OrganizationID)
 			require.NoError(t, err)
 			testutil.AssertFilterEqual(t, c.DataSource, res)
 		})
 	}
+}
 
-	t.Run("Another organization's row is untouched", func(t *testing.T) {
-		t.Parallel()
+func Test_agent_UpdateDataSourceStatus(t *testing.T) {
+	type tcase struct {
+		CancelledContext bool
+		ID               xid.ID
+		OrganizationID   string
+		Status           processor.ConnectionStatus
+		Err              error
+		// Check inspects the stored rows.
+		Check func(t *testing.T, db *DB)
+	}
 
-		db := prepTempDB(t)
-		ds := prepDataSources(t, db, 1, nil)[0]
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(t *testing.T, db *DB) tcase {
+			ds := prepDataSources(t, db, 1, nil)[0]
 
-		// the update must not reach a row owned by a different organization,
-		// whatever identifier it is handed.
-		foreign := *ds
-		foreign.OrganizationID = prepOrganizations(t, db, 1)[0]
-		foreign.Name = "renamed-by-another-org"
+			return tcase{
+				CancelledContext: true,
+				ID:               ds.ID,
+				OrganizationID:   ds.OrganizationID,
+				Status:           processor.ConnectionStatusUnreachable,
+				Err:              assert.AnError,
+			}
+		},
+		"Row owned by another organization is untouched": func(t *testing.T, db *DB) tcase {
+			ds := prepDataSources(t, db, 1, nil)[0]
 
-		require.NoError(t, db.UpdateDataSource(context.Background(), &foreign))
+			return tcase{
+				ID:             ds.ID,
+				OrganizationID: prepOrganizations(t, db, 1)[0],
+				Status:         processor.ConnectionStatusUnreachable,
+				Check: func(t *testing.T, db *DB) {
+					assert.Equal(t, processor.ConnectionStatusSuccess, fetchDataSourceStatus(t, db, ds.ID))
+				},
+			}
+		},
+		"Successful update": func(t *testing.T, db *DB) tcase {
+			ds := prepDataSources(t, db, 1, nil)[0]
+			credentials := fetchDataSourceCredentials(t, db, ds.ID)
 
-		res, err := db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
-		require.NoError(t, err)
-		assert.Equal(t, ds.Name, res.Name)
-	})
+			return tcase{
+				ID:             ds.ID,
+				OrganizationID: ds.OrganizationID,
+				Status:         processor.ConnectionStatusUnreachable,
+				Check: func(t *testing.T, db *DB) {
+					exp := *ds
+					exp.Status = processor.ConnectionStatusUnreachable
 
-	t.Run("Credentials that could not be read are not written back", func(t *testing.T) {
-		t.Parallel()
+					res, err := db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
+					require.NoError(t, err)
+					testutil.AssertFilterEqual(t, &exp, res)
 
-		db := prepTempDB(t)
-		ds := prepDataSources(t, db, 1, nil)[0]
-		poisonDataSourceCredentials(t, db, ds.ID)
+					// the credentials are not encrypted again.
+					assert.Equal(t, credentials, fetchDataSourceCredentials(t, db, ds.ID))
+				},
+			}
+		},
+	}
 
-		broken, err := db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
-		require.NoError(t, err)
-		require.False(t, broken.Credentials.IsValid())
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-		// storing the data source as it came back would replace the
-		// ciphertext with an encryption of the nothing left in its place.
-		require.Error(t, db.UpdateDataSource(context.Background(), broken))
-	})
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-	t.Run("Credentials that could not be read are replaced by new ones", func(t *testing.T) {
-		t.Parallel()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
-		db := prepTempDB(t)
-		ds := prepDataSources(t, db, 1, nil)[0]
-		poisonDataSourceCredentials(t, db, ds.ID)
+			if c.CancelledContext {
+				cancel()
+			}
 
-		broken, err := db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
-		require.NoError(t, err)
+			err := db.UpdateDataSourceStatus(ctx, c.ID, c.OrganizationID, c.Status)
+			testutil.RequireEqualError(t, c.Err, err)
 
-		// what the user re-enters becomes the whole pair: there was nothing
-		// readable left to merge onto.
-		require.NoError(t, broken.ApplyUpdate(datasource.UpdateInput{
-			Credentials: null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user","password":"pass"}`)),
-		}))
-		broken.Status = processor.ConnectionStatusSuccess
+			if err != nil {
+				return
+			}
 
-		require.NoError(t, db.UpdateDataSource(context.Background(), broken))
-
-		res, err := db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
-		require.NoError(t, err)
-		assert.True(t, res.Credentials.IsValid())
-		assert.Equal(
-			t,
-			processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
-			res.Credentials,
-		)
-		assert.Equal(t, processor.ConnectionStatusSuccess, res.Status)
-	})
+			c.Check(t, db)
+		})
+	}
 }
 
 func Test_agent_ReencryptDataSourceCredentials(t *testing.T) {
@@ -499,106 +589,268 @@ func fetchDataSourceCredentials(t *testing.T, db *DB, id xid.ID) []byte {
 }
 
 func Test_agent_FetchDataSource(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		ID             xid.ID
+		OrganizationID string
+		Err            error
+		// Check inspects the result and the row it was read from.
+		Check func(t *testing.T, db *DB, res *datasource.DataSource)
+	}
 
-	// error - not found
-	res, err := db.FetchDataSource(context.Background(), xid.New(), "non-existent-org-id")
-	testutil.AssertEqualError(t, sql.ErrNoRows, err)
-	assert.Nil(t, res)
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Data source not found": func(*testing.T, *DB) tcase {
+			return tcase{
+				ID:             xid.New(),
+				OrganizationID: "non-existent-org-id",
+				Err:            sql.ErrNoRows,
+			}
+		},
+		"Undecryptable credentials are recorded": func(t *testing.T, db *DB) tcase {
+			ds := prepDataSources(t, db, 1, nil)[0]
+			poisonDataSourceCredentials(t, db, ds.ID)
 
-	// success - undecryptable credentials
-	ds := prepDataSources(t, db, 1, nil)[0]
-	poisonDataSourceCredentials(t, db, ds.ID)
+			return tcase{
+				ID:             ds.ID,
+				OrganizationID: ds.OrganizationID,
+				Check: func(t *testing.T, db *DB, res *datasource.DataSource) {
+					require.NotNil(t, res)
+					assert.False(t, res.Credentials.IsValid())
+					assert.Equal(t, processor.ConnectionStatusInvalidEncryptionKey, res.Status)
+					assert.Equal(t, processor.ConnectionStatusInvalidEncryptionKey, fetchDataSourceStatus(t, db, ds.ID))
+				},
+			}
+		},
+		"Undecryptable credentials already recorded": func(t *testing.T, db *DB) tcase {
+			ds := prepDataSources(t, db, 1, func(_ int, nds *datasource.DataSource) {
+				nds.Status = processor.ConnectionStatusInvalidEncryptionKey
+			})[0]
 
-	res, err = db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
-	require.NoError(t, err)
-	require.NotNil(t, res)
-	assert.False(t, res.Credentials.IsValid())
-	assert.Equal(t, processor.ConnectionStatusInvalidEncryptionKey, res.Status)
-	assert.Equal(t, processor.ConnectionStatusInvalidEncryptionKey, fetchDataSourceStatus(t, db, ds.ID))
+			poisonDataSourceCredentials(t, db, ds.ID)
 
-	// success - undecryptable credentials already recorded
-	res, err = db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
-	require.NoError(t, err)
-	require.NotNil(t, res)
-	assert.False(t, res.Credentials.IsValid())
-	assert.Equal(t, processor.ConnectionStatusInvalidEncryptionKey, res.Status)
+			return tcase{
+				ID:             ds.ID,
+				OrganizationID: ds.OrganizationID,
+				Check: func(t *testing.T, _ *DB, res *datasource.DataSource) {
+					require.NotNil(t, res)
+					assert.False(t, res.Credentials.IsValid())
+					assert.Equal(t, processor.ConnectionStatusInvalidEncryptionKey, res.Status)
+				},
+			}
+		},
+		"Undecryptable credentials cannot be recorded": func(t *testing.T, db *DB) tcase {
+			ds := prepDataSources(t, db, 1, nil)[0]
+			poisonDataSourceCredentials(t, db, ds.ID)
+			rejectInvalidEncryptionKeyStatus(t, db)
 
-	// error - undecryptable credentials cannot be recorded
-	ds = prepDataSources(t, db, 1, nil)[0]
-	poisonDataSourceCredentials(t, db, ds.ID)
-	rejectInvalidEncryptionKeyStatus(t, db)
+			return tcase{
+				ID:             ds.ID,
+				OrganizationID: ds.OrganizationID,
+				Err:            assert.AnError,
+			}
+		},
+		"Successful fetch": func(t *testing.T, db *DB) tcase {
+			// another organization's data source is stored first. The fetch
+			// must pass over it.
+			prepDataSources(t, db, 1, nil)
+			ds := prepDataSources(t, db, 1, nil)[0]
 
-	res, err = db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
-	require.Error(t, err)
-	assert.Nil(t, res)
+			return tcase{
+				ID:             ds.ID,
+				OrganizationID: ds.OrganizationID,
+				Check: func(t *testing.T, _ *DB, res *datasource.DataSource) {
+					testutil.AssertFilterEqual(t, ds, res)
+				},
+			}
+		},
+	}
 
-	// success
-	ds = prepDataSources(t, db, 1, nil)[0]
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	res, err = db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
-	assert.NoError(t, err)
-	testutil.AssertFilterEqual(t, ds, res)
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			res, err := db.FetchDataSource(context.Background(), c.ID, c.OrganizationID)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, res)
+
+				return
+			}
+
+			c.Check(t, db, res)
+		})
+	}
 }
 
 func Test_agent_FetchDataSources(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		CancelledContext bool
+		OrganizationID   string
+		Err              error
+		// Check inspects the result and the rows it was read from.
+		Check func(t *testing.T, db *DB, res []datasource.DataSource)
+	}
 
-	// success - no data sources
-	res, err := db.FetchDataSources(context.Background(), "non-existent-org-id")
-	require.NoError(t, err)
-	assert.Empty(t, res)
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"No data sources": func(*testing.T, *DB) tcase {
+			return tcase{
+				OrganizationID: "non-existent-org-id",
+				Check: func(t *testing.T, _ *DB, res []datasource.DataSource) {
+					assert.Empty(t, res)
+				},
+			}
+		},
+		"Cancelled context": func(*testing.T, *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				OrganizationID:   "non-existent-org-id",
+				Err:              assert.AnError,
+			}
+		},
+		"One undecryptable data source does not break the listing": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+			mixed := prepDataSources(t, db, 2, func(_ int, nds *datasource.DataSource) {
+				nds.OrganizationID = org
+			})
 
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+			poisonDataSourceCredentials(t, db, mixed[1].ID)
 
-	res, err = db.FetchDataSources(ctx, "non-existent-org-id")
-	require.Error(t, err)
-	assert.Nil(t, res)
+			return tcase{
+				OrganizationID: org,
+				Check: func(t *testing.T, db *DB, res []datasource.DataSource) {
+					require.Len(t, res, len(mixed))
 
-	// success - one undecryptable data source does not break the listing
-	org := prepOrganizations(t, db, 1)[0]
-	mixed := prepDataSources(t, db, 2, func(_ int, nds *datasource.DataSource) {
-		nds.OrganizationID = org
-	})
+					testutil.AssertFilterEqual(t, *mixed[0], res[0])
 
-	poisonDataSourceCredentials(t, db, mixed[1].ID)
+					assert.False(t, res[1].Credentials.IsValid())
+					assert.Equal(t, processor.ConnectionStatusInvalidEncryptionKey, res[1].Status)
+					assert.Equal(t, processor.ConnectionStatusInvalidEncryptionKey, fetchDataSourceStatus(t, db, mixed[1].ID))
+				},
+			}
+		},
+		"Undecryptable credentials cannot be recorded": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+			ds := prepDataSources(t, db, 1, func(_ int, nds *datasource.DataSource) {
+				nds.OrganizationID = org
+			})[0]
 
-	res, err = db.FetchDataSources(context.Background(), org)
-	require.NoError(t, err)
-	require.Len(t, res, len(mixed))
+			poisonDataSourceCredentials(t, db, ds.ID)
+			rejectInvalidEncryptionKeyStatus(t, db)
 
-	testutil.AssertFilterEqual(t, *mixed[0], res[0])
+			return tcase{
+				OrganizationID: org,
+				Err:            assert.AnError,
+			}
+		},
+		"Ordered by creation time newest first": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+			sources := prepDataSources(t, db, 3, func(_ int, nds *datasource.DataSource) {
+				nds.OrganizationID = org
+			})
 
-	assert.False(t, res[1].Credentials.IsValid())
-	assert.Equal(t, processor.ConnectionStatusInvalidEncryptionKey, res[1].Status)
-	assert.Equal(t, processor.ConnectionStatusInvalidEncryptionKey, fetchDataSourceStatus(t, db, mixed[1].ID))
+			// another organization's data source must stay out of the listing.
+			prepDataSources(t, db, 1, nil)
 
-	// error - undecryptable credentials cannot be recorded
-	org = prepOrganizations(t, db, 1)[0]
-	ds := prepDataSources(t, db, 1, func(_ int, nds *datasource.DataSource) {
-		nds.OrganizationID = org
-	})[0]
+			return tcase{
+				OrganizationID: org,
+				Check: func(t *testing.T, _ *DB, res []datasource.DataSource) {
+					require.Len(t, res, len(sources))
 
-	poisonDataSourceCredentials(t, db, ds.ID)
-	rejectInvalidEncryptionKeyStatus(t, db)
+					for i, ds := range sources {
+						testutil.AssertFilterEqual(t, *ds, res[i])
+					}
+				},
+			}
+		},
+	}
 
-	res, err = db.FetchDataSources(context.Background(), org)
-	require.Error(t, err)
-	assert.Nil(t, res)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// success - ordered by creation time, newest first
-	org = prepOrganizations(t, db, 1)[0]
-	sources := prepDataSources(t, db, 3, func(_ int, nds *datasource.DataSource) {
-		nds.OrganizationID = org
-	})
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-	res, err = db.FetchDataSources(context.Background(), org)
-	assert.NoError(t, err)
-	require.Len(t, res, len(sources))
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
-	for i, ds := range sources {
-		testutil.AssertFilterEqual(t, *ds, res[i])
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchDataSources(ctx, c.OrganizationID)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, res)
+
+				return
+			}
+
+			c.Check(t, db, res)
+		})
+	}
+}
+
+func Test_agent_markCredentialsUndecryptable(t *testing.T) {
+	type tcase struct {
+		DataSource *datasource.DataSource
+		Err        error
+		// Status is what the row stores afterwards.
+		Status processor.ConnectionStatus
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Status already recorded": func(t *testing.T, db *DB) tcase {
+			ds := prepDataSources(t, db, 1, nil)[0]
+
+			// the row still holds its old status, so a write would show.
+			marked := *ds
+			marked.Status = processor.ConnectionStatusInvalidEncryptionKey
+
+			return tcase{
+				DataSource: &marked,
+				Status:     processor.ConnectionStatusSuccess,
+			}
+		},
+		"Error returned by UpdateDataSourceStatus": func(t *testing.T, db *DB) tcase {
+			ds := prepDataSources(t, db, 1, nil)[0]
+			rejectInvalidEncryptionKeyStatus(t, db)
+
+			return tcase{
+				DataSource: ds,
+				Err:        assert.AnError,
+			}
+		},
+		"Successful mark": func(t *testing.T, db *DB) tcase {
+			ds := prepDataSources(t, db, 1, nil)[0]
+
+			return tcase{
+				DataSource: ds,
+				Status:     processor.ConnectionStatusInvalidEncryptionKey,
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			err := db.markCredentialsUndecryptable(context.Background(), c.DataSource)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, processor.ConnectionStatusInvalidEncryptionKey, c.DataSource.Status)
+			assert.Equal(t, c.Status, fetchDataSourceStatus(t, db, c.DataSource.ID))
+		})
 	}
 }

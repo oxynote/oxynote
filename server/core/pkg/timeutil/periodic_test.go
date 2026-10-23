@@ -12,10 +12,7 @@ import (
 func Test_NewPeriodicExec(t *testing.T) {
 	t.Parallel()
 
-	fn := func(context.Context) {}
-	recovery := func(any) {}
-
-	pe := NewPeriodicExec(time.Minute, time.Second, fn, recovery, true)
+	pe := NewPeriodicExec(time.Minute, time.Second, func(context.Context) {}, func(any) {}, true)
 	require.NotNil(t, pe)
 	assert.Equal(t, time.Minute, pe.interval)
 	assert.Equal(t, time.Second, pe.offset)
@@ -28,38 +25,29 @@ func Test_NewPeriodicExec(t *testing.T) {
 func Test_PeriodicExec_Trigger(t *testing.T) {
 	t.Parallel()
 
-	// repeated triggers never block and collapse into one pending run.
-	pe := NewPeriodicExec(time.Hour, 0, func(context.Context) {}, nil, false)
-	pe.Trigger()
-	pe.Trigger()
-	assert.Len(t, pe.trigger, 1)
+	cc := map[string]struct {
+		Pending bool
+	}{
+		"Trigger is queued when none is pending": {},
+		"Repeated triggers never block and collapse into one pending run": {
+			Pending: true,
+		},
+	}
 
-	// a trigger runs the function without waiting for the interval, and
-	// the interval keeps its schedule.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	var runs int
+			pe := NewPeriodicExec(time.Hour, 0, func(context.Context) {}, nil, false)
 
-	stopCh := make(chan struct{})
+			if c.Pending {
+				pe.Trigger()
+			}
 
-	pe = NewPeriodicExec(time.Hour, 0, func(context.Context) {
-		runs++
-
-		cancel()
-	}, nil, false)
-
-	go func() {
-		defer close(stopCh)
-
-		pe.Start(ctx)
-	}()
-
-	pe.Trigger()
-
-	<-stopCh
-
-	assert.Equal(t, 1, runs)
+			pe.Trigger()
+			assert.Len(t, pe.trigger, 1)
+		})
+	}
 }
 
 func Test_PeriodicExec_Start(t *testing.T) {
@@ -68,6 +56,7 @@ func Test_PeriodicExec_Start(t *testing.T) {
 	cc := map[string]struct {
 		Immediate bool
 		Interval  time.Duration
+		Trigger   bool
 		Runs      int
 	}{
 		"Cancelled before the first interval elapses": {
@@ -82,6 +71,11 @@ func Test_PeriodicExec_Start(t *testing.T) {
 			Interval: time.Millisecond,
 			Runs:     3,
 		},
+		"Trigger runs the function without waiting for the interval": {
+			Interval: time.Hour,
+			Trigger:  true,
+			Runs:     1,
+		},
 	}
 
 	for cn, c := range cc {
@@ -95,17 +89,23 @@ func Test_PeriodicExec_Start(t *testing.T) {
 
 			stopCh := make(chan struct{})
 
+			pe := NewPeriodicExec(c.Interval, 0, func(context.Context) {
+				runs++
+
+				if runs >= c.Runs {
+					cancel()
+				}
+			}, nil, c.Immediate)
+
 			go func() {
 				defer close(stopCh)
 
-				NewPeriodicExec(c.Interval, 0, func(context.Context) {
-					runs++
-
-					if runs >= c.Runs {
-						cancel()
-					}
-				}, nil, c.Immediate).Start(ctx)
+				pe.Start(ctx)
 			}()
+
+			if c.Trigger {
+				pe.Trigger()
+			}
 
 			if c.Runs == 0 {
 				cancel()
@@ -121,32 +121,58 @@ func Test_PeriodicExec_Start(t *testing.T) {
 func Test_PeriodicExec_exec(t *testing.T) {
 	t.Parallel()
 
-	// a panic is handed to the recovery function instead of unwinding.
-	var recovered any
+	cc := map[string]struct {
+		Panic     bool
+		Recovery  bool
+		Panics    bool
+		Recovered []any
+	}{
+		"Panic is handed to the recovery function instead of unwinding": {
+			Panic:     true,
+			Recovery:  true,
+			Recovered: []any{"boom"},
+		},
+		"Panic keeps unwinding without a recovery function": {
+			Panic:  true,
+			Panics: true,
+		},
+		"Run that does not panic leaves nothing behind": {
+			Recovery: true,
+		},
+	}
 
-	NewPeriodicExec(time.Hour, 0, func(context.Context) {
-		panic("boom")
-	}, func(v any) {
-		recovered = v
-	}, false).exec(context.Background())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	assert.Equal(t, "boom", recovered)
+			var (
+				runs      int
+				recovered []any
+				recovery  func(v any)
+			)
 
-	// without a recovery function the panic keeps unwinding.
-	assert.Panics(t, func() {
-		NewPeriodicExec(time.Hour, 0, func(context.Context) {
-			panic("boom")
-		}, nil, false).exec(context.Background())
-	})
+			if c.Recovery {
+				recovery = func(v any) {
+					recovered = append(recovered, v)
+				}
+			}
 
-	// a run that does not panic leaves nothing behind.
-	var called bool
+			pe := NewPeriodicExec(time.Hour, 0, func(context.Context) {
+				runs++
 
-	NewPeriodicExec(time.Hour, 0, func(context.Context) {
-		called = true
-	}, func(any) {
-		t.Fatal("recovery must not be called")
-	}, false).exec(context.Background())
+				if c.Panic {
+					panic("boom")
+				}
+			}, recovery, false)
 
-	assert.True(t, called)
+			if c.Panics {
+				assert.Panics(t, func() { pe.exec(context.Background()) })
+			} else {
+				assert.NotPanics(t, func() { pe.exec(context.Background()) })
+			}
+
+			assert.Equal(t, 1, runs)
+			assert.Equal(t, c.Recovered, recovered)
+		})
+	}
 }

@@ -196,6 +196,9 @@ type BranchSummary struct {
 	// BranchID is the unique identifier for this branch row.
 	BranchID xid.ID `json:"branchId" db:"branch_id"`
 
+	// DocumentID is the identifier of the document the branch belongs to.
+	DocumentID xid.ID `json:"documentId" db:"document_id"`
+
 	// BranchName is the branch identifier (e.g. "main", "feature-x").
 	BranchName string `json:"branchName" db:"branch_name"`
 

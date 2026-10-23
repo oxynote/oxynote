@@ -145,15 +145,34 @@ func Test_fail(t *testing.T) {
 func Test_warnDisabled(t *testing.T) {
 	t.Parallel()
 
-	// a configured integration announces nothing.
-	var buf bytes.Buffer
+	cc := map[string]struct {
+		Configured bool
+		Warns      bool
+	}{
+		"Configured integration announces nothing": {
+			Configured: true,
+		},
+		"Disabled integration warns": {
+			Warns: true,
+		},
+	}
 
-	log := slog.New(slog.NewTextHandler(&buf, nil))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	warnDisabled(log, true, "search is disabled")
-	assert.Empty(t, buf.String())
+			var buf bytes.Buffer
 
-	// a disabled one warns.
-	warnDisabled(log, false, "search is disabled")
-	assert.Contains(t, buf.String(), "search is disabled")
+			log := slog.New(slog.NewTextHandler(&buf, nil))
+
+			warnDisabled(log, c.Configured, "search is disabled")
+
+			if !c.Warns {
+				assert.Empty(t, buf.String())
+				return
+			}
+
+			assert.Contains(t, buf.String(), "search is disabled")
+		})
+	}
 }

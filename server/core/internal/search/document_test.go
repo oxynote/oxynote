@@ -29,6 +29,15 @@ func Test_Block_UID(t *testing.T) {
 	assert.Equal(t, "other-p1", Block{ID: "other-p1", BranchID: scope.BranchID}.UID())
 }
 
+func Test_Block_IsDocumentName(t *testing.T) {
+	t.Parallel()
+
+	scope := stubScope()
+
+	assert.True(t, scope.Block(_documentNameUID, "document", "Runbook").IsDocumentName())
+	assert.False(t, scope.Block("p1", "paragraph", "hello").IsDocumentName())
+}
+
 func Test_Scope_Block(t *testing.T) {
 	t.Parallel()
 
@@ -49,122 +58,7 @@ func Test_Scope_Block(t *testing.T) {
 func Test_Scope_entries(t *testing.T) {
 	t.Parallel()
 
-	blocks := []document.Block{
-		{
-			Type:  document.BlockNodeParagraph,
-			Attrs: document.Attributes{"uid": "p1"},
-			Content: []document.Block{
-				{Type: document.BlockNodeText, Text: "first"},
-			},
-		},
-		{
-			Type:  document.BlockNodeBulletList,
-			Attrs: document.Attributes{"uid": "l1"},
-			Content: []document.Block{
-				{
-					Type:  document.BlockNodeListItem,
-					Attrs: document.Attributes{"uid": "li1"},
-					Content: []document.Block{
-						{Type: document.BlockNodeText, Text: "nested"},
-					},
-				},
-			},
-		},
-		// marks split the text into multiple fragments; all of them are
-		// indexed, not just the last one.
-		{
-			Type:  document.BlockNodeParagraph,
-			Attrs: document.Attributes{"uid": "p2"},
-			Content: []document.Block{
-				{Type: document.BlockNodeText, Text: "plain "},
-				{Type: document.BlockNodeText, Text: "bold", Marks: []document.Mark{{Type: "bold"}}},
-				{Type: document.BlockNodeText, Text: " tail"},
-			},
-		},
-		// no uid: the text is not indexable.
-		{
-			Type: document.BlockNodeParagraph,
-			Content: []document.Block{
-				{Type: document.BlockNodeText, Text: "orphan"},
-			},
-		},
-		// no text: nothing to index.
-		{Type: document.BlockNodeHorizontalRule, Attrs: document.Attributes{"uid": "hr1"}},
-		// a metric block's title is an attribute, not a text child.
-		{
-			Type: document.BlockNodeMetricBlock,
-			Attrs: document.Attributes{
-				"uid":               "m1",
-				"title":             "Pizza Fridays",
-				"dataSourceId":      "ds1",
-				"visualizationType": "line_chart",
-				"timeRange":         "1h",
-			},
-		},
-		// a code block keeps its language. An empty or mistyped kept
-		// attribute is left out.
-		{
-			Type:  document.BlockNodeCodeBlock,
-			Attrs: document.Attributes{"uid": "c1", "language": "go"},
-			Content: []document.Block{
-				{Type: document.BlockNodeText, Text: "func main() {}"},
-			},
-		},
-		{
-			Type:  document.BlockNodeCodeBlock,
-			Attrs: document.Attributes{"uid": "c2", "language": ""},
-			Content: []document.Block{
-				{Type: document.BlockNodeText, Text: "plain"},
-			},
-		},
-		{
-			Type:  document.BlockNodeCodeBlock,
-			Attrs: document.Attributes{"uid": "c3", "language": 42},
-			Content: []document.Block{
-				{Type: document.BlockNodeText, Text: "odd"},
-			},
-		},
-		// an untitled metric block has nothing to index.
-		{
-			Type:  document.BlockNodeMetricBlock,
-			Attrs: document.Attributes{"uid": "m2", "title": ""},
-		},
-		{
-			Type:  document.BlockNodeMetricBlock,
-			Attrs: document.Attributes{"uid": "m3"},
-		},
-		// a file block's name is an attribute, not a text child.
-		{
-			Type:  document.BlockNodeFileBlock,
-			Attrs: document.Attributes{"uid": "f1", "name": "quarterly-report.pdf", "size": 2048},
-		},
-		// a file block still uploading has no name to index.
-		{
-			Type:  document.BlockNodeFileBlock,
-			Attrs: document.Attributes{"uid": "f2"},
-		},
-		// an image block is described by its alt and title attributes.
-		{
-			Type:  document.BlockNodeImageBlock,
-			Attrs: document.Attributes{"uid": "i1", "alt": "architecture diagram", "title": "Overview"},
-		},
-		{
-			Type:  document.BlockNodeImageBlock,
-			Attrs: document.Attributes{"uid": "i2", "alt": "login flow"},
-		},
-		// an undescribed image has nothing to index.
-		{
-			Type:  document.BlockNodeImageBlock,
-			Attrs: document.Attributes{"uid": "i3", "src": "/x.png"},
-		},
-	}
-
 	scope := stubScope()
-	res := make(map[string]Block)
-
-	for _, b := range blocks {
-		scope.entries(b, res)
-	}
 
 	metric := scope.Block("m1", "metricBlock", "Pizza Fridays")
 	metric.Attrs = map[string]string{
@@ -175,26 +69,206 @@ func Test_Scope_entries(t *testing.T) {
 	code := scope.Block("c1", "codeBlock", "func main() {}")
 	code.Attrs = map[string]string{"language": "go"}
 
-	assert.Equal(t, map[string]Block{
-		"p1":  scope.Block("p1", "paragraph", "first"),
-		"li1": scope.Block("li1", "listItem", "nested"),
-		"p2":  scope.Block("p2", "paragraph", "plain bold tail"),
-		"m1":  metric,
-		"c1":  code,
-		"c2":  scope.Block("c2", "codeBlock", "plain"),
-		"c3":  scope.Block("c3", "codeBlock", "odd"),
-		"f1":  scope.Block("f1", "fileBlock", "quarterly-report.pdf"),
-		"i1":  scope.Block("i1", "imageBlock", "architecture diagram Overview"),
-		"i2":  scope.Block("i2", "imageBlock", "login flow"),
-	}, res)
+	cc := map[string]struct {
+		Block  document.Block
+		Result map[string]Block
+	}{
+		"Paragraph": {
+			Block: document.Block{
+				Type:  document.BlockNodeParagraph,
+				Attrs: document.Attributes{"uid": "p1"},
+				Content: []document.Block{
+					{Type: document.BlockNodeText, Text: "first"},
+				},
+			},
+			Result: map[string]Block{"p1": scope.Block("p1", "paragraph", "first")},
+		},
+		"Nested list item": {
+			Block: document.Block{
+				Type:  document.BlockNodeBulletList,
+				Attrs: document.Attributes{"uid": "l1"},
+				Content: []document.Block{
+					{
+						Type:  document.BlockNodeListItem,
+						Attrs: document.Attributes{"uid": "li1"},
+						Content: []document.Block{
+							{Type: document.BlockNodeText, Text: "nested"},
+						},
+					},
+				},
+			},
+			Result: map[string]Block{"li1": scope.Block("li1", "listItem", "nested")},
+		},
+		// marks split the text into multiple fragments; all of them are
+		// indexed, not just the last one.
+		"Text split by marks": {
+			Block: document.Block{
+				Type:  document.BlockNodeParagraph,
+				Attrs: document.Attributes{"uid": "p2"},
+				Content: []document.Block{
+					{Type: document.BlockNodeText, Text: "plain "},
+					{Type: document.BlockNodeText, Text: "bold", Marks: []document.Mark{{Type: "bold"}}},
+					{Type: document.BlockNodeText, Text: " tail"},
+				},
+			},
+			Result: map[string]Block{"p2": scope.Block("p2", "paragraph", "plain bold tail")},
+		},
+		// no uid: the text is not indexable.
+		"Block without a uid": {
+			Block: document.Block{
+				Type: document.BlockNodeParagraph,
+				Content: []document.Block{
+					{Type: document.BlockNodeText, Text: "orphan"},
+				},
+			},
+			Result: map[string]Block{},
+		},
+		// no text: nothing to index.
+		"Block without text": {
+			Block:  document.Block{Type: document.BlockNodeHorizontalRule, Attrs: document.Attributes{"uid": "hr1"}},
+			Result: map[string]Block{},
+		},
+		// a metric block's title is an attribute, not a text child.
+		"Metric block": {
+			Block: document.Block{
+				Type: document.BlockNodeMetricBlock,
+				Attrs: document.Attributes{
+					"uid":               "m1",
+					"title":             "Pizza Fridays",
+					"dataSourceId":      "ds1",
+					"visualizationType": "line_chart",
+					"timeRange":         "1h",
+				},
+			},
+			Result: map[string]Block{"m1": metric},
+		},
+		// a code block keeps its language. An empty or mistyped kept
+		// attribute is left out.
+		"Code block with a language": {
+			Block: document.Block{
+				Type:  document.BlockNodeCodeBlock,
+				Attrs: document.Attributes{"uid": "c1", "language": "go"},
+				Content: []document.Block{
+					{Type: document.BlockNodeText, Text: "func main() {}"},
+				},
+			},
+			Result: map[string]Block{"c1": code},
+		},
+		"Code block with an empty language": {
+			Block: document.Block{
+				Type:  document.BlockNodeCodeBlock,
+				Attrs: document.Attributes{"uid": "c2", "language": ""},
+				Content: []document.Block{
+					{Type: document.BlockNodeText, Text: "plain"},
+				},
+			},
+			Result: map[string]Block{"c2": scope.Block("c2", "codeBlock", "plain")},
+		},
+		"Code block with a mistyped language": {
+			Block: document.Block{
+				Type:  document.BlockNodeCodeBlock,
+				Attrs: document.Attributes{"uid": "c3", "language": 42},
+				Content: []document.Block{
+					{Type: document.BlockNodeText, Text: "odd"},
+				},
+			},
+			Result: map[string]Block{"c3": scope.Block("c3", "codeBlock", "odd")},
+		},
+		// an untitled metric block has nothing to index.
+		"Metric block with an empty title": {
+			Block: document.Block{
+				Type:  document.BlockNodeMetricBlock,
+				Attrs: document.Attributes{"uid": "m2", "title": ""},
+			},
+			Result: map[string]Block{},
+		},
+		"Metric block without a title": {
+			Block: document.Block{
+				Type:  document.BlockNodeMetricBlock,
+				Attrs: document.Attributes{"uid": "m3"},
+			},
+			Result: map[string]Block{},
+		},
+		// a file block's name is an attribute, not a text child.
+		"File block": {
+			Block: document.Block{
+				Type:  document.BlockNodeFileBlock,
+				Attrs: document.Attributes{"uid": "f1", "name": "quarterly-report.pdf", "size": 2048},
+			},
+			Result: map[string]Block{"f1": scope.Block("f1", "fileBlock", "quarterly-report.pdf")},
+		},
+		// a file block still uploading has no name to index.
+		"File block without a name": {
+			Block: document.Block{
+				Type:  document.BlockNodeFileBlock,
+				Attrs: document.Attributes{"uid": "f2"},
+			},
+			Result: map[string]Block{},
+		},
+		// an image block is described by its alt and title attributes.
+		"Image block with an alt and a title": {
+			Block: document.Block{
+				Type:  document.BlockNodeImageBlock,
+				Attrs: document.Attributes{"uid": "i1", "alt": "architecture diagram", "title": "Overview"},
+			},
+			Result: map[string]Block{"i1": scope.Block("i1", "imageBlock", "architecture diagram Overview")},
+		},
+		"Image block with an alt only": {
+			Block: document.Block{
+				Type:  document.BlockNodeImageBlock,
+				Attrs: document.Attributes{"uid": "i2", "alt": "login flow"},
+			},
+			Result: map[string]Block{"i2": scope.Block("i2", "imageBlock", "login flow")},
+		},
+		// an undescribed image has nothing to index.
+		"Image block without a description": {
+			Block: document.Block{
+				Type:  document.BlockNodeImageBlock,
+				Attrs: document.Attributes{"uid": "i3", "src": "/x.png"},
+			},
+			Result: map[string]Block{},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res := make(map[string]Block)
+			scope.entries(c.Block, res)
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
 }
 
 func Test_attrKeys(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, []string{"language"}, attrKeys(document.BlockNodeCodeBlock))
-	assert.Equal(t, []string{"dataSourceId", "visualizationType"}, attrKeys(document.BlockNodeMetricBlock))
-	assert.Nil(t, attrKeys(document.BlockNodeParagraph))
+	cc := map[string]struct {
+		Type   document.BlockNodeType
+		Result []string
+	}{
+		"Code block": {
+			Type:   document.BlockNodeCodeBlock,
+			Result: []string{"language"},
+		},
+		"Metric block": {
+			Type:   document.BlockNodeMetricBlock,
+			Result: []string{"dataSourceId", "visualizationType"},
+		},
+		"Block without kept attributes": {
+			Type: document.BlockNodeParagraph,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, attrKeys(c.Type))
+		})
+	}
 }
 
 func Test_Entries(t *testing.T) {

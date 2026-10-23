@@ -10,31 +10,6 @@ import (
 func Test_expandMacros(t *testing.T) {
 	t.Parallel()
 
-	// the expansion echoes what it was given, so a case can assert on the
-	// name and arguments the scanner produced. The raw name emits the
-	// invocation as the scanner saw it.
-	expand := func(name string, args []string, raw string) (string, bool) {
-		if name == "skip" {
-			return "", false
-		}
-
-		if name == "raw" {
-			return raw, true
-		}
-
-		var b strings.Builder
-
-		b.WriteString("<" + name)
-
-		for _, a := range args {
-			b.WriteString("|" + a)
-		}
-
-		b.WriteString(">")
-
-		return b.String(), true
-	}
-
 	cc := map[string]struct {
 		Query    string
 		Expected string
@@ -69,6 +44,10 @@ func Test_expandMacros(t *testing.T) {
 			Query:    "SELECT $__skip(a) FROM t",
 			Expected: "SELECT $__skip(a) FROM t",
 		},
+		"Macro name without parentheses is left as it was": {
+			Query:    "SELECT $__name FROM t",
+			Expected: "SELECT $__name FROM t",
+		},
 		"Unclosed invocation is left as it was": {
 			Query:    "SELECT $__timeFilter(a FROM t",
 			Expected: "SELECT $__timeFilter(a FROM t",
@@ -83,7 +62,31 @@ func Test_expandMacros(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, c.Expected, expandMacros(c.Query, expand))
+			// the expansion echoes what it was given, so a case can assert
+			// on the name and arguments the scanner produced. The raw name
+			// emits the invocation as the scanner saw it.
+			result := expandMacros(c.Query, func(name string, args []string, raw string) (string, bool) {
+				if name == "skip" {
+					return "", false
+				}
+
+				if name == "raw" {
+					return raw, true
+				}
+
+				var b strings.Builder
+
+				b.WriteString("<" + name)
+
+				for _, a := range args {
+					b.WriteString("|" + a)
+				}
+
+				b.WriteString(">")
+
+				return b.String(), true
+			})
+			assert.Equal(t, c.Expected, result)
 		})
 	}
 }

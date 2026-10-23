@@ -13,115 +13,175 @@ var _testTimeRange = TimeRange{
 }
 
 func Test_TimeRange_ProcessPostgreSQLQuery(t *testing.T) {
-	tests := map[string]struct {
+	cc := map[string]struct {
 		TimeRange TimeRange
 		Query     string
 		Result    string
 	}{
-		"$__time": {
+		"Time column": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT $__time(created_at), value FROM metrics",
 			Result:    `SELECT EXTRACT(EPOCH FROM created_at) AS "time", value FROM metrics`,
 		},
-		"$__timeEpoch": {
+		"Time epoch column": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT $__timeEpoch(created_at), value FROM metrics",
 			Result:    `SELECT EXTRACT(EPOCH FROM created_at) AS "time", value FROM metrics`,
 		},
-		"$__timeFilter": {
+		"Time filter": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT * FROM metrics WHERE $__timeFilter(created_at)",
 			Result:    "SELECT * FROM metrics WHERE created_at BETWEEN '2024-01-15T10:00:00Z'::timestamptz AND '2024-01-15T11:00:00Z'::timestamptz",
 		},
-		"$__timeFrom": {
+		"Range start": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT * FROM metrics WHERE created_at >= $__timeFrom()",
 			Result:    "SELECT * FROM metrics WHERE created_at >= '2024-01-15T10:00:00Z'::timestamptz",
 		},
-		"$__timeTo": {
+		"Range end": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT * FROM metrics WHERE created_at <= $__timeTo()",
 			Result:    "SELECT * FROM metrics WHERE created_at <= '2024-01-15T11:00:00Z'::timestamptz",
 		},
-		"$__timeFrom and $__timeTo together": {
+		"Range start and end together": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT * FROM metrics WHERE created_at >= $__timeFrom() AND created_at <= $__timeTo()",
 			Result:    "SELECT * FROM metrics WHERE created_at >= '2024-01-15T10:00:00Z'::timestamptz AND created_at <= '2024-01-15T11:00:00Z'::timestamptz",
 		},
-		"$__timeGroup with 5m": {
+		"Time group by five minutes": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT $__timeGroup(created_at,'5m'), avg(value) FROM metrics GROUP BY 1",
 			Result:    "SELECT floor(EXTRACT(EPOCH FROM created_at)/300)*300, avg(value) FROM metrics GROUP BY 1",
 		},
-		"$__timeGroup with 1h": {
+		"Time group by one hour": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT $__timeGroup(created_at,'1h') FROM metrics",
 			Result:    "SELECT floor(EXTRACT(EPOCH FROM created_at)/3600)*3600 FROM metrics",
 		},
-		"$__timeGroup with fill mode 0": {
+		"Time group with zero fill mode": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT $__timeGroup(created_at,'5m', 0), avg(value) FROM metrics GROUP BY 1",
 			Result:    "SELECT floor(EXTRACT(EPOCH FROM created_at)/300)*300, avg(value) FROM metrics GROUP BY 1",
 		},
-		"$__timeGroup with fill mode NULL": {
+		"Time group with NULL fill mode": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT $__timeGroup(created_at,'5m', NULL), avg(value) FROM metrics GROUP BY 1",
 			Result:    "SELECT floor(EXTRACT(EPOCH FROM created_at)/300)*300, avg(value) FROM metrics GROUP BY 1",
 		},
-		"$__timeGroup with fill mode previous": {
+		"Time group with previous fill mode": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT $__timeGroup(created_at,'5m', previous) FROM metrics",
 			Result:    "SELECT floor(EXTRACT(EPOCH FROM created_at)/300)*300 FROM metrics",
 		},
-		"$__timeGroupAlias with 5m": {
+		"Time group alias by five minutes": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT $__timeGroupAlias(created_at,'5m'), avg(value) FROM metrics GROUP BY 1",
 			Result:    `SELECT floor(EXTRACT(EPOCH FROM created_at)/300)*300 AS "time", avg(value) FROM metrics GROUP BY 1`,
 		},
-		"$__unixEpochFilter": {
+		"Unix epoch filter": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT * FROM metrics WHERE $__unixEpochFilter(epoch_col)",
 			Result:    "SELECT * FROM metrics WHERE epoch_col >= 1705312800 AND epoch_col <= 1705316400",
 		},
-		"$__unixEpochFrom": {
+		"Unix epoch range start": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT * FROM metrics WHERE epoch >= $__unixEpochFrom()",
 			Result:    "SELECT * FROM metrics WHERE epoch >= 1705312800",
 		},
-		"$__unixEpochTo": {
+		"Unix epoch range end": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT * FROM metrics WHERE epoch <= $__unixEpochTo()",
 			Result:    "SELECT * FROM metrics WHERE epoch <= 1705316400",
 		},
-		"$__unixEpochNanoFilter": {
+		"Unix epoch nanosecond filter": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT * FROM metrics WHERE $__unixEpochNanoFilter(ns_col)",
 			Result:    "SELECT * FROM metrics WHERE ns_col >= 1705312800000000000 AND ns_col <= 1705316400000000000",
 		},
-		"$__unixEpochNanoFrom": {
+		"Unix epoch nanosecond range start": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT * FROM metrics WHERE ns >= $__unixEpochNanoFrom()",
 			Result:    "SELECT * FROM metrics WHERE ns >= 1705312800000000000",
 		},
-		"$__unixEpochNanoTo": {
+		"Unix epoch nanosecond range end": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT * FROM metrics WHERE ns <= $__unixEpochNanoTo()",
 			Result:    "SELECT * FROM metrics WHERE ns <= 1705316400000000000",
 		},
-		"$__unixEpochGroup with 5m": {
+		"Unix epoch group by five minutes": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT $__unixEpochGroup(epoch_col,'5m'), avg(value) FROM metrics GROUP BY 1",
 			Result:    "SELECT floor(epoch_col/300)*300, avg(value) FROM metrics GROUP BY 1",
 		},
-		"$__unixEpochGroup with fill mode": {
+		"Unix epoch group with fill mode": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT $__unixEpochGroup(epoch_col,'5m', 0) FROM metrics",
 			Result:    "SELECT floor(epoch_col/300)*300 FROM metrics",
 		},
-		"$__unixEpochGroupAlias with 5m": {
+		"Unix epoch group alias by five minutes": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT $__unixEpochGroupAlias(epoch_col,'5m'), avg(value) FROM metrics GROUP BY 1",
 			Result:    `SELECT floor(epoch_col/300)*300 AS "time", avg(value) FROM metrics GROUP BY 1`,
+		},
+		"Time column without a column is left unchanged": {
+			TimeRange: _testTimeRange,
+			Query:     "SELECT $__time() FROM metrics",
+			Result:    "SELECT $__time() FROM metrics",
+		},
+		"Time filter without a column is left unchanged": {
+			TimeRange: _testTimeRange,
+			Query:     "SELECT * FROM metrics WHERE $__timeFilter()",
+			Result:    "SELECT * FROM metrics WHERE $__timeFilter()",
+		},
+		"Time group without an interval is left unchanged": {
+			TimeRange: _testTimeRange,
+			Query:     "SELECT $__timeGroup(created_at) FROM metrics",
+			Result:    "SELECT $__timeGroup(created_at) FROM metrics",
+		},
+		"Time group with an invalid interval is left unchanged": {
+			TimeRange: _testTimeRange,
+			Query:     "SELECT $__timeGroup(created_at,'5x') FROM metrics",
+			Result:    "SELECT $__timeGroup(created_at,'5x') FROM metrics",
+		},
+		"Time group alias without an interval is left unchanged": {
+			TimeRange: _testTimeRange,
+			Query:     "SELECT $__timeGroupAlias(created_at) FROM metrics",
+			Result:    "SELECT $__timeGroupAlias(created_at) FROM metrics",
+		},
+		"Time group alias with an invalid interval is left unchanged": {
+			TimeRange: _testTimeRange,
+			Query:     "SELECT $__timeGroupAlias(created_at,'5x') FROM metrics",
+			Result:    "SELECT $__timeGroupAlias(created_at,'5x') FROM metrics",
+		},
+		"Unix epoch group alias without an interval is left unchanged": {
+			TimeRange: _testTimeRange,
+			Query:     "SELECT $__unixEpochGroupAlias(epoch_col) FROM metrics",
+			Result:    "SELECT $__unixEpochGroupAlias(epoch_col) FROM metrics",
+		},
+		"Unix epoch group alias with an invalid interval is left unchanged": {
+			TimeRange: _testTimeRange,
+			Query:     "SELECT $__unixEpochGroupAlias(epoch_col,'5x') FROM metrics",
+			Result:    "SELECT $__unixEpochGroupAlias(epoch_col,'5x') FROM metrics",
+		},
+		"Unix epoch filter without a column is left unchanged": {
+			TimeRange: _testTimeRange,
+			Query:     "SELECT * FROM metrics WHERE $__unixEpochFilter()",
+			Result:    "SELECT * FROM metrics WHERE $__unixEpochFilter()",
+		},
+		"Unix epoch nanosecond filter without a column is left unchanged": {
+			TimeRange: _testTimeRange,
+			Query:     "SELECT * FROM metrics WHERE $__unixEpochNanoFilter()",
+			Result:    "SELECT * FROM metrics WHERE $__unixEpochNanoFilter()",
+		},
+		"Unix epoch group without an interval is left unchanged": {
+			TimeRange: _testTimeRange,
+			Query:     "SELECT $__unixEpochGroup(epoch_col) FROM metrics",
+			Result:    "SELECT $__unixEpochGroup(epoch_col) FROM metrics",
+		},
+		"Unix epoch group with an invalid interval is left unchanged": {
+			TimeRange: _testTimeRange,
+			Query:     "SELECT $__unixEpochGroup(epoch_col,'5x') FROM metrics",
+			Result:    "SELECT $__unixEpochGroup(epoch_col,'5x') FROM metrics",
 		},
 		"Unknown macro is left unchanged": {
 			TimeRange: _testTimeRange,
@@ -138,7 +198,7 @@ func Test_TimeRange_ProcessPostgreSQLQuery(t *testing.T) {
 			Query:     "SELECT $__timeGroupAlias(created_at,'5m'), avg(value) FROM metrics WHERE $__timeFilter(created_at) GROUP BY 1",
 			Result:    `SELECT floor(EXTRACT(EPOCH FROM created_at)/300)*300 AS "time", avg(value) FROM metrics WHERE created_at BETWEEN '2024-01-15T10:00:00Z'::timestamptz AND '2024-01-15T11:00:00Z'::timestamptz GROUP BY 1`,
 		},
-		"$__timeGroupAlias with $__interval": {
+		"Time group alias by the calculated interval": {
 			TimeRange: _testTimeRange,
 			Query: `SELECT
     $__timeGroupAlias("time", $__interval),
@@ -159,18 +219,18 @@ ORDER BY 1, 2`,
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			result := tc.TimeRange.ProcessPostgreSQLQuery(tc.Query)
-			assert.Equal(t, tc.Result, result)
+			result := c.TimeRange.ProcessPostgreSQLQuery(c.Query)
+			assert.Equal(t, c.Result, result)
 		})
 	}
 }
 
 func Test_parseInterval(t *testing.T) {
-	tests := map[string]struct {
+	cc := map[string]struct {
 		Input   string
 		Seconds int64
 		OK      bool
@@ -187,13 +247,13 @@ func Test_parseInterval(t *testing.T) {
 		"Negative":     {Input: "-5m", Seconds: 0, OK: false},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			seconds, ok := parseInterval(tc.Input)
-			assert.Equal(t, tc.OK, ok)
-			assert.Equal(t, tc.Seconds, seconds)
+			seconds, ok := parseInterval(c.Input)
+			assert.Equal(t, c.OK, ok)
+			assert.Equal(t, c.Seconds, seconds)
 		})
 	}
 }

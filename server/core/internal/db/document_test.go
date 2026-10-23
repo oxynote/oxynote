@@ -134,6 +134,7 @@ func Test_agent_InsertDocument(t *testing.T) {
 		CancelledContext bool
 		Document         document.Document
 		SortIndex        int64
+		Check            func(t *testing.T, db *DB)
 		Err              error
 	}
 
@@ -145,6 +146,49 @@ func Test_agent_InsertDocument(t *testing.T) {
 				CancelledContext: true,
 				Document:         stubDocument(org),
 				Err:              assert.AnError,
+			}
+		},
+		"Branch insert failure rolls the document back": func(t *testing.T, db *DB) tcase {
+			existing := prepDocuments(t, db, 1, nil)[0]
+
+			// reusing the branch id trips the branch primary key, after the
+			// documents row has already been inserted.
+			doc := *existing
+			doc.ID = xid.New()
+
+			return tcase{
+				Document: doc,
+				Check: func(t *testing.T, db *DB) {
+					err := db.CheckDocumentExists(context.Background(), doc.ID, doc.OrganizationID)
+					testutil.AssertEqualError(t, sql.ErrNoRows, err)
+				},
+				Err: assert.AnError,
+			}
+		},
+		"Root sort indexes are scoped per organization": func(t *testing.T, db *DB) tcase {
+			orgs := prepOrganizations(t, db, 2)
+
+			first := stubDocument(orgs[0])
+			require.NoError(t, db.InsertDocument(context.Background(), first))
+
+			second := stubDocument(orgs[0])
+			require.NoError(t, db.InsertDocument(context.Background(), second))
+
+			// a second organization starts its own sequence rather than
+			// colliding with, or counting, the first one's roots.
+			return tcase{
+				Document: stubDocument(orgs[1]),
+				Check: func(t *testing.T, db *DB) {
+					for i, id := range []xid.ID{first.ID, second.ID} {
+						var idx int
+
+						q, args := db.builder.Select("sort_index").From("documents").
+							Where(sq.Eq{"id": id}).MustSql()
+
+						require.NoError(t, db.sql.Get(&idx, q, args...))
+						assert.Equal(t, i, idx)
+					}
+				},
 			}
 		},
 		"Sort index race exhausts retries": func(t *testing.T, _ *DB) tcase {
@@ -237,6 +281,10 @@ func Test_agent_InsertDocument(t *testing.T) {
 			err := ag.InsertDocument(ctx, c.Document)
 			testutil.RequireEqualError(t, c.Err, err)
 
+			if c.Check != nil {
+				c.Check(t, db)
+			}
+
 			if err != nil {
 				return
 			}
@@ -262,70 +310,6 @@ func Test_agent_InsertDocument(t *testing.T) {
 			assert.Equal(t, c.SortIndex, idx)
 		})
 	}
-
-	t.Run("Branch insert failure rolls the document back", func(t *testing.T) {
-		t.Parallel()
-
-		db := prepTempDB(t)
-		existing := prepDocuments(t, db, 1, nil)[0]
-
-		// reusing the branch id trips the branch primary key, after the
-		// documents row has already been inserted.
-		doc := *existing
-		doc.ID = xid.New()
-
-		err := db.InsertDocument(context.Background(), doc)
-		require.Error(t, err)
-
-		err = db.CheckDocumentExists(context.Background(), doc.ID, doc.OrganizationID)
-		testutil.AssertEqualError(t, sql.ErrNoRows, err)
-	})
-
-	t.Run("Root sort indexes are scoped per organization", func(t *testing.T) {
-		t.Parallel()
-
-		db := prepTempDB(t)
-		orgs := prepOrganizations(t, db, 2)
-
-		now := timeutil.Now().Truncate(time.Second)
-
-		insert := func(org string) document.Document {
-			doc := document.Document{
-				ID:             xid.New(),
-				OrganizationID: org,
-				BranchID:       xid.New(),
-				BranchName:     document.DefaultBranch,
-				CreatedAt:      now,
-				UpdatedAt:      now,
-			}
-
-			require.NoError(t, db.InsertDocument(context.Background(), doc))
-
-			return doc
-		}
-
-		first := insert(orgs[0])
-		second := insert(orgs[0])
-
-		// a second organization starts its own sequence rather than
-		// colliding with, or counting, the first one's roots.
-		other := insert(orgs[1])
-
-		sortIndex := func(id xid.ID) int {
-			var idx int
-
-			q, args := db.builder.Select("sort_index").From("documents").
-				Where(sq.Eq{"id": id}).MustSql()
-
-			require.NoError(t, db.sql.Get(&idx, q, args...))
-
-			return idx
-		}
-
-		assert.Equal(t, 0, sortIndex(first.ID))
-		assert.Equal(t, 1, sortIndex(second.ID))
-		assert.Equal(t, 0, sortIndex(other.ID))
-	})
 }
 
 func Test_agent_CheckDocumentExists(t *testing.T) {
@@ -343,24 +327,8 @@ func Test_agent_CheckDocumentExists(t *testing.T) {
 }
 
 func Test_agent_CheckDocumentCycle(t *testing.T) {
-	// error - failing query
-	a, mock := prepMockDB(t)
-
-	mock.ExpectQuery("WITH RECURSIVE").WillReturnError(assert.AnError)
-
-	_, err := a.CheckDocumentCycle(context.Background(), xid.New(), xid.New(), "org-id")
-	assert.Equal(t, assert.AnError, err)
-
-	// success
 	db := prepTempDB(t)
 	org := prepOrganizations(t, db, 1)[0]
-
-	prepChild := func(parent null.Value[xid.ID]) *document.Document {
-		return prepDocuments(t, db, 1, func(_ int, d *document.Document) {
-			d.OrganizationID = org
-			d.ParentID = parent
-		})[0]
-	}
 
 	// the two roots are created together so they get distinct sort indexes.
 	roots := prepDocuments(t, db, 2, func(_ int, d *document.Document) {
@@ -368,15 +336,38 @@ func Test_agent_CheckDocumentCycle(t *testing.T) {
 	})
 	root, other := roots[0], roots[1]
 
-	child := prepChild(null.ValueFrom(root.ID))
-	grandchild := prepChild(null.ValueFrom(child.ID))
+	child := prepDocuments(t, db, 1, func(_ int, d *document.Document) {
+		d.OrganizationID = org
+		d.ParentID = null.ValueFrom(root.ID)
+	})[0]
+	grandchild := prepDocuments(t, db, 1, func(_ int, d *document.Document) {
+		d.OrganizationID = org
+		d.ParentID = null.ValueFrom(child.ID)
+	})[0]
 
-	cc := map[string]struct {
+	type tcase struct {
+		Agent          *agent
 		ID             xid.ID
 		ParentID       xid.ID
 		OrganizationID string
 		Result         bool
-	}{
+		Err            error
+	}
+
+	cc := map[string]tcase{
+		"Error returned by the ancestors query": func() tcase {
+			a, mock := prepMockDB(t)
+
+			mock.ExpectQuery("WITH RECURSIVE").WillReturnError(assert.AnError)
+
+			return tcase{
+				Agent:          a,
+				ID:             xid.New(),
+				ParentID:       xid.New(),
+				OrganizationID: "org-id",
+				Err:            assert.AnError,
+			}
+		}(),
 		"Document adopted by itself": {
 			ID:       root.ID,
 			ParentID: root.ID,
@@ -420,8 +411,19 @@ func Test_agent_CheckDocumentCycle(t *testing.T) {
 				organizationID = org
 			}
 
-			res, err := db.CheckDocumentCycle(context.Background(), c.ID, c.ParentID, organizationID)
-			assert.NoError(t, err)
+			ag := &db.agent
+
+			if c.Agent != nil {
+				ag = c.Agent
+			}
+
+			res, err := ag.CheckDocumentCycle(context.Background(), c.ID, c.ParentID, organizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
 			assert.Equal(t, c.Result, res)
 		})
 	}
@@ -444,70 +446,107 @@ func Test_agent_FetchDocument(t *testing.T) {
 }
 
 func Test_agent_UpdateDocumentTree(t *testing.T) {
-	// error - failing update statement inside the transaction
-	a, mock := prepMockDB(t)
+	prepTree := func(t *testing.T, db *DB) ([]document.Summary, string) {
+		t.Helper()
 
-	mock.ExpectBegin()
-	mock.ExpectExec("SET CONSTRAINTS").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("UPDATE documents").WillReturnError(assert.AnError)
-	mock.ExpectRollback()
-
-	err := a.UpdateDocumentTree(
-		context.Background(),
-		document.Summaries{{ID: xid.New()}},
-		"org-id",
-	)
-	assert.Equal(t, assert.AnError, err)
-
-	db := prepTempDB(t)
-
-	org := prepOrganizations(t, db, 1)[0]
-	docs := prepDocuments(t, db, 3, func(_ int, ndoc *document.Document) {
-		ndoc.OrganizationID = org
-	})
-
-	exp1 := make([]document.Summary, 0, len(docs))
-
-	// Root documents
-	for i, doc := range docs {
-		st := document.Summary{
-			DocumentName:    doc.DocumentName,
-			ID:              doc.ID,
-			DefaultBranchID: doc.BranchID,
-			Icon:            doc.Icon,
-			Protected:       doc.Protected,
-		}
-
-		// Children documents
-		prepDocuments(t, db, i+1, func(_ int, sdoc *document.Document) {
-			sdoc.OrganizationID = org
-			sdoc.ParentID = null.ValueFrom(docs[i].ID)
-
-			st.Children = append(st.Children, document.Summary{
-				ID:              sdoc.ID,
-				DocumentName:    sdoc.DocumentName,
-				DefaultBranchID: sdoc.BranchID,
-				Icon:            sdoc.Icon,
-				Protected:       sdoc.Protected,
-			})
+		org := prepOrganizations(t, db, 1)[0]
+		docs := prepDocuments(t, db, 3, func(_ int, ndoc *document.Document) {
+			ndoc.OrganizationID = org
 		})
 
-		exp1 = append(exp1, st)
+		exp1 := make([]document.Summary, 0, len(docs))
+
+		// Root documents
+		for i, doc := range docs {
+			st := document.Summary{
+				DocumentName:    doc.DocumentName,
+				ID:              doc.ID,
+				DefaultBranchID: doc.BranchID,
+				Icon:            doc.Icon,
+				Protected:       doc.Protected,
+			}
+
+			// Children documents
+			prepDocuments(t, db, i+1, func(_ int, sdoc *document.Document) {
+				sdoc.OrganizationID = org
+				sdoc.ParentID = null.ValueFrom(docs[i].ID)
+
+				st.Children = append(st.Children, document.Summary{
+					ID:              sdoc.ID,
+					DocumentName:    sdoc.DocumentName,
+					DefaultBranchID: sdoc.BranchID,
+					Icon:            sdoc.Icon,
+					Protected:       sdoc.Protected,
+				})
+			})
+
+			exp1 = append(exp1, st)
+		}
+
+		return exp1, org
 	}
 
-	// success swapping root elements
-	exp1[0], exp1[1] = exp1[1], exp1[0] // swap root elements
+	type tcase struct {
+		Agent          *agent
+		Summaries      document.Summaries
+		OrganizationID string
+		Err            error
+	}
 
-	err = db.UpdateDocumentTree(context.Background(), exp1, org)
-	assert.NoError(t, err)
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Error returned by the document update": func(t *testing.T, _ *DB) tcase {
+			a, mock := prepMockDB(t)
 
-	exp2 := exp1[0].Children
+			mock.ExpectBegin()
+			mock.ExpectExec("SET CONSTRAINTS").WillReturnResult(sqlmock.NewResult(0, 0))
+			mock.ExpectExec("UPDATE documents").WillReturnError(assert.AnError)
+			mock.ExpectRollback()
 
-	// success swapping children elements
-	exp2[0], exp2[1] = exp2[1], exp2[0] // swap children elements
+			return tcase{
+				Agent:          a,
+				Summaries:      document.Summaries{{ID: xid.New()}},
+				OrganizationID: "org-id",
+				Err:            assert.AnError,
+			}
+		},
+		"Successful swap of root elements": func(t *testing.T, db *DB) tcase {
+			exp1, org := prepTree(t, db)
+			exp1[0], exp1[1] = exp1[1], exp1[0] // swap root elements
 
-	err = db.UpdateDocumentTree(context.Background(), exp2, org)
-	assert.NoError(t, err)
+			return tcase{
+				Summaries:      exp1,
+				OrganizationID: org,
+			}
+		},
+		"Successful swap of children elements": func(t *testing.T, db *DB) tcase {
+			exp1, org := prepTree(t, db)
+			exp2 := exp1[1].Children
+			exp2[0], exp2[1] = exp2[1], exp2[0] // swap children elements
+
+			return tcase{
+				Summaries:      exp2,
+				OrganizationID: org,
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ag := &db.agent
+
+			if c.Agent != nil {
+				ag = c.Agent
+			}
+
+			err := ag.UpdateDocumentTree(context.Background(), c.Summaries, c.OrganizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+		})
+	}
 }
 
 func Test_agent_FetchDocumentTree(t *testing.T) {
@@ -577,49 +616,69 @@ func Test_agent_FetchDocumentTree(t *testing.T) {
 }
 
 func Test_agent_fetchDocumentTree(t *testing.T) {
-	// sort_index drives row order, so the levels arrive interleaved: root,
-	// child, grandchild, second child, second grandchild. The second child
-	// grows the root's children slice after the first grandchild was
-	// already attached to the first child.
-	t.Run("Grandchildren survive sibling appends", func(t *testing.T) {
-		t.Parallel()
+	type tcase struct {
+		OrganizationID string
+		Check          func(t *testing.T, res document.Summaries)
+	}
 
-		db := prepTempDB(t)
-		org := prepOrganizations(t, db, 1)[0]
+	cc := map[string]func(*testing.T, *DB) tcase{
+		// sort_index drives row order, so the levels arrive interleaved: root,
+		// child, grandchild, second child, second grandchild. The second child
+		// grows the root's children slice after the first grandchild was
+		// already attached to the first child.
+		"Grandchildren survive sibling appends": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
 
-		ids := make([]xid.ID, 5)
-		for i := range ids {
-			ids[i] = xid.New()
-		}
+			ids := make([]xid.ID, 5)
+			for i := range ids {
+				ids[i] = xid.New()
+			}
 
-		parents := []null.Value[xid.ID]{
-			{},
-			null.ValueFrom(ids[0]),
-			null.ValueFrom(ids[1]),
-			null.ValueFrom(ids[0]),
-			null.ValueFrom(ids[1]),
-		}
+			parents := []null.Value[xid.ID]{
+				{},
+				null.ValueFrom(ids[0]),
+				null.ValueFrom(ids[1]),
+				null.ValueFrom(ids[0]),
+				null.ValueFrom(ids[1]),
+			}
 
-		prepDocuments(t, db, len(ids), func(i int, doc *document.Document) {
-			doc.ID = ids[i]
-			doc.OrganizationID = org
-			doc.ParentID = parents[i]
+			prepDocuments(t, db, len(ids), func(i int, doc *document.Document) {
+				doc.ID = ids[i]
+				doc.OrganizationID = org
+				doc.ParentID = parents[i]
+			})
+
+			return tcase{
+				OrganizationID: org,
+				Check: func(t *testing.T, res document.Summaries) {
+					require.Len(t, res, 1)
+					assert.Equal(t, ids[0], res[0].ID)
+
+					require.Len(t, res[0].Children, 2)
+					assert.Equal(t, ids[1], res[0].Children[0].ID)
+					assert.Equal(t, ids[3], res[0].Children[1].ID)
+
+					require.Len(t, res[0].Children[0].Children, 2)
+					assert.Equal(t, ids[2], res[0].Children[0].Children[0].ID)
+					assert.Equal(t, ids[4], res[0].Children[0].Children[1].ID)
+				},
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			res, err := db.FetchDocumentTree(context.Background(), c.OrganizationID)
+			require.NoError(t, err)
+
+			c.Check(t, res)
 		})
-
-		res, err := db.FetchDocumentTree(context.Background(), org)
-		require.NoError(t, err)
-
-		require.Len(t, res, 1)
-		assert.Equal(t, ids[0], res[0].ID)
-
-		require.Len(t, res[0].Children, 2)
-		assert.Equal(t, ids[1], res[0].Children[0].ID)
-		assert.Equal(t, ids[3], res[0].Children[1].ID)
-
-		require.Len(t, res[0].Children[0].Children, 2)
-		assert.Equal(t, ids[2], res[0].Children[0].Children[0].ID)
-		assert.Equal(t, ids[4], res[0].Children[0].Children[1].ID)
-	})
+	}
 }
 
 func Test_agent_FetchDocumentTreeByDocumentParentID(t *testing.T) {
@@ -684,39 +743,38 @@ func Test_agent_FetchDocumentTreeByDocumentParentID(t *testing.T) {
 }
 
 func Test_agent_UpdateDocument(t *testing.T) {
-	t.Run("Error returned by the document update", func(t *testing.T) {
-		t.Parallel()
-
-		a, mock := prepMockDB(t)
-
-		mock.ExpectBegin()
-		mock.ExpectExec("UPDATE documents").WillReturnError(assert.AnError)
-		mock.ExpectRollback()
-
-		err := a.UpdateDocument(context.Background(), document.Document{})
-		assert.Equal(t, assert.AnError, err)
-	})
-
-	t.Run("Error returned by the branch upsert", func(t *testing.T) {
-		t.Parallel()
-
-		a, mock := prepMockDB(t)
-
-		mock.ExpectBegin()
-		mock.ExpectExec("UPDATE documents").WillReturnResult(sqlmock.NewResult(0, 1))
-		mock.ExpectExec("INSERT INTO document_branches").WillReturnError(assert.AnError)
-		mock.ExpectRollback()
-
-		err := a.UpdateDocument(context.Background(), document.Document{})
-		assert.Equal(t, assert.AnError, err)
-	})
-
 	type tcase struct {
+		Agent    *agent
 		Document document.Document
 		Err      error
 	}
 
 	cc := map[string]func(*testing.T, *DB) tcase{
+		"Error returned by the document update": func(t *testing.T, _ *DB) tcase {
+			a, mock := prepMockDB(t)
+
+			mock.ExpectBegin()
+			mock.ExpectExec("UPDATE documents").WillReturnError(assert.AnError)
+			mock.ExpectRollback()
+
+			return tcase{
+				Agent: a,
+				Err:   assert.AnError,
+			}
+		},
+		"Error returned by the branch upsert": func(t *testing.T, _ *DB) tcase {
+			a, mock := prepMockDB(t)
+
+			mock.ExpectBegin()
+			mock.ExpectExec("UPDATE documents").WillReturnResult(sqlmock.NewResult(0, 1))
+			mock.ExpectExec("INSERT INTO document_branches").WillReturnError(assert.AnError)
+			mock.ExpectRollback()
+
+			return tcase{
+				Agent: a,
+				Err:   assert.AnError,
+			}
+		},
 		"Successful update": func(t *testing.T, db *DB) tcase {
 			doc := prepDocuments(t, db, 1, nil)[0]
 			doc.DocumentName = "Updated Document Name"
@@ -736,8 +794,14 @@ func Test_agent_UpdateDocument(t *testing.T) {
 			db := prepTempDB(t)
 			c := cfn(t, db)
 
+			ag := &db.agent
+
+			if c.Agent != nil {
+				ag = c.Agent
+			}
+
 			for range 3 {
-				err := db.UpdateDocument(context.Background(), c.Document)
+				err := ag.UpdateDocument(context.Background(), c.Document)
 				testutil.RequireEqualError(t, c.Err, err)
 
 				if err != nil {
@@ -912,9 +976,17 @@ func Test_agent_DeleteDocument(t *testing.T) {
 				doc.OrganizationID = organizationID
 			})
 
+			// the fixture inserts roots, so the tree is built afterwards:
 			// parent -> child -> grandchild, plus an untouched sibling.
-			setParent(t, db, docs[1].ID, docs[0].ID)
-			setParent(t, db, docs[2].ID, docs[1].ID)
+			for i := 1; i < 3; i++ {
+				q, args := db.builder.Update("documents").
+					SetMap(map[string]any{"fk_parent_id": docs[i-1].ID}).
+					Where(sq.Eq{"id": docs[i].ID}).
+					MustSql()
+
+				_, err := db.sql.Exec(q, args...)
+				require.NoError(t, err)
+			}
 
 			return tcase{
 				ID:             docs[0].ID,
@@ -1010,18 +1082,4 @@ func Test_agent_DeleteDocument(t *testing.T) {
 			assert.False(t, hk.BranchID.Valid)
 		})
 	}
-}
-
-// setParent re-parents a document, building a tree out of documents the
-// fixture inserts as roots.
-func setParent(t *testing.T, db *DB, id, parentID xid.ID) {
-	t.Helper()
-
-	q, args := db.builder.Update("documents").
-		SetMap(map[string]any{"fk_parent_id": parentID}).
-		Where(sq.Eq{"id": id}).
-		MustSql()
-
-	_, err := db.sql.Exec(q, args...)
-	require.NoError(t, err)
 }

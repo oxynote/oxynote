@@ -93,60 +93,97 @@ func Test_agent_InsertGithubInstallation(t *testing.T) {
 }
 
 func Test_agent_FetchGithubInstallationByOrganizationID(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		OrganizationID string
+		Result         int64
+		Err            error
+	}
 
-	// error - not found
-	res, err := db.FetchGithubInstallationByOrganizationID(context.Background(), "non-existent-org-id")
-	testutil.AssertEqualError(t, sql.ErrNoRows, err)
-	assert.Zero(t, res)
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Installation not found": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				OrganizationID: "non-existent-org-id",
+				Err:            sql.ErrNoRows,
+			}
+		},
+		"Successful fetch": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+			ids := prepGithubInstallations(t, db, 1, org)
 
-	// success
-	org := prepOrganizations(t, db, 1)[0]
-	ids := prepGithubInstallations(t, db, 1, org)
+			return tcase{
+				OrganizationID: org,
+				Result:         ids[0],
+			}
+		},
+	}
 
-	res, err = db.FetchGithubInstallationByOrganizationID(context.Background(), org)
-	assert.NoError(t, err)
-	assert.Equal(t, ids[0], res)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			res, err := db.FetchGithubInstallationByOrganizationID(context.Background(), c.OrganizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Result, res)
+		})
+	}
 }
 
 func Test_agent_FetchGithubInstallationOrganizationID(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		InstallationID int64
+		Result         null.String
+		Err            error
+	}
 
-	// error - not found
-	res, err := db.FetchGithubInstallationOrganizationID(context.Background(), 404)
-	testutil.AssertEqualError(t, sql.ErrNoRows, err)
-	assert.Zero(t, res)
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Installation not found": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				InstallationID: 404,
+				Err:            sql.ErrNoRows,
+			}
+		},
+		"Unassigned installation": func(t *testing.T, db *DB) tcase {
+			ids := prepGithubInstallations(t, db, 1, "")
 
-	// success - unassigned installation
-	org := prepOrganizations(t, db, 1)[0]
-	ids := prepGithubInstallations(t, db, 1, "")
+			return tcase{
+				InstallationID: ids[0],
+			}
+		},
+		"Assigned installation": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+			ids := prepGithubInstallations(t, db, 1, org)
 
-	res, err = db.FetchGithubInstallationOrganizationID(context.Background(), ids[0])
-	require.NoError(t, err)
-	assert.False(t, res.Valid)
+			return tcase{
+				InstallationID: ids[0],
+				Result:         null.StringFrom(org),
+			}
+		},
+	}
 
-	// success - assigned installation
-	q, args := db.builder.Update("github_installations").
-		SetMap(map[string]any{
-			"fk_organization_id": org,
-		}).
-		Where(sq.Eq{
-			"installation_id": ids[0],
-		}).MustSql()
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	_, err = db.sql.Exec(q, args...)
-	require.NoError(t, err)
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-	res, err = db.FetchGithubInstallationOrganizationID(context.Background(), ids[0])
-	require.NoError(t, err)
-	assert.Equal(t, null.StringFrom(org), res)
+			res, err := db.FetchGithubInstallationOrganizationID(context.Background(), c.InstallationID)
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Result, res)
+		})
+	}
 }
 
 func Test_agent_UpdateGithubInstallationOrganizationID(t *testing.T) {
 	type tcase struct {
 		InstallationID int64
 		OrganizationID string
-		Err            error
+		// Owner is the organization the installation belongs to afterwards.
+		Owner null.String
+		Err   error
 	}
 
 	cc := map[string]func(*testing.T, *DB) tcase{
@@ -159,6 +196,25 @@ func Test_agent_UpdateGithubInstallationOrganizationID(t *testing.T) {
 				Err:            assert.AnError,
 			}
 		},
+		"An already claimed installation is not reassigned": func(t *testing.T, db *DB) tcase {
+			orgs := prepOrganizations(t, db, 2)
+
+			const installationID = int64(4242)
+
+			require.NoError(t, db.InsertGithubInstallation(context.Background(), installationID))
+			require.NoError(t, db.UpdateGithubInstallationOrganizationID(
+				context.Background(), installationID, orgs[0],
+			))
+
+			// a second connect must lose the race rather than take the
+			// installation away from the organization that claimed it.
+			return tcase{
+				InstallationID: installationID,
+				OrganizationID: orgs[1],
+				Owner:          null.StringFrom(orgs[0]),
+				Err:            errutil.ErrNotFound,
+			}
+		},
 		"Successful update": func(t *testing.T, db *DB) tcase {
 			org := prepOrganizations(t, db, 1)[0]
 			ids := prepGithubInstallations(t, db, 1, "")
@@ -166,6 +222,7 @@ func Test_agent_UpdateGithubInstallationOrganizationID(t *testing.T) {
 			return tcase{
 				InstallationID: ids[0],
 				OrganizationID: org,
+				Owner:          null.StringFrom(org),
 			}
 		},
 	}
@@ -178,11 +235,7 @@ func Test_agent_UpdateGithubInstallationOrganizationID(t *testing.T) {
 			c := cfn(t, db)
 
 			err := db.UpdateGithubInstallationOrganizationID(context.Background(), c.InstallationID, c.OrganizationID)
-			testutil.RequireEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
+			testutil.AssertEqualError(t, c.Err, err)
 
 			var organizationID null.String
 
@@ -194,34 +247,9 @@ func Test_agent_UpdateGithubInstallationOrganizationID(t *testing.T) {
 
 			err = db.sql.Get(&organizationID, q, args...)
 			require.NoError(t, err)
-			assert.Equal(t, null.StringFrom(c.OrganizationID), organizationID)
+			assert.Equal(t, c.Owner, organizationID)
 		})
 	}
-
-	t.Run("An already claimed installation is not reassigned", func(t *testing.T) {
-		t.Parallel()
-
-		db := prepTempDB(t)
-		orgs := prepOrganizations(t, db, 2)
-
-		const installationID = int64(4242)
-
-		require.NoError(t, db.InsertGithubInstallation(context.Background(), installationID))
-		require.NoError(t, db.UpdateGithubInstallationOrganizationID(
-			context.Background(), installationID, orgs[0],
-		))
-
-		// a second connect must lose the race rather than take the
-		// installation away from the organization that claimed it.
-		err := db.UpdateGithubInstallationOrganizationID(
-			context.Background(), installationID, orgs[1],
-		)
-		testutil.AssertEqualError(t, errutil.ErrNotFound, err)
-
-		res, err := db.FetchGithubInstallationByOrganizationID(context.Background(), orgs[0])
-		require.NoError(t, err)
-		assert.Equal(t, installationID, res)
-	})
 }
 
 func Test_agent_DeleteGithubInstallation(t *testing.T) {
@@ -371,7 +399,7 @@ func Test_agent_DeleteGithubInstallationsByOrganizationID(t *testing.T) {
 				Err:              assert.AnError,
 			}
 		},
-		"Only the organization's installations go": func(t *testing.T, db *DB) tcase {
+		"Only installations of the organization are deleted": func(t *testing.T, db *DB) tcase {
 			orgs := prepOrganizations(t, db, 2)
 
 			prepGithubInstallations(t, db, 1, orgs[0])

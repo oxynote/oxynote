@@ -16,7 +16,12 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 // reminderSettings builds scheduled-reminder settings due at the given time.
 func reminderSettings(t *testing.T, schedule time.Time) processor.Settings {

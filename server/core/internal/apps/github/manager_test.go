@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync"
 	"testing"
 
 	gogithub "github.com/google/go-github/v88/github"
@@ -16,7 +17,12 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 // stubDB creates a DB mock resolving organization installations to the
 // given installation ID or error.
@@ -26,27 +32,6 @@ func stubDB(installationID int64, err error) *DBMock {
 			return installationID, err
 		},
 	}
-}
-
-// pointManagerAt points the manager's app client at a test server serving
-// the given handler.
-func pointManagerAt(t *testing.T, man *Manager, handler http.Handler) {
-	t.Helper()
-
-	srv := httptest.NewServer(handler)
-	t.Cleanup(srv.Close)
-
-	base := srv.URL + "/"
-
-	// the base URL is fixed at construction, so the client is rebuilt
-	// around the original one's transport instead of being re-pointed.
-	client, err := gogithub.NewClient(
-		gogithub.WithHTTPClient(man.appClient.Client()),
-		gogithub.WithURLs(&base, &base),
-	)
-	require.NoError(t, err)
-
-	man.appClient = client
 }
 
 // newTestInstallationClient creates an InstallationClient talking to a test
@@ -71,18 +56,30 @@ func newTestInstallationClient(t *testing.T, handler http.Handler) *Installation
 	}
 }
 
-// installationHandler serves the given GetInstallation response body.
-func installationHandler(t *testing.T, body string) http.Handler {
-	t.Helper()
+// recordRequests wraps the handler and returns a function listing the paths
+// of the requests it has received.
+func recordRequests(handler http.Handler) (http.Handler, func() []string) {
+	var (
+		mu    sync.Mutex
+		paths []string
+	)
 
-	mux := http.NewServeMux()
+	record := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 
-	mux.HandleFunc("/app/installations/42", func(w http.ResponseWriter, _ *http.Request) {
-		_, err := w.Write([]byte(body))
-		assert.NoError(t, err)
+		paths = append(paths, r.URL.Path)
+
+		mu.Unlock()
+
+		handler.ServeHTTP(w, r)
 	})
 
-	return mux
+	return record, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+
+		return paths
+	}
 }
 
 func Test_Options_Validate(t *testing.T) {
@@ -146,10 +143,10 @@ func Test_Options_Validate(t *testing.T) {
 func Test_NewManager(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct {
+	cc := map[string]struct {
 		Opt            Options
-		ExpectErr      bool
 		WantConfigured bool
+		Err            error
 	}{
 		"Zero app ID creates an unconfigured manager": {
 			Opt: Options{},
@@ -160,7 +157,7 @@ func Test_NewManager(t *testing.T) {
 				AppSlug:        "test-app",
 				PrivateKeyPath: "testdata/test-key.pem",
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"App ID with missing private key fails": {
 			Opt: Options{
@@ -170,7 +167,7 @@ func Test_NewManager(t *testing.T) {
 				PrivateKeyPath:            "testdata/missing.pem",
 				InstallationSigningSecret: _testSigningSecret,
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"App ID with valid private key creates a configured manager": {
 			Opt: Options{
@@ -184,20 +181,18 @@ func Test_NewManager(t *testing.T) {
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			man, err := NewManager(nil, tc.Opt)
+			man, err := NewManager(nil, c.Opt)
+			testutil.AssertEqualError(t, c.Err, err)
 
-			if tc.ExpectErr {
-				require.Error(t, err)
-
+			if err != nil {
 				return
 			}
 
-			require.NoError(t, err)
-			assert.Equal(t, tc.WantConfigured, man.Configured())
+			assert.Equal(t, c.WantConfigured, man.Configured())
 		})
 	}
 }
@@ -214,24 +209,29 @@ func Test_Manager_SignatureSecret(t *testing.T) {
 func Test_Manager_GetInstallationClient(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct {
-		Configured  bool
-		DB          *DBMock
-		Handler     func(t *testing.T) http.Handler
-		ExpectedErr error
+	cc := map[string]struct {
+		Configured bool
+		DB         *DBMock
+		Handler    func(t *testing.T) http.Handler
+		FetchCalls int
+		Requests   []string
+		Err        error
 	}{
 		"Unconfigured manager fails": {
-			ExpectedErr: ErrNotConfigured,
+			DB:  &DBMock{},
+			Err: ErrNotConfigured,
 		},
-		"Database error is propagated": {
-			Configured:  true,
-			DB:          stubDB(0, assert.AnError),
-			ExpectedErr: assert.AnError,
+		"Error returned by DB.FetchGithubInstallationByOrganizationID": {
+			Configured: true,
+			DB:         stubDB(0, assert.AnError),
+			FetchCalls: 1,
+			Err:        assert.AnError,
 		},
 		"Missing installation record fails": {
-			Configured:  true,
-			DB:          stubDB(0, sql.ErrNoRows),
-			ExpectedErr: ErrInstallationNotFound,
+			Configured: true,
+			DB:         stubDB(0, sql.ErrNoRows),
+			FetchCalls: 1,
+			Err:        ErrInstallationNotFound,
 		},
 		"Missing GitHub installation fails": {
 			Configured: true,
@@ -243,7 +243,9 @@ func Test_Manager_GetInstallationClient(t *testing.T) {
 					w.WriteHeader(http.StatusNotFound)
 				})
 			},
-			ExpectedErr: ErrInstallationNotFound,
+			FetchCalls: 1,
+			Requests:   []string{"/app/installations/42"},
+			Err:        ErrInstallationNotFound,
 		},
 		"Installation without an account fails": {
 			Configured: true,
@@ -251,9 +253,14 @@ func Test_Manager_GetInstallationClient(t *testing.T) {
 			Handler: func(t *testing.T) http.Handler {
 				t.Helper()
 
-				return installationHandler(t, `{"id": 42}`)
+				return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					_, err := w.Write([]byte(`{"id": 42}`))
+					assert.NoError(t, err)
+				})
 			},
-			ExpectedErr: ErrInstallationNotFound,
+			FetchCalls: 1,
+			Requests:   []string{"/app/installations/42"},
+			Err:        ErrInstallationNotFound,
 		},
 		"Complete installation returns a client": {
 			Configured: true,
@@ -261,39 +268,64 @@ func Test_Manager_GetInstallationClient(t *testing.T) {
 			Handler: func(t *testing.T) http.Handler {
 				t.Helper()
 
-				return installationHandler(t, `{"id": 42, "account": {"login": "own", "type": "User"}}`)
+				return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					_, err := w.Write([]byte(`{"id": 42, "account": {"login": "own", "type": "User"}}`))
+					assert.NoError(t, err)
+				})
 			},
+			FetchCalls: 1,
+			Requests:   []string{"/app/installations/42"},
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
+
+			handler := http.NotFoundHandler()
+
+			if c.Handler != nil {
+				handler = c.Handler(t)
+			}
+
+			handler, requests := recordRequests(handler)
 
 			var man *Manager
 
-			if tc.Configured {
-				man = newTestManager(t, tc.DB)
+			if c.Configured {
+				man = newTestManager(t, c.DB)
+
+				srv := httptest.NewServer(handler)
+				t.Cleanup(srv.Close)
+
+				base := srv.URL + "/"
+
+				// the base URL is fixed at construction, so the client is
+				// rebuilt around the original one's transport instead of
+				// being re-pointed.
+				client, err := gogithub.NewClient(
+					gogithub.WithHTTPClient(man.appClient.Client()),
+					gogithub.WithURLs(&base, &base),
+				)
+				require.NoError(t, err)
+
+				man.appClient = client
 			} else {
 				var err error
 
-				man, err = NewManager(tc.DB, Options{})
+				man, err = NewManager(c.DB, Options{})
 				require.NoError(t, err)
 			}
 
-			if tc.Handler != nil {
-				pointManagerAt(t, man, tc.Handler(t))
-			}
-
 			client, err := man.GetInstallationClient(context.Background(), "org-1")
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, c.DB.FetchGithubInstallationByOrganizationIDCalls(), c.FetchCalls)
+			assert.Equal(t, c.Requests, requests())
 
-			if tc.ExpectedErr != nil {
-				testutil.AssertEqualError(t, tc.ExpectedErr, err)
-
+			if err != nil {
 				return
 			}
 
-			require.NoError(t, err)
 			assert.Equal(t, "own", client.owner)
 		})
 	}
@@ -302,114 +334,121 @@ func Test_Manager_GetInstallationClient(t *testing.T) {
 func Test_InstallationClient_FetchRepositories(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct {
-		Status        int
-		ExpectedErr   error
+	cc := map[string]struct {
+		Handler       func(t *testing.T) http.HandlerFunc
+		Requests      []string
 		ExpectedRepos []Repository
+		Err           error
 	}{
 		"Repositories are listed": {
+			Handler: func(t *testing.T) http.HandlerFunc {
+				t.Helper()
+
+				return func(w http.ResponseWriter, _ *http.Request) {
+					_, err := w.Write([]byte(`{"total_count": 1, "repositories": [{"name": "repo", "default_branch": "main"}]}`))
+					assert.NoError(t, err)
+				}
+			},
+			Requests: []string{"/installation/repositories"},
 			ExpectedRepos: []Repository{
 				{Name: "repo", DefaultBranch: "main"},
 			},
 		},
-		"Listing failure is propagated": {
-			Status:      http.StatusInternalServerError,
-			ExpectedErr: assert.AnError,
+		"Listing follows every page": {
+			Handler: func(t *testing.T) http.HandlerFunc {
+				t.Helper()
+
+				// GitHub returns 30 entries per page by default and signals
+				// more through the Link header; stopping at the first page
+				// hides the rest.
+				return func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Query().Get("page") == "" {
+						w.Header().Set("Link", `<`+r.URL.Path+`?page=2>; rel="next"`)
+
+						_, err := w.Write([]byte(`{"total_count": 2, "repositories": [{"name": "one", "default_branch": "main"}]}`))
+						assert.NoError(t, err)
+
+						return
+					}
+
+					_, err := w.Write([]byte(`{"total_count": 2, "repositories": [{"name": "two", "default_branch": "dev"}]}`))
+					assert.NoError(t, err)
+				}
+			},
+			Requests: []string{"/installation/repositories", "/installation/repositories"},
+			ExpectedRepos: []Repository{
+				{Name: "one", DefaultBranch: "main"},
+				{Name: "two", DefaultBranch: "dev"},
+			},
+		},
+		"Error returned by Apps.ListRepos": {
+			Handler: func(*testing.T) http.HandlerFunc {
+				return func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+			},
+			Requests: []string{"/installation/repositories"},
+			Err:      assert.AnError,
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
 			mux := http.NewServeMux()
 
 			// the installation's own repositories, which is what the app was
 			// granted and the only form that works for a user account.
-			mux.HandleFunc("/installation/repositories", func(w http.ResponseWriter, _ *http.Request) {
-				if tc.Status != 0 {
-					w.WriteHeader(tc.Status)
+			mux.HandleFunc("/installation/repositories", c.Handler(t))
 
-					return
-				}
-
-				_, err := w.Write([]byte(`{"total_count": 1, "repositories": [{"name": "repo", "default_branch": "main"}]}`))
-				assert.NoError(t, err)
-			})
-
-			ic := newTestInstallationClient(t, mux)
+			handler, requests := recordRequests(mux)
+			ic := newTestInstallationClient(t, handler)
 
 			repos, err := ic.FetchRepositories(context.Background())
 
-			testutil.AssertEqualError(t, tc.ExpectedErr, err)
-			assert.Equal(t, tc.ExpectedRepos, repos)
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Requests, requests())
+			assert.Equal(t, c.ExpectedRepos, repos)
 		})
 	}
-
-	t.Run("Listing follows every page", func(t *testing.T) {
-		t.Parallel()
-
-		mux := http.NewServeMux()
-
-		// GitHub returns 30 entries per page by default and signals more through
-		// the Link header; stopping at the first page hides the rest.
-		mux.HandleFunc("/installation/repositories", func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Query().Get("page") == "" {
-				w.Header().Set("Link", `<`+r.URL.Path+`?page=2>; rel="next"`)
-
-				_, err := w.Write([]byte(`{"total_count": 2, "repositories": [{"name": "one", "default_branch": "main"}]}`))
-				assert.NoError(t, err)
-
-				return
-			}
-
-			_, err := w.Write([]byte(`{"total_count": 2, "repositories": [{"name": "two", "default_branch": "dev"}]}`))
-			assert.NoError(t, err)
-		})
-
-		ic := newTestInstallationClient(t, mux)
-
-		res, err := ic.FetchRepositories(context.Background())
-		require.NoError(t, err)
-
-		assert.Equal(t, []Repository{
-			{Name: "one", DefaultBranch: "main"},
-			{Name: "two", DefaultBranch: "dev"},
-		}, res)
-	})
 }
 
 func Test_InstallationClient_FetchRepositoryBranches(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct {
+	cc := map[string]struct {
 		RepoStatus       int
 		BranchesStatus   int
-		ExpectedErr      error
+		Requests         []string
 		ExpectedBranches []string
+		Err              error
 	}{
 		"Branches are listed": {
+			Requests:         []string{"/repos/own/repo", "/repos/own/repo/branches"},
 			ExpectedBranches: []string{"main", "dev"},
 		},
 		"Missing repository fails": {
-			RepoStatus:  http.StatusNotFound,
-			ExpectedErr: ErrRepositoryNotFound,
+			RepoStatus: http.StatusNotFound,
+			Requests:   []string{"/repos/own/repo"},
+			Err:        ErrRepositoryNotFound,
 		},
-		"Listing failure is propagated": {
+		"Error returned by Repositories.ListBranches": {
 			BranchesStatus: http.StatusInternalServerError,
-			ExpectedErr:    assert.AnError,
+			Requests:       []string{"/repos/own/repo", "/repos/own/repo/branches"},
+			Err:            assert.AnError,
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
 			mux := http.NewServeMux()
 
 			mux.HandleFunc("/repos/own/repo", func(w http.ResponseWriter, _ *http.Request) {
-				if tc.RepoStatus != 0 {
-					w.WriteHeader(tc.RepoStatus)
+				if c.RepoStatus != 0 {
+					w.WriteHeader(c.RepoStatus)
 
 					return
 				}
@@ -419,8 +458,8 @@ func Test_InstallationClient_FetchRepositoryBranches(t *testing.T) {
 			})
 
 			mux.HandleFunc("/repos/own/repo/branches", func(w http.ResponseWriter, _ *http.Request) {
-				if tc.BranchesStatus != 0 {
-					w.WriteHeader(tc.BranchesStatus)
+				if c.BranchesStatus != 0 {
+					w.WriteHeader(c.BranchesStatus)
 
 					return
 				}
@@ -429,12 +468,14 @@ func Test_InstallationClient_FetchRepositoryBranches(t *testing.T) {
 				assert.NoError(t, err)
 			})
 
-			ic := newTestInstallationClient(t, mux)
+			handler, requests := recordRequests(mux)
+			ic := newTestInstallationClient(t, handler)
 
 			branches, err := ic.FetchRepositoryBranches(context.Background(), "repo")
 
-			testutil.AssertEqualError(t, tc.ExpectedErr, err)
-			assert.Equal(t, tc.ExpectedBranches, branches)
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Requests, requests())
+			assert.Equal(t, c.ExpectedBranches, branches)
 		})
 	}
 }
@@ -442,18 +483,24 @@ func Test_InstallationClient_FetchRepositoryBranches(t *testing.T) {
 func Test_InstallationClient_FetchRepositoryTree(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct {
+	cc := map[string]struct {
 		Branch         string
 		RepoStatus     int
 		BranchStatus   int
 		TreeStatus     int
 		Truncated      bool
+		Requests       []string
 		ExpectedBranch string
-		ExpectedErr    error
 		ExpectedTree   Tree
+		Err            error
 	}{
 		"Explicit branch tree is fetched": {
-			Branch:         "dev",
+			Branch: "dev",
+			Requests: []string{
+				"/repos/own/repo",
+				"/repos/own/repo/branches/dev",
+				"/repos/own/repo/git/trees/dev",
+			},
 			ExpectedBranch: "dev",
 			ExpectedTree: Tree{
 				{
@@ -465,6 +512,11 @@ func Test_InstallationClient_FetchRepositoryTree(t *testing.T) {
 			},
 		},
 		"Empty branch falls back to the default branch": {
+			Requests: []string{
+				"/repos/own/repo",
+				"/repos/own/repo/branches/main",
+				"/repos/own/repo/git/trees/main",
+			},
 			ExpectedBranch: "main",
 			ExpectedTree: Tree{
 				{
@@ -476,28 +528,43 @@ func Test_InstallationClient_FetchRepositoryTree(t *testing.T) {
 			},
 		},
 		"Missing repository fails": {
-			RepoStatus:  http.StatusNotFound,
-			ExpectedErr: ErrRepositoryNotFound,
+			RepoStatus: http.StatusNotFound,
+			Requests:   []string{"/repos/own/repo"},
+			Err:        ErrRepositoryNotFound,
 		},
 		"Missing branch fails": {
 			Branch:       "gone",
 			BranchStatus: http.StatusNotFound,
-			ExpectedErr:  ErrRepositoryBranchNotFound,
+			Requests: []string{
+				"/repos/own/repo",
+				"/repos/own/repo/branches/gone",
+			},
+			Err: ErrRepositoryBranchNotFound,
 		},
 		"Truncated tree is reported": {
-			Branch:      "dev",
-			Truncated:   true,
-			ExpectedErr: ErrTreeTruncated,
+			Branch:    "dev",
+			Truncated: true,
+			Requests: []string{
+				"/repos/own/repo",
+				"/repos/own/repo/branches/dev",
+				"/repos/own/repo/git/trees/dev",
+			},
+			Err: ErrTreeTruncated,
 		},
-		"Tree failure is propagated": {
-			Branch:      "dev",
-			TreeStatus:  http.StatusInternalServerError,
-			ExpectedErr: assert.AnError,
+		"Error returned by Git.GetTree": {
+			Branch:     "dev",
+			TreeStatus: http.StatusInternalServerError,
+			Requests: []string{
+				"/repos/own/repo",
+				"/repos/own/repo/branches/dev",
+				"/repos/own/repo/git/trees/dev",
+			},
+			Err: assert.AnError,
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
 			var fetchedBranch string
@@ -505,8 +572,8 @@ func Test_InstallationClient_FetchRepositoryTree(t *testing.T) {
 			mux := http.NewServeMux()
 
 			mux.HandleFunc("/repos/own/repo", func(w http.ResponseWriter, _ *http.Request) {
-				if tc.RepoStatus != 0 {
-					w.WriteHeader(tc.RepoStatus)
+				if c.RepoStatus != 0 {
+					w.WriteHeader(c.RepoStatus)
 
 					return
 				}
@@ -516,8 +583,8 @@ func Test_InstallationClient_FetchRepositoryTree(t *testing.T) {
 			})
 
 			mux.HandleFunc("/repos/own/repo/branches/", func(w http.ResponseWriter, _ *http.Request) {
-				if tc.BranchStatus != 0 {
-					w.WriteHeader(tc.BranchStatus)
+				if c.BranchStatus != 0 {
+					w.WriteHeader(c.BranchStatus)
 
 					return
 				}
@@ -529,15 +596,15 @@ func Test_InstallationClient_FetchRepositoryTree(t *testing.T) {
 			mux.HandleFunc("/repos/own/repo/git/trees/", func(w http.ResponseWriter, r *http.Request) {
 				fetchedBranch = r.URL.Path[len("/repos/own/repo/git/trees/"):]
 
-				if tc.TreeStatus != 0 {
-					w.WriteHeader(tc.TreeStatus)
+				if c.TreeStatus != 0 {
+					w.WriteHeader(c.TreeStatus)
 
 					return
 				}
 
 				_, err := w.Write([]byte(`{
 					"sha": "root",
-					"truncated": ` + strconv.FormatBool(tc.Truncated) + `,
+					"truncated": ` + strconv.FormatBool(c.Truncated) + `,
 					"tree": [
 						{"path": "docs", "type": "tree", "sha": "sha-1"},
 						{"path": "docs/guide.md", "type": "blob", "sha": "sha-2"}
@@ -546,18 +613,20 @@ func Test_InstallationClient_FetchRepositoryTree(t *testing.T) {
 				assert.NoError(t, err)
 			})
 
-			ic := newTestInstallationClient(t, mux)
+			handler, requests := recordRequests(mux)
+			ic := newTestInstallationClient(t, handler)
 
-			tree, err := ic.FetchRepositoryTree(context.Background(), "repo", tc.Branch)
+			tree, err := ic.FetchRepositoryTree(context.Background(), "repo", c.Branch)
 
-			testutil.AssertEqualError(t, tc.ExpectedErr, err)
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Requests, requests())
 
-			if tc.ExpectedErr != nil {
+			if err != nil {
 				return
 			}
 
-			assert.Equal(t, tc.ExpectedBranch, fetchedBranch)
-			assert.Equal(t, tc.ExpectedTree, tree)
+			assert.Equal(t, c.ExpectedBranch, fetchedBranch)
+			assert.Equal(t, c.ExpectedTree, tree)
 		})
 	}
 }
@@ -565,47 +634,43 @@ func Test_InstallationClient_FetchRepositoryTree(t *testing.T) {
 func Test_parseGithubError(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct {
-		Err         error
-		ExpectedErr error
+	cc := map[string]struct {
+		Inp error
+		Err error
 	}{
 		"Rate limit error maps to too many requests": {
-			Err:         &gogithub.RateLimitError{},
-			ExpectedErr: errutil.New(http.StatusTooManyRequests, "github.rate_limit", "rate limit exceeded"),
+			Inp: &gogithub.RateLimitError{},
+			Err: errutil.New(http.StatusTooManyRequests, "github.rate_limit", "rate limit exceeded"),
 		},
 		"Abuse rate limit error maps to too many requests": {
-			Err:         &gogithub.AbuseRateLimitError{},
-			ExpectedErr: errutil.New(http.StatusTooManyRequests, "github.abuse_rate_limit", "abuse rate limit exceeded"),
+			Inp: &gogithub.AbuseRateLimitError{},
+			Err: errutil.New(http.StatusTooManyRequests, "github.abuse_rate_limit", "abuse rate limit exceeded"),
 		},
 		"Not found response maps to resource not found": {
-			Err: &gogithub.ErrorResponse{
+			Inp: &gogithub.ErrorResponse{
 				Response: &http.Response{StatusCode: http.StatusNotFound},
 			},
-			ExpectedErr: ErrResourceNotFound,
+			Err: ErrResourceNotFound,
 		},
 		"Other response errors pass through": {
+			Inp: &gogithub.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusInternalServerError},
+			},
 			Err: &gogithub.ErrorResponse{
 				Response: &http.Response{StatusCode: http.StatusInternalServerError},
 			},
 		},
 		"Generic errors pass through": {
-			Err: assert.AnError,
+			Inp: errors.New("generic"),
+			Err: errors.New("generic"),
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			err := parseGithubError(tc.Err)
-
-			if tc.ExpectedErr == nil {
-				assert.Equal(t, tc.Err, err)
-
-				return
-			}
-
-			assert.Equal(t, tc.ExpectedErr, err)
+			testutil.AssertEqualError(t, c.Err, parseGithubError(c.Inp))
 		})
 	}
 }

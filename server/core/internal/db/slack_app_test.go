@@ -298,37 +298,72 @@ func Test_agent_InsertSlackMessage(t *testing.T) {
 }
 
 func Test_agent_FetchSlackMessages(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		CancelledContext bool
+		OrganizationID   string
+		Result           []slack.Message
+		Err              error
+	}
 
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				OrganizationID:   "non-existent-org-id",
+				Err:              assert.AnError,
+			}
+		},
+		"No messages": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				OrganizationID: "non-existent-org-id",
+				Result:         []slack.Message{},
+			}
+		},
+		"Ordered by creation time newest first": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+			messages := prepSlackMessages(t, db, 3, func(_ int, msg *slack.Message) {
+				msg.OrganizationID = org
+			})
 
-	res, err := db.FetchSlackMessages(ctx, "non-existent-org-id")
-	require.Error(t, err)
-	assert.Nil(t, res)
+			return tcase{
+				OrganizationID: org,
+				Result:         messages,
+			}
+		},
+		"Retention bounds the listing": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+			messages := prepSlackMessages(t, db, 3, func(_ int, msg *slack.Message) {
+				msg.OrganizationID = org
+			})
 
-	// success - no messages
-	res, err = db.FetchSlackMessages(context.Background(), "non-existent-org-id")
-	require.NoError(t, err)
-	assert.Empty(t, res)
+			db.opts.MaxSlackMessages = 2
 
-	// success - ordered by creation time, newest first
-	org := prepOrganizations(t, db, 1)[0]
-	messages := prepSlackMessages(t, db, 3, func(_ int, msg *slack.Message) {
-		msg.OrganizationID = org
-	})
+			return tcase{
+				OrganizationID: org,
+				Result:         messages[:2],
+			}
+		},
+	}
 
-	res, err = db.FetchSlackMessages(context.Background(), org)
-	assert.NoError(t, err)
-	testutil.AssertFilterEqual(t, messages, res)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// success - retention bounds the listing
-	db.opts.MaxSlackMessages = 2
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-	res, err = db.FetchSlackMessages(context.Background(), org)
-	assert.NoError(t, err)
-	testutil.AssertFilterEqual(t, messages[:2], res)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchSlackMessages(ctx, c.OrganizationID)
+			testutil.RequireEqualError(t, c.Err, err)
+			testutil.AssertFilterEqual(t, c.Result, res)
+		})
+	}
 }
 
 func Test_agent_UpdateSlackAppOrganizationID(t *testing.T) {

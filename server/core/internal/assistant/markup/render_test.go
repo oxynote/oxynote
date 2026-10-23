@@ -60,30 +60,42 @@ func Test_Render(t *testing.T) {
 func Test_renderer_entry(t *testing.T) {
 	t.Parallel()
 
-	// an entry whose first child is not a paragraph has no text of its
-	// own, and its children render nested.
-	got := Render([]document.Block{{
-		Type:  document.BlockNodeBulletList,
-		Attrs: document.Attributes{document.AttrUID: "l"},
-		Content: []document.Block{{
-			Type:  document.BlockNodeListItem,
-			Attrs: document.Attributes{document.AttrUID: "li"},
-			Content: []document.Block{{
-				Type:    document.BlockNodeCodeBlock,
-				Attrs:   document.Attributes{document.AttrUID: "c"},
-				Content: []document.Block{{Type: document.BlockNodeText, Text: "x"}},
+	cc := map[string]struct {
+		Blocks []document.Block
+		Result string
+	}{
+		"Entry without a leading paragraph has no text and nests its children": {
+			Blocks: []document.Block{{
+				Type:  document.BlockNodeBulletList,
+				Attrs: document.Attributes{document.AttrUID: "l"},
+				Content: []document.Block{{
+					Type:  document.BlockNodeListItem,
+					Attrs: document.Attributes{document.AttrUID: "li"},
+					Content: []document.Block{{
+						Type:    document.BlockNodeCodeBlock,
+						Attrs:   document.Attributes{document.AttrUID: "c"},
+						Content: []document.Block{{Type: document.BlockNodeText, Text: "x"}},
+					}},
+				}},
 			}},
-		}},
-	}})
+			Result: strings.Join([]string{
+				`<ul id="l">`,
+				`  <li id="li">`,
+				`    <pre id="c">x</pre>`,
+				`  </li>`,
+				`</ul>`,
+				``,
+			}, "\n"),
+		},
+	}
 
-	assert.Equal(t, strings.Join([]string{
-		`<ul id="l">`,
-		`  <li id="li">`,
-		`    <pre id="c">x</pre>`,
-		`  </li>`,
-		`</ul>`,
-		``,
-	}, "\n"), got)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, Render(c.Blocks))
+		})
+	}
 }
 
 func Test_renderer_param(t *testing.T) {
@@ -126,10 +138,48 @@ func Test_attr_text(t *testing.T) {
 func Test_escapeRaw(t *testing.T) {
 	t.Parallel()
 
-	// every level of escaping reads back as it was written.
-	for _, raw := range []string{"a </pre> b", "a &lt;/pre> b", "a &amp;lt;/pre> b", "</p> &lt;/p>", "a </PRE> &lt;/Pre> b"} {
-		escaped := escapeRaw(raw, _elemCode)
-		assert.NotContains(t, strings.ToLower(escaped), "</pre")
-		assert.Equal(t, raw, unescapeRaw(escaped, _elemCode))
+	cc := map[string]struct {
+		Text   string
+		Result string
+	}{
+		"Closing tag": {
+			Text:   "a </pre> b",
+			Result: "a &lt;/pre> b",
+		},
+		"Escaped closing tag gains a level": {
+			Text:   "a &lt;/pre> &amp;lt;/pre> b",
+			Result: "a &amp;lt;/pre> &amp;amp;lt;/pre> b",
+		},
+		"Closing tags in any case": {
+			Text:   "a </PRE> &lt;/Pre> b",
+			Result: "a &lt;/PRE> &amp;lt;/Pre> b",
+		},
+		"Other closing tags stay": {
+			Text:   "</p> &lt;/p>",
+			Result: "</p> &lt;/p>",
+		},
+		"Code without entities stays": {
+			Text:   "if a && b { x() }",
+			Result: "if a && b { x() }",
+		},
+		"Entities with no angle bracket are escaped whole": {
+			Text:   "x &lt; y && z",
+			Result: "x &amp;lt; y &amp;&amp; z",
+		},
+		"Entities beside an escaped closing tag are escaped whole": {
+			Text:   "</pre> &amp;",
+			Result: "&lt;/pre> &amp;amp;",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			escaped := escapeRaw(c.Text, _elemCode)
+			assert.Equal(t, c.Result, escaped)
+			assert.NotContains(t, strings.ToLower(escaped), "</pre")
+			assert.Equal(t, c.Text, unescapeRaw(escaped, _elemCode))
+		})
 	}
 }

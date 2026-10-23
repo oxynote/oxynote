@@ -1,7 +1,6 @@
 package slack
 
 import (
-	"context"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
@@ -32,14 +31,9 @@ func Test_Handler_BindPostMessage(t *testing.T) {
 	// the event carries a filter so only the owning organization is told.
 	require.NotNil(t, pubs[0].Filter)
 
-	assert.True(t, pubs[0].Filter(sessionCtx("org1"), ""))
-	assert.False(t, pubs[0].Filter(sessionCtx("org2"), ""))
-}
+	org1 := auth.AddSessionToContext(t.Context(), auth.Session{UserID: "u1", ActiveOrganizationID: "org1"})
+	org2 := auth.AddSessionToContext(t.Context(), auth.Session{UserID: "u1", ActiveOrganizationID: "org2"})
 
-// sessionCtx builds a context carrying a session for the given organization.
-func sessionCtx(organizationID string) context.Context {
-	return auth.AddSessionToContext(context.Background(), auth.Session{
-		UserID:               "u1",
-		ActiveOrganizationID: organizationID,
-	})
+	assert.True(t, pubs[0].Filter(org1, ""))
+	assert.False(t, pubs[0].Filter(org2, ""))
 }

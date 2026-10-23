@@ -30,20 +30,15 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-// stubDoc creates a stub document for tests.
-func stubDoc() *document.Document {
-	return &document.Document{
-		BranchName:   "main",
-		DocumentName: "My Doc",
-		ID:           _testDocID,
-	}
-}
-
 // stubDB creates a database mock whose calls all succeed.
 func stubDB() *DBMock {
 	return &DBMock{
 		FetchDocumentByBranchIDFunc: func(_ context.Context, _ xid.ID, _ string) (*document.Document, error) {
-			return stubDoc(), nil
+			return &document.Document{
+				BranchName:   "main",
+				DocumentName: "My Doc",
+				ID:           _testDocID,
+			}, nil
 		},
 		FetchOrganizationSlugFunc: func(_ context.Context, _ string) (string, error) {
 			return "acme", nil
@@ -51,14 +46,6 @@ func stubDB() *DBMock {
 		FetchUserNameFunc: func(_ context.Context, _ string) (string, error) {
 			return "Alice", nil
 		},
-	}
-}
-
-// stubNotification wraps a notification core into a full notification.
-func stubNotification(nc notification.Core) notification.Notification {
-	return notification.Notification{
-		Core:           nc,
-		OrganizationID: "org1",
 	}
 }
 
@@ -77,67 +64,79 @@ func Test_NewInterpreter(t *testing.T) {
 
 func Test_Interpreter_InterpretNotification(t *testing.T) {
 	cc := map[string]struct {
-		N      notification.Notification
-		Result *Message
-		Err    error
+		Core            notification.Core
+		Result          *Message
+		DocumentFetches int
+		SlugFetches     int
+		NameFetches     int
+		Err             error
 	}{
 		"Unknown notification code": {
-			N: stubNotification(notification.Core{
+			Core: notification.Core{
 				Code: notification.Code("bogus"),
-			}),
+			},
 			Err: ErrUnknownNotificationCode,
 		},
 		"Document review request": {
-			N: stubNotification(notification.NewDocumentReviewRequestNotification(
+			Core: notification.NewDocumentReviewRequestNotification(
 				"user1",
 				_testDocID,
 				_testBranchID,
-			)),
+			),
 			Result: &Message{
 				Text: fmt.Sprintf("Your review was requested on the main branch of <%s|My Doc>", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
 		},
 		"Document hook triggered": {
-			N: stubNotification(notification.NewDocumentHookTriggeredNotification(
+			Core: notification.NewDocumentHookTriggeredNotification(
 				_testDocID,
 				hook.TypeScheduledReminder,
 				null.String{},
 				_testBranchID,
 				nil,
 				null.Int{},
-			)),
+			),
 			Result: &Message{
 				Text: fmt.Sprintf("<%s|My Doc> may be outdated — Scheduled Reminder", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
 		},
 		"Document hook needs attention": {
-			N: stubNotification(notification.NewDocumentHookNeedsAttentionNotification(
+			Core: notification.NewDocumentHookNeedsAttentionNotification(
 				_testDocID,
 				hook.TypeGithubTracking,
 				null.String{},
 				_testBranchID,
 				processor.StatusMissingRepository,
 				nil,
-			)),
+			),
 			Result: &Message{
 				Text: fmt.Sprintf("<%s|My Doc> can no longer be checked — GitHub Tracking", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
 		},
 		"Document new comment": {
-			N: stubNotification(notification.NewDocumentNewCommentNotification(
+			Core: notification.NewDocumentNewCommentNotification(
 				"user1",
 				_testDocID,
 				xid.New(),
 				null.String{},
 				_testBranchID,
 				"",
-			)),
+			),
 			Result: &Message{
 				Text: fmt.Sprintf("Alice left a comment on <%s|My Doc>", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
+			NameFetches:     1,
 		},
 		"Document new comment reply": {
-			N: stubNotification(notification.NewDocumentNewCommentReplyNotification(
+			Core: notification.NewDocumentNewCommentReplyNotification(
 				"user1",
 				_testDocID,
 				xid.New(),
@@ -145,23 +144,29 @@ func Test_Interpreter_InterpretNotification(t *testing.T) {
 				null.String{},
 				_testBranchID,
 				"",
-			)),
+			),
 			Result: &Message{
 				Text: fmt.Sprintf("Alice replied to a comment on <%s|My Doc>", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
+			NameFetches:     1,
 		},
 		"Document comment resolved": {
-			N: stubNotification(notification.NewDocumentCommentResolvedNotification(
+			Core: notification.NewDocumentCommentResolvedNotification(
 				"user1",
 				_testDocID,
 				xid.New(),
 				null.String{},
 				_testBranchID,
 				"",
-			)),
+			),
 			Result: &Message{
 				Text: fmt.Sprintf("Alice resolved a comment on <%s|My Doc>", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
+			NameFetches:     1,
 		},
 	}
 
@@ -169,10 +174,20 @@ func Test_Interpreter_InterpretNotification(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			i := NewInterpreter(stubDB(), NewSlackFormatter(), "https://app.test")
+			db := stubDB()
+			i := NewInterpreter(db, NewSlackFormatter(), "https://app.test")
 
-			res, err := i.InterpretNotification(context.Background(), c.N)
+			res, err := i.InterpretNotification(
+				context.Background(),
+				notification.Notification{
+					Core:           c.Core,
+					OrganizationID: "org1",
+				},
+			)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, db.FetchDocumentByBranchIDCalls(), c.DocumentFetches)
+			assert.Len(t, db.FetchOrganizationSlugCalls(), c.SlugFetches)
+			assert.Len(t, db.FetchUserNameCalls(), c.NameFetches)
 
 			if err != nil {
 				return
@@ -185,17 +200,19 @@ func Test_Interpreter_InterpretNotification(t *testing.T) {
 
 func Test_Interpreter_interpretDocumentReviewRequestNotification(t *testing.T) {
 	cc := map[string]struct {
-		DB     *DBMock
-		N      notification.Notification
-		Result *Message
-		Err    error
+		DB              *DBMock
+		Core            notification.Core
+		Result          *Message
+		DocumentFetches int
+		SlugFetches     int
+		Err             error
 	}{
 		"Invalid branch metadata": {
 			DB: stubDB(),
-			N: stubNotification(notification.Core{
+			Core: notification.Core{
 				Code:     notification.NotificationDocumentReviewRequest,
 				Metadata: notification.Metadata{},
-			}),
+			},
 			Err: ErrInvalidNotificationMetadata,
 		},
 		"Error returned by db.FetchDocumentByBranchID": {
@@ -207,12 +224,13 @@ func Test_Interpreter_interpretDocumentReviewRequestNotification(t *testing.T) {
 
 				return db
 			}(),
-			N: stubNotification(notification.NewDocumentReviewRequestNotification(
+			Core: notification.NewDocumentReviewRequestNotification(
 				"user1",
 				_testDocID,
 				_testBranchID,
-			)),
-			Err: assert.AnError,
+			),
+			DocumentFetches: 1,
+			Err:             assert.AnError,
 		},
 		"Error returned by db.FetchOrganizationSlug": {
 			DB: func() *DBMock {
@@ -223,23 +241,27 @@ func Test_Interpreter_interpretDocumentReviewRequestNotification(t *testing.T) {
 
 				return db
 			}(),
-			N: stubNotification(notification.NewDocumentReviewRequestNotification(
+			Core: notification.NewDocumentReviewRequestNotification(
 				"user1",
 				_testDocID,
 				_testBranchID,
-			)),
-			Err: assert.AnError,
+			),
+			DocumentFetches: 1,
+			SlugFetches:     1,
+			Err:             assert.AnError,
 		},
 		"Successful interpretation": {
 			DB: stubDB(),
-			N: stubNotification(notification.NewDocumentReviewRequestNotification(
+			Core: notification.NewDocumentReviewRequestNotification(
 				"user1",
 				_testDocID,
 				_testBranchID,
-			)),
+			),
 			Result: &Message{
 				Text: fmt.Sprintf("Your review was requested on the main branch of <%s|My Doc>", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
 		},
 	}
 
@@ -249,8 +271,16 @@ func Test_Interpreter_interpretDocumentReviewRequestNotification(t *testing.T) {
 
 			i := NewInterpreter(c.DB, NewSlackFormatter(), "https://app.test")
 
-			res, err := i.interpretDocumentReviewRequestNotification(context.Background(), c.N)
+			res, err := i.interpretDocumentReviewRequestNotification(
+				context.Background(),
+				notification.Notification{
+					Core:           c.Core,
+					OrganizationID: "org1",
+				},
+			)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.DocumentFetches)
+			assert.Len(t, c.DB.FetchOrganizationSlugCalls(), c.SlugFetches)
 
 			if err != nil {
 				return
@@ -268,43 +298,45 @@ func Test_Interpreter_interpretDocumentReviewRequestNotification(t *testing.T) {
 
 func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 	cc := map[string]struct {
-		DB *DBMock
-		N  notification.Notification
+		DB   *DBMock
+		Core notification.Core
 		// Format defaults to _hookTriggeredFormat.
-		Format string
-		Result *Message
-		Err    error
+		Format          string
+		Result          *Message
+		DocumentFetches int
+		SlugFetches     int
+		Err             error
 	}{
 		"Invalid type metadata": {
 			DB: stubDB(),
-			N: stubNotification(notification.Core{
+			Core: notification.Core{
 				Code: notification.NotificationDocumentHookTriggered,
 				Metadata: notification.Metadata{
 					"type": "not-a-hook-type",
 				},
-			}),
+			},
 			Err: ErrInvalidNotificationMetadata,
 		},
 		"Invalid block metadata": {
 			DB: stubDB(),
-			N: stubNotification(notification.Core{
+			Core: notification.Core{
 				Code: notification.NotificationDocumentHookTriggered,
 				Metadata: notification.Metadata{
 					"type":    hook.TypeScheduledReminder,
 					"blockId": 42,
 				},
-			}),
+			},
 			Err: ErrInvalidNotificationMetadata,
 		},
 		"Invalid branch metadata": {
 			DB: stubDB(),
-			N: stubNotification(notification.Core{
+			Core: notification.Core{
 				Code: notification.NotificationDocumentHookTriggered,
 				Metadata: notification.Metadata{
 					"type":    hook.TypeScheduledReminder,
 					"blockId": null.String{},
 				},
-			}),
+			},
 			Err: ErrInvalidNotificationMetadata,
 		},
 		"Error returned by db.FetchDocumentByBranchID": {
@@ -316,15 +348,16 @@ func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 
 				return db
 			}(),
-			N: stubNotification(notification.NewDocumentHookTriggeredNotification(
+			Core: notification.NewDocumentHookTriggeredNotification(
 				_testDocID,
 				hook.TypeScheduledReminder,
 				null.String{},
 				_testBranchID,
 				nil,
 				null.Int{},
-			)),
-			Err: assert.AnError,
+			),
+			DocumentFetches: 1,
+			Err:             assert.AnError,
 		},
 		"Error returned by db.FetchOrganizationSlug": {
 			DB: func() *DBMock {
@@ -335,35 +368,39 @@ func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 
 				return db
 			}(),
-			N: stubNotification(notification.NewDocumentHookTriggeredNotification(
+			Core: notification.NewDocumentHookTriggeredNotification(
 				_testDocID,
 				hook.TypeScheduledReminder,
 				null.String{},
 				_testBranchID,
 				nil,
 				null.Int{},
-			)),
-			Err: assert.AnError,
+			),
+			DocumentFetches: 1,
+			SlugFetches:     1,
+			Err:             assert.AnError,
 		},
 		"Successful interpretation": {
 			DB: stubDB(),
-			N: stubNotification(notification.NewDocumentHookTriggeredNotification(
+			Core: notification.NewDocumentHookTriggeredNotification(
 				_testDocID,
 				hook.TypeScheduledReminder,
 				null.String{},
 				_testBranchID,
 				nil,
 				null.Int{},
-			)),
+			),
 			Result: &Message{
 				Text: fmt.Sprintf("<%s|My Doc> may be outdated — Scheduled Reminder", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
 		},
 		// a stored notification decodes into plain strings, which the
 		// readers must accept as well as typed values.
 		"Successful interpretation of a stored notification": {
 			DB: stubDB(),
-			N: stubNotification(notification.Core{
+			Core: notification.Core{
 				Code: notification.NotificationDocumentHookTriggered,
 				Metadata: notification.Metadata{
 					"type":       string(hook.TypeScheduledReminder),
@@ -371,39 +408,45 @@ func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 					"branchId":   _testBranchID.String(),
 					"documentId": _testDocID.String(),
 				},
-			}),
+			},
 			Result: &Message{
 				Text: fmt.Sprintf("<%s#blk1|a block in My Doc> may be outdated — Scheduled Reminder", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
 		},
 		"Successful interpretation with block": {
 			DB: stubDB(),
-			N: stubNotification(notification.NewDocumentHookTriggeredNotification(
+			Core: notification.NewDocumentHookTriggeredNotification(
 				_testDocID,
 				hook.TypeScheduledReminder,
 				null.StringFrom("blk1"),
 				_testBranchID,
 				nil,
 				null.Int{},
-			)),
+			),
 			Result: &Message{
 				Text: fmt.Sprintf("<%s#blk1|a block in My Doc> may be outdated — Scheduled Reminder", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
 		},
 		"Successful interpretation with the needs attention format": {
 			DB: stubDB(),
-			N: stubNotification(notification.NewDocumentHookNeedsAttentionNotification(
+			Core: notification.NewDocumentHookNeedsAttentionNotification(
 				_testDocID,
 				hook.TypeURLWatcher,
 				null.StringFrom("blk1"),
 				_testBranchID,
 				processor.StatusUnreachableURL,
 				nil,
-			)),
+			),
 			Format: _hookNeedsAttentionFormat,
 			Result: &Message{
 				Text: fmt.Sprintf("<%s#blk1|a block in My Doc> can no longer be checked — Website Changes", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
 		},
 	}
 
@@ -418,8 +461,17 @@ func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 				format = _hookTriggeredFormat
 			}
 
-			res, err := i.interpretDocumentHookNotification(context.Background(), c.N, format)
+			res, err := i.interpretDocumentHookNotification(
+				context.Background(),
+				notification.Notification{
+					Core:           c.Core,
+					OrganizationID: "org1",
+				},
+				format,
+			)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.DocumentFetches)
+			assert.Len(t, c.DB.FetchOrganizationSlugCalls(), c.SlugFetches)
 
 			if err != nil {
 				return
@@ -432,42 +484,45 @@ func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 
 func Test_Interpreter_interpretDocumentCommentNotification(t *testing.T) {
 	cc := map[string]struct {
-		DB     *DBMock
-		N      notification.Notification
-		Verb   string
-		Result *Message
-		Err    error
+		DB              *DBMock
+		Core            notification.Core
+		Verb            string
+		Result          *Message
+		DocumentFetches int
+		SlugFetches     int
+		NameFetches     int
+		Err             error
 	}{
 		"Invalid user metadata": {
 			DB: stubDB(),
-			N: stubNotification(notification.Core{
+			Core: notification.Core{
 				Code:     notification.NotificationDocumentNewComment,
 				Metadata: notification.Metadata{},
-			}),
+			},
 			Verb: _commentVerb,
 			Err:  ErrInvalidNotificationMetadata,
 		},
 		"Invalid anchor block metadata": {
 			DB: stubDB(),
-			N: stubNotification(notification.Core{
+			Core: notification.Core{
 				Code: notification.NotificationDocumentNewComment,
 				Metadata: notification.Metadata{
 					"userId":        "user1",
 					"anchorBlockId": "not-a-null-string",
 				},
-			}),
+			},
 			Verb: _commentVerb,
 			Err:  ErrInvalidNotificationMetadata,
 		},
 		"Invalid branch metadata": {
 			DB: stubDB(),
-			N: stubNotification(notification.Core{
+			Core: notification.Core{
 				Code: notification.NotificationDocumentNewComment,
 				Metadata: notification.Metadata{
 					"userId":        "user1",
 					"anchorBlockId": null.String{},
 				},
-			}),
+			},
 			Verb: _commentVerb,
 			Err:  ErrInvalidNotificationMetadata,
 		},
@@ -480,16 +535,17 @@ func Test_Interpreter_interpretDocumentCommentNotification(t *testing.T) {
 
 				return db
 			}(),
-			N: stubNotification(notification.NewDocumentNewCommentNotification(
+			Core: notification.NewDocumentNewCommentNotification(
 				"user1",
 				_testDocID,
 				xid.New(),
 				null.String{},
 				_testBranchID,
 				"",
-			)),
-			Verb: _commentVerb,
-			Err:  assert.AnError,
+			),
+			Verb:            _commentVerb,
+			DocumentFetches: 1,
+			Err:             assert.AnError,
 		},
 		"Error returned by db.FetchOrganizationSlug": {
 			DB: func() *DBMock {
@@ -500,16 +556,18 @@ func Test_Interpreter_interpretDocumentCommentNotification(t *testing.T) {
 
 				return db
 			}(),
-			N: stubNotification(notification.NewDocumentNewCommentNotification(
+			Core: notification.NewDocumentNewCommentNotification(
 				"user1",
 				_testDocID,
 				xid.New(),
 				null.String{},
 				_testBranchID,
 				"",
-			)),
-			Verb: _commentVerb,
-			Err:  assert.AnError,
+			),
+			Verb:            _commentVerb,
+			DocumentFetches: 1,
+			SlugFetches:     1,
+			Err:             assert.AnError,
 		},
 		"Error returned by db.FetchUserName": {
 			DB: func() *DBMock {
@@ -520,50 +578,59 @@ func Test_Interpreter_interpretDocumentCommentNotification(t *testing.T) {
 
 				return db
 			}(),
-			N: stubNotification(notification.NewDocumentNewCommentNotification(
+			Core: notification.NewDocumentNewCommentNotification(
 				"user1",
 				_testDocID,
 				xid.New(),
 				null.String{},
 				_testBranchID,
 				"",
-			)),
-			Verb: _commentVerb,
-			Err:  assert.AnError,
+			),
+			Verb:            _commentVerb,
+			DocumentFetches: 1,
+			SlugFetches:     1,
+			NameFetches:     1,
+			Err:             assert.AnError,
 		},
 		"Successful comment interpretation": {
 			DB: stubDB(),
-			N: stubNotification(notification.NewDocumentNewCommentNotification(
+			Core: notification.NewDocumentNewCommentNotification(
 				"user1",
 				_testDocID,
 				xid.New(),
 				null.String{},
 				_testBranchID,
 				"",
-			)),
+			),
 			Verb: _commentVerb,
 			Result: &Message{
 				Text: fmt.Sprintf("Alice left a comment on <%s|My Doc>", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
+			NameFetches:     1,
 		},
 		"Successful comment interpretation with anchor block": {
 			DB: stubDB(),
-			N: stubNotification(notification.NewDocumentNewCommentNotification(
+			Core: notification.NewDocumentNewCommentNotification(
 				"user1",
 				_testDocID,
 				xid.New(),
 				null.StringFrom("blk1"),
 				_testBranchID,
 				"",
-			)),
+			),
 			Verb: _commentVerb,
 			Result: &Message{
 				Text: fmt.Sprintf("Alice left a comment on <%s#blk1|My Doc>", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
+			NameFetches:     1,
 		},
 		"Successful reply interpretation": {
 			DB: stubDB(),
-			N: stubNotification(notification.NewDocumentNewCommentReplyNotification(
+			Core: notification.NewDocumentNewCommentReplyNotification(
 				"user1",
 				_testDocID,
 				xid.New(),
@@ -571,15 +638,18 @@ func Test_Interpreter_interpretDocumentCommentNotification(t *testing.T) {
 				null.String{},
 				_testBranchID,
 				"",
-			)),
+			),
 			Verb: _commentReplyVerb,
 			Result: &Message{
 				Text: fmt.Sprintf("Alice replied to a comment on <%s|My Doc>", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
+			NameFetches:     1,
 		},
 		"Successful reply interpretation with anchor block": {
 			DB: stubDB(),
-			N: stubNotification(notification.NewDocumentNewCommentReplyNotification(
+			Core: notification.NewDocumentNewCommentReplyNotification(
 				"user1",
 				_testDocID,
 				xid.New(),
@@ -587,26 +657,32 @@ func Test_Interpreter_interpretDocumentCommentNotification(t *testing.T) {
 				null.StringFrom("blk1"),
 				_testBranchID,
 				"",
-			)),
+			),
 			Verb: _commentReplyVerb,
 			Result: &Message{
 				Text: fmt.Sprintf("Alice replied to a comment on <%s#blk1|My Doc>", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
+			NameFetches:     1,
 		},
 		"Successful resolved interpretation": {
 			DB: stubDB(),
-			N: stubNotification(notification.NewDocumentCommentResolvedNotification(
+			Core: notification.NewDocumentCommentResolvedNotification(
 				"user1",
 				_testDocID,
 				xid.New(),
 				null.String{},
 				_testBranchID,
 				"",
-			)),
+			),
 			Verb: _commentResolvedVerb,
 			Result: &Message{
 				Text: fmt.Sprintf("Alice resolved a comment on <%s|My Doc>", _testDocURL),
 			},
+			DocumentFetches: 1,
+			SlugFetches:     1,
+			NameFetches:     1,
 		},
 	}
 
@@ -616,8 +692,18 @@ func Test_Interpreter_interpretDocumentCommentNotification(t *testing.T) {
 
 			i := NewInterpreter(c.DB, NewSlackFormatter(), "https://app.test")
 
-			res, err := i.interpretDocumentCommentNotification(context.Background(), c.N, c.Verb)
+			res, err := i.interpretDocumentCommentNotification(
+				context.Background(),
+				notification.Notification{
+					Core:           c.Core,
+					OrganizationID: "org1",
+				},
+				c.Verb,
+			)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.DocumentFetches)
+			assert.Len(t, c.DB.FetchOrganizationSlugCalls(), c.SlugFetches)
+			assert.Len(t, c.DB.FetchUserNameCalls(), c.NameFetches)
 
 			if err != nil {
 				return

@@ -132,31 +132,10 @@ func Test_Manager_PublishNotifications(t *testing.T) {
 				received <- n
 			})
 
-			// waiting on the create call keeps the supervisor context from
-			// cancelling a retry mid-flight; the fan-out cannot be used for
-			// that, as a failed write is not supposed to produce one.
-			created := make(chan struct{}, len(c.UserIDs))
-			create := c.DB.CreateNotificationFunc
-
-			c.DB.CreateNotificationFunc = func(ctx context.Context, nt *Notification) error {
-				var err error
-
-				if create != nil {
-					err = create(ctx, nt)
-				}
-
-				created <- struct{}{}
-
-				return err
-			}
-
 			nc := NewDocumentReviewRequestNotification("user1", xid.New(), xid.New())
 
 			m.PublishNotifications("org1", nc, c.UserIDs...)
-
-			for range c.UserIDs {
-				<-created
-			}
+			m.supv.Wait()
 
 			// a notification the database never stored must not reach the
 			// subscribers: it would show up as a toast and then vanish on

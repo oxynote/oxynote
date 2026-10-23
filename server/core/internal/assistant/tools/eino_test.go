@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -94,97 +95,265 @@ func Test_einoTool_Info(t *testing.T) {
 func Test_einoTool_Run(t *testing.T) {
 	t.Parallel()
 
-	// error: the arguments never reach a tool that cannot read them, and
-	// the failure names the tool.
-	_, err := newEinoTool(getDocument{}, testDeps(nil, nil, nil)).
-		Run(context.Background(), json.RawMessage(`{`))
-	require.Error(t, err)
-	assert.True(t, strings.HasPrefix(err.Error(), "get_document: invalid input: "))
+	cc := map[string]struct {
+		Tool                   Tool
+		Args                   string
+		FetchDocumentTreeCalls int
+		Result                 string
+		Err                    error
+		ErrPrefix              string
+	}{
+		// the arguments never reach a tool that cannot read them, and
+		// the failure names the tool.
+		"Malformed arguments": {
+			Tool:      getDocument{},
+			Args:      `{`,
+			Err:       assert.AnError,
+			ErrPrefix: "get_document: invalid input: ",
+		},
+		// the tool's own output comes back as it is.
+		"Successful run": {
+			Tool:                   listDocuments{},
+			Args:                   `{}`,
+			FetchDocumentTreeCalls: 1,
+			Result:                 `{"documents":[]}`,
+		},
+	}
 
-	// success: the tool's own output comes back as it is
-	out, err := newEinoTool(listDocuments{}, testDeps(nil, nil, nil)).
-		Run(context.Background(), json.RawMessage(`{}`))
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"documents":[]}`, out)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := &DBMock{}
+
+			out, err := newEinoTool(c.Tool, testDeps(db, nil, nil)).
+				Run(context.Background(), json.RawMessage(c.Args))
+			assert.Empty(t, db.FetchDocumentByBranchIDCalls())
+			assert.Empty(t, db.FetchDocumentBranchesCalls())
+			assert.Empty(t, db.FetchBranchTagsCalls())
+			assert.Len(t, db.FetchDocumentTreeCalls(), c.FetchDocumentTreeCalls)
+			assert.Empty(t, db.FetchDocumentTreeByDocumentParentIDCalls())
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.True(t, strings.HasPrefix(err.Error(), c.ErrPrefix))
+
+				return
+			}
+
+			assert.JSONEq(t, c.Result, out)
+		})
+	}
 }
 
 func Test_einoTool_InvokableRun(t *testing.T) {
 	t.Parallel()
 
-	// the tool is handed an input carrying this call's args
-	res, err := newEinoTool(listDocuments{}, testDeps(nil, nil, nil)).
-		InvokableRun(context.Background(), `{}`)
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"documents":[]}`, res)
-
-	// a failure comes back as the call's result rather than as an
-	// error: the framework would end the whole turn on an error, and
-	// arguments the tool cannot read are the model's to fix.
-	res, err = newEinoTool(getDocument{}, testDeps(nil, nil, nil)).
-		InvokableRun(context.Background(), `{`)
-	require.NoError(t, err)
-	assert.Contains(t, res, "invalid input")
-
-	// the same holds for a data source that rejected the model's query
-	failing := dataSourceDeps(t, datasource.TypePrometheus, prometheusRunner(&datasourceMock.Prometheus{
-		QueryRangeFunc: func(context.Context, string, processor.TimeRange) (*processor.PrometheusQueryResult, error) {
-			return nil, errors.New("parse error: unexpected character")
+	cc := map[string]struct {
+		Tool                   Tool
+		QueryRange             func(context.Context, string, processor.TimeRange) (*processor.PrometheusQueryResult, error)
+		Args                   string
+		FetchDocumentTreeCalls int
+		QueryCalls             int
+		Result                 string
+		Failure                string
+	}{
+		// the tool is handed an input carrying this call's args.
+		"Successful run": {
+			Tool:                   listDocuments{},
+			Args:                   `{}`,
+			FetchDocumentTreeCalls: 1,
+			Result:                 `{"documents":[]}`,
 		},
-	}))
+		// a failure comes back as the call's result rather than as an
+		// error: the framework would end the whole turn on an error, and
+		// arguments the tool cannot read are the model's to fix.
+		"Malformed arguments": {
+			Tool:    getDocument{},
+			Args:    `{`,
+			Failure: "invalid input",
+		},
+		// the same holds for a data source that rejected the model's
+		// query.
+		"Error returned by Prometheus.QueryRange": {
+			Tool: queryDataSource{},
+			QueryRange: func(context.Context, string, processor.TimeRange) (*processor.PrometheusQueryResult, error) {
+				return nil, errors.New("parse error: unexpected character")
+			},
+			Args:       `{"data_source_id":"` + _testDataSourceID.String() + `","query":"up)"}`,
+			QueryCalls: 1,
+			Failure:    "parse error",
+		},
+	}
 
-	args := `{"data_source_id":"` + _testDataSourceID.String() + `","query":"up)"}`
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	res, err = newEinoTool(queryDataSource{}, failing).InvokableRun(context.Background(), args)
-	require.NoError(t, err)
-	assert.Contains(t, res, "parse error")
+			prom := &datasourceMock.Prometheus{QueryRangeFunc: c.QueryRange}
+			runner := &datasourceMock.Runner{
+				TypeFunc: func() datasource.Type { return datasource.TypePrometheus },
+				PrometheusFunc: func(context.Context) (datasource.Prometheus, error) {
+					return prom, nil
+				},
+			}
+			d := dataSourceDeps(t, datasource.TypePrometheus, runner)
+			db := d.db.(*DBMock)
+
+			res, err := newEinoTool(c.Tool, d).InvokableRun(context.Background(), c.Args)
+			require.NoError(t, err)
+
+			assert.Len(t, db.FetchDocumentTreeCalls(), c.FetchDocumentTreeCalls)
+			assert.Empty(t, db.FetchDocumentTreeByDocumentParentIDCalls())
+			assert.Empty(t, db.FetchDocumentByBranchIDCalls())
+			assert.Empty(t, db.FetchDocumentBranchesCalls())
+			assert.Empty(t, db.FetchBranchTagsCalls())
+			assert.Len(t, db.FetchDataSourceCalls(), c.QueryCalls)
+			assert.Len(t, d.runners.(*DataSourceRunnersMock).RunnerCalls(), c.QueryCalls)
+			assert.Empty(t, d.variableMan.(*VariableManagerMock).FetchTreeCalls())
+			assert.Len(t, runner.TypeCalls(), c.QueryCalls)
+			assert.Len(t, runner.PrometheusCalls(), c.QueryCalls)
+			assert.Empty(t, runner.PostgreSQLCalls())
+			assert.Empty(t, runner.MySQLCalls())
+			assert.Len(t, prom.QueryRangeCalls(), c.QueryCalls)
+
+			if c.Failure != "" {
+				assert.Contains(t, res, c.Failure)
+
+				return
+			}
+
+			assert.JSONEq(t, c.Result, res)
+		})
+	}
 }
 
 func Test_einoTool_Title(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	d := testDeps(stubContentDB(nil), nil, nil)
+	cc := map[string]struct {
+		Tool                         Tool
+		Args                         string
+		FetchDocumentByBranchIDCalls int
+		Result                       string
+	}{
+		"Read announced by its own title": {
+			Tool:                         getDocument{},
+			Args:                         `{` + targetArgs(_stubMainBranchID) + `}`,
+			FetchDocumentByBranchIDCalls: 1,
+			Result:                       "Reading Runbook",
+		},
+		"Read without a title runs silently": {
+			Tool: listDocuments{},
+			Args: `{}`,
+		},
+		"Write announced by its summary": {
+			Tool:                         deleteBlock{},
+			Args:                         `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a"}`,
+			FetchDocumentByBranchIDCalls: 1,
+			Result:                       "Delete a block in Runbook",
+		},
+		"Write with malformed arguments runs silently": {
+			Tool: deleteBlock{},
+			Args: `{`,
+		},
+	}
 
-	// a read announces itself with its own title.
-	assert.Equal(t, "Reading Runbook", newEinoTool(getDocument{}, d).Title(ctx, json.RawMessage(`{`+targetArgs(_stubMainBranchID)+`}`)))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// a read without one runs silently.
-	assert.Empty(t, newEinoTool(listDocuments{}, d).Title(ctx, json.RawMessage(`{}`)))
+			db := stubContentDB(nil)
 
-	// a write is announced by its summary, and by nothing when its
-	// arguments cannot be read.
-	write := newEinoTool(deleteBlock{}, d)
-	assert.Equal(t, "Delete a block in Runbook", write.Title(ctx, json.RawMessage(`{`+targetArgs(_stubMainBranchID)+`,"block_uid":"a"}`)))
-	assert.Empty(t, write.Title(ctx, json.RawMessage(`{`)))
+			got := newEinoTool(c.Tool, testDeps(db, nil, nil)).Title(context.Background(), json.RawMessage(c.Args))
+			assert.Len(t, db.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchIDCalls)
+			assert.Empty(t, db.FetchDocumentBranchesCalls())
+			assert.Equal(t, c.Result, got)
+		})
+	}
 }
 
 func Test_einoTool_Summary(t *testing.T) {
 	t.Parallel()
 
-	// a write describes its pending change
-	et := newEinoTool(deleteDocument{}, testDeps(stubDocumentDB(), nil, nil))
+	cc := map[string]struct {
+		Tool                   Tool
+		Args                   string
+		FetchDocumentCalls     int
+		FetchDocumentTreeCalls int
+		Result                 ActionSummary
+		Err                    error
+	}{
+		// a read proposes nothing, so it has nothing to describe.
+		"Read proposes no change": {
+			Tool: getDocument{},
+			Args: `{}`,
+			Err:  assert.AnError,
+		},
+		// arguments the tool cannot read are refused rather than
+		// described: the same payload would fail on resume anyway.
+		"Missing document id": {
+			Tool: deleteDocument{},
+			Args: `{"document_id":null}`,
+			Err:  fmt.Errorf("%s: %w", NameDeleteDocument, errors.New("document_id is required")),
+		},
+		"Write describes its pending change": {
+			Tool:                   deleteDocument{},
+			Args:                   `{"document_id":"` + _testDocID.String() + `"}`,
+			FetchDocumentCalls:     1,
+			FetchDocumentTreeCalls: 1,
+			Result: ActionSummary{
+				Tool:         NameDeleteDocument,
+				DocumentID:   _testDocID,
+				DocumentName: _stubDocumentName,
+				Summary:      "Delete Runbook",
+			},
+		},
+	}
 
-	got, err := et.Summary(context.Background(), json.RawMessage(`{"document_id":"`+_testDocID.String()+`"}`))
-	require.NoError(t, err)
-	assert.Equal(t, NameDeleteDocument, got.Tool)
-	assert.Equal(t, "Delete Runbook", got.Summary)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// arguments the tool cannot read are refused rather than described:
-	// the same payload would fail on resume anyway.
-	_, err = et.Summary(context.Background(), json.RawMessage(`{"document_id":null}`))
-	assert.EqualError(t, err, "delete_document: document_id is required")
+			db := stubDocumentDB()
 
-	// a read proposes nothing, so it has nothing to describe.
-	_, err = newEinoTool(getDocument{}, testDeps(nil, nil, nil)).Summary(context.Background(), json.RawMessage(`{}`))
-	require.Error(t, err)
+			got, err := newEinoTool(c.Tool, testDeps(db, nil, nil)).Summary(context.Background(), json.RawMessage(c.Args))
+			assert.Len(t, db.FetchDocumentCalls(), c.FetchDocumentCalls)
+			assert.Len(t, db.FetchDocumentTreeCalls(), c.FetchDocumentTreeCalls)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, got)
+		})
+	}
 }
 
 func Test_readToolOutputArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, readToolOutputArgs{FilePath: "p"}, map[string]Args{
-		"file_path": readToolOutputArgs{},
-	})
+	cc := map[string]struct {
+		Args readToolOutputArgs
+		Err  error
+	}{
+		"File path is required": {
+			Args: readToolOutputArgs{},
+			Err:  errors.New("file_path is required"),
+		},
+		"Valid arguments": {
+			Args: readToolOutputArgs{FilePath: "p"},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Args.Validate())
+		})
+	}
 }
 
 func Test_readToolOutput_Info(t *testing.T) {
@@ -208,10 +377,11 @@ func Test_readToolOutput_Execute(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Read   func(path string) (string, error)
-		Args   string
-		Result string
-		Err    error
+		Read      func(path string) (string, error)
+		Args      string
+		ReadCalls int
+		Result    string
+		Err       error
 	}{
 		"Malformed arguments": {
 			Args: `{`,
@@ -221,12 +391,13 @@ func Test_readToolOutput_Execute(t *testing.T) {
 			Args: `{}`,
 			Err:  assert.AnError,
 		},
-		"Expired output tells the model to re-run the tool": {
+		"Error returned by OffloadReader.Read": {
 			Read: func(string) (string, error) {
 				return "", errors.New(`no stored output at "trunc/1"; it has expired, so re-run the tool`)
 			},
-			Args: `{"file_path":"trunc/1"}`,
-			Err:  errors.New(`no stored output at "trunc/1"; it has expired, so re-run the tool`),
+			Args:      `{"file_path":"trunc/1"}`,
+			ReadCalls: 1,
+			Err:       errors.New(`no stored output at "trunc/1"; it has expired, so re-run the tool`),
 		},
 		"Stored output is returned": {
 			Read: func(path string) (string, error) {
@@ -236,8 +407,9 @@ func Test_readToolOutput_Execute(t *testing.T) {
 
 				return "payload", nil
 			},
-			Args:   `{"file_path":"trunc/1"}`,
-			Result: "payload",
+			Args:      `{"file_path":"trunc/1"}`,
+			ReadCalls: 1,
+			Result:    "payload",
 		},
 	}
 
@@ -245,10 +417,22 @@ func Test_readToolOutput_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d := testDeps(nil, nil, nil)
-			d.offload = &offloadReaderMock{read: c.Read}
+			// the offload stub records no calls, so they are counted here.
+			var reads int
 
-			res, err := readToolOutput{}.Execute(testInput(d, NameReadToolOutput, c.Args))
+			d := testDeps(nil, nil, nil)
+			d.offload = &offloadReaderMock{read: func(path string) (string, error) {
+				reads++
+
+				if c.Read == nil {
+					return "", nil
+				}
+
+				return c.Read(path)
+			}}
+
+			res, err := readToolOutput{}.Execute(d.newInput(context.Background(), NameReadToolOutput, json.RawMessage(c.Args)))
+			assert.Equal(t, c.ReadCalls, reads)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {

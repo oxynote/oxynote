@@ -8,15 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// entry builds a go-github tree entry for tests.
-func entry(path, tp, sha string) *gogithub.TreeEntry {
-	return &gogithub.TreeEntry{
-		Path: new(path),
-		Type: new(tp),
-		SHA:  new(sha),
-	}
-}
-
 func Test_Tree_GetItem(t *testing.T) {
 	t.Parallel()
 
@@ -38,7 +29,7 @@ func Test_Tree_GetItem(t *testing.T) {
 		},
 	}
 
-	tests := map[string]struct {
+	cc := map[string]struct {
 		Tree         Tree
 		Path         string
 		ExpectedItem TreeItem
@@ -82,14 +73,14 @@ func Test_Tree_GetItem(t *testing.T) {
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			item, ok := tc.Tree.GetItem(tc.Path)
+			item, ok := c.Tree.GetItem(c.Path)
 
-			assert.Equal(t, tc.ExpectedOK, ok)
-			assert.Equal(t, tc.ExpectedItem, item)
+			assert.Equal(t, c.ExpectedOK, ok)
+			assert.Equal(t, c.ExpectedItem, item)
 		})
 	}
 }
@@ -97,15 +88,15 @@ func Test_Tree_GetItem(t *testing.T) {
 func Test_ParseTreeItems(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct {
+	cc := map[string]struct {
 		Items    []*gogithub.TreeEntry
 		Expected []TreeItem
 	}{
 		"Nil entries produce an empty tree": {},
 		"Flat files are kept in order": {
 			Items: []*gogithub.TreeEntry{
-				entry("readme.md", "blob", "sha-1"),
-				entry("main.go", "blob", "sha-2"),
+				{Path: new("readme.md"), Type: new("blob"), SHA: new("sha-1")},
+				{Path: new("main.go"), Type: new("blob"), SHA: new("sha-2")},
 			},
 			Expected: []TreeItem{
 				{Type: TreeItemTypeFile, Name: "readme.md", Checksum: "sha-1"},
@@ -114,7 +105,7 @@ func Test_ParseTreeItems(t *testing.T) {
 		},
 		"Unknown entry types become files": {
 			Items: []*gogithub.TreeEntry{
-				entry("weird", "commit", "sha-1"),
+				{Path: new("weird"), Type: new("commit"), SHA: new("sha-1")},
 			},
 			Expected: []TreeItem{
 				{Type: TreeItemTypeFile, Name: "weird", Checksum: "sha-1"},
@@ -122,10 +113,10 @@ func Test_ParseTreeItems(t *testing.T) {
 		},
 		"Folder children are nested": {
 			Items: []*gogithub.TreeEntry{
-				entry("docs", "tree", "sha-1"),
-				entry("docs/guide.md", "blob", "sha-2"),
-				entry("docs/api", "tree", "sha-3"),
-				entry("docs/api/spec.md", "blob", "sha-4"),
+				{Path: new("docs"), Type: new("tree"), SHA: new("sha-1")},
+				{Path: new("docs/guide.md"), Type: new("blob"), SHA: new("sha-2")},
+				{Path: new("docs/api"), Type: new("tree"), SHA: new("sha-3")},
+				{Path: new("docs/api/spec.md"), Type: new("blob"), SHA: new("sha-4")},
 			},
 			Expected: []TreeItem{
 				{
@@ -144,8 +135,8 @@ func Test_ParseTreeItems(t *testing.T) {
 		},
 		"Orphaned children are skipped": {
 			Items: []*gogithub.TreeEntry{
-				entry("readme.md", "blob", "sha-1"),
-				entry("missing/orphan.md", "blob", "sha-2"),
+				{Path: new("readme.md"), Type: new("blob"), SHA: new("sha-1")},
+				{Path: new("missing/orphan.md"), Type: new("blob"), SHA: new("sha-2")},
 			},
 			Expected: []TreeItem{
 				{Type: TreeItemTypeFile, Name: "readme.md", Checksum: "sha-1"},
@@ -155,12 +146,12 @@ func Test_ParseTreeItems(t *testing.T) {
 			// enough top-level entries after the folder to force the
 			// result slice to reallocate before the children arrive.
 			Items: []*gogithub.TreeEntry{
-				entry("docs", "tree", "sha-1"),
-				entry("a.md", "blob", "sha-2"),
-				entry("b.md", "blob", "sha-3"),
-				entry("c.md", "blob", "sha-4"),
-				entry("d.md", "blob", "sha-5"),
-				entry("docs/guide.md", "blob", "sha-6"),
+				{Path: new("docs"), Type: new("tree"), SHA: new("sha-1")},
+				{Path: new("a.md"), Type: new("blob"), SHA: new("sha-2")},
+				{Path: new("b.md"), Type: new("blob"), SHA: new("sha-3")},
+				{Path: new("c.md"), Type: new("blob"), SHA: new("sha-4")},
+				{Path: new("d.md"), Type: new("blob"), SHA: new("sha-5")},
+				{Path: new("docs/guide.md"), Type: new("blob"), SHA: new("sha-6")},
 			},
 			Expected: []TreeItem{
 				{
@@ -180,12 +171,12 @@ func Test_ParseTreeItems(t *testing.T) {
 			// force the folder's Items slice to reallocate before the
 			// grandchildren arrive.
 			Items: []*gogithub.TreeEntry{
-				entry("docs", "tree", "sha-1"),
-				entry("docs/api", "tree", "sha-2"),
-				entry("docs/a.md", "blob", "sha-3"),
-				entry("docs/b.md", "blob", "sha-4"),
-				entry("docs/c.md", "blob", "sha-5"),
-				entry("docs/api/spec.md", "blob", "sha-6"),
+				{Path: new("docs"), Type: new("tree"), SHA: new("sha-1")},
+				{Path: new("docs/api"), Type: new("tree"), SHA: new("sha-2")},
+				{Path: new("docs/a.md"), Type: new("blob"), SHA: new("sha-3")},
+				{Path: new("docs/b.md"), Type: new("blob"), SHA: new("sha-4")},
+				{Path: new("docs/c.md"), Type: new("blob"), SHA: new("sha-5")},
+				{Path: new("docs/api/spec.md"), Type: new("blob"), SHA: new("sha-6")},
 			},
 			Expected: []TreeItem{
 				{
@@ -206,12 +197,12 @@ func Test_ParseTreeItems(t *testing.T) {
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
 			require.NotPanics(t, func() {
-				assert.Equal(t, tc.Expected, ParseTreeItems(tc.Items))
+				assert.Equal(t, c.Expected, ParseTreeItems(c.Items))
 			})
 		})
 	}

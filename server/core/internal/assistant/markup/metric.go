@@ -89,7 +89,8 @@ func MetricReference() string {
 
 	sb.WriteString(", and optionally title, unitCustom (the label when unitType is custom), decimals, thresholds ([{value, label, color}]), baseThresholdColor, axisBoundsMin, axisBoundsMax. " +
 		"timeRange and refreshInterval default to " + _metricReferences[document.AttrTimeRange] + " and " + _metricReferences[document.AttrRefreshInterval] +
-		", the built-in variables each user sets; give a preset only to pin one chart, and the reference to unpin it")
+		", the built-in variables each user sets; give a preset only to pin one chart, and the reference to unpin it. " +
+		"A <metrics> row fits 3 compact, 2 standard or 1 wide, never a standard beside a compact: fill every row, with the text about the charts before the <metrics>")
 
 	return sb.String()
 }

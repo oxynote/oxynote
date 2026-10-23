@@ -81,6 +81,11 @@ type Manager struct {
 		m  map[string]struct{}
 	}
 
+	// loadToolsOnRequest keeps the grouped tools out of a conversation
+	// until the model loads them, which needs a model that expands tool
+	// references.
+	loadToolsOnRequest bool
+
 	metrics *metrics
 }
 
@@ -91,6 +96,8 @@ type Manager struct {
 // backs the search_documents tool and searchQueue queues the
 // search jobs of document writes; providerName labels token
 // metrics so usage stays readable across a provider change.
+// loadToolsOnRequest says whether the model expands tool references, so
+// the grouped tools can load on request.
 //
 // githubMan and webchangeClient tell the hook tools which integrations
 // exist; hookMan runs hook writes and variableMan the variable reads and
@@ -114,6 +121,7 @@ func NewManager(
 	hookMan tools.HookManager,
 	variableMan tools.VariableManager,
 	providerName string,
+	loadToolsOnRequest bool,
 ) *Manager {
 	if summaryModel == nil {
 		summaryModel = chatModel
@@ -161,6 +169,8 @@ func NewManager(
 		offload:     persist.NewOffload(blobs),
 
 		stores: []persist.Starter{blobs, history, pendings},
+
+		loadToolsOnRequest: loadToolsOnRequest,
 
 		metrics: newMetrics(fc, providerName),
 	}

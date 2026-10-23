@@ -100,8 +100,24 @@ func Test_NewGroup(t *testing.T) {
 func Test_Group_AllowsChange(t *testing.T) {
 	t.Parallel()
 
-	assert.NoError(t, Group{}.AllowsChange())
-	assert.Equal(t, ErrBuiltinGroup, Group{Builtin: true}.AllowsChange())
+	cc := map[string]struct {
+		Group Group
+		Err   error
+	}{
+		"Regular group": {},
+		"Built-in group": {
+			Group: Group{Builtin: true},
+			Err:   ErrBuiltinGroup,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Group.AllowsChange())
+		})
+	}
 }
 
 func Test_GroupCreateInput_Validate(t *testing.T) {
@@ -217,8 +233,24 @@ func Test_NewVariable(t *testing.T) {
 func Test_Variable_AllowsChange(t *testing.T) {
 	t.Parallel()
 
-	assert.NoError(t, Variable{}.AllowsChange())
-	assert.Equal(t, ErrBuiltinVariable, Variable{Builtin: true}.AllowsChange())
+	cc := map[string]struct {
+		Variable Variable
+		Err      error
+	}{
+		"Regular variable": {},
+		"Built-in variable": {
+			Variable: Variable{Builtin: true},
+			Err:      ErrBuiltinVariable,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Variable.AllowsChange())
+		})
+	}
 }
 
 func Test_Variable_Apply(t *testing.T) {
@@ -303,14 +335,32 @@ func Test_Variable_Apply(t *testing.T) {
 func Test_Variable_apply(t *testing.T) {
 	t.Parallel()
 
-	v := Variable{ID: xid.New()}.apply(Input{
-		Type:         TypeNumber,
-		DefaultValue: null.StringFrom("2"),
-	})
+	cc := map[string]struct {
+		Input Input
+		Check func(t *testing.T, v Variable)
+	}{
+		"Number without options": {
+			Input: Input{
+				Type:         TypeNumber,
+				DefaultValue: null.StringFrom("2"),
+			},
+			Check: func(t *testing.T, v Variable) {
+				t.Helper()
 
-	assert.Equal(t, TypeNumber, v.Type)
-	assert.Equal(t, null.StringFrom("2"), v.DefaultValue)
-	assert.Empty(t, v.Options)
+				assert.Equal(t, TypeNumber, v.Type)
+				assert.Equal(t, null.StringFrom("2"), v.DefaultValue)
+				assert.Empty(t, v.Options)
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			c.Check(t, Variable{ID: xid.New()}.apply(c.Input))
+		})
+	}
 }
 
 func Test_Variable_ValidateValue(t *testing.T) {
@@ -589,12 +639,28 @@ func Test_NewTree(t *testing.T) {
 	v1 := Entry{ID: xid.New(), GroupID: g1.ID, Type: TypeList}
 	v2 := Entry{ID: xid.New(), GroupID: g1.ID, Type: TypeText, Value: null.StringFrom("a")}
 
-	tree := NewTree([]Group{g1, g2}, []Entry{v1, v2})
+	cc := map[string]struct {
+		Groups  []Group
+		Entries []Entry
+		Result  Tree
+	}{
+		"Groups with and without variables": {
+			Groups:  []Group{g1, g2},
+			Entries: []Entry{v1, v2},
+			Result: Tree{
+				{Group: g1, Variables: []Entry{v1, v2}},
+				{Group: g2, Variables: []Entry{}},
+			},
+		},
+	}
 
-	assert.Equal(t, Tree{
-		{Group: g1, Variables: []Entry{v1, v2}},
-		{Group: g2, Variables: []Entry{}},
-	}, tree)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, NewTree(c.Groups, c.Entries))
+		})
+	}
 }
 
 func Test_Entry_Resolved(t *testing.T) {

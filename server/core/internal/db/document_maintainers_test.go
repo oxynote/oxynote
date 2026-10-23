@@ -30,6 +30,16 @@ func Test_agent_UpsertDocumentMaintainers(t *testing.T) {
 				Err:            assert.AnError,
 			}
 		},
+		"Empty maintainer list is a no-op": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+
+			// squirrel refuses an INSERT with no VALUES and MustSql panics on it, so
+			// an empty list has to short-circuit.
+			return tcase{
+				DocumentID:     doc.ID,
+				OrganizationID: doc.OrganizationID,
+			}
+		},
 		"Successful upsert": func(t *testing.T, db *DB) tcase {
 			doc := prepDocuments(t, db, 1, nil)[0]
 			users := prepUsers(t, db, 2)
@@ -68,7 +78,11 @@ func Test_agent_UpsertDocumentMaintainers(t *testing.T) {
 			db := prepTempDB(t)
 			c := cfn(t, db)
 
-			err := db.UpsertDocumentMaintainers(context.Background(), c.DocumentID, c.OrganizationID, c.MaintainerIDs)
+			var err error
+
+			require.NotPanics(t, func() {
+				err = db.UpsertDocumentMaintainers(context.Background(), c.DocumentID, c.OrganizationID, c.MaintainerIDs)
+			})
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -80,45 +94,69 @@ func Test_agent_UpsertDocumentMaintainers(t *testing.T) {
 			assert.ElementsMatch(t, c.Result, res)
 		})
 	}
-
-	t.Run("Empty maintainer list is a no-op", func(t *testing.T) {
-		t.Parallel()
-
-		db := prepTempDB(t)
-		doc := prepDocuments(t, db, 1, nil)[0]
-
-		// squirrel refuses an INSERT with no VALUES and MustSql panics on it, so
-		// an empty list has to short-circuit.
-		assert.NotPanics(t, func() {
-			err := db.UpsertDocumentMaintainers(context.Background(), doc.ID, doc.OrganizationID, nil)
-			assert.NoError(t, err)
-		})
-	})
 }
 
 func Test_agent_FetchDocumentMaintainers(t *testing.T) {
-	db := prepTempDB(t)
+	type tcase struct {
+		CancelledContext bool
+		DocumentID       xid.ID
+		OrganizationID   string
+		Result           []string
+		Err              error
+	}
 
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(*testing.T, *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				DocumentID:       xid.New(),
+				OrganizationID:   "org-id",
+				Err:              assert.AnError,
+			}
+		},
+		"No maintainers": func(*testing.T, *DB) tcase {
+			return tcase{
+				DocumentID:     xid.New(),
+				OrganizationID: "non-existent-org-id",
+			}
+		},
+		"Successful fetch": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+			users := prepUsers(t, db, 2)
 
-	res, err := db.FetchDocumentMaintainers(ctx, xid.New(), "org-id")
-	require.Error(t, err)
-	assert.Nil(t, res)
+			require.NoError(t, db.UpsertDocumentMaintainers(context.Background(), doc.ID, doc.OrganizationID, users))
 
-	// success - no maintainers
-	res, err = db.FetchDocumentMaintainers(context.Background(), xid.New(), "non-existent-org-id")
-	require.NoError(t, err)
-	assert.Empty(t, res)
+			return tcase{
+				DocumentID:     doc.ID,
+				OrganizationID: doc.OrganizationID,
+				Result:         users,
+			}
+		},
+	}
 
-	// success
-	doc := prepDocuments(t, db, 1, nil)[0]
-	users := prepUsers(t, db, 2)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	require.NoError(t, db.UpsertDocumentMaintainers(context.Background(), doc.ID, doc.OrganizationID, users))
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-	res, err = db.FetchDocumentMaintainers(context.Background(), doc.ID, doc.OrganizationID)
-	assert.NoError(t, err)
-	assert.ElementsMatch(t, users, res)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchDocumentMaintainers(ctx, c.DocumentID, c.OrganizationID)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, res)
+				return
+			}
+
+			assert.ElementsMatch(t, c.Result, res)
+		})
+	}
 }

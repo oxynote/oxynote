@@ -61,18 +61,24 @@ func Test_Manager_Start(t *testing.T) {
 		},
 	}
 
+	storer := &StorerMock{}
 	stopped := make(chan struct{})
 
 	go func() {
 		defer close(stopped)
 
-		NewManager(slog.New(slog.DiscardHandler), db, &StorerMock{}, Options{}).Start(ctx)
+		NewManager(slog.New(slog.DiscardHandler), db, storer, Options{}).Start(ctx)
 	}()
 
 	<-fetched
 	<-stopped
 
 	assert.Len(t, db.FetchPaginatedDocumentFilesCalls(), 1)
+	assert.Empty(t, db.DeleteExpiredDocumentBranchHistoryEntriesCalls())
+	assert.Empty(t, db.CheckDocumentFileReferencedCalls())
+	assert.Empty(t, db.UpdateDocumentFileUnreferencedAtCalls())
+	assert.Empty(t, db.DeleteDocumentFileCalls())
+	assert.Empty(t, storer.DeleteCalls())
 }
 
 func Test_Manager_processFiles(t *testing.T) {
@@ -104,18 +110,22 @@ func Test_Manager_processFiles(t *testing.T) {
 		}
 	}
 
-	// a full batch followed by a partial one, which is what makes the
-	// loop page a second time.
-	pagedFiles := func() []file.File {
-		ff := make([]file.File, _processingBatch)
-
-		for i := range ff {
-			f := stubFile()
-			f.DocumentID = null.Value[xid.ID]{}
-			ff[i] = f
+	wasCheckCalled := func(count int) check {
+		return func(t *testing.T, db *DBMock, _ *StorerMock, _ error) {
+			assert.Len(t, db.CheckDocumentFileReferencedCalls(), count)
 		}
+	}
 
-		return ff
+	wasMarkCalled := func(count int) check {
+		return func(t *testing.T, db *DBMock, _ *StorerMock, _ error) {
+			assert.Len(t, db.UpdateDocumentFileUnreferencedAtCalls(), count)
+		}
+	}
+
+	wasStorerDeleteCalled := func(count int) check {
+		return func(t *testing.T, _ *DBMock, storer *StorerMock, _ error) {
+			assert.Len(t, storer.DeleteCalls(), count)
+		}
 	}
 
 	cc := map[string]struct {
@@ -136,6 +146,10 @@ func Test_Manager_processFiles(t *testing.T) {
 				hasError(assert.AnError),
 				wasTrimCalled(1),
 				wasFetchCalled(0),
+				wasCheckCalled(0),
+				wasMarkCalled(0),
+				wasStorerDeleteCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		"Error returned by db.FetchPaginatedDocumentFiles": {
@@ -147,11 +161,26 @@ func Test_Manager_processFiles(t *testing.T) {
 			Storer: &StorerMock{},
 			Checks: checks(
 				hasError(assert.AnError),
+				wasTrimCalled(0),
 				wasFetchCalled(1),
+				wasCheckCalled(0),
+				wasMarkCalled(0),
+				wasStorerDeleteCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		"Full batch pages once more": {
 			DB: func() *DBMock {
+				// a full batch followed by a partial one, which is what makes
+				// the loop page a second time.
+				ff := make([]file.File, _processingBatch)
+
+				for i := range ff {
+					f := stubFile()
+					f.DocumentID = null.Value[xid.ID]{}
+					ff[i] = f
+				}
+
 				db := &DBMock{}
 
 				calls := 0
@@ -159,7 +188,7 @@ func Test_Manager_processFiles(t *testing.T) {
 					calls++
 
 					if calls == 1 {
-						return pagedFiles(), nil
+						return ff, nil
 					}
 
 					return nil, nil
@@ -170,7 +199,11 @@ func Test_Manager_processFiles(t *testing.T) {
 			Storer: &StorerMock{},
 			Checks: checks(
 				hasError(nil),
+				wasTrimCalled(0),
 				wasFetchCalled(2),
+				wasCheckCalled(0),
+				wasMarkCalled(0),
+				wasStorerDeleteCalled(_processingBatch),
 				wasDeleteCalled(_processingBatch),
 			),
 		},
@@ -181,6 +214,9 @@ func Test_Manager_processFiles(t *testing.T) {
 				hasError(nil),
 				wasFetchCalled(1),
 				wasTrimCalled(0),
+				wasCheckCalled(0),
+				wasMarkCalled(0),
+				wasStorerDeleteCalled(0),
 				wasDeleteCalled(0),
 			),
 		},
@@ -247,14 +283,6 @@ func Test_Manager_processFile(t *testing.T) {
 		}
 	}
 
-	referencedDB := func(referenced bool) *DBMock {
-		return &DBMock{
-			CheckDocumentFileReferencedFunc: func(context.Context, string, xid.ID) (bool, error) {
-				return referenced, nil
-			},
-		}
-	}
-
 	cc := map[string]struct {
 		DB     *DBMock
 		Storer *StorerMock
@@ -273,6 +301,7 @@ func Test_Manager_processFile(t *testing.T) {
 			},
 			Checks: checks(
 				wasCheckCalled(0),
+				wasNotMarked(),
 				wasObjectDeleted(1),
 				wasRowDeleted(1),
 			),
@@ -305,20 +334,30 @@ func Test_Manager_processFile(t *testing.T) {
 				wasCheckCalled(1),
 				wasNotMarked(),
 				wasObjectDeleted(0),
+				wasRowDeleted(0),
 			),
 		},
 		"Referenced file keeps its clean state": {
-			DB:     referencedDB(true),
+			DB: &DBMock{
+				CheckDocumentFileReferencedFunc: func(context.Context, string, xid.ID) (bool, error) {
+					return true, nil
+				},
+			},
 			Storer: &StorerMock{},
 			File:   stubFile,
 			Checks: checks(
 				wasCheckCalled(1),
 				wasNotMarked(),
 				wasObjectDeleted(0),
+				wasRowDeleted(0),
 			),
 		},
 		"Referenced file loses its unreferenced mark": {
-			DB:     referencedDB(true),
+			DB: &DBMock{
+				CheckDocumentFileReferencedFunc: func(context.Context, string, xid.ID) (bool, error) {
+					return true, nil
+				},
+			},
 			Storer: &StorerMock{},
 			File: func() file.File {
 				f := stubFile()
@@ -327,22 +366,33 @@ func Test_Manager_processFile(t *testing.T) {
 				return f
 			},
 			Checks: checks(
+				wasCheckCalled(1),
 				wasMarkCalled(null.Time{}),
 				wasObjectDeleted(0),
+				wasRowDeleted(0),
 			),
 		},
 		"Unreferenced file is marked": {
-			DB:     referencedDB(false),
+			DB: &DBMock{
+				CheckDocumentFileReferencedFunc: func(context.Context, string, xid.ID) (bool, error) {
+					return false, nil
+				},
+			},
 			Storer: &StorerMock{},
 			File:   stubFile,
 			Checks: checks(
+				wasCheckCalled(1),
 				wasMarkCalled(null.TimeFrom(timeutil.Now())),
 				wasObjectDeleted(0),
 				wasRowDeleted(0),
 			),
 		},
 		"Marked file within the retention window survives": {
-			DB:     referencedDB(false),
+			DB: &DBMock{
+				CheckDocumentFileReferencedFunc: func(context.Context, string, xid.ID) (bool, error) {
+					return false, nil
+				},
+			},
 			Storer: &StorerMock{},
 			File: func() file.File {
 				f := stubFile()
@@ -351,13 +401,18 @@ func Test_Manager_processFile(t *testing.T) {
 				return f
 			},
 			Checks: checks(
+				wasCheckCalled(1),
 				wasNotMarked(),
 				wasObjectDeleted(0),
 				wasRowDeleted(0),
 			),
 		},
 		"Marked file past the retention window is reclaimed": {
-			DB:     referencedDB(false),
+			DB: &DBMock{
+				CheckDocumentFileReferencedFunc: func(context.Context, string, xid.ID) (bool, error) {
+					return false, nil
+				},
+			},
 			Storer: &StorerMock{},
 			File: func() file.File {
 				f := stubFile()
@@ -366,6 +421,7 @@ func Test_Manager_processFile(t *testing.T) {
 				return f
 			},
 			Checks: checks(
+				wasCheckCalled(1),
 				wasNotMarked(),
 				wasObjectDeleted(1),
 				wasRowDeleted(1),

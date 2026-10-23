@@ -2,11 +2,11 @@ package files
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"io"
 	"log/slog"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -31,45 +31,9 @@ func TestMain(m *testing.M) {
 // _documentID is the fixed document ID used across test requests.
 var _documentID = xid.New()
 
-// addSession stores a test session on the request context.
-func addSession(ctx context.Context) context.Context {
-	return auth.AddSessionToContext(ctx, auth.Session{
-		UserID:               "u1",
-		ActiveOrganizationID: "org1",
-	})
-}
-
 // _testPNG is a data prefix carrying the PNG magic bytes so content
 // type sniffing detects image/png.
 var _testPNG = append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{1}, 1024)...)
-
-// multipartBody builds a multipart form body carrying a single file field
-// under the given file name; an empty name sends "file.png" and nil
-// content sends a PNG.
-func multipartBody(t *testing.T, field, name string, content []byte) (io.Reader, string) {
-	t.Helper()
-
-	if name == "" {
-		name = "file.png"
-	}
-
-	if content == nil {
-		content = _testPNG
-	}
-
-	var buf bytes.Buffer
-
-	mw := multipart.NewWriter(&buf)
-
-	fw, err := mw.CreateFormFile(field, name)
-	require.NoError(t, err)
-
-	_, err = fw.Write(content)
-	require.NoError(t, err)
-	require.NoError(t, mw.Close())
-
-	return &buf, mw.FormDataContentType()
-}
 
 func Test_NewHandler(t *testing.T) {
 	t.Parallel()
@@ -92,14 +56,13 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 
 	hasResp := func(code int, body string) check {
 		return func(t *testing.T, _ *DBMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
-			assert.Equal(t, code, rec.Code)
+			testutil.AssertResponse(t, rec, code, body)
+		}
+	}
 
-			if body == "" {
-				assert.Zero(t, rec.Body.Len(), rec.Body.String())
-				return
-			}
-
-			assert.JSONEq(t, body, rec.Body.String())
+	wasCheckCalled := func(count int) check {
+		return func(t *testing.T, db *DBMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
+			assert.Len(t, db.CheckDocumentExistsCalls(), count)
 		}
 	}
 
@@ -189,7 +152,10 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:     "?id=f1xxxxxxxxxxxxxxxxxxx&location=document&kind=image",
 			Checks: checks(
 				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
+				wasCheckCalled(0),
+				wasInsertCalled(0),
 				wasUploadCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		"Missing document ID parameter": {
@@ -199,10 +165,13 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:  "?id=f1xxxxxxxxxxxxxxxxxxx&location=document&kind=image",
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
+				wasCheckCalled(0),
+				wasInsertCalled(0),
 				wasUploadCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
-		"Document existence check error": {
+		"Error returned by DB.CheckDocumentExists": {
 			DB: &DBMock{
 				CheckDocumentExistsFunc: func(context.Context, xid.ID, string) error {
 					return errors.New("boom")
@@ -212,7 +181,10 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:  "?id=f1xxxxxxxxxxxxxxxxxxx&location=document&kind=image",
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasCheckCalled(1),
+				wasInsertCalled(0),
 				wasUploadCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		"Missing file ID query parameter": {
@@ -221,7 +193,10 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:  "?location=document&kind=image",
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"request.invalid_form","message":"invalid form data"}`),
+				wasCheckCalled(1),
+				wasInsertCalled(0),
 				wasUploadCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		// path.Join would clean the dot segments straight out of the
@@ -233,8 +208,10 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:  "?id=../../../org2/documents/d2/files/f9&location=document&kind=image",
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"request.invalid_form","message":"invalid form data"}`),
+				wasCheckCalled(1),
 				wasInsertCalled(0),
 				wasUploadCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		"Invalid location query parameter": {
@@ -243,7 +220,10 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:  "?id=f1xxxxxxxxxxxxxxxxxxx&location=nowhere&kind=image",
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"request.invalid_form","message":"invalid form data"}`),
+				wasCheckCalled(1),
+				wasInsertCalled(0),
 				wasUploadCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		"Missing kind query parameter": {
@@ -252,8 +232,10 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:  "?id=f1xxxxxxxxxxxxxxxxxxx&location=document",
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"request.invalid_form","message":"invalid form data"}`),
+				wasCheckCalled(1),
 				wasInsertCalled(0),
 				wasUploadCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		"Invalid kind query parameter": {
@@ -262,8 +244,10 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:  "?id=f1xxxxxxxxxxxxxxxxxxx&location=document&kind=video",
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"request.invalid_form","message":"invalid form data"}`),
+				wasCheckCalled(1),
 				wasInsertCalled(0),
 				wasUploadCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		// every editor mints 21-character nanoids, and the retrieval route
@@ -274,8 +258,10 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:  "?id=short&location=document&kind=image",
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"request.invalid_form","message":"invalid form data"}`),
+				wasCheckCalled(1),
 				wasInsertCalled(0),
 				wasUploadCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		"Missing multipart file field": {
@@ -285,7 +271,10 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:  "?id=f1xxxxxxxxxxxxxxxxxxx&location=document&kind=image",
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"request.invalid_form","message":"invalid form data"}`),
+				wasCheckCalled(1),
+				wasInsertCalled(0),
 				wasUploadCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		// the image kind keeps the image-only rule, and a rejected body
@@ -297,8 +286,10 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:   "?id=f1xxxxxxxxxxxxxxxxxxx&location=document&kind=image",
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"storage.invalid_content_type","message":"invalid content type"}`),
+				wasCheckCalled(1),
 				wasInsertCalled(0),
 				wasUploadCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		"Image kind rejects a body over the image size limit": {
@@ -308,8 +299,10 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:   "?id=f1xxxxxxxxxxxxxxxxxxx&location=document&kind=image",
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"storage.size_limit_exceeded","message":"file size exceeds limit"}`),
+				wasCheckCalled(1),
 				wasInsertCalled(0),
 				wasUploadCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		"File kind rejects a body over the file size limit": {
@@ -319,8 +312,10 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:   "?id=f1xxxxxxxxxxxxxxxxxxx&location=document&kind=file",
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"storage.size_limit_exceeded","message":"file size exceeds limit"}`),
+				wasCheckCalled(1),
 				wasInsertCalled(0),
 				wasUploadCalled(0),
+				wasDeleteCalled(0),
 			),
 		},
 		"Existing file id": {
@@ -333,12 +328,13 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:  "?id=f1xxxxxxxxxxxxxxxxxxx&location=document&kind=image",
 			Checks: checks(
 				hasResp(http.StatusConflict, `{"code":"document_file.exists","message":"file id is already in use"}`),
+				wasCheckCalled(1),
 				wasInsertCalled(1),
 				wasUploadCalled(0),
 				wasDeleteCalled(0),
 			),
 		},
-		"DB insert error": {
+		"Error returned by DB.InsertDocumentFile": {
 			DB: &DBMock{
 				InsertDocumentFileFunc: func(context.Context, file.File) error {
 					return errors.New("boom")
@@ -348,12 +344,13 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:  "?id=f1xxxxxxxxxxxxxxxxxxx&location=document&kind=image",
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasCheckCalled(1),
 				wasInsertCalled(1),
 				wasUploadCalled(0),
 				wasDeleteCalled(0),
 			),
 		},
-		"Storer upload error rolls the row back": {
+		"Error returned by Storer.Upload": {
 			DB: &DBMock{},
 			Storer: &StorerMock{
 				UploadFunc: func(context.Context, string, string, []byte, string) error {
@@ -363,12 +360,13 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query: "?id=f1xxxxxxxxxxxxxxxxxxx&location=document&kind=image",
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasCheckCalled(1),
 				wasInsertCalled(1),
 				wasUploadCalled(1),
 				wasDeleteCalled(1),
 			),
 		},
-		"Storer upload error with failing rollback": {
+		"Error returned by DB.DeleteDocumentFile": {
 			DB: &DBMock{
 				DeleteDocumentFileFunc: func(context.Context, string) error {
 					return errors.New("cleanup boom")
@@ -382,6 +380,9 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query: "?id=f1xxxxxxxxxxxxxxxxxxx&location=document&kind=image",
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasCheckCalled(1),
+				wasInsertCalled(1),
+				wasUploadCalled(1),
 				wasDeleteCalled(1),
 			),
 		},
@@ -399,6 +400,7 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 					)
 					assert.Equal(t, "https://app.test/core/api/documents/"+_documentID.String()+"/files/f1xxxxxxxxxxxxxxxxxxx-file.png", rec.Header().Get("Location"))
 				},
+				wasCheckCalled(1),
 				wasUploadCalled(1),
 				wasUploadCalledWith(_testPNG, "image/png"),
 				wasInsertCalledWith("file.png", 1032, "image/png"),
@@ -412,7 +414,7 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 		},
 		// the type is what the bytes say, whatever the part's name
 		// claims, and the file kind takes any of them.
-		"Successful file upload records the name, size and detected type": {
+		"Successful file upload records the name and size and detected type": {
 			DB:       &DBMock{},
 			Storer:   &StorerMock{},
 			FileName: "notes.zip",
@@ -428,6 +430,7 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 					)
 					assert.Equal(t, "https://app.test/core/api/documents/"+_documentID.String()+"/files/f1xxxxxxxxxxxxxxxxxxx-notes.zip", rec.Header().Get("Location"))
 				},
+				wasCheckCalled(1),
 				wasInsertCalled(1),
 				wasInsertCalledWith("notes.zip", 15, "text/plain; charset=utf-8"),
 				func(t *testing.T, _ *DBMock, storer *StorerMock, _ *httptest.ResponseRecorder) {
@@ -452,7 +455,11 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 					assert.Equal(t, http.StatusCreated, rec.Code)
 					assert.Equal(t, "https://app.test/core/api/documents/"+_documentID.String()+"/files/f1xxxxxxxxxxxxxxxxxxx-Portfolio%20-%20sheet.csv", rec.Header().Get("Location"))
 				},
+				wasCheckCalled(1),
+				wasInsertCalled(1),
 				wasInsertCalledWith("Portfolio - sheet.csv", 29, "text/plain; charset=utf-8"),
+				wasUploadCalled(1),
+				wasDeleteCalled(0),
 			),
 		},
 		"Successful file upload at the file size limit": {
@@ -464,11 +471,14 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 				func(t *testing.T, _ *DBMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
 					assert.Equal(t, http.StatusCreated, rec.Code)
 				},
+				wasCheckCalled(1),
+				wasInsertCalled(1),
 				wasInsertCalledWith("file.png", storage.FilePolicy.MaxSize, "text/plain; charset=utf-8"),
 				wasUploadCalled(1),
+				wasDeleteCalled(0),
 			),
 		},
-		"Successful file upload records a path's base name": {
+		"Successful file upload records the base name of a path": {
 			DB:       &DBMock{},
 			Storer:   &StorerMock{},
 			FileName: `C:\Users\me\Documents\notes.zip`,
@@ -478,7 +488,11 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 				func(t *testing.T, _ *DBMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
 					assert.Equal(t, http.StatusCreated, rec.Code)
 				},
+				wasCheckCalled(1),
+				wasInsertCalled(1),
 				wasInsertCalledWith("notes.zip", 15, "text/plain; charset=utf-8"),
+				wasUploadCalled(1),
+				wasDeleteCalled(0),
 			),
 		},
 		"Successful file upload without a usable name": {
@@ -491,7 +505,11 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 				func(t *testing.T, _ *DBMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
 					assert.Equal(t, http.StatusCreated, rec.Code)
 				},
+				wasCheckCalled(1),
+				wasInsertCalled(1),
 				wasInsertCalledWith("file", 15, "text/plain; charset=utf-8"),
+				wasUploadCalled(1),
+				wasDeleteCalled(0),
 			),
 		},
 	}
@@ -513,7 +531,12 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			)
 
 			if !c.NoFile {
-				body, contentType = multipartBody(t, "file", c.FileName, c.Content)
+				content := c.Content
+				if content == nil {
+					content = _testPNG
+				}
+
+				body, contentType = testutil.MultipartBody(t, "file", cmp.Or(c.FileName, "file.png"), content)
 			}
 
 			req := httptest.NewRequest(http.MethodPut, "http://test.com/"+c.Query, body)
@@ -525,7 +548,10 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			ctx := req.Context()
 
 			if !c.NoSession {
-				ctx = addSession(ctx)
+				ctx = auth.AddSessionToContext(ctx, auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				})
 			}
 
 			if !c.OmitID {
@@ -674,6 +700,7 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 				func(t *testing.T, _ *DBMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
 					assert.Equal(t, http.StatusUnauthorized, rec.Code)
 				},
+				wasFetchCalled(0),
 				wasRetrieveCalled(0),
 			),
 		},
@@ -686,6 +713,7 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 					assert.Equal(t, http.StatusNotFound, rec.Code)
 					assert.JSONEq(t, `{"code":"general","message":"not found"}`, rec.Body.String())
 				},
+				wasFetchCalled(0),
 				wasRetrieveCalled(0),
 			),
 		},
@@ -702,7 +730,7 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 				wasRetrieveCalled(0),
 			),
 		},
-		"File record fetch error": {
+		"Error returned by DB.FetchDocumentFile": {
 			DB: &DBMock{
 				FetchDocumentFileFunc: func(context.Context, string, string) (*file.File, error) {
 					return nil, errors.New("boom")
@@ -729,7 +757,7 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 				wasRetrieveCalled(0),
 			),
 		},
-		"Storer retrieval error": {
+		"Error returned by Storer.Retrieve": {
 			DB: stubFileDB(_documentID, "shot.png", "image/png"),
 			Storer: &StorerMock{
 				RetrieveFunc: func(context.Context, string, string) (*storage.ObjectInfo, bool, error) {
@@ -740,6 +768,7 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 				func(t *testing.T, _ *DBMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
 					assert.Equal(t, http.StatusInternalServerError, rec.Code)
 				},
+				wasFetchCalled(1),
 				wasRetrieveCalled(1),
 			),
 		},
@@ -754,6 +783,7 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 				func(t *testing.T, _ *DBMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
 					assert.Equal(t, http.StatusNotFound, rec.Code)
 				},
+				wasFetchCalled(1),
 				wasRetrieveCalled(1),
 			),
 		},
@@ -766,6 +796,7 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 					assert.Equal(t, http.StatusNotModified, rec.Code)
 					assert.Zero(t, rec.Body.Len(), rec.Body.String())
 				},
+				wasFetchCalled(1),
 				wasRetrieveCalled(1),
 			),
 		},
@@ -797,6 +828,8 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 					assert.Equal(t, "inline; filename=report.pdf", rec.Header().Get("Content-Disposition"))
 					assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
 				},
+				wasFetchCalled(1),
+				wasRetrieveCalled(1),
 			),
 		},
 		"Successful retrieval of an archive": {
@@ -809,6 +842,8 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 					assert.Equal(t, "attachment; filename=notes.zip", rec.Header().Get("Content-Disposition"))
 					assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
 				},
+				wasFetchCalled(1),
+				wasRetrieveCalled(1),
 			),
 		},
 		"Successful retrieval of HTML is an attachment": {
@@ -820,6 +855,8 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 					assert.Equal(t, "attachment; filename=evil.html", rec.Header().Get("Content-Disposition"))
 					assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
 				},
+				wasFetchCalled(1),
+				wasRetrieveCalled(1),
 			),
 		},
 		"Successful retrieval under a quoted name": {
@@ -830,6 +867,8 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 					assert.Equal(t, http.StatusOK, rec.Code)
 					assert.Equal(t, `inline; filename="a \"quoted\"; name.txt"`, rec.Header().Get("Content-Disposition"))
 				},
+				wasFetchCalled(1),
+				wasRetrieveCalled(1),
 			),
 		},
 		"Successful retrieval under a non-ASCII name": {
@@ -840,6 +879,8 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 					assert.Equal(t, http.StatusOK, rec.Code)
 					assert.Equal(t, `inline; filename*=utf-8''r%C3%A9sum%C3%A9.pdf`, rec.Header().Get("Content-Disposition"))
 				},
+				wasFetchCalled(1),
+				wasRetrieveCalled(1),
 			),
 		},
 	}
@@ -859,7 +900,10 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 			ctx := req.Context()
 
 			if !c.NoSession {
-				ctx = addSession(ctx)
+				ctx = auth.AddSessionToContext(ctx, auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				})
 			}
 
 			if !c.OmitDocID {

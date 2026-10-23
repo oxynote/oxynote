@@ -53,21 +53,6 @@ func allToolNames() []Name {
 	}
 }
 
-// adapter returns the eino adapter underneath a registry entry, gated
-// or not, so a test can reach the tool the registry wrapped.
-func adapter(t *testing.T, it registryTool) *einoTool {
-	t.Helper()
-
-	if c, ok := it.(*confirming); ok {
-		return c.einoTool
-	}
-
-	et, ok := it.(*einoTool)
-	require.True(t, ok, "the registry holds an unexpected %T", it)
-
-	return et
-}
-
 func Test_New(t *testing.T) {
 	t.Parallel()
 
@@ -86,7 +71,15 @@ func Test_New(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, string(name), info.Name)
 
-		tl := adapter(t, it).tl
+		// the eino adapter sits under the gate when there is one.
+		et, ok := it.(*einoTool)
+		if c, gated := it.(*confirming); gated {
+			et, ok = c.einoTool, true
+		}
+
+		require.True(t, ok, "the registry holds an unexpected %T", it)
+
+		tl := et.tl
 		tr := tl.Info().Traits
 
 		// a write has to describe what it proposes, and nothing else
@@ -96,7 +89,7 @@ func Test_New(t *testing.T) {
 		require.Equal(t, tr.Write, summarizes, "%s declares Write=%v but summarizer=%v", name, tr.Write, summarizes)
 
 		if summarizes {
-			sum, serr := s.Summary(testInput(testDeps(stubContentDB(nil), nil, nil), name, requiredArgs(t, name)))
+			sum, serr := s.Summary(testDeps(stubContentDB(nil), nil, nil).newInput(context.Background(), name, json.RawMessage(requiredArgs(t, name))))
 			require.NoError(t, serr)
 			assert.NotEmpty(t, sum.Summary, "%s has an empty summary", name)
 		}
@@ -149,6 +142,21 @@ func Test_Set_Entries(t *testing.T) {
 
 	entries := s.Entries()
 	require.Len(t, entries, len(allToolNames()))
+
+	overwrites := []Name{
+		NameReplaceBlocks,
+		NameUpdateVariable,
+		NameUpdateHook,
+	}
+
+	idempotent := []Name{
+		NameUpdateDocument,
+		NameUpdateTag,
+		NameSetTagAssignment,
+		NameUpdateVariableGroup,
+		NameUpdateVariable,
+		NameSetVariableValue,
+	}
 
 	destructive := []Name{
 		NameDeleteDocument,
@@ -211,6 +219,8 @@ func Test_Set_Entries(t *testing.T) {
 		tr := e.Info.Traits
 		assert.Equal(t, slices.Contains(s.WriteNames(), string(e.Info.Name)), tr.Write, "%s write flag", e.Info.Name)
 		assert.Equal(t, slices.Contains(destructive, e.Info.Name), tr.Destructive, "%s destructive flag", e.Info.Name)
+		assert.Equal(t, slices.Contains(overwrites, e.Info.Name), tr.Overwrites, "%s overwrites flag", e.Info.Name)
+		assert.Equal(t, slices.Contains(idempotent, e.Info.Name), tr.Idempotent, "%s idempotent flag", e.Info.Name)
 		assert.Equal(t, e.Info.Name == NameReadToolOutput, tr.Internal, "%s internal flag", e.Info.Name)
 	}
 
@@ -310,14 +320,42 @@ func Test_Set_WriteNames(t *testing.T) {
 	assert.NotContains(t, s.WriteNames(), "clobbered")
 }
 
+func Test_Set_Grouped(t *testing.T) {
+	t.Parallel()
+
+	s := New(testDeps(nil, nil, nil))
+
+	got := map[Group][]Name{}
+
+	for g, tls := range s.Grouped() {
+		for _, tl := range tls {
+			info, err := tl.Info(context.Background())
+			require.NoError(t, err)
+
+			got[g] = append(got[g], Name(info.Name))
+		}
+	}
+
+	// document and block tools stay out of every group: each
+	// conversation needs them from its first call.
+	assert.Equal(t, map[Group][]Name{
+		GroupTags:        {NameListTags, NameCreateTag, NameUpdateTag, NameDeleteTag, NameSetTagAssignment},
+		GroupVariables:   {NameListVariables, NameCreateVariableGroup, NameUpdateVariableGroup, NameDeleteVariableGroup, NameCreateVariable, NameUpdateVariable, NameDeleteVariable, NameSetVariableValue},
+		GroupHooks:       {NameListHooks, NameCreateHook, NameUpdateHook, NameDeleteHook},
+		GroupDataSources: {NameListDataSources, NameGetDataSourceMetadata, NameListPrometheusLabels, NameListPrometheusSeries, NameQueryDataSource},
+	}, got)
+}
+
 func Test_Set_Label(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB     *DBMock
-		Name   Name
-		Args   string
-		Result string
+		DB             *DBMock
+		Name           Name
+		Args           string
+		Result         string
+		BranchFetches  int
+		TagTreeFetches int
 	}{
 		"Unknown name is not an error": {
 			Name: "not_a_tool",
@@ -328,23 +366,26 @@ func Test_Set_Label(t *testing.T) {
 			Args: `{}`,
 		},
 		"Read names the document": {
-			Name:   NameGetDocument,
-			Args:   `{` + targetArgs(_stubMainBranchID) + `}`,
-			Result: "Reading Runbook",
+			Name:          NameGetDocument,
+			Args:          `{` + targetArgs(_stubMainBranchID) + `}`,
+			Result:        "Reading Runbook",
+			BranchFetches: 1,
 		},
 		// a write is announced by the summary its approval card shows.
 		"Write is announced by its summary": {
-			DB:     stubContentDB(nil),
-			Name:   NameReplaceBlocks,
-			Args:   `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","content":"<p>t</p>"}`,
-			Result: "Replace a block in Runbook with 1 block",
+			DB:            stubContentDB(nil),
+			Name:          NameReplaceBlocks,
+			Args:          `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","content":"<p>t</p>"}`,
+			Result:        "Replace a block in Runbook with 1 block",
+			BranchFetches: 1,
 		},
 		"Tag write is announced by its summary": {
-			Name:   NameDeleteTag,
-			Args:   `{"tag_id":"` + _testTagID.String() + `"}`,
-			Result: "Delete tag Production and take it off the 1 page carrying it",
+			Name:           NameDeleteTag,
+			Args:           `{"tag_id":"` + _testTagID.String() + `"}`,
+			Result:         "Delete tag Production and take it off the 1 page carrying it",
+			TagTreeFetches: 1,
 		},
-		"Unresolvable document is not announced": {
+		"Error returned by db.FetchDocumentByBranchID": {
 			DB: &DBMock{
 				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
 					return nil, assert.AnError
@@ -353,8 +394,9 @@ func Test_Set_Label(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			Name: NameGetDocument,
-			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
+			Name:          NameGetDocument,
+			Args:          `{` + targetArgs(_stubMainBranchID) + `}`,
+			BranchFetches: 1,
 		},
 		"Malformed arguments are not announced": {
 			// the call is about to fail on these same arguments, and
@@ -381,6 +423,10 @@ func Test_Set_Label(t *testing.T) {
 
 			got := s.Label(context.Background(), c.Name, json.RawMessage(c.Args))
 			assert.Equal(t, c.Result, got)
+
+			assert.Len(t, db.FetchDocumentByBranchIDCalls(), c.BranchFetches)
+			assert.Empty(t, db.FetchDocumentBranchesCalls())
+			assert.Len(t, db.FetchTagTreeCalls(), c.TagTreeFetches)
 		})
 	}
 }

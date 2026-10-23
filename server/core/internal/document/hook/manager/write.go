@@ -46,6 +46,10 @@ func (m *Manager) CreateHook(
 		return nil, hook.ErrBranchMismatch
 	}
 
+	if err = doc.AllowsDocumentChange(); err != nil {
+		return nil, err
+	}
+
 	// a hook on a block the branch does not hold would be soft-deleted by
 	// the next sweep.
 	if ci.BlockID.Valid && !doc.Content.HasBlock(ci.BlockID.String) {
@@ -193,6 +197,15 @@ func (m *Manager) DeleteHook(ctx context.Context, id, documentID xid.ID, organiz
 	}
 
 	if hk.BranchID.Valid {
+		doc, ferr := m.db.FetchDocumentByBranchID(ctx, hk.BranchID.V, organizationID)
+		if ferr != nil {
+			return ferr
+		}
+
+		if err = doc.AllowsDocumentChange(); err != nil {
+			return err
+		}
+
 		if err = m.flusher.Flush(ctx, hk.DocumentID.V, hk.BranchID.V); err != nil {
 			return fmt.Errorf("storing the branch's pending edits: %w", err)
 		}

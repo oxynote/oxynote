@@ -1,10 +1,12 @@
 package metricutil
 
 import (
+	"os"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
 
@@ -13,13 +15,36 @@ func TestMain(m *testing.M) {
 }
 
 func Test_NewFactory(t *testing.T) {
-	reg := prometheus.NewRegistry()
-	f := NewFactory("test", reg)
-	assert.Equal(t, reg, f.(*factory).RegistererGatherer)
-	assert.Equal(t, "test", f.(*factory).namespace)
+	host, err := os.Hostname()
+	require.NoError(t, err)
 
-	f = NewFactory("test", reg, WithCustomHost("custom"))
-	assert.Equal(t, "custom", f.(*factory).host)
+	cc := map[string]struct {
+		Opts []Option
+		Host string
+	}{
+		"Machine hostname": {
+			Host: host,
+		},
+		"Custom host": {
+			Opts: []Option{WithCustomHost("custom")},
+			Host: "custom",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			reg := prometheus.NewRegistry()
+
+			f := NewFactory("test", reg, c.Opts...)
+			assert.Equal(t, &factory{
+				RegistererGatherer: reg,
+				namespace:          "test",
+				host:               c.Host,
+			}, f)
+		})
+	}
 }
 
 func Test_WithCustomHost(t *testing.T) {
@@ -34,225 +59,387 @@ func Test_WithCustomHost(t *testing.T) {
 func Test_registerOrExisting(t *testing.T) {
 	t.Parallel()
 
-	reg := prometheus.NewRegistry()
-
 	opts := prometheus.GaugeOpts{
 		Name: "test_registered",
 		Help: "test help",
 	}
 
-	gv := prometheus.NewGaugeVec(opts, []string{_hostLabel})
+	cc := map[string]struct {
+		Registered bool
+	}{
+		"Fresh collector": {},
+		"Equivalent collector already registered": {
+			Registered: true,
+		},
+	}
 
-	// a fresh collector is registered and handed back as it is.
-	assert.Same(t, gv, registerOrExisting(reg, gv))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// an equivalent collector is replaced by the registered one.
-	assert.Same(t, gv, registerOrExisting(reg, prometheus.NewGaugeVec(opts, []string{_hostLabel})))
+			reg := prometheus.NewRegistry()
+			gv := prometheus.NewGaugeVec(opts, []string{_hostLabel})
+			inp := gv
+
+			if c.Registered {
+				require.NoError(t, reg.Register(gv))
+
+				inp = prometheus.NewGaugeVec(opts, []string{_hostLabel})
+			}
+
+			assert.Same(t, gv, registerOrExisting(reg, inp))
+			assert.True(t, reg.Unregister(gv), "collector must be registered")
+		})
+	}
 }
 
 func Test_factory_NewHistogram(t *testing.T) {
-	var f factory
+	cc := map[string]struct {
+		Registry   RegistererGatherer
+		Registered bool
+		Discarded  bool
+	}{
+		"Registerer is nil": {
+			Discarded: true,
+		},
+		"New histogram": {
+			Registry: prometheus.NewRegistry(),
+		},
+		"Histogram already registered": {
+			Registry:   prometheus.NewRegistry(),
+			Registered: true,
+		},
+	}
 
-	cv := f.NewHistogram(Options{})
-	assert.Equal(t, discarder{}, cv.(discarder))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	f.RegistererGatherer = prometheus.NewRegistry()
+			f := factory{RegistererGatherer: c.Registry}
+			opts := Options{
+				Name: "test_duration",
+				Help: "test help",
+			}
 
-	cv = f.NewHistogram(Options{
-		Name: "test_duration",
-		Help: "test help",
-	})
+			var existing Observer
+			if c.Registered {
+				existing = f.NewHistogram(opts)
+			}
 
-	assert.Implements(t, (*prometheus.Histogram)(nil), cv)
+			cv := f.NewHistogram(opts)
+			if c.Discarded {
+				assert.Equal(t, discarder{}, cv.(discarder))
+				return
+			}
 
-	ncv := f.NewHistogram(Options{
-		Name: "test_duration",
-		Help: "test help",
-	})
+			assert.Implements(t, (*prometheus.Histogram)(nil), cv)
 
-	assert.Implements(t, (*prometheus.Histogram)(nil), cv)
-	assert.Same(t, cv, ncv)
+			if c.Registered {
+				assert.Same(t, existing, cv)
+			}
+		})
+	}
 }
 
 func Test_factory_NewGauge(t *testing.T) {
-	var f factory
+	cc := map[string]struct {
+		Registry   RegistererGatherer
+		Registered bool
+		Discarded  bool
+	}{
+		"Registerer is nil": {
+			Discarded: true,
+		},
+		"New gauge": {
+			Registry: prometheus.NewRegistry(),
+		},
+		"Gauge already registered": {
+			Registry:   prometheus.NewRegistry(),
+			Registered: true,
+		},
+	}
 
-	cv := f.NewGauge(Options{})
-	assert.Equal(t, discarder{}, cv.(discarder))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	f.RegistererGatherer = prometheus.NewRegistry()
+			f := factory{RegistererGatherer: c.Registry}
+			opts := Options{
+				Name: "test_duration",
+				Help: "test help",
+			}
 
-	cv = f.NewGauge(Options{
-		Name: "test_duration",
-		Help: "test help",
-	})
+			var existing Gauge
+			if c.Registered {
+				existing = f.NewGauge(opts)
+			}
 
-	assert.Implements(t, (*prometheus.Gauge)(nil), cv)
+			cv := f.NewGauge(opts)
+			if c.Discarded {
+				assert.Equal(t, discarder{}, cv.(discarder))
+				return
+			}
 
-	ncv := f.NewGauge(Options{
-		Name: "test_duration",
-		Help: "test help",
-	})
+			assert.Implements(t, (*prometheus.Gauge)(nil), cv)
 
-	assert.Implements(t, (*prometheus.Gauge)(nil), cv)
-	assert.Same(t, cv, ncv)
+			if c.Registered {
+				assert.Same(t, existing, cv)
+			}
+		})
+	}
 }
 
 func Test_factory_NewCounterVec(t *testing.T) {
-	var f factory
+	cc := map[string]struct {
+		Registry   RegistererGatherer
+		Registered bool
+		Discarded  bool
+	}{
+		"Registerer is nil": {
+			Discarded: true,
+		},
+		"New counter vector": {
+			Registry: prometheus.NewRegistry(),
+		},
+		"Counter vector already registered": {
+			Registry:   prometheus.NewRegistry(),
+			Registered: true,
+		},
+	}
 
-	cv := f.NewCounterVec(Options{}, []string{"foo"})
-	assert.Equal(t, &counterVec{}, cv.(*counterVec))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	f.RegistererGatherer = prometheus.NewRegistry()
+			f := factory{RegistererGatherer: c.Registry}
+			opts := Options{
+				Name: "test_total",
+				Help: "test help",
+			}
 
-	cv = f.NewCounterVec(Options{
-		Name: "test_total",
-		Help: "test help",
-	}, []string{"foo"})
+			var existing CounterVec
+			if c.Registered {
+				existing = f.NewCounterVec(opts, []string{"foo"})
+			}
 
-	assert.IsType(t, &prometheus.CounterVec{}, cv.(*counterVec).counter)
+			cv := f.NewCounterVec(opts, []string{"foo"})
+			if c.Discarded {
+				assert.Equal(t, &counterVec{}, cv.(*counterVec))
+				return
+			}
 
-	ncv := f.NewCounterVec(Options{
-		Name: "test_total",
-		Help: "test help",
-	}, []string{"foo"})
+			assert.IsType(t, &prometheus.CounterVec{}, cv.(*counterVec).counter)
 
-	assert.IsType(t, &prometheus.CounterVec{}, ncv.(*counterVec).counter)
-	assert.Same(t, cv.(*counterVec).counter, ncv.(*counterVec).counter)
+			if c.Registered {
+				assert.Same(t, existing.(*counterVec).counter, cv.(*counterVec).counter)
+			}
+		})
+	}
 }
 
 func Test_factory_NewHistogramVec(t *testing.T) {
-	var f factory
+	cc := map[string]struct {
+		Registry   RegistererGatherer
+		Registered bool
+		Discarded  bool
+	}{
+		"Registerer is nil": {
+			Discarded: true,
+		},
+		"New histogram vector": {
+			Registry: prometheus.NewRegistry(),
+		},
+		"Histogram vector already registered": {
+			Registry:   prometheus.NewRegistry(),
+			Registered: true,
+		},
+	}
 
-	cv := f.NewHistogramVec(Options{}, []string{"foo"})
-	assert.Equal(t, &histogramVec{}, cv.(*histogramVec))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	f.RegistererGatherer = prometheus.NewRegistry()
+			f := factory{RegistererGatherer: c.Registry}
+			opts := Options{
+				Name: "test_duration",
+				Help: "test help",
+			}
 
-	cv = f.NewHistogramVec(Options{
-		Name: "test_duration",
-		Help: "test help",
-	}, []string{"foo"})
+			var existing HistogramVec
+			if c.Registered {
+				existing = f.NewHistogramVec(opts, []string{"foo"})
+			}
 
-	assert.IsType(t, &prometheus.HistogramVec{}, cv.(*histogramVec).histogram)
+			cv := f.NewHistogramVec(opts, []string{"foo"})
+			if c.Discarded {
+				assert.Equal(t, &histogramVec{}, cv.(*histogramVec))
+				return
+			}
 
-	ncv := f.NewHistogramVec(Options{
-		Name: "test_duration",
-		Help: "test help",
-	}, []string{"foo"})
+			assert.IsType(t, &prometheus.HistogramVec{}, cv.(*histogramVec).histogram)
 
-	assert.IsType(t, &prometheus.HistogramVec{}, ncv.(*histogramVec).histogram)
-	assert.Same(t, cv.(*histogramVec).histogram, ncv.(*histogramVec).histogram)
+			if c.Registered {
+				assert.Same(t, existing.(*histogramVec).histogram, cv.(*histogramVec).histogram)
+			}
+		})
+	}
 }
 
 func Test_factory_NewGaugeVec(t *testing.T) {
-	var f factory
+	cc := map[string]struct {
+		Registry   RegistererGatherer
+		Registered bool
+		Discarded  bool
+	}{
+		"Registerer is nil": {
+			Discarded: true,
+		},
+		"New gauge vector": {
+			Registry: prometheus.NewRegistry(),
+		},
+		"Gauge vector already registered": {
+			Registry:   prometheus.NewRegistry(),
+			Registered: true,
+		},
+	}
 
-	gv := f.NewGaugeVec(Options{}, []string{"foo"})
-	assert.Equal(t, &gaugeVec{}, gv.(*gaugeVec))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	f.RegistererGatherer = prometheus.NewRegistry()
+			f := factory{RegistererGatherer: c.Registry}
+			opts := Options{
+				Name: "test_duration",
+				Help: "test help",
+			}
 
-	gv = f.NewGaugeVec(Options{
-		Name: "test_duration",
-		Help: "test help",
-	}, []string{"foo"})
+			var existing GaugeVec
+			if c.Registered {
+				existing = f.NewGaugeVec(opts, []string{"foo"})
+			}
 
-	assert.IsType(t, &prometheus.GaugeVec{}, gv.(*gaugeVec).gauge)
+			gv := f.NewGaugeVec(opts, []string{"foo"})
+			if c.Discarded {
+				assert.Equal(t, &gaugeVec{}, gv.(*gaugeVec))
+				return
+			}
 
-	ngv := f.NewGaugeVec(Options{
-		Name: "test_duration",
-		Help: "test help",
-	}, []string{"foo"})
+			assert.IsType(t, &prometheus.GaugeVec{}, gv.(*gaugeVec).gauge)
 
-	assert.IsType(t, &prometheus.GaugeVec{}, ngv.(*gaugeVec).gauge)
-	assert.Same(t, gv.(*gaugeVec).gauge, ngv.(*gaugeVec).gauge)
+			if c.Registered {
+				assert.Same(t, existing.(*gaugeVec).gauge, gv.(*gaugeVec).gauge)
+			}
+		})
+	}
 }
 
 func Test_counterVec_With(t *testing.T) {
-	var cv counterVec
+	cc := map[string]struct {
+		Counter   *prometheus.CounterVec
+		Discarded bool
+	}{
+		"Counter is nil": {
+			Discarded: true,
+		},
+		"Counter is set": {
+			Counter: prometheus.NewCounterVec(prometheus.CounterOpts{
+				Name: "test_total",
+				Help: "test help",
+			}, []string{"foo", _hostLabel}),
+		},
+	}
 
-	c := cv.With(prometheus.Labels{"foo": "bar"})
-	assert.IsType(t, discarder{}, c)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	cv.counter = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "test_total",
-		Help: "test help",
-	}, []string{"foo", _hostLabel})
+			labels := prometheus.Labels{"foo": "bar"}
 
-	c = cv.With(prometheus.Labels{"foo": "bar"})
-	_, ok := c.(prometheus.Counter)
-	assert.True(t, ok)
+			cv := counterVec{counter: c.Counter}
+			got := cv.With(labels)
+			assert.Equal(t, prometheus.Labels{"foo": "bar"}, labels, "caller labels must not be mutated")
 
-	labels := prometheus.Labels{"foo": "bar"}
+			if c.Discarded {
+				assert.IsType(t, discarder{}, got)
+				return
+			}
 
-	cv.With(labels)
-	assert.Equal(t, prometheus.Labels{"foo": "bar"}, labels, "caller labels must not be mutated")
+			_, ok := got.(prometheus.Counter)
+			assert.True(t, ok)
+		})
+	}
 }
 
 func Test_histogramVec_With(t *testing.T) {
-	var hv histogramVec
+	cc := map[string]struct {
+		Histogram *prometheus.HistogramVec
+		Discarded bool
+	}{
+		"Histogram is nil": {
+			Discarded: true,
+		},
+		"Histogram is set": {
+			Histogram: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+				Name: "test_duration",
+				Help: "test help",
+			}, []string{"foo", _hostLabel}),
+		},
+	}
 
-	h := hv.With(prometheus.Labels{"foo": "bar"})
-	assert.IsType(t, discarder{}, h)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	hv.histogram = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "test_duration",
-		Help: "test help",
-	}, []string{"foo", _hostLabel})
+			labels := prometheus.Labels{"foo": "bar"}
 
-	h = hv.With(prometheus.Labels{"foo": "bar"})
-	_, ok := h.(prometheus.Histogram)
-	assert.True(t, ok)
+			hv := histogramVec{histogram: c.Histogram}
+			got := hv.With(labels)
+			assert.Equal(t, prometheus.Labels{"foo": "bar"}, labels, "caller labels must not be mutated")
 
-	labels := prometheus.Labels{"foo": "bar"}
+			if c.Discarded {
+				assert.IsType(t, discarder{}, got)
+				return
+			}
 
-	hv.With(labels)
-	assert.Equal(t, prometheus.Labels{"foo": "bar"}, labels, "caller labels must not be mutated")
+			_, ok := got.(prometheus.Histogram)
+			assert.True(t, ok)
+		})
+	}
 }
 
 func Test_gaugeVec_With(t *testing.T) {
-	var gv gaugeVec
+	cc := map[string]struct {
+		Gauge     *prometheus.GaugeVec
+		Discarded bool
+	}{
+		"Gauge is nil": {
+			Discarded: true,
+		},
+		"Gauge is set": {
+			Gauge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+				Name: "test_duration",
+				Help: "test help",
+			}, []string{"foo", _hostLabel}),
+		},
+	}
 
-	g := gv.With(prometheus.Labels{"foo": "bar"})
-	assert.IsType(t, discarder{}, g)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	gv.gauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "test_duration",
-		Help: "test help",
-	}, []string{"foo", _hostLabel})
+			labels := prometheus.Labels{"foo": "bar"}
 
-	g = gv.With(prometheus.Labels{"foo": "bar"})
-	_, ok := g.(prometheus.Gauge)
-	assert.True(t, ok)
+			gv := gaugeVec{gauge: c.Gauge}
+			got := gv.With(labels)
+			assert.Equal(t, prometheus.Labels{"foo": "bar"}, labels, "caller labels must not be mutated")
 
-	labels := prometheus.Labels{"foo": "bar"}
+			if c.Discarded {
+				assert.IsType(t, discarder{}, got)
+				return
+			}
 
-	gv.With(labels)
-	assert.Equal(t, prometheus.Labels{"foo": "bar"}, labels, "caller labels must not be mutated")
-}
-
-func Test_discarder_Set(_ *testing.T) {
-	(&discarder{}).Set(123)
-}
-
-func Test_discarder_Dec(_ *testing.T) {
-	(&discarder{}).Dec()
-}
-
-func Test_discarder_Sub(_ *testing.T) {
-	(&discarder{}).Sub(123)
-}
-
-func Test_discarder_Inc(_ *testing.T) {
-	(&discarder{}).Inc()
-}
-
-func Test_discarder_Add(_ *testing.T) {
-	(&discarder{}).Add(5)
-}
-
-func Test_discarder_Observe(_ *testing.T) {
-	(&discarder{}).Observe(1.0)
+			_, ok := got.(prometheus.Gauge)
+			assert.True(t, ok)
+		})
+	}
 }

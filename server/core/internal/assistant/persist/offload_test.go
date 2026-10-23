@@ -71,14 +71,11 @@ func Test_Offload_Write(t *testing.T) {
 			t.Parallel()
 
 			err := NewOffload(c.Store).Write(context.Background(), c.Req)
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
 
 			require.Len(t, c.Store.SetCalls(), 1)
 			assert.Equal(t, "assistant:offload:trunc/1", c.Store.SetCalls()[0].Key)
+
+			testutil.AssertEqualError(t, c.Err, err)
 		})
 	}
 }
@@ -122,6 +119,7 @@ func Test_Offload_Read(t *testing.T) {
 			t.Parallel()
 
 			res, err := NewOffload(c.Store).Read(context.Background(), "trunc/1")
+			assert.Len(t, c.Store.GetCalls(), 1)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {

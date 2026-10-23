@@ -2,12 +2,12 @@ package memkit
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -82,15 +82,12 @@ func Test_ValueStore_Set(t *testing.T) {
 			}
 
 			err := vs.Set(context.Background(), "test", c.Value)
+			testutil.AssertEqualError(t, c.Err, err)
 
-			if c.Err != nil {
-				assert.Error(t, err)
+			if err != nil {
 				assert.Zero(t, vs.cache.Len())
-
 				return
 			}
-
-			assert.NoError(t, err)
 
 			item := vs.cache.Get("test")
 			require.NotNil(t, item)
@@ -156,21 +153,14 @@ func Test_ValueStore_Get(t *testing.T) {
 			}
 
 			res, err := vs.Get(context.Background(), "test")
+			testutil.AssertEqualError(t, c.Err, err)
 
-			if c.Err != nil {
+			if err != nil {
 				assert.Nil(t, res)
-
-				if errors.Is(c.Err, assert.AnError) {
-					assert.Error(t, err)
-					return
-				}
-
-				assert.Equal(t, c.Err, err)
-
 				return
 			}
 
-			assert.NoError(t, err)
+			require.NotNil(t, res)
 			assert.Equal(t, c.Result, *res)
 		})
 	}

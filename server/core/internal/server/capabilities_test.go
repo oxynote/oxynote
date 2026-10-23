@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,7 +14,7 @@ func Test_Server_fetchCapabilities(t *testing.T) {
 	t.Parallel()
 
 	s := Server{
-		log: discardLog(),
+		log: slog.New(slog.DiscardHandler),
 		capabilities: Capabilities{
 			Slack: true,
 			AIAssistant: AssistantCapability{

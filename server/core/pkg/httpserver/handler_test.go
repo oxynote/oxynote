@@ -10,12 +10,12 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"testing/iotest"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
@@ -29,13 +29,29 @@ func TestMain(m *testing.M) {
 }
 
 func Test_LocationHeader(t *testing.T) {
-	hdr := http.Header{}
+	cc := map[string]struct {
+		Code     int
+		Location string
+	}{
+		"Error response": {
+			Code: http.StatusBadGateway,
+		},
+		"Successful response": {
+			Code:     http.StatusOK,
+			Location: "/test/123",
+		},
+	}
 
-	LocationHeader("/test/123")(hdr, http.StatusBadGateway)
-	assert.Empty(t, hdr.Get("Location"))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	LocationHeader("/test/123")(hdr, http.StatusOK)
-	assert.Equal(t, "/test/123", hdr.Get("Location"))
+			hdr := http.Header{}
+
+			LocationHeader("/test/123")(hdr, c.Code)
+			assert.Equal(t, c.Location, hdr.Get("Location"))
+		})
+	}
 }
 
 func Test_errorHeaders(t *testing.T) {
@@ -48,24 +64,34 @@ func Test_errorHeaders(t *testing.T) {
 
 func Test_Respond(t *testing.T) {
 	cc := map[string]struct {
-		Code int
-		Data any
-		Body bool
-		Log  string
+		Code        int
+		Data        any
+		WriteErr    error
+		ContentType string
+		Body        bool
+		Log         string
 	}{
 		"Invalid data": {
 			Code: http.StatusInternalServerError,
 			Data: func() {},
 			Log:  `"msg":"cannot marshal response"`,
 		},
+		"Error returned by ResponseWriter.Write": {
+			Code:        http.StatusTeapot,
+			Data:        []string{"hello"},
+			WriteErr:    assert.AnError,
+			ContentType: "application/json",
+			Log:         `"msg":"cannot send response"`,
+		},
 		"Successful response without body": {
 			Code: http.StatusTeapot,
 			Body: false,
 		},
 		"Successful response with body": {
-			Code: http.StatusTeapot,
-			Data: errutil.New(0, "", "error"),
-			Body: true,
+			Code:        http.StatusTeapot,
+			Data:        errutil.New(0, "", "error"),
+			ContentType: "application/json",
+			Body:        true,
 		},
 	}
 
@@ -79,37 +105,44 @@ func Test_Respond(t *testing.T) {
 			log := slog.New(slog.NewJSONHandler(out, nil))
 			rec := httptest.NewRecorder()
 
-			header1Func := func(hdr http.Header, _ int) {
-				hdr.Set("Hello1", "World1")
-			}
-			header2Func := func(hdr http.Header, _ int) {
-				hdr.Set("Hello2", "World2")
+			var w http.ResponseWriter = rec
+
+			if c.WriteErr != nil {
+				w = &MockResponseWriter{
+					headerFn: rec.Header,
+					writeFn: func(_ []byte) (int, error) {
+						return 0, c.WriteErr
+					},
+					writeHeaderFn: rec.WriteHeader,
+				}
 			}
 
 			Respond(
 				log,
-				rec,
+				w,
 				c.Data,
 				http.StatusTeapot,
-				header1Func,
-				header2Func,
+				func(hdr http.Header, _ int) {
+					hdr.Set("Hello1", "World1")
+				},
+				func(hdr http.Header, _ int) {
+					hdr.Set("Hello2", "World2")
+				},
 			)
 			assert.Equal(t, c.Code, rec.Code)
 			assert.Equal(t, "World1", rec.Header().Get("Hello1"))
 			assert.Equal(t, "World2", rec.Header().Get("Hello2"))
+			assert.Equal(t, c.ContentType, rec.Header().Get("Content-Type"))
 
 			if c.Body {
-				assert.Equal(t, "application/json",
-					rec.Header().Get("Content-Type"))
 				assert.NotEmpty(t, rec.Body.String())
 			} else {
-				assert.Empty(t, rec.Header().Get("Content-Type"))
 				assert.Empty(t, rec.Body.String())
 			}
 
 			require.NoError(t, out.Flush())
 
-			if c.Code < 500 {
+			if c.Log == "" {
 				assert.Empty(t, b.String())
 				return
 			}
@@ -119,64 +152,55 @@ func Test_Respond(t *testing.T) {
 			assert.Regexp(t, c.Log, strs[0])
 		})
 	}
-
-	// special case
-	var b bytes.Buffer
-
-	out := bufio.NewWriter(&b)
-	log := slog.New(slog.NewJSONHandler(out, nil))
-
-	Respond(
-		log,
-		&MockResponseWriter{
-			headerFn: func() http.Header {
-				return http.Header{}
-			},
-			writeFn: func(_ []byte) (int, error) {
-				return 0, assert.AnError
-			},
-			writeHeaderFn: func(_ int) {},
-		},
-		[]string{"hello"},
-		http.StatusTeapot,
-	)
-
-	require.NoError(t, out.Flush())
-	assert.Contains(t, b.String(), `"msg":"cannot send response"`)
 }
 
 func Test_RespondError(t *testing.T) {
-	var b bytes.Buffer
+	cc := map[string]struct {
+		Inp      error
+		RespCode int
+		Log      string
+	}{
+		"Client error": {
+			Inp:      ErrInvalidJSON,
+			RespCode: http.StatusBadRequest,
+		},
+		"Internal server error": {
+			Inp:      assert.AnError,
+			RespCode: http.StatusInternalServerError,
+			Log:      `"msg":"internal server error"`,
+		},
+	}
 
-	out := bufio.NewWriter(&b)
-	log := slog.New(slog.NewJSONHandler(out, nil))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	rec := httptest.NewRecorder()
-	rec.Header().Set("Location", "test")
+			var b bytes.Buffer
 
-	RespondError(log, rec, ErrInvalidJSON)
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-	assert.NotContains(t, rec.Header(), "Location")
-	assert.NotEmpty(t, rec.Body.String())
+			out := bufio.NewWriter(&b)
+			log := slog.New(slog.NewJSONHandler(out, nil))
 
-	require.NoError(t, out.Flush())
-	assert.Empty(t, b.String())
+			rec := httptest.NewRecorder()
+			rec.Header().Set("Location", "test")
 
-	rec = httptest.NewRecorder()
-	rec.Header().Set("Location", "test")
+			RespondError(log, rec, c.Inp)
+			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+			assert.NotContains(t, rec.Header(), "Location")
+			assert.NotEmpty(t, rec.Body.String())
 
-	RespondError(log, rec, assert.AnError)
-	assert.Equal(t, http.StatusInternalServerError, rec.Code)
-	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-	assert.NotContains(t, rec.Header(), "Location")
-	assert.NotEmpty(t, rec.Body.String())
+			require.NoError(t, out.Flush())
 
-	require.NoError(t, out.Flush())
+			if c.Log == "" {
+				assert.Empty(t, b.String())
+				return
+			}
 
-	strs := strings.Split(b.String(), "\n")
-	require.Len(t, strs, 2)
-	assert.Regexp(t, `"msg":"internal server error"`, strs[0])
+			strs := strings.Split(b.String(), "\n")
+			require.Len(t, strs, 2)
+			assert.Regexp(t, c.Log, strs[0])
+		})
+	}
 }
 
 func Test_RespondSuppressedError(t *testing.T) {
@@ -215,25 +239,6 @@ func Test_FormFile(t *testing.T) {
 
 	errTooLarge := errors.New("too large")
 
-	// buildForm builds a multipart body with one file part under the
-	// given field carrying content.
-	buildForm := func(t *testing.T, field, content string) (io.Reader, string) {
-		t.Helper()
-
-		var buf bytes.Buffer
-
-		mw := multipart.NewWriter(&buf)
-
-		fw, err := mw.CreateFormFile(field, "file.bin")
-		require.NoError(t, err)
-
-		_, err = io.WriteString(fw, content)
-		require.NoError(t, err)
-		require.NoError(t, mw.Close())
-
-		return &buf, mw.FormDataContentType()
-	}
-
 	cc := map[string]struct {
 		Field   string
 		Lookup  string
@@ -266,10 +271,19 @@ func Test_FormFile(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			body, contentType := buildForm(t, c.Field, c.Content)
+			var body bytes.Buffer
 
-			req := httptest.NewRequest(http.MethodPut, "http://test.com/", body)
-			req.Header.Set("Content-Type", contentType)
+			mw := multipart.NewWriter(&body)
+
+			fw, err := mw.CreateFormFile(c.Field, "file.bin")
+			require.NoError(t, err)
+
+			_, err = io.WriteString(fw, c.Content)
+			require.NoError(t, err)
+			require.NoError(t, mw.Close())
+
+			req := httptest.NewRequest(http.MethodPut, "http://test.com/", &body)
+			req.Header.Set("Content-Type", mw.FormDataContentType())
 
 			f, err := FormFile(httptest.NewRecorder(), req, c.Lookup, c.Limit, errTooLarge)
 			testutil.AssertEqualError(t, c.Err, err)
@@ -290,75 +304,127 @@ func Test_FormFile(t *testing.T) {
 }
 
 func Test_DecodeJSON(t *testing.T) {
-	v := struct {
+	type dest struct {
 		Msg string `json:"msg"`
-	}{}
-	req := httptest.NewRequest("GET", "http://test.com/", strings.NewReader("{"))
-	err := DecodeJSON(req, &v)
-	assert.Equal(t, ErrInvalidJSON, err)
-	assert.Zero(t, v)
+	}
 
-	req = httptest.NewRequest("GET", "http://test.com/", strings.NewReader(`{"msg":"test"}`))
-	err = DecodeJSON(req, &v)
-	assert.NoError(t, err)
-	assert.Equal(t, "test", v.Msg)
+	cc := map[string]struct {
+		Body   string
+		Result dest
+		Err    error
+	}{
+		"Error returned by Decoder.Decode": {
+			Body: "{",
+			Err:  ErrInvalidJSON,
+		},
+		"Successful decode": {
+			Body:   `{"msg":"test"}`,
+			Result: dest{Msg: "test"},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var v dest
+
+			req := httptest.NewRequest("GET", "http://test.com/", strings.NewReader(c.Body))
+			err := DecodeJSON(req, &v)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Zero(t, v)
+				return
+			}
+
+			assert.Equal(t, c.Result, v)
+		})
+	}
 }
 
 func Test_DecodeForm(t *testing.T) {
-	v := struct{ Msg string }{}
+	type msgDest struct {
+		Msg string
+	}
 
-	req := httptest.NewRequest("POST", "http://test.com/", http.NoBody)
-	req.Body = nil
+	type idsDest struct {
+		IDs []xid.ID
+	}
 
-	assert.Equal(t, ErrInvalidForm, DecodeForm(req, v))
-
-	req = httptest.NewRequest("GET", "http://test.com/", http.NoBody)
-	assert.Equal(t, ErrInvalidForm, DecodeForm(req, v))
-
-	req = httptest.NewRequest("GET", "http://test.com/", http.NoBody)
-	q := req.URL.Query()
-	q.Add("msg", "test")
-	q.Add("hello", "test")
-	req.URL.RawQuery = q.Encode()
-	assert.NoError(t, DecodeForm(req, &v))
-	assert.Equal(t, "test", v.Msg)
-
-	v2 := struct{ IDs []xid.ID }{}
-	id := xid.New()
-
-	req = httptest.NewRequest("GET", "http://test.com/", http.NoBody)
-	q = req.URL.Query()
-	q.Add("ids", id.String())
-	req.URL.RawQuery = q.Encode()
-	assert.NoError(t, DecodeForm(req, &v2))
-	assert.Equal(t, []xid.ID{id}, v2.IDs)
-
-	v3 := struct {
+	type idTimeDest struct {
 		ID   xid.ID
 		Time time.Time
-	}{}
+	}
+
+	id := xid.New()
 	tm := time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)
 
-	req = httptest.NewRequest("GET", "http://test.com/", http.NoBody)
-	q = req.URL.Query()
-	q.Add("id", "invalid")
-	req.URL.RawQuery = q.Encode()
-	assert.Equal(t, ErrInvalidForm, DecodeForm(req, &v3))
+	cc := map[string]struct {
+		NilPostBody bool
+		Query       url.Values
+		Dest        any
+		Result      any
+		Err         error
+	}{
+		"Error returned by Request.ParseForm": {
+			NilPostBody: true,
+			Dest:        &msgDest{},
+			Err:         ErrInvalidForm,
+		},
+		"Error returned by Decoder.Decode for non pointer destination": {
+			Dest: msgDest{},
+			Err:  ErrInvalidForm,
+		},
+		"Error returned by Decoder.Decode for invalid ID": {
+			Query: url.Values{"id": {"invalid"}},
+			Dest:  &idTimeDest{},
+			Err:   ErrInvalidForm,
+		},
+		"Error returned by Decoder.Decode for invalid time": {
+			Query: url.Values{"time": {"invalid"}},
+			Dest:  &idTimeDest{},
+			Err:   ErrInvalidForm,
+		},
+		"Successful decode with unknown keys": {
+			Query:  url.Values{"msg": {"test"}, "hello": {"test"}},
+			Dest:   &msgDest{},
+			Result: &msgDest{Msg: "test"},
+		},
+		"Successful decode of IDs": {
+			Query:  url.Values{"ids": {id.String()}},
+			Dest:   &idsDest{},
+			Result: &idsDest{IDs: []xid.ID{id}},
+		},
+		"Successful decode of ID and time": {
+			Query:  url.Values{"id": {id.String()}, "time": {tm.Format(time.RFC3339Nano)}},
+			Dest:   &idTimeDest{},
+			Result: &idTimeDest{ID: id, Time: tm},
+		},
+	}
 
-	req = httptest.NewRequest("GET", "http://test.com/", http.NoBody)
-	q = req.URL.Query()
-	q.Add("time", "invalid")
-	req.URL.RawQuery = q.Encode()
-	assert.Equal(t, ErrInvalidForm, DecodeForm(req, &v3))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	req = httptest.NewRequest("GET", "http://test.com/", http.NoBody)
-	q = req.URL.Query()
-	q.Add("id", id.String())
-	q.Add("time", tm.Format(time.RFC3339Nano))
-	req.URL.RawQuery = q.Encode()
-	assert.NoError(t, DecodeForm(req, &v3))
-	assert.Equal(t, id, v3.ID)
-	assert.Equal(t, tm, v3.Time)
+			req := httptest.NewRequest("GET", "http://test.com/", http.NoBody)
+			req.URL.RawQuery = c.Query.Encode()
+
+			if c.NilPostBody {
+				req.Method = "POST"
+				req.Body = nil
+			}
+
+			err := DecodeForm(req, c.Dest)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, c.Dest)
+		})
+	}
 }
 
 func Test_NotFound(t *testing.T) {
@@ -461,64 +527,125 @@ func Test_ServeObject(t *testing.T) {
 }
 
 func Test_ExtractNamedID(t *testing.T) {
-	req := httptest.NewRequest("GET", "http://test.com/", http.NoBody)
-	id, err := ExtractNamedID(req, "id")
-	assert.Zero(t, id)
-	assert.Equal(t, errutil.ErrNotFound, err)
+	id := xid.New()
 
-	ctx := chi.NewRouteContext()
-	ctx.URLParams.Add("id", "invalid")
-	req = req.WithContext(context.WithValue(context.Background(),
-		chi.RouteCtxKey, ctx))
+	cc := map[string]struct {
+		Param  string
+		Result xid.ID
+		Err    error
+	}{
+		"Error returned by ExtractParam": {
+			Err: errutil.ErrNotFound,
+		},
+		"Error returned by xid.FromString": {
+			Param: "invalid",
+			Err:   errutil.ErrNotFound,
+		},
+		"Successful extraction": {
+			Param:  id.String(),
+			Result: id,
+		},
+	}
 
-	id, err = ExtractNamedID(req, "id")
-	assert.Zero(t, id)
-	assert.Equal(t, errutil.ErrNotFound, err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	expID := xid.New()
-	ctx = chi.NewRouteContext()
-	ctx.URLParams.Add("id", expID.String())
-	req = req.WithContext(context.WithValue(context.Background(),
-		chi.RouteCtxKey, ctx))
+			req := httptest.NewRequest("GET", "http://test.com/", http.NoBody)
 
-	id, err = ExtractNamedID(req, "id")
-	assert.Equal(t, expID, id)
-	assert.NoError(t, err)
+			if c.Param != "" {
+				req = req.WithContext(testutil.AddChiCtx(context.Background(), "id", c.Param))
+			}
+
+			res, err := ExtractNamedID(req, "id")
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Zero(t, res)
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
 }
 
 func Test_ExtractParam(t *testing.T) {
-	req := httptest.NewRequest("GET", "http://test.com/", http.NoBody)
-	val, err := ExtractParam(req, "key")
-	assert.Empty(t, val)
-	assert.Error(t, err)
+	cc := map[string]struct {
+		Param  string
+		Result string
+		Err    error
+	}{
+		"Missing parameter": {
+			Err: errutil.ErrNotFound,
+		},
+		"Successful extraction": {
+			Param:  "123",
+			Result: "123",
+		},
+	}
 
-	ctx := chi.NewRouteContext()
-	ctx.URLParams.Add("key", "123")
-	req = req.WithContext(context.WithValue(context.Background(),
-		chi.RouteCtxKey, ctx))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	val, err = ExtractParam(req, "key")
-	assert.Equal(t, "123", val)
-	assert.NoError(t, err)
+			req := httptest.NewRequest("GET", "http://test.com/", http.NoBody)
+
+			if c.Param != "" {
+				req = req.WithContext(testutil.AddChiCtx(context.Background(), "key", c.Param))
+			}
+
+			res, err := ExtractParam(req, "key")
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Empty(t, res)
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
 }
 
 func Test_ExtractQueryID(t *testing.T) {
-	req := httptest.NewRequest("GET", "http://test.com/", http.NoBody)
-	id, err := ExtractQueryID(req, "branchId")
-	assert.Zero(t, id)
-	assert.Equal(t, ErrInvalidForm, err)
+	id := xid.New()
 
-	req = httptest.NewRequest("GET", "http://test.com/?branchId=invalid", http.NoBody)
-	id, err = ExtractQueryID(req, "branchId")
-	assert.Zero(t, id)
-	assert.Equal(t, ErrInvalidForm, err)
+	cc := map[string]struct {
+		Query  string
+		Result xid.ID
+		Err    error
+	}{
+		"Error returned by xid.FromString for missing ID": {
+			Err: ErrInvalidForm,
+		},
+		"Error returned by xid.FromString for invalid ID": {
+			Query: "?branchId=invalid",
+			Err:   ErrInvalidForm,
+		},
+		"Successful extraction": {
+			Query:  "?branchId=" + id.String(),
+			Result: id,
+		},
+	}
 
-	expID := xid.New()
-	req = httptest.NewRequest("GET", "http://test.com/?branchId="+expID.String(), http.NoBody)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	id, err = ExtractQueryID(req, "branchId")
-	assert.Equal(t, expID, id)
-	assert.NoError(t, err)
+			req := httptest.NewRequest("GET", "http://test.com/"+c.Query, http.NoBody)
+
+			res, err := ExtractQueryID(req, "branchId")
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Zero(t, res)
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
 }
 
 func Test_CacheBust(t *testing.T) {

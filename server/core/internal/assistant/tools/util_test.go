@@ -29,8 +29,30 @@ func Test_errRequired(t *testing.T) {
 func Test_countPhrase(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "1 page", countPhrase(1, "page"))
-	assert.Equal(t, "3 blocks", countPhrase(3, "block"))
+	cc := map[string]struct {
+		N      int
+		Noun   string
+		Result string
+	}{
+		"Singular count": {
+			N:      1,
+			Noun:   "page",
+			Result: "1 page",
+		},
+		"Plural count": {
+			N:      3,
+			Noun:   "block",
+			Result: "3 blocks",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, countPhrase(c.N, c.Noun))
+		})
+	}
 }
 
 func Test_sentence(t *testing.T) {

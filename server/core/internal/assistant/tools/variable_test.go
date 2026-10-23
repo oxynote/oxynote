@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -125,7 +127,7 @@ func Test_listVariables_Info(t *testing.T) {
 
 	info := listVariables{}.Info()
 
-	assert.Equal(t, Traits{}, info.Traits)
+	assert.Equal(t, Traits{Group: GroupVariables}, info.Traits)
 	assert.Equal(t, NameListVariables, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Empty(t, info.Properties)
@@ -136,20 +138,23 @@ func Test_listVariables_Execute(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Man    *VariableManagerMock
-		Args   string
-		Result string
-		Err    error
+		Man            *VariableManagerMock
+		Args           string
+		FetchTreeCalls int
+		Result         string
+		Err            error
 	}{
 		"Malformed arguments": {Man: stubVariableManager(), Args: `{`, Err: assert.AnError},
 		"Error returned by VariableManager.FetchTree": {
-			Man:  failingTreeManager(),
-			Args: `{}`,
-			Err:  assert.AnError,
+			Man:            failingTreeManager(),
+			Args:           `{}`,
+			FetchTreeCalls: 1,
+			Err:            assert.AnError,
 		},
 		"Successful listing": {
-			Man:  stubVariableManager(),
-			Args: `{}`,
+			Man:            stubVariableManager(),
+			Args:           `{}`,
+			FetchTreeCalls: 1,
 			Result: `{"groups":[
 				{"id":"` + _builtinVariableGroupID.String() + `","name":"Metrics","color":"blue","builtin":true,"variables":[
 					{"id":"` + _builtinVariableID.String() + `","key":"metric_range","name":"Metric time range","description":null,"type":"time-range","builtin":true,"default":"last_24_hours","value":"last_7_days","options":[]}
@@ -168,8 +173,10 @@ func Test_listVariables_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := listVariables{}.Execute(testInput(variableDeps(c.Man), NameListVariables, c.Args))
+			res, err := listVariables{}.Execute(variableDeps(c.Man).newInput(context.Background(), NameListVariables, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.Man.FetchTreeCalls(), c.FetchTreeCalls)
 
 			if err != nil {
 				return
@@ -183,12 +190,34 @@ func Test_listVariables_Execute(t *testing.T) {
 func Test_createVariableGroupArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, createVariableGroupArgs{Name: "Deploys", ColorName: "orange"}, map[string]Args{
-		"name":  createVariableGroupArgs{ColorName: "orange"},
-		"color": createVariableGroupArgs{Name: "Deploys"},
-	})
+	cc := map[string]struct {
+		Args createVariableGroupArgs
+		Err  error
+	}{
+		"Missing name": {
+			Args: createVariableGroupArgs{ColorName: "orange"},
+			Err:  errors.New("name is required"),
+		},
+		"Missing colour": {
+			Args: createVariableGroupArgs{Name: "Deploys"},
+			Err:  errors.New("color is required"),
+		},
+		"Colour outside the palette": {
+			Args: createVariableGroupArgs{Name: "Deploys", ColorName: "beige"},
+			Err:  variable.ErrInvalidGroupColor,
+		},
+		"Complete arguments": {
+			Args: createVariableGroupArgs{Name: "Deploys", ColorName: "orange"},
+		},
+	}
 
-	assert.Equal(t, variable.ErrInvalidGroupColor, createVariableGroupArgs{Name: "Deploys", ColorName: "beige"}.Validate())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Args.Validate())
+		})
+	}
 }
 
 func Test_createVariableGroupArgs_input(t *testing.T) {
@@ -206,35 +235,55 @@ func Test_createVariableGroup_Info(t *testing.T) {
 
 	info := createVariableGroup{}.Info()
 
-	assert.Equal(t, Traits{Write: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Group: GroupVariables}, info.Traits)
 	assert.Equal(t, NameCreateVariableGroup, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"name", "color"}, info.Required)
-	assert.Equal(t, tag.ColorNames(), colorEnum(t, info))
+
+	prop, ok := info.Properties["color"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, tag.ColorNames(), prop["enum"])
 }
 
 func Test_createVariableGroup_Summary(t *testing.T) {
 	t.Parallel()
 
-	in := testInput(variableDeps(stubVariableManager()), NameCreateVariableGroup, `{`)
+	cc := map[string]struct {
+		Args   string
+		Result string
+		Err    error
+	}{
+		"Malformed arguments": {Args: `{`, Err: assert.AnError},
+		"New group": {
+			Args:   `{"name":"Deploys","color":"orange"}`,
+			Result: "Create variable group Deploys (orange)",
+		},
+	}
 
-	_, err := createVariableGroup{}.Summary(in)
-	assert.Error(t, err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	in = testInput(variableDeps(stubVariableManager()), NameCreateVariableGroup, `{"name":"Deploys","color":"orange"}`)
+			got, err := createVariableGroup{}.Summary(variableDeps(stubVariableManager()).newInput(context.Background(), NameCreateVariableGroup, json.RawMessage(c.Args)))
+			testutil.AssertEqualError(t, c.Err, err)
 
-	got, err := createVariableGroup{}.Summary(in)
-	require.NoError(t, err)
-	assert.Equal(t, ActionSummary{Tool: NameCreateVariableGroup, Summary: "Create variable group Deploys (orange)"}, got)
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, ActionSummary{Tool: NameCreateVariableGroup, Summary: c.Result}, got)
+		})
+	}
 }
 
 func Test_createVariableGroup_Execute(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Man  *VariableManagerMock
-		Args string
-		Err  error
+		Man              *VariableManagerMock
+		Args             string
+		CreateGroupCalls int
+		Err              error
 	}{
 		"Malformed arguments": {Man: stubVariableManager(), Args: `{`, Err: assert.AnError},
 		"Error returned by VariableManager.CreateGroup": {
@@ -243,12 +292,14 @@ func Test_createVariableGroup_Execute(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			Args: `{"name":"Deploys","color":"orange"}`,
-			Err:  assert.AnError,
+			Args:             `{"name":"Deploys","color":"orange"}`,
+			CreateGroupCalls: 1,
+			Err:              assert.AnError,
 		},
 		"Created": {
-			Man:  stubVariableManager(),
-			Args: `{"name":"Deploys","color":"orange"}`,
+			Man:              stubVariableManager(),
+			Args:             `{"name":"Deploys","color":"orange"}`,
+			CreateGroupCalls: 1,
 		},
 	}
 
@@ -256,15 +307,16 @@ func Test_createVariableGroup_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := createVariableGroup{}.Execute(testInput(variableDeps(c.Man), NameCreateVariableGroup, c.Args))
+			res, err := createVariableGroup{}.Execute(variableDeps(c.Man).newInput(context.Background(), NameCreateVariableGroup, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			ff := c.Man.CreateGroupCalls()
+			require.Len(t, ff, c.CreateGroupCalls)
 
 			if err != nil {
 				return
 			}
 
-			ff := c.Man.CreateGroupCalls()
-			require.Len(t, ff, 1)
 			assert.Equal(t, variable.GroupCreateInput{GroupName: "Deploys", Color: "#f54a00"}, ff[0].Inp)
 			assert.Equal(t, "org", ff[0].OrganizationID)
 			assert.Equal(t, "user", ff[0].UserID)
@@ -276,19 +328,60 @@ func Test_createVariableGroup_Execute(t *testing.T) {
 func Test_updateVariableGroupArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, updateVariableGroupArgs{GroupID: _testVariableGroupID, Name: "Env"}, map[string]Args{
-		"group_id": updateVariableGroupArgs{Name: "Env"},
-	})
+	cc := map[string]struct {
+		Args updateVariableGroupArgs
+		Err  error
+	}{
+		"Missing group id": {
+			Args: updateVariableGroupArgs{Name: "Env"},
+			Err:  errors.New("group_id is required"),
+		},
+		"Nothing to change": {
+			Args: updateVariableGroupArgs{GroupID: _testVariableGroupID},
+			Err:  errors.New("give at least one of name or color"),
+		},
+		"Colour outside the palette": {
+			Args: updateVariableGroupArgs{GroupID: _testVariableGroupID, ColorName: "beige"},
+			Err:  variable.ErrInvalidGroupColor,
+		},
+		"Complete arguments": {
+			Args: updateVariableGroupArgs{GroupID: _testVariableGroupID, Name: "Env"},
+		},
+	}
 
-	assert.EqualError(t, updateVariableGroupArgs{GroupID: _testVariableGroupID}.Validate(), "give at least one of name or color")
-	assert.Equal(t, variable.ErrInvalidGroupColor, updateVariableGroupArgs{GroupID: _testVariableGroupID, ColorName: "beige"}.Validate())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Args.Validate())
+		})
+	}
 }
 
 func Test_updateVariableGroupArgs_input(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, variable.GroupUpdateInput{GroupName: null.StringFrom("Env")}, updateVariableGroupArgs{Name: "Env"}.input())
-	assert.Equal(t, variable.GroupUpdateInput{Color: null.StringFrom("#f54a00")}, updateVariableGroupArgs{ColorName: "orange"}.input())
+	cc := map[string]struct {
+		Args   updateVariableGroupArgs
+		Result variable.GroupUpdateInput
+	}{
+		"Name given": {
+			Args:   updateVariableGroupArgs{Name: "Env"},
+			Result: variable.GroupUpdateInput{GroupName: null.StringFrom("Env")},
+		},
+		"Colour given": {
+			Args:   updateVariableGroupArgs{ColorName: "orange"},
+			Result: variable.GroupUpdateInput{Color: null.StringFrom("#f54a00")},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Args.input())
+		})
+	}
 }
 
 func Test_updateVariableGroup_Info(t *testing.T) {
@@ -296,7 +389,7 @@ func Test_updateVariableGroup_Info(t *testing.T) {
 
 	info := updateVariableGroup{}.Info()
 
-	assert.Equal(t, Traits{Write: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Idempotent: true, Group: GroupVariables}, info.Traits)
 	assert.Equal(t, NameUpdateVariableGroup, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"group_id"}, info.Required)
@@ -310,26 +403,30 @@ func Test_updateVariableGroup_Summary(t *testing.T) {
 	group := `"group_id":"` + _testVariableGroupID.String() + `"`
 
 	cc := map[string]struct {
-		Man    *VariableManagerMock
-		Args   string
-		Result string
-		Err    error
+		Man            *VariableManagerMock
+		Args           string
+		FetchTreeCalls int
+		Result         string
+		Err            error
 	}{
 		"Malformed arguments": {Man: stubVariableManager(), Args: `{`, Err: assert.AnError},
 		"Error returned by VariableManager.FetchTree": {
-			Man:  failingTreeManager(),
-			Args: `{` + group + `,"name":"Env"}`,
-			Err:  assert.AnError,
+			Man:            failingTreeManager(),
+			Args:           `{` + group + `,"name":"Env"}`,
+			FetchTreeCalls: 1,
+			Err:            assert.AnError,
 		},
 		"Unknown group": {
-			Man:  stubVariableManager(),
-			Args: `{"group_id":"` + _unknownVariableID.String() + `","name":"Env"}`,
-			Err:  assert.AnError,
+			Man:            stubVariableManager(),
+			Args:           `{"group_id":"` + _unknownVariableID.String() + `","name":"Env"}`,
+			FetchTreeCalls: 1,
+			Err:            assert.AnError,
 		},
 		"Rename and recolour": {
-			Man:    stubVariableManager(),
-			Args:   `{` + group + `,"name":"Env","color":"orange"}`,
-			Result: `Rename variable group Environment to "Env" and set the colour of variable group Environment to orange`,
+			Man:            stubVariableManager(),
+			Args:           `{` + group + `,"name":"Env","color":"orange"}`,
+			FetchTreeCalls: 1,
+			Result:         `Rename variable group Environment to "Env" and set the colour of variable group Environment to orange`,
 		},
 	}
 
@@ -337,8 +434,10 @@ func Test_updateVariableGroup_Summary(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := updateVariableGroup{}.Summary(testInput(variableDeps(c.Man), NameUpdateVariableGroup, c.Args))
+			got, err := updateVariableGroup{}.Summary(variableDeps(c.Man).newInput(context.Background(), NameUpdateVariableGroup, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.Man.FetchTreeCalls(), c.FetchTreeCalls)
 
 			if err != nil {
 				return
@@ -353,9 +452,10 @@ func Test_updateVariableGroup_Execute(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Man  *VariableManagerMock
-		Args string
-		Err  error
+		Man              *VariableManagerMock
+		Args             string
+		UpdateGroupCalls int
+		Err              error
 	}{
 		"Malformed arguments": {Man: stubVariableManager(), Args: `{`, Err: assert.AnError},
 		"Unknown group": {
@@ -364,12 +464,14 @@ func Test_updateVariableGroup_Execute(t *testing.T) {
 					return errutil.ErrNotFound
 				},
 			},
-			Args: `{"group_id":"` + _testVariableGroupID.String() + `","name":"Env"}`,
-			Err:  fmt.Errorf("variable group %s: %w", _testVariableGroupID, ErrUnknownVariableGroup),
+			Args:             `{"group_id":"` + _testVariableGroupID.String() + `","name":"Env"}`,
+			UpdateGroupCalls: 1,
+			Err:              fmt.Errorf("variable group %s: %w", _testVariableGroupID, ErrUnknownVariableGroup),
 		},
 		"Updated": {
-			Man:  stubVariableManager(),
-			Args: `{"group_id":"` + _testVariableGroupID.String() + `","name":"Env"}`,
+			Man:              stubVariableManager(),
+			Args:             `{"group_id":"` + _testVariableGroupID.String() + `","name":"Env"}`,
+			UpdateGroupCalls: 1,
 		},
 	}
 
@@ -377,15 +479,16 @@ func Test_updateVariableGroup_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := updateVariableGroup{}.Execute(testInput(variableDeps(c.Man), NameUpdateVariableGroup, c.Args))
+			res, err := updateVariableGroup{}.Execute(variableDeps(c.Man).newInput(context.Background(), NameUpdateVariableGroup, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			ff := c.Man.UpdateGroupCalls()
+			require.Len(t, ff, c.UpdateGroupCalls)
 
 			if err != nil {
 				return
 			}
 
-			ff := c.Man.UpdateGroupCalls()
-			require.Len(t, ff, 1)
 			assert.Equal(t, _testVariableGroupID, ff[0].ID)
 			assert.Equal(t, variable.GroupUpdateInput{GroupName: null.StringFrom("Env")}, ff[0].Inp)
 			assert.JSONEq(t, `{"group_id":"`+_testVariableGroupID.String()+`"}`, res)
@@ -396,9 +499,26 @@ func Test_updateVariableGroup_Execute(t *testing.T) {
 func Test_deleteVariableGroupArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, deleteVariableGroupArgs{GroupID: _testVariableGroupID}, map[string]Args{
-		"group_id": deleteVariableGroupArgs{},
-	})
+	cc := map[string]struct {
+		Args deleteVariableGroupArgs
+		Err  error
+	}{
+		"Missing group id": {
+			Args: deleteVariableGroupArgs{},
+			Err:  errors.New("group_id is required"),
+		},
+		"Complete arguments": {
+			Args: deleteVariableGroupArgs{GroupID: _testVariableGroupID},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Args.Validate())
+		})
+	}
 }
 
 func Test_deleteVariableGroup_Info(t *testing.T) {
@@ -406,7 +526,7 @@ func Test_deleteVariableGroup_Info(t *testing.T) {
 
 	info := deleteVariableGroup{}.Info()
 
-	assert.Equal(t, Traits{Write: true, Destructive: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Destructive: true, Group: GroupVariables}, info.Traits)
 	assert.Equal(t, NameDeleteVariableGroup, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"group_id"}, info.Required)
@@ -416,18 +536,21 @@ func Test_deleteVariableGroup_Summary(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Args   string
-		Result string
-		Err    error
+		Args           string
+		FetchTreeCalls int
+		Result         string
+		Err            error
 	}{
 		"Malformed arguments": {Args: `{`, Err: assert.AnError},
 		"Unknown group": {
-			Args: `{"group_id":"` + _unknownVariableID.String() + `"}`,
-			Err:  assert.AnError,
+			Args:           `{"group_id":"` + _unknownVariableID.String() + `"}`,
+			FetchTreeCalls: 1,
+			Err:            assert.AnError,
 		},
 		"Known group": {
-			Args:   `{"group_id":"` + _testVariableGroupID.String() + `"}`,
-			Result: "Delete variable group Environment",
+			Args:           `{"group_id":"` + _testVariableGroupID.String() + `"}`,
+			FetchTreeCalls: 1,
+			Result:         "Delete variable group Environment",
 		},
 	}
 
@@ -435,8 +558,12 @@ func Test_deleteVariableGroup_Summary(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := deleteVariableGroup{}.Summary(testInput(variableDeps(stubVariableManager()), NameDeleteVariableGroup, c.Args))
+			man := stubVariableManager()
+
+			got, err := deleteVariableGroup{}.Summary(variableDeps(man).newInput(context.Background(), NameDeleteVariableGroup, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, man.FetchTreeCalls(), c.FetchTreeCalls)
 
 			if err != nil {
 				return
@@ -451,9 +578,10 @@ func Test_deleteVariableGroup_Execute(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Man  *VariableManagerMock
-		Args string
-		Err  error
+		Man              *VariableManagerMock
+		Args             string
+		DeleteGroupCalls int
+		Err              error
 	}{
 		"Malformed arguments": {Man: stubVariableManager(), Args: `{`, Err: assert.AnError},
 		"Group with variables": {
@@ -462,12 +590,14 @@ func Test_deleteVariableGroup_Execute(t *testing.T) {
 					return variable.ErrGroupNotEmpty
 				},
 			},
-			Args: `{"group_id":"` + _testVariableGroupID.String() + `"}`,
-			Err:  variable.ErrGroupNotEmpty,
+			Args:             `{"group_id":"` + _testVariableGroupID.String() + `"}`,
+			DeleteGroupCalls: 1,
+			Err:              variable.ErrGroupNotEmpty,
 		},
 		"Deleted": {
-			Man:  stubVariableManager(),
-			Args: `{"group_id":"` + _testVariableGroupID.String() + `"}`,
+			Man:              stubVariableManager(),
+			Args:             `{"group_id":"` + _testVariableGroupID.String() + `"}`,
+			DeleteGroupCalls: 1,
 		},
 	}
 
@@ -475,15 +605,16 @@ func Test_deleteVariableGroup_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := deleteVariableGroup{}.Execute(testInput(variableDeps(c.Man), NameDeleteVariableGroup, c.Args))
+			res, err := deleteVariableGroup{}.Execute(variableDeps(c.Man).newInput(context.Background(), NameDeleteVariableGroup, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			ff := c.Man.DeleteGroupCalls()
+			require.Len(t, ff, c.DeleteGroupCalls)
 
 			if err != nil {
 				return
 			}
 
-			ff := c.Man.DeleteGroupCalls()
-			require.Len(t, ff, 1)
 			assert.Equal(t, _testVariableGroupID, ff[0].ID)
 			assert.JSONEq(t, `{"group_id":"`+_testVariableGroupID.String()+`","deleted":true}`, res)
 		})
@@ -493,47 +624,82 @@ func Test_deleteVariableGroup_Execute(t *testing.T) {
 func Test_createVariableArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	ok := createVariableArgs{GroupID: _testVariableGroupID, Key: "release", Name: "Release", Type: variable.TypeText}
+	cc := map[string]struct {
+		Args createVariableArgs
+		Err  error
+	}{
+		"Missing group id": {
+			Args: createVariableArgs{Key: "release", Name: "Release", Type: variable.TypeText},
+			Err:  errors.New("group_id is required"),
+		},
+		"Missing key": {
+			Args: createVariableArgs{GroupID: _testVariableGroupID, Name: "Release", Type: variable.TypeText},
+			Err:  errors.New("key is required"),
+		},
+		"Missing name": {
+			Args: createVariableArgs{GroupID: _testVariableGroupID, Key: "release", Type: variable.TypeText},
+			Err:  errors.New("name is required"),
+		},
+		"Missing type": {
+			Args: createVariableArgs{GroupID: _testVariableGroupID, Key: "release", Name: "Release"},
+			Err:  errors.New("type is required"),
+		},
+		"Invalid key": {
+			Args: createVariableArgs{GroupID: _testVariableGroupID, Key: "$release", Name: "Release", Type: variable.TypeText},
+			Err:  variable.ErrInvalidKey,
+		},
+		"Complete arguments": {
+			Args: createVariableArgs{GroupID: _testVariableGroupID, Key: "release", Name: "Release", Type: variable.TypeText},
+		},
+	}
 
-	assertValidate(t, ok, map[string]Args{
-		"group_id": createVariableArgs{Key: "release", Name: "Release", Type: variable.TypeText},
-		"key":      createVariableArgs{GroupID: _testVariableGroupID, Name: "Release", Type: variable.TypeText},
-		"name":     createVariableArgs{GroupID: _testVariableGroupID, Key: "release", Type: variable.TypeText},
-		"type":     createVariableArgs{GroupID: _testVariableGroupID, Key: "release", Name: "Release"},
-	})
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	bad := ok
-	bad.Key = "$release"
-
-	assert.Equal(t, variable.ErrInvalidKey, bad.Validate())
+			testutil.AssertEqualError(t, c.Err, c.Args.Validate())
+		})
+	}
 }
 
 func Test_createVariableArgs_input(t *testing.T) {
 	t.Parallel()
 
-	got := createVariableArgs{
-		GroupID:     _testVariableGroupID,
-		Key:         "region",
-		Name:        "Region",
-		Description: "Cloud region",
-		Type:        variable.TypeList,
-		Options:     []string{"eu-west-1", "us-east-1"},
-	}.input()
+	cc := map[string]struct {
+		Args   createVariableArgs
+		Result variable.Input
+	}{
+		"List with a description": {
+			Args: createVariableArgs{
+				GroupID:     _testVariableGroupID,
+				Key:         "region",
+				Name:        "Region",
+				Description: "Cloud region",
+				Type:        variable.TypeList,
+				Options:     []string{"eu-west-1", "us-east-1"},
+			},
+			Result: variable.Input{
+				GroupID:     _testVariableGroupID,
+				Key:         "region",
+				Name:        "Region",
+				Description: null.StringFrom("Cloud region"),
+				Type:        variable.TypeList,
+				Options:     []variable.OptionInput{{Value: "eu-west-1"}, {Value: "us-east-1"}},
+			},
+		},
+		"Default without a description or options": {
+			Args:   createVariableArgs{Type: variable.TypeNumber, Default: null.StringFrom("2")},
+			Result: variable.Input{Type: variable.TypeNumber, DefaultValue: null.StringFrom("2")},
+		},
+	}
 
-	assert.Equal(t, variable.Input{
-		GroupID:     _testVariableGroupID,
-		Key:         "region",
-		Name:        "Region",
-		Description: null.StringFrom("Cloud region"),
-		Type:        variable.TypeList,
-		Options:     []variable.OptionInput{{Value: "eu-west-1"}, {Value: "us-east-1"}},
-	}, got)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	got = createVariableArgs{Type: variable.TypeNumber, Default: null.StringFrom("2")}.input()
-
-	assert.False(t, got.Description.Valid)
-	assert.Equal(t, null.StringFrom("2"), got.DefaultValue)
-	assert.Nil(t, got.Options)
+			assert.Equal(t, c.Result, c.Args.input())
+		})
+	}
 }
 
 func Test_createVariable_Info(t *testing.T) {
@@ -541,7 +707,7 @@ func Test_createVariable_Info(t *testing.T) {
 
 	info := createVariable{}.Info()
 
-	assert.Equal(t, Traits{Write: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Group: GroupVariables}, info.Traits)
 	assert.Equal(t, NameCreateVariable, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"group_id", "key", "name", "type"}, info.Required)
@@ -552,20 +718,22 @@ func Test_createVariable_Info(t *testing.T) {
 func Test_createVariable_Summary(t *testing.T) {
 	t.Parallel()
 
-	args := func(groupID xid.ID) string {
-		return `{"group_id":"` + groupID.String() + `","key":"release","name":"Release","type":"text"}`
-	}
-
 	cc := map[string]struct {
-		Args   string
-		Result string
-		Err    error
+		Args           string
+		FetchTreeCalls int
+		Result         string
+		Err            error
 	}{
 		"Malformed arguments": {Args: `{`, Err: assert.AnError},
-		"Unknown group":       {Args: args(_unknownVariableID), Err: assert.AnError},
+		"Unknown group": {
+			Args:           `{"group_id":"` + _unknownVariableID.String() + `","key":"release","name":"Release","type":"text"}`,
+			FetchTreeCalls: 1,
+			Err:            assert.AnError,
+		},
 		"Known group": {
-			Args:   args(_testVariableGroupID),
-			Result: "Create text variable $release in Environment",
+			Args:           `{"group_id":"` + _testVariableGroupID.String() + `","key":"release","name":"Release","type":"text"}`,
+			FetchTreeCalls: 1,
+			Result:         "Create text variable $release in Environment",
 		},
 	}
 
@@ -573,8 +741,12 @@ func Test_createVariable_Summary(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := createVariable{}.Summary(testInput(variableDeps(stubVariableManager()), NameCreateVariable, c.Args))
+			man := stubVariableManager()
+
+			got, err := createVariable{}.Summary(variableDeps(man).newInput(context.Background(), NameCreateVariable, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, man.FetchTreeCalls(), c.FetchTreeCalls)
 
 			if err != nil {
 				return
@@ -591,9 +763,10 @@ func Test_createVariable_Execute(t *testing.T) {
 	args := `{"group_id":"` + _testVariableGroupID.String() + `","key":"region","name":"Region","type":"list","options":["eu-west-1"]}`
 
 	cc := map[string]struct {
-		Man  *VariableManagerMock
-		Args string
-		Err  error
+		Man                 *VariableManagerMock
+		Args                string
+		CreateVariableCalls int
+		Err                 error
 	}{
 		"Malformed arguments": {Man: stubVariableManager(), Args: `{`, Err: assert.AnError},
 		"Unknown group": {
@@ -602,12 +775,14 @@ func Test_createVariable_Execute(t *testing.T) {
 					return nil, errutil.ErrNotFound
 				},
 			},
-			Args: args,
-			Err:  fmt.Errorf("variable group %s: %w", _testVariableGroupID, ErrUnknownVariableGroup),
+			Args:                args,
+			CreateVariableCalls: 1,
+			Err:                 fmt.Errorf("variable group %s: %w", _testVariableGroupID, ErrUnknownVariableGroup),
 		},
 		"Created": {
-			Man:  stubVariableManager(),
-			Args: args,
+			Man:                 stubVariableManager(),
+			Args:                args,
+			CreateVariableCalls: 1,
 		},
 	}
 
@@ -615,15 +790,16 @@ func Test_createVariable_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := createVariable{}.Execute(testInput(variableDeps(c.Man), NameCreateVariable, c.Args))
+			res, err := createVariable{}.Execute(variableDeps(c.Man).newInput(context.Background(), NameCreateVariable, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			ff := c.Man.CreateVariableCalls()
+			require.Len(t, ff, c.CreateVariableCalls)
 
 			if err != nil {
 				return
 			}
 
-			ff := c.Man.CreateVariableCalls()
-			require.Len(t, ff, 1)
 			assert.Equal(t, "region", ff[0].Inp.Key)
 			assert.Equal(t, []variable.OptionInput{{Value: "eu-west-1"}}, ff[0].Inp.Options)
 			assert.Equal(t, "user", ff[0].UserID)
@@ -635,12 +811,33 @@ func Test_createVariable_Execute(t *testing.T) {
 func Test_updateVariableArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, updateVariableArgs{VariableID: _testVariableID}, map[string]Args{
-		"variable_id": updateVariableArgs{},
-	})
+	cc := map[string]struct {
+		Args updateVariableArgs
+		Err  error
+	}{
+		"Missing variable id": {
+			Args: updateVariableArgs{},
+			Err:  errors.New("variable_id is required"),
+		},
+		"Invalid type": {
+			Args: updateVariableArgs{VariableID: _testVariableID, Type: "date"},
+			Err:  variable.ErrInvalidType,
+		},
+		"Valid type": {
+			Args: updateVariableArgs{VariableID: _testVariableID, Type: variable.TypeText},
+		},
+		"Only the variable id": {
+			Args: updateVariableArgs{VariableID: _testVariableID},
+		},
+	}
 
-	assert.Equal(t, variable.ErrInvalidType, updateVariableArgs{VariableID: _testVariableID, Type: "date"}.Validate())
-	assert.NoError(t, updateVariableArgs{VariableID: _testVariableID, Type: variable.TypeText}.Validate())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Args.Validate())
+		})
+	}
 }
 
 func Test_updateVariableArgs_input(t *testing.T) {
@@ -745,7 +942,7 @@ func Test_updateVariable_Info(t *testing.T) {
 
 	info := updateVariable{}.Info()
 
-	assert.Equal(t, Traits{Write: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Overwrites: true, Idempotent: true, Group: GroupVariables}, info.Traits)
 	assert.Equal(t, NameUpdateVariable, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"variable_id"}, info.Required)
@@ -763,22 +960,26 @@ func Test_updateVariable_Summary(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Args   string
-		Result string
-		Err    error
+		Args           string
+		FetchTreeCalls int
+		Result         string
+		Err            error
 	}{
 		"Malformed arguments": {Args: `{`, Err: assert.AnError},
 		"Unknown variable": {
-			Args: `{"variable_id":"` + _unknownVariableID.String() + `"}`,
-			Err:  assert.AnError,
+			Args:           `{"variable_id":"` + _unknownVariableID.String() + `"}`,
+			FetchTreeCalls: 1,
+			Err:            assert.AnError,
 		},
 		"Same type": {
-			Args:   `{"variable_id":"` + _testVariableID.String() + `","name":"Zone"}`,
-			Result: "Update variable $region",
+			Args:           `{"variable_id":"` + _testVariableID.String() + `","name":"Zone"}`,
+			FetchTreeCalls: 1,
+			Result:         "Update variable $region",
 		},
 		"Type change": {
-			Args:   `{"variable_id":"` + _testVariableID.String() + `","type":"text"}`,
-			Result: "Update variable $region and make it text, resetting everyone's value",
+			Args:           `{"variable_id":"` + _testVariableID.String() + `","type":"text"}`,
+			FetchTreeCalls: 1,
+			Result:         "Update variable $region and make it text, resetting everyone's value",
 		},
 	}
 
@@ -786,8 +987,12 @@ func Test_updateVariable_Summary(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := updateVariable{}.Summary(testInput(variableDeps(stubVariableManager()), NameUpdateVariable, c.Args))
+			man := stubVariableManager()
+
+			got, err := updateVariable{}.Summary(variableDeps(man).newInput(context.Background(), NameUpdateVariable, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, man.FetchTreeCalls(), c.FetchTreeCalls)
 
 			if err != nil {
 				return
@@ -813,24 +1018,31 @@ func Test_updateVariable_Execute(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		Man  *VariableManagerMock
-		Args string
-		Err  error
+		Man                 *VariableManagerMock
+		Args                string
+		FetchTreeCalls      int
+		UpdateVariableCalls int
+		Err                 error
 	}{
 		"Malformed arguments": {Man: stubVariableManager(), Args: `{`, Err: assert.AnError},
 		"Unknown variable": {
-			Man:  stubVariableManager(),
-			Args: `{"variable_id":"` + _unknownVariableID.String() + `"}`,
-			Err:  fmt.Errorf("variable %s: %w", _unknownVariableID, ErrUnknownVariable),
+			Man:            stubVariableManager(),
+			Args:           `{"variable_id":"` + _unknownVariableID.String() + `"}`,
+			FetchTreeCalls: 1,
+			Err:            fmt.Errorf("variable %s: %w", _unknownVariableID, ErrUnknownVariable),
 		},
 		"Built-in variable": {
-			Man:  withUpdate(variable.ErrBuiltinVariable),
-			Args: args,
-			Err:  variable.ErrBuiltinVariable,
+			Man:                 withUpdate(variable.ErrBuiltinVariable),
+			Args:                args,
+			FetchTreeCalls:      1,
+			UpdateVariableCalls: 1,
+			Err:                 variable.ErrBuiltinVariable,
 		},
 		"Updated": {
-			Man:  withUpdate(nil),
-			Args: args,
+			Man:                 withUpdate(nil),
+			Args:                args,
+			FetchTreeCalls:      1,
+			UpdateVariableCalls: 1,
 		},
 	}
 
@@ -838,15 +1050,18 @@ func Test_updateVariable_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := updateVariable{}.Execute(testInput(variableDeps(c.Man), NameUpdateVariable, c.Args))
+			res, err := updateVariable{}.Execute(variableDeps(c.Man).newInput(context.Background(), NameUpdateVariable, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.Man.FetchTreeCalls(), c.FetchTreeCalls)
+
+			ff := c.Man.UpdateVariableCalls()
+			require.Len(t, ff, c.UpdateVariableCalls)
 
 			if err != nil {
 				return
 			}
 
-			ff := c.Man.UpdateVariableCalls()
-			require.Len(t, ff, 1)
 			assert.Equal(t, _testVariableID, ff[0].ID)
 			assert.Equal(t, "Zone", ff[0].Inp.Name)
 			assert.Len(t, ff[0].Inp.Options, 2)
@@ -858,9 +1073,26 @@ func Test_updateVariable_Execute(t *testing.T) {
 func Test_deleteVariableArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, deleteVariableArgs{VariableID: _testVariableID}, map[string]Args{
-		"variable_id": deleteVariableArgs{},
-	})
+	cc := map[string]struct {
+		Args deleteVariableArgs
+		Err  error
+	}{
+		"Missing variable id": {
+			Args: deleteVariableArgs{},
+			Err:  errors.New("variable_id is required"),
+		},
+		"Complete arguments": {
+			Args: deleteVariableArgs{VariableID: _testVariableID},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Args.Validate())
+		})
+	}
 }
 
 func Test_deleteVariable_Info(t *testing.T) {
@@ -868,7 +1100,7 @@ func Test_deleteVariable_Info(t *testing.T) {
 
 	info := deleteVariable{}.Info()
 
-	assert.Equal(t, Traits{Write: true, Destructive: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Destructive: true, Group: GroupVariables}, info.Traits)
 	assert.Equal(t, NameDeleteVariable, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"variable_id"}, info.Required)
@@ -878,15 +1110,17 @@ func Test_deleteVariable_Summary(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Args   string
-		Result string
-		Err    error
+		Args           string
+		FetchTreeCalls int
+		Result         string
+		Err            error
 	}{
 		"Malformed arguments": {Args: `{`, Err: assert.AnError},
-		"Unknown variable":    {Args: `{"variable_id":"` + _unknownVariableID.String() + `"}`, Err: assert.AnError},
+		"Unknown variable":    {Args: `{"variable_id":"` + _unknownVariableID.String() + `"}`, FetchTreeCalls: 1, Err: assert.AnError},
 		"Known variable": {
-			Args:   `{"variable_id":"` + _testVariableID.String() + `"}`,
-			Result: "Delete variable $region",
+			Args:           `{"variable_id":"` + _testVariableID.String() + `"}`,
+			FetchTreeCalls: 1,
+			Result:         "Delete variable $region",
 		},
 	}
 
@@ -894,8 +1128,12 @@ func Test_deleteVariable_Summary(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := deleteVariable{}.Summary(testInput(variableDeps(stubVariableManager()), NameDeleteVariable, c.Args))
+			man := stubVariableManager()
+
+			got, err := deleteVariable{}.Summary(variableDeps(man).newInput(context.Background(), NameDeleteVariable, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, man.FetchTreeCalls(), c.FetchTreeCalls)
 
 			if err != nil {
 				return
@@ -910,9 +1148,10 @@ func Test_deleteVariable_Execute(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Man  *VariableManagerMock
-		Args string
-		Err  error
+		Man                 *VariableManagerMock
+		Args                string
+		DeleteVariableCalls int
+		Err                 error
 	}{
 		"Malformed arguments": {Man: stubVariableManager(), Args: `{`, Err: assert.AnError},
 		"Unknown variable": {
@@ -921,12 +1160,14 @@ func Test_deleteVariable_Execute(t *testing.T) {
 					return errutil.ErrNotFound
 				},
 			},
-			Args: `{"variable_id":"` + _testVariableID.String() + `"}`,
-			Err:  fmt.Errorf("variable %s: %w", _testVariableID, ErrUnknownVariable),
+			Args:                `{"variable_id":"` + _testVariableID.String() + `"}`,
+			DeleteVariableCalls: 1,
+			Err:                 fmt.Errorf("variable %s: %w", _testVariableID, ErrUnknownVariable),
 		},
 		"Deleted": {
-			Man:  stubVariableManager(),
-			Args: `{"variable_id":"` + _testVariableID.String() + `"}`,
+			Man:                 stubVariableManager(),
+			Args:                `{"variable_id":"` + _testVariableID.String() + `"}`,
+			DeleteVariableCalls: 1,
 		},
 	}
 
@@ -934,15 +1175,16 @@ func Test_deleteVariable_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := deleteVariable{}.Execute(testInput(variableDeps(c.Man), NameDeleteVariable, c.Args))
+			res, err := deleteVariable{}.Execute(variableDeps(c.Man).newInput(context.Background(), NameDeleteVariable, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			ff := c.Man.DeleteVariableCalls()
+			require.Len(t, ff, c.DeleteVariableCalls)
 
 			if err != nil {
 				return
 			}
 
-			ff := c.Man.DeleteVariableCalls()
-			require.Len(t, ff, 1)
 			assert.Equal(t, _testVariableID, ff[0].ID)
 			assert.JSONEq(t, `{"variable_id":"`+_testVariableID.String()+`","deleted":true}`, res)
 		})
@@ -952,10 +1194,30 @@ func Test_deleteVariable_Execute(t *testing.T) {
 func Test_setVariableValueArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, setVariableValueArgs{VariableID: _testVariableID, Value: null.StringFrom(""), Default: true}, map[string]Args{
-		"variable_id": setVariableValueArgs{Value: null.StringFrom("x")},
-		"value":       setVariableValueArgs{VariableID: _testVariableID},
-	})
+	cc := map[string]struct {
+		Args setVariableValueArgs
+		Err  error
+	}{
+		"Missing variable id": {
+			Args: setVariableValueArgs{Value: null.StringFrom("x")},
+			Err:  errors.New("variable_id is required"),
+		},
+		"Missing value": {
+			Args: setVariableValueArgs{VariableID: _testVariableID},
+			Err:  errors.New("value is required"),
+		},
+		"Empty default": {
+			Args: setVariableValueArgs{VariableID: _testVariableID, Value: null.StringFrom(""), Default: true},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Args.Validate())
+		})
+	}
 }
 
 func Test_setVariableValue_Info(t *testing.T) {
@@ -963,7 +1225,7 @@ func Test_setVariableValue_Info(t *testing.T) {
 
 	info := setVariableValue{}.Info()
 
-	assert.Equal(t, Traits{Write: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Idempotent: true, Group: GroupVariables}, info.Traits)
 	assert.Equal(t, NameSetVariableValue, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"variable_id", "value"}, info.Required)
@@ -973,26 +1235,31 @@ func Test_setVariableValue_Summary(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Args   string
-		Result string
-		Err    error
+		Args           string
+		FetchTreeCalls int
+		Result         string
+		Err            error
 	}{
 		"Malformed arguments": {Args: `{`, Err: assert.AnError},
 		"Unknown variable": {
-			Args: `{"variable_id":"` + _unknownVariableID.String() + `","value":"x"}`,
-			Err:  assert.AnError,
+			Args:           `{"variable_id":"` + _unknownVariableID.String() + `","value":"x"}`,
+			FetchTreeCalls: 1,
+			Err:            assert.AnError,
 		},
 		"Option id shown as its value": {
-			Args:   `{"variable_id":"` + _testVariableID.String() + `","value":"` + _testOtherOptionID.String() + `"}`,
-			Result: `Set your $region to "us-east-1"`,
+			Args:           `{"variable_id":"` + _testVariableID.String() + `","value":"` + _testOtherOptionID.String() + `"}`,
+			FetchTreeCalls: 1,
+			Result:         `Set your $region to "us-east-1"`,
 		},
 		"Plain value": {
-			Args:   `{"variable_id":"` + _builtinVariableID.String() + `","value":"last_1_hour"}`,
-			Result: `Set your $metric_range to "last_1_hour"`,
+			Args:           `{"variable_id":"` + _builtinVariableID.String() + `","value":"last_1_hour"}`,
+			FetchTreeCalls: 1,
+			Result:         `Set your $metric_range to "last_1_hour"`,
 		},
 		"Default": {
-			Args:   `{"variable_id":"` + _builtinVariableID.String() + `","value":"last_7_days","default":true}`,
-			Result: `Set the default of $metric_range to "last_7_days"`,
+			Args:           `{"variable_id":"` + _builtinVariableID.String() + `","value":"last_7_days","default":true}`,
+			FetchTreeCalls: 1,
+			Result:         `Set the default of $metric_range to "last_7_days"`,
 		},
 	}
 
@@ -1000,8 +1267,12 @@ func Test_setVariableValue_Summary(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := setVariableValue{}.Summary(testInput(variableDeps(stubVariableManager()), NameSetVariableValue, c.Args))
+			man := stubVariableManager()
+
+			got, err := setVariableValue{}.Summary(variableDeps(man).newInput(context.Background(), NameSetVariableValue, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, man.FetchTreeCalls(), c.FetchTreeCalls)
 
 			if err != nil {
 				return
@@ -1016,12 +1287,12 @@ func Test_setVariableValue_Execute(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Man         *VariableManagerMock
-		Args        string
-		ValueCalls  int
-		DefaultCall bool
-		Result      string
-		Err         error
+		Man          *VariableManagerMock
+		Args         string
+		ValueCalls   int
+		DefaultCalls int
+		Result       string
+		Err          error
 	}{
 		"Malformed arguments": {Man: stubVariableManager(), Args: `{`, Err: assert.AnError},
 		"Invalid value": {
@@ -1030,8 +1301,9 @@ func Test_setVariableValue_Execute(t *testing.T) {
 					return variable.ErrInvalidTimeRange
 				},
 			},
-			Args: `{"variable_id":"` + _builtinVariableID.String() + `","value":"last_1_hour"}`,
-			Err:  variable.ErrInvalidTimeRange,
+			Args:       `{"variable_id":"` + _builtinVariableID.String() + `","value":"last_1_hour"}`,
+			ValueCalls: 1,
+			Err:        variable.ErrInvalidTimeRange,
 		},
 		"Invalid default": {
 			Man: &VariableManagerMock{
@@ -1039,8 +1311,9 @@ func Test_setVariableValue_Execute(t *testing.T) {
 					return variable.ErrInvalidTimeRange
 				},
 			},
-			Args: `{"variable_id":"` + _builtinVariableID.String() + `","value":"last_1_hour","default":true}`,
-			Err:  variable.ErrInvalidTimeRange,
+			Args:         `{"variable_id":"` + _builtinVariableID.String() + `","value":"last_1_hour","default":true}`,
+			DefaultCalls: 1,
+			Err:          variable.ErrInvalidTimeRange,
 		},
 		"Set": {
 			Man:        stubVariableManager(),
@@ -1049,10 +1322,10 @@ func Test_setVariableValue_Execute(t *testing.T) {
 			Result:     `{"variable_id":"` + _builtinVariableID.String() + `","value":"last_1_hour","default":false}`,
 		},
 		"Set the default": {
-			Man:         stubVariableManager(),
-			Args:        `{"variable_id":"` + _builtinVariableID.String() + `","value":"last_1_hour","default":true}`,
-			DefaultCall: true,
-			Result:      `{"variable_id":"` + _builtinVariableID.String() + `","value":"last_1_hour","default":true}`,
+			Man:          stubVariableManager(),
+			Args:         `{"variable_id":"` + _builtinVariableID.String() + `","value":"last_1_hour","default":true}`,
+			DefaultCalls: 1,
+			Result:       `{"variable_id":"` + _builtinVariableID.String() + `","value":"last_1_hour","default":true}`,
 		},
 	}
 
@@ -1060,17 +1333,20 @@ func Test_setVariableValue_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := setVariableValue{}.Execute(testInput(variableDeps(c.Man), NameSetVariableValue, c.Args))
+			res, err := setVariableValue{}.Execute(variableDeps(c.Man).newInput(context.Background(), NameSetVariableValue, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+
+			vv := c.Man.SetValueCalls()
+			require.Len(t, vv, c.ValueCalls)
+
+			dd := c.Man.SetDefaultValueCalls()
+			require.Len(t, dd, c.DefaultCalls)
 
 			if err != nil {
 				return
 			}
 
 			assert.JSONEq(t, c.Result, res)
-
-			vv := c.Man.SetValueCalls()
-			require.Len(t, vv, c.ValueCalls)
 
 			for _, v := range vv {
 				assert.Equal(t, _builtinVariableID, v.ID)
@@ -1079,18 +1355,11 @@ func Test_setVariableValue_Execute(t *testing.T) {
 				assert.Equal(t, "user", v.UserID)
 			}
 
-			dd := c.Man.SetDefaultValueCalls()
-
-			if !c.DefaultCall {
-				assert.Empty(t, dd)
-
-				return
+			for _, d := range dd {
+				assert.Equal(t, _builtinVariableID, d.ID)
+				assert.Equal(t, "last_1_hour", d.Value)
+				assert.Equal(t, "org", d.OrganizationID)
 			}
-
-			require.Len(t, dd, 1)
-			assert.Equal(t, _builtinVariableID, dd[0].ID)
-			assert.Equal(t, "last_1_hour", dd[0].Value)
-			assert.Equal(t, "org", dd[0].OrganizationID)
 		})
 	}
 }

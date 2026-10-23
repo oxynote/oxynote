@@ -2,12 +2,12 @@ package redkit
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/gomodule/redigo/redis"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rafaeljusto/redigomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,43 +53,58 @@ func Test_BytesStore_Set(t *testing.T) {
 	cc := map[string]struct {
 		Cancelled   bool
 		ExpireAfter time.Duration
-		Conn        func() *redigomock.Conn
+		Conn        func() (*redigomock.Conn, func(*testing.T))
 		Value       []byte
 		Err         error
 	}{
 		"Cancelled context": {
 			Cancelled: true,
-			Conn:      redigomock.NewConn,
-			Value:     []byte("payload"),
-			Err:       assert.AnError,
+			Conn: func() (*redigomock.Conn, func(*testing.T)) {
+				conn := redigomock.NewConn()
+
+				return conn, func(t *testing.T) {
+					assert.NoError(t, conn.ExpectationsWereMet())
+				}
+			},
+			Value: []byte("payload"),
+			Err:   assert.AnError,
 		},
 		"SET returns an error": {
-			Conn: func() *redigomock.Conn {
+			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("SET", "test", []byte("payload"), "EX", int(_testExpiry.Seconds())).
+				cmd := conn.Command("SET", "test", []byte("payload"), "EX", int(_testExpiry.Seconds())).
 					ExpectError(assert.AnError)
 
-				return conn
+				return conn, func(t *testing.T) {
+					assert.NoError(t, conn.ExpectationsWereMet())
+					assert.Equal(t, 1, conn.Stats(cmd))
+				}
 			},
 			Value: []byte("payload"),
 			Err:   assert.AnError,
 		},
 		"Sub-second expiry stores without an expiry": {
 			ExpireAfter: time.Millisecond,
-			Conn: func() *redigomock.Conn {
+			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("SET", "test", []byte("payload"))
+				cmd := conn.Command("SET", "test", []byte("payload"))
 
-				return conn
+				return conn, func(t *testing.T) {
+					assert.NoError(t, conn.ExpectationsWereMet())
+					assert.Equal(t, 1, conn.Stats(cmd))
+				}
 			},
 			Value: []byte("payload"),
 		},
 		"Successfully set payload": {
-			Conn: func() *redigomock.Conn {
+			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("SET", "test", []byte("payload"), "EX", int(_testExpiry.Seconds()))
+				cmd := conn.Command("SET", "test", []byte("payload"), "EX", int(_testExpiry.Seconds()))
 
-				return conn
+				return conn, func(t *testing.T) {
+					assert.NoError(t, conn.ExpectationsWereMet())
+					assert.Equal(t, 1, conn.Stats(cmd))
+				}
 			},
 			Value: []byte("payload"),
 		},
@@ -99,7 +114,7 @@ func Test_BytesStore_Set(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			conn := c.Conn()
+			conn, check := c.Conn()
 
 			expireAfter := c.ExpireAfter
 			if expireAfter == 0 {
@@ -107,7 +122,13 @@ func Test_BytesStore_Set(t *testing.T) {
 			}
 
 			bs := &BytesStore{
-				pool:        stubPool(conn),
+				pool: &redis.Pool{
+					Dial: func() (redis.Conn, error) {
+						return conn, nil
+					},
+					Wait:      true,
+					MaxActive: 10,
+				},
 				expireAfter: expireAfter,
 			}
 
@@ -120,15 +141,8 @@ func Test_BytesStore_Set(t *testing.T) {
 
 			err := bs.Set(ctx, "test", c.Value)
 
-			assert.NoError(t, conn.ExpectationsWereMet())
-
-			if c.Err != nil {
-				assert.Error(t, err)
-
-				return
-			}
-
-			assert.NoError(t, err)
+			check(t)
+			testutil.AssertEqualError(t, c.Err, err)
 		})
 	}
 }
@@ -136,39 +150,54 @@ func Test_BytesStore_Set(t *testing.T) {
 func Test_BytesStore_Get(t *testing.T) {
 	cc := map[string]struct {
 		Cancelled bool
-		Conn      func() *redigomock.Conn
+		Conn      func() (*redigomock.Conn, func(*testing.T))
 		Result    []byte
 		Err       error
 	}{
 		"Cancelled context": {
 			Cancelled: true,
-			Conn:      redigomock.NewConn,
-			Err:       assert.AnError,
+			Conn: func() (*redigomock.Conn, func(*testing.T)) {
+				conn := redigomock.NewConn()
+
+				return conn, func(t *testing.T) {
+					assert.NoError(t, conn.ExpectationsWereMet())
+				}
+			},
+			Err: assert.AnError,
 		},
 		"GET returns an error": {
-			Conn: func() *redigomock.Conn {
+			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("GET", "test").ExpectError(assert.AnError)
+				cmd := conn.Command("GET", "test").ExpectError(assert.AnError)
 
-				return conn
+				return conn, func(t *testing.T) {
+					assert.NoError(t, conn.ExpectationsWereMet())
+					assert.Equal(t, 1, conn.Stats(cmd))
+				}
 			},
 			Err: assert.AnError,
 		},
 		"Missing key is reported as not found": {
-			Conn: func() *redigomock.Conn {
+			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("GET", "test").ExpectError(redis.ErrNil)
+				cmd := conn.Command("GET", "test").ExpectError(redis.ErrNil)
 
-				return conn
+				return conn, func(t *testing.T) {
+					assert.NoError(t, conn.ExpectationsWereMet())
+					assert.Equal(t, 1, conn.Stats(cmd))
+				}
 			},
 			Err: errutil.ErrNotFound,
 		},
 		"Successfully fetched payload": {
-			Conn: func() *redigomock.Conn {
+			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("GET", "test").Expect([]byte("payload"))
+				cmd := conn.Command("GET", "test").Expect([]byte("payload"))
 
-				return conn
+				return conn, func(t *testing.T) {
+					assert.NoError(t, conn.ExpectationsWereMet())
+					assert.Equal(t, 1, conn.Stats(cmd))
+				}
 			},
 			Result: []byte("payload"),
 		},
@@ -178,9 +207,18 @@ func Test_BytesStore_Get(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			conn := c.Conn()
+			conn, check := c.Conn()
 
-			bs := &BytesStore{pool: stubPool(conn), expireAfter: _testExpiry}
+			bs := &BytesStore{
+				pool: &redis.Pool{
+					Dial: func() (redis.Conn, error) {
+						return conn, nil
+					},
+					Wait:      true,
+					MaxActive: 10,
+				},
+				expireAfter: _testExpiry,
+			}
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -191,21 +229,15 @@ func Test_BytesStore_Get(t *testing.T) {
 
 			res, err := bs.Get(ctx, "test")
 
-			assert.NoError(t, conn.ExpectationsWereMet())
+			check(t)
+			testutil.AssertEqualError(t, c.Err, err)
 
-			if c.Err != nil {
-				if errors.Is(c.Err, errutil.ErrNotFound) {
-					assert.ErrorIs(t, err, errutil.ErrNotFound)
-
-					return
-				}
-
-				assert.Error(t, err)
+			if err != nil {
+				assert.Nil(t, res)
 
 				return
 			}
 
-			require.NoError(t, err)
 			assert.Equal(t, c.Result, res)
 		})
 	}
@@ -214,29 +246,41 @@ func Test_BytesStore_Get(t *testing.T) {
 func Test_BytesStore_Delete(t *testing.T) {
 	cc := map[string]struct {
 		Cancelled bool
-		Conn      func() *redigomock.Conn
+		Conn      func() (*redigomock.Conn, func(*testing.T))
 		Err       error
 	}{
 		"Cancelled context": {
 			Cancelled: true,
-			Conn:      redigomock.NewConn,
-			Err:       assert.AnError,
+			Conn: func() (*redigomock.Conn, func(*testing.T)) {
+				conn := redigomock.NewConn()
+
+				return conn, func(t *testing.T) {
+					assert.NoError(t, conn.ExpectationsWereMet())
+				}
+			},
+			Err: assert.AnError,
 		},
 		"DEL returns an error": {
-			Conn: func() *redigomock.Conn {
+			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("DEL", "test").ExpectError(assert.AnError)
+				cmd := conn.Command("DEL", "test").ExpectError(assert.AnError)
 
-				return conn
+				return conn, func(t *testing.T) {
+					assert.NoError(t, conn.ExpectationsWereMet())
+					assert.Equal(t, 1, conn.Stats(cmd))
+				}
 			},
 			Err: assert.AnError,
 		},
 		"Successfully deleted": {
-			Conn: func() *redigomock.Conn {
+			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
-				conn.Command("DEL", "test").Expect(int64(1))
+				cmd := conn.Command("DEL", "test").Expect(int64(1))
 
-				return conn
+				return conn, func(t *testing.T) {
+					assert.NoError(t, conn.ExpectationsWereMet())
+					assert.Equal(t, 1, conn.Stats(cmd))
+				}
 			},
 		},
 	}
@@ -245,9 +289,18 @@ func Test_BytesStore_Delete(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			conn := c.Conn()
+			conn, check := c.Conn()
 
-			bs := &BytesStore{pool: stubPool(conn), expireAfter: _testExpiry}
+			bs := &BytesStore{
+				pool: &redis.Pool{
+					Dial: func() (redis.Conn, error) {
+						return conn, nil
+					},
+					Wait:      true,
+					MaxActive: 10,
+				},
+				expireAfter: _testExpiry,
+			}
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -258,26 +311,8 @@ func Test_BytesStore_Delete(t *testing.T) {
 
 			err := bs.Delete(ctx, "test")
 
-			assert.NoError(t, conn.ExpectationsWereMet())
-
-			if c.Err != nil {
-				assert.Error(t, err)
-
-				return
-			}
-
-			assert.NoError(t, err)
+			check(t)
+			testutil.AssertEqualError(t, c.Err, err)
 		})
-	}
-}
-
-// stubPool wraps a mock connection in a pool the stores can draw from.
-func stubPool(conn redis.Conn) *redis.Pool {
-	return &redis.Pool{
-		Dial: func() (redis.Conn, error) {
-			return conn, nil
-		},
-		Wait:      true,
-		MaxActive: 10,
 	}
 }

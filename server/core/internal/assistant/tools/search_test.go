@@ -3,6 +3,9 @@ package tools
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -17,9 +20,30 @@ import (
 func Test_searchDocumentsArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, searchDocumentsArgs{Query: "q"}, map[string]Args{
-		"query": searchDocumentsArgs{},
-	})
+	cc := map[string]struct {
+		Args searchDocumentsArgs
+		Err  error
+	}{
+		"Query is required": {
+			Args: searchDocumentsArgs{},
+			Err:  errors.New("query is required"),
+		},
+		"Query over the length cap": {
+			Args: searchDocumentsArgs{Query: strings.Repeat("a", search.MaxQueryLength+1)},
+			Err:  fmt.Errorf("query must be at most %d characters; search for the key terms instead", search.MaxQueryLength),
+		},
+		"Valid arguments": {
+			Args: searchDocumentsArgs{Query: "q"},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Args.Validate())
+		})
+	}
 }
 
 func Test_searchDocuments_Info(t *testing.T) {
@@ -39,8 +63,21 @@ func Test_searchDocuments_Title(t *testing.T) {
 
 	d := testDeps(nil, nil, nil)
 
-	assert.Equal(t, `Searching for "rate limit"`, searchDocuments{}.Title(testInput(d, NameSearchDocuments, `{"query":"rate limit"}`)))
-	assert.Empty(t, searchDocuments{}.Title(testInput(d, NameSearchDocuments, `{}`)))
+	cc := map[string]struct {
+		Args   string
+		Result string
+	}{
+		"Query is announced":           {Args: `{"query":"rate limit"}`, Result: `Searching for "rate limit"`},
+		"Missing query makes no title": {Args: `{}`},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, searchDocuments{}.Title(d.newInput(context.Background(), NameSearchDocuments, json.RawMessage(c.Args))))
+		})
+	}
 }
 
 func Test_searchDocuments_Execute(t *testing.T) {
@@ -49,15 +86,24 @@ func Test_searchDocuments_Execute(t *testing.T) {
 	docID, branchID, mainID := xid.New(), xid.New(), xid.New()
 
 	branchFields := `"branch_id":"` + branchID.String() + `","branch_name":"draft","default":false,`
+	knownFields := branchFields + `"protected":false,`
+
+	// the draft takes writes; the main branch is protected.
+	stubBranches := func() *DBMock {
+		return &DBMock{
+			FetchDocumentBranchesByOrganizationIDFunc: func(context.Context, string) ([]document.BranchSummary, error) {
+				return []document.BranchSummary{
+					{BranchID: mainID, DocumentID: docID, BranchName: "main", DocumentName: "Runbook", Default: true, Protected: true},
+					{BranchID: branchID, DocumentID: docID, BranchName: "draft", DocumentName: "Runbook draft"},
+				}, nil
+			},
+		}
+	}
 	hit := `"hits":[{"block_uid":"b1","text":"rate limiting"}]`
 
-	hitSearcher := func(limit *int) *SearcherMock {
+	hitSearcher := func() *SearcherMock {
 		return &SearcherMock{
-			SearchDocumentBlocksFunc: func(_ context.Context, _, _ string, l int) ([]search.Block, error) {
-				if limit != nil {
-					*limit = l
-				}
-
+			SearchDocumentBlocksFunc: func(context.Context, string, string, int) ([]search.Block, error) {
 				return []search.Block{{
 					DocumentID:    docID,
 					BranchID:      branchID,
@@ -77,24 +123,32 @@ func Test_searchDocuments_Execute(t *testing.T) {
 		Limit    int
 		Result   string
 		Logged   string
+		Searches int
+		Fetches  int
 		Err      error
 	}{
 		"Malformed arguments": {
-			Searcher: hitSearcher(nil),
+			Searcher: hitSearcher(),
 			DB:       &DBMock{},
 			Args:     `{`,
+			Searches: 0,
+			Fetches:  0,
 			Err:      assert.AnError,
 		},
 		"Query is required": {
-			Searcher: hitSearcher(nil),
+			Searcher: hitSearcher(),
 			DB:       &DBMock{},
 			Args:     `{}`,
+			Searches: 0,
+			Fetches:  0,
 			Err:      assert.AnError,
 		},
 		"Query over the cap": {
-			Searcher: hitSearcher(nil),
+			Searcher: hitSearcher(),
 			DB:       &DBMock{},
 			Args:     `{"query":"` + strings.Repeat("a", search.MaxQueryLength+1) + `"}`,
+			Searches: 0,
+			Fetches:  0,
 			Err:      assert.AnError,
 		},
 		"Error returned by search.SearchDocumentBlocks": {
@@ -103,9 +157,11 @@ func Test_searchDocuments_Execute(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			DB:   &DBMock{},
-			Args: `{"query":"rate limit"}`,
-			Err:  assert.AnError,
+			DB:       &DBMock{},
+			Args:     `{"query":"rate limit"}`,
+			Searches: 1,
+			Fetches:  0,
+			Err:      assert.AnError,
 		},
 		"Zero hits skip the name lookup": {
 			Searcher: &SearcherMock{
@@ -113,40 +169,64 @@ func Test_searchDocuments_Execute(t *testing.T) {
 					return nil, nil
 				},
 			},
-			DB:     &DBMock{},
-			Args:   `{"query":"rate limit"}`,
-			Limit:  _searchLimitDefault,
-			Result: `{"documents":[]}`,
+			DB:       &DBMock{},
+			Args:     `{"query":"rate limit"}`,
+			Limit:    _searchLimitDefault,
+			Result:   `{"documents":[]}`,
+			Searches: 1,
+			Fetches:  0,
 		},
-		"Names are joined in": {
-			Searcher: hitSearcher(nil),
-			DB: &DBMock{
-				FetchDocumentTreeFunc: func(context.Context, string) (document.Summaries, error) {
-					return document.Summaries{{ID: docID, DocumentName: "Runbook"}}, nil
-				},
-			},
-			Args:   `{"query":"rate limit"}`,
-			Limit:  _searchLimitDefault,
-			Result: `{"documents":[{"document_id":"` + docID.String() + `","document_name":"Runbook",` + branchFields + hit + `}]}`,
+		// the document goes by its default branch's name, and the hit's
+		// branch says whether it takes writes.
+		"Names and protection are joined in": {
+			Searcher: hitSearcher(),
+			DB:       stubBranches(),
+			Args:     `{"query":"rate limit"}`,
+			Limit:    _searchLimitDefault,
+			Result:   `{"documents":[{"document_id":"` + docID.String() + `","document_name":"Runbook",` + knownFields + hit + `}]}`,
+			Searches: 1,
+			Fetches:  1,
 		},
-		"Losing the names does not fail the search": {
-			Searcher: hitSearcher(nil),
+		"Error returned by db.FetchDocumentBranchesByOrganizationID": {
+			Searcher: hitSearcher(),
 			DB: &DBMock{
-				FetchDocumentTreeFunc: func(context.Context, string) (document.Summaries, error) {
+				FetchDocumentBranchesByOrganizationIDFunc: func(context.Context, string) ([]document.BranchSummary, error) {
 					return nil, assert.AnError
 				},
 			},
-			Args:   `{"query":"rate limit"}`,
-			Limit:  _searchLimitDefault,
-			Result: `{"documents":[{"document_id":"` + docID.String() + `",` + branchFields + hit + `}]}`,
-			Logged: "cannot fetch the document tree for search hit names",
+			Args:     `{"query":"rate limit"}`,
+			Limit:    _searchLimitDefault,
+			Result:   `{"documents":[{"document_id":"` + docID.String() + `",` + branchFields + hit + `}]}`,
+			Logged:   "cannot fetch the branches for search hits",
+			Searches: 1,
+			Fetches:  1,
+		},
+		// the name's entry is a flag on its branch, never a hit, so a
+		// title-only match lists no hits.
+		"Title match is flagged": {
+			Searcher: &SearcherMock{
+				SearchDocumentBlocksFunc: func(context.Context, string, string, int) ([]search.Block, error) {
+					return []search.Block{
+						{DocumentID: docID, BranchID: mainID, BranchName: "main", BranchDefault: true, ID: mainID.String() + "-docname", Type: "document", Text: "Runbook"},
+					}, nil
+				},
+			},
+			DB:    stubBranches(),
+			Args:  `{"query":"runbook"}`,
+			Limit: _searchLimitDefault,
+			Result: `{"documents":[{"document_id":"` + docID.String() + `","document_name":"Runbook","branch_id":"` + mainID.String() + `",` +
+				`"branch_name":"main","default":true,"protected":true,"title_match":true,"hits":[]}]}`,
+			Searches: 1,
+			Fetches:  1,
 		},
 		"Requested limit is honoured": {
-			Searcher: hitSearcher(nil),
+			Searcher: hitSearcher(),
 			DB:       &DBMock{},
 			Args:     `{"query":"rate limit","limit":5}`,
 			Limit:    5,
 			Result:   `{"documents":[{"document_id":"` + docID.String() + `",` + branchFields + hit + `}]}`,
+			Searches: 1,
+			Fetches:  1,
 		},
 		// hits of one branch sit under it once, in the order its best hit
 		// ranked; another branch of the same document is its own entry.
@@ -166,13 +246,17 @@ func Test_searchDocuments_Execute(t *testing.T) {
 			Result: `{"documents":[` +
 				`{"document_id":"` + docID.String() + `",` + branchFields + `"hits":[{"block_uid":"b1","text":"one"},{"block_uid":"b3","text":"three"}]},` +
 				`{"document_id":"` + docID.String() + `","branch_id":"` + mainID.String() + `","branch_name":"main","default":true,"hits":[{"block_uid":"b2","text":"two"}]}]}`,
+			Searches: 1,
+			Fetches:  1,
 		},
 		"Oversized limit is clipped": {
-			Searcher: hitSearcher(nil),
+			Searcher: hitSearcher(),
 			DB:       &DBMock{},
 			Args:     `{"query":"rate limit","limit":5000}`,
 			Limit:    _searchLimitMax,
 			Result:   `{"documents":[{"document_id":"` + docID.String() + `",` + branchFields + hit + `}]}`,
+			Searches: 1,
+			Fetches:  1,
 		},
 	}
 
@@ -195,8 +279,10 @@ func Test_searchDocuments_Execute(t *testing.T) {
 				},
 			}
 
-			res, err := searchDocuments{}.Execute(testInput(d, NameSearchDocuments, c.Args))
+			res, err := searchDocuments{}.Execute(d.newInput(context.Background(), NameSearchDocuments, json.RawMessage(c.Args)))
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, c.Searcher.SearchDocumentBlocksCalls(), c.Searches)
+			assert.Len(t, c.DB.FetchDocumentBranchesByOrganizationIDCalls(), c.Fetches)
 
 			if err != nil {
 				return

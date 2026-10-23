@@ -2,7 +2,6 @@ package processor
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -35,20 +34,6 @@ func prepPrometheusInput(t *testing.T, h http.Handler) *InputMock {
 	}
 }
 
-// prometheusEndpoint builds a handler serving a single Prometheus API path
-// with the given status code and body, 404-ing every other path.
-func prometheusEndpoint(path string, code int, body string) http.Handler {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(code)
-		fmt.Fprint(w, body) //nolint:errcheck // error provides no meaningful info
-	})
-
-	return mux
-}
-
 func Test_NewPrometheus(t *testing.T) {
 	t.Parallel()
 
@@ -71,19 +56,19 @@ func Test_Prometheus_TestConnection(t *testing.T) {
 			Err: assert.AnError,
 		},
 		"Unauthorized data source": {
-			Handler: prometheusEndpoint("/api/v1/status/buildinfo", http.StatusUnauthorized, `{}`),
+			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusUnauthorized, `{}`),
 			Result:  ConnectionStatusUnauthorized,
 		},
 		"Unreachable data source": {
-			Handler: prometheusEndpoint("/api/v1/status/buildinfo", http.StatusInternalServerError, `{}`),
+			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusInternalServerError, `{}`),
 			Result:  ConnectionStatusUnreachable,
 		},
 		"Unsupported version": {
-			Handler: prometheusEndpoint("/api/v1/status/buildinfo", http.StatusOK, `{"status":"success","data":{"version":""}}`),
+			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusOK, `{"status":"success","data":{"version":""}}`),
 			Result:  ConnectionStatusVersionNotSupported,
 		},
 		"Successful connection": {
-			Handler: prometheusEndpoint("/api/v1/status/buildinfo", http.StatusOK, `{"status":"success","data":{"version":"2.50.0"}}`),
+			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusOK, `{"status":"success","data":{"version":"2.50.0"}}`),
 			Result:  ConnectionStatusSuccess,
 		},
 	}
@@ -101,6 +86,8 @@ func Test_Prometheus_TestConnection(t *testing.T) {
 
 			cs, err := p.TestConnection(context.Background())
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, inp.URLCalls(), 1)
+			assert.Len(t, inp.CredentialsCalls(), 1)
 
 			if err != nil {
 				return
@@ -127,7 +114,7 @@ func Test_Prometheus_Metadata(t *testing.T) {
 			Err:     assert.AnError,
 		},
 		"Successful metadata retrieval": {
-			Handler: prometheusEndpoint("/api/v1/metadata", http.StatusOK, `{"status":"success","data":{"go_goroutines":[{"type":"gauge","help":"Number of goroutines.","unit":""}]}}`),
+			Handler: testutil.JSONHandler("/api/v1/metadata", http.StatusOK, `{"status":"success","data":{"go_goroutines":[{"type":"gauge","help":"Number of goroutines.","unit":""}]}}`),
 			Result: &PrometheusMetadataResult{
 				Result: map[string][]v1.Metadata{
 					"go_goroutines": {
@@ -151,6 +138,8 @@ func Test_Prometheus_Metadata(t *testing.T) {
 
 			result, err := p.Metadata(context.Background())
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, inp.URLCalls(), 1)
+			assert.Len(t, inp.CredentialsCalls(), 1)
 
 			if err != nil {
 				return
@@ -177,11 +166,11 @@ func Test_Prometheus_QueryRange(t *testing.T) {
 			Err: assert.AnError,
 		},
 		"Invalid query error": {
-			Handler: prometheusEndpoint("/api/v1/query_range", http.StatusBadRequest, `{"status":"error","errorType":"bad_data","error":"parse error"}`),
+			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusBadRequest, `{"status":"error","errorType":"bad_data","error":"parse error"}`),
 			Err:     NewInvalidQueryError("parse error"),
 		},
 		"Successful query": {
-			Handler: prometheusEndpoint("/api/v1/query_range", http.StatusOK, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"up"},"values":[[1700000000,"1"]]}]}}`),
+			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusOK, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"up"},"values":[[1700000000,"1"]]}]}}`),
 			Result: &PrometheusQueryResult{
 				Type: model.ValMatrix,
 				Result: model.Matrix{
@@ -209,6 +198,8 @@ func Test_Prometheus_QueryRange(t *testing.T) {
 
 			result, err := p.QueryRange(context.Background(), "up", _testTimeRange)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, inp.URLCalls(), 1)
+			assert.Len(t, inp.CredentialsCalls(), 1)
 
 			if err != nil {
 				return
@@ -235,7 +226,7 @@ func Test_Prometheus_LabelNames(t *testing.T) {
 			Err:     assert.AnError,
 		},
 		"Successful label names retrieval": {
-			Handler: prometheusEndpoint("/api/v1/labels", http.StatusOK, `{"status":"success","data":["__name__","job"]}`),
+			Handler: testutil.JSONHandler("/api/v1/labels", http.StatusOK, `{"status":"success","data":["__name__","job"]}`),
 			Result: &PrometheusLabelNamesResult{
 				Result: []string{"__name__", "job"},
 			},
@@ -255,6 +246,8 @@ func Test_Prometheus_LabelNames(t *testing.T) {
 
 			result, err := p.LabelNames(context.Background(), []string{"up"}, _testTimeRange)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, inp.URLCalls(), 1)
+			assert.Len(t, inp.CredentialsCalls(), 1)
 
 			if err != nil {
 				return
@@ -281,7 +274,7 @@ func Test_Prometheus_LabelValues(t *testing.T) {
 			Err:     assert.AnError,
 		},
 		"Successful label values retrieval": {
-			Handler: prometheusEndpoint("/api/v1/label/instance/values", http.StatusOK, `{"status":"success","data":["a","b"]}`),
+			Handler: testutil.JSONHandler("/api/v1/label/instance/values", http.StatusOK, `{"status":"success","data":["a","b"]}`),
 			Result: &PrometheusLabelValuesResult{
 				Result: []string{"a", "b"},
 			},
@@ -301,6 +294,8 @@ func Test_Prometheus_LabelValues(t *testing.T) {
 
 			result, err := p.LabelValues(context.Background(), "instance", []string{"up"}, _testTimeRange)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, inp.URLCalls(), 1)
+			assert.Len(t, inp.CredentialsCalls(), 1)
 
 			if err != nil {
 				return
@@ -327,7 +322,7 @@ func Test_Prometheus_Series(t *testing.T) {
 			Err:     assert.AnError,
 		},
 		"Successful series retrieval": {
-			Handler: prometheusEndpoint("/api/v1/series", http.StatusOK, `{"status":"success","data":[{"__name__":"up","job":"prometheus"}]}`),
+			Handler: testutil.JSONHandler("/api/v1/series", http.StatusOK, `{"status":"success","data":[{"__name__":"up","job":"prometheus"}]}`),
 			Result: &PrometheusSeriesResult{
 				Result: []model.LabelSet{
 					{"__name__": "up", "job": "prometheus"},
@@ -349,6 +344,8 @@ func Test_Prometheus_Series(t *testing.T) {
 
 			result, err := p.Series(context.Background(), []string{"up"}, _testTimeRange)
 			testutil.AssertEqualError(t, c.Err, err)
+			assert.Len(t, inp.URLCalls(), 1)
+			assert.Len(t, inp.CredentialsCalls(), 1)
 
 			if err != nil {
 				return
@@ -360,23 +357,43 @@ func Test_Prometheus_Series(t *testing.T) {
 }
 
 func Test_createPrometheusClient(t *testing.T) {
-	t.Parallel()
+	cc := map[string]struct {
+		URL   string
+		Creds Credentials
+		Err   error
+	}{
+		"Error returned by json.Unmarshal": {
+			URL:   "http://prometheus.test",
+			Creds: NewCredentials([]byte(`{`)),
+			Err:   assert.AnError,
+		},
+		"Error returned by api.NewClient": {
+			URL: "://",
+			Err: assert.AnError,
+		},
+		"Successful creation without credentials": {
+			URL: "http://prometheus.test",
+		},
+		"Successful creation with credentials": {
+			URL:   "http://prometheus.test",
+			Creds: NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+		},
+	}
 
-	// error
-	_, err := createPrometheusClient("http://prometheus.test", NewCredentials([]byte(`{`)))
-	assert.Error(t, err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	_, err = createPrometheusClient("://", Credentials{})
-	assert.Error(t, err)
+			client, err := createPrometheusClient(c.URL, c.Creds)
+			testutil.AssertEqualError(t, c.Err, err)
 
-	// success
-	client, err := createPrometheusClient("http://prometheus.test", Credentials{})
-	require.NoError(t, err)
-	assert.NotNil(t, client)
+			if err != nil {
+				return
+			}
 
-	client, err = createPrometheusClient("http://prometheus.test", NewCredentials([]byte(`{"username":"user","password":"pass"}`)))
-	require.NoError(t, err)
-	assert.NotNil(t, client)
+			assert.NotNil(t, client)
+		})
+	}
 }
 
 func Test_PrometheusQueryResult_Transform(t *testing.T) {

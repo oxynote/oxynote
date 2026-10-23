@@ -34,11 +34,6 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m, testutil.IgnoreBleveWorkers())
 }
 
-// discardLog returns a logger that writes nowhere.
-func discardLog() *slog.Logger {
-	return slog.New(slog.DiscardHandler)
-}
-
 // stubSearchQueue satisfies the tools' SearchQueue. Its methods are never
 // called.
 type stubSearchQueue struct {
@@ -117,17 +112,48 @@ type stores struct {
 	pendings *persistMock.PendingStore
 }
 
-// stubStores builds the stores a test manager runs over. They are
-// in-memory rather than don't-care, because a turn that pauses has to
+// storeCalls are the calls a test expects each store method to receive.
+// A session reads the history and the pending record once as it starts,
+// so those count too.
+type storeCalls struct {
+	HistoryGet    int
+	HistorySet    int
+	HistoryDelete int
+	BlobGet       int
+	BlobSet       int
+	BlobDelete    int
+	PendingGet    int
+	PendingSet    int
+	PendingDelete int
+}
+
+// assertCalls checks how many calls each store method received.
+func (st *stores) assertCalls(t *testing.T, exp storeCalls) {
+	t.Helper()
+
+	assert.Len(t, st.history.GetCalls(), exp.HistoryGet, "history.Get")
+	assert.Len(t, st.history.SetCalls(), exp.HistorySet, "history.Set")
+	assert.Len(t, st.history.DeleteCalls(), exp.HistoryDelete, "history.Delete")
+	assert.Len(t, st.blobs.GetCalls(), exp.BlobGet, "blobs.Get")
+	assert.Len(t, st.blobs.SetCalls(), exp.BlobSet, "blobs.Set")
+	assert.Len(t, st.blobs.DeleteCalls(), exp.BlobDelete, "blobs.Delete")
+	assert.Len(t, st.pendings.GetCalls(), exp.PendingGet, "pendings.Get")
+	assert.Len(t, st.pendings.SetCalls(), exp.PendingSet, "pendings.Set")
+	assert.Len(t, st.pendings.DeleteCalls(), exp.PendingDelete, "pendings.Delete")
+}
+
+// testManagerStores builds a Manager alongside the stores it persists
+// through, for tests that drive or assert on what was stored. The stores
+// are in-memory rather than don't-care, because a turn that pauses has to
 // read back the checkpoint and confirmation it just wrote.
-func stubStores() *stores {
+func testManagerStores() (*Manager, *stores) {
 	var (
 		mu       sync.Mutex
 		blobs    = map[string][]byte{}
 		confirms = map[string]persist.PendingConfirm{}
 	)
 
-	return &stores{
+	st := &stores{
 		history: &persistMock.HistoryStore{},
 		blobs: &persistMock.BlobStore{
 			GetFunc: func(_ context.Context, key string) ([]byte, error) {
@@ -188,20 +214,8 @@ func stubStores() *stores {
 			},
 		},
 	}
-}
 
-// testManager builds a Manager with stub dependencies.
-func testManager() *Manager {
-	m, _ := testManagerStores()
-
-	return m
-}
-
-// testManagerStores builds a Manager alongside the stores it persists
-// through, for tests that drive or assert on what was stored.
-func testManagerStores() (*Manager, *stores) {
-	st := stubStores()
-	log := discardLog()
+	log := slog.New(slog.DiscardHandler)
 
 	m := &Manager{
 		log:         log,
@@ -226,7 +240,8 @@ func testManagerStores() (*Manager, *stores) {
 func Test_Manager_Configured(t *testing.T) {
 	t.Parallel()
 
-	assert.True(t, testManager().Configured())
+	m, _ := testManagerStores()
+	assert.True(t, m.Configured())
 	assert.False(t, (&Manager{}).Configured())
 }
 
@@ -256,7 +271,7 @@ func Test_NewManager(t *testing.T) {
 			wc := &webchange.Client{}
 			hm := &stubHookManager{}
 			vm := &stubVariableManager{}
-			m := NewManager(discardLog(), nil, c.Pool, nil, nil, fc, nil, nil, &stubSearchQueue{}, nil, gh, wc, hm, vm, "claude")
+			m := NewManager(slog.New(slog.DiscardHandler), nil, c.Pool, nil, nil, fc, nil, nil, &stubSearchQueue{}, nil, gh, wc, hm, vm, "claude", true)
 
 			require.NotNil(t, m)
 			assert.NotNil(t, m.log)
@@ -270,6 +285,7 @@ func Test_NewManager(t *testing.T) {
 			assert.Same(t, wc, m.webchangeClient)
 			assert.Same(t, hm, m.hookMan)
 			assert.Same(t, vm, m.variableMan)
+			assert.True(t, m.loadToolsOnRequest)
 			assert.Nil(t, m.tree)
 			assert.Nil(t, m.tags)
 
@@ -341,7 +357,7 @@ func Test_Manager_Start(t *testing.T) {
 func Test_Manager_SetTreeNotifier(t *testing.T) {
 	t.Parallel()
 
-	m := testManager()
+	m, _ := testManagerStores()
 	require.Nil(t, m.tree)
 
 	m.SetTreeNotifier(nil)
@@ -351,7 +367,7 @@ func Test_Manager_SetTreeNotifier(t *testing.T) {
 func Test_Manager_SetTagNotifier(t *testing.T) {
 	t.Parallel()
 
-	m := testManager()
+	m, _ := testManagerStores()
 	require.Nil(t, m.tags)
 
 	m.SetTagNotifier(nil)
@@ -361,7 +377,7 @@ func Test_Manager_SetTagNotifier(t *testing.T) {
 func Test_Manager_ToolSet(t *testing.T) {
 	t.Parallel()
 
-	m := testManager()
+	m, _ := testManagerStores()
 
 	s := m.ToolSet("org1", "user1")
 	require.NotNil(t, s)
@@ -377,20 +393,47 @@ func Test_Manager_ToolSet(t *testing.T) {
 func Test_Manager_claimTurn(t *testing.T) {
 	t.Parallel()
 
-	m := testManager()
-
-	require.True(t, m.claimTurn("k1"))
-
 	// held until released, and per key: another conversation's turns
 	// are not serialized with this one's.
-	assert.False(t, m.claimTurn("k1"))
-	assert.True(t, m.claimTurn("k2"))
+	cc := map[string]struct {
+		Held   []string
+		Key    string
+		Result bool
+	}{
+		"Free key is claimed": {
+			Key:    "k1",
+			Result: true,
+		},
+		"Held key is refused": {
+			Held: []string{"k1"},
+			Key:  "k1",
+		},
+		"Claim is per key": {
+			Held:   []string{"k1"},
+			Key:    "k2",
+			Result: true,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			m, _ := testManagerStores()
+
+			for _, key := range c.Held {
+				require.True(t, m.claimTurn(key))
+			}
+
+			assert.Equal(t, c.Result, m.claimTurn(c.Key))
+		})
+	}
 }
 
 func Test_Manager_releaseTurn(t *testing.T) {
 	t.Parallel()
 
-	m := testManager()
+	m, _ := testManagerStores()
 
 	require.True(t, m.claimTurn("k1"))
 	m.releaseTurn("k1")
@@ -402,15 +445,48 @@ func Test_Manager_Chat(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Conn *protocolMock.SessionConn
-		Err  error
+		OmitSummary bool
+		Conn        *protocolMock.SessionConn
+		Reads       int
+		Writes      int
+		Stores      storeCalls
+		Err         error
 	}{
+		"Error returned by newSession": {
+			// without a summary model the agent cannot be built, so the
+			// chat ends before it reads or restores anything.
+			OmitSummary: true,
+			Conn:        &protocolMock.SessionConn{},
+			Err:         assert.AnError,
+		},
+		"Messages are dispatched until the client closes": {
+			Conn: func() *protocolMock.SessionConn {
+				var sent bool
+
+				return &protocolMock.SessionConn{
+					ReadFunc: func(_ context.Context) ([]byte, error) {
+						if sent {
+							return nil, io.EOF
+						}
+
+						sent = true
+
+						return []byte(`{"type":"nonsense"}`), nil
+					},
+				}
+			}(),
+			Reads:  2,
+			Writes: 1,
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
+		},
 		"Clean client close ends the chat": {
 			Conn: &protocolMock.SessionConn{
 				ReadFunc: func(_ context.Context) ([]byte, error) {
 					return nil, io.EOF
 				},
 			},
+			Reads:  1,
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
 		},
 		"Error returned by conn.Read": {
 			Conn: &protocolMock.SessionConn{
@@ -418,7 +494,9 @@ func Test_Manager_Chat(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			Err: assert.AnError,
+			Reads:  1,
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
+			Err:    assert.AnError,
 		},
 	}
 
@@ -426,10 +504,22 @@ func Test_Manager_Chat(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			m := testManager()
+			cm := stubChatModel()
+
+			m, st := testManagerStores()
+			m.model = cm
+
+			if c.OmitSummary {
+				m.summary = nil
+			}
 
 			err := m.Chat(context.Background(), "org", "user", c.Conn)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.Conn.ReadCalls(), c.Reads)
+			assert.Len(t, c.Conn.WriteJSONCalls(), c.Writes)
+			assert.Empty(t, cm.StreamCalls())
+			st.assertCalls(t, c.Stores)
 		})
 	}
 }

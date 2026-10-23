@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // stubSummaries builds three summaries and returns them with their IDs.
@@ -20,104 +20,148 @@ func stubSummaries() (Summaries, []xid.ID) {
 	}, ids
 }
 
+// summaryNames lists the document names of the summaries in order.
+func summaryNames(ss []Summary) []string {
+	names := make([]string, 0, len(ss))
+
+	for _, s := range ss {
+		names = append(names, s.DocumentName)
+	}
+
+	return names
+}
+
 func Test_Summaries_Swap(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Moves the summary to the target index", func(t *testing.T) {
-		t.Parallel()
+	type tcase struct {
+		Summaries Summaries
+		ID        xid.ID
+		SortIndex int
+		Result    []string
+		Err       error
+	}
 
-		ss, ids := stubSummaries()
+	cc := map[string]tcase{
+		"Moves the summary to the target index": func() tcase {
+			ss, ids := stubSummaries()
 
-		res, err := ss.Swap(ids[0], 2)
-		require.NoError(t, err)
+			return tcase{Summaries: ss, ID: ids[0], SortIndex: 2, Result: []string{"b", "c", "a"}}
+		}(),
+		"Index above the range fails": func() tcase {
+			ss, ids := stubSummaries()
 
-		assert.Equal(t, []string{"b", "c", "a"}, []string{
-			res[0].DocumentName,
-			res[1].DocumentName,
-			res[2].DocumentName,
+			return tcase{Summaries: ss, ID: ids[0], SortIndex: 3, Err: assert.AnError}
+		}(),
+		"Index below the range fails": func() tcase {
+			ss, ids := stubSummaries()
+
+			return tcase{Summaries: ss, ID: ids[0], SortIndex: -1, Err: assert.AnError}
+		}(),
+		"Unknown ID fails with not found": func() tcase {
+			ss, _ := stubSummaries()
+
+			return tcase{Summaries: ss, ID: xid.New(), Err: errutil.ErrNotFound}
+		}(),
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			names := summaryNames(c.Summaries)
+
+			res, err := c.Summaries.Swap(c.ID, c.SortIndex)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, summaryNames(res))
+
+			// the receiver is left untouched.
+			assert.Equal(t, names, summaryNames(c.Summaries))
 		})
-
-		// the receiver is left untouched.
-		assert.Equal(t, "a", ss[0].DocumentName)
-	})
-
-	t.Run("Out-of-range index fails", func(t *testing.T) {
-		t.Parallel()
-
-		ss, ids := stubSummaries()
-
-		_, err := ss.Swap(ids[0], 3)
-		require.Error(t, err)
-
-		_, err = ss.Swap(ids[0], -1)
-		require.Error(t, err)
-	})
-
-	t.Run("Unknown ID fails with not found", func(t *testing.T) {
-		t.Parallel()
-
-		ss, _ := stubSummaries()
-
-		_, err := ss.Swap(xid.New(), 0)
-		assert.ErrorIs(t, err, errutil.ErrNotFound)
-	})
+	}
 }
 
 func Test_Summaries_Remove(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Removes the summary by ID", func(t *testing.T) {
-		t.Parallel()
+	type tcase struct {
+		Summaries Summaries
+		ID        xid.ID
+		Result    []string
+		Err       error
+	}
 
-		ss, ids := stubSummaries()
+	cc := map[string]tcase{
+		"Removes the summary by ID": func() tcase {
+			ss, ids := stubSummaries()
 
-		res, err := ss.Remove(ids[1])
-		require.NoError(t, err)
+			return tcase{Summaries: ss, ID: ids[1], Result: []string{"a", "c"}}
+		}(),
+		"Unknown ID fails with not found": func() tcase {
+			ss, _ := stubSummaries()
 
-		require.Len(t, res, 2)
-		assert.Equal(t, "a", res[0].DocumentName)
-		assert.Equal(t, "c", res[1].DocumentName)
+			return tcase{Summaries: ss, ID: xid.New(), Err: errutil.ErrNotFound}
+		}(),
+	}
 
-		// the receiver is left untouched.
-		require.Len(t, ss, 3)
-		assert.Equal(t, "b", ss[1].DocumentName)
-		assert.Equal(t, "c", ss[2].DocumentName)
-	})
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("Unknown ID fails with not found", func(t *testing.T) {
-		t.Parallel()
+			names := summaryNames(c.Summaries)
 
-		ss, _ := stubSummaries()
+			res, err := c.Summaries.Remove(c.ID)
+			testutil.AssertEqualError(t, c.Err, err)
 
-		_, err := ss.Remove(xid.New())
-		assert.ErrorIs(t, err, errutil.ErrNotFound)
-	})
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, summaryNames(res))
+
+			// the receiver is left untouched.
+			assert.Equal(t, names, summaryNames(c.Summaries))
+		})
+	}
 }
 
 func Test_Summaries_Descendants(t *testing.T) {
 	t.Parallel()
 
-	// empty
-	assert.Empty(t, Summaries{}.Descendants())
+	type tcase struct {
+		Summaries Summaries
+		Result    []string
+	}
 
-	// nested: every summary is followed by its own descendants, so the
-	// flat list reads in document order.
-	ss, ids := stubSummaries()
-	ss[0].Children = Summaries{{ID: ids[1], DocumentName: "a1", Children: Summaries{
-		{ID: ids[2], DocumentName: "a1a"},
-	}}}
+	cc := map[string]tcase{
+		"Empty": {Summaries: Summaries{}, Result: []string{}},
+		// every summary is followed by its own descendants, so the flat
+		// list reads in document order.
+		"Nested": func() tcase {
+			ss, ids := stubSummaries()
+			ss[0].Children = Summaries{{ID: ids[1], DocumentName: "a1", Children: Summaries{
+				{ID: ids[2], DocumentName: "a1a"},
+			}}}
 
-	got := ss.Descendants()
+			return tcase{Summaries: ss, Result: []string{"a", "a1", "a1a", "b", "c"}}
+		}(),
+	}
 
-	require.Len(t, got, 5)
-	assert.Equal(t, []string{"a", "a1", "a1a", "b", "c"}, []string{
-		got[0].DocumentName,
-		got[1].DocumentName,
-		got[2].DocumentName,
-		got[3].DocumentName,
-		got[4].DocumentName,
-	})
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// the receiver is left untouched.
-	require.Len(t, ss, 3)
+			names := summaryNames(c.Summaries)
+
+			assert.Equal(t, c.Result, summaryNames(c.Summaries.Descendants()))
+
+			// the receiver is left untouched.
+			assert.Equal(t, names, summaryNames(c.Summaries))
+		})
+	}
 }

@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -16,59 +17,15 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 // _registryErrorBody is the registry-format error payload the transport
 // parses to surface UNAUTHORIZED diagnostics.
 const _registryErrorBody = `{"errors":[{"code":"UNAUTHORIZED","message":"authentication required"}]}`
 
-// newFakeRegistry starts an in-process container registry seeded with a
-// random image under repo "test/img" tagged "v1" and returns the server
-// host and the seeded image digest. A non-empty authorization value makes
-// the server challenge with Basic auth and reject any request that does
-// not carry exactly that Authorization header.
-func newFakeRegistry(t *testing.T, authorization string) (string, string) {
-	t.Helper()
-
-	handler := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
-
-	seedSrv := httptest.NewServer(handler)
-	t.Cleanup(seedSrv.Close)
-
-	img, err := random.Image(256, 1)
-	require.NoError(t, err)
-
-	digest, err := img.Digest()
-	require.NoError(t, err)
-
-	seedHost := strings.TrimPrefix(seedSrv.URL, "http://")
-
-	ref, err := name.ParseReference(seedHost + "/test/img:v1")
-	require.NoError(t, err)
-
-	require.NoError(t, remote.Write(ref, img))
-
-	if authorization == "" {
-		return seedHost, digest.String()
-	}
-
-	authSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != authorization {
-			w.Header().Set("WWW-Authenticate", `Basic realm="test"`)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-
-			_, werr := w.Write([]byte(_registryErrorBody))
-			assert.NoError(t, werr)
-
-			return
-		}
-
-		handler.ServeHTTP(w, r)
-	}))
-	t.Cleanup(authSrv.Close)
-
-	return strings.TrimPrefix(authSrv.URL, "http://"), digest.String()
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
 }
 
 func Test_Digest(t *testing.T) {
@@ -77,66 +34,122 @@ func Test_Digest(t *testing.T) {
 	// dXNlcjpwYXNz is the base64 form of user:pass.
 	const basicAuthorization = "Basic dXNlcjpwYXNz"
 
-	tests := map[string]struct {
+	cc := map[string]struct {
 		Authorization string
+		Diagnostic    string
 		Reference     string
 		Path          string
-		ExpectedErr   string
 		ErrContains   string
+		Err           error
 	}{
 		"Anonymous fetch returns the seeded digest": {},
 		"Invalid image reference": {
 			Reference:   "UPPERCASE not allowed",
 			ErrContains: "parsing image reference",
+			Err:         assert.AnError,
 		},
 		"Missing tag maps to ErrNotFound": {
-			Path:        "/test/img:v2",
-			ExpectedErr: ErrNotFound.Error(),
+			Path: "/test/img:v2",
+			Err:  ErrNotFound,
 		},
 		"Missing repository maps to ErrNotFound": {
-			Path:        "/test/other:v1",
-			ExpectedErr: ErrNotFound.Error(),
+			Path: "/test/other:v1",
+			Err:  ErrNotFound,
 		},
 		"Missing credentials map to ErrUnauthorized": {
 			Authorization: basicAuthorization,
-			ExpectedErr:   ErrUnauthorized.Error(),
+			Err:           ErrUnauthorized,
+		},
+		"Denied diagnostic maps to ErrUnauthorized": {
+			Diagnostic: "DENIED",
+			Err:        ErrUnauthorized,
+		},
+		"Other registry error is wrapped": {
+			Diagnostic:  "UNSUPPORTED",
+			ErrContains: "getting remote head",
+			Err:         assert.AnError,
 		},
 	}
 
-	for tname, tc := range tests {
-		t.Run(tname, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			host, seeded := newFakeRegistry(t, tc.Authorization)
+			handler := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
 
-			path := tc.Path
+			seedSrv := httptest.NewServer(handler)
+			t.Cleanup(seedSrv.Close)
+
+			img, err := random.Image(256, 1)
+			require.NoError(t, err)
+
+			seeded, err := img.Digest()
+			require.NoError(t, err)
+
+			host := strings.TrimPrefix(seedSrv.URL, "http://")
+
+			ref, err := name.ParseReference(host + "/test/img:v1")
+			require.NoError(t, err)
+
+			require.NoError(t, remote.Write(ref, img))
+
+			// a set authorization puts a proxy in front that challenges with
+			// Basic auth and rejects any request without exactly that header.
+			if c.Authorization != "" {
+				authSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Header.Get("Authorization") != c.Authorization {
+						w.Header().Set("WWW-Authenticate", `Basic realm="test"`)
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusUnauthorized)
+
+						_, werr := w.Write([]byte(_registryErrorBody))
+						assert.NoError(t, werr)
+
+						return
+					}
+
+					handler.ServeHTTP(w, r)
+				}))
+				t.Cleanup(authSrv.Close)
+
+				host = strings.TrimPrefix(authSrv.URL, "http://")
+			}
+
+			// a set diagnostic puts a proxy in front that fails every request
+			// with a 400 carrying that registry error code.
+			if c.Diagnostic != "" {
+				diagSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+
+					_, werr := fmt.Fprintf(w, `{"errors":[{"code":%q,"message":"request failed"}]}`, c.Diagnostic)
+					assert.NoError(t, werr)
+				}))
+				t.Cleanup(diagSrv.Close)
+
+				host = strings.TrimPrefix(diagSrv.URL, "http://")
+			}
+
+			path := c.Path
 			if path == "" {
 				path = "/test/img:v1"
 			}
 
-			reference := tc.Reference
+			reference := c.Reference
 			if reference == "" {
 				reference = host + path
 			}
 
 			digest, err := Digest(context.Background(), reference)
+			testutil.AssertEqualError(t, c.Err, err)
 
-			if tc.ErrContains != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.ErrContains)
-
-				return
-			}
-
-			if tc.ExpectedErr != "" {
-				require.Error(t, err)
-				assert.EqualError(t, err, tc.ExpectedErr)
+			if err != nil {
+				assert.Contains(t, err.Error(), c.ErrContains)
 
 				return
 			}
 
-			require.NoError(t, err)
-			assert.Equal(t, seeded, digest)
+			assert.Equal(t, seeded.String(), digest)
 		})
 	}
 }

@@ -2,6 +2,8 @@ package cryptoutil
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/sha256"
 	"encoding/base64"
 	"strings"
@@ -24,15 +26,10 @@ var (
 func testKeyring(t *testing.T, keys ...string) *Keyring {
 	t.Helper()
 
-	kr, err := ParseKeyring(joinKeys(keys...))
+	kr, err := ParseKeyring(strings.Join(keys, ","))
 	require.NoError(t, err)
 
 	return kr
-}
-
-// joinKeys builds the list ParseKeyring reads.
-func joinKeys(keys ...string) string {
-	return strings.Join(keys, ",")
 }
 
 func Test_ParseKeyring(t *testing.T) {
@@ -62,7 +59,7 @@ func Test_ParseKeyring(t *testing.T) {
 			Err:  assert.AnError,
 		},
 		"Duplicate key": {
-			List: joinKeys(_keyA, _keyB, _keyA),
+			List: _keyA + "," + _keyB + "," + _keyA,
 			Err:  assert.AnError,
 		},
 		"Trailing comma": {
@@ -228,19 +225,78 @@ func Test_Keyring_IsCurrent(t *testing.T) {
 	out, err := kr.Encrypt([]byte("text"), nil)
 	require.NoError(t, err)
 
-	// too short
-	assert.False(t, kr.IsCurrent(out[:_keyringHeaderSize-1]))
-
-	// unknown version
-	other := bytes.Clone(out)
-	other[0] = 2
-	assert.False(t, kr.IsCurrent(other))
-
-	// retired key
 	retired, err := testKeyring(t, _keyB).Encrypt([]byte("text"), nil)
 	require.NoError(t, err)
-	assert.False(t, kr.IsCurrent(retired))
 
-	// newest key
-	assert.True(t, kr.IsCurrent(out))
+	cc := map[string]struct {
+		Ciphertext []byte
+		Result     bool
+	}{
+		"Too short": {
+			Ciphertext: out[:_keyringHeaderSize-1],
+		},
+		"Unknown version": {
+			Ciphertext: func() []byte {
+				other := bytes.Clone(out)
+				other[0] = 2
+
+				return other
+			}(),
+		},
+		"Retired key": {
+			Ciphertext: retired,
+		},
+		"Newest key": {
+			Ciphertext: out,
+			Result:     true,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, kr.IsCurrent(c.Ciphertext))
+		})
+	}
+}
+
+func Test_newKeyringKey(t *testing.T) {
+	cc := map[string]struct {
+		Key []byte
+		Err error
+	}{
+		"Error returned by aes.NewCipher": {
+			Key: []byte("key"),
+			Err: aes.KeySizeError(3),
+		},
+		"Successful creation": {
+			Key: bytes.Repeat([]byte{'a'}, KeySize),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			kk, err := newKeyringKey(c.Key)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Equal(t, keyringKey{}, kk)
+
+				return
+			}
+
+			block, err := aes.NewCipher(c.Key)
+			require.NoError(t, err)
+
+			aead, err := cipher.NewGCM(block)
+			require.NoError(t, err)
+
+			sum := sha256.Sum256(c.Key)
+			assert.Equal(t, [_keyIDSize]byte(sum[:_keyIDSize]), kk.id)
+			assert.Equal(t, aead, kk.aead)
+		})
+	}
 }

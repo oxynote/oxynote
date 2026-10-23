@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -57,11 +56,6 @@ const (
 	_stubTagColor = "#00a63e"
 )
 
-// discardLog returns a logger that writes nowhere.
-func discardLog() *slog.Logger {
-	return slog.New(slog.DiscardHandler)
-}
-
 // testDeps builds session wiring with don't-care dependencies. Pass the
 // mocks a test cares about; nil leaves a don't-care in place.
 func testDeps(db *DBMock, applier *EditApplierMock, tree *TreeNotifierMock) *Deps {
@@ -73,8 +67,15 @@ func testDeps(db *DBMock, applier *EditApplierMock, tree *TreeNotifierMock) *Dep
 		applier = &EditApplierMock{}
 	}
 
+	// a deployment without the GitHub app refuses every call that would
+	// reach GitHub.
+	gh, err := github.NewManager(nil, github.Options{})
+	if err != nil {
+		panic(err)
+	}
+
 	d := &Deps{
-		log:         discardLog(),
+		log:         slog.New(slog.DiscardHandler),
 		db:          db,
 		search:      &SearcherMock{},
 		searchQueue: &SearchQueueMock{},
@@ -83,7 +84,7 @@ func testDeps(db *DBMock, applier *EditApplierMock, tree *TreeNotifierMock) *Dep
 				return &datasourceMock.Runner{}
 			},
 		},
-		githubMan:       unconfiguredGithub(),
+		githubMan:       gh,
 		webchangeClient: webchange.NewClient("", ""),
 		hookMan:         stubHookManager(),
 		variableMan:     stubVariableManager(),
@@ -102,55 +103,17 @@ func testDeps(db *DBMock, applier *EditApplierMock, tree *TreeNotifierMock) *Dep
 	return d
 }
 
-// unconfiguredGithub builds the GitHub manager of a deployment without
-// the app, which refuses every call that would reach GitHub.
-func unconfiguredGithub() *github.Manager {
-	man, err := github.NewManager(nil, github.Options{})
-	if err != nil {
-		panic(err)
-	}
-
-	return man
-}
-
-// testInput builds the per-call input a tool is handed.
-func testInput(d *Deps, name Name, args string) *input {
-	return d.newInput(context.Background(), name, json.RawMessage(args))
-}
-
-// infoOf returns the named tool's description, or a bare one for a name
-// the registry does not know.
-func infoOf(name Name) Info {
-	if e, ok := New(testDeps(nil, nil, nil)).Entry(name); ok {
-		return e.Info
-	}
-
-	return Info{Name: name}
-}
-
-// assertValidate checks that ok passes Validate and that every entry of
-// missing — ok with one required argument blanked — is refused naming
-// that argument.
-func assertValidate(t *testing.T, ok Args, missing map[string]Args) {
-	t.Helper()
-
-	require.NoError(t, ok.Validate())
-
-	for key, a := range missing {
-		err := a.Validate()
-		require.Error(t, err, "%s should be required", key)
-		assert.Contains(t, err.Error(), key+" is required")
-	}
-}
-
 // requiredArgs builds the smallest payload the named tool's Decode
 // accepts: every required argument, each with a value its type takes.
 func requiredArgs(t *testing.T, name Name) string {
 	t.Helper()
 
+	e, ok := New(testDeps(nil, nil, nil)).Entry(name)
+	require.True(t, ok, "%s is not in the registry", name)
+
 	vals := map[string]any{}
 
-	for _, key := range infoOf(name).Required {
+	for _, key := range e.Info.Required {
 		switch key {
 		case "document_id", "data_source_id":
 			vals[key] = _testDocID.String()
@@ -180,7 +143,7 @@ func requiredArgs(t *testing.T, name Name) string {
 			// a position beside a block needs the reference the tool
 			// requires; one that requires no reference takes an end.
 			vals[key] = string(positionEnd)
-			if slices.Contains(infoOf(name).Required, "reference_block_uid") {
+			if slices.Contains(e.Info.Required, "reference_block_uid") {
 				vals[key] = string(positionAfter)
 			}
 		case "branch_id":
@@ -253,20 +216,38 @@ func stubDocumentDB() *DBMock {
 			}
 		},
 		FetchDocumentBranchesFunc: stubBranches(false, false),
-		FetchTagTreeFunc:          stubTagTree,
-		FetchDocumentHookFunc:     stubHookLookup,
-	}
-}
+		// the tag tree holds two tags: the test tag, carried by the test
+		// document, and a hidden one carried by nothing.
+		FetchTagTreeFunc: func(context.Context, string, string) (tag.Summaries, error) {
+			return tag.Summaries{
+				{
+					ID:      _testTagID,
+					TagName: _stubTagName,
+					Color:   _stubTagColor,
+					Documents: document.Summaries{{
+						ID:              _testDocID,
+						DocumentName:    _stubDocumentName,
+						DefaultBranchID: _stubMainBranchID,
+						Children:        document.Summaries{{ID: xid.New(), DocumentName: "Nested"}},
+					}},
+				},
+				{
+					ID:        _otherTagID,
+					TagName:   "Staging",
+					Color:     "#f97316",
+					Hidden:    true,
+					Documents: document.Summaries{},
+				},
+			}, nil
+		},
+		FetchDocumentHookFunc: func(_ context.Context, id xid.ID, _ string) (*hook.Hook, error) {
+			if id != _testHookID {
+				return nil, errutil.ErrNotFound
+			}
 
-// stubHookLookup answers a hook lookup with the test hook, a scheduled
-// reminder on the draft branch of the test document, for the test hook
-// id and with not found for any other.
-func stubHookLookup(_ context.Context, id xid.ID, _ string) (*hook.Hook, error) {
-	if id != _testHookID {
-		return nil, errutil.ErrNotFound
+			return stubHook(), nil
+		},
 	}
-
-	return stubHook(), nil
 }
 
 // stubHook builds the hook every hook stub answers with.
@@ -291,31 +272,6 @@ var (
 	_testHookID    = xid.New()
 	_unknownHookID = xid.New()
 )
-
-// stubTagTree answers a tag tree listing with two tags: the test tag,
-// carried by the test document, and a hidden one carried by nothing.
-func stubTagTree(context.Context, string, string) (tag.Summaries, error) {
-	return tag.Summaries{
-		{
-			ID:      _testTagID,
-			TagName: _stubTagName,
-			Color:   _stubTagColor,
-			Documents: document.Summaries{{
-				ID:              _testDocID,
-				DocumentName:    _stubDocumentName,
-				DefaultBranchID: _stubMainBranchID,
-				Children:        document.Summaries{{ID: xid.New(), DocumentName: "Nested"}},
-			}},
-		},
-		{
-			ID:        _otherTagID,
-			TagName:   "Staging",
-			Color:     "#f97316",
-			Hidden:    true,
-			Documents: document.Summaries{},
-		},
-	}, nil
-}
 
 // stubBranchDocument builds the document the stubs answer with, on the
 // named branch.
@@ -401,6 +357,9 @@ func stubApplier() *EditApplierMock {
 func Test_NewDeps(t *testing.T) {
 	t.Parallel()
 
+	gh, err := github.NewManager(nil, github.Options{})
+	require.NoError(t, err)
+
 	var (
 		db       = &DBMock{}
 		searcher = &SearcherMock{}
@@ -409,7 +368,6 @@ func Test_NewDeps(t *testing.T) {
 		tree     = &TreeNotifierMock{}
 		tags     = &TagNotifierMock{}
 		offload  = &offloadReaderMock{}
-		gh       = unconfiguredGithub()
 		wc       = webchange.NewClient("", "")
 		hookMan  = &HookManagerMock{}
 		varMan   = &VariableManagerMock{}
@@ -421,7 +379,7 @@ func Test_NewDeps(t *testing.T) {
 
 	queue := &SearchQueueMock{}
 
-	d := NewDeps(discardLog(), db, searcher, queue, runners, gh, wc, hookMan, varMan, applier, tree, tags, offload, "org", "user")
+	d := NewDeps(slog.New(slog.DiscardHandler), db, searcher, queue, runners, gh, wc, hookMan, varMan, applier, tree, tags, offload, "org", "user")
 	require.NotNil(t, d)
 
 	assert.NotNil(t, d.log)
@@ -458,33 +416,45 @@ func Test_Deps_newInput(t *testing.T) {
 	assert.Equal(t, "user", i.userID)
 }
 
+func Test_input_Context(t *testing.T) {
+	t.Parallel()
+
+	type callKey struct{}
+
+	ctx := context.WithValue(context.Background(), callKey{}, "call")
+
+	assert.Same(t, ctx, (&input{ctx: ctx}).Context())
+}
+
 func Test_input_Decode(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
 		Args string
-		Err  string
 		Want deleteBlockArgs
+
+		// ErrContains is a fragment the error has to carry, for an error
+		// whose full wording json/v2 does not fix.
+		ErrContains string
+
+		Err error
 	}{
-		"Malformed JSON": {Args: `{`, Err: "invalid input:"},
+		"Malformed JSON": {Args: `{`, ErrContains: "invalid input:", Err: assert.AnError},
 		// a provider calling a parameterless tool sends nothing rather
 		// than an empty object; that is a payload, not a decode failure.
-		"Empty arguments read as none": {Args: ``, Err: "document_id is required"},
-		"Blank arguments read as none": {Args: " \n", Err: "document_id is required"},
-		// NOTE: json/v2 randomizes the modal verb of its error messages per
-		// process ("cannot" / "unable to") to keep callers off the exact
-		// wording, so the expectation starts after it.
+		"Empty arguments read as none": {Args: ``, Err: errors.New("document_id is required")},
+		"Blank arguments read as none": {Args: " \n", Err: errors.New("document_id is required")},
 		"Invalid id names the argument": {
 			Args: `{"document_id":"nope","block_uid":"b"}`,
-			Err:  `unmarshal JSON string into Go xid.ID within "/document_id": xid: invalid ID`,
+			Err:  errors.New("document_id is not an id; copy all 20 characters exactly from the result that gave it"),
 		},
 		"Null id is not an argument": {
 			Args: `{"document_id":null,"block_uid":"b"}`,
-			Err:  "document_id is required",
+			Err:  errors.New("document_id is required"),
 		},
 		"Incomplete arguments are rejected by Validate": {
 			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
-			Err:  "block_uid is required",
+			Err:  errors.New("block_uid is required"),
 		},
 		"Unknown keys are ignored": {
 			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"b","extra":true}`,
@@ -502,15 +472,15 @@ func Test_input_Decode(t *testing.T) {
 
 			var out deleteBlockArgs
 
-			err := testInput(testDeps(nil, nil, nil), NameDeleteBlock, c.Args).Decode(&out)
-			if c.Err != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), c.Err)
+			err := testDeps(nil, nil, nil).newInput(context.Background(), NameDeleteBlock, json.RawMessage(c.Args)).Decode(&out)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Contains(t, err.Error(), c.ErrContains)
 
 				return
 			}
 
-			require.NoError(t, err)
 			assert.Equal(t, c.Want, out)
 		})
 	}
@@ -520,13 +490,18 @@ func Test_input_CreateDocument(t *testing.T) {
 	t.Parallel()
 
 	type tcase struct {
-		DB      *DBMock
-		Tx      *TxMock
-		Queue   *SearchQueueMock
-		Parent  null.Value[xid.ID]
-		Commits int
-		Jobs    int
-		Err     error
+		DB       *DBMock
+		Tx       *TxMock
+		Queue    *SearchQueueMock
+		Parent   null.Value[xid.ID]
+		Exists   int
+		Begins   int
+		Inserts  int
+		Upserts  int
+		Commits  int
+		Jobs     int
+		Notifies int
+		Err      error
 	}
 
 	stubQueue := func(enqueueErr error) *SearchQueueMock {
@@ -551,15 +526,7 @@ func Test_input_CreateDocument(t *testing.T) {
 
 	stubDB := func(tx *TxMock, beginErr error) *DBMock {
 		return &DBMock{
-			BeginTxFunc: func(_ context.Context, dest any) error {
-				if beginErr != nil {
-					return beginErr
-				}
-
-				reflect.ValueOf(dest).Elem().Set(reflect.ValueOf(tx))
-
-				return nil
-			},
+			BeginTxFunc: testutil.StubBeginTx(tx, beginErr),
 		}
 	}
 
@@ -572,7 +539,7 @@ func Test_input_CreateDocument(t *testing.T) {
 				return assert.AnError
 			}
 
-			return tcase{DB: db, Queue: stubQueue(nil), Parent: null.ValueFrom(xid.New()), Err: assert.AnError}
+			return tcase{DB: db, Queue: stubQueue(nil), Parent: null.ValueFrom(xid.New()), Exists: 1, Err: assert.AnError}
 		}(),
 		"Unknown parent": func() tcase {
 			parentID := xid.New()
@@ -581,35 +548,35 @@ func Test_input_CreateDocument(t *testing.T) {
 				return sql.ErrNoRows
 			}
 
-			return tcase{DB: db, Queue: stubQueue(nil), Parent: null.ValueFrom(parentID), Err: fmt.Errorf("parent %s: %w", parentID, errUnknownParent)}
+			return tcase{DB: db, Queue: stubQueue(nil), Parent: null.ValueFrom(parentID), Exists: 1, Err: fmt.Errorf("parent %s: %w", parentID, errUnknownParent)}
 		}(),
 		"Error returned by db.BeginTx": func() tcase {
-			return tcase{DB: stubDB(nil, assert.AnError), Queue: stubQueue(nil), Err: assert.AnError}
+			return tcase{DB: stubDB(nil, assert.AnError), Queue: stubQueue(nil), Begins: 1, Err: assert.AnError}
 		}(),
 		"Error returned by Tx.InsertDocument": func() tcase {
 			tx := stubTx(assert.AnError, nil, nil)
 
-			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Err: assert.AnError}
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Err: assert.AnError}
 		}(),
 		"Error returned by Tx.UpsertDocumentMaintainers": func() tcase {
 			tx := stubTx(nil, assert.AnError, nil)
 
-			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Err: assert.AnError}
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Upserts: 1, Err: assert.AnError}
 		}(),
 		"Error returned by SearchQueue.Enqueue": func() tcase {
 			tx := stubTx(nil, nil, nil)
 
-			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(assert.AnError), Jobs: 1, Err: assert.AnError}
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(assert.AnError), Begins: 1, Inserts: 1, Upserts: 1, Jobs: 1, Err: assert.AnError}
 		}(),
 		"Error returned by Tx.Commit": func() tcase {
 			tx := stubTx(nil, nil, assert.AnError)
 
-			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Commits: 1, Jobs: 1, Err: assert.AnError}
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Upserts: 1, Commits: 1, Jobs: 1, Err: assert.AnError}
 		}(),
 		"Every write lands together": func() tcase {
 			tx := stubTx(nil, nil, nil)
 
-			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Commits: 1, Jobs: 1}
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Upserts: 1, Commits: 1, Jobs: 1, Notifies: 1}
 		}(),
 	}
 
@@ -617,14 +584,19 @@ func Test_input_CreateDocument(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			deps := testDeps(c.DB, nil, nil)
+			tree := &TreeNotifierMock{}
+			deps := testDeps(c.DB, nil, tree)
 			deps.searchQueue = c.Queue
-			inp := testInput(deps, NameCreateDocument, `{}`)
+			inp := deps.newInput(context.Background(), NameCreateDocument, json.RawMessage(`{}`))
 
 			doc := document.Document{ID: xid.New(), BranchID: xid.New(), ParentID: c.Parent}
 
 			err := inp.CreateDocument(doc)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.CheckDocumentExistsCalls(), c.Exists)
+			assert.Len(t, c.DB.BeginTxCalls(), c.Begins)
+			assert.Len(t, tree.NotifyTreeChangeCalls(), c.Notifies)
 
 			ff := c.Queue.EnqueueCalls()
 			require.Len(t, ff, c.Jobs)
@@ -639,6 +611,8 @@ func Test_input_CreateDocument(t *testing.T) {
 				return
 			}
 
+			assert.Len(t, c.Tx.InsertDocumentCalls(), c.Inserts)
+			assert.Len(t, c.Tx.UpsertDocumentMaintainersCalls(), c.Upserts)
 			assert.Len(t, c.Tx.CommitCalls(), c.Commits)
 
 			// the rollback is deferred unconditionally; after a
@@ -685,15 +659,7 @@ func Test_input_DeleteDocument(t *testing.T) {
 			FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
 				return &document.Document{ID: docID, ParentID: parentID}, nil
 			},
-			BeginTxFunc: func(_ context.Context, dest any) error {
-				if beginErr != nil {
-					return beginErr
-				}
-
-				reflect.ValueOf(dest).Elem().Set(reflect.ValueOf(tx))
-
-				return nil
-			},
+			BeginTxFunc: testutil.StubBeginTx(tx, beginErr),
 		}
 	}
 
@@ -738,7 +704,7 @@ func Test_input_DeleteDocument(t *testing.T) {
 			tree := &TreeNotifierMock{}
 			deps := testDeps(c.DB, nil, tree)
 			deps.searchQueue = c.Queue
-			inp := testInput(deps, NameDeleteDocument, `{}`)
+			inp := deps.newInput(context.Background(), NameDeleteDocument, json.RawMessage(`{}`))
 
 			err := inp.DeleteDocument(docID)
 			testutil.AssertEqualError(t, c.Err, err)
@@ -751,12 +717,8 @@ func Test_input_DeleteDocument(t *testing.T) {
 				assert.Equal(t, parentID, tree.NotifyTreeChangeCalls()[0].ParentID)
 			}
 
-			if c.Tx == nil {
-				return
-			}
-
-			assert.Len(t, c.Tx.CommitCalls(), c.Commits)
-			assert.Len(t, c.Tx.RollbackCalls(), 1)
+			assert.Len(t, c.DB.FetchDocumentCalls(), 1)
+			assert.Len(t, c.DB.BeginTxCalls(), 1)
 
 			ff := c.Queue.EnqueueCalls()
 			require.Len(t, ff, c.Jobs)
@@ -766,6 +728,14 @@ func Test_input_DeleteDocument(t *testing.T) {
 				assert.True(t, ff[0].J.DocumentID.Valid)
 				assert.False(t, ff[0].J.BranchID.Valid)
 			}
+
+			if c.Tx == nil {
+				return
+			}
+
+			assert.Len(t, c.Tx.DeleteDocumentCalls(), 1)
+			assert.Len(t, c.Tx.CommitCalls(), c.Commits)
+			assert.Len(t, c.Tx.RollbackCalls(), 1)
 		})
 	}
 }
@@ -787,6 +757,8 @@ func Test_input_RenameDocument(t *testing.T) {
 		Name    string
 		Icon    string
 		Ops     int
+		Fetches int
+		Applies int
 		Notify  int
 		Err     error
 	}{
@@ -794,14 +766,18 @@ func Test_input_RenameDocument(t *testing.T) {
 		"Error returned by applier.Apply": {
 			Applier: failing,
 			Name:    "Playbook",
+			Fetches: 1,
+			Applies: 1,
 			Err:     assert.AnError,
 		},
-		"Renamed": {Applier: stubApplier(), Name: "Playbook", Ops: 1, Notify: 1},
-		"Renamed and re-iconed": {
+		"Renamed": {Applier: stubApplier(), Name: "Playbook", Ops: 1, Fetches: 1, Applies: 1, Notify: 1},
+		"Renamed with a new icon": {
 			Applier: stubApplier(),
 			Name:    "Playbook",
 			Icon:    "mingcute:rocket-fill",
 			Ops:     2,
+			Fetches: 1,
+			Applies: 1,
 			Notify:  1,
 		},
 	}
@@ -810,11 +786,18 @@ func Test_input_RenameDocument(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			db := stubDocumentDB()
 			tree := &TreeNotifierMock{}
-			inp := testInput(testDeps(stubDocumentDB(), c.Applier, tree), NameUpdateDocument, `{}`)
+			inp := testDeps(db, c.Applier, tree).newInput(context.Background(), NameUpdateDocument, json.RawMessage(`{}`))
 
 			err := inp.RenameDocument(doc, c.Name, c.Icon)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, db.FetchDocumentByBranchIDCalls(), c.Fetches)
+			assert.Empty(t, db.FetchDocumentBranchesCalls())
+
+			calls := c.Applier.ApplyCalls()
+			require.Len(t, calls, c.Applies)
 
 			// the document's own row shows the change, under its parent.
 			ff := tree.NotifyTreeChangeCalls()
@@ -824,18 +807,10 @@ func Test_input_RenameDocument(t *testing.T) {
 				assert.Equal(t, parentID, ff[0].ParentID)
 			}
 
-			if err != nil {
+			if err != nil || c.Applies == 0 {
 				return
 			}
 
-			calls := c.Applier.ApplyCalls()
-			if c.Ops == 0 {
-				assert.Empty(t, calls)
-
-				return
-			}
-
-			require.Len(t, calls, 1)
 			assert.Len(t, calls[0].Ops, c.Ops)
 		})
 	}
@@ -861,11 +836,13 @@ func Test_input_MoveDocument(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		DB      *DBMock
-		Parent  null.Value[xid.ID]
-		Checks  int
-		Updates int
-		Err     error
+		DB       *DBMock
+		Parent   null.Value[xid.ID]
+		Checks   int
+		Cycles   int
+		Updates  int
+		Notifies int
+		Err      error
 	}{
 		"Error returned by db.CheckDocumentExists": {
 			DB:     moveDB(assert.AnError, false, nil, nil),
@@ -883,30 +860,38 @@ func Test_input_MoveDocument(t *testing.T) {
 			DB:     moveDB(nil, false, assert.AnError, nil),
 			Parent: parentID,
 			Checks: 1,
+			Cycles: 1,
 			Err:    assert.AnError,
 		},
-		"A move under the document's own subtree is refused": {
+		"A move under its own subtree is refused": {
 			DB:     moveDB(nil, true, nil, nil),
 			Parent: parentID,
 			Checks: 1,
+			Cycles: 1,
 			Err:    errCyclicParent,
 		},
 		"Error returned by db.UpdateDocumentParentID": {
 			DB:      moveDB(nil, false, nil, assert.AnError),
 			Parent:  parentID,
 			Checks:  1,
+			Cycles:  1,
 			Updates: 1,
 			Err:     assert.AnError,
 		},
+		// the old and the new subtree both change shape.
 		"Moved under a parent": {
-			DB:      moveDB(nil, false, nil, nil),
-			Parent:  parentID,
-			Checks:  1,
-			Updates: 1,
+			DB:       moveDB(nil, false, nil, nil),
+			Parent:   parentID,
+			Checks:   1,
+			Cycles:   1,
+			Updates:  1,
+			Notifies: 2,
 		},
+		// the document already sat at the root, so one subtree changes.
 		"A move to the root has no destination to check": {
-			DB:      moveDB(nil, false, nil, nil),
-			Updates: 1,
+			DB:       moveDB(nil, false, nil, nil),
+			Updates:  1,
+			Notifies: 1,
 		},
 	}
 
@@ -914,14 +899,17 @@ func Test_input_MoveDocument(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			inp := testInput(testDeps(c.DB, nil, nil), NameUpdateDocument, `{}`)
+			tree := &TreeNotifierMock{}
+			inp := testDeps(c.DB, nil, tree).newInput(context.Background(), NameUpdateDocument, json.RawMessage(`{}`))
 
 			err := inp.MoveDocument(&document.Document{ID: docID, BranchID: branchID}, c.Parent)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			// nothing is written until the destination is known good.
 			assert.Len(t, c.DB.CheckDocumentExistsCalls(), c.Checks)
+			assert.Len(t, c.DB.CheckDocumentCycleCalls(), c.Cycles)
 			assert.Len(t, c.DB.UpdateDocumentParentIDCalls(), c.Updates)
+			assert.Len(t, tree.NotifyTreeChangeCalls(), c.Notifies)
 		})
 	}
 }
@@ -932,10 +920,11 @@ func Test_input_ApplyEdit(t *testing.T) {
 	docID := _testDocID
 
 	type tcase struct {
-		DB      *DBMock
-		Applier *EditApplierMock
-		Branch  xid.ID
-		Applies int
+		DB       *DBMock
+		Applier  *EditApplierMock
+		Branch   xid.ID
+		Listings int
+		Applies  int
 
 		// Ops is how many operations the batch holds; 0 means one.
 		Ops int
@@ -963,18 +952,20 @@ func Test_input_ApplyEdit(t *testing.T) {
 			Err:     assert.AnError,
 		},
 		"Protected branch is refused before anything is applied": {
-			DB:      protectedDocumentDB(),
-			Applier: stubApplier(),
-			Err:     fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID),
+			DB:       protectedDocumentDB(),
+			Applier:  stubApplier(),
+			Listings: 1,
+			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID),
 		},
 		"Protected branch with no alternative says so": func() tcase {
 			db := protectedDocumentDB()
 			db.FetchDocumentBranchesFunc = stubBranches(true, true)
 
 			return tcase{
-				DB:      db,
-				Applier: stubApplier(),
-				Err:     fmt.Errorf("branch main: %w; the document has no unprotected branch to write to", errBranchProtected),
+				DB:       db,
+				Applier:  stubApplier(),
+				Listings: 1,
+				Err:      fmt.Errorf("branch main: %w; the document has no unprotected branch to write to", errBranchProtected),
 			}
 		}(),
 		"Applied to a named branch": func() tcase {
@@ -991,7 +982,7 @@ func Test_input_ApplyEdit(t *testing.T) {
 				Applies: 1,
 			}
 		}(),
-		"Nothing applied is a failure, not a result": {
+		"Nothing applied is a failure rather than a result": {
 			DB: stubDocumentDB(),
 			Applier: &EditApplierMock{
 				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, string, bool) (edit.Result, error) {
@@ -1027,7 +1018,7 @@ func Test_input_ApplyEdit(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			inp := testInput(testDeps(c.DB, c.Applier, nil), NameInsertBlocks, `{}`)
+			inp := testDeps(c.DB, c.Applier, nil).newInput(context.Background(), NameInsertBlocks, json.RawMessage(`{}`))
 
 			branch := c.Branch
 			if branch.IsNil() {
@@ -1050,6 +1041,8 @@ func Test_input_ApplyEdit(t *testing.T) {
 			// before the batch is shipped, rather than letting it land
 			// and be undone by the persist behind it.
 			assert.Len(t, c.Applier.ApplyCalls(), c.Applies)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), 1)
+			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), c.Listings)
 
 			if err != nil {
 				return
@@ -1074,16 +1067,30 @@ func Test_input_notifyTreeChange(t *testing.T) {
 
 	parentID := null.ValueFrom(xid.New())
 
-	// a session without a notifier silently no-ops.
-	testInput(testDeps(nil, nil, nil), NameCreateDocument, `{}`).notifyTreeChange(parentID)
+	cc := map[string]struct {
+		Tree *TreeNotifierMock
+	}{
+		// a session without a notifier silently no-ops.
+		"No notifier":         {},
+		"Notifier configured": {Tree: &TreeNotifierMock{}},
+	}
 
-	tree := &TreeNotifierMock{}
-	testInput(testDeps(nil, nil, tree), NameCreateDocument, `{}`).notifyTreeChange(parentID)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	ff := tree.NotifyTreeChangeCalls()
-	require.Len(t, ff, 1)
-	assert.Equal(t, "org", ff[0].OrganizationID)
-	assert.Equal(t, parentID, ff[0].ParentID)
+			testDeps(nil, nil, c.Tree).newInput(context.Background(), NameCreateDocument, json.RawMessage(`{}`)).notifyTreeChange(parentID)
+
+			if c.Tree == nil {
+				return
+			}
+
+			ff := c.Tree.NotifyTreeChangeCalls()
+			require.Len(t, ff, 1)
+			assert.Equal(t, "org", ff[0].OrganizationID)
+			assert.Equal(t, parentID, ff[0].ParentID)
+		})
+	}
 }
 
 func Test_input_Warn(t *testing.T) {
@@ -1094,7 +1101,7 @@ func Test_input_Warn(t *testing.T) {
 	d := testDeps(nil, nil, nil)
 	d.log = slog.New(slog.NewTextHandler(&buf, nil))
 
-	testInput(d, NameSearchDocuments, `{}`).Warn("something degraded", slog.String("key", "value"))
+	d.newInput(context.Background(), NameSearchDocuments, json.RawMessage(`{}`)).Warn("something degraded", slog.String("key", "value"))
 
 	assert.Contains(t, buf.String(), "something degraded")
 	assert.Contains(t, buf.String(), "search_documents")
@@ -1115,23 +1122,27 @@ func Test_input_CheckDataSources(t *testing.T) {
 	unknown := xid.New().String()
 
 	cc := map[string]struct {
-		Blocks []document.Block
-		Err    error
+		Blocks  []document.Block
+		Fetches int
+		Err     error
 	}{
 		"No blocks": {},
 		"Owned data source nested in a grid": {
-			Blocks: grid(metric(_testDataSourceID.String())),
+			Blocks:  grid(metric(_testDataSourceID.String())),
+			Fetches: 1,
 		},
 		"Empty id is skipped": {
 			Blocks: grid(metric("")),
 		},
 		"Id that is not an xid": {
-			Blocks: grid(metric(_testDataSourceID.String()), metric("wibble")),
-			Err:    assert.AnError,
+			Blocks:  grid(metric(_testDataSourceID.String()), metric("wibble")),
+			Fetches: 1,
+			Err:     assert.AnError,
 		},
 		"Id the organisation owns nothing for": {
-			Blocks: grid(metric(_testDataSourceID.String()), metric(unknown)),
-			Err:    fmt.Errorf("metric dataSourceId %q: %w", unknown, errUnknownDataSource),
+			Blocks:  grid(metric(_testDataSourceID.String()), metric(unknown)),
+			Fetches: 2,
+			Err:     fmt.Errorf("metric dataSourceId %q: %w", unknown, errUnknownDataSource),
 		},
 	}
 
@@ -1139,9 +1150,12 @@ func Test_input_CheckDataSources(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			inp := testInput(dataSourceDeps(t, datasource.TypePrometheus, nil), NameInsertBlocks, "")
+			d := dataSourceDeps(t, datasource.TypePrometheus, nil)
+			inp := d.newInput(context.Background(), NameInsertBlocks, json.RawMessage(""))
 
 			testutil.AssertEqualError(t, c.Err, inp.CheckDataSources(c.Blocks))
+
+			assert.Len(t, d.db.(*DBMock).FetchDataSourceCalls(), c.Fetches)
 		})
 	}
 }
@@ -1185,8 +1199,10 @@ func Test_input_FetchDataSource(t *testing.T) {
 				d.db = c.DB
 			}
 
-			ds, err := testInput(d, NameQueryDataSource, "").FetchDataSource(c.ID)
+			ds, err := d.newInput(context.Background(), NameQueryDataSource, json.RawMessage("")).FetchDataSource(c.ID)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, d.db.(*DBMock).FetchDataSourceCalls(), 1)
 
 			if err != nil {
 				return
@@ -1203,27 +1219,54 @@ func Test_input_FetchDataSources(t *testing.T) {
 
 	d := dataSourceDeps(t, datasource.TypePrometheus, nil)
 
-	got, err := testInput(d, NameListDataSources, "").FetchDataSources()
+	got, err := d.newInput(context.Background(), NameListDataSources, json.RawMessage("")).FetchDataSources()
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, "prod", got[0].Name)
+	assert.Len(t, d.db.(*DBMock).FetchDataSourcesCalls(), 1)
 }
 
 func Test_input_DataSourceRunner(t *testing.T) {
 	t.Parallel()
 
-	runner := &datasourceMock.Runner{}
-	inp := testInput(dataSourceDeps(t, datasource.TypePrometheus, runner), NameQueryDataSource, "")
+	cc := map[string]struct {
+		ID      xid.ID
+		Runners int
+		Err     error
+	}{
+		// an id the organisation owns nothing for is as absent as one that
+		// names nothing at all, and says so in terms the model can act on.
+		"Unknown data source": {
+			ID:  xid.New(),
+			Err: errUnknownDataSource,
+		},
+		"Successful lookup": {
+			ID:      _testDataSourceID,
+			Runners: 1,
+		},
+	}
 
-	got, err := inp.DataSourceRunner(_testDataSourceID)
-	require.NoError(t, err)
-	assert.Same(t, runner, got)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// an id the organisation owns nothing for is as absent as one that
-	// names nothing at all, and says so in terms the model can act on.
-	_, err = inp.DataSourceRunner(xid.New())
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "list_data_sources")
+			runner := &datasourceMock.Runner{}
+			d := dataSourceDeps(t, datasource.TypePrometheus, runner)
+
+			got, err := d.newInput(context.Background(), NameQueryDataSource, json.RawMessage("")).DataSourceRunner(c.ID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, d.db.(*DBMock).FetchDataSourceCalls(), 1)
+			assert.Len(t, d.runners.(*DataSourceRunnersMock).RunnerCalls(), c.Runners)
+
+			if err != nil {
+				assert.Contains(t, err.Error(), "list_data_sources")
+				return
+			}
+
+			assert.Same(t, runner, got)
+		})
+	}
 }
 
 func Test_input_FetchDocumentBlock(t *testing.T) {
@@ -1266,10 +1309,13 @@ func Test_input_FetchDocumentBlock(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			inp := testInput(testDeps(c.DB, nil, nil), NameReplaceBlocks, `{}`)
+			inp := testDeps(c.DB, nil, nil).newInput(context.Background(), NameReplaceBlocks, json.RawMessage(`{}`))
 
 			b, err := inp.FetchDocumentBlock(_testDocID, c.Branch, c.UID)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), 1)
+			assert.Empty(t, c.DB.FetchDocumentBranchesCalls())
 
 			if err != nil {
 				return
@@ -1277,6 +1323,255 @@ func Test_input_FetchDocumentBlock(t *testing.T) {
 
 			require.NotEmpty(t, b.Content)
 			assert.Equal(t, c.Result, b.Content[0].Text)
+		})
+	}
+}
+
+func Test_input_DescendantCount(t *testing.T) {
+	t.Parallel()
+
+	nestedID := xid.New()
+	tree := document.Summaries{{
+		ID: _testDocID,
+		Children: document.Summaries{
+			{ID: xid.New()},
+			{ID: nestedID, Children: document.Summaries{{ID: xid.New()}}},
+		},
+	}}
+
+	cc := map[string]struct {
+		TreeErr error
+		ID      xid.ID
+		Result  int
+		Err     error
+	}{
+		"Error returned by db.FetchDocumentTree": {
+			TreeErr: assert.AnError,
+			ID:      _testDocID,
+			Err:     assert.AnError,
+		},
+		"Document at the root counts every level under it": {
+			ID:     _testDocID,
+			Result: 3,
+		},
+		"Nested document counts its own subtree": {
+			ID:     nestedID,
+			Result: 1,
+		},
+		"Document missing from the tree has none": {
+			ID:     xid.New(),
+			Result: 0,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := &DBMock{
+				FetchDocumentTreeFunc: func(context.Context, string) (document.Summaries, error) {
+					if c.TreeErr != nil {
+						return nil, c.TreeErr
+					}
+
+					return tree, nil
+				},
+			}
+
+			got, err := testDeps(db, nil, nil).newInput(context.Background(), NameDeleteDocument, nil).DescendantCount(c.ID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			require.Len(t, db.FetchDocumentTreeCalls(), 1)
+			assert.Equal(t, "org", db.FetchDocumentTreeCalls()[0].OrganizationID)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, got)
+		})
+	}
+}
+
+func Test_input_FetchDocumentTree(t *testing.T) {
+	t.Parallel()
+
+	tree := document.Summaries{{ID: _testDocID}}
+
+	cc := map[string]struct {
+		TreeErr error
+		Result  document.Summaries
+		Err     error
+	}{
+		"Error returned by db.FetchDocumentTree": {
+			TreeErr: assert.AnError,
+			Err:     assert.AnError,
+		},
+		"Successful fetch": {
+			Result: tree,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := &DBMock{
+				FetchDocumentTreeFunc: func(context.Context, string) (document.Summaries, error) {
+					if c.TreeErr != nil {
+						return nil, c.TreeErr
+					}
+
+					return tree, nil
+				},
+			}
+
+			got, err := testDeps(db, nil, nil).newInput(context.Background(), NameListDocuments, nil).FetchDocumentTree()
+			testutil.AssertEqualError(t, c.Err, err)
+
+			require.Len(t, db.FetchDocumentTreeCalls(), 1)
+			assert.Equal(t, "org", db.FetchDocumentTreeCalls()[0].OrganizationID)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, got)
+		})
+	}
+}
+
+func Test_input_FetchBranchesByDocument(t *testing.T) {
+	t.Parallel()
+
+	otherID := xid.New()
+
+	cc := map[string]struct {
+		Err    error
+		Result map[xid.ID][]document.BranchSummary
+	}{
+		"Error returned by db.FetchDocumentBranchesByOrganizationID": {
+			Err: assert.AnError,
+		},
+		"Branches keyed by document": {
+			Result: map[xid.ID][]document.BranchSummary{
+				_testDocID: {
+					{BranchID: _stubMainBranchID, DocumentID: _testDocID, Default: true},
+					{BranchID: _stubBranchID, DocumentID: _testDocID},
+				},
+				otherID: {
+					{BranchID: _unknownBranchID, DocumentID: otherID, Default: true},
+				},
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := &DBMock{
+				FetchDocumentBranchesByOrganizationIDFunc: func(context.Context, string) ([]document.BranchSummary, error) {
+					if c.Err != nil {
+						return nil, c.Err
+					}
+
+					return []document.BranchSummary{
+						{BranchID: _stubMainBranchID, DocumentID: _testDocID, Default: true},
+						{BranchID: _stubBranchID, DocumentID: _testDocID},
+						{BranchID: _unknownBranchID, DocumentID: otherID, Default: true},
+					}, nil
+				},
+			}
+
+			got, err := testDeps(db, nil, nil).newInput(context.Background(), NameListDocuments, nil).FetchBranchesByDocument()
+			testutil.AssertEqualError(t, c.Err, err)
+
+			require.Len(t, db.FetchDocumentBranchesByOrganizationIDCalls(), 1)
+			assert.Equal(t, "org", db.FetchDocumentBranchesByOrganizationIDCalls()[0].OrganizationID)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, got)
+		})
+	}
+}
+
+func Test_input_FetchDocumentChildren(t *testing.T) {
+	t.Parallel()
+
+	parentID := null.ValueFrom(_testDocID)
+	children := document.Summaries{{ID: xid.New()}}
+
+	cc := map[string]struct {
+		ChildrenErr error
+		Children    document.Summaries
+		CheckErr    error
+		Checks      int
+		Result      document.Summaries
+		Err         error
+	}{
+		"Error returned by db.FetchDocumentTreeByDocumentParentID": {
+			ChildrenErr: assert.AnError,
+			Err:         assert.AnError,
+		},
+		// a parent with children exists, so it is not checked.
+		"Successful fetch": {
+			Children: children,
+			Result:   children,
+		},
+		"Unknown parent is refused": {
+			Children: document.Summaries{},
+			CheckErr: sql.ErrNoRows,
+			Checks:   1,
+			Err:      fmt.Errorf("parent %s: %w", _testDocID, ErrUnknownDocument),
+		},
+		"Error returned by db.CheckDocumentExists": {
+			Children: document.Summaries{},
+			CheckErr: assert.AnError,
+			Checks:   1,
+			Err:      assert.AnError,
+		},
+		"Parent without children": {
+			Children: document.Summaries{},
+			Checks:   1,
+			Result:   document.Summaries{},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := &DBMock{
+				FetchDocumentTreeByDocumentParentIDFunc: func(context.Context, null.Value[xid.ID], string) (document.Summaries, error) {
+					if c.ChildrenErr != nil {
+						return nil, c.ChildrenErr
+					}
+
+					return c.Children, nil
+				},
+				CheckDocumentExistsFunc: func(context.Context, xid.ID, string) error {
+					return c.CheckErr
+				},
+			}
+
+			got, err := testDeps(db, nil, nil).newInput(context.Background(), NameListDocuments, nil).FetchDocumentChildren(parentID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			require.Len(t, db.FetchDocumentTreeByDocumentParentIDCalls(), 1)
+			assert.Equal(t, parentID, db.FetchDocumentTreeByDocumentParentIDCalls()[0].ParentID)
+			assert.Equal(t, "org", db.FetchDocumentTreeByDocumentParentIDCalls()[0].OrganizationID)
+			assert.Empty(t, db.FetchDocumentTreeCalls())
+			assert.Len(t, db.CheckDocumentExistsCalls(), c.Checks)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, got)
 		})
 	}
 }
@@ -1307,8 +1602,10 @@ func Test_input_FetchDocument(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			doc, err := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).FetchDocument(_testDocID)
+			doc, err := testDeps(c.DB, nil, nil).newInput(context.Background(), NameGetDocument, json.RawMessage(`{}`)).FetchDocument(_testDocID)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentCalls(), 1)
 
 			if err != nil {
 				return
@@ -1324,10 +1621,11 @@ func Test_input_FetchBranch(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB     *DBMock
-		Branch xid.ID
-		Result string
-		Err    error
+		DB       *DBMock
+		Branch   xid.ID
+		Result   string
+		Listings int
+		Err      error
 	}{
 		"Error returned by db.FetchDocumentByBranchID": {
 			DB: &DBMock{
@@ -1339,9 +1637,10 @@ func Test_input_FetchBranch(t *testing.T) {
 			Err:    assert.AnError,
 		},
 		"Unknown branch names the ones that exist": {
-			DB:     stubDocumentDB(),
-			Branch: _unknownBranchID,
-			Err:    fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
+			DB:       stubDocumentDB(),
+			Branch:   _unknownBranchID,
+			Listings: 1,
+			Err:      fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
 		},
 		"Unknown branch of an unknown document": {
 			DB: &DBMock{
@@ -1349,8 +1648,9 @@ func Test_input_FetchBranch(t *testing.T) {
 					return nil, errutil.ErrNotFound
 				},
 			},
-			Branch: _unknownBranchID,
-			Err:    ErrUnknownDocument,
+			Branch:   _unknownBranchID,
+			Listings: 1,
+			Err:      ErrUnknownDocument,
 		},
 		// a branch id resolves on its own, so another document's branch
 		// is refused as unknown to this one.
@@ -1363,8 +1663,9 @@ func Test_input_FetchBranch(t *testing.T) {
 
 				return db
 			}(),
-			Branch: _stubBranchID,
-			Err:    fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _stubBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
+			Branch:   _stubBranchID,
+			Listings: 1,
+			Err:      fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _stubBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
 		},
 		"Default branch": {
 			DB:     stubDocumentDB(),
@@ -1382,10 +1683,13 @@ func Test_input_FetchBranch(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			inp := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`)
+			inp := testDeps(c.DB, nil, nil).newInput(context.Background(), NameGetDocument, json.RawMessage(`{}`))
 
 			doc, err := inp.FetchBranch(_testDocID, c.Branch)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), 1)
+			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), c.Listings)
 
 			if err != nil {
 				return
@@ -1403,6 +1707,8 @@ func Test_input_FetchBranch(t *testing.T) {
 
 			_, err = inp.FetchBranch(xid.New(), c.Branch)
 			require.Error(t, err)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), 2)
+			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), 1)
 		})
 	}
 }
@@ -1410,19 +1716,36 @@ func Test_input_FetchBranch(t *testing.T) {
 func Test_input_unknownBranch(t *testing.T) {
 	t.Parallel()
 
-	// error: the listing itself failing is passed on.
-	db := &DBMock{
-		FetchDocumentBranchesFunc: func(context.Context, xid.ID, string) ([]document.BranchSummary, error) {
-			return nil, assert.AnError
+	cc := map[string]struct {
+		DB  *DBMock
+		Err error
+	}{
+		// the listing itself failing is passed on.
+		"Error returned by db.FetchDocumentBranches": {
+			DB: &DBMock{
+				FetchDocumentBranchesFunc: func(context.Context, xid.ID, string) ([]document.BranchSummary, error) {
+					return nil, assert.AnError
+				},
+			},
+			Err: assert.AnError,
+		},
+		// the branches the document does have travel with the refusal.
+		"Unknown branch names the ones that exist": {
+			DB:  stubDocumentDB(),
+			Err: fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
 		},
 	}
 
-	err := testInput(testDeps(db, nil, nil), NameGetDocument, `{}`).unknownBranch(_testDocID, _unknownBranchID)
-	require.Error(t, err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// success: the branches the document does have travel with the refusal.
-	err = testInput(testDeps(stubDocumentDB(), nil, nil), NameGetDocument, `{}`).unknownBranch(_testDocID, _unknownBranchID)
-	assert.Equal(t, fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID), err)
+			err := testDeps(c.DB, nil, nil).newInput(context.Background(), NameGetDocument, json.RawMessage(`{}`)).unknownBranch(_testDocID, _unknownBranchID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), 1)
+		})
+	}
 }
 
 func Test_input_FetchDocumentBranches(t *testing.T) {
@@ -1459,8 +1782,10 @@ func Test_input_FetchDocumentBranches(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).FetchDocumentBranches(_testDocID)
+			got, err := testDeps(c.DB, nil, nil).newInput(context.Background(), NameGetDocument, json.RawMessage(`{}`)).FetchDocumentBranches(_testDocID)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), 1)
 
 			if err != nil {
 				return
@@ -1476,20 +1801,35 @@ func Test_input_protectedBranch(t *testing.T) {
 
 	doc := &document.Document{ID: _testDocID, BranchName: document.DefaultBranch, Protected: true}
 
-	// error: a listing that fails still says the branch is protected.
-	db := &DBMock{
-		FetchDocumentBranchesFunc: func(context.Context, xid.ID, string) ([]document.BranchSummary, error) {
-			return nil, assert.AnError
+	cc := map[string]struct {
+		DB  *DBMock
+		Err error
+	}{
+		// a listing that fails still says the branch is protected.
+		"Error returned by db.FetchDocumentBranches": {
+			DB: &DBMock{
+				FetchDocumentBranchesFunc: func(context.Context, xid.ID, string) ([]document.BranchSummary, error) {
+					return nil, assert.AnError
+				},
+			},
+			Err: fmt.Errorf("branch main: %w; %w", errBranchProtected, fmt.Errorf("fetching branches: %w", assert.AnError)),
+		},
+		"Unprotected branches are offered": {
+			DB:  protectedDocumentDB(),
+			Err: fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID),
 		},
 	}
 
-	err := testInput(testDeps(db, nil, nil), NameInsertBlocks, `{}`).protectedBranch(doc)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), errBranchProtected.Error())
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// success: the unprotected branches are offered.
-	err = testInput(testDeps(protectedDocumentDB(), nil, nil), NameInsertBlocks, `{}`).protectedBranch(doc)
-	assert.Equal(t, fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID), err)
+			err := testDeps(c.DB, nil, nil).newInput(context.Background(), NameInsertBlocks, json.RawMessage(`{}`)).protectedBranch(doc)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), 1)
+		})
+	}
 }
 
 func Test_branchLabels(t *testing.T) {
@@ -1510,7 +1850,7 @@ func Test_input_FetchTagTree(t *testing.T) {
 
 	db := stubTagDB(nil)
 
-	tree, err := testInput(testDeps(db, nil, nil), NameListTags, `{}`).FetchTagTree()
+	tree, err := testDeps(db, nil, nil).newInput(context.Background(), NameListTags, json.RawMessage(`{}`)).FetchTagTree()
 	require.NoError(t, err)
 	require.Len(t, tree, 2)
 	assert.Equal(t, _testTagID, tree[0].ID)
@@ -1522,8 +1862,11 @@ func Test_input_FetchTagTree(t *testing.T) {
 	assert.Equal(t, "org", ff[0].OrganizationID)
 	assert.Equal(t, "user", ff[0].UserID)
 
-	_, err = testInput(testDeps(stubTagDB(assert.AnError), nil, nil), NameListTags, `{}`).FetchTagTree()
+	failing := stubTagDB(assert.AnError)
+
+	_, err = testDeps(failing, nil, nil).newInput(context.Background(), NameListTags, json.RawMessage(`{}`)).FetchTagTree()
 	require.Error(t, err)
+	assert.Len(t, failing.FetchTagTreeCalls(), 1)
 }
 
 func Test_input_FetchTag(t *testing.T) {
@@ -1556,8 +1899,10 @@ func Test_input_FetchTag(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			tg, err := testInput(testDeps(c.DB, nil, nil), NameDeleteTag, `{}`).FetchTag(c.ID)
+			tg, err := testDeps(c.DB, nil, nil).newInput(context.Background(), NameDeleteTag, json.RawMessage(`{}`)).FetchTag(c.ID)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchTagTreeCalls(), 1)
 
 			if err != nil {
 				assert.Nil(t, tg)
@@ -1582,12 +1927,14 @@ func Test_input_FetchBranchTags(t *testing.T) {
 		},
 	}
 
-	tags, err := testInput(testDeps(db, nil, nil), NameGetDocument, `{}`).FetchBranchTags(_testDocID, _stubBranchID)
+	tags, err := testDeps(db, nil, nil).newInput(context.Background(), NameGetDocument, json.RawMessage(`{}`)).FetchBranchTags(_testDocID, _stubBranchID)
 	require.NoError(t, err)
 	assert.Equal(t, []tag.Tag{{ID: _testTagID}}, tags)
+	assert.Len(t, db.FetchBranchTagsCalls(), 1)
 
-	_, err = testInput(testDeps(db, nil, nil), NameGetDocument, `{}`).FetchBranchTags(_testDocID, _unknownBranchID)
+	_, err = testDeps(db, nil, nil).newInput(context.Background(), NameGetDocument, json.RawMessage(`{}`)).FetchBranchTags(_testDocID, _unknownBranchID)
 	require.Error(t, err)
+	assert.Len(t, db.FetchBranchTagsCalls(), 2)
 }
 
 func Test_input_CreateTag(t *testing.T) {
@@ -1595,27 +1942,52 @@ func Test_input_CreateTag(t *testing.T) {
 
 	tg := tag.NewTag(tag.CreateInput{TagName: "Release", Color: "#3b82f6"}, "org", "user")
 
-	db := &DBMock{}
-	require.NoError(t, testInput(testDeps(db, nil, nil), NameCreateTag, `{}`).CreateTag(tg))
-
-	ff := db.InsertTagCalls()
-	require.Len(t, ff, 1)
-	assert.Equal(t, tg, ff[0].T)
-
-	// the repository's own refusal of a duplicate name passes through
-	// untouched: it already names the clash.
-	db = &DBMock{
-		InsertTagFunc: func(context.Context, tag.Tag) error { return tag.ErrDuplicateTagName },
+	cc := map[string]struct {
+		DB       *DBMock
+		Notifies int
+		Err      error
+	}{
+		// the repository's own refusal of a duplicate name passes through
+		// untouched: it already names the clash.
+		"Duplicate tag name": {
+			DB: &DBMock{
+				InsertTagFunc: func(context.Context, tag.Tag) error { return tag.ErrDuplicateTagName },
+			},
+			Err: tag.ErrDuplicateTagName,
+		},
+		"Created": {
+			DB:       &DBMock{},
+			Notifies: 1,
+		},
 	}
-	assert.Equal(t, tag.ErrDuplicateTagName, testInput(testDeps(db, nil, nil), NameCreateTag, `{}`).CreateTag(tg))
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			tags := &TagNotifierMock{}
+			d := testDeps(c.DB, nil, nil)
+			d.tags = tags
+
+			err := d.newInput(context.Background(), NameCreateTag, json.RawMessage(`{}`)).CreateTag(tg)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, tags.NotifyTreeChangeCalls(), c.Notifies)
+
+			ff := c.DB.InsertTagCalls()
+			require.Len(t, ff, 1)
+			assert.Equal(t, tg, ff[0].T)
+		})
+	}
 }
 
 func Test_input_UpdateTag(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB  *DBMock
-		Err error
+		DB       *DBMock
+		Notifies int
+		Err      error
 	}{
 		"Error returned by db.UpdateTag": {
 			DB: &DBMock{
@@ -1633,7 +2005,7 @@ func Test_input_UpdateTag(t *testing.T) {
 			},
 			Err: fmt.Errorf("tag %s: %w", _testTagID, ErrUnknownTag),
 		},
-		"Updated": {DB: &DBMock{}},
+		"Updated": {DB: &DBMock{}, Notifies: 1},
 	}
 
 	for cn, c := range cc {
@@ -1641,9 +2013,14 @@ func Test_input_UpdateTag(t *testing.T) {
 			t.Parallel()
 
 			inp := tag.UpdateInput{TagName: null.StringFrom("Release")}
+			tags := &TagNotifierMock{}
+			d := testDeps(c.DB, nil, nil)
+			d.tags = tags
 
-			err := testInput(testDeps(c.DB, nil, nil), NameUpdateTag, `{}`).UpdateTag(_testTagID, inp)
+			err := d.newInput(context.Background(), NameUpdateTag, json.RawMessage(`{}`)).UpdateTag(_testTagID, inp)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, tags.NotifyTreeChangeCalls(), c.Notifies)
 
 			ff := c.DB.UpdateTagCalls()
 			require.Len(t, ff, 1)
@@ -1658,8 +2035,9 @@ func Test_input_DeleteTag(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB  *DBMock
-		Err error
+		DB       *DBMock
+		Notifies int
+		Err      error
 	}{
 		"Error returned by db.DeleteTag": {
 			DB: &DBMock{
@@ -1673,15 +2051,21 @@ func Test_input_DeleteTag(t *testing.T) {
 			},
 			Err: fmt.Errorf("tag %s: %w", _testTagID, ErrUnknownTag),
 		},
-		"Deleted": {DB: &DBMock{}},
+		"Deleted": {DB: &DBMock{}, Notifies: 1},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			err := testInput(testDeps(c.DB, nil, nil), NameDeleteTag, `{}`).DeleteTag(_testTagID)
+			tags := &TagNotifierMock{}
+			d := testDeps(c.DB, nil, nil)
+			d.tags = tags
+
+			err := d.newInput(context.Background(), NameDeleteTag, json.RawMessage(`{}`)).DeleteTag(_testTagID)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, tags.NotifyTreeChangeCalls(), c.Notifies)
 
 			ff := c.DB.DeleteTagCalls()
 			require.Len(t, ff, 1)
@@ -1695,15 +2079,24 @@ func Test_input_AssignTag(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB      *DBMock
-		Branch  xid.ID
-		Assigns int
-		Err     error
+		DB       *DBMock
+		Branch   xid.ID
+		Listings int
+		Assigns  int
+		Notifies int
+		Err      error
 	}{
 		"Unknown branch is refused before the write": {
-			DB:     stubDocumentDB(),
-			Branch: _unknownBranchID,
-			Err:    fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
+			DB:       stubDocumentDB(),
+			Branch:   _unknownBranchID,
+			Listings: 1,
+			Err:      fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
+		},
+		"Protected branch is refused before the write": {
+			DB:       protectedDocumentDB(),
+			Branch:   _stubMainBranchID,
+			Listings: 1,
+			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID),
 		},
 		"Unknown tag": {
 			DB: func() *DBMock {
@@ -1732,9 +2125,10 @@ func Test_input_AssignTag(t *testing.T) {
 			Err:     assert.AnError,
 		},
 		"Assigned and recorded": {
-			DB:      stubDocumentDB(),
-			Branch:  _stubBranchID,
-			Assigns: 1,
+			DB:       stubDocumentDB(),
+			Branch:   _stubBranchID,
+			Assigns:  1,
+			Notifies: 1,
 		},
 	}
 
@@ -1742,10 +2136,18 @@ func Test_input_AssignTag(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			inp := testInput(testDeps(c.DB, nil, nil), NameSetTagAssignment, `{}`)
+			tags := &TagNotifierMock{}
+			d := testDeps(c.DB, nil, nil)
+			d.tags = tags
+			inp := d.newInput(context.Background(), NameSetTagAssignment, json.RawMessage(`{}`))
 
 			err := inp.AssignTag(_testDocID, c.Branch, _testTagID)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), 1)
+			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), c.Listings)
+			assert.Len(t, tags.NotifyTreeChangeCalls(), c.Notifies)
+			assert.Len(t, tags.NotifyBranchTagsChangeCalls(), c.Notifies)
 
 			ff := c.DB.AssignBranchTagCalls()
 			require.Len(t, ff, c.Assigns)
@@ -1764,25 +2166,37 @@ func Test_input_UnassignTag(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB        *DBMock
-		Branch    xid.ID
-		Tag       xid.ID
-		Unassigns int
-		Err       error
+		DB         *DBMock
+		Branch     xid.ID
+		Tag        xid.ID
+		Listings   int
+		TagFetches int
+		Unassigns  int
+		Notifies   int
+		Err        error
 	}{
 		"Unknown branch is refused before the write": {
-			DB:     stubTagDB(nil),
-			Branch: _unknownBranchID,
-			Tag:    _testTagID,
-			Err:    fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
+			DB:       stubTagDB(nil),
+			Branch:   _unknownBranchID,
+			Tag:      _testTagID,
+			Listings: 1,
+			Err:      fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
+		},
+		"Protected branch is refused before the write": {
+			DB:       protectedDocumentDB(),
+			Branch:   _stubMainBranchID,
+			Tag:      _testTagID,
+			Listings: 1,
+			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID),
 		},
 		// the repository treats a tag the branch does not carry as
 		// nothing to do, so an id naming nothing is caught here.
 		"Unknown tag": {
-			DB:     stubTagDB(nil),
-			Branch: _stubMainBranchID,
-			Tag:    _unknownTagID,
-			Err:    fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
+			DB:         stubTagDB(nil),
+			Branch:     _stubMainBranchID,
+			Tag:        _unknownTagID,
+			TagFetches: 1,
+			Err:        fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
 		},
 		"Error returned by db.UnassignBranchTag": {
 			DB: func() *DBMock {
@@ -1793,16 +2207,19 @@ func Test_input_UnassignTag(t *testing.T) {
 
 				return db
 			}(),
-			Branch:    _stubMainBranchID,
-			Tag:       _testTagID,
-			Unassigns: 1,
-			Err:       assert.AnError,
+			Branch:     _stubMainBranchID,
+			Tag:        _testTagID,
+			TagFetches: 1,
+			Unassigns:  1,
+			Err:        assert.AnError,
 		},
 		"Unassigned and recorded": {
-			DB:        stubTagDB(nil),
-			Branch:    _stubBranchID,
-			Tag:       _testTagID,
-			Unassigns: 1,
+			DB:         stubTagDB(nil),
+			Branch:     _stubBranchID,
+			Tag:        _testTagID,
+			TagFetches: 1,
+			Unassigns:  1,
+			Notifies:   1,
 		},
 	}
 
@@ -1810,10 +2227,19 @@ func Test_input_UnassignTag(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			inp := testInput(testDeps(c.DB, nil, nil), NameSetTagAssignment, `{}`)
+			tags := &TagNotifierMock{}
+			d := testDeps(c.DB, nil, nil)
+			d.tags = tags
+			inp := d.newInput(context.Background(), NameSetTagAssignment, json.RawMessage(`{}`))
 
 			err := inp.UnassignTag(_testDocID, c.Branch, c.Tag)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), 1)
+			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), c.Listings)
+			assert.Len(t, c.DB.FetchTagTreeCalls(), c.TagFetches)
+			assert.Len(t, tags.NotifyTreeChangeCalls(), c.Notifies)
+			assert.Len(t, tags.NotifyBranchTagsChangeCalls(), c.Notifies)
 
 			ff := c.DB.UnassignBranchTagCalls()
 			require.Len(t, ff, c.Unassigns)
@@ -1836,6 +2262,7 @@ func Test_input_MoveTag(t *testing.T) {
 		Tag       xid.ID
 		SortIndex int
 		Order     []xid.ID
+		Notifies  int
 		Err       error
 	}{
 		"Error returned by db.FetchTagTree": {
@@ -1879,12 +2306,14 @@ func Test_input_MoveTag(t *testing.T) {
 			Tag:       _testTagID,
 			SortIndex: 1,
 			Order:     []xid.ID{_otherTagID, _testTagID},
+			Notifies:  1,
 		},
 		"Kept in place": {
 			DB:        stubTagDB(nil),
 			Tag:       _testTagID,
 			SortIndex: 0,
 			Order:     []xid.ID{_testTagID, _otherTagID},
+			Notifies:  1,
 		},
 	}
 
@@ -1892,8 +2321,15 @@ func Test_input_MoveTag(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			err := testInput(testDeps(c.DB, nil, nil), NameUpdateTag, `{}`).MoveTag(c.Tag, c.SortIndex)
+			tags := &TagNotifierMock{}
+			d := testDeps(c.DB, nil, nil)
+			d.tags = tags
+
+			err := d.newInput(context.Background(), NameUpdateTag, json.RawMessage(`{}`)).MoveTag(c.Tag, c.SortIndex)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchTagTreeCalls(), 1)
+			assert.Len(t, tags.NotifyTreeChangeCalls(), c.Notifies)
 
 			ff := c.DB.UpdateTagTreeCalls()
 
@@ -1918,31 +2354,69 @@ func Test_input_MoveTag(t *testing.T) {
 func Test_input_notifyTagTreeChange(t *testing.T) {
 	t.Parallel()
 
-	// a session without a notifier silently no-ops.
-	testInput(testDeps(nil, nil, nil), NameCreateTag, `{}`).notifyTagTreeChange()
+	cc := map[string]struct {
+		Tags *TagNotifierMock
+	}{
+		// a session without a notifier silently no-ops.
+		"No notifier":         {},
+		"Notifier configured": {Tags: &TagNotifierMock{}},
+	}
 
-	d, tags := tagDeps(nil)
-	testInput(d, NameCreateTag, `{}`).notifyTagTreeChange()
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	ff := tags.NotifyTreeChangeCalls()
-	require.Len(t, ff, 1)
-	assert.Equal(t, "org", ff[0].OrganizationID)
+			d := testDeps(nil, nil, nil)
+			if c.Tags != nil {
+				d.tags = c.Tags
+			}
+
+			d.newInput(context.Background(), NameCreateTag, json.RawMessage(`{}`)).notifyTagTreeChange()
+
+			if c.Tags == nil {
+				return
+			}
+
+			ff := c.Tags.NotifyTreeChangeCalls()
+			require.Len(t, ff, 1)
+			assert.Equal(t, "org", ff[0].OrganizationID)
+		})
+	}
 }
 
 func Test_input_notifyBranchTagsChange(t *testing.T) {
 	t.Parallel()
 
-	// a session without a notifier silently no-ops.
-	testInput(testDeps(nil, nil, nil), NameSetTagAssignment, `{}`).notifyBranchTagsChange(_testDocID, _stubBranchID)
+	cc := map[string]struct {
+		Tags *TagNotifierMock
+	}{
+		// a session without a notifier silently no-ops.
+		"No notifier":         {},
+		"Notifier configured": {Tags: &TagNotifierMock{}},
+	}
 
-	d, tags := tagDeps(nil)
-	testInput(d, NameSetTagAssignment, `{}`).notifyBranchTagsChange(_testDocID, _stubBranchID)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	ff := tags.NotifyBranchTagsChangeCalls()
-	require.Len(t, ff, 1)
-	assert.Equal(t, "org", ff[0].OrganizationID)
-	assert.Equal(t, _testDocID, ff[0].DocumentID)
-	assert.Equal(t, _stubBranchID, ff[0].BranchID)
+			d := testDeps(nil, nil, nil)
+			if c.Tags != nil {
+				d.tags = c.Tags
+			}
+
+			d.newInput(context.Background(), NameSetTagAssignment, json.RawMessage(`{}`)).notifyBranchTagsChange(_testDocID, _stubBranchID)
+
+			if c.Tags == nil {
+				return
+			}
+
+			ff := c.Tags.NotifyBranchTagsChangeCalls()
+			require.Len(t, ff, 1)
+			assert.Equal(t, "org", ff[0].OrganizationID)
+			assert.Equal(t, _testDocID, ff[0].DocumentID)
+			assert.Equal(t, _stubBranchID, ff[0].BranchID)
+		})
+	}
 }
 
 func Test_input_FetchHooks(t *testing.T) {
@@ -1954,30 +2428,36 @@ func Test_input_FetchHooks(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		DB     *DBMock
-		Branch xid.ID
-		Result []hook.Hook
-		Err    error
+		DB          *DBMock
+		Branch      xid.ID
+		Result      []hook.Hook
+		Listings    int
+		HookFetches int
+		Err         error
 	}{
 		"Unknown branch": {
-			DB:     stubHookDB(),
-			Branch: _unknownBranchID,
-			Err:    fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
+			DB:       stubHookDB(),
+			Branch:   _unknownBranchID,
+			Listings: 1,
+			Err:      fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
 		},
 		"Error returned by db.FetchDocumentHooksByBranchID": {
-			DB:     failing,
-			Branch: _stubBranchID,
-			Err:    assert.AnError,
+			DB:          failing,
+			Branch:      _stubBranchID,
+			HookFetches: 1,
+			Err:         assert.AnError,
 		},
 		"Branch without hooks": {
-			DB:     stubHookDB(),
-			Branch: _stubMainBranchID,
-			Result: []hook.Hook{},
+			DB:          stubHookDB(),
+			Branch:      _stubMainBranchID,
+			Result:      []hook.Hook{},
+			HookFetches: 1,
 		},
 		"Branch with hooks": {
-			DB:     stubHookDB(),
-			Branch: _stubBranchID,
-			Result: []hook.Hook{*stubHook()},
+			DB:          stubHookDB(),
+			Branch:      _stubBranchID,
+			Result:      []hook.Hook{*stubHook()},
+			HookFetches: 1,
 		},
 	}
 
@@ -1985,8 +2465,14 @@ func Test_input_FetchHooks(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := testInput(testDeps(c.DB, nil, nil), NameListHooks, `{}`).FetchHooks(_testDocID, c.Branch)
+			got, err := testDeps(c.DB, nil, nil).newInput(context.Background(), NameListHooks, json.RawMessage(`{}`)).FetchHooks(_testDocID, c.Branch)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), 1)
+			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), c.Listings)
+
+			ff := c.DB.FetchDocumentHooksByBranchIDCalls()
+			require.Len(t, ff, c.HookFetches)
 
 			if err != nil {
 				assert.Nil(t, got)
@@ -1994,9 +2480,6 @@ func Test_input_FetchHooks(t *testing.T) {
 			}
 
 			assert.Equal(t, c.Result, got)
-
-			ff := c.DB.FetchDocumentHooksByBranchIDCalls()
-			require.Len(t, ff, 1)
 			assert.Equal(t, c.Branch, ff[0].BranchID)
 			assert.Equal(t, "org", ff[0].OrganizationID)
 		})
@@ -2005,15 +2488,6 @@ func Test_input_FetchHooks(t *testing.T) {
 
 func Test_input_FetchHook(t *testing.T) {
 	t.Parallel()
-
-	// withHook answers the lookup with the given hook.
-	withHook := func(hk *hook.Hook) *DBMock {
-		return &DBMock{
-			FetchDocumentHookFunc: func(context.Context, xid.ID, string) (*hook.Hook, error) {
-				return hk, nil
-			},
-		}
-	}
 
 	otherDocument := stubHook()
 	otherDocument.DocumentID = null.ValueFrom(xid.New())
@@ -2052,12 +2526,20 @@ func Test_input_FetchHook(t *testing.T) {
 			Err: fmt.Errorf("hook %s on document %s: %w", _testHookID, _testDocID, errUnknownHook),
 		},
 		"Hook of another document": {
-			DB:  withHook(otherDocument),
+			DB: &DBMock{
+				FetchDocumentHookFunc: func(context.Context, xid.ID, string) (*hook.Hook, error) {
+					return otherDocument, nil
+				},
+			},
 			ID:  _testHookID,
 			Err: fmt.Errorf("hook %s on document %s: %w", _testHookID, _testDocID, errUnknownHook),
 		},
 		"Hook of a deleted document": {
-			DB:  withHook(deletedDocument),
+			DB: &DBMock{
+				FetchDocumentHookFunc: func(context.Context, xid.ID, string) (*hook.Hook, error) {
+					return deletedDocument, nil
+				},
+			},
 			ID:  _testHookID,
 			Err: fmt.Errorf("hook %s on document %s: %w", _testHookID, _testDocID, errUnknownHook),
 		},
@@ -2071,7 +2553,7 @@ func Test_input_FetchHook(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hk, err := testInput(testDeps(c.DB, nil, nil), NameUpdateHook, `{}`).FetchHook(_testDocID, c.ID)
+			hk, err := testDeps(c.DB, nil, nil).newInput(context.Background(), NameUpdateHook, json.RawMessage(`{}`)).FetchHook(_testDocID, c.ID)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			ff := c.DB.FetchDocumentHookCalls()
@@ -2111,6 +2593,7 @@ func Test_input_CreateHook(t *testing.T) {
 		BlockUID string
 		Type     hook.Type
 		Settings processor.Settings
+		Listings int
 		Inserts  int
 		Err      error
 	}{
@@ -2119,7 +2602,16 @@ func Test_input_CreateHook(t *testing.T) {
 			Branch:   _unknownBranchID,
 			Type:     hook.TypeScheduledReminder,
 			Settings: scheduled,
+			Listings: 1,
 			Err:      fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
+		},
+		"Protected branch is refused before anything is created": {
+			DB:       protectedDocumentDB(),
+			Branch:   _stubMainBranchID,
+			Type:     hook.TypeScheduledReminder,
+			Settings: scheduled,
+			Listings: 1,
+			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID),
 		},
 		"Unknown block": {
 			DB:       stubHookDB(),
@@ -2176,10 +2668,13 @@ func Test_input_CreateHook(t *testing.T) {
 			t.Parallel()
 
 			d := hookDeps(c.DB, c.Man)
-			inp := testInput(d, NameCreateHook, `{}`)
+			inp := d.newInput(context.Background(), NameCreateHook, json.RawMessage(`{}`))
 
 			hk, err := inp.CreateHook(_testDocID, c.Branch, c.BlockUID, c.Type, c.Settings)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), 1)
+			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), c.Listings)
 
 			ff := d.hookMan.(*HookManagerMock).CreateHookCalls()
 			require.Len(t, ff, c.Inserts)
@@ -2241,7 +2736,7 @@ func Test_input_UpdateHook(t *testing.T) {
 			t.Parallel()
 
 			d := hookDeps(c.DB, c.Man)
-			inp := testInput(d, NameUpdateHook, `{}`)
+			inp := d.newInput(context.Background(), NameUpdateHook, json.RawMessage(`{}`))
 			hk := stubHook()
 
 			err := inp.UpdateHook(hk, c.Settings)
@@ -2303,7 +2798,7 @@ func Test_input_ResetHook(t *testing.T) {
 			t.Parallel()
 
 			d := hookDeps(c.DB, c.Man)
-			inp := testInput(d, NameUpdateHook, `{}`)
+			inp := d.newInput(context.Background(), NameUpdateHook, json.RawMessage(`{}`))
 
 			err := inp.ResetHook(c.Hook)
 			testutil.AssertEqualError(t, c.Err, err)
@@ -2332,12 +2827,34 @@ func Test_input_DeleteHook(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		DB      *DBMock
-		Man     *HookManagerMock
-		Hook    *hook.Hook
-		Deletes int
-		Err     error
+		DB       *DBMock
+		Man      *HookManagerMock
+		Hook     *hook.Hook
+		Listings int
+		Deletes  int
+		Err      error
 	}{
+		"Error returned by db.FetchDocumentByBranchID": {
+			DB:   failingDocumentDB(),
+			Hook: stubHook(),
+			Err:  assert.AnError,
+		},
+		"Protected branch is refused before the delete": {
+			DB:       protectedDocumentDB(),
+			Hook:     stubHook(),
+			Listings: 1,
+			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID),
+		},
+		"Hook without a branch is deleted": {
+			DB: failingDocumentDB(),
+			Hook: func() *hook.Hook {
+				hk := stubHook()
+				hk.BranchID = null.Value[xid.ID]{}
+
+				return hk
+			}(),
+			Deletes: 1,
+		},
 		"Error returned by hookMan.DeleteHook": {
 			DB:      stubHookDB(),
 			Man:     failing,
@@ -2357,10 +2874,12 @@ func Test_input_DeleteHook(t *testing.T) {
 			t.Parallel()
 
 			d := hookDeps(c.DB, c.Man)
-			inp := testInput(d, NameDeleteHook, `{}`)
+			inp := d.newInput(context.Background(), NameDeleteHook, json.RawMessage(`{}`))
 
 			err := inp.DeleteHook(c.Hook)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), c.Listings)
 
 			ff := d.hookMan.(*HookManagerMock).DeleteHookCalls()
 			require.Len(t, ff, c.Deletes)
@@ -2386,7 +2905,7 @@ func Test_input_FetchVariableTree(t *testing.T) {
 
 	man := stubVariableManager()
 
-	tree, err := testInput(variableDeps(man), NameListVariables, `{}`).FetchVariableTree()
+	tree, err := variableDeps(man).newInput(context.Background(), NameListVariables, json.RawMessage(`{}`)).FetchVariableTree()
 	require.NoError(t, err)
 	assert.Equal(t, stubVariableTree(), tree)
 
@@ -2429,7 +2948,7 @@ func Test_input_SubstituteVariables(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := testInput(variableDeps(c.Man), NameQueryDataSource, `{}`).SubstituteVariables(c.Texts...)
+			res, err := variableDeps(c.Man).newInput(context.Background(), NameQueryDataSource, json.RawMessage(`{}`)).SubstituteVariables(c.Texts...)
 			assert.Len(t, c.Man.FetchTreeCalls(), c.Calls)
 			testutil.AssertEqualError(t, c.Err, err)
 
@@ -2464,8 +2983,10 @@ func Test_input_FetchVariableGroup(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			g, err := testInput(variableDeps(c.Man), NameDeleteVariableGroup, `{}`).FetchVariableGroup(c.ID)
+			g, err := variableDeps(c.Man).newInput(context.Background(), NameDeleteVariableGroup, json.RawMessage(`{}`)).FetchVariableGroup(c.ID)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.Man.FetchTreeCalls(), 1)
 
 			if err != nil {
 				return
@@ -2498,8 +3019,10 @@ func Test_input_FetchVariable(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			v, err := testInput(variableDeps(c.Man), NameDeleteVariable, `{}`).FetchVariable(c.ID)
+			v, err := variableDeps(c.Man).newInput(context.Background(), NameDeleteVariable, json.RawMessage(`{}`)).FetchVariable(c.ID)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.Man.FetchTreeCalls(), 1)
 
 			if err != nil {
 				return
@@ -2516,7 +3039,7 @@ func Test_input_CreateVariableGroup(t *testing.T) {
 	man := stubVariableManager()
 	inp := variable.GroupCreateInput{GroupName: "Deploys", Color: "#f54a00"}
 
-	g, err := testInput(variableDeps(man), NameCreateVariableGroup, `{}`).CreateVariableGroup(inp)
+	g, err := variableDeps(man).newInput(context.Background(), NameCreateVariableGroup, json.RawMessage(`{}`)).CreateVariableGroup(inp)
 	require.NoError(t, err)
 	assert.Equal(t, _testVariableGroupID, g.ID)
 
@@ -2559,7 +3082,7 @@ func Test_input_UpdateVariableGroup(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			err := testInput(variableDeps(c.Man), NameUpdateVariableGroup, `{}`).UpdateVariableGroup(_testVariableGroupID, variable.GroupUpdateInput{GroupName: null.StringFrom("Env")})
+			err := variableDeps(c.Man).newInput(context.Background(), NameUpdateVariableGroup, json.RawMessage(`{}`)).UpdateVariableGroup(_testVariableGroupID, variable.GroupUpdateInput{GroupName: null.StringFrom("Env")})
 			testutil.AssertEqualError(t, c.Err, err)
 
 			ff := c.Man.UpdateGroupCalls()
@@ -2603,7 +3126,7 @@ func Test_input_DeleteVariableGroup(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			err := testInput(variableDeps(c.Man), NameDeleteVariableGroup, `{}`).DeleteVariableGroup(_testVariableGroupID)
+			err := variableDeps(c.Man).newInput(context.Background(), NameDeleteVariableGroup, json.RawMessage(`{}`)).DeleteVariableGroup(_testVariableGroupID)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			ff := c.Man.DeleteGroupCalls()
@@ -2638,7 +3161,7 @@ func Test_input_CreateVariable(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			v, err := testInput(variableDeps(c.Man), NameCreateVariable, `{}`).CreateVariable(inp)
+			v, err := variableDeps(c.Man).newInput(context.Background(), NameCreateVariable, json.RawMessage(`{}`)).CreateVariable(inp)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			ff := c.Man.CreateVariableCalls()
@@ -2669,9 +3192,10 @@ func Test_input_UpdateVariable(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		Man     *VariableManagerMock
-		GroupID xid.ID
-		Err     error
+		Man         *VariableManagerMock
+		GroupID     xid.ID
+		TreeFetches int
+		Err         error
 	}{
 		"Error returned by VariableManager.UpdateVariable": {
 			Man:     withUpdate(assert.AnError),
@@ -2679,14 +3203,16 @@ func Test_input_UpdateVariable(t *testing.T) {
 			Err:     assert.AnError,
 		},
 		"Unknown group": {
-			Man:     withUpdate(errutil.ErrNotFound),
-			GroupID: _unknownVariableID,
-			Err:     fmt.Errorf("variable group %s: %w", _unknownVariableID, ErrUnknownVariableGroup),
+			Man:         withUpdate(errutil.ErrNotFound),
+			GroupID:     _unknownVariableID,
+			TreeFetches: 1,
+			Err:         fmt.Errorf("variable group %s: %w", _unknownVariableID, ErrUnknownVariableGroup),
 		},
 		"Unknown variable": {
-			Man:     withUpdate(errutil.ErrNotFound),
-			GroupID: _testVariableGroupID,
-			Err:     fmt.Errorf("variable %s: %w", _testVariableID, ErrUnknownVariable),
+			Man:         withUpdate(errutil.ErrNotFound),
+			GroupID:     _testVariableGroupID,
+			TreeFetches: 1,
+			Err:         fmt.Errorf("variable %s: %w", _testVariableID, ErrUnknownVariable),
 		},
 		"Updated": {
 			Man:     withUpdate(nil),
@@ -2700,8 +3226,10 @@ func Test_input_UpdateVariable(t *testing.T) {
 
 			inp := variable.Input{GroupID: c.GroupID, Key: "zone"}
 
-			err := testInput(variableDeps(c.Man), NameUpdateVariable, `{}`).UpdateVariable(_testVariableID, inp)
+			err := variableDeps(c.Man).newInput(context.Background(), NameUpdateVariable, json.RawMessage(`{}`)).UpdateVariable(_testVariableID, inp)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, c.Man.FetchTreeCalls(), c.TreeFetches)
 
 			ff := c.Man.UpdateVariableCalls()
 			require.Len(t, ff, 1)
@@ -2744,7 +3272,7 @@ func Test_input_DeleteVariable(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			err := testInput(variableDeps(c.Man), NameDeleteVariable, `{}`).DeleteVariable(_testVariableID)
+			err := variableDeps(c.Man).newInput(context.Background(), NameDeleteVariable, json.RawMessage(`{}`)).DeleteVariable(_testVariableID)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			ff := c.Man.DeleteVariableCalls()
@@ -2787,7 +3315,7 @@ func Test_input_SetVariableValue(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			err := testInput(variableDeps(c.Man), NameSetVariableValue, `{}`).SetVariableValue(_testVariableID, "x")
+			err := variableDeps(c.Man).newInput(context.Background(), NameSetVariableValue, json.RawMessage(`{}`)).SetVariableValue(_testVariableID, "x")
 			testutil.AssertEqualError(t, c.Err, err)
 
 			ff := c.Man.SetValueCalls()
@@ -2832,7 +3360,7 @@ func Test_input_SetVariableDefault(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			err := testInput(variableDeps(c.Man), NameSetVariableValue, `{}`).SetVariableDefault(_testVariableID, "x")
+			err := variableDeps(c.Man).newInput(context.Background(), NameSetVariableValue, json.RawMessage(`{}`)).SetVariableDefault(_testVariableID, "x")
 			testutil.AssertEqualError(t, c.Err, err)
 
 			ff := c.Man.SetDefaultValueCalls()

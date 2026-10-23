@@ -7,6 +7,7 @@ import (
 
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -136,15 +137,13 @@ func Test_BytesStore_Get(t *testing.T) {
 			}
 
 			res, err := bs.Get(context.Background(), "test")
+			testutil.AssertEqualError(t, c.Err, err)
 
-			if c.Err != nil {
+			if err != nil {
 				assert.Nil(t, res)
-				assert.Equal(t, c.Err, err)
-
 				return
 			}
 
-			assert.NoError(t, err)
 			assert.Equal(t, c.Result, res)
 
 			// the payload is copied out, so mutating it cannot reach

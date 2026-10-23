@@ -84,21 +84,6 @@ func newTestHandler(db DB, pub *fakePublisher) (*Handler, *callbackCounts) {
 	return hdl, cnt
 }
 
-// withTx wires the DB mock's BeginTx to hand out the provided Tx mock.
-func withTx(db *DBMock, tx *TxMock, err error) *DBMock {
-	db.BeginTxFunc = func(_ context.Context, dest any) error {
-		if err != nil {
-			return err
-		}
-
-		*dest.(*Tx) = tx
-
-		return nil
-	}
-
-	return db
-}
-
 // newRequest builds a request carrying a session and the standard chi
 // parameters unless the respective omit flags are set.
 func newRequest(method, body string, noSession, omitDoc, omitBranch bool) *http.Request {
@@ -151,6 +136,17 @@ func branchDoc(branchID xid.ID) *documentCore.Document {
 	}
 }
 
+// insertAwareTx builds a Tx mock whose parent subtree holds the freshly
+// inserted document, so the sort-index swap can find it.
+func insertAwareTx() *TxMock {
+	tx := &TxMock{}
+	tx.FetchDocumentTreeByDocumentParentIDFunc = func(context.Context, null.Value[xid.ID], string) (documentCore.Summaries, error) {
+		return documentCore.Summaries{{ID: tx.InsertDocumentCalls()[0].Doc.ID}}, nil
+	}
+
+	return tx
+}
+
 func Test_NewHandler(t *testing.T) {
 	t.Parallel()
 
@@ -174,11 +170,12 @@ func Test_NewHandler(t *testing.T) {
 
 func Test_Handler_RequireDocumentAccess(t *testing.T) {
 	cc := map[string]struct {
-		DB        *DBMock
-		NoSession bool
-		OmitDoc   bool
-		RespCode  int
-		Passed    bool
+		DB                  *DBMock
+		NoSession           bool
+		OmitDoc             bool
+		RespCode            int
+		Passed              bool
+		CheckDocumentExists int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -190,26 +187,29 @@ func Test_Handler_RequireDocumentAccess(t *testing.T) {
 			OmitDoc:  true,
 			RespCode: http.StatusNotFound,
 		},
-		"Document existence check error": {
+		"Error returned by DB.CheckDocumentExists": {
 			DB: &DBMock{
 				CheckDocumentExistsFunc: func(context.Context, xid.ID, string) error {
 					return errors.New("boom")
 				},
 			},
-			RespCode: http.StatusInternalServerError,
+			RespCode:            http.StatusInternalServerError,
+			CheckDocumentExists: 1,
 		},
-		"Document outside the caller's organization": {
+		"Document in another organization": {
 			DB: &DBMock{
 				CheckDocumentExistsFunc: func(context.Context, xid.ID, string) error {
 					return errutil.ErrNotFound
 				},
 			},
-			RespCode: http.StatusNotFound,
+			RespCode:            http.StatusNotFound,
+			CheckDocumentExists: 1,
 		},
-		"Document within the caller's organization": {
-			DB:       &DBMock{},
-			RespCode: http.StatusTeapot,
-			Passed:   true,
+		"Document in the active organization": {
+			DB:                  &DBMock{},
+			RespCode:            http.StatusTeapot,
+			Passed:              true,
+			CheckDocumentExists: 1,
 		},
 	}
 
@@ -234,6 +234,7 @@ func Test_Handler_RequireDocumentAccess(t *testing.T) {
 
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Equal(t, c.Passed, passed)
+			assert.Len(t, c.DB.CheckDocumentExistsCalls(), c.CheckDocumentExists)
 
 			if !c.Passed {
 				return
@@ -249,11 +250,12 @@ func Test_Handler_RequireDocumentAccess(t *testing.T) {
 
 func Test_Handler_FetchDocumentMaintainers(t *testing.T) {
 	cc := map[string]struct {
-		DB        *DBMock
-		NoSession bool
-		OmitDoc   bool
-		RespCode  int
-		RespJSON  string
+		DB                       *DBMock
+		NoSession                bool
+		OmitDoc                  bool
+		RespCode                 int
+		RespJSON                 string
+		FetchDocumentMaintainers int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -265,13 +267,14 @@ func Test_Handler_FetchDocumentMaintainers(t *testing.T) {
 			OmitDoc:  true,
 			RespCode: http.StatusNotFound,
 		},
-		"Maintainer fetch error": {
+		"Error returned by DB.FetchDocumentMaintainers": {
 			DB: &DBMock{
 				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			RespCode: http.StatusInternalServerError,
+			RespCode:                 http.StatusInternalServerError,
+			FetchDocumentMaintainers: 1,
 		},
 		"Successful fetch": {
 			DB: &DBMock{
@@ -279,8 +282,9 @@ func Test_Handler_FetchDocumentMaintainers(t *testing.T) {
 					return []string{"u1", "u2"}, nil
 				},
 			},
-			RespCode: http.StatusOK,
-			RespJSON: `["u1","u2"]`,
+			RespCode:                 http.StatusOK,
+			RespJSON:                 `["u1","u2"]`,
+			FetchDocumentMaintainers: 1,
 		},
 	}
 
@@ -295,6 +299,7 @@ func Test_Handler_FetchDocumentMaintainers(t *testing.T) {
 			hdl.FetchDocumentMaintainers(rec, newRequest(http.MethodGet, "", c.NoSession, c.OmitDoc, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchDocumentMaintainersCalls(), c.FetchDocumentMaintainers)
 
 			if c.RespJSON != "" {
 				assert.JSONEq(t, c.RespJSON, rec.Body.String())
@@ -305,10 +310,11 @@ func Test_Handler_FetchDocumentMaintainers(t *testing.T) {
 
 func Test_Handler_VerifyDocumentAccess(t *testing.T) {
 	cc := map[string]struct {
-		DB        *DBMock
-		NoSession bool
-		OmitDoc   bool
-		RespCode  int
+		DB            *DBMock
+		NoSession     bool
+		OmitDoc       bool
+		RespCode      int
+		FetchDocument int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -320,21 +326,23 @@ func Test_Handler_VerifyDocumentAccess(t *testing.T) {
 			OmitDoc:  true,
 			RespCode: http.StatusNotFound,
 		},
-		"Document fetch error": {
+		"Error returned by DB.FetchDocument": {
 			DB: &DBMock{
 				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			RespCode: http.StatusInternalServerError,
+			RespCode:      http.StatusInternalServerError,
+			FetchDocument: 1,
 		},
-		"Document outside the caller's organization": {
+		"Document in another organization": {
 			DB: &DBMock{
 				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
 					return nil, errutil.ErrNotFound
 				},
 			},
-			RespCode: http.StatusNotFound,
+			RespCode:      http.StatusNotFound,
+			FetchDocument: 1,
 		},
 		"Successful check": {
 			DB: &DBMock{
@@ -342,7 +350,8 @@ func Test_Handler_VerifyDocumentAccess(t *testing.T) {
 					return storedDoc(), nil
 				},
 			},
-			RespCode: http.StatusNoContent,
+			RespCode:      http.StatusNoContent,
+			FetchDocument: 1,
 		},
 	}
 
@@ -357,6 +366,7 @@ func Test_Handler_VerifyDocumentAccess(t *testing.T) {
 			hdl.VerifyDocumentAccess(rec, newRequest(http.MethodGet, "", c.NoSession, c.OmitDoc, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchDocumentCalls(), c.FetchDocument)
 
 			if c.RespCode == http.StatusNoContent {
 				assert.Zero(t, rec.Body.Len(), rec.Body.String())
@@ -373,11 +383,13 @@ func Test_Handler_VerifyDocumentAccess(t *testing.T) {
 
 func Test_Handler_FetchBranchReviewers(t *testing.T) {
 	cc := map[string]struct {
-		DB         *DBMock
-		NoSession  bool
-		OmitDoc    bool
-		OmitBranch bool
-		RespCode   int
+		DB                      *DBMock
+		NoSession               bool
+		OmitDoc                 bool
+		OmitBranch              bool
+		RespCode                int
+		FetchDocumentByBranchID int
+		FetchBranchReviewers    int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -394,13 +406,14 @@ func Test_Handler_FetchBranchReviewers(t *testing.T) {
 			OmitBranch: true,
 			RespCode:   http.StatusNotFound,
 		},
-		"Branch document fetch error": {
+		"Error returned by DB.FetchDocumentByBranchID": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			RespCode: http.StatusInternalServerError,
+			RespCode:                http.StatusInternalServerError,
+			FetchDocumentByBranchID: 1,
 		},
 		"Branch of another document": {
 			DB: &DBMock{
@@ -411,15 +424,18 @@ func Test_Handler_FetchBranchReviewers(t *testing.T) {
 					return doc, nil
 				},
 			},
-			RespCode: http.StatusNotFound,
+			RespCode:                http.StatusNotFound,
+			FetchDocumentByBranchID: 1,
 		},
-		"Reviewer fetch error": {
+		"Error returned by DB.FetchBranchReviewers": {
 			DB: &DBMock{
 				FetchBranchReviewersFunc: func(context.Context, xid.ID, string) ([]documentCore.BranchReviewer, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			RespCode: http.StatusInternalServerError,
+			RespCode:                http.StatusInternalServerError,
+			FetchDocumentByBranchID: 1,
+			FetchBranchReviewers:    1,
 		},
 		"Successful fetch": {
 			DB: &DBMock{
@@ -427,7 +443,9 @@ func Test_Handler_FetchBranchReviewers(t *testing.T) {
 					return []documentCore.BranchReviewer{{BranchID: _branchID, UserID: "u2"}}, nil
 				},
 			},
-			RespCode: http.StatusOK,
+			RespCode:                http.StatusOK,
+			FetchDocumentByBranchID: 1,
+			FetchBranchReviewers:    1,
 		},
 	}
 
@@ -448,6 +466,8 @@ func Test_Handler_FetchBranchReviewers(t *testing.T) {
 			hdl.FetchBranchReviewers(rec, newRequest(http.MethodGet, "", c.NoSession, c.OmitDoc, c.OmitBranch))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchID)
+			assert.Len(t, c.DB.FetchBranchReviewersCalls(), c.FetchBranchReviewers)
 
 			if c.RespCode == http.StatusOK {
 				assert.Contains(t, rec.Body.String(), `"u2"`)
@@ -460,15 +480,18 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 	validBody := `{"userId":"u2"}`
 
 	cc := map[string]struct {
-		DB        *DBMock
-		NoSession bool
-		OmitDoc   bool
-		Body      string
-		RespCode  int
-		Inserted  int
-		Updated   int
-		Notified  int
-		Reviewers int
+		DB                      *DBMock
+		NoSession               bool
+		OmitDoc                 bool
+		Body                    string
+		RespCode                int
+		Inserted                int
+		Updated                 int
+		Notified                int
+		Reviewers               int
+		FetchDocumentByBranchID int
+		CheckOrganizationMember int
+		FetchBranchReviewer     int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -482,14 +505,15 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 			Body:     validBody,
 			RespCode: http.StatusNotFound,
 		},
-		"Branch document fetch error": {
+		"Error returned by DB.FetchDocumentByBranchID": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			FetchDocumentByBranchID: 1,
 		},
 		"Branch of another document": {
 			DB: &DBMock{
@@ -500,8 +524,9 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 					return doc, nil
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusNotFound,
+			Body:                    validBody,
+			RespCode:                http.StatusNotFound,
+			FetchDocumentByBranchID: 1,
 		},
 		"Invalid JSON body": {
 			DB: &DBMock{
@@ -509,10 +534,11 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 					return storedDoc(), nil
 				},
 			},
-			Body:     "{",
-			RespCode: http.StatusBadRequest,
+			Body:                    "{",
+			RespCode:                http.StatusBadRequest,
+			FetchDocumentByBranchID: 1,
 		},
-		"Member check error": {
+		"Error returned by DB.CheckOrganizationMember": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return storedDoc(), nil
@@ -521,8 +547,10 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 					return false, errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			FetchDocumentByBranchID: 1,
+			CheckOrganizationMember: 1,
 		},
 		"Not an organization member": {
 			DB: &DBMock{
@@ -533,10 +561,12 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 					return false, nil
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusForbidden,
+			Body:                    validBody,
+			RespCode:                http.StatusForbidden,
+			FetchDocumentByBranchID: 1,
+			CheckOrganizationMember: 1,
 		},
-		"Reviewer lookup error": {
+		"Error returned by DB.FetchBranchReviewer": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return storedDoc(), nil
@@ -548,10 +578,13 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 					return nil, errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			FetchDocumentByBranchID: 1,
+			CheckOrganizationMember: 1,
+			FetchBranchReviewer:     1,
 		},
-		"Existing reviewer update error": {
+		"Error returned by DB.UpdateBranchReviewer": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return storedDoc(), nil
@@ -563,11 +596,14 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 					return errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
-			Updated:  1,
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			Updated:                 1,
+			FetchDocumentByBranchID: 1,
+			CheckOrganizationMember: 1,
+			FetchBranchReviewer:     1,
 		},
-		"Existing reviewer re-request": {
+		"Existing reviewer requested again": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return storedDoc(), nil
@@ -576,13 +612,16 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 					return true, nil
 				},
 			},
-			Body:      validBody,
-			RespCode:  http.StatusCreated,
-			Updated:   1,
-			Notified:  1,
-			Reviewers: 1,
+			Body:                    validBody,
+			RespCode:                http.StatusCreated,
+			Updated:                 1,
+			Notified:                1,
+			Reviewers:               1,
+			FetchDocumentByBranchID: 1,
+			CheckOrganizationMember: 1,
+			FetchBranchReviewer:     1,
 		},
-		"New reviewer insertion error": {
+		"Error returned by DB.InsertBranchReviewer": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return storedDoc(), nil
@@ -597,9 +636,12 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 					return errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
-			Inserted: 1,
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			Inserted:                1,
+			FetchDocumentByBranchID: 1,
+			CheckOrganizationMember: 1,
+			FetchBranchReviewer:     1,
 		},
 		"New reviewer request": {
 			DB: &DBMock{
@@ -613,11 +655,14 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 					return nil, errutil.ErrNotFound
 				},
 			},
-			Body:      validBody,
-			RespCode:  http.StatusCreated,
-			Inserted:  1,
-			Notified:  1,
-			Reviewers: 1,
+			Body:                    validBody,
+			RespCode:                http.StatusCreated,
+			Inserted:                1,
+			Notified:                1,
+			Reviewers:               1,
+			FetchDocumentByBranchID: 1,
+			CheckOrganizationMember: 1,
+			FetchBranchReviewer:     1,
 		},
 	}
 
@@ -633,6 +678,9 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 			hdl.RequestBranchReviewer(rec, newRequest(http.MethodPost, c.Body, c.NoSession, c.OmitDoc, false))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchID)
+			assert.Len(t, c.DB.CheckOrganizationMemberCalls(), c.CheckOrganizationMember)
+			assert.Len(t, c.DB.FetchBranchReviewerCalls(), c.FetchBranchReviewer)
 			assert.Len(t, c.DB.InsertBranchReviewerCalls(), c.Inserted)
 			assert.Len(t, c.DB.UpdateBranchReviewerCalls(), c.Updated)
 			require.Len(t, pub.calls, c.Notified)
@@ -647,13 +695,14 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 
 func Test_Handler_RemoveBranchReviewer(t *testing.T) {
 	cc := map[string]struct {
-		DB        *DBMock
-		NoSession bool
-		OmitDoc   bool
-		Query     string
-		RespCode  int
-		Deleted   int
-		Reviewers int
+		DB                      *DBMock
+		NoSession               bool
+		OmitDoc                 bool
+		Query                   string
+		RespCode                int
+		Deleted                 int
+		Reviewers               int
+		FetchDocumentByBranchID int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -671,14 +720,15 @@ func Test_Handler_RemoveBranchReviewer(t *testing.T) {
 			DB:       &DBMock{},
 			RespCode: http.StatusBadRequest,
 		},
-		"Branch document fetch error": {
+		"Error returned by DB.FetchDocumentByBranchID": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			Query:    "?userId=u2",
-			RespCode: http.StatusInternalServerError,
+			Query:                   "?userId=u2",
+			RespCode:                http.StatusInternalServerError,
+			FetchDocumentByBranchID: 1,
 		},
 		"Branch of another document": {
 			DB: &DBMock{
@@ -689,10 +739,11 @@ func Test_Handler_RemoveBranchReviewer(t *testing.T) {
 					return doc, nil
 				},
 			},
-			Query:    "?userId=u2",
-			RespCode: http.StatusNotFound,
+			Query:                   "?userId=u2",
+			RespCode:                http.StatusNotFound,
+			FetchDocumentByBranchID: 1,
 		},
-		"Reviewer deletion error": {
+		"Error returned by DB.DeleteBranchReviewer": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return storedDoc(), nil
@@ -701,9 +752,10 @@ func Test_Handler_RemoveBranchReviewer(t *testing.T) {
 					return errors.New("boom")
 				},
 			},
-			Query:    "?userId=u2",
-			RespCode: http.StatusInternalServerError,
-			Deleted:  1,
+			Query:                   "?userId=u2",
+			RespCode:                http.StatusInternalServerError,
+			Deleted:                 1,
+			FetchDocumentByBranchID: 1,
 		},
 		"Successful removal": {
 			DB: &DBMock{
@@ -711,10 +763,11 @@ func Test_Handler_RemoveBranchReviewer(t *testing.T) {
 					return storedDoc(), nil
 				},
 			},
-			Query:     "?userId=u2",
-			RespCode:  http.StatusNoContent,
-			Deleted:   1,
-			Reviewers: 1,
+			Query:                   "?userId=u2",
+			RespCode:                http.StatusNoContent,
+			Deleted:                 1,
+			Reviewers:               1,
+			FetchDocumentByBranchID: 1,
 		},
 	}
 
@@ -746,6 +799,7 @@ func Test_Handler_RemoveBranchReviewer(t *testing.T) {
 			hdl.RemoveBranchReviewer(rec, req.WithContext(ctx))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchID)
 			assert.Len(t, c.DB.DeleteBranchReviewerCalls(), c.Deleted)
 			assert.Equal(t, c.Reviewers, cnt.reviewers)
 		})
@@ -756,13 +810,15 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 	validBody := `{"approved":true}`
 
 	cc := map[string]struct {
-		DB        *DBMock
-		NoSession bool
-		Body      string
-		RespCode  int
-		Inserted  int
-		Updated   int
-		Reviewers int
+		DB                      *DBMock
+		NoSession               bool
+		Body                    string
+		RespCode                int
+		Inserted                int
+		Updated                 int
+		Reviewers               int
+		FetchDocumentByBranchID int
+		FetchBranchReviewer     int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -770,14 +826,15 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 			Body:      validBody,
 			RespCode:  http.StatusUnauthorized,
 		},
-		"Branch document fetch error": {
+		"Error returned by DB.FetchDocumentByBranchID": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			FetchDocumentByBranchID: 1,
 		},
 		"Branch of another document": {
 			DB: &DBMock{
@@ -788,8 +845,9 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 					return doc, nil
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusNotFound,
+			Body:                    validBody,
+			RespCode:                http.StatusNotFound,
+			FetchDocumentByBranchID: 1,
 		},
 		"Invalid JSON body": {
 			DB: &DBMock{
@@ -797,10 +855,11 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 					return storedDoc(), nil
 				},
 			},
-			Body:     "{",
-			RespCode: http.StatusBadRequest,
+			Body:                    "{",
+			RespCode:                http.StatusBadRequest,
+			FetchDocumentByBranchID: 1,
 		},
-		"Reviewer lookup error": {
+		"Error returned by DB.FetchBranchReviewer": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return storedDoc(), nil
@@ -809,10 +868,12 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 					return nil, errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			FetchDocumentByBranchID: 1,
+			FetchBranchReviewer:     1,
 		},
-		"Existing reviewer update error": {
+		"Error returned by DB.UpdateBranchReviewer": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return storedDoc(), nil
@@ -824,9 +885,11 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 					return errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
-			Updated:  1,
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			Updated:                 1,
+			FetchDocumentByBranchID: 1,
+			FetchBranchReviewer:     1,
 		},
 		"Existing reviewer approval": {
 			DB: &DBMock{
@@ -837,12 +900,14 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 					return &documentCore.BranchReviewer{PreviouslyApproved: true}, nil
 				},
 			},
-			Body:      validBody,
-			RespCode:  http.StatusOK,
-			Updated:   1,
-			Reviewers: 1,
+			Body:                    validBody,
+			RespCode:                http.StatusOK,
+			Updated:                 1,
+			Reviewers:               1,
+			FetchDocumentByBranchID: 1,
+			FetchBranchReviewer:     1,
 		},
-		"New reviewer insertion error": {
+		"Error returned by DB.InsertBranchReviewer": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return storedDoc(), nil
@@ -854,9 +919,11 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 					return errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
-			Inserted: 1,
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			Inserted:                1,
+			FetchDocumentByBranchID: 1,
+			FetchBranchReviewer:     1,
 		},
 		"New reviewer approval": {
 			DB: &DBMock{
@@ -867,10 +934,12 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 					return nil, errutil.ErrNotFound
 				},
 			},
-			Body:      validBody,
-			RespCode:  http.StatusOK,
-			Inserted:  1,
-			Reviewers: 1,
+			Body:                    validBody,
+			RespCode:                http.StatusOK,
+			Inserted:                1,
+			Reviewers:               1,
+			FetchDocumentByBranchID: 1,
+			FetchBranchReviewer:     1,
 		},
 	}
 
@@ -885,6 +954,8 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 			hdl.UpdateBranchReviewApproval(rec, newRequest(http.MethodPut, c.Body, c.NoSession, false, false))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchID)
+			assert.Len(t, c.DB.FetchBranchReviewerCalls(), c.FetchBranchReviewer)
 			assert.Len(t, c.DB.InsertBranchReviewerCalls(), c.Inserted)
 			assert.Len(t, c.DB.UpdateBranchReviewerCalls(), c.Updated)
 			assert.Equal(t, c.Reviewers, cnt.reviewers)
@@ -901,22 +972,24 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 
 func Test_Handler_FetchDocumentTree(t *testing.T) {
 	cc := map[string]struct {
-		DB        *DBMock
-		NoSession bool
-		RespCode  int
+		DB                *DBMock
+		NoSession         bool
+		RespCode          int
+		FetchDocumentTree int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
 			NoSession: true,
 			RespCode:  http.StatusUnauthorized,
 		},
-		"Tree fetch error": {
+		"Error returned by DB.FetchDocumentTree": {
 			DB: &DBMock{
 				FetchDocumentTreeFunc: func(context.Context, string) (documentCore.Summaries, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			RespCode: http.StatusInternalServerError,
+			RespCode:          http.StatusInternalServerError,
+			FetchDocumentTree: 1,
 		},
 		"Successful fetch": {
 			DB: &DBMock{
@@ -924,7 +997,8 @@ func Test_Handler_FetchDocumentTree(t *testing.T) {
 					return documentCore.Summaries{{ID: _documentID, DocumentName: "Doc"}}, nil
 				},
 			},
-			RespCode: http.StatusOK,
+			RespCode:          http.StatusOK,
+			FetchDocumentTree: 1,
 		},
 	}
 
@@ -939,6 +1013,7 @@ func Test_Handler_FetchDocumentTree(t *testing.T) {
 			hdl.FetchDocumentTree(rec, newRequest(http.MethodGet, "", c.NoSession, true, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchDocumentTreeCalls(), c.FetchDocumentTree)
 
 			if c.RespCode == http.StatusOK {
 				assert.Contains(t, rec.Body.String(), _documentID.String())
@@ -952,26 +1027,23 @@ func Test_Handler_UpdateDocumentTree(t *testing.T) {
 	newParentID := xid.New()
 	newParentBody := `{"id":"` + _documentID.String() + `","parentId":"` + newParentID.String() + `","sortIndex":0}`
 
-	// sameParentTx serves a document already under the requested parent.
-	sameParentTx := func() *TxMock {
-		return &TxMock{
-			FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
-				return storedDoc(), nil
-			},
-			FetchDocumentTreeByDocumentParentIDFunc: func(_ context.Context, _ null.Value[xid.ID], _ string) (documentCore.Summaries, error) {
-				return documentCore.Summaries{{ID: _documentID}, {ID: xid.New()}}, nil
-			},
-		}
-	}
-
 	cc := map[string]struct {
-		Tx        *TxMock
-		BeginErr  error
-		NoSession bool
-		Body      string
-		RespCode  int
-		Committed int
-		TreeCbs   int
+		Tx                                  *TxMock
+		BeginErr                            error
+		NoSession                           bool
+		Body                                string
+		RespCode                            int
+		Committed                           int
+		TreeCbs                             int
+		BeginTx                             int
+		FetchDocument                       int
+		CheckDocumentExists                 int
+		CheckDocumentCycle                  int
+		FetchDocumentTreeByDocumentParentID int
+		UpdateDocumentTree                  int
+		UpdateDocumentParentID              int
+		Rollback                            int
+		Check                               func(*testing.T, *httptest.ResponseRecorder)
 	}{
 		"No session in context": {
 			Tx:        &TxMock{},
@@ -984,20 +1056,24 @@ func Test_Handler_UpdateDocumentTree(t *testing.T) {
 			Body:     "{",
 			RespCode: http.StatusBadRequest,
 		},
-		"Transaction start error": {
+		"Error returned by DB.BeginTx": {
 			Tx:       &TxMock{},
 			BeginErr: errors.New("boom"),
 			Body:     sameParentBody,
 			RespCode: http.StatusInternalServerError,
+			BeginTx:  1,
 		},
-		"Document fetch error": {
+		"Error returned by Tx.FetchDocument": {
 			Tx: &TxMock{
 				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			Body:     sameParentBody,
-			RespCode: http.StatusInternalServerError,
+			Body:          sameParentBody,
+			RespCode:      http.StatusInternalServerError,
+			BeginTx:       1,
+			FetchDocument: 1,
+			Rollback:      1,
 		},
 		"Document missing from tree": {
 			Tx: &TxMock{
@@ -1008,40 +1084,72 @@ func Test_Handler_UpdateDocumentTree(t *testing.T) {
 					return documentCore.Summaries{{ID: xid.New()}}, nil
 				},
 			},
-			Body:     sameParentBody,
-			RespCode: http.StatusNotFound,
+			Body:                                sameParentBody,
+			RespCode:                            http.StatusNotFound,
+			BeginTx:                             1,
+			FetchDocument:                       1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			Rollback:                            1,
 		},
-		"Tree update error": {
-			Tx: func() *TxMock {
-				tx := sameParentTx()
-				tx.UpdateDocumentTreeFunc = func(context.Context, documentCore.Summaries, string) error {
+		"Error returned by Tx.UpdateDocumentTree": {
+			Tx: &TxMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+				FetchDocumentTreeByDocumentParentIDFunc: func(context.Context, null.Value[xid.ID], string) (documentCore.Summaries, error) {
+					return documentCore.Summaries{{ID: _documentID}, {ID: xid.New()}}, nil
+				},
+				UpdateDocumentTreeFunc: func(context.Context, documentCore.Summaries, string) error {
 					return errors.New("boom")
-				}
-
-				return tx
-			}(),
-			Body:     sameParentBody,
-			RespCode: http.StatusInternalServerError,
+				},
+			},
+			Body:                                sameParentBody,
+			RespCode:                            http.StatusInternalServerError,
+			BeginTx:                             1,
+			FetchDocument:                       1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			UpdateDocumentTree:                  1,
+			Rollback:                            1,
 		},
-		"Commit error": {
-			Tx: func() *TxMock {
-				tx := sameParentTx()
-				tx.CommitFunc = func() error {
+		"Error returned by Tx.Commit": {
+			Tx: &TxMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+				FetchDocumentTreeByDocumentParentIDFunc: func(context.Context, null.Value[xid.ID], string) (documentCore.Summaries, error) {
+					return documentCore.Summaries{{ID: _documentID}, {ID: xid.New()}}, nil
+				},
+				CommitFunc: func() error {
 					return errors.New("boom")
-				}
-
-				return tx
-			}(),
-			Body:      sameParentBody,
-			RespCode:  http.StatusInternalServerError,
-			Committed: 1,
+				},
+			},
+			Body:                                sameParentBody,
+			RespCode:                            http.StatusInternalServerError,
+			Committed:                           1,
+			BeginTx:                             1,
+			FetchDocument:                       1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			UpdateDocumentTree:                  1,
+			Rollback:                            1,
 		},
 		"Successful reorder within the same parent": {
-			Tx:        sameParentTx(),
-			Body:      sameParentBody,
-			RespCode:  http.StatusOK,
-			Committed: 1,
-			TreeCbs:   1,
+			Tx: &TxMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+				FetchDocumentTreeByDocumentParentIDFunc: func(context.Context, null.Value[xid.ID], string) (documentCore.Summaries, error) {
+					return documentCore.Summaries{{ID: _documentID}, {ID: xid.New()}}, nil
+				},
+			},
+			Body:                                sameParentBody,
+			RespCode:                            http.StatusOK,
+			Committed:                           1,
+			TreeCbs:                             1,
+			BeginTx:                             1,
+			FetchDocument:                       1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			UpdateDocumentTree:                  1,
+			Rollback:                            1,
 		},
 		"Successful move to a new parent": {
 			Tx: &TxMock{
@@ -1058,10 +1166,18 @@ func Test_Handler_UpdateDocumentTree(t *testing.T) {
 					return documentCore.Summaries{{ID: _documentID}, {ID: xid.New()}}, nil
 				},
 			},
-			Body:      newParentBody,
-			RespCode:  http.StatusOK,
-			Committed: 1,
-			TreeCbs:   2,
+			Body:                                newParentBody,
+			RespCode:                            http.StatusOK,
+			Committed:                           1,
+			TreeCbs:                             2,
+			BeginTx:                             1,
+			FetchDocument:                       1,
+			CheckDocumentExists:                 1,
+			CheckDocumentCycle:                  1,
+			FetchDocumentTreeByDocumentParentID: 2,
+			UpdateDocumentTree:                  1,
+			UpdateDocumentParentID:              1,
+			Rollback:                            1,
 		},
 		"New parent does not exist": {
 			Tx: &TxMock{
@@ -1072,10 +1188,14 @@ func Test_Handler_UpdateDocumentTree(t *testing.T) {
 					return errutil.ErrNotFound
 				},
 			},
-			Body:     newParentBody,
-			RespCode: http.StatusNotFound,
+			Body:                newParentBody,
+			RespCode:            http.StatusNotFound,
+			BeginTx:             1,
+			FetchDocument:       1,
+			CheckDocumentExists: 1,
+			Rollback:            1,
 		},
-		"New parent cycle check error": {
+		"Error returned by Tx.CheckDocumentCycle": {
 			Tx: &TxMock{
 				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
 					return storedDoc(), nil
@@ -1084,8 +1204,13 @@ func Test_Handler_UpdateDocumentTree(t *testing.T) {
 					return false, errors.New("boom")
 				},
 			},
-			Body:     newParentBody,
-			RespCode: http.StatusInternalServerError,
+			Body:                newParentBody,
+			RespCode:            http.StatusInternalServerError,
+			BeginTx:             1,
+			FetchDocument:       1,
+			CheckDocumentExists: 1,
+			CheckDocumentCycle:  1,
+			Rollback:            1,
 		},
 		"New parent is the document or its descendant": {
 			Tx: &TxMock{
@@ -1096,10 +1221,15 @@ func Test_Handler_UpdateDocumentTree(t *testing.T) {
 					return true, nil
 				},
 			},
-			Body:     newParentBody,
-			RespCode: http.StatusBadRequest,
+			Body:                newParentBody,
+			RespCode:            http.StatusBadRequest,
+			BeginTx:             1,
+			FetchDocument:       1,
+			CheckDocumentExists: 1,
+			CheckDocumentCycle:  1,
+			Rollback:            1,
 		},
-		"Move with parent update error": {
+		"Error returned by Tx.UpdateDocumentParentID": {
 			Tx: &TxMock{
 				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
 					return storedDoc(), nil
@@ -1115,8 +1245,45 @@ func Test_Handler_UpdateDocumentTree(t *testing.T) {
 					return errors.New("boom")
 				},
 			},
-			Body:     newParentBody,
-			RespCode: http.StatusInternalServerError,
+			Body:                                newParentBody,
+			RespCode:                            http.StatusInternalServerError,
+			BeginTx:                             1,
+			FetchDocument:                       1,
+			CheckDocumentExists:                 1,
+			CheckDocumentCycle:                  1,
+			FetchDocumentTreeByDocumentParentID: 2,
+			UpdateDocumentParentID:              1,
+			Rollback:                            1,
+		},
+		"Response carries the swapped ordering": {
+			Tx: &TxMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+				FetchDocumentTreeByDocumentParentIDFunc: func(context.Context, null.Value[xid.ID], string) (documentCore.Summaries, error) {
+					return documentCore.Summaries{{ID: xid.New()}, {ID: _documentID}}, nil
+				},
+			},
+			Body:                                sameParentBody,
+			RespCode:                            http.StatusOK,
+			Committed:                           1,
+			TreeCbs:                             1,
+			BeginTx:                             1,
+			FetchDocument:                       1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			UpdateDocumentTree:                  1,
+			Rollback:                            1,
+			Check: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				t.Helper()
+
+				// the persisted ordering is the swapped one, so the client
+				// must not be handed back the ordering it asked to change.
+				var got documentCore.Summaries
+
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+				require.Len(t, got, 2)
+				assert.Equal(t, _documentID, got[0].ID)
+			},
 		},
 	}
 
@@ -1124,49 +1291,30 @@ func Test_Handler_UpdateDocumentTree(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, cnt := newTestHandler(withTx(&DBMock{}, c.Tx, c.BeginErr), &fakePublisher{})
+			db := &DBMock{BeginTxFunc: testutil.StubBeginTx(c.Tx, c.BeginErr)}
+			hdl, cnt := newTestHandler(db, &fakePublisher{})
 
 			rec := httptest.NewRecorder()
 
 			hdl.UpdateDocumentTree(rec, newRequest(http.MethodPut, c.Body, c.NoSession, true, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, db.BeginTxCalls(), c.BeginTx)
+			assert.Len(t, c.Tx.FetchDocumentCalls(), c.FetchDocument)
+			assert.Len(t, c.Tx.CheckDocumentExistsCalls(), c.CheckDocumentExists)
+			assert.Len(t, c.Tx.CheckDocumentCycleCalls(), c.CheckDocumentCycle)
+			assert.Len(t, c.Tx.FetchDocumentTreeByDocumentParentIDCalls(), c.FetchDocumentTreeByDocumentParentID)
+			assert.Len(t, c.Tx.UpdateDocumentTreeCalls(), c.UpdateDocumentTree)
+			assert.Len(t, c.Tx.UpdateDocumentParentIDCalls(), c.UpdateDocumentParentID)
 			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
+			assert.Len(t, c.Tx.RollbackCalls(), c.Rollback)
 			assert.Equal(t, c.TreeCbs, cnt.tree)
+
+			if c.Check != nil {
+				c.Check(t, rec)
+			}
 		})
 	}
-
-	t.Run("Response carries the swapped ordering", func(t *testing.T) {
-		t.Parallel()
-
-		moved, other := _documentID, xid.New()
-
-		tx := &TxMock{
-			FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
-				return storedDoc(), nil
-			},
-			FetchDocumentTreeByDocumentParentIDFunc: func(context.Context, null.Value[xid.ID], string) (documentCore.Summaries, error) {
-				return documentCore.Summaries{{ID: other}, {ID: moved}}, nil
-			},
-		}
-
-		hdl, _ := newTestHandler(withTx(&DBMock{}, tx, nil), &fakePublisher{})
-
-		rec := httptest.NewRecorder()
-
-		body := `{"id":"` + moved.String() + `","sortIndex":0}`
-		hdl.UpdateDocumentTree(rec, newRequest(http.MethodPut, body, false, true, true))
-
-		require.Equal(t, http.StatusOK, rec.Code)
-
-		// the persisted ordering is the swapped one, so the client must not
-		// be handed back the ordering it asked to change.
-		var got documentCore.Summaries
-
-		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
-		require.Len(t, got, 2)
-		assert.Equal(t, moved, got[0].ID)
-	})
 }
 
 func Test_Handler_SearchDocuments(t *testing.T) {
@@ -1249,19 +1397,16 @@ func Test_Handler_SearchDocuments(t *testing.T) {
 		TotalDocuments: 1,
 	}
 
-	// stubDocs answers the branch lookup with the stored document.
-	stubDocs := func(context.Context, []xid.ID, string) ([]documentCore.Document, error) {
-		return []documentCore.Document{doc}, nil
-	}
-
 	cc := map[string]struct {
-		DB        *DBMock
-		Searcher  *SearcherMock
-		NoSession bool
-		Query     string
-		RespCode  int
-		RespJSON  string
-		Check     func(*testing.T, *DBMock, *SearcherMock)
+		DB                        *DBMock
+		Searcher                  *SearcherMock
+		NoSession                 bool
+		Query                     string
+		RespCode                  int
+		RespJSON                  string
+		SearchGroups              int
+		FetchDocumentsByBranchIDs int
+		Check                     func(*testing.T, *DBMock, *SearcherMock)
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -1289,22 +1434,25 @@ func Test_Handler_SearchDocuments(t *testing.T) {
 			RespCode: http.StatusBadRequest,
 		},
 		"Short query": {
-			DB:       &DBMock{},
-			Searcher: stubSearcher(search.GroupPage{}, search.ErrInvalidQuery),
-			Query:    "?q=a",
-			RespCode: http.StatusBadRequest,
+			DB:           &DBMock{},
+			Searcher:     stubSearcher(search.GroupPage{}, search.ErrInvalidQuery),
+			Query:        "?q=a",
+			RespCode:     http.StatusBadRequest,
+			SearchGroups: 1,
 		},
 		"Error returned by Searcher.SearchGroups": {
-			DB:       &DBMock{},
-			Searcher: stubSearcher(search.GroupPage{}, assert.AnError),
-			Query:    "?q=shipment",
-			RespCode: http.StatusInternalServerError,
+			DB:           &DBMock{},
+			Searcher:     stubSearcher(search.GroupPage{}, assert.AnError),
+			Query:        "?q=shipment",
+			RespCode:     http.StatusInternalServerError,
+			SearchGroups: 1,
 		},
 		"Invalid page token": {
-			DB:       &DBMock{},
-			Searcher: stubSearcher(search.GroupPage{}, search.ErrInvalidPageToken),
-			Query:    "?q=shipment&nextToken=nope",
-			RespCode: http.StatusBadRequest,
+			DB:           &DBMock{},
+			Searcher:     stubSearcher(search.GroupPage{}, search.ErrInvalidPageToken),
+			Query:        "?q=shipment&nextToken=nope",
+			RespCode:     http.StatusBadRequest,
+			SearchGroups: 1,
 		},
 		"Error returned by DB.FetchDocumentsByBranchIDs": {
 			DB: &DBMock{
@@ -1312,13 +1460,17 @@ func Test_Handler_SearchDocuments(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			Searcher: stubSearcher(paragraphPage, nil),
-			Query:    "?q=shipment",
-			RespCode: http.StatusInternalServerError,
+			Searcher:                  stubSearcher(paragraphPage, nil),
+			Query:                     "?q=shipment",
+			RespCode:                  http.StatusInternalServerError,
+			SearchGroups:              1,
+			FetchDocumentsByBranchIDs: 1,
 		},
 		"Successful search": {
 			DB: &DBMock{
-				FetchDocumentsByBranchIDsFunc: stubDocs,
+				FetchDocumentsByBranchIDsFunc: func(context.Context, []xid.ID, string) ([]documentCore.Document, error) {
+					return []documentCore.Document{doc}, nil
+				},
 			},
 			Searcher: stubSearcher(paragraphPage, nil),
 			Query:    "?q=shipment&limit=500&hitsLimit=5&currentDocId=" + _documentID.String() + "&nextToken=token",
@@ -1333,6 +1485,8 @@ func Test_Handler_SearchDocuments(t *testing.T) {
 					"nextHitsToken": "more"
 				}]
 			}`,
+			SearchGroups:              1,
+			FetchDocumentsByBranchIDs: 1,
 			Check: func(t *testing.T, db *DBMock, searcher *SearcherMock) {
 				t.Helper()
 
@@ -1355,7 +1509,9 @@ func Test_Handler_SearchDocuments(t *testing.T) {
 		},
 		"Successful search with charts": {
 			DB: &DBMock{
-				FetchDocumentsByBranchIDsFunc: stubDocs,
+				FetchDocumentsByBranchIDsFunc: func(context.Context, []xid.ID, string) ([]documentCore.Document, error) {
+					return []documentCore.Document{doc}, nil
+				},
 			},
 			Searcher: stubSearcher(chartPage, nil),
 			Query:    "?q=shipment",
@@ -1375,6 +1531,8 @@ func Test_Handler_SearchDocuments(t *testing.T) {
 					"nextHitsToken": null
 				}]
 			}`,
+			SearchGroups:              1,
+			FetchDocumentsByBranchIDs: 1,
 			Check: func(t *testing.T, _ *DBMock, searcher *SearcherMock) {
 				t.Helper()
 
@@ -1407,6 +1565,8 @@ func Test_Handler_SearchDocuments(t *testing.T) {
 			hdl.SearchDocuments(rec, req)
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.Searcher.SearchGroupsCalls(), c.SearchGroups)
+			assert.Len(t, c.DB.FetchDocumentsByBranchIDsCalls(), c.FetchDocumentsByBranchIDs)
 
 			if c.RespJSON != "" {
 				assert.JSONEq(t, c.RespJSON, rec.Body.String())
@@ -1431,13 +1591,6 @@ func Test_Handler_FetchRecentlyViewedDocuments(t *testing.T) {
 		UpdatedAt:      time.Date(2026, 10, 4, 9, 12, 41, 0, time.UTC),
 		LastUpdatedBy:  null.StringFrom("u2"),
 		ViewedAt:       time.Date(2026, 10, 7, 8, 0, 0, 0, time.UTC),
-	}
-
-	// stubDocs answers the listing with the documents.
-	stubDocs := func(docs ...search.RecentDocument) func(context.Context, string, string, search.ViewFrom, int) ([]search.RecentDocument, error) {
-		return func(context.Context, string, string, search.ViewFrom, int) ([]search.RecentDocument, error) {
-			return docs, nil
-		}
 	}
 
 	cc := map[string]struct {
@@ -1476,7 +1629,9 @@ func Test_Handler_FetchRecentlyViewedDocuments(t *testing.T) {
 		},
 		"Successful listing": {
 			DB: &DBMock{
-				FetchRecentlyViewedDocumentsFunc: stubDocs(doc),
+				FetchRecentlyViewedDocumentsFunc: func(context.Context, string, string, search.ViewFrom, int) ([]search.RecentDocument, error) {
+					return []search.RecentDocument{doc}, nil
+				},
 			},
 			Query:    "?from=search&limit=5",
 			RespCode: http.StatusOK,
@@ -1497,7 +1652,9 @@ func Test_Handler_FetchRecentlyViewedDocuments(t *testing.T) {
 		},
 		"Successful listing capped at the maximum": {
 			DB: &DBMock{
-				FetchRecentlyViewedDocumentsFunc: stubDocs(),
+				FetchRecentlyViewedDocumentsFunc: func(context.Context, string, string, search.ViewFrom, int) ([]search.RecentDocument, error) {
+					return nil, nil
+				},
 			},
 			Query:    "?limit=500",
 			RespCode: http.StatusOK,
@@ -1550,11 +1707,12 @@ func Test_Handler_FetchRecentlyViewedDocuments(t *testing.T) {
 
 func Test_Handler_SearchDocumentsLegacy(t *testing.T) {
 	cc := map[string]struct {
-		Searcher  *SearcherMock
-		NoSession bool
-		Query     string
-		RespCode  int
-		RespBody  string
+		Searcher        *SearcherMock
+		NoSession       bool
+		Query           string
+		RespCode        int
+		RespBody        string
+		SearchDocuments int
 	}{
 		"No session in context": {
 			Searcher:  &SearcherMock{},
@@ -1568,16 +1726,18 @@ func Test_Handler_SearchDocumentsLegacy(t *testing.T) {
 					return nil, search.ErrInvalidQuery
 				},
 			},
-			RespCode: http.StatusBadRequest,
+			RespCode:        http.StatusBadRequest,
+			SearchDocuments: 1,
 		},
-		"Searcher error": {
+		"Error returned by Searcher.SearchDocuments": {
 			Searcher: &SearcherMock{
 				SearchDocumentsFunc: func(context.Context, string, string) ([]byte, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			Query:    "?q=test",
-			RespCode: http.StatusInternalServerError,
+			Query:           "?q=test",
+			RespCode:        http.StatusInternalServerError,
+			SearchDocuments: 1,
 		},
 		"Successful search": {
 			Searcher: &SearcherMock{
@@ -1585,9 +1745,10 @@ func Test_Handler_SearchDocumentsLegacy(t *testing.T) {
 					return []byte(`{"hits":[]}`), nil
 				},
 			},
-			Query:    "?q=test",
-			RespCode: http.StatusOK,
-			RespBody: `{"hits":[]}`,
+			Query:           "?q=test",
+			RespCode:        http.StatusOK,
+			RespBody:        `{"hits":[]}`,
+			SearchDocuments: 1,
 		},
 	}
 
@@ -1612,6 +1773,7 @@ func Test_Handler_SearchDocumentsLegacy(t *testing.T) {
 			hdl.SearchDocumentsLegacy(rec, req)
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.Searcher.SearchDocumentsCalls(), c.SearchDocuments)
 
 			if c.RespBody != "" {
 				assert.JSONEq(t, c.RespBody, rec.Body.String())
@@ -1625,26 +1787,24 @@ func Test_Handler_CreateDocument(t *testing.T) {
 	validBody := `{"name":"New doc","icon":"icon"}`
 	parentBody := `{"name":"New doc","icon":"icon","parentId":"` + xid.New().String() + `"}`
 
-	// insertAwareTx returns the freshly inserted document in the parent
-	// subtree so the sort-index swap can find it.
-	insertAwareTx := func() *TxMock {
-		tx := &TxMock{}
-		tx.FetchDocumentTreeByDocumentParentIDFunc = func(context.Context, null.Value[xid.ID], string) (documentCore.Summaries, error) {
-			return documentCore.Summaries{{ID: tx.InsertDocumentCalls()[0].Doc.ID}}, nil
-		}
-
-		return tx
-	}
-
 	cc := map[string]struct {
-		Tx        *TxMock
-		Queue     *SearchQueueMock
-		BeginErr  error
-		NoSession bool
-		Body      string
-		RespCode  int
-		Committed int
-		TreeCbs   int
+		Tx                                  *TxMock
+		Queue                               *SearchQueueMock
+		BeginErr                            error
+		NoSession                           bool
+		Body                                string
+		RespCode                            int
+		Committed                           int
+		TreeCbs                             int
+		BeginTx                             int
+		CheckDocumentExists                 int
+		InsertDocument                      int
+		RecordDocumentBranchHistoryEntry    int
+		UpsertDocumentMaintainers           int
+		Enqueue                             int
+		FetchDocumentTreeByDocumentParentID int
+		UpdateDocumentTree                  int
+		Rollback                            int
 	}{
 		"No session in context": {
 			Tx:        &TxMock{},
@@ -1657,11 +1817,12 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			Body:     "{",
 			RespCode: http.StatusBadRequest,
 		},
-		"Transaction start error": {
+		"Error returned by DB.BeginTx": {
 			Tx:       &TxMock{},
 			BeginErr: errors.New("boom"),
 			Body:     validBody,
 			RespCode: http.StatusInternalServerError,
+			BeginTx:  1,
 		},
 		"Parent document does not exist": {
 			Tx: &TxMock{
@@ -1669,61 +1830,96 @@ func Test_Handler_CreateDocument(t *testing.T) {
 					return errutil.ErrNotFound
 				},
 			},
-			Body:     parentBody,
-			RespCode: http.StatusNotFound,
+			Body:                parentBody,
+			RespCode:            http.StatusNotFound,
+			BeginTx:             1,
+			CheckDocumentExists: 1,
+			Rollback:            1,
 		},
-		"Document insertion error": {
+		"Error returned by Tx.InsertDocument": {
 			Tx: &TxMock{
 				InsertDocumentFunc: func(context.Context, documentCore.Document) error {
 					return errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
+			Body:           validBody,
+			RespCode:       http.StatusInternalServerError,
+			BeginTx:        1,
+			InsertDocument: 1,
+			Rollback:       1,
 		},
-		"History entry insert error": {
+		"Error returned by Tx.RecordDocumentBranchHistoryEntry": {
 			Tx: &TxMock{
 				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
 					return errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
+			Body:                             validBody,
+			RespCode:                         http.StatusInternalServerError,
+			BeginTx:                          1,
+			InsertDocument:                   1,
+			RecordDocumentBranchHistoryEntry: 1,
+			Rollback:                         1,
 		},
-		"Maintainer upsert error": {
+		"Error returned by Tx.UpsertDocumentMaintainers": {
 			Tx: &TxMock{
 				UpsertDocumentMaintainersFunc: func(context.Context, xid.ID, string, []string) error {
 					return errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
+			Body:                             validBody,
+			RespCode:                         http.StatusInternalServerError,
+			BeginTx:                          1,
+			InsertDocument:                   1,
+			RecordDocumentBranchHistoryEntry: 1,
+			UpsertDocumentMaintainers:        1,
+			Rollback:                         1,
 		},
-		"Search job enqueue error": {
+		"Error returned by SearchQueue.Enqueue": {
 			Tx: &TxMock{},
 			Queue: &SearchQueueMock{
 				EnqueueFunc: func(context.Context, sqlutil.Tx, search.Job) error {
 					return errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
+			Body:                             validBody,
+			RespCode:                         http.StatusInternalServerError,
+			BeginTx:                          1,
+			InsertDocument:                   1,
+			RecordDocumentBranchHistoryEntry: 1,
+			UpsertDocumentMaintainers:        1,
+			Enqueue:                          1,
+			Rollback:                         1,
 		},
-		"Tree fetch error": {
+		"Error returned by Tx.FetchDocumentTreeByDocumentParentID": {
 			Tx: &TxMock{
 				FetchDocumentTreeByDocumentParentIDFunc: func(context.Context, null.Value[xid.ID], string) (documentCore.Summaries, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
+			Body:                                validBody,
+			RespCode:                            http.StatusInternalServerError,
+			BeginTx:                             1,
+			InsertDocument:                      1,
+			RecordDocumentBranchHistoryEntry:    1,
+			UpsertDocumentMaintainers:           1,
+			Enqueue:                             1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			Rollback:                            1,
 		},
 		"Sort index swap error": {
-			Tx:       &TxMock{},
-			Body:     validBody,
-			RespCode: http.StatusBadRequest,
+			Tx:                                  &TxMock{},
+			Body:                                validBody,
+			RespCode:                            http.StatusBadRequest,
+			BeginTx:                             1,
+			InsertDocument:                      1,
+			RecordDocumentBranchHistoryEntry:    1,
+			UpsertDocumentMaintainers:           1,
+			Enqueue:                             1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			Rollback:                            1,
 		},
-		"Tree update error": {
+		"Error returned by Tx.UpdateDocumentTree": {
 			Tx: func() *TxMock {
 				tx := insertAwareTx()
 				tx.UpdateDocumentTreeFunc = func(context.Context, documentCore.Summaries, string) error {
@@ -1732,10 +1928,18 @@ func Test_Handler_CreateDocument(t *testing.T) {
 
 				return tx
 			}(),
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
+			Body:                                validBody,
+			RespCode:                            http.StatusInternalServerError,
+			BeginTx:                             1,
+			InsertDocument:                      1,
+			RecordDocumentBranchHistoryEntry:    1,
+			UpsertDocumentMaintainers:           1,
+			Enqueue:                             1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			UpdateDocumentTree:                  1,
+			Rollback:                            1,
 		},
-		"Commit error": {
+		"Error returned by Tx.Commit": {
 			Tx: func() *TxMock {
 				tx := insertAwareTx()
 				tx.CommitFunc = func() error {
@@ -1744,16 +1948,32 @@ func Test_Handler_CreateDocument(t *testing.T) {
 
 				return tx
 			}(),
-			Body:      validBody,
-			RespCode:  http.StatusInternalServerError,
-			Committed: 1,
+			Body:                                validBody,
+			RespCode:                            http.StatusInternalServerError,
+			Committed:                           1,
+			BeginTx:                             1,
+			InsertDocument:                      1,
+			RecordDocumentBranchHistoryEntry:    1,
+			UpsertDocumentMaintainers:           1,
+			Enqueue:                             1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			UpdateDocumentTree:                  1,
+			Rollback:                            1,
 		},
 		"Successful creation": {
-			Tx:        insertAwareTx(),
-			Body:      validBody,
-			RespCode:  http.StatusCreated,
-			Committed: 1,
-			TreeCbs:   1,
+			Tx:                                  insertAwareTx(),
+			Body:                                validBody,
+			RespCode:                            http.StatusCreated,
+			Committed:                           1,
+			TreeCbs:                             1,
+			BeginTx:                             1,
+			InsertDocument:                      1,
+			RecordDocumentBranchHistoryEntry:    1,
+			UpsertDocumentMaintainers:           1,
+			Enqueue:                             1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			UpdateDocumentTree:                  1,
+			Rollback:                            1,
 		},
 	}
 
@@ -1766,7 +1986,8 @@ func Test_Handler_CreateDocument(t *testing.T) {
 				queue = &SearchQueueMock{}
 			}
 
-			hdl, cnt := newTestHandler(withTx(&DBMock{}, c.Tx, c.BeginErr), &fakePublisher{})
+			db := &DBMock{BeginTxFunc: testutil.StubBeginTx(c.Tx, c.BeginErr)}
+			hdl, cnt := newTestHandler(db, &fakePublisher{})
 			hdl.searchQueue = queue
 
 			rec := httptest.NewRecorder()
@@ -1774,7 +1995,16 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			hdl.CreateDocument(rec, newRequest(http.MethodPost, c.Body, c.NoSession, true, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, db.BeginTxCalls(), c.BeginTx)
+			assert.Len(t, c.Tx.CheckDocumentExistsCalls(), c.CheckDocumentExists)
+			assert.Len(t, c.Tx.InsertDocumentCalls(), c.InsertDocument)
+			assert.Len(t, c.Tx.RecordDocumentBranchHistoryEntryCalls(), c.RecordDocumentBranchHistoryEntry)
+			assert.Len(t, c.Tx.UpsertDocumentMaintainersCalls(), c.UpsertDocumentMaintainers)
+			assert.Len(t, queue.EnqueueCalls(), c.Enqueue)
+			assert.Len(t, c.Tx.FetchDocumentTreeByDocumentParentIDCalls(), c.FetchDocumentTreeByDocumentParentID)
+			assert.Len(t, c.Tx.UpdateDocumentTreeCalls(), c.UpdateDocumentTree)
 			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
+			assert.Len(t, c.Tx.RollbackCalls(), c.Rollback)
 			assert.Equal(t, c.TreeCbs, cnt.tree)
 
 			if c.RespCode == http.StatusCreated {
@@ -1799,20 +2029,21 @@ func Test_Handler_CreateDocument(t *testing.T) {
 }
 
 func Test_Handler_DeleteDocument(t *testing.T) {
-	fetchStored := func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
-		return storedDoc(), nil
-	}
-
 	cc := map[string]struct {
-		DB        *DBMock
-		Tx        *TxMock
-		Queue     *SearchQueueMock
-		BeginErr  error
-		NoSession bool
-		OmitDoc   bool
-		RespCode  int
-		Committed int
-		TreeCbs   int
+		DB             *DBMock
+		Tx             *TxMock
+		Queue          *SearchQueueMock
+		BeginErr       error
+		NoSession      bool
+		OmitDoc        bool
+		RespCode       int
+		Committed      int
+		TreeCbs        int
+		FetchDocument  int
+		BeginTx        int
+		DeleteDocument int
+		Enqueue        int
+		Rollback       int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -1826,32 +2057,51 @@ func Test_Handler_DeleteDocument(t *testing.T) {
 			OmitDoc:  true,
 			RespCode: http.StatusNotFound,
 		},
-		"Document fetch error": {
+		"Error returned by DB.FetchDocument": {
 			DB: &DBMock{
 				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			Tx:       &TxMock{},
-			RespCode: http.StatusInternalServerError,
+			Tx:            &TxMock{},
+			RespCode:      http.StatusInternalServerError,
+			FetchDocument: 1,
 		},
-		"Transaction start error": {
-			DB:       &DBMock{FetchDocumentFunc: fetchStored},
-			Tx:       &TxMock{},
-			BeginErr: errors.New("boom"),
-			RespCode: http.StatusInternalServerError,
+		"Error returned by DB.BeginTx": {
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx:            &TxMock{},
+			BeginErr:      errors.New("boom"),
+			RespCode:      http.StatusInternalServerError,
+			FetchDocument: 1,
+			BeginTx:       1,
 		},
-		"Document deletion error": {
-			DB: &DBMock{FetchDocumentFunc: fetchStored},
+		"Error returned by Tx.DeleteDocument": {
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
 			Tx: &TxMock{
 				DeleteDocumentFunc: func(context.Context, xid.ID, string) ([]xid.ID, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			RespCode: http.StatusInternalServerError,
+			RespCode:       http.StatusInternalServerError,
+			FetchDocument:  1,
+			BeginTx:        1,
+			DeleteDocument: 1,
+			Rollback:       1,
 		},
-		"Search removal enqueue error": {
-			DB: &DBMock{FetchDocumentFunc: fetchStored},
+		"Error returned by SearchQueue.Enqueue": {
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
 			Tx: &TxMock{
 				DeleteDocumentFunc: func(context.Context, xid.ID, string) ([]xid.ID, error) {
 					return []xid.ID{_documentID}, nil
@@ -1862,30 +2112,50 @@ func Test_Handler_DeleteDocument(t *testing.T) {
 					return errors.New("boom")
 				},
 			},
-			RespCode: http.StatusInternalServerError,
+			RespCode:       http.StatusInternalServerError,
+			FetchDocument:  1,
+			BeginTx:        1,
+			DeleteDocument: 1,
+			Enqueue:        1,
+			Rollback:       1,
 		},
-		"Commit error": {
-			DB: &DBMock{FetchDocumentFunc: fetchStored},
+		"Error returned by Tx.Commit": {
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
 			Tx: &TxMock{
 				CommitFunc: func() error {
 					return errors.New("boom")
 				},
 			},
-			RespCode:  http.StatusInternalServerError,
-			Committed: 1,
+			RespCode:       http.StatusInternalServerError,
+			Committed:      1,
+			FetchDocument:  1,
+			BeginTx:        1,
+			DeleteDocument: 1,
+			Rollback:       1,
 		},
 		"Successful deletion": {
 			DB: &DBMock{
-				FetchDocumentFunc: fetchStored,
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
 			},
 			Tx: &TxMock{
 				DeleteDocumentFunc: func(_ context.Context, id xid.ID, _ string) ([]xid.ID, error) {
 					return []xid.ID{id}, nil
 				},
 			},
-			RespCode:  http.StatusOK,
-			Committed: 1,
-			TreeCbs:   1,
+			RespCode:       http.StatusOK,
+			Committed:      1,
+			TreeCbs:        1,
+			FetchDocument:  1,
+			BeginTx:        1,
+			DeleteDocument: 1,
+			Enqueue:        1,
+			Rollback:       1,
 		},
 	}
 
@@ -1898,7 +2168,9 @@ func Test_Handler_DeleteDocument(t *testing.T) {
 				queue = &SearchQueueMock{}
 			}
 
-			hdl, cnt := newTestHandler(withTx(c.DB, c.Tx, c.BeginErr), &fakePublisher{})
+			c.DB.BeginTxFunc = testutil.StubBeginTx(c.Tx, c.BeginErr)
+
+			hdl, cnt := newTestHandler(c.DB, &fakePublisher{})
 			hdl.searchQueue = queue
 
 			rec := httptest.NewRecorder()
@@ -1906,7 +2178,12 @@ func Test_Handler_DeleteDocument(t *testing.T) {
 			hdl.DeleteDocument(rec, newRequest(http.MethodDelete, "", c.NoSession, c.OmitDoc, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchDocumentCalls(), c.FetchDocument)
+			assert.Len(t, c.DB.BeginTxCalls(), c.BeginTx)
+			assert.Len(t, c.Tx.DeleteDocumentCalls(), c.DeleteDocument)
+			assert.Len(t, queue.EnqueueCalls(), c.Enqueue)
 			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
+			assert.Len(t, c.Tx.RollbackCalls(), c.Rollback)
 			assert.Equal(t, c.TreeCbs, cnt.tree)
 
 			if c.RespCode == http.StatusOK {
@@ -1925,46 +2202,28 @@ func Test_Handler_DeleteDocument(t *testing.T) {
 }
 
 func Test_Handler_DuplicateDocument(t *testing.T) {
-	fetchStored := func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
-		return storedDoc(), nil
-	}
-
-	// insertAwareTx returns the freshly inserted duplicate in the parent
-	// subtree so the sort-index swap can find it.
-	insertAwareTx := func() *TxMock {
-		tx := &TxMock{}
-		tx.FetchDocumentTreeByDocumentParentIDFunc = func(context.Context, null.Value[xid.ID], string) (documentCore.Summaries, error) {
-			return documentCore.Summaries{{ID: tx.InsertDocumentCalls()[0].Doc.ID}}, nil
-		}
-
-		return tx
-	}
-
-	// fetchStoredWithImage serves a document whose content holds an image
-	// served by that same document, which is what duplication has to copy.
-	fetchStoredWithImage := func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
-		doc := storedDoc()
-		doc.Content = documentCore.RootBlock{
-			Type: documentCore.BlockNodeDoc,
-			Content: []documentCore.Block{
-				{
-					Type: documentCore.BlockNodeImageBlock,
-					Attrs: documentCore.Attributes{
-						"uid": "img-1-aaaaaaaaaaaaaaa",
-						"src": "https://app.test/core" + documentCore.FilePath(_documentID, "img-1-aaaaaaaaaaaaaaa", "shot.png"),
-					},
-				},
-			},
-		}
-
-		return doc, nil
-	}
-
-	// imageDB serves the document with the image plus the file row that
-	// image refers to, which is what the copy is made from.
+	// imageDB serves a document whose content holds an image served by that
+	// same document, plus the file row that image refers to. Duplication
+	// copies the file from that row.
 	imageDB := func() *DBMock {
 		return &DBMock{
-			FetchDocumentFunc: fetchStoredWithImage,
+			FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+				doc := storedDoc()
+				doc.Content = documentCore.RootBlock{
+					Type: documentCore.BlockNodeDoc,
+					Content: []documentCore.Block{
+						{
+							Type: documentCore.BlockNodeImageBlock,
+							Attrs: documentCore.Attributes{
+								"uid": "img-1-aaaaaaaaaaaaaaa",
+								"src": "https://app.test/core" + documentCore.FilePath(_documentID, "img-1-aaaaaaaaaaaaaaa", "shot.png"),
+							},
+						},
+					},
+				}
+
+				return doc, nil
+			},
 			FetchDocumentFileFunc: func(_ context.Context, id, organizationID string) (*file.File, error) {
 				f := file.NewFile(id, file.LocationDocument, "key", _documentID, organizationID, "shot.png", 1024, "image/png")
 
@@ -1986,7 +2245,20 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 		Copies    int
 		// CopiedUID is the source block uid the case's hook is anchored
 		// to.
-		CopiedUID string
+		CopiedUID                           string
+		FetchDocument                       int
+		BeginTx                             int
+		InsertDocument                      int
+		FetchDocumentHooksByBranchID        int
+		InsertDocumentHook                  int
+		RecordDocumentBranchHistoryEntry    int
+		CopyBranchTags                      int
+		UpsertDocumentMaintainers           int
+		Enqueue                             int
+		FetchDocumentTreeByDocumentParentID int
+		UpdateDocumentTree                  int
+		Rollback                            int
+		SetUpBranch                         int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -2000,46 +2272,90 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			OmitDoc:  true,
 			RespCode: http.StatusNotFound,
 		},
-		"Document fetch error": {
+		"Error returned by DB.FetchDocument": {
 			DB: &DBMock{
 				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			Tx:       &TxMock{},
-			RespCode: http.StatusInternalServerError,
+			Tx:            &TxMock{},
+			RespCode:      http.StatusInternalServerError,
+			FetchDocument: 1,
 		},
-		"Transaction start error": {
-			DB:       &DBMock{FetchDocumentFunc: fetchStored},
-			Tx:       &TxMock{},
-			BeginErr: errors.New("boom"),
-			RespCode: http.StatusInternalServerError,
+		"Error returned by DB.BeginTx": {
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx:            &TxMock{},
+			BeginErr:      errors.New("boom"),
+			RespCode:      http.StatusInternalServerError,
+			FetchDocument: 1,
+			BeginTx:       1,
 		},
-		"Duplicate insertion error": {
-			DB: &DBMock{FetchDocumentFunc: fetchStored},
+		"Error returned by Tx.InsertDocument": {
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
 			Tx: &TxMock{
 				InsertDocumentFunc: func(context.Context, documentCore.Document) error {
 					return errors.New("boom")
 				},
 			},
-			RespCode: http.StatusInternalServerError,
+			RespCode:       http.StatusInternalServerError,
+			FetchDocument:  1,
+			BeginTx:        1,
+			InsertDocument: 1,
+			Rollback:       1,
 		},
-		"Tag copy error": {
-			DB: &DBMock{FetchDocumentFunc: fetchStored},
+		"Error returned by Tx.CopyBranchTags": {
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
 			Tx: &TxMock{
 				CopyBranchTagsFunc: func(context.Context, string, xid.ID, xid.ID) error {
 					return errors.New("boom")
 				},
 			},
-			RespCode: http.StatusInternalServerError,
+			RespCode:                         http.StatusInternalServerError,
+			FetchDocument:                    1,
+			BeginTx:                          1,
+			InsertDocument:                   1,
+			FetchDocumentHooksByBranchID:     1,
+			RecordDocumentBranchHistoryEntry: 1,
+			CopyBranchTags:                   1,
+			Rollback:                         1,
 		},
 		"Sort index swap error": {
-			DB:       &DBMock{FetchDocumentFunc: fetchStored},
-			Tx:       &TxMock{},
-			RespCode: http.StatusBadRequest,
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx:                                  &TxMock{},
+			RespCode:                            http.StatusBadRequest,
+			FetchDocument:                       1,
+			BeginTx:                             1,
+			InsertDocument:                      1,
+			FetchDocumentHooksByBranchID:        1,
+			RecordDocumentBranchHistoryEntry:    1,
+			CopyBranchTags:                      1,
+			UpsertDocumentMaintainers:           1,
+			Enqueue:                             1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			Rollback:                            1,
 		},
-		"Commit error": {
-			DB: &DBMock{FetchDocumentFunc: fetchStored},
+		"Error returned by Tx.Commit": {
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
 			Tx: func() *TxMock {
 				tx := insertAwareTx()
 				tx.CommitFunc = func() error {
@@ -2048,24 +2364,63 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 
 				return tx
 			}(),
-			RespCode:  http.StatusInternalServerError,
-			Committed: 1,
+			RespCode:                            http.StatusInternalServerError,
+			Committed:                           1,
+			FetchDocument:                       1,
+			BeginTx:                             1,
+			InsertDocument:                      1,
+			FetchDocumentHooksByBranchID:        1,
+			RecordDocumentBranchHistoryEntry:    1,
+			CopyBranchTags:                      1,
+			UpsertDocumentMaintainers:           1,
+			Enqueue:                             1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			UpdateDocumentTree:                  1,
+			Rollback:                            1,
 		},
 		"Successful duplication": {
-			DB:        &DBMock{FetchDocumentFunc: fetchStored},
-			Tx:        insertAwareTx(),
-			RespCode:  http.StatusCreated,
-			Committed: 1,
-			TreeCbs:   1,
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx:                                  insertAwareTx(),
+			RespCode:                            http.StatusCreated,
+			Committed:                           1,
+			TreeCbs:                             1,
+			FetchDocument:                       1,
+			BeginTx:                             1,
+			InsertDocument:                      1,
+			FetchDocumentHooksByBranchID:        1,
+			RecordDocumentBranchHistoryEntry:    1,
+			CopyBranchTags:                      1,
+			UpsertDocumentMaintainers:           1,
+			Enqueue:                             1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			UpdateDocumentTree:                  1,
+			Rollback:                            1,
+			SetUpBranch:                         1,
 		},
 		"Files are copied along with the document": {
-			DB:        imageDB(),
-			Tx:        insertAwareTx(),
-			Storer:    &StorerMock{},
-			RespCode:  http.StatusCreated,
-			Committed: 1,
-			TreeCbs:   1,
-			Copies:    1,
+			DB:                                  imageDB(),
+			Tx:                                  insertAwareTx(),
+			Storer:                              &StorerMock{},
+			RespCode:                            http.StatusCreated,
+			Committed:                           1,
+			TreeCbs:                             1,
+			Copies:                              1,
+			FetchDocument:                       1,
+			BeginTx:                             1,
+			InsertDocument:                      1,
+			FetchDocumentHooksByBranchID:        1,
+			RecordDocumentBranchHistoryEntry:    1,
+			CopyBranchTags:                      1,
+			UpsertDocumentMaintainers:           1,
+			Enqueue:                             1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			UpdateDocumentTree:                  1,
+			Rollback:                            1,
+			SetUpBranch:                         1,
 		},
 		"Failing file copy still yields the duplicate": {
 			DB: imageDB(),
@@ -2075,10 +2430,22 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 					return errors.New("boom")
 				},
 			},
-			RespCode:  http.StatusCreated,
-			Committed: 1,
-			TreeCbs:   1,
-			Copies:    1,
+			RespCode:                            http.StatusCreated,
+			Committed:                           1,
+			TreeCbs:                             1,
+			Copies:                              1,
+			FetchDocument:                       1,
+			BeginTx:                             1,
+			InsertDocument:                      1,
+			FetchDocumentHooksByBranchID:        1,
+			RecordDocumentBranchHistoryEntry:    1,
+			CopyBranchTags:                      1,
+			UpsertDocumentMaintainers:           1,
+			Enqueue:                             1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			UpdateDocumentTree:                  1,
+			Rollback:                            1,
+			SetUpBranch:                         1,
 		},
 		"Hooks follow the regenerated block uids": {
 			DB: imageDB(),
@@ -2090,15 +2457,32 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 
 				return tx
 			}(),
-			Storer:    &StorerMock{},
-			RespCode:  http.StatusCreated,
-			Committed: 1,
-			TreeCbs:   1,
-			Copies:    1,
-			CopiedUID: "img-1-aaaaaaaaaaaaaaa",
+			Storer:                              &StorerMock{},
+			RespCode:                            http.StatusCreated,
+			Committed:                           1,
+			TreeCbs:                             1,
+			Copies:                              1,
+			CopiedUID:                           "img-1-aaaaaaaaaaaaaaa",
+			FetchDocument:                       1,
+			BeginTx:                             1,
+			InsertDocument:                      1,
+			FetchDocumentHooksByBranchID:        1,
+			InsertDocumentHook:                  1,
+			RecordDocumentBranchHistoryEntry:    1,
+			CopyBranchTags:                      1,
+			UpsertDocumentMaintainers:           1,
+			Enqueue:                             1,
+			FetchDocumentTreeByDocumentParentID: 1,
+			UpdateDocumentTree:                  1,
+			Rollback:                            1,
+			SetUpBranch:                         1,
 		},
 		"Error returned by Tx.FetchDocumentHooksByBranchID": {
-			DB: &DBMock{FetchDocumentFunc: fetchStored},
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
 			Tx: func() *TxMock {
 				tx := insertAwareTx()
 				tx.FetchDocumentHooksByBranchIDFunc = func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
@@ -2107,7 +2491,12 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 
 				return tx
 			}(),
-			RespCode: http.StatusInternalServerError,
+			RespCode:                     http.StatusInternalServerError,
+			FetchDocument:                1,
+			BeginTx:                      1,
+			InsertDocument:               1,
+			FetchDocumentHooksByBranchID: 1,
+			Rollback:                     1,
 		},
 	}
 
@@ -2115,11 +2504,18 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, cnt := newTestHandler(withTx(c.DB, c.Tx, c.BeginErr), &fakePublisher{})
-
-			if c.Storer != nil {
-				hdl.storer = c.Storer
+			storer := c.Storer
+			if storer == nil {
+				storer = &StorerMock{}
 			}
+
+			c.DB.BeginTxFunc = testutil.StubBeginTx(c.Tx, c.BeginErr)
+
+			hdl, cnt := newTestHandler(c.DB, &fakePublisher{})
+			hdl.storer = storer
+
+			queue := &SearchQueueMock{}
+			hdl.searchQueue = queue
 
 			man := &HookManagerMock{}
 			hdl.hookMan = man
@@ -2129,13 +2525,28 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			hdl.DuplicateDocument(rec, newRequest(http.MethodPost, "", c.NoSession, c.OmitDoc, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchDocumentCalls(), c.FetchDocument)
+			assert.Len(t, c.DB.BeginTxCalls(), c.BeginTx)
+			assert.Len(t, c.Tx.InsertDocumentCalls(), c.InsertDocument)
+			assert.Len(t, c.Tx.FetchDocumentHooksByBranchIDCalls(), c.FetchDocumentHooksByBranchID)
+			assert.Len(t, c.Tx.InsertDocumentHookCalls(), c.InsertDocumentHook)
+			assert.Len(t, c.Tx.RecordDocumentBranchHistoryEntryCalls(), c.RecordDocumentBranchHistoryEntry)
+			assert.Len(t, c.Tx.CopyBranchTagsCalls(), c.CopyBranchTags)
+			assert.Len(t, c.Tx.UpsertDocumentMaintainersCalls(), c.UpsertDocumentMaintainers)
+			assert.Len(t, queue.EnqueueCalls(), c.Enqueue)
+			assert.Len(t, c.Tx.FetchDocumentTreeByDocumentParentIDCalls(), c.FetchDocumentTreeByDocumentParentID)
+			assert.Len(t, c.Tx.UpdateDocumentTreeCalls(), c.UpdateDocumentTree)
 			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
+			assert.Len(t, c.Tx.RollbackCalls(), c.Rollback)
+			assert.Len(t, man.SetUpBranchCalls(), c.SetUpBranch)
 			assert.Equal(t, c.TreeCbs, cnt.tree)
 
-			if c.Storer != nil {
-				assert.Len(t, c.Storer.CopyCalls(), c.Copies)
-				assert.Len(t, c.DB.InsertDocumentFileCalls(), c.Copies)
-			}
+			// the source document has no parent to check.
+			assert.Empty(t, c.Tx.CheckDocumentExistsCalls())
+
+			assert.Len(t, c.DB.FetchDocumentFileCalls(), c.Copies)
+			assert.Len(t, c.DB.InsertDocumentFileCalls(), c.Copies)
+			assert.Len(t, storer.CopyCalls(), c.Copies)
 
 			if c.RespCode == http.StatusCreated {
 				// the duplicate is a new document owned by the caller.
@@ -2194,27 +2605,29 @@ func Test_Handler_copyDocumentFiles(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		DB      *DBMock
-		Storer  *StorerMock
-		Files   map[string]string
-		Inserts int
-		Copies  int
+		DB                *DBMock
+		Storer            *StorerMock
+		Files             map[string]string
+		Inserts           int
+		Copies            int
+		FetchDocumentFile int
 	}{
 		"Nothing to copy": {
 			DB:     fileDB(),
 			Storer: &StorerMock{},
 			Files:  map[string]string{},
 		},
-		"File row is missing": {
+		"Error returned by DB.FetchDocumentFile": {
 			DB: &DBMock{
 				FetchDocumentFileFunc: func(context.Context, string, string) (*file.File, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			Storer: &StorerMock{},
-			Files:  map[string]string{"old-1": "new-1"},
+			Storer:            &StorerMock{},
+			Files:             map[string]string{"old-1": "new-1"},
+			FetchDocumentFile: 1,
 		},
-		"Error returned by db.InsertDocumentFile": {
+		"Error returned by DB.InsertDocumentFile": {
 			DB: func() *DBMock {
 				db := fileDB()
 				db.InsertDocumentFileFunc = func(context.Context, file.File) error {
@@ -2223,27 +2636,30 @@ func Test_Handler_copyDocumentFiles(t *testing.T) {
 
 				return db
 			}(),
-			Storer:  &StorerMock{},
-			Files:   map[string]string{"old-1": "new-1"},
-			Inserts: 1,
+			Storer:            &StorerMock{},
+			Files:             map[string]string{"old-1": "new-1"},
+			Inserts:           1,
+			FetchDocumentFile: 1,
 		},
-		"Error returned by storer.Copy": {
+		"Error returned by Storer.Copy": {
 			DB: fileDB(),
 			Storer: &StorerMock{
 				CopyFunc: func(context.Context, string, string, string, string) error {
 					return errors.New("boom")
 				},
 			},
-			Files:   map[string]string{"old-1": "new-1"},
-			Inserts: 1,
-			Copies:  1,
+			Files:             map[string]string{"old-1": "new-1"},
+			Inserts:           1,
+			Copies:            1,
+			FetchDocumentFile: 1,
 		},
 		"Successful copy": {
-			DB:      fileDB(),
-			Storer:  &StorerMock{},
-			Files:   map[string]string{"old-1": "new-1"},
-			Inserts: 1,
-			Copies:  1,
+			DB:                fileDB(),
+			Storer:            &StorerMock{},
+			Files:             map[string]string{"old-1": "new-1"},
+			Inserts:           1,
+			Copies:            1,
+			FetchDocumentFile: 1,
 		},
 	}
 
@@ -2255,6 +2671,8 @@ func Test_Handler_copyDocumentFiles(t *testing.T) {
 			hdl.storer = c.Storer
 
 			hdl.copyDocumentFiles(context.Background(), c.Files, toDocumentID, "org1")
+
+			assert.Len(t, c.DB.FetchDocumentFileCalls(), c.FetchDocumentFile)
 
 			ff := c.DB.InsertDocumentFileCalls()
 			require.Len(t, ff, c.Inserts)

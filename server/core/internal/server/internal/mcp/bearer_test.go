@@ -61,36 +61,6 @@ func Test_newVerifier(t *testing.T) {
 func Test_sessionFromContext(t *testing.T) {
 	t.Parallel()
 
-	// runWith pushes the given TokenInfo through the go-sdk bearer
-	// middleware — the only writer of its private context key — and
-	// captures what sessionFromContext sees inside the request.
-	runWith := func(t *testing.T, info *sdkauth.TokenInfo) (Session, error) {
-		t.Helper()
-
-		var (
-			session Session
-			err     error
-		)
-
-		mw := sdkauth.RequireBearerToken(
-			func(context.Context, string, *http.Request) (*sdkauth.TokenInfo, error) {
-				return info, nil
-			},
-			nil,
-		)
-
-		hdl := mw(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-			session, err = sessionFromContext(r.Context())
-		}))
-
-		req := httptest.NewRequest(http.MethodPost, "http://test.com/", http.NoBody)
-		req.Header.Set("Authorization", "Bearer tok")
-
-		hdl.ServeHTTP(httptest.NewRecorder(), req)
-
-		return session, err
-	}
-
 	cc := map[string]struct {
 		Context context.Context //nolint:containedctx // table input
 		Info    *sdkauth.TokenInfo
@@ -136,7 +106,23 @@ func Test_sessionFromContext(t *testing.T) {
 			if c.Context != nil {
 				session, err = sessionFromContext(c.Context)
 			} else {
-				session, err = runWith(t, c.Info)
+				// the go-sdk bearer middleware is the only writer of its
+				// private context key, so the token info goes in through it.
+				mw := sdkauth.RequireBearerToken(
+					func(context.Context, string, *http.Request) (*sdkauth.TokenInfo, error) {
+						return c.Info, nil
+					},
+					nil,
+				)
+
+				hdl := mw(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+					session, err = sessionFromContext(r.Context())
+				}))
+
+				req := httptest.NewRequest(http.MethodPost, "http://test.com/", http.NoBody)
+				req.Header.Set("Authorization", "Bearer tok")
+
+				hdl.ServeHTTP(httptest.NewRecorder(), req)
 			}
 
 			testutil.AssertEqualError(t, c.Err, err)

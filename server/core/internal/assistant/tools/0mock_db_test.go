@@ -55,6 +55,9 @@ var _ DB = &DBMock{}
 //			FetchDocumentBranchesFunc: func(ctx context.Context, docID xid.ID, organizationID string) ([]document.BranchSummary, error) {
 //				panic("mock out the FetchDocumentBranches method")
 //			},
+//			FetchDocumentBranchesByOrganizationIDFunc: func(ctx context.Context, organizationID string) ([]document.BranchSummary, error) {
+//				panic("mock out the FetchDocumentBranchesByOrganizationID method")
+//			},
 //			FetchDocumentByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error) {
 //				panic("mock out the FetchDocumentByBranchID method")
 //			},
@@ -124,6 +127,9 @@ type DBMock struct {
 
 	// FetchDocumentBranchesFunc mocks the FetchDocumentBranches method.
 	FetchDocumentBranchesFunc func(ctx context.Context, docID xid.ID, organizationID string) ([]document.BranchSummary, error)
+
+	// FetchDocumentBranchesByOrganizationIDFunc mocks the FetchDocumentBranchesByOrganizationID method.
+	FetchDocumentBranchesByOrganizationIDFunc func(ctx context.Context, organizationID string) ([]document.BranchSummary, error)
 
 	// FetchDocumentByBranchIDFunc mocks the FetchDocumentByBranchID method.
 	FetchDocumentByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error)
@@ -256,6 +262,13 @@ type DBMock struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
+		// FetchDocumentBranchesByOrganizationID holds details about calls to the FetchDocumentBranchesByOrganizationID method.
+		FetchDocumentBranchesByOrganizationID []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
 		// FetchDocumentByBranchID holds details about calls to the FetchDocumentByBranchID method.
 		FetchDocumentByBranchID []struct {
 			// Ctx is the ctx argument value.
@@ -360,27 +373,28 @@ type DBMock struct {
 			OrganizationID string
 		}
 	}
-	lockAssignBranchTag                     sync.RWMutex
-	lockBeginTx                             sync.RWMutex
-	lockCheckDocumentCycle                  sync.RWMutex
-	lockCheckDocumentExists                 sync.RWMutex
-	lockDeleteTag                           sync.RWMutex
-	lockFetchBranchTags                     sync.RWMutex
-	lockFetchDataSource                     sync.RWMutex
-	lockFetchDataSources                    sync.RWMutex
-	lockFetchDocument                       sync.RWMutex
-	lockFetchDocumentBranches               sync.RWMutex
-	lockFetchDocumentByBranchID             sync.RWMutex
-	lockFetchDocumentHook                   sync.RWMutex
-	lockFetchDocumentHooksByBranchID        sync.RWMutex
-	lockFetchDocumentTree                   sync.RWMutex
-	lockFetchDocumentTreeByDocumentParentID sync.RWMutex
-	lockFetchTagTree                        sync.RWMutex
-	lockInsertTag                           sync.RWMutex
-	lockUnassignBranchTag                   sync.RWMutex
-	lockUpdateDocumentParentID              sync.RWMutex
-	lockUpdateTag                           sync.RWMutex
-	lockUpdateTagTree                       sync.RWMutex
+	lockAssignBranchTag                       sync.RWMutex
+	lockBeginTx                               sync.RWMutex
+	lockCheckDocumentCycle                    sync.RWMutex
+	lockCheckDocumentExists                   sync.RWMutex
+	lockDeleteTag                             sync.RWMutex
+	lockFetchBranchTags                       sync.RWMutex
+	lockFetchDataSource                       sync.RWMutex
+	lockFetchDataSources                      sync.RWMutex
+	lockFetchDocument                         sync.RWMutex
+	lockFetchDocumentBranches                 sync.RWMutex
+	lockFetchDocumentBranchesByOrganizationID sync.RWMutex
+	lockFetchDocumentByBranchID               sync.RWMutex
+	lockFetchDocumentHook                     sync.RWMutex
+	lockFetchDocumentHooksByBranchID          sync.RWMutex
+	lockFetchDocumentTree                     sync.RWMutex
+	lockFetchDocumentTreeByDocumentParentID   sync.RWMutex
+	lockFetchTagTree                          sync.RWMutex
+	lockInsertTag                             sync.RWMutex
+	lockUnassignBranchTag                     sync.RWMutex
+	lockUpdateDocumentParentID                sync.RWMutex
+	lockUpdateTag                             sync.RWMutex
+	lockUpdateTagTree                         sync.RWMutex
 }
 
 // AssignBranchTag calls AssignBranchTagFunc.
@@ -828,6 +842,46 @@ func (mock *DBMock) FetchDocumentBranchesCalls() []struct {
 	mock.lockFetchDocumentBranches.RLock()
 	calls = mock.calls.FetchDocumentBranches
 	mock.lockFetchDocumentBranches.RUnlock()
+	return calls
+}
+
+// FetchDocumentBranchesByOrganizationID calls FetchDocumentBranchesByOrganizationIDFunc.
+func (mock *DBMock) FetchDocumentBranchesByOrganizationID(ctx context.Context, organizationID string) ([]document.BranchSummary, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+	}
+	mock.lockFetchDocumentBranchesByOrganizationID.Lock()
+	mock.calls.FetchDocumentBranchesByOrganizationID = append(mock.calls.FetchDocumentBranchesByOrganizationID, callInfo)
+	mock.lockFetchDocumentBranchesByOrganizationID.Unlock()
+	if mock.FetchDocumentBranchesByOrganizationIDFunc == nil {
+		var (
+			branchSummarysOut []document.BranchSummary
+			errOut            error
+		)
+		return branchSummarysOut, errOut
+	}
+	return mock.FetchDocumentBranchesByOrganizationIDFunc(ctx, organizationID)
+}
+
+// FetchDocumentBranchesByOrganizationIDCalls gets all the calls that were made to FetchDocumentBranchesByOrganizationID.
+// Check the length with:
+//
+//	len(mockedDB.FetchDocumentBranchesByOrganizationIDCalls())
+func (mock *DBMock) FetchDocumentBranchesByOrganizationIDCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+	}
+	mock.lockFetchDocumentBranchesByOrganizationID.RLock()
+	calls = mock.calls.FetchDocumentBranchesByOrganizationID
+	mock.lockFetchDocumentBranchesByOrganizationID.RUnlock()
 	return calls
 }
 

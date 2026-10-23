@@ -93,6 +93,12 @@ func (b Block) UID() string {
 	return strings.TrimPrefix(b.ID, b.BranchID.String()+"-")
 }
 
+// IsDocumentName reports whether the block is the entry carrying its
+// branch's document name rather than a block of its content.
+func (b Block) IsDocumentName() bool {
+	return b.UID() == _documentNameUID
+}
+
 // Scope is the branch every block of one indexing pass belongs to.
 type Scope struct {
 	// OrganizationID is the organization owning the document.

@@ -25,19 +25,19 @@ func Test_NewSender(t *testing.T) {
 		NilClient bool
 		Err       error
 	}{
-		"Error returned by invalid public url": {
+		"Error returned by url.Parse": {
 			Cfg: Config{
 				PublicURL: "::not-a-url",
 			},
 			Err: assert.AnError,
 		},
-		"Error returned by public url without a host": {
+		"Public url without a host": {
 			Cfg: Config{
 				PublicURL: "/core",
 			},
 			Err: assert.AnError,
 		},
-		"Error returned by invalid port": {
+		"Error returned by strconv.Atoi": {
 			Cfg: Config{
 				Host:      "localhost",
 				Port:      "not-a-port",
@@ -57,7 +57,7 @@ func Test_NewSender(t *testing.T) {
 			},
 			Err: assert.AnError,
 		},
-		"Error returned by invalid tls mode": {
+		"Invalid tls mode": {
 			Cfg: Config{
 				Host:      "localhost",
 				Port:      "1025",
@@ -155,14 +155,14 @@ func Test_Sender_send(t *testing.T) {
 			Template:    Template("nonexistent"),
 			LogContains: "cannot render email template",
 		},
-		"Invalid from address": {
+		"Error returned by msg.From": {
 			Client:      &clientMock{},
 			To:          "user@example.com",
 			Template:    TemplatePasswordReset,
 			Args:        map[string]string{"link": "https://example.com/reset"},
 			LogContains: "cannot set email from address",
 		},
-		"Invalid recipient address": {
+		"Error returned by msg.To": {
 			Client:      &clientMock{},
 			From:        "team@oxynote.io",
 			Template:    TemplatePasswordReset,
@@ -249,7 +249,7 @@ func Test_Sender_Send(t *testing.T) {
 		Contains []string
 		Err      error
 	}{
-		"Unknown template": {
+		"Error returned by tmpl.Validate": {
 			Template: Template("nonexistent"),
 			Data:     Data{Email: "user@example.com"},
 			Err:      ErrInvalidTemplate,
@@ -303,7 +303,14 @@ func Test_Sender_Send(t *testing.T) {
 			t.Parallel()
 
 			client := &clientMock{}
-			s := stubSender(client)
+			s := &Sender{
+				log:             slog.New(slog.DiscardHandler),
+				client:          client,
+				backoffStrategy: func() backoff.BackOff { return &backoff.ZeroBackOff{} },
+				supv:            xync.NewSupervisor(),
+				fromEmail:       "Oxynote <team@oxynote.io>",
+				publicHost:      "notes.example.com",
+			}
 
 			err := s.Send(c.Template, c.Data)
 
@@ -317,14 +324,27 @@ func Test_Sender_Send(t *testing.T) {
 				return
 			}
 
-			msg := sentMsg(t, client)
-			assert.Equal(t, c.Data.Email, msgTo(t, msg))
+			ff := client.DialAndSendWithContextCalls()
+			require.Len(t, ff, 1)
+			require.Len(t, ff[0].Msgs, 1)
+
+			msg := ff[0].Msgs[0]
+
+			addrs := msg.GetTo()
+			require.Len(t, addrs, 1)
+			assert.Equal(t, c.Data.Email, addrs[0].Address)
 			assert.Equal(t, []string{c.Subject}, msg.GetGenHeader(mail.HeaderSubject))
 
-			body := msgBody(t, msg)
+			// the first part holds the rendered HTML body before any
+			// transfer encoding is applied.
+			parts := msg.GetParts()
+			require.NotEmpty(t, parts)
+
+			body, err := parts[0].GetContent()
+			require.NoError(t, err)
 
 			for _, sub := range c.Contains {
-				assert.Contains(t, body, sub)
+				assert.Contains(t, string(body), sub)
 			}
 		})
 	}
@@ -342,7 +362,14 @@ func Test_Sender_Close(t *testing.T) {
 			return nil
 		},
 	}
-	s := stubSender(client)
+	s := &Sender{
+		log:             slog.New(slog.DiscardHandler),
+		client:          client,
+		backoffStrategy: func() backoff.BackOff { return &backoff.ZeroBackOff{} },
+		supv:            xync.NewSupervisor(),
+		fromEmail:       "Oxynote <team@oxynote.io>",
+		publicHost:      "notes.example.com",
+	}
 
 	require.NoError(t, s.Send(TemplatePasswordReset, Data{Email: "user@example.com", Link: "https://example.com/reset"}))
 	require.NoError(t, s.Close())
@@ -351,51 +378,4 @@ func Test_Sender_Close(t *testing.T) {
 	// supervisor context, so the send observed a live context.
 	require.Len(t, client.DialAndSendWithContextCalls(), 1)
 	assert.NoError(t, ctxErr)
-}
-
-// stubSender creates a sender backed by the provided mocked client.
-func stubSender(client *clientMock) *Sender {
-	return &Sender{
-		log:             slog.New(slog.DiscardHandler),
-		client:          client,
-		backoffStrategy: func() backoff.BackOff { return &backoff.ZeroBackOff{} },
-		supv:            xync.NewSupervisor(),
-		fromEmail:       "Oxynote <team@oxynote.io>",
-		publicHost:      "notes.example.com",
-	}
-}
-
-// sentMsg extracts the single message passed to the mocked client.
-func sentMsg(t *testing.T, client *clientMock) *mail.Msg {
-	t.Helper()
-
-	ff := client.DialAndSendWithContextCalls()
-	require.Len(t, ff, 1)
-	require.Len(t, ff[0].Msgs, 1)
-
-	return ff[0].Msgs[0]
-}
-
-// msgTo extracts the single recipient address of the message.
-func msgTo(t *testing.T, msg *mail.Msg) string {
-	t.Helper()
-
-	addrs := msg.GetTo()
-	require.Len(t, addrs, 1)
-
-	return addrs[0].Address
-}
-
-// msgBody extracts the rendered HTML body of the message before any
-// transfer encoding is applied.
-func msgBody(t *testing.T, msg *mail.Msg) string {
-	t.Helper()
-
-	parts := msg.GetParts()
-	require.NotEmpty(t, parts)
-
-	body, err := parts[0].GetContent()
-	require.NoError(t, err)
-
-	return string(body)
 }
