@@ -100,9 +100,9 @@ watchDebounced(
 // creation due to the debounce delay
 const canUseDebouncedConfigInParams = ref(false)
 
-// a threshold colour is a palette name, which a chart needs as hex. One
-// saved before thresholds stored names is a css colour already and passes
-// through.
+// a threshold colour is a palette name, which a chart needs as a css
+// colour. One saved before thresholds stored names is a css colour already
+// and passes through.
 const processedThresholds = computed(() => {
 	const thresholds = debouncedConfig.value.thresholds
 	if (!thresholds?.length) {
