@@ -212,7 +212,7 @@ func Test_DetectError(t *testing.T) {
 			existing := prepTags(t, db, 1, nil)[0]
 
 			dup := tag.NewTag(
-				tag.CreateInput{TagName: existing.TagName, Color: "#000000"},
+				tag.CreateInput{TagName: existing.TagName, Color: "green"},
 				existing.OrganizationID,
 				prepUsers(t, db, 1)[0],
 			)
@@ -262,7 +262,8 @@ func Test_DB_migrateUp(t *testing.T) {
 	organizationID := prepOrganizations(t, db, 1)[0]
 
 	// rolling back to before the variables migration (008) and up again
-	// runs its backfill over an organization that existed before it.
+	// runs its backfill over an organization that existed before it, and
+	// the palette name migration (010) over tags stored as hex.
 	fsys, err := fs.Sub(_migrations, "migrations")
 	require.NoError(t, err)
 
@@ -275,7 +276,25 @@ func Test_DB_migrateUp(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	hexes := []string{"#f54a00", "#e7010c", "#155DFC", "rgb(1, 2, 3)"}
+
+	prepTags(t, db, len(hexes), func(i int, tg *tag.Tag) {
+		tg.OrganizationID = organizationID
+		tg.Color = hexes[i]
+	})
+
 	require.NoError(t, db.migrateUp())
+
+	tags, err := db.FetchTagTree(context.Background(), organizationID, "")
+	require.NoError(t, err)
+
+	colors := make([]string, 0, len(tags))
+
+	for _, s := range tags {
+		colors = append(colors, s.Color)
+	}
+
+	assert.Equal(t, []string{"orange", "red", "blue", "green"}, colors)
 
 	tree, err := db.FetchVariableTree(context.Background(), organizationID, "")
 	require.NoError(t, err)

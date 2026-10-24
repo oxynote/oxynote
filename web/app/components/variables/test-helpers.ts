@@ -36,7 +36,7 @@ export function metricsGroup(): VariableGroupTreeElement {
 		{
 			id: GROUP_METRICS,
 			groupName: "Metrics",
-			color: "#155dfc",
+			color: "blue",
 			builtin: true,
 		},
 		[
@@ -68,7 +68,7 @@ export function metricsGroup(): VariableGroupTreeElement {
 
 export function environmentGroup(): VariableGroupTreeElement {
 	return makeGroup(
-		{ id: GROUP_ENV, groupName: "Environment", color: "#16a34a" },
+		{ id: GROUP_ENV, groupName: "Environment", color: "green" },
 		[
 			makeVariable({
 				id: VAR_ENV,
@@ -124,7 +124,7 @@ function deploysGroup(): VariableGroupTreeElement {
 	return makeGroup({
 		id: GROUP_DEPLOYS,
 		groupName: "Deploys",
-		color: "#ea580c",
+		color: "orange",
 		sortIndex: 1,
 	})
 }
@@ -145,7 +145,7 @@ export function makeGroup(
 		id: makeXid("grp"),
 		organizationId: "org-1",
 		groupName: "Group",
-		color: "#16a34a",
+		color: "green",
 		sortIndex: 0,
 		builtin: false,
 		createdAt: "2026-10-01T00:00:00Z",

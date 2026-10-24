@@ -86,13 +86,13 @@ func Test_Type_UnmarshalText(t *testing.T) {
 func Test_NewGroup(t *testing.T) {
 	t.Parallel()
 
-	g := NewGroup(GroupCreateInput{GroupName: "Environment", Color: "#00a63e"}, "org", "user")
+	g := NewGroup(GroupCreateInput{GroupName: "Environment", Color: "green"}, "org", "user")
 
 	assert.NotZero(t, g.ID)
 	assert.NotZero(t, g.CreatedAt)
 	assert.Equal(t, "org", g.OrganizationID)
 	assert.Equal(t, "Environment", g.GroupName)
-	assert.Equal(t, "#00a63e", g.Color)
+	assert.Equal(t, "green", g.Color)
 	assert.Equal(t, null.StringFrom("user"), g.CreatedBy)
 	assert.False(t, g.Builtin)
 }
@@ -128,7 +128,7 @@ func Test_GroupCreateInput_Validate(t *testing.T) {
 		Err   error
 	}{
 		"Empty name": {
-			Input: GroupCreateInput{Color: "#00a63e"},
+			Input: GroupCreateInput{Color: "green"},
 			Err:   ErrInvalidGroupName,
 		},
 		"Off-palette colour": {
@@ -136,7 +136,7 @@ func Test_GroupCreateInput_Validate(t *testing.T) {
 			Err:   ErrInvalidGroupColor,
 		},
 		"Valid input": {
-			Input: GroupCreateInput{GroupName: "Environment", Color: "#00a63e"},
+			Input: GroupCreateInput{GroupName: "Environment", Color: "green"},
 		},
 	}
 
@@ -171,7 +171,7 @@ func Test_GroupUpdateInput_Validate(t *testing.T) {
 			Input: GroupUpdateInput{GroupName: null.StringFrom("Environment")},
 		},
 		"Colour only": {
-			Input: GroupUpdateInput{Color: null.StringFrom("#00a63e")},
+			Input: GroupUpdateInput{Color: null.StringFrom("green")},
 		},
 	}
 

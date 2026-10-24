@@ -43,7 +43,7 @@ type Tag struct {
 	// TagName is the display name of the tag.
 	TagName string `json:"tagName" db:"tag_name"`
 
-	// Color is the tag's colour: the Hex of one palette entry.
+	// Color is the tag's colour: a palette name, such as "green".
 	Color string `json:"color" db:"color"`
 
 	// SortIndex is the position of the tag among its organization's tags.
@@ -61,7 +61,7 @@ type CreateInput struct {
 	// TagName is the display name of the tag.
 	TagName string `json:"tagName"`
 
-	// Color is the tag's colour: the Hex of one palette entry.
+	// Color is the tag's colour: a palette name, such as "green".
 	Color string `json:"color"`
 }
 
@@ -71,7 +71,7 @@ func (ci CreateInput) Validate() error {
 		return ErrInvalidTagName
 	}
 
-	if ColorName(ci.Color) == "" {
+	if !ValidColor(ci.Color) {
 		return ErrInvalidTagColor
 	}
 
@@ -102,7 +102,7 @@ type UpdateInput struct {
 	// TagName is the new display name of the tag.
 	TagName null.String `json:"tagName"`
 
-	// Color is the new colour of the tag: the Hex of one palette entry.
+	// Color is the new colour of the tag: a palette name.
 	Color null.String `json:"color"`
 }
 
@@ -117,7 +117,7 @@ func (ui UpdateInput) Validate() error {
 		return ErrInvalidTagName
 	}
 
-	if ui.Color.Valid && ColorName(ui.Color.String) == "" {
+	if ui.Color.Valid && !ValidColor(ui.Color.String) {
 		return ErrInvalidTagColor
 	}
 
@@ -180,7 +180,7 @@ type Summary struct {
 	// TagName is the display name of the tag.
 	TagName string `json:"tagName" db:"tag_name"`
 
-	// Color is the tag's colour: the Hex of one palette entry.
+	// Color is the tag's colour: a palette name, such as "green".
 	Color string `json:"color" db:"color"`
 
 	// Hidden reports whether the user who asked for the tree keeps this tag

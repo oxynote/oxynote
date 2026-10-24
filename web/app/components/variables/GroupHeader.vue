@@ -24,7 +24,7 @@ const props = defineProps<{
 			/>
 			<span
 				class="size-2.5 shrink-0 rounded-full"
-				:style="{ backgroundColor: props.group.color }"
+				:style="{ backgroundColor: paletteColor(props.group.color) }"
 			/>
 			<span class="truncate font-semibold">{{ props.group.groupName }}</span>
 		</ShadcnUiCollapsibleTrigger>

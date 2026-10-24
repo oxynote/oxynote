@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 
@@ -27,7 +26,7 @@ func (listTags) Info() Info {
 	return Info{
 		Name:        NameListTags,
 		Traits:      Traits{Group: GroupTags},
-		Description: "List the organisation's tags in sidebar order as [{id, name, color, hidden, documents}]. color is a palette name, or unknown for a colour outside the palette that update_tag can fix. documents are the documents whose default branch carries the tag; a tag on another branch shows only on get_document for that branch. hidden is the current user's own sidebar setting and does not stop assignment.",
+		Description: "List the organisation's tags in sidebar order as [{id, name, color, hidden, documents}]. color is a palette name. documents are the documents whose default branch carries the tag; a tag on another branch shows only on get_document for that branch. hidden is the current user's own sidebar setting and does not stop assignment.",
 		Properties:  map[string]any{},
 	}
 }
@@ -51,7 +50,7 @@ func (listTags) Execute(inp *input) (string, error) {
 		e := tagEntry{
 			ID:        s.ID,
 			Name:      s.TagName,
-			ColorName: cmp.Or(tag.ColorName(s.Color), "unknown"),
+			ColorName: s.Color,
 			Hidden:    s.Hidden,
 			Documents: make([]tagDocument, 0, len(s.Documents)),
 		}
@@ -86,9 +85,7 @@ type tagEntry struct {
 	// Name is the tag's display name.
 	Name string `json:"name"`
 
-	// ColorName is the palette name of the tag's colour, or "unknown" for
-	// one stored outside the palette: before the palette existed, or by
-	// another browser's rounding of a shade.
+	// ColorName is the palette name of the tag's colour.
 	ColorName string `json:"color"`
 
 	// Hidden indicates the current user keeps the tag out of their own
@@ -133,11 +130,9 @@ func (a createTagArgs) Validate() error {
 	return a.input().Validate()
 }
 
-// input returns the arguments as the domain's create input. A colour
-// outside the palette maps to no colour, which the input's Validate
-// refuses.
+// input returns the arguments as the domain's create input.
 func (a createTagArgs) input() tag.CreateInput {
-	return tag.CreateInput{TagName: a.Name, Color: tag.ColorHex(a.ColorName)}
+	return tag.CreateInput{TagName: a.Name, Color: a.ColorName}
 }
 
 // createTag creates a new tag in the organisation.
@@ -235,8 +230,7 @@ func (a updateTagArgs) renames() bool {
 }
 
 // input returns the arguments as the domain's update input, with only
-// the fields that were given set. A colour outside the palette maps to
-// no colour, which the input's Validate refuses.
+// the fields that were given set.
 func (a updateTagArgs) input() tag.UpdateInput {
 	var inp tag.UpdateInput
 
@@ -245,7 +239,7 @@ func (a updateTagArgs) input() tag.UpdateInput {
 	}
 
 	if a.ColorName != "" {
-		inp.Color = null.StringFrom(tag.ColorHex(a.ColorName))
+		inp.Color = null.StringFrom(a.ColorName)
 	}
 
 	return inp

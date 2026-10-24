@@ -7,13 +7,8 @@ import {
 	mockEndpoint,
 	runInApp,
 } from "~/composables/api/test-helpers"
-import {
-	stubSelectableColors,
-	stubThemeColorContext,
-} from "../editor/test-helpers/theme"
 import ColorSelect from "../ColorSelect.vue"
 import {
-	at,
 	clearTeleportedOverlays,
 	emitFrom,
 	findButtonByText,
@@ -31,26 +26,22 @@ vi.mock("vue-sonner", () => ({
 
 const GROUPS_URL = "/api/variables/groups"
 
-let palette: string[] = []
-
-// the palette lives on the shared document element, and the query cache,
-// the mocked toast and the popover teleported into <body> are shared by
-// every mount
+// the query cache, the mocked toast, the spied draw and the popover
+// teleported into <body> are shared by every mount
 describe("<GroupForm>", { concurrent: false }, () => {
 	beforeEach(() => {
 		clearQueryCache()
 		clearTeleportedOverlays()
 		vi.mocked(toast.custom).mockClear()
-		stubThemeColorContext()
-		palette = stubSelectableColors()
 	})
 	afterEach(disposeMockEndpoints)
 
-	it("creates a group with its name and the default colour", async ({
+	it("creates a group with its name and the suggested colour", async ({
 		expect,
 	}) => {
 		mockTree(fullTree())
 		const calls = mockEndpoint("POST", GROUPS_URL, () => ({ id: "grp-new" }))
+		vi.spyOn(Math, "random").mockReturnValue(0)
 		const wrapper = await mountForm(null)
 
 		await wrapper.get("input").setValue("Incidents")
@@ -62,10 +53,10 @@ describe("<GroupForm>", { concurrent: false }, () => {
 		expect
 			.soft(runInApp(() => useGroupOpenState().created.value))
 			.toContain("grp-new")
-		// the canvas stand-in reads every colour back as black
+		// the pinned draw suggests the first colour no group holds yet
 		expect
 			.soft(calls.map((call) => call.body))
-			.toEqual([{ groupName: "Incidents", color: "#000000" }])
+			.toEqual([{ groupName: "Incidents", color: "red" }])
 		expect.soft(wrapper.emitted("close")).toHaveLength(1)
 	})
 
@@ -78,12 +69,12 @@ describe("<GroupForm>", { concurrent: false }, () => {
 			t("variable.group-form.color-button"),
 		).trigger("click")
 
-		emitFrom(wrapper, ColorSelect, "update:modelValue", at(palette, 3))
+		emitFrom(wrapper, ColorSelect, "update:modelValue", "yellow")
 		await nextTick()
 
 		expect(
 			wrapper.get("button span.rounded-full").attributes("style"),
-		).toContain(`background-color: ${at(palette, 3)}`)
+		).toContain("background-color: var(--selectable-color-4)")
 	})
 
 	it("saves an edited group", async ({ expect }) => {
@@ -103,7 +94,7 @@ describe("<GroupForm>", { concurrent: false }, () => {
 
 		expect
 			.soft(calls.map((call) => call.body))
-			.toEqual([{ groupName: "Releases", color: "#000000" }])
+			.toEqual([{ groupName: "Releases", color: "orange" }])
 	})
 
 	it("flags a name another group already has", async ({ expect }) => {

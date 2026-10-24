@@ -47,7 +47,7 @@ function toggleOpen() {
 			<div class="relative pt-0.5 pb-1">
 				<div
 					class="pointer-events-none absolute top-1 bottom-2 left-3.5 z-1 w-0.5 rounded-full opacity-35"
-					:style="{ backgroundColor: props.group.color }"
+					:style="{ backgroundColor: paletteColor(props.group.color) }"
 				/>
 				<slot />
 			</div>

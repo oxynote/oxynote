@@ -1,7 +1,20 @@
 import { describe, it, vi } from "vitest"
-import { pickLeastUsedColor } from "./color"
+import { paletteColor, pickLeastUsedColor } from "./color"
 
 const PALETTE = ["#ff0000", "#00ff00", "#0000ff", "#ffff00"]
+
+describe("paletteColor", () => {
+	it.for([
+		{ input: "red", expected: "var(--selectable-color-1)" },
+		{ input: "green", expected: "var(--selectable-color-6)" },
+		{ input: "pink", expected: "var(--selectable-color-16)" },
+	])(
+		"paints $input with its theme variable",
+		({ input, expected }, { expect }) => {
+			expect(paletteColor(input)).toBe(expected)
+		},
+	)
+})
 
 // the draw is spied on Math itself, which every test in the file shares
 describe("pickLeastUsedColor", { concurrent: false }, () => {

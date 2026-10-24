@@ -34,7 +34,7 @@ func prepVariableGroups(t *testing.T, db *DB, count int, fn func(int, *variable.
 		g := variable.Group{
 			ID:        xid.New(),
 			GroupName: "Group " + strconv.Itoa(i) + " " + xid.New().String(),
-			Color:     "#00a63e",
+			Color:     "green",
 			SortIndex: i,
 			CreatedAt: now,
 		}
@@ -257,7 +257,7 @@ func Test_agent_CreateVariableGroup(t *testing.T) {
 					ID:             xid.New(),
 					OrganizationID: prepOrganizations(t, db, 1)[0],
 					GroupName:      "Environment",
-					Color:          "#00a63e",
+					Color:          "green",
 					Builtin:        true,
 					CreatedAt:      timeutil.Now().Truncate(time.Second),
 					CreatedBy:      null.StringFrom(prepUsers(t, db, 1)[0]),
@@ -274,7 +274,7 @@ func Test_agent_CreateVariableGroup(t *testing.T) {
 					ID:             xid.New(),
 					OrganizationID: groups[0].OrganizationID,
 					GroupName:      "Environment",
-					Color:          "#00a63e",
+					Color:          "green",
 					CreatedAt:      timeutil.Now().Truncate(time.Second),
 				},
 				SortIndex: 6,
@@ -890,10 +890,10 @@ func Test_agent_UpdateVariableGroup(t *testing.T) {
 				Group:          g,
 				Input: variable.GroupUpdateInput{
 					GroupName: null.StringFrom("Deploys"),
-					Color:     null.StringFrom("#155dfc"),
+					Color:     null.StringFrom("blue"),
 				},
 				Name:  "Deploys",
-				Color: "#155dfc",
+				Color: "blue",
 			}
 		},
 	}

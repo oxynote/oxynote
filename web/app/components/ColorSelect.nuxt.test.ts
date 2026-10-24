@@ -2,6 +2,7 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { beforeEach, describe, it } from "vitest"
 import ColorSelect from "./ColorSelect.vue"
 import { at } from "~/components/test-helpers"
+import { paletteColor } from "~/utils"
 import {
 	stubThemeColorContext,
 	stubSelectableColors,
@@ -9,8 +10,13 @@ import {
 
 let palette: string[] = []
 
-function mountSelect(color?: string) {
-	return mountSuspended(ColorSelect, { props: { modelValue: color } })
+function mountSelect(
+	color?: string,
+	props: { colors?: string[]; paint?: (color: string) => string } = {},
+) {
+	return mountSuspended(ColorSelect, {
+		props: { modelValue: color, ...props },
+	})
 }
 
 // the palette lives on the document element, shared by every mount, so
@@ -38,5 +44,32 @@ describe("<ColorSelect>", { concurrent: false }, () => {
 		await at(wrapper.findAll("button"), 3).trigger("click")
 
 		expect(wrapper.emitted("update:modelValue")).toEqual([[at(palette, 3)]])
+	})
+
+	it("offers the given colours painted the way it is told", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSelect(undefined, {
+			colors: ["red", "pink"],
+			paint: paletteColor,
+		})
+
+		expect(
+			wrapper.findAll("button div").map((s) => s.attributes("style")),
+		).toEqual([
+			"background-color: var(--selectable-color-1);",
+			"background-color: var(--selectable-color-16);",
+		])
+	})
+
+	it("picks the given colour the reader clicked", async ({ expect }) => {
+		const wrapper = await mountSelect("red", {
+			colors: ["red", "pink"],
+			paint: paletteColor,
+		})
+
+		await at(wrapper.findAll("button"), 1).trigger("click")
+
+		expect(wrapper.emitted("update:modelValue")).toEqual([["pink"]])
 	})
 })

@@ -736,7 +736,7 @@ describe("useVariableAPI", { concurrent: false }, () => {
 
 			const created = await api.createVariableGroup.mutateAsync({
 				groupName: "Services",
-				color: "#f97316",
+				color: "orange",
 			})
 			await flushPromises()
 
@@ -750,7 +750,7 @@ describe("useVariableAPI", { concurrent: false }, () => {
 			expect(snapshot?.[3]).toMatchObject({
 				organizationId: ORG_ID,
 				groupName: "Services",
-				color: "#f97316",
+				color: "orange",
 				sortIndex: 3,
 				builtin: false,
 				createdBy: USER_ID,
@@ -761,7 +761,7 @@ describe("useVariableAPI", { concurrent: false }, () => {
 			expect.soft(post.calls).toHaveLength(1)
 			expect
 				.soft(post.calls[0]?.body)
-				.toEqual({ groupName: "Services", color: "#f97316" })
+				.toEqual({ groupName: "Services", color: "orange" })
 			expect.soft(treeCalls).toHaveLength(1)
 		})
 
@@ -774,7 +774,7 @@ describe("useVariableAPI", { concurrent: false }, () => {
 
 			await api.createVariableGroup.mutateAsync({
 				groupName: "Services",
-				color: "#f97316",
+				color: "orange",
 			})
 			await flushPromises()
 
@@ -794,7 +794,7 @@ describe("useVariableAPI", { concurrent: false }, () => {
 			await expect(
 				api.createVariableGroup.mutateAsync({
 					groupName: "Services",
-					color: "#f97316",
+					color: "orange",
 				}),
 			).rejects.toThrow()
 			await flushPromises()
@@ -878,16 +878,16 @@ describe("useVariableAPI", { concurrent: false }, () => {
 			await expect(
 				api.updateVariableGroup.mutateAsync({
 					id: GROUP_A,
-					req: { color: "#f97316" },
+					req: { color: "orange" },
 				}),
 			).resolves.toBeUndefined()
 			await flushPromises()
 
 			const group = groupOf(put.snapshots[0], GROUP_A)
-			expect(group?.color).toBe("#f97316")
+			expect(group?.color).toBe("orange")
 			expect(group?.groupName).toBe("Infrastructure")
 			expect.soft(put.calls).toHaveLength(1)
-			expect.soft(put.calls[0]?.body).toEqual({ color: "#f97316" })
+			expect.soft(put.calls[0]?.body).toEqual({ color: "orange" })
 			expect.soft(treeCalls).toHaveLength(1)
 		})
 
@@ -1050,7 +1050,7 @@ describe("useVariableAPI", { concurrent: false }, () => {
 			invoke: (api: VariableAPI) =>
 				api.updateVariableGroup.mutateAsync({
 					id: SHORT_ID,
-					req: { color: "#f97316" },
+					req: { color: "orange" },
 				}),
 		},
 		{
@@ -1155,7 +1155,7 @@ function makeGroup(
 		id,
 		organizationId: ORG_ID,
 		groupName,
-		color: "#22c55e",
+		color: "green",
 		sortIndex: 0,
 		builtin,
 		createdAt: "2026-10-13T10:00:00Z",

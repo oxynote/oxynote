@@ -409,7 +409,7 @@ function makeGroup(
 		id: "grp",
 		organizationId: "org",
 		groupName: group.id ?? "Group",
-		color: "#16a34a",
+		color: "green",
 		sortIndex: 0,
 		builtin: false,
 		createdAt: "2026-10-01T00:00:00Z",

@@ -29,7 +29,7 @@ var (
 		ID:             xid.New(),
 		OrganizationID: _org,
 		GroupName:      "Environment",
-		Color:          "#00a63e",
+		Color:          "green",
 	}
 
 	// _builtinGroup is the group every organization starts with.
@@ -37,7 +37,7 @@ var (
 		ID:             xid.New(),
 		OrganizationID: _org,
 		GroupName:      "Metrics",
-		Color:          "#155dfc",
+		Color:          "blue",
 		Builtin:        true,
 	}
 
@@ -216,7 +216,7 @@ func Test_Manager_FetchTree(t *testing.T) {
 func Test_Manager_CreateGroup(t *testing.T) {
 	t.Parallel()
 
-	inp := variable.GroupCreateInput{GroupName: "Deploys", Color: "#f54a00"}
+	inp := variable.GroupCreateInput{GroupName: "Deploys", Color: "orange"}
 
 	cc := map[string]struct {
 		DB      *DBMock
@@ -229,7 +229,7 @@ func Test_Manager_CreateGroup(t *testing.T) {
 	}{
 		"Invalid input": {
 			DB:  &DBMock{},
-			Inp: variable.GroupCreateInput{Color: "#f54a00"},
+			Inp: variable.GroupCreateInput{Color: "orange"},
 			Err: variable.ErrInvalidGroupName,
 		},
 		"Error returned by DB.CreateVariableGroup": {

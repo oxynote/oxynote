@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"time"
@@ -10,7 +9,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/icon"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/markup"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/rs/xid"
 )
 
@@ -188,7 +186,7 @@ func (getDocument) Execute(inp *input) (string, error) {
 	}
 
 	for _, tg := range tags {
-		out.Tags = append(out.Tags, documentTag{ID: tg.ID, Name: tg.TagName, ColorName: cmp.Or(tag.ColorName(tg.Color), "unknown")})
+		out.Tags = append(out.Tags, documentTag{ID: tg.ID, Name: tg.TagName, ColorName: tg.Color})
 	}
 
 	for _, b := range branches {
@@ -240,8 +238,7 @@ type documentTag struct {
 	// Name is the tag's display name.
 	Name string `json:"name"`
 
-	// ColorName is the palette name of the tag's colour, or "unknown" as
-	// list_tags reports it.
+	// ColorName is the palette name of the tag's colour.
 	ColorName string `json:"color"`
 }
 

@@ -180,8 +180,8 @@ type Group struct {
 	// GroupName specifies the display name of the group.
 	GroupName string `json:"groupName" db:"group_name"`
 
-	// Color specifies the group's colour: the Hex of one tag palette
-	// entry.
+	// Color specifies the group's colour: a tag palette name, such as
+	// "blue".
 	Color string `json:"color" db:"color"`
 
 	// SortIndex specifies the position of the group among its
@@ -226,8 +226,8 @@ type GroupCreateInput struct {
 	// GroupName specifies the display name of the group.
 	GroupName string `json:"groupName"`
 
-	// Color specifies the group's colour: the Hex of one tag palette
-	// entry.
+	// Color specifies the group's colour: a tag palette name, such as
+	// "blue".
 	Color string `json:"color"`
 }
 
@@ -237,7 +237,7 @@ func (gci GroupCreateInput) Validate() error {
 		return ErrInvalidGroupName
 	}
 
-	if tag.ColorName(gci.Color) == "" {
+	if !tag.ValidColor(gci.Color) {
 		return ErrInvalidGroupColor
 	}
 
@@ -265,7 +265,7 @@ func (gui GroupUpdateInput) Validate() error {
 		return ErrInvalidGroupName
 	}
 
-	if gui.Color.Valid && tag.ColorName(gui.Color.String) == "" {
+	if gui.Color.Valid && !tag.ValidColor(gui.Color.String) {
 		return ErrInvalidGroupColor
 	}
 

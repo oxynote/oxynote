@@ -13,10 +13,6 @@ import DocumentTagList from "./DocumentTagList.vue"
 import TagPill from "./TagPill.vue"
 import ColorSelect from "../ColorSelect.vue"
 import {
-	stubThemeColorContext,
-	stubSelectableColors,
-} from "./test-helpers/theme"
-import {
 	clearTeleportedOverlays,
 	mountUnderSidebarProvider,
 	renderedIconNames,
@@ -25,9 +21,7 @@ import {
 	WAIT_FOR_OPTIONS,
 } from "../test-helpers"
 import type WsState from "~/utils/websocket"
-import { makeWsBranchTagsChangeTopic } from "~/utils"
-
-let palette: string[] = []
+import { makeWsBranchTagsChangeTopic, PALETTE_COLORS } from "~/utils"
 
 const DOC_ID = makeXid("doc")
 const BRANCH_ID = makeXid("br")
@@ -145,10 +139,6 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	beforeEach(() => {
 		clearQueryCache()
 		clearTeleportedOverlays()
-		// the picker reads its swatches off the root element and converts
-		// them through a canvas, neither of which happy-dom provides
-		stubThemeColorContext()
-		palette = stubSelectableColors()
 		useEditorStore().activeDocumentId = DOC_ID
 		useEditorStore().activeBranchId = BRANCH_ID
 		useEditorStore().setActiveBranchProtected(false)
@@ -191,7 +181,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		mockEndpoint("GET", "/api/tags/tree", () => [
-			makeTag(TAG_A, "Production", "#1a9e4a"),
+			makeTag(TAG_A, "Production", "green"),
 		])
 		const calls = mockEndpoint("GET", BRANCH_TAGS_URL, () => [TAG_A])
 		const { handlers, subscribe } = stubSocket()
@@ -218,7 +208,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		mockEndpoint("GET", "/api/tags/tree", () => [
-			makeTag(TAG_A, "Production", "#1a9e4a"),
+			makeTag(TAG_A, "Production", "green"),
 		])
 		const calls = mockEndpoint("GET", BRANCH_TAGS_URL, () => [TAG_A])
 		const { handlers } = stubSocket()
@@ -240,7 +230,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	it("loads the target's tags before the diff is turned on", async ({
 		expect,
 	}) => {
-		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")], [TAG_A])
+		stubTags([makeTag(TAG_A, "Production", "green")], [TAG_A])
 		const targetCalls = mockEndpoint("GET", TARGET_TAGS_URL, () => [])
 		useEditorStore().updateTargetBranchId(TARGET_ID)
 
@@ -252,7 +242,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	it("refetches the target's tags when the server says they changed", async ({
 		expect,
 	}) => {
-		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")], [TAG_A])
+		stubTags([makeTag(TAG_A, "Production", "green")], [TAG_A])
 		const targetCalls = mockEndpoint("GET", TARGET_TAGS_URL, () => [])
 		useEditorStore().updateTargetBranchId(TARGET_ID)
 		const { handlers } = stubSocket()
@@ -284,8 +274,8 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	it("shows a pill for every tag the branch carries", async ({ expect }) => {
 		stubTags(
 			[
-				makeTag(TAG_A, "Production", "#1a9e4a"),
-				makeTag(TAG_B, "Staging", "#e8760c"),
+				makeTag(TAG_A, "Production", "green"),
+				makeTag(TAG_B, "Staging", "orange"),
 			],
 			[TAG_A],
 		)
@@ -306,8 +296,8 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		const DRAFT_ID = makeXid("draft")
 		const mainTags = [TAG_A]
 		mockEndpoint("GET", "/api/tags/tree", () => [
-			makeTag(TAG_A, "Production", "#1a9e4a"),
-			makeTag(TAG_B, "Staging", "#e8760c"),
+			makeTag(TAG_A, "Production", "green"),
+			makeTag(TAG_B, "Staging", "orange"),
 		])
 		mockEndpoint("GET", BRANCH_TAGS_URL, () => mainTags)
 		mockEndpoint(
@@ -362,8 +352,8 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		// branch; the active branch carries Staging alone
 		stubTags(
 			[
-				makeTag(TAG_A, "Production", "#1a9e4a", [makeDoc(DOC_ID)]),
-				makeTag(TAG_B, "Staging", "#e8760c"),
+				makeTag(TAG_A, "Production", "green", [makeDoc(DOC_ID)]),
+				makeTag(TAG_B, "Staging", "orange"),
 			],
 			[TAG_B],
 		)
@@ -378,7 +368,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	it("offers a plus button while the document carries none", async ({
 		expect,
 	}) => {
-		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")])
+		stubTags([makeTag(TAG_A, "Production", "green")])
 
 		const wrapper = await mountTags()
 
@@ -403,7 +393,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(200)
 		vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(300)
 		const tags = ["a", "b", "c", "d", "e"].map((n) =>
-			makeTag(makeXid(`t${n}`), `Tag ${n}`, "#1a9e4a"),
+			makeTag(makeXid(`t${n}`), `Tag ${n}`, "green"),
 		)
 		stubTags(
 			tags,
@@ -444,7 +434,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		})
 		vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(400)
 		const tags = ["a", "b", "c", "d", "e"].map((n) =>
-			makeTag(makeXid(`t${n}`), `Tag ${n}`, "#1a9e4a"),
+			makeTag(makeXid(`t${n}`), `Tag ${n}`, "green"),
 		)
 		stubTags(
 			tags,
@@ -466,7 +456,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 
 	it("collapses past the fourth tag into a counter", async ({ expect }) => {
 		const tags = ["a", "b", "c", "d", "e"].map((n) =>
-			makeTag(makeXid(`t${n}`), `Tag ${n}`, "#1a9e4a"),
+			makeTag(makeXid(`t${n}`), `Tag ${n}`, "green"),
 		)
 		stubTags(
 			tags,
@@ -487,8 +477,8 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	it("ticks the tags the branch already carries", async ({ expect }) => {
 		stubTags(
 			[
-				makeTag(TAG_A, "Production", "#1a9e4a"),
-				makeTag(TAG_B, "Staging", "#e8760c"),
+				makeTag(TAG_A, "Production", "green"),
+				makeTag(TAG_B, "Staging", "orange"),
 			],
 			[TAG_A],
 		)
@@ -504,7 +494,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	})
 
 	it("attaches a tag the branch does not carry", async ({ expect }) => {
-		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")])
+		stubTags([makeTag(TAG_A, "Production", "green")])
 		const calls = mockEndpoint("POST", BRANCH_TAGS_URL, () => ({}))
 		const wrapper = await mountTags()
 		await openPicker(wrapper)
@@ -522,7 +512,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		// the open popover anchors to the trigger element, so swapping the
 		// plus button out for the pills strands the panel in the page corner
 		const carried: string[] = []
-		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")], carried)
+		stubTags([makeTag(TAG_A, "Production", "green")], carried)
 		mockEndpoint("POST", BRANCH_TAGS_URL, () => {
 			carried.push(TAG_A)
 
@@ -542,7 +532,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	})
 
 	it("detaches a tag the branch already carries", async ({ expect }) => {
-		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")], [TAG_A])
+		stubTags([makeTag(TAG_A, "Production", "green")], [TAG_A])
 		const calls = mockEndpoint(
 			"DELETE",
 			`${BRANCH_TAGS_URL}/${TAG_A}`,
@@ -559,8 +549,8 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 
 	it("narrows the list to what was typed", async ({ expect }) => {
 		stubTags([
-			makeTag(TAG_A, "Production", "#1a9e4a"),
-			makeTag(TAG_B, "Staging", "#e8760c"),
+			makeTag(TAG_A, "Production", "green"),
+			makeTag(TAG_B, "Staging", "orange"),
 		])
 		const wrapper = await mountTags()
 		await openPicker(wrapper)
@@ -575,8 +565,8 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 
 	it("reopens with the search box empty", async ({ expect }) => {
 		stubTags([
-			makeTag(TAG_A, "Production", "#1a9e4a"),
-			makeTag(TAG_B, "Staging", "#e8760c"),
+			makeTag(TAG_A, "Production", "green"),
+			makeTag(TAG_B, "Staging", "orange"),
 		])
 		const wrapper = await mountTags()
 		await openPicker(wrapper)
@@ -590,7 +580,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	})
 
 	it("hints at creation while nothing is typed", async ({ expect }) => {
-		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")])
+		stubTags([makeTag(TAG_A, "Production", "green")])
 		const wrapper = await mountTags()
 
 		await openPicker(wrapper)
@@ -604,14 +594,15 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	it("creates the typed tag and attaches it in one go", async ({ expect }) => {
 		// core answers the refetch that follows a creation with the new tag,
 		// which is what the assignment then looks itself up in
-		const tree = [makeTag(TAG_A, "Production", "#1a9e4a")]
+		const tree = [makeTag(TAG_A, "Production", "green")]
 		stubTags(tree)
 		const created = mockEndpoint("POST", "/api/tags", () => {
-			tree.push(makeTag(TAG_B, "Rollout", "#000000"))
+			tree.push(makeTag(TAG_B, "Rollout", "red"))
 
 			return { id: TAG_B }
 		})
 		const assigned = mockEndpoint("POST", BRANCH_TAGS_URL, () => ({}))
+		vi.spyOn(Math, "random").mockReturnValue(0)
 		const wrapper = await mountTags()
 		await openPicker(wrapper)
 
@@ -623,23 +614,24 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		createRow?.click()
 		await settleMutations()
 
-		// the stubbed canvas reports one flat colour whatever swatch is set
+		// the pinned draw suggests the first colour no tag holds yet
 		expect(created[0]?.body).toEqual({
 			tagName: "Rollout",
-			color: "#000000",
+			color: "red",
 		})
 		expect(assigned[0]?.body).toEqual({ tagId: TAG_B })
 	})
 
 	it("creates the typed tag on enter in the search box", async ({ expect }) => {
-		const tree = [makeTag(TAG_A, "Production", "#1a9e4a")]
+		const tree = [makeTag(TAG_A, "Production", "green")]
 		stubTags(tree)
 		const created = mockEndpoint("POST", "/api/tags", () => {
-			tree.push(makeTag(TAG_B, "Rollout", "#000000"))
+			tree.push(makeTag(TAG_B, "Rollout", "red"))
 
 			return { id: TAG_B }
 		})
 		const assigned = mockEndpoint("POST", BRANCH_TAGS_URL, () => ({}))
+		vi.spyOn(Math, "random").mockReturnValue(0)
 		const wrapper = await mountTags()
 		await openPicker(wrapper)
 		await search("Rollout")
@@ -649,7 +641,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 
 		expect(created[0]?.body).toEqual({
 			tagName: "Rollout",
-			color: "#000000",
+			color: "red",
 		})
 		expect(assigned[0]?.body).toEqual({ tagId: TAG_B })
 	})
@@ -659,7 +651,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	}) => {
 		// the create settles only once the refetch behind it has, so a slow
 		// request leaves the list on screen for as long as it takes
-		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")])
+		stubTags([makeTag(TAG_A, "Production", "green")])
 		const created = mockDeferredEndpoint("POST", "/api/tags")
 		const wrapper = await mountTags()
 		await openPicker(wrapper)
@@ -678,7 +670,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		// happy-dom lays nothing out, so the list reports a height for the
 		// scroll to aim at
 		vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(500)
-		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")])
+		stubTags([makeTag(TAG_A, "Production", "green")])
 		mockEndpoint("POST", "/api/tags", () => ({ id: TAG_B }))
 		mockEndpoint("POST", BRANCH_TAGS_URL, () => ({}))
 		const wrapper = await mountTags()
@@ -694,7 +686,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	it("creates nothing on enter for a name that already exists", async ({
 		expect,
 	}) => {
-		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")])
+		stubTags([makeTag(TAG_A, "Production", "green")])
 		const created = mockEndpoint("POST", "/api/tags", () => ({ id: TAG_B }))
 		const wrapper = await mountTags()
 		await openPicker(wrapper)
@@ -709,7 +701,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	it("offers the shared colour picker on the create row", async ({
 		expect,
 	}) => {
-		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")])
+		stubTags([makeTag(TAG_A, "Production", "green")])
 		const wrapper = await mountTags()
 		await openPicker(wrapper)
 
@@ -721,16 +713,16 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		colorTrigger().click()
 		await nextTick()
 
-		// the swatch popover holds one button per selectable colour
+		// the swatch popover holds one button per palette colour
 		expect(
 			document.body.querySelectorAll("[data-slot='popover-content'] button"),
-		).toHaveLength(palette.length)
+		).toHaveLength(PALETTE_COLORS.length)
 	})
 
 	it("offers no create row for a name that already exists", async ({
 		expect,
 	}) => {
-		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")])
+		stubTags([makeTag(TAG_A, "Production", "green")])
 		const wrapper = await mountTags()
 		await openPicker(wrapper)
 
@@ -745,8 +737,8 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		useEditorStore().setActiveBranchProtected(true)
 		stubTags(
 			[
-				makeTag(TAG_A, "Production", "#1a9e4a"),
-				makeTag(TAG_B, "Staging", "#e8760c"),
+				makeTag(TAG_A, "Production", "green"),
+				makeTag(TAG_B, "Staging", "orange"),
 			],
 			[TAG_A],
 		)
@@ -780,7 +772,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		},
 	])("$name", async ({ carried, query }, { expect }) => {
 		useEditorStore().setActiveBranchProtected(true)
-		stubTags([makeTag(TAG_B, "Staging", "#e8760c")], carried)
+		stubTags([makeTag(TAG_B, "Staging", "orange")], carried)
 		const wrapper = await mountTags()
 		await openPicker(wrapper)
 
@@ -799,8 +791,8 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		useEditorStore().setActiveBranchProtected(true)
 		stubTags(
 			[
-				makeTag(TAG_A, "Production", "#1a9e4a"),
-				makeTag(TAG_B, "Staging", "#e8760c"),
+				makeTag(TAG_A, "Production", "green"),
+				makeTag(TAG_B, "Staging", "orange"),
 			],
 			[TAG_A],
 		)
@@ -824,7 +816,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 
 	it("creates nothing on a protected branch", async ({ expect }) => {
 		useEditorStore().setActiveBranchProtected(true)
-		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")])
+		stubTags([makeTag(TAG_A, "Production", "green")])
 		const created = mockEndpoint("POST", "/api/tags", () => ({ id: TAG_B }))
 		const wrapper = await mountTags()
 		await openPicker(wrapper)
@@ -845,10 +837,10 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		beforeEach(() => {
 			stubTags(
 				[
-					makeTag(TAG_A, "Production", "#1a9e4a"),
-					makeTag(TAG_B, "Staging", "#e8760c"),
-					makeTag(TAG_C, "Incidents", "#2563eb"),
-					makeTag(TAG_D, "Runbook", "#d23c3c"),
+					makeTag(TAG_A, "Production", "green"),
+					makeTag(TAG_B, "Staging", "orange"),
+					makeTag(TAG_C, "Incidents", "blue"),
+					makeTag(TAG_D, "Runbook", "red"),
 				],
 				[TAG_A, TAG_B],
 			)

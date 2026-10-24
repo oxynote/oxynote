@@ -53,7 +53,7 @@ var (
 // with for _testTagID.
 const (
 	_stubTagName  = "Production"
-	_stubTagColor = "#00a63e"
+	_stubTagColor = "green"
 )
 
 // testDeps builds session wiring with don't-care dependencies. Pass the
@@ -234,7 +234,7 @@ func stubDocumentDB() *DBMock {
 				{
 					ID:        _otherTagID,
 					TagName:   "Staging",
-					Color:     "#f97316",
+					Color:     "orange",
 					Hidden:    true,
 					Documents: document.Summaries{},
 				},
@@ -1940,7 +1940,7 @@ func Test_input_FetchBranchTags(t *testing.T) {
 func Test_input_CreateTag(t *testing.T) {
 	t.Parallel()
 
-	tg := tag.NewTag(tag.CreateInput{TagName: "Release", Color: "#3b82f6"}, "org", "user")
+	tg := tag.NewTag(tag.CreateInput{TagName: "Release", Color: "blue"}, "org", "user")
 
 	cc := map[string]struct {
 		DB       *DBMock
@@ -3037,7 +3037,7 @@ func Test_input_CreateVariableGroup(t *testing.T) {
 	t.Parallel()
 
 	man := stubVariableManager()
-	inp := variable.GroupCreateInput{GroupName: "Deploys", Color: "#f54a00"}
+	inp := variable.GroupCreateInput{GroupName: "Deploys", Color: "orange"}
 
 	g, err := variableDeps(man).newInput(context.Background(), NameCreateVariableGroup, json.RawMessage(`{}`)).CreateVariableGroup(inp)
 	require.NoError(t, err)

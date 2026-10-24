@@ -3,7 +3,6 @@ import { toTypedSchema } from "@vee-validate/zod"
 import { useForm } from "vee-validate"
 import * as z from "zod"
 import type { VariableGroupTreeElement, VariableTreeResponse } from "~/utils"
-import { chartStyles, colorToHex } from "~/assets/css"
 // for some reason this isn't auto imported
 import { FormField as ShadcnUiFormField } from "#layers/ui/app/components/shadcn/ui/form"
 import { showToastMessage } from "../toast"
@@ -56,7 +55,7 @@ const onSubmit = form.handleSubmit(async (values) => {
 	await delay(300) // show loading spinner for at least a moment
 	const req = {
 		groupName: values.name,
-		color: colorToHex(values.color),
+		color: values.color,
 	}
 
 	try {
@@ -76,16 +75,13 @@ const onSubmit = form.handleSubmit(async (values) => {
 })
 
 // a new group takes a color no group has yet, or else one of the least
-// used, as a new tag does. Both sides go through hex, since the palette
-// resolves to oklch while a group stores hex.
+// used, as a new tag does
 function suggestedColor(): string {
-	const colors = chartStyles().selectableColors
-
 	return (
 		pickLeastUsedColor(
-			colors.available.map(colorToHex),
-			props.tree.map((g) => colorToHex(g.color)),
-		) ?? colorToHex(colors.default)
+			PALETTE_COLORS,
+			props.tree.map((g) => g.color),
+		) ?? "green"
 	)
 }
 </script>
@@ -137,7 +133,7 @@ function suggestedColor(): string {
 									>
 										<span
 											class="size-3.5 rounded-full"
-											:style="{ backgroundColor: value }"
+											:style="{ backgroundColor: paletteColor(value) }"
 										/>
 										<span class="sr-only">
 											{{ t("variable.group-form.color-button") }}
@@ -152,6 +148,8 @@ function suggestedColor(): string {
 								>
 									<ColorSelect
 										:model-value="value"
+										:colors="PALETTE_COLORS"
+										:paint="paletteColor"
 										@update:model-value="handleChange"
 									/>
 								</ShadcnUiPopoverContent>

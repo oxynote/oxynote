@@ -34,7 +34,7 @@ func prepTags(t *testing.T, db *DB, count int, fn func(int, *tag.Tag)) []tag.Tag
 		tg := tag.Tag{
 			ID:        xid.New(),
 			TagName:   "Tag " + strconv.Itoa(i),
-			Color:     "#22c55e",
+			Color:     "green",
 			SortIndex: i,
 			CreatedAt: now,
 		}
@@ -207,7 +207,7 @@ func Test_agent_InsertTag(t *testing.T) {
 			return tcase{
 				CancelledContext: true,
 				Tag: tag.NewTag(
-					tag.CreateInput{TagName: "Release", Color: "#3b82f6"},
+					tag.CreateInput{TagName: "Release", Color: "blue"},
 					prepOrganizations(t, db, 1)[0],
 					prepUsers(t, db, 1)[0],
 				),
@@ -217,7 +217,7 @@ func Test_agent_InsertTag(t *testing.T) {
 		"First tag starts at zero": func(t *testing.T, db *DB) tcase {
 			return tcase{
 				Tag: tag.NewTag(
-					tag.CreateInput{TagName: "Release", Color: "#3b82f6"},
+					tag.CreateInput{TagName: "Release", Color: "blue"},
 					prepOrganizations(t, db, 1)[0],
 					prepUsers(t, db, 1)[0],
 				),
@@ -230,7 +230,7 @@ func Test_agent_InsertTag(t *testing.T) {
 
 			return tcase{
 				Tag: tag.NewTag(
-					tag.CreateInput{TagName: "Release", Color: "#3b82f6"},
+					tag.CreateInput{TagName: "Release", Color: "blue"},
 					existing.OrganizationID,
 					prepUsers(t, db, 1)[0],
 				),
@@ -242,7 +242,7 @@ func Test_agent_InsertTag(t *testing.T) {
 
 			return tcase{
 				Tag: tag.NewTag(
-					tag.CreateInput{TagName: existing.TagName, Color: "#3b82f6"},
+					tag.CreateInput{TagName: existing.TagName, Color: "blue"},
 					existing.OrganizationID,
 					prepUsers(t, db, 1)[0],
 				),
@@ -254,7 +254,7 @@ func Test_agent_InsertTag(t *testing.T) {
 
 			return tcase{
 				Tag: tag.NewTag(
-					tag.CreateInput{TagName: existing.TagName, Color: "#3b82f6"},
+					tag.CreateInput{TagName: existing.TagName, Color: "blue"},
 					prepOrganizations(t, db, 1)[0],
 					prepUsers(t, db, 1)[0],
 				),
@@ -809,9 +809,9 @@ func Test_agent_UpdateTag(t *testing.T) {
 			return tcase{
 				OrganizationID: tg.OrganizationID,
 				Tag:            tg,
-				Input:          tag.UpdateInput{Color: null.StringFrom("#3b82f6")},
+				Input:          tag.UpdateInput{Color: null.StringFrom("blue")},
 				Name:           tg.TagName,
-				Color:          "#3b82f6",
+				Color:          "blue",
 			}
 		},
 		"Renames and recolours": func(t *testing.T, db *DB) tcase {
@@ -820,9 +820,9 @@ func Test_agent_UpdateTag(t *testing.T) {
 			return tcase{
 				OrganizationID: tg.OrganizationID,
 				Tag:            tg,
-				Input:          tag.UpdateInput{TagName: null.StringFrom("Release"), Color: null.StringFrom("#3b82f6")},
+				Input:          tag.UpdateInput{TagName: null.StringFrom("Release"), Color: null.StringFrom("blue")},
 				Name:           "Release",
-				Color:          "#3b82f6",
+				Color:          "blue",
 			}
 		},
 	}

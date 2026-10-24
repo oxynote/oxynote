@@ -80,7 +80,7 @@ func Test_Handler_FetchTagTree(t *testing.T) {
 						{
 							ID:      _tagID,
 							TagName: "Production",
-							Color:   "#22c55e",
+							Color:   "green",
 							Documents: documentCore.Summaries{
 								{ID: _documentID, DocumentName: "Runbook", Icon: "lucide:file"},
 							},
@@ -138,7 +138,7 @@ func Test_Handler_UpdateTagTree(t *testing.T) {
 		{
 			ID:      _tagID,
 			TagName: "Production",
-			Color:   "#22c55e",
+			Color:   "green",
 			Documents: documentCore.Summaries{
 				{ID: _documentID, DocumentName: "Runbook", Icon: "lucide:file"},
 			},
@@ -146,7 +146,7 @@ func Test_Handler_UpdateTagTree(t *testing.T) {
 		{
 			ID:      xid.New(),
 			TagName: "Staging",
-			Color:   "#22c55e",
+			Color:   "green",
 			Documents: documentCore.Summaries{
 				{ID: _documentID, DocumentName: "Runbook", Icon: "lucide:file"},
 			},
@@ -305,19 +305,19 @@ func Test_Handler_CreateTag(t *testing.T) {
 		},
 		"Missing name": {
 			DB:      &DBMock{},
-			Payload: `{"tagName":"","color":"#00a63e"}`,
+			Payload: `{"tagName":"","color":"green"}`,
 			Code:    http.StatusBadRequest,
 			Body:    `{"code":"tag.invalid_name","message":"tag name cannot be empty"}`,
 		},
 		"Off palette colour": {
 			DB:      &DBMock{},
-			Payload: `{"tagName":"Production","color":"#22c55e"}`,
+			Payload: `{"tagName":"Production","color":"navy"}`,
 			Code:    http.StatusBadRequest,
 			Body:    `{"code":"tag.invalid_color","message":"tag colour must be one of the palette"}`,
 		},
-		"Colour name instead of hex": {
+		"Hex instead of a name": {
 			DB:      &DBMock{},
-			Payload: `{"tagName":"Production","color":"green"}`,
+			Payload: `{"tagName":"Production","color":"#00a63e"}`,
 			Code:    http.StatusBadRequest,
 			Body:    `{"code":"tag.invalid_color","message":"tag colour must be one of the palette"}`,
 		},
@@ -327,14 +327,14 @@ func Test_Handler_CreateTag(t *testing.T) {
 					return assert.AnError
 				},
 			},
-			Payload: `{"tagName":"Production","color":"#00a63e"}`,
+			Payload: `{"tagName":"Production","color":"green"}`,
 			Code:    http.StatusInternalServerError,
 			Body:    `{"code":"general","message":"internal server error"}`,
 			Inserts: 1,
 		},
 		"Successful creation": {
 			DB:       &DBMock{},
-			Payload:  `{"tagName":"Production","color":"#00a63e"}`,
+			Payload:  `{"tagName":"Production","color":"green"}`,
 			Code:     http.StatusCreated,
 			Inserts:  1,
 			Notifies: 1,

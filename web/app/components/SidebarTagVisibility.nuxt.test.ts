@@ -37,8 +37,8 @@ describe("<SidebarTagVisibility>", { concurrent: false }, () => {
 
 	it("lists every tag, hidden ones included", async ({ expect }) => {
 		await openControl([
-			makeTag("a", "Production", false, "#22c55e"),
-			makeTag("b", "Staging", true, "#f97316"),
+			makeTag("a", "Production", false, "green"),
+			makeTag("b", "Staging", true, "orange"),
 		])
 
 		const rows = Array.from(
@@ -50,8 +50,8 @@ describe("<SidebarTagVisibility>", { concurrent: false }, () => {
 
 	it("shows each tag's own colour beside its name", async ({ expect }) => {
 		await openControl([
-			makeTag("a", "Production", false, "#22c55e"),
-			makeTag("b", "Staging", true, "#f97316"),
+			makeTag("a", "Production", false, "green"),
+			makeTag("b", "Staging", true, "orange"),
 		])
 
 		const dots = Array.from(
@@ -61,8 +61,8 @@ describe("<SidebarTagVisibility>", { concurrent: false }, () => {
 		).map((el) => el.getAttribute("style"))
 
 		expect(dots).toEqual([
-			expect.stringContaining("#22c55e"),
-			expect.stringContaining("#f97316"),
+			expect.stringContaining("var(--selectable-color-6)"),
+			expect.stringContaining("var(--selectable-color-2)"),
 		])
 	})
 
@@ -70,8 +70,8 @@ describe("<SidebarTagVisibility>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		await openControl([
-			makeTag("a", "Production", false, "#22c55e"),
-			makeTag("b", "Staging", true, "#f97316"),
+			makeTag("a", "Production", false, "green"),
+			makeTag("b", "Staging", true, "orange"),
 		])
 
 		// the tick is the menu item's own active marker, which renders after
@@ -91,8 +91,8 @@ describe("<SidebarTagVisibility>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		await openControl([
-			makeTag("a", "Production", false, "#22c55e"),
-			makeTag("b", "Staging", true, "#f97316"),
+			makeTag("a", "Production", false, "green"),
+			makeTag("b", "Staging", true, "orange"),
 		])
 
 		const states = Array.from(
@@ -103,9 +103,9 @@ describe("<SidebarTagVisibility>", { concurrent: false }, () => {
 	})
 
 	it("reports the tag whose row was pressed", async ({ expect }) => {
-		const hidden = makeTag("b", "Staging", true, "#f97316")
+		const hidden = makeTag("b", "Staging", true, "orange")
 		const { control } = await openControl([
-			makeTag("a", "Production", false, "#22c55e"),
+			makeTag("a", "Production", false, "green"),
 			hidden,
 		])
 
@@ -119,8 +119,8 @@ describe("<SidebarTagVisibility>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		await openControl([
-			makeTag("a", "Production", false, "#22c55e"),
-			makeTag("b", "Staging", true, "#f97316"),
+			makeTag("a", "Production", false, "green"),
+			makeTag("b", "Staging", true, "orange"),
 		])
 
 		menuItem("Staging").click()

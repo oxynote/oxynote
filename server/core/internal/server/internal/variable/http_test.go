@@ -113,7 +113,7 @@ func Test_Handler_FetchVariableTree(t *testing.T) {
 		ID:             _groupID,
 		OrganizationID: "org1",
 		GroupName:      "Metrics",
-		Color:          "#155dfc",
+		Color:          "blue",
 		Builtin:        true,
 		Variables: []variableCore.Entry{{
 			ID:             _id,
@@ -163,7 +163,7 @@ func Test_Handler_FetchVariableTree(t *testing.T) {
 				"id": "c3h1n2k0c3h1n2k0c3h0",
 				"organizationId": "org1",
 				"groupName": "Metrics",
-				"color": "#155dfc",
+				"color": "blue",
 				"sortIndex": 0,
 				"builtin": true,
 				"createdAt": "0001-01-01T00:00:00Z",
@@ -239,7 +239,7 @@ func Test_Handler_CreateVariableGroup(t *testing.T) {
 					return nil, variableCore.ErrDuplicateGroupName
 				},
 			},
-			Req:   request{Payload: `{"groupName":"Deploys","color":"#f54a00"}`},
+			Req:   request{Payload: `{"groupName":"Deploys","color":"orange"}`},
 			Code:  http.StatusConflict,
 			Body:  `{"code":"variable.duplicate_group_name","message":"group name is already in use"}`,
 			Calls: 1,
@@ -247,16 +247,16 @@ func Test_Handler_CreateVariableGroup(t *testing.T) {
 		"Successful creation": {
 			Man: &ManagerMock{
 				CreateGroupFunc: func(context.Context, variableCore.GroupCreateInput, string, string) (*variableCore.Group, error) {
-					return &variableCore.Group{ID: _groupID, OrganizationID: "org1", GroupName: "Deploys", Color: "#f54a00", SortIndex: 1}, nil
+					return &variableCore.Group{ID: _groupID, OrganizationID: "org1", GroupName: "Deploys", Color: "orange", SortIndex: 1}, nil
 				},
 			},
-			Req:  request{Payload: `{"groupName":"Deploys","color":"#f54a00"}`},
+			Req:  request{Payload: `{"groupName":"Deploys","color":"orange"}`},
 			Code: http.StatusCreated,
 			Body: `{
 				"id": "c3h1n2k0c3h1n2k0c3h0",
 				"organizationId": "org1",
 				"groupName": "Deploys",
-				"color": "#f54a00",
+				"color": "orange",
 				"sortIndex": 1,
 				"builtin": false,
 				"createdAt": "0001-01-01T00:00:00Z",
@@ -282,7 +282,7 @@ func Test_Handler_CreateVariableGroup(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, variableCore.GroupCreateInput{GroupName: "Deploys", Color: "#f54a00"}, calls[0].Inp)
+			assert.Equal(t, variableCore.GroupCreateInput{GroupName: "Deploys", Color: "orange"}, calls[0].Inp)
 			assert.Equal(t, "org1", calls[0].OrganizationID)
 			assert.Equal(t, "u1", calls[0].UserID)
 		})

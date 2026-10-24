@@ -51,7 +51,7 @@ function makeTagAPI(): TagAPI {
 }
 
 function makeTag(id: string, tagName: string, documents: TestDocument[] = []) {
-	return { id, tagName, color: "#22c55e", hidden: false, documents }
+	return { id, tagName, color: "green", hidden: false, documents }
 }
 
 function makeDoc(
@@ -308,7 +308,7 @@ describe("useTagAPI", { concurrent: false }, () => {
 
 			const pending = api.createTag.mutateAsync({
 				tagName: "Staging",
-				color: "#f97316",
+				color: "orange",
 			})
 			await post.reached
 
@@ -319,7 +319,7 @@ describe("useTagAPI", { concurrent: false }, () => {
 			])
 			expect(post.calls[0]?.body).toEqual({
 				tagName: "Staging",
-				color: "#f97316",
+				color: "orange",
 			})
 
 			post.resolve({ id: TAG_B })
@@ -338,7 +338,7 @@ describe("useTagAPI", { concurrent: false }, () => {
 			const api = makeTagAPI()
 
 			await expect(
-				api.createTag.mutateAsync({ tagName: "Staging", color: "#f97316" }),
+				api.createTag.mutateAsync({ tagName: "Staging", color: "orange" }),
 			).rejects.toThrow()
 			await flushPromises()
 

@@ -61,7 +61,7 @@ func (listVariables) Execute(inp *input) (string, error) {
 		ge := variableGroupEntry{
 			ID:        g.ID,
 			Name:      g.GroupName,
-			ColorName: cmp.Or(tag.ColorName(g.Color), "unknown"),
+			ColorName: g.Color,
 			Builtin:   g.Builtin,
 			Variables: make([]variableEntry, 0, len(g.Variables)),
 		}
@@ -107,8 +107,7 @@ type variableGroupEntry struct {
 	// Name is the group's display name.
 	Name string `json:"name"`
 
-	// ColorName is the palette name of the group's colour, or "unknown"
-	// for one outside the palette.
+	// ColorName is the palette name of the group's colour.
 	ColorName string `json:"color"`
 
 	// Builtin indicates the group ships with every organisation and
@@ -181,11 +180,9 @@ func (a createVariableGroupArgs) Validate() error {
 	return a.input().Validate()
 }
 
-// input returns the arguments as the domain's create input. A colour
-// outside the palette maps to no colour, which the input's Validate
-// refuses.
+// input returns the arguments as the domain's create input.
 func (a createVariableGroupArgs) input() variable.GroupCreateInput {
-	return variable.GroupCreateInput{GroupName: a.Name, Color: tag.ColorHex(a.ColorName)}
+	return variable.GroupCreateInput{GroupName: a.Name, Color: a.ColorName}
 }
 
 // createVariableGroup creates a variable group in the organisation.
@@ -278,7 +275,7 @@ func (a updateVariableGroupArgs) input() variable.GroupUpdateInput {
 	}
 
 	if a.ColorName != "" {
-		inp.Color = null.StringFrom(tag.ColorHex(a.ColorName))
+		inp.Color = null.StringFrom(a.ColorName)
 	}
 
 	return inp

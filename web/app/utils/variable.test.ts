@@ -95,7 +95,7 @@ function makeTree(): VariableTreeResponse {
 			id: "group-1",
 			organizationId: "org-1",
 			groupName: "Deploys",
-			color: "#000000",
+			color: "green",
 			sortIndex: 0,
 			builtin: false,
 			createdAt: "2026-01-01T00:00:00Z",

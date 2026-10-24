@@ -37,7 +37,7 @@ const emit = defineEmits<{
 				<div class="flex min-w-0 flex-1 items-center gap-2">
 					<span
 						class="size-2.5 shrink-0 rounded-full"
-						:style="{ backgroundColor: tag.color }"
+						:style="{ backgroundColor: paletteColor(tag.color) }"
 					/>
 					<span class="min-w-0 truncate whitespace-nowrap">
 						{{ tag.tagName }}

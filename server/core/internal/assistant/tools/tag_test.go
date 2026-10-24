@@ -97,7 +97,7 @@ func Test_listTags_Execute(t *testing.T) {
 			Result: `{"tags":[` +
 				`{"id":"` + _testTagID.String() + `","name":"Production","color":"green","hidden":false,` +
 				`"documents":[{"id":"` + _testDocID.String() + `","name":"Runbook","default_branch_id":"` + _stubMainBranchID.String() + `"}]},` +
-				`{"id":"` + _otherTagID.String() + `","name":"Staging","color":"unknown","hidden":true,"documents":[]}` +
+				`{"id":"` + _otherTagID.String() + `","name":"Staging","color":"orange","hidden":true,"documents":[]}` +
 				`]}`,
 		},
 	}
@@ -152,11 +152,7 @@ func Test_createTagArgs_input(t *testing.T) {
 	}{
 		"Palette colour": {
 			Args:   createTagArgs{Name: "Release", ColorName: "blue"},
-			Result: tag.CreateInput{TagName: "Release", Color: "#155dfc"},
-		},
-		"Colour outside the palette": {
-			Args:   createTagArgs{Name: "Release", ColorName: "navy"},
-			Result: tag.CreateInput{TagName: "Release"},
+			Result: tag.CreateInput{TagName: "Release", Color: "blue"},
 		},
 	}
 
@@ -286,7 +282,7 @@ func Test_createTag_Execute(t *testing.T) {
 			assert.Equal(t, "org", ff[0].T.OrganizationID)
 			assert.Equal(t, "user", ff[0].T.CreatedBy.String)
 			assert.Equal(t, "Release", ff[0].T.TagName)
-			assert.Equal(t, "#155dfc", ff[0].T.Color)
+			assert.Equal(t, "blue", ff[0].T.Color)
 			assert.JSONEq(t, `{"tag_id":"`+ff[0].T.ID.String()+`"}`, res)
 		})
 	}
@@ -330,11 +326,7 @@ func Test_updateTagArgs_input(t *testing.T) {
 		},
 		"Name and palette colour": {
 			Args:   updateTagArgs{TagID: _testTagID, Name: "Release", ColorName: "blue"},
-			Result: tag.UpdateInput{TagName: null.StringFrom("Release"), Color: null.StringFrom("#155dfc")},
-		},
-		"Colour outside the palette": {
-			Args:   updateTagArgs{TagID: _testTagID, ColorName: "navy"},
-			Result: tag.UpdateInput{Color: null.StringFrom("")},
+			Result: tag.UpdateInput{TagName: null.StringFrom("Release"), Color: null.StringFrom("blue")},
 		},
 	}
 

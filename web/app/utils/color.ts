@@ -1,11 +1,37 @@
+// PALETTE_COLORS names every colour a tag or a variable group can carry,
+// in picker order. The api stores the name, and the n-th name paints as the
+// n-th --selectable-color variable. Core validates against its own copy of
+// the names (server/core/internal/tag/color.go).
+export const PALETTE_COLORS = [
+	"red",
+	"orange",
+	"amber",
+	"yellow",
+	"lime",
+	"green",
+	"emerald",
+	"teal",
+	"cyan",
+	"sky",
+	"blue",
+	"indigo",
+	"violet",
+	"purple",
+	"fuchsia",
+	"pink",
+]
+
+// paletteColor resolves a stored palette name to the css colour that
+// paints it.
+export function paletteColor(name: string): string {
+	return `var(--selectable-color-${PALETTE_COLORS.indexOf(name) + 1})`
+}
+
 // pickLeastUsedColor suggests a colour for something new, such as a tag or
 // a variable group, drawing at random from the ones nothing holds yet. Once
 // the palette is exhausted every colour stays in play, weighted so the
 // least used are the most likely, so new things keep spreading out instead
 // of piling onto whichever colour comes first.
-//
-// Both arguments have to be in the same notation for a colour to count as
-// used; the caller normalises them.
 export function pickLeastUsedColor(
 	palette: string[],
 	used: string[],

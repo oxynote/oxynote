@@ -179,7 +179,7 @@ function previousGroupId(group: VariableGroupTreeElement) {
 						<div v-if="open" class="relative pt-0.5 pb-1">
 							<div
 								class="absolute top-1 bottom-2 left-3.5 z-1 w-0.5 rounded-full opacity-35"
-								:style="{ backgroundColor: group.color }"
+								:style="{ backgroundColor: paletteColor(group.color) }"
 							/>
 							<VariablesEditVariableRow
 								v-for="variable in group.variables"

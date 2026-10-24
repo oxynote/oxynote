@@ -130,7 +130,7 @@ export function processTagTree(
 		.map((v) => ({
 			id: v.id,
 			name: v.tagName,
-			dotColor: v.color,
+			dotColor: paletteColor(v.color),
 			acceptsChildren: false,
 			active: false,
 			draggable: true,

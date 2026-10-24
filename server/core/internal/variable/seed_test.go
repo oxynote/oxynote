@@ -16,7 +16,7 @@ func Test_SeedBuiltins(t *testing.T) {
 	assert.NotZero(t, g.ID)
 	assert.Equal(t, "org", g.OrganizationID)
 	assert.Equal(t, "Metrics", g.GroupName)
-	assert.Equal(t, "#155dfc", g.Color)
+	assert.Equal(t, "blue", g.Color)
 	assert.True(t, g.Builtin)
 	require.Len(t, g.Variables, 2)
 

@@ -189,7 +189,7 @@ function tagElement(
 	return {
 		id: id,
 		tagName: tagName,
-		color: "#22c55e",
+		color: "green",
 		hidden: false,
 		documents: documents,
 	}
@@ -209,7 +209,7 @@ describe("processTagTree", () => {
 			{
 				id: ID_A,
 				name: "Production",
-				dotColor: "#22c55e",
+				dotColor: "var(--selectable-color-6)",
 				acceptsChildren: false,
 				active: false,
 				draggable: true,

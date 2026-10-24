@@ -48,7 +48,7 @@ func stubVariableTree() variable.Tree {
 		{
 			ID:        _builtinVariableGroupID,
 			GroupName: "Metrics",
-			Color:     "#155dfc",
+			Color:     "blue",
 			Builtin:   true,
 			Variables: []variable.Entry{{
 				ID:           _builtinVariableID,
@@ -65,7 +65,7 @@ func stubVariableTree() variable.Tree {
 		{
 			ID:        _testVariableGroupID,
 			GroupName: "Environment",
-			Color:     "#123456",
+			Color:     "green",
 			Variables: []variable.Entry{{
 				ID:           _testVariableID,
 				GroupID:      _testVariableGroupID,
@@ -159,7 +159,7 @@ func Test_listVariables_Execute(t *testing.T) {
 				{"id":"` + _builtinVariableGroupID.String() + `","name":"Metrics","color":"blue","builtin":true,"variables":[
 					{"id":"` + _builtinVariableID.String() + `","key":"metric_range","name":"Metric time range","description":null,"type":"time-range","builtin":true,"default":"last_24_hours","value":"last_7_days","options":[]}
 				]},
-				{"id":"` + _testVariableGroupID.String() + `","name":"Environment","color":"unknown","builtin":false,"variables":[
+				{"id":"` + _testVariableGroupID.String() + `","name":"Environment","color":"green","builtin":false,"variables":[
 					{"id":"` + _testVariableID.String() + `","key":"region","name":"Region","description":"Cloud region","type":"list","builtin":false,"default":"` + _testOptionID.String() + `","value":null,"options":[
 						{"id":"` + _testOptionID.String() + `","value":"eu-west-1"},
 						{"id":"` + _testOtherOptionID.String() + `","value":"us-east-1"}
@@ -225,7 +225,7 @@ func Test_createVariableGroupArgs_input(t *testing.T) {
 
 	assert.Equal(
 		t,
-		variable.GroupCreateInput{GroupName: "Deploys", Color: "#f54a00"},
+		variable.GroupCreateInput{GroupName: "Deploys", Color: "orange"},
 		createVariableGroupArgs{Name: "Deploys", ColorName: "orange"}.input(),
 	)
 }
@@ -317,7 +317,7 @@ func Test_createVariableGroup_Execute(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, variable.GroupCreateInput{GroupName: "Deploys", Color: "#f54a00"}, ff[0].Inp)
+			assert.Equal(t, variable.GroupCreateInput{GroupName: "Deploys", Color: "orange"}, ff[0].Inp)
 			assert.Equal(t, "org", ff[0].OrganizationID)
 			assert.Equal(t, "user", ff[0].UserID)
 			assert.JSONEq(t, `{"group_id":"`+_testVariableGroupID.String()+`"}`, res)
@@ -371,7 +371,7 @@ func Test_updateVariableGroupArgs_input(t *testing.T) {
 		},
 		"Colour given": {
 			Args:   updateVariableGroupArgs{ColorName: "orange"},
-			Result: variable.GroupUpdateInput{Color: null.StringFrom("#f54a00")},
+			Result: variable.GroupUpdateInput{Color: null.StringFrom("orange")},
 		},
 	}
 

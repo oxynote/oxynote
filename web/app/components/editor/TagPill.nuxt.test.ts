@@ -10,7 +10,7 @@ function mountPill(name: string, color?: string) {
 // properties the variants read are the only trace a test can follow
 describe("<TagPill>", () => {
 	it("shows the tag's name", async ({ expect }) => {
-		const wrapper = await mountPill("Production", "#1a9e4a")
+		const wrapper = await mountPill("Production", "green")
 
 		expect(wrapper.text()).toBe("Production")
 	})
@@ -18,21 +18,21 @@ describe("<TagPill>", () => {
 	it("carries a light and a dark treatment of its colour", async ({
 		expect,
 	}) => {
-		const wrapper = await mountPill("Production", "#1a9e4a")
+		const wrapper = await mountPill("Production", "green")
 		const style = wrapper.get("span").attributes("style") ?? ""
 
 		expect(style).toContain(
-			"--tag-bg: color-mix(in srgb, #1a9e4a 13%, transparent)",
+			"--tag-bg: color-mix(in srgb, var(--selectable-color-6) 13%, transparent)",
 		)
-		expect(style).toContain("--tag-fg: color-mix(in srgb, #1a9e4a 80%, black)")
+		expect(style).toContain("--tag-fg: color-mix(in srgb, var(--selectable-color-6) 80%, black)")
 		expect(style).toContain(
-			"--tag-dark-bg: color-mix(in srgb, #1a9e4a 18%, transparent)",
-		)
-		expect(style).toContain(
-			"--tag-dark-border: color-mix(in srgb, #1a9e4a 40%, transparent)",
+			"--tag-dark-bg: color-mix(in srgb, var(--selectable-color-6) 18%, transparent)",
 		)
 		expect(style).toContain(
-			"--tag-dark-fg: color-mix(in srgb, #1a9e4a 60%, white)",
+			"--tag-dark-border: color-mix(in srgb, var(--selectable-color-6) 40%, transparent)",
+		)
+		expect(style).toContain(
+			"--tag-dark-fg: color-mix(in srgb, var(--selectable-color-6) 60%, white)",
 		)
 	})
 

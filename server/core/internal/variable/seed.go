@@ -5,7 +5,6 @@ import (
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
@@ -40,7 +39,7 @@ func SeedBuiltins(organizationID string) GroupTree {
 		ID:             xid.New(),
 		OrganizationID: organizationID,
 		GroupName:      _builtinGroupName,
-		Color:          tag.ColorHex("blue"),
+		Color:          "blue",
 		Builtin:        true,
 		CreatedAt:      now,
 	}

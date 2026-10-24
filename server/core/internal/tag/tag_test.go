@@ -23,23 +23,19 @@ func Test_CreateInput_Validate(t *testing.T) {
 		Err   error
 	}{
 		"Empty name": {
-			Input: CreateInput{TagName: "", Color: "#22c55e"},
+			Input: CreateInput{TagName: "", Color: "green"},
 			Err:   ErrInvalidTagName,
 		},
 		"Off-palette colour": {
-			Input: CreateInput{TagName: "Production", Color: "#22c55e"},
+			Input: CreateInput{TagName: "Production", Color: "navy"},
 			Err:   ErrInvalidTagColor,
 		},
-		"Uppercase palette colour": {
-			Input: CreateInput{TagName: "Production", Color: "#00A63E"},
-			Err:   ErrInvalidTagColor,
-		},
-		"Colour name instead of hex": {
-			Input: CreateInput{TagName: "Production", Color: "green"},
+		"Hex instead of a name": {
+			Input: CreateInput{TagName: "Production", Color: "#00a63e"},
 			Err:   ErrInvalidTagColor,
 		},
 		"Palette colour": {
-			Input: CreateInput{TagName: "Production", Color: "#00a63e"},
+			Input: CreateInput{TagName: "Production", Color: "green"},
 		},
 	}
 
@@ -68,7 +64,7 @@ func Test_UpdateInput_Validate(t *testing.T) {
 			Err:   ErrInvalidTagName,
 		},
 		"Off-palette colour": {
-			Input: UpdateInput{Color: null.StringFrom("#22c55e")},
+			Input: UpdateInput{Color: null.StringFrom("navy")},
 			Err:   ErrInvalidTagColor,
 		},
 		"Empty colour": {
@@ -79,10 +75,10 @@ func Test_UpdateInput_Validate(t *testing.T) {
 			Input: UpdateInput{TagName: null.StringFrom("Production")},
 		},
 		"Colour only": {
-			Input: UpdateInput{Color: null.StringFrom("#00a63e")},
+			Input: UpdateInput{Color: null.StringFrom("green")},
 		},
 		"Both fields": {
-			Input: UpdateInput{TagName: null.StringFrom("Production"), Color: null.StringFrom("#00a63e")},
+			Input: UpdateInput{TagName: null.StringFrom("Production"), Color: null.StringFrom("green")},
 		},
 	}
 
@@ -98,12 +94,12 @@ func Test_UpdateInput_Validate(t *testing.T) {
 func Test_NewTag(t *testing.T) {
 	t.Parallel()
 
-	tg := NewTag(CreateInput{TagName: "Production", Color: "#22c55e"}, "org1", "u1")
+	tg := NewTag(CreateInput{TagName: "Production", Color: "green"}, "org1", "u1")
 
 	assert.False(t, tg.ID.IsNil())
 	assert.Equal(t, "org1", tg.OrganizationID)
 	assert.Equal(t, "Production", tg.TagName)
-	assert.Equal(t, "#22c55e", tg.Color)
+	assert.Equal(t, "green", tg.Color)
 	assert.Equal(t, "u1", tg.CreatedBy.String)
 	assert.False(t, tg.CreatedAt.IsZero())
 	assert.Zero(t, tg.SortIndex)
@@ -113,9 +109,9 @@ func Test_Tag_Summary(t *testing.T) {
 	t.Parallel()
 
 	id := xid.New()
-	tg := Tag{ID: id, OrganizationID: "org1", TagName: "Production", Color: "#22c55e", SortIndex: 3}
+	tg := Tag{ID: id, OrganizationID: "org1", TagName: "Production", Color: "green", SortIndex: 3}
 
-	assert.Equal(t, Summary{ID: id, TagName: "Production", Color: "#22c55e"}, tg.Summary())
+	assert.Equal(t, Summary{ID: id, TagName: "Production", Color: "green"}, tg.Summary())
 }
 
 func Test_Summaries_Swap(t *testing.T) {

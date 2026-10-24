@@ -3,7 +3,6 @@ import TagPill from "./TagPill.vue"
 import { availableRowWidth, stepTagFit } from "./tag-fit"
 import ColorSelect from "../ColorSelect.vue"
 import { cn } from "#layers/ui/app/lib/utils"
-import { chartStyles, colorToHex } from "~/assets/css"
 import { showToastMessage } from "../toast"
 import { TAG_QUERY_KEYS } from "~/composables/api/useTagAPI"
 import { DiffStatus } from "./diff/position-map"
@@ -217,17 +216,12 @@ watch(open, (isOpen) => {
 	newColor.value = suggestedColor()
 })
 
-// the swatches come from theme variables, which resolve to oklch, while a
-// tag stores hex — both sides go through hex so a colour the palette
-// offers can be recognised in the tags that already hold it
 function suggestedColor(): string {
-	const colors = chartStyles().selectableColors
-
 	return (
 		pickLeastUsedColor(
-			colors.available.map(colorToHex),
-			allTags.value.map((tag) => colorToHex(tag.color)),
-		) ?? colorToHex(colors.default)
+			PALETTE_COLORS,
+			allTags.value.map((tag) => tag.color),
+		) ?? "green"
 	)
 }
 
@@ -323,11 +317,7 @@ async function createAndAssign() {
 	try {
 		const creating = createTag.mutateAsync({
 			tagName: tagName,
-			// the swatches resolve from theme variables, which are oklch; the
-			// stored colour is hex so it survives a theme change
-			color: colorToHex(
-				newColor.value ?? chartStyles().selectableColors.default,
-			),
+			color: newColor.value ?? "green",
 		})
 		// the tag is appended, so the row it adds is below the fold on a
 		// list long enough to scroll. onMutate has already put it there
@@ -510,7 +500,7 @@ function handleSearchEnter() {
 								</span>
 								<span
 									class="size-2.5 shrink-0 rounded-full"
-									:style="{ backgroundColor: tag.color }"
+									:style="{ backgroundColor: paletteColor(tag.color) }"
 								/>
 								<span
 									class="min-w-0 truncate whitespace-nowrap"
@@ -564,7 +554,9 @@ function handleSearchEnter() {
 							>
 								<div
 									class="size-3.5 rounded-full transition-colors"
-									:style="{ backgroundColor: newColor }"
+									:style="{
+										backgroundColor: newColor && paletteColor(newColor),
+									}"
 								/>
 							</ShadcnUiButton>
 						</ShadcnUiPopoverTrigger>
@@ -573,7 +565,11 @@ function handleSearchEnter() {
 							align="end"
 							class="w-fit min-w-0"
 						>
-							<ColorSelect v-model="newColor" />
+							<ColorSelect
+								v-model="newColor"
+								:colors="PALETTE_COLORS"
+								:paint="paletteColor"
+							/>
 						</ShadcnUiPopoverContent>
 					</ShadcnUiPopover>
 				</div>
