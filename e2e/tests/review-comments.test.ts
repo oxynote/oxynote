@@ -817,10 +817,10 @@ async function draftWithSplitChanges(
 	await typeParameter(page, "id", "string", "Identifier")
 	await page.keyboard.press("Enter")
 	await typeParameter(page, "name", "string", "Display name")
-	await bottomAction(
+	await addRightSideBlock(
 		page,
-		t("editor.split-documentation.right-side-bottom-action-buttons.add-code"),
-	).click()
+		t("editor.split-documentation.right-side-bottom-action-buttons.code"),
+	)
 	await page.keyboard.type("Beta")
 	await expect.poll(() => editorText(contentEditor(page))).toContain("Beta")
 	await documentPersisted(page)
@@ -851,10 +851,10 @@ async function draftWithSplitChanges(
 		.poll(() => editorText(contentEditor(page)))
 		.toContain("Describe stuff")
 
-	await bottomAction(
+	await addRightSideBlock(
 		page,
-		t("editor.split-documentation.right-side-bottom-action-buttons.add-code"),
-	).click()
+		t("editor.split-documentation.right-side-bottom-action-buttons.code"),
+	)
 	await page.keyboard.type("Gamma")
 	await expect.poll(() => editorText(contentEditor(page))).toContain("Gamma")
 
@@ -893,10 +893,20 @@ async function draftWithSplitChanges(
 	return url
 }
 
-// the split block's bottom actions, which add a parameter list on the
-// left and a code block on the right
+// the split block's bottom actions: one adds a parameter list on the
+// left, the other opens the menu of blocks to add on the right
 function bottomAction(page: Page, name: string): Locator {
 	return contentPane(page).getByRole("button", { name: name })
+}
+
+// the menu is teleported out of the content pane, so its entry is looked
+// up on the whole page
+async function addRightSideBlock(page: Page, name: string): Promise<void> {
+	await bottomAction(
+		page,
+		t("editor.split-documentation.bottom-action-trigger-label"),
+	).click()
+	await page.getByRole("menuitem", { name: name }).click()
 }
 
 // typeParameter fills the parameter the caret has just been placed in:

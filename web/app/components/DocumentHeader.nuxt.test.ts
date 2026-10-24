@@ -1,3 +1,4 @@
+import { enableAutoUnmount } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
 import {
@@ -17,6 +18,7 @@ import {
 	seedPersistentState,
 	settleMutations,
 	t,
+	teleportedButton,
 } from "./test-helpers"
 
 vi.mock("vue-sonner", () => ({
@@ -87,6 +89,10 @@ function menuItemTexts() {
 // app-wide singletons every mount in the file shares, and the menus are
 // teleported into the shared <body>
 describe("<DocumentHeader>", { concurrent: false }, () => {
+	// the reviewability modal stays mounted and patches its teleported
+	// dialog after the test
+	enableAutoUnmount(afterEach)
+
 	beforeEach(() => {
 		clearQueryCache()
 		vi.mocked(toast.custom).mockReset()
@@ -440,7 +446,44 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		expect(updated[0]?.body).toEqual({ protected: true })
 	})
 
-	it("closes the review workflow by dropping every draft and unprotecting main", async ({
+	it("asks for confirmation before dropping every draft and unprotecting main", async ({
+		expect,
+	}) => {
+		vi.useFakeTimers()
+		mainAndDraft()
+		const deleted = mockEndpoint(
+			"DELETE",
+			`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches/${DRAFT_BRANCH}`,
+			() => ({}),
+		)
+		const updated = mockEndpoint(
+			"PUT",
+			`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches/${MAIN_BRANCH}`,
+			() => ({}),
+		)
+		const wrapper = await mountHeader()
+		await openOptionsMenu(wrapper)
+
+		menuItem(
+			t("editor.navbar.document-options.review-workflow.disable-title"),
+		).click()
+		await nextTick()
+
+		expect(deleted).toHaveLength(0)
+
+		teleportedButton(
+			t(
+				"editor.navbar.document-options.review-workflow.disable-confirm-modal.confirm-button",
+			),
+		).click()
+		await vi.advanceTimersByTimeAsync(300)
+		await settleMutations()
+
+		expect(deleted).toHaveLength(1)
+		expect(updated[0]?.body).toEqual({ protected: false })
+	})
+
+	it("leaves every branch alone when the confirmation is cancelled", async ({
 		expect,
 	}) => {
 		mainAndDraft()
@@ -460,10 +503,17 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		menuItem(
 			t("editor.navbar.document-options.review-workflow.disable-title"),
 		).click()
-		await settleMutations()
+		await nextTick()
 
-		expect(deleted).toHaveLength(1)
-		expect(updated[0]?.body).toEqual({ protected: false })
+		teleportedButton(
+			t(
+				"editor.navbar.document-options.review-workflow.disable-confirm-modal.cancel-button",
+			),
+		).click()
+		await nextTick()
+
+		expect.soft(deleted).toHaveLength(0)
+		expect.soft(updated).toHaveLength(0)
 	})
 
 	it("warns when the reviewability change fails", async ({ expect }) => {

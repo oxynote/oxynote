@@ -1,32 +1,16 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
-import { beforeEach, describe, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import DocumentDeletionModal from "./DocumentDeletionModal.vue"
 import { clearTeleportedOverlays, t, teleportedButton } from "./test-helpers"
 
-function mountModal(
-	target: { deleteDocument: () => Promise<void>; name: string } | null,
-) {
-	return mountSuspended(DocumentDeletionModal, {
-		props: { modelValue: target },
-	})
-}
-
-// the dialog body is teleported into <body>, so it is the only place the
-// modal's own markup can be read from
-function dialog() {
-	return document.body.querySelector("[data-slot='dialog-content']")
-}
-
 // the dialog body is teleported into the shared <body> and the delete flow
 // is driven by the global fake timers, so these tests cannot interleave
-// t() reaches for the nuxt app context, so the label can only be
-// resolved inside a test — not once at module scope
-function confirmButton() {
-	return teleportedButton(t("editor.document-deletion-modal.confirm-button"))
-}
-
 describe("<DocumentDeletionModal>", { concurrent: false }, () => {
 	beforeEach(clearTeleportedOverlays)
+
+	afterEach(() => {
+		vi.useRealTimers()
+	})
 
 	it("stays closed while there is no deletion target", async ({ expect }) => {
 		await mountModal(null)
@@ -113,3 +97,23 @@ describe("<DocumentDeletionModal>", { concurrent: false }, () => {
 		expect(document.body.textContent).toContain("Runbook")
 	})
 })
+
+function mountModal(
+	target: { deleteDocument: () => Promise<void>; name: string } | null,
+) {
+	return mountSuspended(DocumentDeletionModal, {
+		props: { modelValue: target },
+	})
+}
+
+// the dialog body is teleported into <body>, so it is the only place the
+// modal's own markup can be read from
+function dialog() {
+	return document.body.querySelector("[data-slot='dialog-content']")
+}
+
+// t() needs the nuxt app context, so the label is resolved inside a test
+// and not once at module scope
+function confirmButton() {
+	return teleportedButton(t("editor.document-deletion-modal.confirm-button"))
+}

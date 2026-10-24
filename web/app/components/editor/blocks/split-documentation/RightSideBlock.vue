@@ -20,15 +20,15 @@ const buttons = computed(
 		{
 			id: "code",
 			text: t(
-				"editor.split-documentation.right-side-bottom-action-buttons.add-code",
+				"editor.split-documentation.right-side-bottom-action-buttons.code",
 			),
-			icon: "lucide:code",
+			icon: BLOCK_ICONS.codeBlock,
 			shortcut: SHORTCUT_ACTIONS.addCodeBlockToSplitDocRightSide,
 		},
 		{
 			id: "metrics",
 			text: t(
-				"editor.split-documentation.right-side-bottom-action-buttons.add-metrics",
+				"editor.split-documentation.right-side-bottom-action-buttons.metrics",
 			),
 			icon: BLOCK_ICONS.metricBlock,
 			shortcut: SHORTCUT_ACTIONS.addMetricsToSplitDocRightSide,
@@ -36,7 +36,7 @@ const buttons = computed(
 		{
 			id: "diagram",
 			text: t(
-				"editor.split-documentation.right-side-bottom-action-buttons.add-diagram",
+				"editor.split-documentation.right-side-bottom-action-buttons.diagram",
 			),
 			icon: BLOCK_ICONS.mermaidBlock,
 			shortcut: SHORTCUT_ACTIONS.addDiagramToSplitDocRightSide,

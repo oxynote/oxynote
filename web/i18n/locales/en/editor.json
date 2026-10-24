@@ -78,7 +78,13 @@
 				},
 				"review-workflow": {
 					"enable-title": "Make Reviewable",
-					"disable-title": "Make Non Reviewable"
+					"disable-title": "Make Non Reviewable",
+					"disable-confirm-modal": {
+						"title": "Make Non Reviewable",
+						"description": "This discards the draft version and all its changes. This action cannot be undone.",
+						"confirm-button": "Make non reviewable",
+						"cancel-button": "Cancel"
+					}
 				},
 				"delete": {
 					"title": "Delete"
@@ -310,12 +316,13 @@
 					"add-below-block": "Add Parameter Below"
 				},
 				"split-doc-right-side": {
-					"add-code-block-above-block": "Add Code Above",
-					"add-code-block-below-block": "Add Code Below",
-					"add-metrics-above-block": "Add Live Metrics Above",
-					"add-metrics-below-block": "Add Live Metrics Below",
-					"add-diagram-above-block": "Add Diagram Above",
-					"add-diagram-below-block": "Add Diagram Below"
+					"add-above-block": "Add Above",
+					"add-below-block": "Add Below",
+					"block-types": {
+						"code": "Code Block",
+						"metrics": "Live Metrics",
+						"diagram": "Mermaid Diagram"
+					}
 				},
 				"metric-block": {
 					"width": "Resize",
@@ -528,10 +535,11 @@
 		"split-documentation": {
 			"left-side-bottom-action-button": "Add Parameters",
 			"right-side-bottom-action-buttons": {
-				"add-code": "Add Code",
-				"add-metrics": "Add Metrics",
-				"add-diagram": "Add Diagram"
-			}
+				"code": "Code Block",
+				"metrics": "Live Metrics",
+				"diagram": "Mermaid Diagram"
+			},
+			"bottom-action-trigger-label": "Add Block"
 		},
 		"metrics": {
 			"labels": {

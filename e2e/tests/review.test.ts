@@ -436,6 +436,14 @@ test.describe("review workflow", () => {
 				name: t("editor.navbar.document-options.review-workflow.disable-title"),
 			})
 			.click()
+		await page
+			.getByRole("dialog")
+			.getByRole("button", {
+				name: t(
+					"editor.navbar.document-options.review-workflow.disable-confirm-modal.confirm-button",
+				),
+			})
+			.click()
 
 		await expect(branchSwitcher(page)).toHaveCount(0)
 		await expect(contentEditor(page)).toHaveAttribute("contenteditable", "true")

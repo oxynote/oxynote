@@ -74,6 +74,7 @@ const activeBranchMode = computed(() => {
 
 	return activeBranch.default ? "main" : "draft"
 })
+const pendingReviewabilityDisable = ref<(() => Promise<void>) | null>(null)
 
 if (import.meta.client) {
 	watchImmediate(height, (v) => {
@@ -82,6 +83,15 @@ if (import.meta.client) {
 			`${v}px`,
 		)
 	})
+}
+
+function requestToggleReviewability() {
+	if (isReviewable.value) {
+		pendingReviewabilityDisable.value = toggleReviewability
+		return
+	}
+
+	void toggleReviewability()
 }
 
 async function toggleReviewability() {
@@ -361,7 +371,7 @@ function activateBranch(branch: "default" | "draft") {
 										}}
 									</span>
 								</ShadcnUiDropdownMenuItem>
-								<ShadcnUiDropdownMenuItem @click="toggleReviewability">
+								<ShadcnUiDropdownMenuItem @click="requestToggleReviewability">
 									<Icon
 										:name="
 											isReviewable
@@ -434,4 +444,5 @@ function activateBranch(branch: "default" | "draft") {
 			</div>
 		</Transition>
 	</header>
+	<DisableReviewabilityModal v-model="pendingReviewabilityDisable" />
 </template>

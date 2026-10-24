@@ -1,5 +1,5 @@
-import type { VueWrapper } from "@vue/test-utils"
-import { beforeEach, describe, it } from "vitest"
+import { enableAutoUnmount, type VueWrapper } from "@vue/test-utils"
+import { afterEach, beforeEach, describe, it } from "vitest"
 import RightSideBlock from "./RightSideBlock.vue"
 import {
 	commandArgs,
@@ -8,36 +8,29 @@ import {
 	makeNode,
 	mountNodeViewUnderTooltipProvider,
 } from "../../test-helpers/node-view"
-import { at, findButtonByText, t } from "~/components/test-helpers"
+import {
+	at,
+	clearTeleportedOverlays,
+	menuItem,
+	t,
+} from "~/components/test-helpers"
 import { SUPPRESS_SCROLL_TO_SELECTION_META } from "../../scroll-control"
 
 const ADD_CODE_BUTTON =
-	"editor.split-documentation.right-side-bottom-action-buttons.add-code"
+	"editor.split-documentation.right-side-bottom-action-buttons.code"
 const ADD_METRICS_BUTTON =
-	"editor.split-documentation.right-side-bottom-action-buttons.add-metrics"
+	"editor.split-documentation.right-side-bottom-action-buttons.metrics"
 const ADD_DIAGRAM_BUTTON =
-	"editor.split-documentation.right-side-bottom-action-buttons.add-diagram"
+	"editor.split-documentation.right-side-bottom-action-buttons.diagram"
 
-function mountRightSide(overrides: Record<string, unknown> = {}) {
-	return mountNodeViewUnderTooltipProvider(RightSideBlock, {
-		node: makeNode({ uid: "right-1" }),
-		...overrides,
-	})
-}
+enableAutoUnmount(afterEach)
 
-// the bottom action row is the wrapper's second child, after the node
-// content, and is hidden with v-show — which leaves it in the dom with
-// an inline display:none
-function actionsHidden(wrapper: VueWrapper): boolean {
-	const row = at(wrapper.findAll("[data-node-view-wrapper] > div"), 1)
-
-	return (row.element as HTMLElement).style.display === "none"
-}
-
-// the editable flag is a shared cookie state and the editor store is
-// app-wide, so these tests cannot interleave
+// the editable flag is a shared cookie state, the editor store is app-wide
+// and the add menu is teleported into the shared <body>, so these tests
+// cannot interleave
 describe("<SplitDocumentationRightSideBlock>", { concurrent: false }, () => {
 	beforeEach(() => {
+		clearTeleportedOverlays()
 		useEditorMeta().setEditable(true)
 		useEditorMeta().updateLock(false)
 		useEditorStore().setReviewableDiffActive(false)
@@ -69,14 +62,23 @@ describe("<SplitDocumentationRightSideBlock>", { concurrent: false }, () => {
 		expect(root.attributes("data-diff-status")).toBe("removed")
 	})
 
-	it("offers all three add actions while editing is possible", async ({
+	it("offers all three add actions with their block icons while editing is possible", async ({
 		expect,
 	}) => {
 		const wrapper = await mountRightSide()
 
-		expect(wrapper.text()).toContain(t(ADD_CODE_BUTTON))
-		expect(wrapper.text()).toContain(t(ADD_METRICS_BUTTON))
-		expect(wrapper.text()).toContain(t(ADD_DIAGRAM_BUTTON))
+		await openAddMenu(wrapper)
+
+		expect(menuEntryTexts()).toEqual([
+			expect.stringContaining(t(ADD_CODE_BUTTON)),
+			expect.stringContaining(t(ADD_METRICS_BUTTON)),
+			expect.stringContaining(t(ADD_DIAGRAM_BUTTON)),
+		])
+		expect(menuEntryIcons()).toEqual([
+			BLOCK_ICONS.codeBlock,
+			BLOCK_ICONS.metricBlock,
+			BLOCK_ICONS.mermaidBlock,
+		])
 		expect(actionsHidden(wrapper)).toBe(false)
 	})
 
@@ -110,7 +112,7 @@ describe("<SplitDocumentationRightSideBlock>", { concurrent: false }, () => {
 		const { editor, commands } = makeEditor()
 		const wrapper = await mountRightSide({ editor: editor, getPos: () => 4 })
 
-		await findButtonByText(wrapper, t(ADD_CODE_BUTTON)).trigger("click")
+		await chooseAddAction(wrapper, t(ADD_CODE_BUTTON))
 
 		expect(commandNames(commands)).toEqual([
 			"focus",
@@ -126,7 +128,7 @@ describe("<SplitDocumentationRightSideBlock>", { concurrent: false }, () => {
 		const { editor, commands } = makeEditor()
 		const wrapper = await mountRightSide({ editor: editor, getPos: () => 4 })
 
-		await findButtonByText(wrapper, t(ADD_METRICS_BUTTON)).trigger("click")
+		await chooseAddAction(wrapper, t(ADD_METRICS_BUTTON))
 
 		expect(commandNames(commands)).toEqual([
 			"setMeta",
@@ -148,7 +150,7 @@ describe("<SplitDocumentationRightSideBlock>", { concurrent: false }, () => {
 		const { editor, commands } = makeEditor()
 		const wrapper = await mountRightSide({ editor: editor, getPos: () => 4 })
 
-		await findButtonByText(wrapper, t(ADD_DIAGRAM_BUTTON)).trigger("click")
+		await chooseAddAction(wrapper, t(ADD_DIAGRAM_BUTTON))
 
 		expect(commandNames(commands)).toEqual([
 			"focus",
@@ -165,7 +167,7 @@ describe("<SplitDocumentationRightSideBlock>", { concurrent: false }, () => {
 		const { editor, commands } = makeEditor()
 		const wrapper = await mountRightSide({ editor: editor, getPos: () => 0 })
 
-		await findButtonByText(wrapper, t(ADD_CODE_BUTTON)).trigger("click")
+		await chooseAddAction(wrapper, t(ADD_CODE_BUTTON))
 
 		expect(commandArgs(commands, "appendBlockOnRightSide")).toEqual([0, "code"])
 	})
@@ -179,7 +181,7 @@ describe("<SplitDocumentationRightSideBlock>", { concurrent: false }, () => {
 			getPos: () => undefined,
 		})
 
-		await findButtonByText(wrapper, t(ADD_CODE_BUTTON)).trigger("click")
+		await chooseAddAction(wrapper, t(ADD_CODE_BUTTON))
 
 		expect(commands).toEqual([])
 	})
@@ -188,8 +190,56 @@ describe("<SplitDocumentationRightSideBlock>", { concurrent: false }, () => {
 		const { editor, commands } = makeEditor()
 		const wrapper = await mountRightSide({ editor: editor, getPos: () => -1 })
 
-		await findButtonByText(wrapper, t(ADD_CODE_BUTTON)).trigger("click")
+		await chooseAddAction(wrapper, t(ADD_CODE_BUTTON))
 
 		expect(commands).toEqual([])
 	})
 })
+
+function mountRightSide(overrides: Record<string, unknown> = {}) {
+	return mountNodeViewUnderTooltipProvider(RightSideBlock, {
+		node: makeNode({ uid: "right-1" }),
+		...overrides,
+	})
+}
+
+// the bottom action row is the wrapper's second child, after the node
+// content, and is hidden with v-show — which leaves it in the dom with
+// an inline display:none
+function actionsHidden(wrapper: VueWrapper): boolean {
+	const row = at(wrapper.findAll("[data-node-view-wrapper] > div"), 1)
+
+	return (row.element as HTMLElement).style.display === "none"
+}
+
+function openAddMenu(wrapper: VueWrapper) {
+	return wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
+}
+
+// the add actions are entries of a menu teleported into <body>, so one
+// is reached only after the menu opens
+async function chooseAddAction(wrapper: VueWrapper, label: string) {
+	await openAddMenu(wrapper)
+	menuItem(label).click()
+	await nextTick()
+}
+
+function menuEntries(): HTMLElement[] {
+	return Array.from(
+		document.body.querySelectorAll<HTMLElement>("[role='menuitem']"),
+	)
+}
+
+function menuEntryTexts(): string[] {
+	return menuEntries().map((entry) => entry.textContent)
+}
+
+function menuEntryIcons(): string[] {
+	return menuEntries().flatMap((entry) => {
+		const cls = Array.from(
+			entry.querySelector(".iconify")?.classList ?? [],
+		).find((c) => c.startsWith("i-"))
+
+		return cls ? [cls.slice("i-".length)] : []
+	})
+}

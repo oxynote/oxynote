@@ -13,7 +13,12 @@ import {
 } from "../../test-helpers/node-view"
 import { METRIC_BLOCK_NAME } from "../../blocks/node-names"
 import { SUPPRESS_SCROLL_TO_SELECTION_META } from "../../scroll-control"
-import { clearTeleportedOverlays, menuItem, t } from "~/components/test-helpers"
+import {
+	clearTeleportedOverlays,
+	menuItem,
+	openSubMenu,
+	t,
+} from "~/components/test-helpers"
 
 vi.mock("vue-sonner", () => ({
 	toast: {
@@ -188,15 +193,19 @@ describe("<CoreMenu>", { concurrent: false }, () => {
 		})
 
 		await mountCoreMenu(editor, block("codeBlock"))
+		await openSubMenu(
+			t("editor.drag-handle.options.split-doc-right-side.add-above-block"),
+		)
 
 		expect(menuLabels()).toContain(
-			t(
-				"editor.drag-handle.options.split-doc-right-side.add-code-block-above-block",
+			t("editor.drag-handle.options.split-doc-right-side.block-types.code"),
+		)
+		expect(
+			menuLabels().filter(
+				(label) =>
+					label === t("editor.drag-handle.options.default.add-above-block"),
 			),
-		)
-		expect(menuLabels()).not.toContain(
-			t("editor.drag-handle.options.default.add-above-block"),
-		)
+		).toHaveLength(1)
 	})
 
 	it("offers the parameter list actions for a parameter list", async ({
