@@ -310,12 +310,13 @@
 					"add-below-block": "Add Parameter Below"
 				},
 				"split-doc-right-side": {
-					"add-code-block-above-block": "Add Code Above",
-					"add-code-block-below-block": "Add Code Below",
-					"add-metrics-above-block": "Add Live Metrics Above",
-					"add-metrics-below-block": "Add Live Metrics Below",
-					"add-diagram-above-block": "Add Diagram Above",
-					"add-diagram-below-block": "Add Diagram Below"
+					"add-above-block": "Add Above",
+					"add-below-block": "Add Below",
+					"block-types": {
+						"code": "Code",
+						"metrics": "Live Metrics",
+						"diagram": "Diagram"
+					}
 				},
 				"metric-block": {
 					"width": "Resize",

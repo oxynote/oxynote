@@ -7,14 +7,29 @@ import {
 	makeEditor,
 } from "../../test-helpers/node-view"
 import { SUPPRESS_SCROLL_TO_SELECTION_META } from "../../scroll-control"
-import { clearTeleportedOverlays, menuItem, t } from "~/components/test-helpers"
+import {
+	clearTeleportedOverlays,
+	menuItem,
+	openSubMenu,
+	t,
+} from "~/components/test-helpers"
+
+const ADD_ABOVE =
+	"editor.drag-handle.options.split-doc-right-side.add-above-block"
+const ADD_BELOW =
+	"editor.drag-handle.options.split-doc-right-side.add-below-block"
+const CODE = "editor.drag-handle.options.split-doc-right-side.block-types.code"
+const METRICS =
+	"editor.drag-handle.options.split-doc-right-side.block-types.metrics"
+const DIAGRAM =
+	"editor.drag-handle.options.split-doc-right-side.block-types.diagram"
 
 // the menu body is teleported into a shared <body>, so these tests
 // cannot interleave
 describe("<SplitDocRightSideMenu>", { concurrent: false }, () => {
 	afterEach(clearTeleportedOverlays)
 
-	it("offers all six insertion points", async ({ expect }) => {
+	it("offers one sub menu per side", async ({ expect }) => {
 		const { editor } = makeEditor()
 
 		await mountMenuOptions(SplitDocRightSideMenu, {
@@ -22,28 +37,55 @@ describe("<SplitDocRightSideMenu>", { concurrent: false }, () => {
 			hovered: hoveredBlock(4),
 		})
 
-		expect(document.body.querySelectorAll("[role^='menuitem']")).toHaveLength(6)
+		expect(menuLabels()).toEqual([t(ADD_ABOVE), t(ADD_BELOW)])
 	})
 
 	it.for([
+		{ sideLabel: ADD_ABOVE, side: "above" },
+		{ sideLabel: ADD_BELOW, side: "below" },
+	])(
+		"offers the three block types to add $side",
+		async ({ sideLabel }, { expect }) => {
+			const { editor } = makeEditor()
+			await mountMenuOptions(SplitDocRightSideMenu, {
+				editor: editor,
+				hovered: hoveredBlock(4),
+			})
+
+			await openSubMenu(t(sideLabel))
+
+			expect(
+				menuLabels().filter(
+					(label) => label !== t(ADD_ABOVE) && label !== t(ADD_BELOW),
+				),
+			).toEqual([t(CODE), t(METRICS), t(DIAGRAM)])
+		},
+	)
+
+	it.for([
+		{ sideLabel: ADD_ABOVE, side: "above", label: CODE, blockType: "code" },
+		{ sideLabel: ADD_BELOW, side: "below", label: CODE, blockType: "code" },
 		{
-			label:
-				"editor.drag-handle.options.split-doc-right-side.add-code-block-above-block",
+			sideLabel: ADD_ABOVE,
 			side: "above",
+			label: DIAGRAM,
+			blockType: "diagram",
 		},
 		{
-			label:
-				"editor.drag-handle.options.split-doc-right-side.add-code-block-below-block",
+			sideLabel: ADD_BELOW,
 			side: "below",
+			label: DIAGRAM,
+			blockType: "diagram",
 		},
 	])(
-		"inserts a code block $side the hovered one",
-		async ({ label, side }, { expect }) => {
+		"inserts a $blockType block $side the hovered one",
+		async ({ sideLabel, side, label, blockType }, { expect }) => {
 			const { editor, commands } = makeEditor()
 			await mountMenuOptions(SplitDocRightSideMenu, {
 				editor: editor,
 				hovered: hoveredBlock(4),
 			})
+			await openSubMenu(t(sideLabel))
 
 			menuItem(t(label)).click()
 
@@ -55,32 +97,25 @@ describe("<SplitDocRightSideMenu>", { concurrent: false }, () => {
 			expect(commandArgs(commands, "insertBlockOnRightSide")).toEqual([
 				4,
 				side,
-				"code",
+				blockType,
 			])
 		},
 	)
 
 	it.for([
-		{
-			label:
-				"editor.drag-handle.options.split-doc-right-side.add-metrics-above-block",
-			side: "above",
-		},
-		{
-			label:
-				"editor.drag-handle.options.split-doc-right-side.add-metrics-below-block",
-			side: "below",
-		},
+		{ sideLabel: ADD_ABOVE, side: "above" },
+		{ sideLabel: ADD_BELOW, side: "below" },
 	])(
 		"inserts a metrics block $side the hovered one without scrolling",
-		async ({ label, side }, { expect }) => {
+		async ({ sideLabel, side }, { expect }) => {
 			const { editor, commands } = makeEditor()
 			await mountMenuOptions(SplitDocRightSideMenu, {
 				editor: editor,
 				hovered: hoveredBlock(4),
 			})
+			await openSubMenu(t(sideLabel))
 
-			menuItem(t(label)).click()
+			menuItem(t(METRICS)).click()
 
 			expect(commandNames(commands)).toEqual([
 				"setMeta",
@@ -100,54 +135,22 @@ describe("<SplitDocRightSideMenu>", { concurrent: false }, () => {
 		},
 	)
 
-	it.for([
-		{
-			label:
-				"editor.drag-handle.options.split-doc-right-side.add-diagram-above-block",
-			side: "above",
-		},
-		{
-			label:
-				"editor.drag-handle.options.split-doc-right-side.add-diagram-below-block",
-			side: "below",
-		},
-	])(
-		"inserts a diagram block $side the hovered one",
-		async ({ label, side }, { expect }) => {
-			const { editor, commands } = makeEditor()
-			await mountMenuOptions(SplitDocRightSideMenu, {
-				editor: editor,
-				hovered: hoveredBlock(4),
-			})
-
-			menuItem(t(label)).click()
-
-			expect(commandNames(commands)).toEqual([
-				"focus",
-				"insertBlockOnRightSide",
-				"run",
-			])
-			expect(commandArgs(commands, "insertBlockOnRightSide")).toEqual([
-				4,
-				side,
-				"diagram",
-			])
-		},
-	)
-
 	it("does nothing while no block is hovered", async ({ expect }) => {
 		const { editor, commands } = makeEditor()
 		await mountMenuOptions(SplitDocRightSideMenu, {
 			editor: editor,
 			hovered: null,
 		})
+		await openSubMenu(t(ADD_ABOVE))
 
-		menuItem(
-			t(
-				"editor.drag-handle.options.split-doc-right-side.add-code-block-above-block",
-			),
-		).click()
+		menuItem(t(CODE)).click()
 
 		expect(commands).toEqual([])
 	})
 })
+
+function menuLabels(): string[] {
+	return Array.from(
+		document.body.querySelectorAll<HTMLElement>("[role^='menuitem']"),
+	).map((item) => item.textContent.trim())
+}
