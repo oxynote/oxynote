@@ -28,6 +28,7 @@ import {
 import { Fragment, Slice } from "@tiptap/pm/model"
 import type { HocuspocusProvider } from "@hocuspocus/provider"
 import { findDraggableNodeAtCoords } from "./node-detection.js"
+import { bindTouchLongPress } from "../long-press"
 import type { DragHandleDragging } from "./drag"
 import { enableGapZones, disableGapZones } from "./gap-decorations"
 import {
@@ -335,6 +336,7 @@ export interface DragHandlePluginProps {
 		pos: number
 		depth: number
 	}) => void
+	onNodeLongPress?: () => void
 	onElementDragStart?: (e: DragEvent) => void
 	onElementDragEnd?: (e: DragEvent) => void
 	onDragCancel?: () => void
@@ -362,6 +364,7 @@ export const DragHandlePlugin = ({
 	provider,
 	getReferencedVirtualElement,
 	onNodeChange,
+	onNodeLongPress,
 	onElementDragStart,
 	onElementDragEnd,
 	onDragCancel,
@@ -377,6 +380,7 @@ export const DragHandlePlugin = ({
 	// pointer is followed on the document to know where it is once the
 	// menu has closed
 	let lastMouseCoords: { x: number; y: number } | null = null
+	let stopLongPress: (() => void) | undefined
 	let draggingNodeUid: string | null = null // tracks the UID of the node currently being dragged
 
 	// resolve the plugin key once for use throughout the plugin
@@ -552,7 +556,7 @@ export const DragHandlePlugin = ({
 		const result = findDraggableNodeAtCoords(editor, x, y)
 		if (!result) {
 			forgetNode()
-			return
+			return false
 		}
 
 		if (result.pos !== currentNodePos) {
@@ -571,6 +575,7 @@ export const DragHandlePlugin = ({
 		})
 		repositionDragHandle(result.dom, currentNodePos)
 		showHandle()
+		return true
 	}
 
 	// the lock kept the handle on its node whatever the pointer did, so
@@ -627,6 +632,7 @@ export const DragHandlePlugin = ({
 
 	return {
 		unbind() {
+			stopLongPress?.()
 			element.removeEventListener("dragstart", onDragStart)
 			element.removeEventListener("dragend", onDragEnd)
 			element.removeEventListener("mouseleave", onHandleMouseLeave)
@@ -742,6 +748,20 @@ export const DragHandlePlugin = ({
 				},
 			},
 			view: (view) => {
+				stopLongPress = bindTouchLongPress(view.dom, (event) => {
+					if (locked || view.dragging || !onNodeLongPress) {
+						return false
+					}
+
+					if (!retargetHandle(event.clientX, event.clientY)) {
+						return false
+					}
+
+					lastMouseCoords = null
+					onNodeLongPress()
+					return true
+				})
+
 				element.draggable = editor.isEditable
 				element.style.pointerEvents = "auto"
 
@@ -787,6 +807,7 @@ export const DragHandlePlugin = ({
 						}
 					},
 					destroy() {
+						stopLongPress?.()
 						document.removeEventListener("mousemove", trackMouse)
 
 						// clear awareness if we were mid-drag

@@ -187,6 +187,98 @@ describe("<NameEditor>", { concurrent: false }, () => {
 		disposeMockEndpoints()
 	})
 
+	it("opens the page hook menu after holding the title on touch", async ({
+		expect,
+	}) => {
+		const wrapper = await mountEditor()
+		vi.useFakeTimers()
+
+		await wrapper.get(".group\\/name-editor").trigger("pointerdown", {
+			pointerType: "touch",
+			pointerId: 1,
+			isPrimary: true,
+			clientX: 30,
+			clientY: 30,
+		})
+		await vi.advanceTimersByTimeAsync(500)
+		await nextTick()
+
+		expect(hookHandle(wrapper).attributes("aria-expanded")).toBe("true")
+		expect(document.body.querySelector("[role='menu']")).not.toBeNull()
+		expect(
+			document.body
+				.querySelector("[data-slot='dropdown-menu-content']")
+				?.classList.contains("select-none"),
+		).toBe(true)
+		expect(wrapper.get(".group\\/name-editor").classes()).not.toContain(
+			"select-none",
+		)
+	})
+
+	it.for(["pointerup", "pointercancel"])(
+		"keeps the page hook menu closed when %s interrupts the touch hold",
+		async (event, { expect }) => {
+			const wrapper = await mountEditor()
+			vi.useFakeTimers()
+			const title = wrapper.get(".group\\/name-editor")
+			await title.trigger("pointerdown", {
+				pointerType: "touch",
+				pointerId: 1,
+				isPrimary: true,
+			})
+			await vi.advanceTimersByTimeAsync(250)
+
+			document.dispatchEvent(
+				new PointerEvent(event, {
+					pointerType: "touch",
+					pointerId: 1,
+					isPrimary: true,
+				}),
+			)
+			await vi.advanceTimersByTimeAsync(500)
+
+			expect(hookHandle(wrapper).attributes("aria-expanded")).toBe("false")
+		},
+	)
+
+	it("reopens the page hook menu after a touch-opened menu is dismissed", async ({
+		expect,
+	}) => {
+		const wrapper = await mountEditor()
+		vi.useFakeTimers()
+		const title = wrapper.get(".group\\/name-editor")
+		await title.trigger("pointerdown", {
+			pointerType: "touch",
+			pointerId: 1,
+			isPrimary: true,
+		})
+		await vi.advanceTimersByTimeAsync(500)
+		document.dispatchEvent(
+			new PointerEvent("pointerup", {
+				pointerType: "touch",
+				pointerId: 1,
+				isPrimary: true,
+			}),
+		)
+		const menu = document.body.querySelector("[role='menu']")
+		expect(menu).not.toBeNull()
+		menu?.dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+		)
+		await vi.advanceTimersByTimeAsync(200)
+		expect(hookHandle(wrapper).attributes("aria-expanded")).toBe("false")
+
+		await title.trigger("pointerdown", {
+			pointerType: "touch",
+			pointerId: 2,
+			isPrimary: true,
+		})
+		await vi.advanceTimersByTimeAsync(500)
+
+		expect(hookHandle(wrapper).attributes("aria-expanded")).toBe("true")
+		expect(document.body.querySelectorAll("[role='menu']")).toHaveLength(1)
+	})
+
 	it("shows the icon the branch carries", async ({ expect }) => {
 		const wrapper = await mountEditor({
 			active: makeBranch("mingcute:at-fill"),

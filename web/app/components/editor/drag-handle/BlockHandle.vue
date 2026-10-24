@@ -193,6 +193,7 @@ function dragEnd() {
 		:on-drag-cancel="dragEnd"
 		class="z-drag-handle pr-1 transition-[opacity,visibility] duration-100 lg:pr-1.5"
 		@node-change="handleNodeHover"
+		@node-long-press="nodeActionMenuOpen = true"
 		@mouseenter="handleDragHoverEnter"
 		@mouseleave="handleDragHoverLeave"
 		@focusin="handleDragHoverEnter"
@@ -212,7 +213,8 @@ function dragEnd() {
 				@update:open="(value: boolean) => (hookMenuOpen = value)"
 			>
 				<ShadcnUiDropdownMenuTrigger as-child>
-					<div
+					<button
+						type="button"
 						:data-menu-open="hookMenuOpen ? '' : undefined"
 						:class="
 							cn(
@@ -228,10 +230,10 @@ function dragEnd() {
 							name="mingcute:leaf-line"
 							:class="cn('mt-0.25 size-4.5', HOOK_ICON_STATUS_CLASS)"
 						/>
-					</div>
-					<span class="sr-only">
-						{{ $t("editor.hook-handle.screen-reader-hint") }}
-					</span>
+						<span class="sr-only">
+							{{ $t("editor.hook-handle.screen-reader-hint") }}
+						</span>
+					</button>
 				</ShadcnUiDropdownMenuTrigger>
 				<ShadcnUiDropdownMenuContent side="right" align="start" loop>
 					<HookMenuContent
@@ -242,11 +244,10 @@ function dragEnd() {
 					/>
 				</ShadcnUiDropdownMenuContent>
 			</ShadcnUiDropdownMenu>
-			<ShadcnUiDropdownMenu
-				@update:open="(value: boolean) => (nodeActionMenuOpen = value)"
-			>
+			<ShadcnUiDropdownMenu v-model:open="nodeActionMenuOpen">
 				<ShadcnUiDropdownMenuTrigger as-child>
-					<div
+					<button
+						type="button"
 						:data-menu-open="nodeActionMenuOpen ? '' : undefined"
 						:class="
 							cn(
@@ -262,12 +263,17 @@ function dragEnd() {
 								class="absolute top-1/2 left-1/2 size-5 -translate-x-1/2 -translate-y-1/2"
 							/>
 						</div>
-					</div>
-					<span class="sr-only">
-						{{ $t("editor.drag-handle.screen-reader-hint") }}
-					</span>
+						<span class="sr-only">
+							{{ $t("editor.drag-handle.screen-reader-hint") }}
+						</span>
+					</button>
 				</ShadcnUiDropdownMenuTrigger>
-				<ShadcnUiDropdownMenuContent side="left" align="start" loop>
+				<ShadcnUiDropdownMenuContent
+					class="select-none"
+					side="left"
+					align="start"
+					loop
+				>
 					<template v-if="compactHandles">
 						<HookMenuContent
 							:active-branch-hooks="processedActiveBranchHooks"
