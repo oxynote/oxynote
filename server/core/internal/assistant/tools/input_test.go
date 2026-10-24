@@ -131,7 +131,6 @@ func requiredArgs(t *testing.T, name Name) string {
 			// the stubbed hook is a scheduled reminder.
 			vals[key] = map[string]any{"type": string(hook.TypeScheduledReminder), "schedule": _stubSchedule}
 		case "color":
-			// the tools take a palette name, not the hex the stub stores.
 			vals[key] = "green"
 		case "sort_index":
 			vals[key] = 0

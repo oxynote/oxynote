@@ -414,7 +414,9 @@ function buildRequest(
 										<span
 											v-if="selectedGroup"
 											class="size-2.5 shrink-0 rounded-full"
-											:style="{ backgroundColor: paletteColor(selectedGroup.color) }"
+											:style="{
+												backgroundColor: paletteColor(selectedGroup.color),
+											}"
 										/>
 										<ShadcnUiSelectValue />
 									</span>

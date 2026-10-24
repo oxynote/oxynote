@@ -9,7 +9,7 @@ function cssVar(name: string, el: HTMLElement = document.documentElement) {
 // consumers (mermaid, echarts, and anything persisting a color) only accept
 // hex/rgb.
 let colorCtx: CanvasRenderingContext2D | null = null
-export function colorToHex(value: string) {
+function colorToHex(value: string) {
 	if (!colorCtx) {
 		const canvas = document.createElement("canvas")
 		canvas.width = 1

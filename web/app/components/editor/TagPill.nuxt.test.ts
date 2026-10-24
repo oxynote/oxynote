@@ -24,7 +24,9 @@ describe("<TagPill>", () => {
 		expect(style).toContain(
 			"--tag-bg: color-mix(in srgb, var(--selectable-color-6) 13%, transparent)",
 		)
-		expect(style).toContain("--tag-fg: color-mix(in srgb, var(--selectable-color-6) 80%, black)")
+		expect(style).toContain(
+			"--tag-fg: color-mix(in srgb, var(--selectable-color-6) 80%, black)",
+		)
 		expect(style).toContain(
 			"--tag-dark-bg: color-mix(in srgb, var(--selectable-color-6) 18%, transparent)",
 		)
