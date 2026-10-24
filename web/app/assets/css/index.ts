@@ -1,3 +1,5 @@
+import { PALETTE_COLORS } from "~/utils/color"
+
 function cssVar(name: string, el: HTMLElement = document.documentElement) {
 	return getComputedStyle(el).getPropertyValue(name).trim()
 }
@@ -6,8 +8,7 @@ function cssVar(name: string, el: HTMLElement = document.documentElement) {
 // the canvas is never added to the DOM; it only exists in memory for color parsing.
 // we paint a pixel and read it back because modern Chromium round-trips
 // newer color formats like oklch through `fillStyle` unchanged, and downstream
-// consumers (mermaid, echarts, and anything persisting a color) only accept
-// hex/rgb.
+// consumers (mermaid and echarts) only accept hex/rgb.
 let colorCtx: CanvasRenderingContext2D | null = null
 function colorToHex(value: string) {
 	if (!colorCtx) {
@@ -81,27 +82,13 @@ export function chartStyles() {
 			mutedText: cssVar("--muted-foreground-50"),
 			emptyGauge: cssVar("--muted-foreground-7"),
 		},
-		selectableColors: {
-			default: cssVar("--selectable-color-6"),
-			available: [
-				cssVar("--selectable-color-1"),
-				cssVar("--selectable-color-2"),
-				cssVar("--selectable-color-3"),
-				cssVar("--selectable-color-4"),
-				cssVar("--selectable-color-5"),
-				cssVar("--selectable-color-6"),
-				cssVar("--selectable-color-7"),
-				cssVar("--selectable-color-8"),
-				cssVar("--selectable-color-9"),
-				cssVar("--selectable-color-10"),
-				cssVar("--selectable-color-11"),
-				cssVar("--selectable-color-12"),
-				cssVar("--selectable-color-13"),
-				cssVar("--selectable-color-14"),
-				cssVar("--selectable-color-15"),
-				cssVar("--selectable-color-16"),
-			],
-		},
+		// every palette name mapped to the hex a chart paints it with
+		paletteColors: Object.fromEntries(
+			PALETTE_COLORS.map((name, index) => [
+				name,
+				cssColorHex(`--selectable-color-${index + 1}`),
+			]),
+		),
 	}
 }
 

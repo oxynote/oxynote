@@ -3,10 +3,7 @@
 // denominator, and nothing here is imported by app code.
 import { TimeRangePreset } from "~/utils/time-range"
 
-export {
-	stubThemeColorContext as stubChartColorContext,
-	stubSelectableColors,
-} from "../../test-helpers/theme"
+export { stubThemeColorContext as stubChartColorContext } from "../../test-helpers/theme"
 
 // the built-in group, with the user's own time range and the default
 // refresh interval, beside a text variable on its default

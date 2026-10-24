@@ -432,7 +432,7 @@ func buildParam(n node, stored document.Block) (document.Block, error) {
 
 // buildMetric builds a metric block from its JSON attributes.
 func buildMetric(n node, stored document.Block) (document.Block, error) {
-	attrs, err := decodeMetricAttrs(n.text)
+	attrs, err := decodeMetricAttrs(n.text, stored)
 	if err != nil {
 		return document.Block{}, fmt.Errorf("line %d: %w", n.line, err)
 	}

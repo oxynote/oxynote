@@ -14,6 +14,12 @@ describe("paletteColor", () => {
 			expect(paletteColor(input)).toBe(expected)
 		},
 	)
+
+	it("returns a colour saved as css as it is", ({ expect }) => {
+		expect(paletteColor("oklch(57.7% .245 27.325)")).toBe(
+			"oklch(57.7% .245 27.325)",
+		)
+	})
 })
 
 // the draw is spied on Math itself, which every test in the file shares

@@ -17,7 +17,7 @@
 			"dataSourceId": "d6ffo789ra6s73aemr5g",
 			"refreshInterval": "$metric_refresh",
 			"visualizationType": "line_chart",
-			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+			"baseThresholdColor": "green"
 		}
 	},
 	{
@@ -38,7 +38,7 @@
 			"dataSourceId": "d6ffo789ra6s73aemr5g",
 			"refreshInterval": "$metric_refresh",
 			"visualizationType": "line_chart",
-			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+			"baseThresholdColor": "green"
 		}
 	},
 	{
@@ -59,7 +59,7 @@
 			"dataSourceId": "d6ffo789ra6s73aemr5g",
 			"refreshInterval": "$metric_refresh",
 			"visualizationType": "line_chart",
-			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+			"baseThresholdColor": "green"
 		}
 	},
 	{
@@ -80,7 +80,7 @@
 			"dataSourceId": "d6ffo789ra6s73aemr5g",
 			"refreshInterval": "$metric_refresh",
 			"visualizationType": "line_chart",
-			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+			"baseThresholdColor": "green"
 		}
 	},
 	{
@@ -101,7 +101,7 @@
 			"dataSourceId": "d6ffo789ra6s73aemr5g",
 			"refreshInterval": "$metric_refresh",
 			"visualizationType": "line_chart",
-			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+			"baseThresholdColor": "green"
 		}
 	},
 	{
@@ -125,7 +125,7 @@
 			"axisBoundsMin": 0,
 			"refreshInterval": "$metric_refresh",
 			"visualizationType": "gauge_chart",
-			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+			"baseThresholdColor": "green"
 		}
 	},
 	{
@@ -145,7 +145,7 @@
 			"dataSourceId": "d6ffo789ra6s73aemr5g",
 			"refreshInterval": "$metric_refresh",
 			"visualizationType": "line_chart",
-			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+			"baseThresholdColor": "green"
 		}
 	},
 	{
@@ -165,7 +165,7 @@
 			"dataSourceId": "d6ffo789ra6s73aemr5g",
 			"refreshInterval": "$metric_refresh",
 			"visualizationType": "line_chart",
-			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+			"baseThresholdColor": "green"
 		}
 	},
 	{
@@ -185,7 +185,7 @@
 			"dataSourceId": "d6ffo789ra6s73aemr5g",
 			"refreshInterval": "$metric_refresh",
 			"visualizationType": "line_chart",
-			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+			"baseThresholdColor": "green"
 		}
 	},
 	{
@@ -205,7 +205,7 @@
 			"dataSourceId": "d6ffo789ra6s73aemr5g",
 			"refreshInterval": "$metric_refresh",
 			"visualizationType": "line_chart",
-			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+			"baseThresholdColor": "green"
 		}
 	},
 	{
@@ -226,7 +226,7 @@
 			"dataSourceId": "d6ffo789ra6s73aemr5g",
 			"refreshInterval": "$metric_refresh",
 			"visualizationType": "line_chart",
-			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+			"baseThresholdColor": "green"
 		}
 	},
 	{
@@ -247,7 +247,7 @@
 			"dataSourceId": "d6ffo789ra6s73aemr5g",
 			"refreshInterval": "$metric_refresh",
 			"visualizationType": "line_chart",
-			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+			"baseThresholdColor": "green"
 		}
 	},
 	{
@@ -269,7 +269,7 @@
 			"dataSourceId": "d6ffo789ra6s73aemr5g",
 			"refreshInterval": "$metric_refresh",
 			"visualizationType": "line_chart",
-			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+			"baseThresholdColor": "green"
 		}
 	},
 	{
@@ -290,7 +290,7 @@
 			"dataSourceId": "d6ffo789ra6s73aemr5g",
 			"refreshInterval": "$metric_refresh",
 			"visualizationType": "line_chart",
-			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+			"baseThresholdColor": "green"
 		}
 	},
 	{
@@ -311,7 +311,7 @@
 			"dataSourceId": "d6ffo789ra6s73aemr5g",
 			"refreshInterval": "$metric_refresh",
 			"visualizationType": "line_chart",
-			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+			"baseThresholdColor": "green"
 		}
 	}
 ]

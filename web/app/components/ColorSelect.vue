@@ -1,25 +1,12 @@
 <script lang="ts" setup>
-import { chartStyles } from "~/assets/css"
-
-const props = defineProps<{
-	// the colours on offer, by default the theme's selectable css colours
-	colors?: string[]
-	// a colour that is not css itself, such as a palette name, is painted
-	// with what this returns
-	paint?: (color: string) => string
-}>()
 const color = defineModel<string | undefined>({
 	required: true,
 })
-
-const colors = computed(
-	() => props.colors ?? chartStyles().selectableColors.available,
-)
 </script>
 <template>
 	<div class="grid w-fit grid-cols-4 gap-0.25">
 		<ShadcnUiButton
-			v-for="c in colors"
+			v-for="c in PALETTE_COLORS"
 			:key="c"
 			size="icon"
 			variant="outline-transparent"
@@ -28,7 +15,7 @@ const colors = computed(
 		>
 			<div
 				class="size-4 rounded-full"
-				:style="{ backgroundColor: props.paint ? props.paint(c) : c }"
+				:style="{ backgroundColor: paletteColor(c) }"
 			/>
 		</ShadcnUiButton>
 	</div>

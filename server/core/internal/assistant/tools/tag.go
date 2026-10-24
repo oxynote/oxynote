@@ -26,7 +26,7 @@ func (listTags) Info() Info {
 	return Info{
 		Name:        NameListTags,
 		Traits:      Traits{Group: GroupTags},
-		Description: "List the organisation's tags in sidebar order as [{id, name, color, hidden, documents}]. color is a palette name. documents are the documents whose default branch carries the tag; a tag on another branch shows only on get_document for that branch. hidden is the current user's own sidebar setting and does not stop assignment.",
+		Description: "List the organisation's tags in sidebar order as [{id, name, color, documents}]. Documents are the documents whose default branch carries the tag; a tag on another branch shows only on get_document for that branch.",
 		Properties:  map[string]any{},
 	}
 }
@@ -51,7 +51,6 @@ func (listTags) Execute(inp *input) (string, error) {
 			ID:        s.ID,
 			Name:      s.TagName,
 			ColorName: s.Color,
-			Hidden:    s.Hidden,
 			Documents: make([]tagDocument, 0, len(s.Documents)),
 		}
 
@@ -87,10 +86,6 @@ type tagEntry struct {
 
 	// ColorName is the palette name of the tag's colour.
 	ColorName string `json:"color"`
-
-	// Hidden indicates the current user keeps the tag out of their own
-	// sidebar.
-	Hidden bool `json:"hidden"`
 
 	// Documents is every document whose default branch carries the tag.
 	Documents []tagDocument `json:"documents"`

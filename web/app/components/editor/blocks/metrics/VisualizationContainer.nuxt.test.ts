@@ -238,6 +238,55 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 		).toEqual([{ value: 10, label: "warn", color: "#ff0000" }])
 	})
 
+	it("hands the chart a palette threshold colour as hex", async ({
+		expect,
+	}) => {
+		mockEndpoint("GET", QUERY_URL, () => seriesResult())
+
+		const wrapper = await mountContainer(
+			metricConfig({
+				thresholds: [{ value: 10, label: "warn", color: "red" }],
+			}),
+		)
+
+		await vi.waitFor(() => {
+			expect(chartNames(wrapper)).toEqual(["LineChart"])
+		}, WAIT_FOR_OPTIONS)
+		// the canvas stand-in reads every theme colour back as black
+		expect(
+			wrapper.findComponent({ name: "LineChart" }).props("thresholds"),
+		).toEqual([{ value: 10, label: "warn", color: "#000000" }])
+	})
+
+	it.for([
+		{
+			name: "a palette base colour as hex",
+			input: "green",
+			expected: "#000000",
+		},
+		{
+			name: "a base colour saved as css as it is",
+			input: "#00ff00",
+			expected: "#00ff00",
+		},
+	])("hands the gauge $name", async ({ input, expected }, { expect }) => {
+		mockEndpoint("GET", QUERY_URL, () => seriesResult())
+
+		const wrapper = await mountContainer(
+			metricConfig({
+				visualizationType: GenericQueryChartType.Gauge,
+				baseThresholdColor: input,
+			}),
+		)
+
+		await vi.waitFor(() => {
+			expect(chartNames(wrapper)).toEqual(["GaugeChart"])
+		}, WAIT_FOR_OPTIONS)
+		expect(
+			wrapper.findComponent({ name: "GaugeChart" }).props("baseThresholdColor"),
+		).toBe(expected)
+	})
+
 	it("reports the error a single failing query returned", async ({
 		expect,
 	}) => {

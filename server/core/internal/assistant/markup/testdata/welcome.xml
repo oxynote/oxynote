@@ -32,8 +32,8 @@
     </tasks>
   </left>
   <right>
-    <metric id="iSCnvMtVcU1rBtE3anBP1">{"baseThresholdColor":"oklch(62.7% .194 149.214)","dataSourceId":"daq1invl0rd000d01ra0","queries":[{"legendFormat":"{{confidence}}","name":"Query 1","query":"engineering_prs_merged_friday_afternoon_count"}],"refreshInterval":"30s","timeRange":"last_3_hours","title":"Pull Requests Merged on Friday Afternoon","unitType":"custom","visualizationType":"line_chart","width":"compact"}</metric>
-    <metric id="O9E-oQmk8GWBBlE4udYnF">{"baseThresholdColor":"oklch(62.7% .194 149.214)","dataSourceId":"daq1invl0rd000d01ra0","queries":[{"legendFormat":"{{platform}}","name":"Query 1","query":"engineering_works_on_my_machine_rate"}],"refreshInterval":"30s","timeRange":"last_3_hours","title":"\"Works on My Machine\" Rate","unitType":"custom","visualizationType":"line_chart","width":"compact"}</metric>
+    <metric id="iSCnvMtVcU1rBtE3anBP1">{"baseThresholdColor":"green","dataSourceId":"daq1invl0rd000d01ra0","queries":[{"legendFormat":"{{confidence}}","name":"Query 1","query":"engineering_prs_merged_friday_afternoon_count"}],"refreshInterval":"30s","timeRange":"last_3_hours","title":"Pull Requests Merged on Friday Afternoon","unitType":"custom","visualizationType":"line_chart","width":"compact"}</metric>
+    <metric id="O9E-oQmk8GWBBlE4udYnF">{"baseThresholdColor":"green","dataSourceId":"daq1invl0rd000d01ra0","queries":[{"legendFormat":"{{platform}}","name":"Query 1","query":"engineering_works_on_my_machine_rate"}],"refreshInterval":"30s","timeRange":"last_3_hours","title":"\"Works on My Machine\" Rate","unitType":"custom","visualizationType":"line_chart","width":"compact"}</metric>
   </right>
 </split_doc>
 <p id="CMUMTue1LmJQELbrD7taL"></p>

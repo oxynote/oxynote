@@ -66,7 +66,7 @@ Make small, targeted edits and send independent ones together. Write each sectio
 // Shared verbatim between the chat prompt and the MCP instructions.
 const _aestheticsSection = `## Style
 
-Open with the first real paragraph, since the name already shows above the content. Keep the outline flat, with a heading only over more than a paragraph or two. Use a callout for what the reader must not miss. Leave a code language empty unless the document names a stack. Write an endpoint as one split_doc: an <h1> naming the action, such as Submitting a transfer, <params> for its fields, and on its right a titled pre for the request, titled by method and path such as POST /v1/transfers, then one per response. Fill every <metrics> row, with the text about its charts before it.
+Open with the first real paragraph, since the name already shows above the content. Keep the outline flat, with a heading only over more than a paragraph or two. Use a callout for what the reader must not miss. Write an endpoint as one split_doc: an <h1> naming the action, such as Submitting a transfer, <params> for its fields, and on its right a titled pre for the request, titled by method and path such as POST /v1/transfers, then one per response.
 
 `
 

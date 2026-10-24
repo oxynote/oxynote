@@ -1,7 +1,8 @@
-// PALETTE_COLORS names every colour a tag or a variable group can carry,
-// in picker order. The api stores the name, and the n-th name paints as the
-// n-th --selectable-color variable. Core validates against its own copy of
-// the names (server/core/internal/tag/color.go).
+// PALETTE_COLORS names every colour a tag, a variable group or a metric
+// threshold can carry, in picker order. What is stored is the name, and the
+// n-th name paints as the n-th --selectable-color variable. Core validates
+// tags and groups against its own copy of the names
+// (server/core/internal/tag/color.go).
 export const PALETTE_COLORS = [
 	"red",
 	"orange",
@@ -21,10 +22,20 @@ export const PALETTE_COLORS = [
 	"pink",
 ]
 
+// DEFAULT_PALETTE_COLOR is the colour something new takes when nothing
+// suggests another.
+export const DEFAULT_PALETTE_COLOR = "green"
+
 // paletteColor resolves a stored palette name to the css colour that
-// paints it.
-export function paletteColor(name: string): string {
-	return `var(--selectable-color-${PALETTE_COLORS.indexOf(name) + 1})`
+// paints it. A threshold saved before thresholds stored names holds a css
+// colour already and is returned as it is.
+export function paletteColor(color: string): string {
+	const slot = PALETTE_COLORS.indexOf(color)
+	if (slot < 0) {
+		return color
+	}
+
+	return `var(--selectable-color-${slot + 1})`
 }
 
 // pickLeastUsedColor suggests a colour for something new, such as a tag or

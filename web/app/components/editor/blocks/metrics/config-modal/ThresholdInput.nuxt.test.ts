@@ -2,7 +2,6 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import type { VueWrapper } from "@vue/test-utils"
 import { beforeEach, describe, it } from "vitest"
 import ThresholdInput from "./ThresholdInput.vue"
-import { stubChartColorContext, stubSelectableColors } from "../test-helpers"
 import { at, clearTeleportedOverlays, t } from "~/components/test-helpers"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 
@@ -10,7 +9,7 @@ function mountThreshold(props: Record<string, unknown> = {}) {
 	return mountSuspended(ThresholdInput, {
 		props: {
 			visualizationType: GenericQueryChartType.Line,
-			color: "#ff0000",
+			color: "red",
 			...props,
 		},
 	})
@@ -30,8 +29,6 @@ function valueOf(wrapper: VueWrapper, index: number): string {
 describe("<ThresholdInput>", { concurrent: false }, () => {
 	beforeEach(() => {
 		clearTeleportedOverlays()
-		stubChartColorContext()
-		stubSelectableColors()
 		useEditorMeta().setEditable(true)
 		useEditorStore().setReviewableDiffActive(false)
 	})
@@ -63,12 +60,21 @@ describe("<ThresholdInput>", { concurrent: false }, () => {
 		expect(valueOf(wrapper, 1)).toBe("warn")
 	})
 
-	it("shows the threshold's colour on the swatch", async ({ expect }) => {
-		const wrapper = await mountThreshold({ color: "#00ff00" })
+	it.for([
+		{
+			name: "paints a palette colour with its theme variable",
+			input: "green",
+			expected: "background-color: var(--selectable-color-6);",
+		},
+		{
+			name: "paints a colour saved as css as it is",
+			input: "#00ff00",
+			expected: "background-color: #00ff00;",
+		},
+	])("$name on the swatch", async ({ input, expected }, { expect }) => {
+		const wrapper = await mountThreshold({ color: input })
 
-		expect(wrapper.get("button div").attributes("style")).toBe(
-			"background-color: #00ff00;",
-		)
+		expect(wrapper.get("button div").attributes("style")).toBe(expected)
 	})
 
 	it("reports a value the reader typed", async ({ expect }) => {
@@ -158,7 +164,6 @@ describe("<ThresholdInput>", { concurrent: false }, () => {
 	)
 
 	it("picks a colour from the palette popover", async ({ expect }) => {
-		const palette = stubSelectableColors()
 		const wrapper = await mountThreshold()
 		await at(wrapper.findAll("button"), 0).trigger("click")
 		await nextTick()
@@ -171,7 +176,7 @@ describe("<ThresholdInput>", { concurrent: false }, () => {
 		swatches[2]?.click()
 		await nextTick()
 
-		expect(wrapper.emitted("update:color")).toEqual([[at(palette, 2)]])
+		expect(wrapper.emitted("update:color")).toEqual([["amber"]])
 	})
 
 	it("offers no colour popover in read mode", async ({ expect }) => {

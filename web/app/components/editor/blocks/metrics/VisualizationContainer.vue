@@ -10,6 +10,7 @@ import {
 	type MetricSimulationPreset,
 } from "./utils"
 import { RefreshInterval } from "~/utils/time-range"
+import { chartStyles } from "~/assets/css"
 import {
 	DEFAULT_SIMULATION_PRESET,
 	generateSimulatedQueryResults,
@@ -99,11 +100,16 @@ watchDebounced(
 // creation due to the debounce delay
 const canUseDebouncedConfigInParams = ref(false)
 
+// a threshold colour is a palette name, which a chart needs as hex. One
+// saved before thresholds stored names is a css colour already and passes
+// through.
 const processedThresholds = computed(() => {
 	const thresholds = debouncedConfig.value.thresholds
 	if (!thresholds?.length) {
 		return []
 	}
+
+	const palette = chartStyles().paletteColors
 
 	return (
 		thresholds
@@ -115,9 +121,14 @@ const processedThresholds = computed(() => {
 			.map((t) => ({
 				value: t.value,
 				label: t.label,
-				color: t.color,
+				color: palette[t.color] ?? t.color,
 			}))
 	)
+})
+const baseThresholdColor = computed(() => {
+	const color = debouncedConfig.value.baseThresholdColor
+
+	return chartStyles().paletteColors[color] ?? color
 })
 const fetchMetricData = useMultipleGenericQueries(
 	() => props.config.dataSourceId,
@@ -488,7 +499,7 @@ function openModal() {
 				"
 				:gauges="data.data as MultipleGaugeChartData"
 				:title="debouncedConfig.title || undefined"
-				:base-threshold-color="debouncedConfig.baseThresholdColor"
+				:base-threshold-color="baseThresholdColor"
 				:thresholds="processedThresholds"
 				:title-right-padding="props.titleRightPadding"
 				:unit="debouncedConfig.unit"

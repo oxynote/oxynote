@@ -6,7 +6,6 @@ import ConfigField from "../ConfigField.vue"
 import ThresholdInput from "./ThresholdInput.vue"
 import DataSourceSelect from "./DataSourceSelect.vue"
 import SimulationPresetSelect from "./SimulationPresetSelect.vue"
-import { stubChartColorContext, stubSelectableColors } from "../test-helpers"
 import {
 	defaultMetricConfig,
 	MetricSimulationPreset,
@@ -21,7 +20,6 @@ import {
 	t,
 } from "~/components/test-helpers"
 import {
-	ANY_STRING,
 	clearQueryCache,
 	disposeMockEndpoints,
 	mockEndpoint,
@@ -65,8 +63,6 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 	beforeEach(() => {
 		clearTeleportedOverlays()
 		clearQueryCache()
-		stubChartColorContext()
-		stubSelectableColors()
 		mockEndpoint("GET", "/api/data-sources", () => [])
 		useEditorMeta().setEditable(true)
 		useEditorStore().setReviewableDiffActive(false)
@@ -151,7 +147,7 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 		).trigger("click")
 
 		expect(config.thresholds).toEqual([
-			{ value: undefined, label: undefined, color: ANY_STRING },
+			{ value: undefined, label: undefined, color: "green" },
 		])
 	})
 

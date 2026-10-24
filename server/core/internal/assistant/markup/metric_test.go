@@ -57,13 +57,19 @@ func Test_MetricReference(t *testing.T) {
 	assert.Contains(t, got, "refreshInterval ($metric_refresh|")
 	assert.Contains(t, got, "timeRange and refreshInterval default to $metric_range and $metric_refresh")
 	assert.Contains(t, got, "and the reference to unpin it")
+	assert.Contains(t, got, "A threshold colour and baseThresholdColor are one of red|orange|")
 }
 
 func Test_decodeMetricAttrs(t *testing.T) {
 	t.Parallel()
 
+	// _legacyColor is a threshold colour saved before thresholds stored
+	// palette names.
+	const legacyColor = "oklch(57.7% .245 27.325)"
+
 	cc := map[string]struct {
 		Text   string
+		Stored document.Block
 		Result document.Attributes
 		Err    error
 	}{
@@ -74,7 +80,7 @@ func Test_decodeMetricAttrs(t *testing.T) {
 		"A fully configured metric": {
 			Text: `{"title":"Request rate","dataSourceId":"d1qbc8kv2vg000cnb6ag","visualizationType":"line_chart",` +
 				`"queries":[{"name":"Query 1","query":"up","legendFormat":"{{job}}"}],"timeRange":"last_1_hour","refreshInterval":"5m",` +
-				`"thresholds":[{"value":90,"label":"warn","color":"#f00"}],"baseThresholdColor":"#0f0","decimals":2,` +
+				`"thresholds":[{"value":90,"label":"warn","color":"red"}],"baseThresholdColor":"green","decimals":2,` +
 				`"unitType":"percent0to100","unitCustom":"rps","axisBoundsMin":0,"axisBoundsMax":100.5,"width":"wide","simulationPreset":"cpu_usage"}`,
 			Result: document.Attributes{
 				document.AttrTitle:             "Request rate",
@@ -83,8 +89,8 @@ func Test_decodeMetricAttrs(t *testing.T) {
 				document.AttrQueries:           []any{map[string]any{"name": "Query 1", "query": "up", "legendFormat": "{{job}}"}},
 				document.AttrTimeRange:         "last_1_hour",
 				document.AttrRefreshInterval:   "5m",
-				"thresholds":                   []any{map[string]any{"value": 90.0, "label": "warn", "color": "#f00"}},
-				"baseThresholdColor":           "#0f0",
+				"thresholds":                   []any{map[string]any{"value": 90.0, "label": "warn", "color": "red"}},
+				"baseThresholdColor":           "green",
 				"decimals":                     2.0,
 				document.AttrUnitType:          "percent0to100",
 				"unitCustom":                   "rps",
@@ -161,13 +167,34 @@ func Test_decodeMetricAttrs(t *testing.T) {
 			Text: `{"thresholds":[{"value":"90"}]}`,
 			Err:  assert.AnError,
 		},
+		"A threshold colour outside the palette": {
+			Text: `{"thresholds":[{"value":90,"color":"red"},{"value":95,"color":"crimson"}]}`,
+			Err:  errors.New("metric threshold 2: color must be one of: red, orange, amber, yellow, lime, green, emerald, teal, cyan, sky, blue, indigo, violet, purple, fuchsia, pink"),
+		},
+		"A base threshold colour outside the palette": {
+			Text: `{"baseThresholdColor":"#00ff00"}`,
+			Err:  errors.New("metric baseThresholdColor must be one of: red, orange, amber, yellow, lime, green, emerald, teal, cyan, sky, blue, indigo, violet, purple, fuchsia, pink"),
+		},
+		"Colours the stored metric already carries": {
+			Text: `{"thresholds":[{"value":90,"color":"` + legacyColor + `"}],"baseThresholdColor":"` + legacyColor + `"}`,
+			Stored: document.Block{
+				Type: document.BlockNodeMetricBlock,
+				Attrs: document.Attributes{
+					"thresholds": []any{map[string]any{"value": 90.0, "color": legacyColor}},
+				},
+			},
+			Result: document.Attributes{
+				"thresholds":         []any{map[string]any{"value": 90.0, "color": legacyColor}},
+				"baseThresholdColor": legacyColor,
+			},
+		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := decodeMetricAttrs(c.Text)
+			got, err := decodeMetricAttrs(c.Text, c.Stored)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -175,6 +202,38 @@ func Test_decodeMetricAttrs(t *testing.T) {
 			}
 
 			assert.Equal(t, c.Result, got)
+		})
+	}
+}
+
+func Test_storedMetricColors(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Stored document.Block
+		Result []string
+	}{
+		"No stored metric": {
+			Result: []string{""},
+		},
+		"Thresholds that are not an array": {
+			Stored: document.Block{Attrs: document.Attributes{"baseThresholdColor": "green", "thresholds": 90.0}},
+			Result: []string{"green"},
+		},
+		"Base and threshold colours": {
+			Stored: document.Block{Attrs: document.Attributes{
+				"baseThresholdColor": "green",
+				"thresholds":         []any{map[string]any{"color": "red"}, "warn", map[string]any{"value": 1.0}},
+			}},
+			Result: []string{"green", "red", ""},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, storedMetricColors(c.Stored))
 		})
 	}
 }

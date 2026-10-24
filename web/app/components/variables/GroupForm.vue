@@ -81,7 +81,7 @@ function suggestedColor(): string {
 		pickLeastUsedColor(
 			PALETTE_COLORS,
 			props.tree.map((g) => g.color),
-		) ?? "green"
+		) ?? DEFAULT_PALETTE_COLOR
 	)
 }
 </script>
@@ -148,8 +148,6 @@ function suggestedColor(): string {
 								>
 									<ColorSelect
 										:model-value="value"
-										:colors="PALETTE_COLORS"
-										:paint="paletteColor"
 										@update:model-value="handleChange"
 									/>
 								</ShadcnUiPopoverContent>

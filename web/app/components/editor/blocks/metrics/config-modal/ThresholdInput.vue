@@ -58,7 +58,9 @@ watchImmediate(
 				>
 					<div
 						class="size-3.5 rounded-full transition-colors"
-						:style="{ backgroundColor: thresholdColor }"
+						:style="{
+							backgroundColor: thresholdColor && paletteColor(thresholdColor),
+						}"
 					/>
 				</ShadcnUiButton>
 			</ShadcnUiPopoverTrigger>

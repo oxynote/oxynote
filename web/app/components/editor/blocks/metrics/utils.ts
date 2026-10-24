@@ -13,7 +13,7 @@ import {
 	startOfYear,
 	endOfYear,
 } from "date-fns"
-import { chartStyles } from "~/assets/css"
+import { DEFAULT_PALETTE_COLOR } from "~/utils/color"
 import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
 import type {
 	METRIC_REFRESH_INTERVAL_REFERENCE,
@@ -139,7 +139,7 @@ export function defaultMetricConfig(): MetricConfig {
 		timeRange: TimeRangePreset.Last5Minutes,
 		refreshInterval: RefreshInterval.M5,
 		thresholds: null,
-		baseThresholdColor: chartStyles().selectableColors.default,
+		baseThresholdColor: DEFAULT_PALETTE_COLOR,
 		decimals: null,
 		unit: {
 			type: null,

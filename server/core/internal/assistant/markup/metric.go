@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	tagCore "github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
 )
 
@@ -88,6 +89,7 @@ func MetricReference() string {
 	}
 
 	sb.WriteString(", and optionally title, unitCustom (the label when unitType is custom), decimals, thresholds ([{value, label, color}]), baseThresholdColor, axisBoundsMin, axisBoundsMax. " +
+		"A threshold colour and baseThresholdColor are one of " + strings.Join(tagCore.ColorNames(), "|") + ". " +
 		"timeRange and refreshInterval default to " + _metricReferences[document.AttrTimeRange] + " and " + _metricReferences[document.AttrRefreshInterval] +
 		", the built-in variables each user sets; give a preset only to pin one chart, and the reference to unpin it. " +
 		"A <metrics> row fits 3 compact, 2 standard or 1 wide, never a standard beside a compact: fill every row, with the text about the charts before the <metrics>")
@@ -107,7 +109,8 @@ type metricAttrs struct {
 	// UnitCustom is the unit label when unitType is custom.
 	UnitCustom string `json:"unitCustom"`
 
-	// BaseThresholdColor is the colour below the first threshold.
+	// BaseThresholdColor is the colour below the first threshold, a
+	// palette name.
 	BaseThresholdColor string `json:"baseThresholdColor"`
 
 	// Decimals is how many decimals values show with.
@@ -146,14 +149,18 @@ type metricThreshold struct {
 	// Label names the threshold.
 	Label string `json:"label"`
 
-	// Color is the colour above it.
+	// Color is the colour above it, a palette name.
 	Color string `json:"color"`
 }
 
 // decodeMetricAttrs reads a metric's JSON attributes and checks them:
 // every enum holds one of its values, every other attribute has its
-// type, and every query has a name and a query.
-func decodeMetricAttrs(text string) (document.Attributes, error) {
+// type, every query has a name and a query, and every threshold colour
+// is a palette name. A colour the stored metric already carries passes
+// too, since one saved before thresholds stored names holds css and a
+// re-sent chart keeps it. stored is the metric the element's id names,
+// or the zero block.
+func decodeMetricAttrs(text string, stored document.Block) (document.Attributes, error) {
 	attrs := document.Attributes{}
 
 	if strings.TrimSpace(text) == "" {
@@ -187,7 +194,38 @@ func decodeMetricAttrs(text string) (document.Attributes, error) {
 		}
 	}
 
+	colors := append(tagCore.ColorNames(), storedMetricColors(stored)...)
+
+	if c := typed.BaseThresholdColor; c != "" && !slices.Contains(colors, c) {
+		return nil, fmt.Errorf("metric baseThresholdColor must be one of: %s", strings.Join(tagCore.ColorNames(), ", "))
+	}
+
+	for i, th := range typed.Thresholds {
+		if th.Color != "" && !slices.Contains(colors, th.Color) {
+			return nil, fmt.Errorf("metric threshold %d: color must be one of: %s", i+1, strings.Join(tagCore.ColorNames(), ", "))
+		}
+	}
+
 	return attrs, nil
+}
+
+// storedMetricColors returns every colour the stored metric carries: the
+// base threshold colour and each threshold's.
+func storedMetricColors(stored document.Block) []string {
+	out := []string{stored.Attrs.Get("baseThresholdColor").String()}
+
+	rows, ok := stored.Attrs["thresholds"].([]any)
+	if !ok {
+		return out
+	}
+
+	for _, row := range rows {
+		if r, isRow := row.(map[string]any); isRow {
+			out = append(out, document.Attributes(r).Get("color").String())
+		}
+	}
+
+	return out
 }
 
 // metricValues returns every value the attribute takes: its enum and,

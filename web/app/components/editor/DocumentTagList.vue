@@ -221,7 +221,7 @@ function suggestedColor(): string {
 		pickLeastUsedColor(
 			PALETTE_COLORS,
 			allTags.value.map((tag) => tag.color),
-		) ?? "green"
+		) ?? DEFAULT_PALETTE_COLOR
 	)
 }
 
@@ -317,7 +317,7 @@ async function createAndAssign() {
 	try {
 		const creating = createTag.mutateAsync({
 			tagName: tagName,
-			color: newColor.value ?? "green",
+			color: newColor.value ?? DEFAULT_PALETTE_COLOR,
 		})
 		// the tag is appended, so the row it adds is below the fold on a
 		// list long enough to scroll. onMutate has already put it there
@@ -565,11 +565,7 @@ function handleSearchEnter() {
 							align="end"
 							class="w-fit min-w-0"
 						>
-							<ColorSelect
-								v-model="newColor"
-								:colors="PALETTE_COLORS"
-								:paint="paletteColor"
-							/>
+							<ColorSelect v-model="newColor" />
 						</ShadcnUiPopoverContent>
 					</ShadcnUiPopover>
 				</div>

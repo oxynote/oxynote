@@ -638,7 +638,7 @@
         "dataSourceId": "daq1invl0rd000d01ra0",
         "refreshInterval": "30s",
         "visualizationType": "line_chart",
-        "baseThresholdColor": "oklch(62.7% .194 149.214)"
+        "baseThresholdColor": "green"
        }
       },
       {
@@ -659,7 +659,7 @@
         "dataSourceId": "daq1invl0rd000d01ra0",
         "refreshInterval": "30s",
         "visualizationType": "line_chart",
-        "baseThresholdColor": "oklch(62.7% .194 149.214)"
+        "baseThresholdColor": "green"
        }
       }
      ]

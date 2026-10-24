@@ -90,14 +90,14 @@ func Test_listTags_Execute(t *testing.T) {
 		},
 		// the tree lists the nested children of an assigned document as
 		// sidebar context; only the assigned document itself is listed.
-		"Tags with their documents and the hidden flag": {
+		"Tags with their documents": {
 			DB:      stubTagDB(nil),
 			Args:    `{}`,
 			Fetches: 1,
 			Result: `{"tags":[` +
-				`{"id":"` + _testTagID.String() + `","name":"Production","color":"green","hidden":false,` +
+				`{"id":"` + _testTagID.String() + `","name":"Production","color":"green",` +
 				`"documents":[{"id":"` + _testDocID.String() + `","name":"Runbook","default_branch_id":"` + _stubMainBranchID.String() + `"}]},` +
-				`{"id":"` + _otherTagID.String() + `","name":"Staging","color":"orange","hidden":true,"documents":[]}` +
+				`{"id":"` + _otherTagID.String() + `","name":"Staging","color":"orange","documents":[]}` +
 				`]}`,
 		},
 	}
