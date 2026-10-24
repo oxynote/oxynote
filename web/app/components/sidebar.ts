@@ -1,13 +1,19 @@
+import type { Component } from "vue"
+
 export type PlainActionFn = (() => void) | (() => Promise<void>)
 
 // SidebarItemAction is one entry of a row's dropdown menu. A row with no
-// actions renders no menu at all.
-export interface SidebarItemAction {
+// actions renders no menu at all. An entry either runs fn when pressed or
+// opens menu to the side, a component with controls of its own that emits
+// close once it is done with the whole menu.
+export type SidebarItemAction = {
 	id: string
 	name: string
 	icon: string
-	fn: PlainActionFn
-}
+} & (
+	| { fn: PlainActionFn }
+	| { menu: { component: Component; props: Record<string, unknown> } }
+)
 
 export const SIDEBAR_ITEM_PLACEHOLDER_ID = "placeholder"
 const TAG_DRAG_GROUP = "tags"

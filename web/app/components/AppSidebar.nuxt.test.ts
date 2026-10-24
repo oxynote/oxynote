@@ -8,6 +8,7 @@ import {
 } from "~/composables/api/test-helpers"
 import { mockNuxtImport } from "@nuxt/test-utils/runtime"
 import AppSidebar from "./AppSidebar.vue"
+import TagEditMenu from "./TagEditMenu.vue"
 import {
 	at,
 	clearTeleportedOverlays,
@@ -16,6 +17,7 @@ import {
 	menuItem,
 	mockAuthEndpoint,
 	mountUnderSidebarProvider,
+	openSubMenu,
 	seedAuthOrganization,
 	seedCapabilities,
 	seedPersistentState,
@@ -831,6 +833,21 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			expect(calls[0]?.body).toEqual({ hidden: true })
 		})
 
+		it("opens a tag's edit menu from its options menu", async ({ expect }) => {
+			stubQueries({ tags: seededTags() })
+			const calls = mockEndpoint("PUT", `/api/tags/${TAG_A}`, () => ({}))
+			const wrapper = await mountSidebar()
+			await settleMutations()
+			await openRowMenu(wrapper, "Production")
+
+			await openSubMenu(t("sidebar.item-dropdown-menu-buttons.edit-tag"))
+
+			expect(wrapper.getComponent(TagEditMenu).props("tag")).toEqual(
+				tagElement(TAG_A, "Production", "green"),
+			)
+			expect(calls).toHaveLength(0)
+		})
+
 		it("asks the page to delete a tag from its options menu", async ({
 			expect,
 		}) => {
@@ -888,7 +905,7 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			])
 		})
 
-		it("offers a tag its own two actions", async ({ expect }) => {
+		it("offers a tag its own three actions", async ({ expect }) => {
 			stubQueries({ tags: seededTags() })
 			const wrapper = await mountSidebar()
 			await settleMutations()
@@ -896,6 +913,7 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			await openRowMenu(wrapper, "Production")
 
 			expect(openMenuRows()).toEqual([
+				t("sidebar.item-dropdown-menu-buttons.edit-tag"),
 				t("sidebar.item-dropdown-menu-buttons.hide-tag"),
 				t("sidebar.item-dropdown-menu-buttons.delete-tag"),
 			])

@@ -346,6 +346,91 @@ describe("useTagAPI", { concurrent: false }, () => {
 		})
 	})
 
+	describe("updateTag", () => {
+		it("bails out for a non-xid tag id without a request", async ({
+			expect,
+		}) => {
+			const treeCalls = mockEndpoint("GET", TREE_URL, () => [])
+			const putCalls = mockEndpoint("PUT", `/api/tags/${SHORT_ID}`, () => ({}))
+			seedQueryData(TREE_KEY, [makeTag(SHORT_ID, "Draft")])
+			const api = makeTagAPI()
+
+			await api.updateTag.mutateAsync({
+				id: SHORT_ID,
+				req: { tagName: "Live" },
+			})
+
+			expect(putCalls).toHaveLength(0)
+			expect(treeCalls).toHaveLength(0)
+		})
+
+		it("rejects when the tag is not in the tree", async ({ expect }) => {
+			const putCalls = mockEndpoint("PUT", `/api/tags/${TAG_B}`, () => ({}))
+			seedQueryData(TREE_KEY, [makeTag(TAG_A, "Production")])
+			const api = makeTagAPI()
+
+			await expect(
+				api.updateTag.mutateAsync({
+					id: TAG_B,
+					req: { tagName: "Live" },
+				}),
+			).rejects.toThrow("invalid tag data")
+
+			expect(putCalls).toHaveLength(0)
+		})
+
+		it.for([
+			{
+				name: "renames the tag before the request answers",
+				input: { tagName: "Live" },
+				expected: { tagName: "Live", color: "green" },
+			},
+			{
+				name: "recolours the tag before the request answers",
+				input: { color: "blue" },
+				expected: { tagName: "Production", color: "blue" },
+			},
+		])("$name", async ({ input, expected }, { expect }) => {
+			const original = makeTag(TAG_A, "Production", [makeDoc(DOC_A, "Runbook")])
+			const updated = { ...original, ...expected }
+			const treeCalls = mockEndpoint("GET", TREE_URL, () => [updated])
+			const put = mockDeferredEndpoint("PUT", `/api/tags/${TAG_A}`)
+			seedQueryData(TREE_KEY, [original])
+			const api = makeTagAPI()
+
+			const pending = api.updateTag.mutateAsync({ id: TAG_A, req: input })
+			await put.reached
+
+			expect(readTree()).toEqual([updated])
+			expect(put.calls[0]?.body).toEqual(input)
+
+			put.resolve({})
+			await pending
+			await flushPromises()
+
+			expect.soft(treeCalls).toHaveLength(1)
+			expect.soft(readTree()).toEqual([updated])
+		})
+
+		it("restores the tag when the request fails", async ({ expect }) => {
+			mockEndpoint("PUT", `/api/tags/${TAG_A}`, () => {
+				throw createError({ statusCode: 500 })
+			})
+			seedQueryData(TREE_KEY, [makeTag(TAG_A, "Production")])
+			const api = makeTagAPI()
+
+			await expect(
+				api.updateTag.mutateAsync({
+					id: TAG_A,
+					req: { tagName: "Live", color: "blue" },
+				}),
+			).rejects.toThrow()
+			await flushPromises()
+
+			expect(readTree()).toEqual([makeTag(TAG_A, "Production")])
+		})
+	})
+
 	describe("updateTagVisibility", () => {
 		it("bails out for a non-xid tag id without a request", async ({
 			expect,

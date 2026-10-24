@@ -220,6 +220,17 @@ export function menuItem(text: string): HTMLElement {
 	return item
 }
 
+// a dropdown sub menu's body only mounts once its trigger opens it, which
+// reka-ui does on a pointer press followed by a click
+export async function openSubMenu(text: string) {
+	const trigger = menuItem(text)
+
+	trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }))
+	trigger.click()
+	await nextTick()
+	await nextTick()
+}
+
 // dialog and sheet bodies are teleported into <body> too, so their buttons
 // cannot be reached through the wrapper
 export function teleportedButton(text: string): HTMLButtonElement {

@@ -56,10 +56,18 @@
 			"delete-page": "Delete Page",
 			"remove-tag": "Remove Tag",
 			"delete-tag": "Delete Tag",
-			"hide-tag": "Hide Tag"
+			"hide-tag": "Hide Tag",
+			"edit-tag": "Edit Tag"
 		},
 		"item-placeholder-name": "Add Page",
 		"toggle-sidebar": "Toggle Sidebar",
+		"tag-edit-menu": {
+			"name-label": "Name",
+			"name-taken": "Another tag already uses this name",
+			"color-title": "Color",
+			"update-button": "Update",
+			"update-success": "The {name} tag was successfully updated"
+		},
 		"tag-deletion-modal": {
 			"title": "Delete Tag",
 			"description": "Are you sure you want to delete {name}? It will be removed from every page using it. This action cannot be undone.",

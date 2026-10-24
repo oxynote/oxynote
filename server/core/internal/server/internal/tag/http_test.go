@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	tagCore "github.com/oxynote/oxynote/server/core/internal/tag"
@@ -377,6 +378,186 @@ func Test_Handler_CreateTag(t *testing.T) {
 				assert.Equal(t, "u1", stored.CreatedBy.String)
 				assert.False(t, stored.ID.IsNil())
 				assert.Contains(t, rec.Body.String(), `"tagName":"Production"`)
+			}
+		})
+	}
+}
+
+func Test_Handler_UpdateTag(t *testing.T) {
+	t.Parallel()
+
+	type check func(*testing.T, *DBMock, *wsMock.Topic, *httptest.ResponseRecorder)
+
+	checks := func(cc ...check) []check { return cc }
+
+	hasResp := func(code int, body string) check {
+		return func(t *testing.T, _ *DBMock, _ *wsMock.Topic, rec *httptest.ResponseRecorder) {
+			assert.Equal(t, code, rec.Code)
+
+			if body == "" {
+				assert.Zero(t, rec.Body.Len(), rec.Body.String())
+				return
+			}
+
+			assert.JSONEq(t, body, rec.Body.String())
+		}
+	}
+
+	wasUpdateCalled := func(count int, inp tagCore.UpdateInput) check {
+		return func(t *testing.T, db *DBMock, _ *wsMock.Topic, _ *httptest.ResponseRecorder) {
+			calls := db.UpdateTagCalls()
+			require.Len(t, calls, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "org1", calls[0].OrganizationID)
+			assert.Equal(t, _tagID, calls[0].ID)
+			assert.Equal(t, inp, calls[0].Inp)
+		}
+	}
+
+	wasPublishCalled := func(count int) check {
+		return func(t *testing.T, _ *DBMock, tpc *wsMock.Topic, _ *httptest.ResponseRecorder) {
+			calls := tpc.PublishManyCalls()
+			require.Len(t, calls, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, TreeChangeMessage{}, calls[0].Payload)
+		}
+	}
+
+	stubDB := func(err error) *DBMock {
+		return &DBMock{
+			UpdateTagFunc: func(context.Context, string, xid.ID, tagCore.UpdateInput) error {
+				return err
+			},
+		}
+	}
+
+	cc := map[string]struct {
+		DB        *DBMock
+		NoSession bool
+		TagID     string
+		JSON      string
+		Checks    []check
+	}{
+		"No session in context": {
+			DB:        &DBMock{},
+			NoSession: true,
+			TagID:     _tagID.String(),
+			JSON:      `{`,
+			Checks: checks(
+				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
+				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Malformed tag id": {
+			DB:    &DBMock{},
+			TagID: "not-an-xid",
+			JSON:  `{"tagName":"Release"}`,
+			Checks: checks(
+				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
+				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Malformed payload": {
+			DB:    &DBMock{},
+			TagID: _tagID.String(),
+			JSON:  `{`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"request.invalid_json","message":"invalid JSON body"}`),
+				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Empty update": {
+			DB:    &DBMock{},
+			TagID: _tagID.String(),
+			JSON:  `{}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"tag.empty_update","message":"tag update needs a name or a colour"}`),
+				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Error returned by DB.UpdateTag": {
+			DB:    stubDB(assert.AnError),
+			TagID: _tagID.String(),
+			JSON:  `{"tagName":"Release"}`,
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasUpdateCalled(1, tagCore.UpdateInput{TagName: null.StringFrom("Release")}),
+				wasPublishCalled(0),
+			),
+		},
+		"Duplicate name returned by DB.UpdateTag": {
+			DB:    stubDB(tagCore.ErrDuplicateTagName),
+			TagID: _tagID.String(),
+			JSON:  `{"tagName":"Release"}`,
+			Checks: checks(
+				hasResp(http.StatusConflict, `{"code":"tag.duplicate_name","message":"tag name is already in use"}`),
+				wasUpdateCalled(1, tagCore.UpdateInput{TagName: null.StringFrom("Release")}),
+				wasPublishCalled(0),
+			),
+		},
+		"Missing or foreign tag returned by DB.UpdateTag": {
+			DB:    stubDB(errutil.ErrNotFound),
+			TagID: _tagID.String(),
+			JSON:  `{"tagName":"Release"}`,
+			Checks: checks(
+				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
+				wasUpdateCalled(1, tagCore.UpdateInput{TagName: null.StringFrom("Release")}),
+				wasPublishCalled(0),
+			),
+		},
+		"Successful update": {
+			DB:    &DBMock{},
+			TagID: _tagID.String(),
+			JSON:  `{"tagName":"Release","color":"green"}`,
+			Checks: checks(
+				hasResp(http.StatusNoContent, ""),
+				wasUpdateCalled(1, tagCore.UpdateInput{
+					TagName: null.StringFrom("Release"),
+					Color:   null.StringFrom("green"),
+				}),
+				wasPublishCalled(1),
+			),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			tpc := &wsMock.Topic{}
+			hdl := Handler{
+				log: slog.New(slog.DiscardHandler),
+				db:  c.DB,
+			}
+			hdl.BindTreeChange(tpc)
+
+			req := httptest.NewRequest(http.MethodPut, "http://test.com/", strings.NewReader(c.JSON))
+			ctx := testutil.AddChiCtx(req.Context(), "tagId", c.TagID)
+
+			if !c.NoSession {
+				ctx = auth.AddSessionToContext(ctx, auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				})
+			}
+
+			rec := httptest.NewRecorder()
+			hdl.UpdateTag(rec, req.WithContext(ctx))
+
+			for _, check := range c.Checks {
+				check(t, c.DB, tpc, rec)
 			}
 		})
 	}

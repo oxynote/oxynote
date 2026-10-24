@@ -9,6 +9,7 @@ import {
 	type SidebarItemLocationUpdate,
 } from "./sidebar"
 import SidebarNestedGroup from "./SidebarNestedGroup.vue"
+import TagEditMenu from "./TagEditMenu.vue"
 import { showToastMessage } from "./toast"
 import { useSidebar } from "#layers/ui/app/components/shadcn/ui/sidebar"
 
@@ -387,6 +388,16 @@ function handleTagVisibilityToggle(tag: TagTreeElement) {
 
 function tagActions(tag: TagTreeElement): SidebarItemAction[] {
 	return [
+		{
+			id: "edit-tag",
+			name: t("sidebar.item-dropdown-menu-buttons.edit-tag"),
+			icon: "mingcute:pencil-line",
+			menu: {
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
+				component: TagEditMenu,
+				props: { tag: tag },
+			},
+		},
 		{
 			id: "hide-tag",
 			name: t("sidebar.item-dropdown-menu-buttons.hide-tag"),
