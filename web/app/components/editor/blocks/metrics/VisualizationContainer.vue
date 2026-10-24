@@ -10,7 +10,7 @@ import {
 	type MetricSimulationPreset,
 } from "./utils"
 import { RefreshInterval } from "~/utils/time-range"
-import { chartStyles } from "~/assets/css"
+import { paletteColors } from "~/assets/css"
 import {
 	DEFAULT_SIMULATION_PRESET,
 	generateSimulatedQueryResults,
@@ -109,7 +109,7 @@ const processedThresholds = computed(() => {
 		return []
 	}
 
-	const palette = chartStyles().paletteColors
+	const palette = paletteColors()
 
 	return (
 		thresholds
@@ -128,7 +128,7 @@ const processedThresholds = computed(() => {
 const baseThresholdColor = computed(() => {
 	const color = debouncedConfig.value.baseThresholdColor
 
-	return chartStyles().paletteColors[color] ?? color
+	return paletteColors()[color] ?? color
 })
 const fetchMetricData = useMultipleGenericQueries(
 	() => props.config.dataSourceId,

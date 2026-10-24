@@ -77,8 +77,6 @@ const canEdit = computed(
 	() => isEditable.value && !editorStore.reviewableDiffActive,
 )
 const query = ref("")
-// the picker paints its swatches from the theme, so a colour only resolves
-// once the popover is on screen
 const newColor = ref<string | undefined>(undefined)
 
 const allTags = computed(() => fetchTagTree.data.value ?? [])

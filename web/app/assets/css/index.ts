@@ -82,14 +82,17 @@ export function chartStyles() {
 			mutedText: cssVar("--muted-foreground-50"),
 			emptyGauge: cssVar("--muted-foreground-7"),
 		},
-		// every palette name mapped to the css colour a chart paints it with
-		paletteColors: Object.fromEntries(
-			PALETTE_COLORS.map((name, index) => [
-				name,
-				cssVar(`--selectable-color-${index + 1}`),
-			]),
-		),
 	}
+}
+
+// maps every palette name to the css colour a chart paints it with.
+export function paletteColors(): Record<string, string> {
+	return Object.fromEntries(
+		PALETTE_COLORS.map((name, index) => [
+			name,
+			cssVar(`--selectable-color-${index + 1}`),
+		]),
+	)
 }
 
 export function mermaidThemeColors() {

@@ -63,7 +63,7 @@ func Test_MetricReference(t *testing.T) {
 func Test_decodeMetricAttrs(t *testing.T) {
 	t.Parallel()
 
-	// _legacyColor is a threshold colour saved before thresholds stored
+	// legacyColor is a threshold colour saved before thresholds stored
 	// palette names.
 	const legacyColor = "oklch(57.7% .245 27.325)"
 
