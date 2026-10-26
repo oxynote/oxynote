@@ -99,7 +99,14 @@ const showsDismissHint = computed(
 			:collision-padding="8"
 			class="pointer-events-auto!"
 		>
-			<div :class="cn('flex flex-col', HOOK_SUBMENU_WIDTH_CLASS)">
+			<!--
+				reka-ui's modal root menu swallows Tab wherever inside it the key
+				is pressed. So Tab stays with the panel, to move between fields
+			-->
+			<div
+				:class="cn('flex flex-col', HOOK_SUBMENU_WIDTH_CLASS)"
+				@keydown.tab.stop
+			>
 				<div class="flex flex-col gap-1.5 px-2 py-1.5">
 					<p
 						v-if="isSettingUp"

@@ -275,6 +275,33 @@ describe("<HookConfigPanel>", { concurrent: false }, () => {
 		expect(hookNotice().textContent.trim()).toBe(t("editor.hooks.removed"))
 		expect(hookNotice().dataset.hookStatus).toBe("fresh")
 	})
+
+	it.for([
+		{
+			name: "keeps Tab inside the panel",
+			input: { key: "Tab" },
+			expected: 0,
+		},
+		{
+			name: "leaves Escape to the menu",
+			input: { key: "Escape" },
+			expected: 1,
+		},
+	])("$name", async ({ input, expected }, { expect }) => {
+		await mountPanel()
+		await openHookSubMenu(TITLE)
+		const field = document.body.querySelector<HTMLInputElement>(
+			`input[placeholder='${FIELD}']`,
+		)
+		const reachedMenu = vi.fn()
+		field?.closest("[role='menu']")?.addEventListener("keydown", reachedMenu)
+
+		field?.dispatchEvent(
+			new KeyboardEvent("keydown", { key: input.key, bubbles: true }),
+		)
+
+		expect(reachedMenu).toHaveBeenCalledTimes(expected)
+	})
 })
 
 function mountPanel(props: Record<string, unknown> = {}) {
