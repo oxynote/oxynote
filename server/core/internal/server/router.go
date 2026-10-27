@@ -328,6 +328,7 @@ func (s *Server) router() chi.Router {
 				sssr.Get("/", s.handlers.document.FetchDocumentBranches)
 				sssr.Route("/{branchId}", func(ssssr chi.Router) {
 					ssssr.Put("/review-approve", s.handlers.document.UpdateBranchReviewApproval)
+					ssssr.Get("/views", s.handlers.document.FetchDocumentBranchViews)
 					ssssr.Post("/views", s.handlers.document.RecordDocumentBranchView)
 					ssssr.Get("/search", s.handlers.document.SearchDocumentBranch)
 					ssssr.Post("/blocks/{blockUid}/run", s.handlers.block.RunBlock)

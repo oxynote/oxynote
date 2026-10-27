@@ -68,6 +68,9 @@ var _ Tx = &TxMock{}
 //			FetchDocumentFunc: func(ctx context.Context, id xid.ID, organizationID string, branchName string) (*documentCore.Document, error) {
 //				panic("mock out the FetchDocument method")
 //			},
+//			FetchDocumentBranchViewsFunc: func(ctx context.Context, branchID xid.ID, organizationID string) ([]documentCore.BranchView, error) {
+//				panic("mock out the FetchDocumentBranchViews method")
+//			},
 //			FetchDocumentBranchesFunc: func(ctx context.Context, docID xid.ID, organizationID string) ([]documentCore.BranchSummary, error) {
 //				panic("mock out the FetchDocumentBranches method")
 //			},
@@ -197,6 +200,9 @@ type TxMock struct {
 
 	// FetchDocumentFunc mocks the FetchDocument method.
 	FetchDocumentFunc func(ctx context.Context, id xid.ID, organizationID string, branchName string) (*documentCore.Document, error)
+
+	// FetchDocumentBranchViewsFunc mocks the FetchDocumentBranchViews method.
+	FetchDocumentBranchViewsFunc func(ctx context.Context, branchID xid.ID, organizationID string) ([]documentCore.BranchView, error)
 
 	// FetchDocumentBranchesFunc mocks the FetchDocumentBranches method.
 	FetchDocumentBranchesFunc func(ctx context.Context, docID xid.ID, organizationID string) ([]documentCore.BranchSummary, error)
@@ -410,6 +416,15 @@ type TxMock struct {
 			OrganizationID string
 			// BranchName is the branchName argument value.
 			BranchName string
+		}
+		// FetchDocumentBranchViews holds details about calls to the FetchDocumentBranchViews method.
+		FetchDocumentBranchViews []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
 		}
 		// FetchDocumentBranches holds details about calls to the FetchDocumentBranches method.
 		FetchDocumentBranches []struct {
@@ -663,6 +678,7 @@ type TxMock struct {
 	lockFetchBranchReviewer                 sync.RWMutex
 	lockFetchBranchReviewers                sync.RWMutex
 	lockFetchDocument                       sync.RWMutex
+	lockFetchDocumentBranchViews            sync.RWMutex
 	lockFetchDocumentBranches               sync.RWMutex
 	lockFetchDocumentBranchesUnsafe         sync.RWMutex
 	lockFetchDocumentByBranchID             sync.RWMutex
@@ -1305,6 +1321,50 @@ func (mock *TxMock) FetchDocumentCalls() []struct {
 	mock.lockFetchDocument.RLock()
 	calls = mock.calls.FetchDocument
 	mock.lockFetchDocument.RUnlock()
+	return calls
+}
+
+// FetchDocumentBranchViews calls FetchDocumentBranchViewsFunc.
+func (mock *TxMock) FetchDocumentBranchViews(ctx context.Context, branchID xid.ID, organizationID string) ([]documentCore.BranchView, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		BranchID       xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		BranchID:       branchID,
+		OrganizationID: organizationID,
+	}
+	mock.lockFetchDocumentBranchViews.Lock()
+	mock.calls.FetchDocumentBranchViews = append(mock.calls.FetchDocumentBranchViews, callInfo)
+	mock.lockFetchDocumentBranchViews.Unlock()
+	if mock.FetchDocumentBranchViewsFunc == nil {
+		var (
+			branchViewsOut []documentCore.BranchView
+			errOut         error
+		)
+		return branchViewsOut, errOut
+	}
+	return mock.FetchDocumentBranchViewsFunc(ctx, branchID, organizationID)
+}
+
+// FetchDocumentBranchViewsCalls gets all the calls that were made to FetchDocumentBranchViews.
+// Check the length with:
+//
+//	len(mockedTx.FetchDocumentBranchViewsCalls())
+func (mock *TxMock) FetchDocumentBranchViewsCalls() []struct {
+	Ctx            context.Context
+	BranchID       xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		BranchID       xid.ID
+		OrganizationID string
+	}
+	mock.lockFetchDocumentBranchViews.RLock()
+	calls = mock.calls.FetchDocumentBranchViews
+	mock.lockFetchDocumentBranchViews.RUnlock()
 	return calls
 }
 

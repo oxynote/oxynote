@@ -1151,6 +1151,14 @@ type BranchViewsDBAgent interface {
 		from search.ViewFrom,
 		limit int,
 	) ([]search.RecentDocument, error)
+
+	// FetchDocumentBranchViews should fetch the latest view of the branch
+	// by each user in the organization, most recent first.
+	FetchDocumentBranchViews(
+		ctx context.Context,
+		branchID xid.ID,
+		organizationID string,
+	) ([]documentCore.BranchView, error)
 }
 
 // TreeDBAgent is an interface that handles communication with the document

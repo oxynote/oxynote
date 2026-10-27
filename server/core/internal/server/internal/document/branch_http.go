@@ -675,6 +675,51 @@ func (h *Handler) RecordDocumentBranchView(w http.ResponseWriter, r *http.Reques
 	)
 }
 
+// FetchDocumentBranchViews handles the listing of who last viewed a
+// document branch and when, most recent first.
+func (h *Handler) FetchDocumentBranchViews(w http.ResponseWriter, r *http.Request) {
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
+		return
+	}
+
+	id, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	branchID, err := httpserver.ExtractNamedID(r, "branchId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	doc, err := h.db.FetchDocumentByBranchID(r.Context(), branchID, session.ActiveOrganizationID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if doc.ID != id {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
+		return
+	}
+
+	views, err := h.db.FetchDocumentBranchViews(r.Context(), branchID, session.ActiveOrganizationID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	httpserver.Respond(
+		h.log,
+		w,
+		views,
+		http.StatusOK,
+	)
+}
+
 // SearchDocumentBranch handles the search for one page of the blocks
 // matching a query in one document branch.
 func (h *Handler) SearchDocumentBranch(w http.ResponseWriter, r *http.Request) {
