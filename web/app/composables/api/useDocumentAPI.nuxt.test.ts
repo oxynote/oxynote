@@ -1113,6 +1113,43 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 		})
 	})
 
+	describe("useFetchBranchViews", () => {
+		it.for([
+			{ name: "no branch id", input: null },
+			{ name: "a branch that is still being created", input: SHORT_ID },
+		])("returns no views for $name", async ({ input }, { expect }) => {
+			const viewCalls = mockEndpoint(
+				"GET",
+				`/api/documents/${DOC_ID}/branches/${input ?? ""}/views`,
+				() => [],
+			)
+			const api = makeDocumentAPI()
+			const views = runInApp(() => api.useFetchBranchViews(DOC_ID, input))
+
+			const result = await views.refresh()
+
+			expect(result.data).toEqual([])
+			expect(viewCalls).toHaveLength(0)
+		})
+
+		it("fetches who viewed the branch", async ({ expect }) => {
+			const viewCalls = mockEndpoint(
+				"GET",
+				`/api/documents/${DOC_ID}/branches/${BRANCH_ID}/views`,
+				() => [{ userId: USER_ID, viewedAt: "2026-10-27T08:00:00Z" }],
+			)
+			const api = makeDocumentAPI()
+			const views = runInApp(() => api.useFetchBranchViews(DOC_ID, BRANCH_ID))
+
+			const result = await views.refresh()
+
+			expect(result.data).toEqual([
+				{ userId: USER_ID, viewedAt: "2026-10-27T08:00:00Z" },
+			])
+			expect(viewCalls).toHaveLength(1)
+		})
+	})
+
 	describe("updateDocumentBranch", () => {
 		it("bails out for a non-xid document id without a request", async ({
 			expect,

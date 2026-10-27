@@ -408,6 +408,13 @@ export interface BranchReviewer {
 
 export type BranchReviewersResponse = BranchReviewer[]
 
+export interface BranchView {
+	userId: string
+	viewedAt: string
+}
+
+export type BranchViewsResponse = BranchView[]
+
 export interface WSDocumentMetadataPayload {
 	branchId: string
 	documentName: string

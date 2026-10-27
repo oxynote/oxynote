@@ -251,6 +251,7 @@ function activateBranch(branch: "default" | "draft") {
 										}}
 									</template>
 								</i18n-t>
+								<BranchViewers class="mt-1" />
 							</div>
 						</ShadcnUiTooltipContent>
 					</ShadcnUiTooltip>

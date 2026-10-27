@@ -6,6 +6,7 @@ import type {
 	DocumentBranchesResponse,
 	DocumentBranchSearchResponse,
 	BranchReviewersResponse,
+	BranchViewsResponse,
 	DocumentCreateRequest,
 	DocumentCreateResponse,
 	DocumentMaintainersResponse,
@@ -31,6 +32,8 @@ export const DOCUMENT_QUERY_KEYS = {
 		["documents", docId, "maintainers"] as const,
 	branchReviewers: (docId: string, branchId: string) =>
 		["documents", docId, "branches", branchId, "reviewers"] as const,
+	branchViews: (docId: string, branchId: string) =>
+		["documents", docId, "branches", branchId, "views"] as const,
 	search: (q: string, currentDocId: string | null) =>
 		["documents", "search", q, currentDocId] as const,
 	recent: (from: DocumentViewSource) => ["documents", "recent", from] as const,
@@ -653,6 +656,35 @@ export default function () {
 			})
 		},
 	})
+
+	// who last viewed the branch and when, most recent first
+	function useFetchBranchViews(
+		docIdRef: MaybeRefOrGetter<string | null | undefined>,
+		branchIdRef: MaybeRefOrGetter<string | null | undefined>,
+	) {
+		return useQuery({
+			key: () =>
+				DOCUMENT_QUERY_KEYS.branchViews(
+					toValue(docIdRef) || "",
+					toValue(branchIdRef) || "",
+				),
+			query: async () => {
+				const docId = toValue(docIdRef)
+				const branchId = toValue(branchIdRef)
+				if (!docId || !branchId || !isXid(branchId)) {
+					return []
+				}
+
+				return await $coreAPIClient<BranchViewsResponse>(
+					`/api/documents/${docId}/branches/${branchId}/views`,
+					{ method: "GET" },
+				)
+			},
+			enabled: () => !!toValue(docIdRef) && !!toValue(branchIdRef),
+			refetchOnWindowFocus: false,
+			refetchOnReconnect: false,
+		})
+	}
 
 	// runs a block, which core resolves from the stored branch and
 	// dispatches on its kind. For a metric block that means probing whether
@@ -1333,6 +1365,7 @@ export default function () {
 		searchDocumentBranch,
 		useFetchRecentDocuments,
 		recordBranchView,
+		useFetchBranchViews,
 		deleteDocument,
 		updateDocumentTreeElementCache,
 		useFetchDocumentMaintainersByDocId,
