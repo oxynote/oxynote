@@ -10,6 +10,8 @@ services:
     image: ghcr.io/oxynote/oxynote:${OXYNOTE_IMAGE_TAG:-latest}
     ports:
       - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # optional: outgoing email (signup verification, invitations, password
     # reset). Without it the product runs without email, as README.md
     # describes. Point it at a real relay, or uncomment the mailpit service

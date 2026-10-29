@@ -127,6 +127,7 @@ export default defineNuxtConfig({
 			privacyPolicyURL: "",
 			docsURL: "",
 			postgresqlReadOnlyUserSetupGuideURL: "",
+			supabaseReadOnlyUserSetupGuideURL: "",
 			mysqlReadOnlyUserSetupGuideURL: "",
 			mariadbReadOnlyUserSetupGuideURL: "",
 			prometheusQueryGuideURL: "",

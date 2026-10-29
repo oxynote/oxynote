@@ -2,9 +2,11 @@ package processor
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -54,12 +56,37 @@ func Test_Prometheus_TestConnection(t *testing.T) {
 	cc := map[string]struct {
 		Inp     *InputMock
 		Handler http.Handler
-		Result  ConnectionStatus
-		Err     error
+
+		// TLS indicates whether the handler is served over TLS, with
+		// CACertificate as the credentials' CA, or the server's own
+		// certificate when it is empty.
+		TLS           bool
+		CACertificate string
+
+		Result ConnectionStatus
+		Err    error
 	}{
-		"Error returned by createPrometheusClient": {
+		"Error returned by Prometheus.client": {
 			Inp: &InputMock{URLFunc: func() string { return "://" }},
 			Err: assert.AnError,
+		},
+		"Invalid CA certificate": {
+			Inp: &InputMock{
+				URLFunc:         func() string { return "https://prometheus.test" },
+				CredentialsFunc: func() Credentials { return NewCredentials([]byte(`{"caCertificate":"not a certificate"}`)) },
+			},
+			Result: ConnectionStatusInvalidCACertificate,
+		},
+		"Server the CA certificate did not sign": {
+			Handler:       testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusOK, `{"status":"success","data":{"version":"2.50.0"}}`),
+			TLS:           true,
+			CACertificate: _testCA,
+			Result:        ConnectionStatusUnreachable,
+		},
+		"Successful connection verified with a CA certificate": {
+			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusOK, `{"status":"success","data":{"version":"2.50.0"}}`),
+			TLS:     true,
+			Result:  ConnectionStatusSuccess,
 		},
 		"Unauthorized data source": {
 			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusUnauthorized, `{}`),
@@ -84,11 +111,18 @@ func Test_Prometheus_TestConnection(t *testing.T) {
 			t.Parallel()
 
 			inp := c.Inp
-			if inp == nil {
+
+			switch {
+			case inp != nil:
+			case c.TLS:
+				inp = prepTLSInput(t, c.Handler, c.CACertificate)
+			default:
 				inp = prepPrometheusInput(t, c.Handler)
 			}
 
 			p := NewPrometheus(inp)
+
+			t.Cleanup(func() { assert.NoError(t, p.Close()) })
 
 			cs, err := p.TestConnection(context.Background())
 			testutil.AssertEqualError(t, c.Err, err)
@@ -362,27 +396,42 @@ func Test_Prometheus_Series(t *testing.T) {
 	}
 }
 
-func Test_createPrometheusClient(t *testing.T) {
+func Test_Prometheus_client(t *testing.T) {
 	cc := map[string]struct {
 		URL   string
-		Creds Credentials
-		Err   error
+		Creds string
+
+		// TLS indicates whether the data source is served over TLS, with
+		// its own certificate as the credentials' CA.
+		TLS bool
+
+		// Auth is the Authorization header the data source receives.
+		Auth string
+
+		Err error
 	}{
-		"Error returned by json.Unmarshal": {
+		"Error returned by Credentials.basic": {
 			URL:   "http://prometheus.test",
-			Creds: NewCredentials([]byte(`{`)),
+			Creds: `{`,
 			Err:   assert.AnError,
+		},
+		"Error returned by ownTransport.roundTripper": {
+			URL:   "http://prometheus.test",
+			Creds: `{"caCertificate":"not a certificate"}`,
+			Err:   _errInvalidCACertificate,
 		},
 		"Error returned by api.NewClient": {
 			URL: "://",
 			Err: assert.AnError,
 		},
-		"Successful creation without credentials": {
-			URL: "http://prometheus.test",
+		"No credentials": {},
+		"Username and password": {
+			Creds: `{"username":"user","password":"pass"}`,
+			Auth:  "Basic dXNlcjpwYXNz",
 		},
-		"Successful creation with credentials": {
-			URL:   "http://prometheus.test",
-			Creds: NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+		// credentials holding only a CA certificate authenticate nobody.
+		"Only a CA certificate": {
+			TLS: true,
 		},
 	}
 
@@ -390,14 +439,43 @@ func Test_createPrometheusClient(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			client, err := createPrometheusClient(c.URL, c.Creds)
+			var auth atomic.Value
+
+			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				auth.Store(r.Header.Get("Authorization"))
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"status":"success","data":{"version":"2.50.0"}}`) //nolint:errcheck // error provides no meaningful info
+			})
+
+			var inp *InputMock
+
+			switch {
+			case c.URL != "":
+				inp = &InputMock{URLFunc: func() string { return c.URL }}
+			case c.TLS:
+				inp = prepTLSInput(t, h, "")
+			default:
+				inp = prepPrometheusInput(t, h)
+			}
+
+			if c.Creds != "" {
+				inp.CredentialsFunc = func() Credentials { return NewCredentials([]byte(c.Creds)) }
+			}
+
+			p := NewPrometheus(inp)
+
+			t.Cleanup(func() { assert.NoError(t, p.Close()) })
+
+			client, err := p.client()
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
 
-			assert.NotNil(t, client)
+			_, err = client.Buildinfo(context.Background())
+			require.NoError(t, err)
+			assert.Equal(t, c.Auth, auth.Load())
 		})
 	}
 }

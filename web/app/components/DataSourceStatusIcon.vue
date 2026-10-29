@@ -20,6 +20,8 @@ const icon = computed(() => {
 			return "devicon:prometheus"
 		case DataSourceType.PostgreSQL:
 			return "devicon:postgresql"
+		case DataSourceType.Supabase:
+			return "devicon:supabase"
 		case DataSourceType.MySQL:
 			return "devicon:mysql"
 		case DataSourceType.MariaDB:

@@ -98,7 +98,7 @@ type dataSourceInfo struct {
 	Name string `json:"name"`
 
 	// Type is what the data source speaks (prometheus, postgresql,
-	// mariadb, mysql), which decides the tools that serve it.
+	// supabase, mariadb, mysql), which decides the tools that serve it.
 	Type datasource.Type `json:"type"`
 
 	// Status is the connection status recorded for it.
@@ -119,7 +119,7 @@ func (listDataSources) Info() Info {
 	return Info{
 		Name:        NameListDataSources,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true},
-		Description: "List the organisation's data sources as {id, name, type, status}. type (prometheus, postgresql, mariadb or mysql) decides the query language and which tools serve it. Start here: the other data source tools take an id from this list.",
+		Description: "List the organisation's data sources as {id, name, type, status}. type (prometheus, postgresql, supabase, mariadb or mysql) decides the query language and which tools serve it. Start here: the other data source tools take an id from this list.",
 		Properties:  map[string]any{},
 	}
 }
@@ -583,7 +583,7 @@ func (queryDataSource) Execute(inp *input) (string, error) {
 		default:
 			return result(newChartPreview(res.Transform(in.ChartType)))
 		}
-	case datasource.TypePostgreSQL:
+	case datasource.TypePostgreSQL, datasource.TypeSupabase:
 		pg, err := runner.PostgreSQL(inp.Context())
 		if err != nil {
 			return "", err

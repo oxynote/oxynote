@@ -166,16 +166,20 @@
 			},
 			"data-source-upsert": {
 				"hidden-placeholder": "[protected]",
+				"help-button": "Help",
+				"reset-button": "Reset",
 				"title": {
 					"creation": {
 						"prometheus": "Connect Prometheus",
 						"postgresql": "Connect PostgreSQL",
+						"supabase": "Connect Supabase",
 						"mysql": "Connect MySQL",
 						"mariadb": "Connect MariaDB"
 					},
 					"update": {
 						"prometheus": "Update Prometheus",
 						"postgresql": "Update PostgreSQL",
+						"supabase": "Update Supabase",
 						"mysql": "Update MySQL",
 						"mariadb": "Update MariaDB"
 					}
@@ -184,12 +188,14 @@
 					"creation": {
 						"prometheus": "Connect a new Prometheus server to use in your workspace.",
 						"postgresql": "Connect a new PostgreSQL server to use in your workspace.",
+						"supabase": "Connect a Supabase project to use in your workspace.",
 						"mysql": "Connect a new MySQL server to use in your workspace.",
 						"mariadb": "Connect a new MariaDB server to use in your workspace."
 					},
 					"update": {
 						"prometheus": "Update the settings of your Prometheus server.",
 						"postgresql": "Update the settings of your PostgreSQL server.",
+						"supabase": "Update the settings of your Supabase project.",
 						"mysql": "Update the settings of your MySQL server.",
 						"mariadb": "Update the settings of your MariaDB server."
 					}
@@ -202,6 +208,10 @@
 					"postgresql": {
 						"label": "Data Source Nickname",
 						"placeholder": "Main PostgreSQL Server"
+					},
+					"supabase": {
+						"label": "Data Source Nickname",
+						"placeholder": "Main Supabase Project"
 					},
 					"mysql": {
 						"label": "Data Source Nickname",
@@ -221,6 +231,10 @@
 						"label": "Data Source URL",
 						"placeholder": "postgresql://postgres.example.com:5432/main_database"
 					},
+					"supabase": {
+						"label": "Data Source URL",
+						"placeholder": "postgresql://aws-0-eu-west-1.pooler.supabase.com:6543/postgres"
+					},
 					"mysql": {
 						"label": "Data Source URL",
 						"placeholder": "mysql://mysql.example.com:3306/main_database"
@@ -228,6 +242,17 @@
 					"mariadb": {
 						"label": "Data Source URL",
 						"placeholder": "mariadb://mariadb.example.com:3306/main_database"
+					},
+					"credentials-reset": "Changing the URL clears the saved credentials",
+					"supabase-help": {
+						"steps": "In your Supabase project, click {connect} at the top of the page and choose {pooler}. Paste that connection string here without {credentials}, so it reads like {url}. Enter the username as your read-only role, a dot and the project ref, such as {user}, and its password below.",
+						"placeholders": {
+							"connect": "Connect",
+							"pooler": "Transaction pooler",
+							"credentials": "postgres.[PROJECT-REF]:[YOUR-PASSWORD]{'@'}",
+							"url": "postgresql://aws-0-eu-west-1.pooler.supabase.com:6543/postgres",
+							"user": "oxynote_ro.[PROJECT-REF]"
+						}
 					}
 				},
 				"creds-username-field": {
@@ -236,6 +261,10 @@
 						"placeholder": "Username"
 					},
 					"postgresql": {
+						"label": "Auth Username",
+						"placeholder": "Username"
+					},
+					"supabase": {
 						"label": "Auth Username",
 						"placeholder": "Username"
 					},
@@ -257,6 +286,10 @@
 						"label": "Auth Password",
 						"placeholder": "Password"
 					},
+					"supabase": {
+						"label": "Auth Password",
+						"placeholder": "Password"
+					},
 					"mysql": {
 						"label": "Auth Password",
 						"placeholder": "Password"
@@ -266,9 +299,23 @@
 						"placeholder": "Password"
 					}
 				},
+				"creds-ca-field": {
+					"label": "CA Certificate",
+					"placeholder": "-----BEGIN CERTIFICATE-----",
+					"help": "Only this CA may sign the server's certificate, and the connection always uses TLS. Reset it to trust the usual public CAs again.",
+					"supabase-help": {
+						"steps": "In Supabase, download {file} from {location}.",
+						"placeholders": {
+							"file": "prod-ca-2021.crt",
+							"location": "Database Settings, SSL Configuration"
+						}
+					}
+				},
 				"read-only-warning": {
 					"postgresql": "A {link} is needed to connect to Oxynote.",
 					"postgresql-link": "read-only PostgreSQL user",
+					"supabase": "A {link} is needed to connect to Oxynote.",
+					"supabase-link": "read-only Supabase user",
 					"mysql": "A {link} is needed to connect to Oxynote.",
 					"mysql-link": "read-only MySQL user",
 					"mariadb": "A {link} is needed to connect to Oxynote.",
@@ -334,6 +381,13 @@
 								"update": "{name} couldn't be updated"
 							},
 							"description": "The stored credentials can no longer be read. Please enter the username and password again to reconnect"
+						},
+						"invalid_ca_certificate": {
+							"title": {
+								"creation": "{name} couldn't be connected",
+								"update": "{name} couldn't be updated"
+							},
+							"description": "The CA certificate must be a PEM certificate, and the data source must connect over TLS"
 						}
 					}
 				}
@@ -342,6 +396,7 @@
 				"title": {
 					"prometheus": "Remove Prometheus Data Source",
 					"postgresql": "Remove PostgreSQL Data Source",
+					"supabase": "Remove Supabase Data Source",
 					"mysql": "Remove MySQL Data Source",
 					"mariadb": "Remove MariaDB Data Source"
 				},
@@ -585,6 +640,37 @@
 					"disconnect": {
 						"title": "PostgreSQL couldn't be disconnected",
 						"description": "An error occurred while trying to disconnect from PostgreSQL. Please try again"
+					}
+				}
+			},
+			"supabase": {
+				"title": "Supabase",
+				"description": "Connect your Supabase project and use it in metric monitoring blocks in your pages",
+				"connect": "Connect",
+				"connected-label": "Connected",
+				"option-button-screen-reader-hint": "Manage Data Source",
+				"options": {
+					"update": {
+						"title": "Update"
+					},
+					"delete": {
+						"title": "Remove"
+					}
+				},
+				"status-messages": {
+					"success": "Successfully connected",
+					"unauthorized": "Authentication credentials are incorrect",
+					"unreachable": "Supabase project is unreachable",
+					"version_not_supported": "Supabase Postgres version not supported"
+				},
+				"errors": {
+					"install": {
+						"title": "Supabase data source couldn't be connected",
+						"description": "An error occurred while trying to connect to Supabase. Please try again"
+					},
+					"disconnect": {
+						"title": "Supabase couldn't be disconnected",
+						"description": "An error occurred while trying to disconnect from Supabase. Please try again"
 					}
 				}
 			},

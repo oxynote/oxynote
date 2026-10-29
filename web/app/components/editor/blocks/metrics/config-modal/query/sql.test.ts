@@ -106,6 +106,10 @@ describe("useSQLQueryExtension", () => {
 			timeMacroInfo: 'EXTRACT(EPOCH FROM dateColumn) AS "time"',
 		},
 		{
+			dialect: DataSourceType.Supabase,
+			timeMacroInfo: 'EXTRACT(EPOCH FROM dateColumn) AS "time"',
+		},
+		{
 			dialect: DataSourceType.MySQL,
 			timeMacroInfo: "UNIX_TIMESTAMP(dateColumn) AS `time`",
 		},

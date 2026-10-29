@@ -30,6 +30,12 @@ const (
 	// source before a call tests it again.
 	_statusTTL = 10 * time.Second
 
+	// _failureTTL is how long a failed connection test answers for a data
+	// source before a call tests it again. Each test of a misconfigured
+	// data source is a failed login, and some servers block an address
+	// after a few of them.
+	_failureTTL = 30 * time.Second
+
 	// _idleAfter is how long a runner may go unasked for before its
 	// connections are closed.
 	_idleAfter = 5 * time.Minute
@@ -50,11 +56,10 @@ var _errDataSourceChanged = errutil.New(
 //
 // It keeps one runner per data source, so the connections a runner opens
 // serve every call that reads the same data source. A runner goes, and its
-// connections close, when the data source changes, when a connection test
-// fails, or when nobody has asked for it in _idleAfter. What the runners
-// share lives here too: the store their observations are recorded in, the
-// log those recordings complain to, the demo client, and the cache their
-// queries are answered from.
+// connections close, when the data source changes or when nobody has asked
+// for it in _idleAfter. What the runners share lives here too: the store
+// their observations are recorded in, the log those recordings complain to,
+// the demo client, and the cache their queries are answered from.
 type Manager struct {
 	log     *slog.Logger
 	store   StatusStore
@@ -207,20 +212,6 @@ func (m *Manager) Evict(id xid.ID) {
 	}
 }
 
-// drop closes the connections of a runner whose connection test failed.
-// A runner already replaced had them closed then.
-func (m *Manager) drop(r *runner) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.runners[r.ds.ID] != r {
-		return
-	}
-
-	delete(m.runners, r.ds.ID)
-	m.release(r)
-}
-
 // keeps reports whether r is the runner the manager keeps for its data
 // source.
 func (m *Manager) keeps(r *runner) bool {
@@ -274,6 +265,8 @@ func (m *Manager) newClient(ds DataSource) (ownedClient, error) {
 		return m.prometheusClient(ds)
 	case TypePostgreSQL:
 		return processor.NewPostgreSQL(newStateInput(ds.URL, ds.Credentials)), nil
+	case TypeSupabase:
+		return processor.NewSupabase(newStateInput(ds.URL, ds.Credentials)), nil
 	case TypeMariaDB, TypeMySQL:
 		return processor.NewMySQL(newStateInput(ds.URL, ds.Credentials)), nil
 	case TypeLoki:
@@ -390,7 +383,7 @@ func (r *runner) Prometheus(ctx context.Context) (Prometheus, error) {
 // PostgreSQL returns the data source's PostgreSQL client, whose queries are
 // answered out of the query cache.
 func (r *runner) PostgreSQL(ctx context.Context) (PostgreSQL, error) {
-	client, err := connect[PostgreSQL](ctx, r, TypePostgreSQL)
+	client, err := connect[PostgreSQL](ctx, r, TypePostgreSQL, TypeSupabase)
 	if err != nil {
 		return nil, err
 	}
@@ -411,7 +404,7 @@ func (r *runner) MySQL(ctx context.Context) (MySQL, error) {
 
 // SQL returns the data source's dialect-agnostic SQL client.
 func (r *runner) SQL(ctx context.Context) (SQL, error) {
-	return connect[SQL](ctx, r, TypePostgreSQL, TypeMariaDB, TypeMySQL)
+	return connect[SQL](ctx, r, TypePostgreSQL, TypeSupabase, TypeMariaDB, TypeMySQL)
 }
 
 // Logs returns the data source's log client, whose reads are answered out
@@ -474,8 +467,9 @@ func connect[C any](ctx context.Context, r *runner, allowed ...Type) (C, error) 
 }
 
 // ensureTested tests the connection unless it passed a test within
-// _statusTTL, and records what it found. A failing test drops the runner,
-// so the next call starts over with new connections and a new test.
+// _statusTTL or failed one within _failureTTL, and records what it found.
+// A failing test keeps the runner, so its failure answers the calls that
+// follow without a new login.
 //
 // One call at a time tests a data source, and the calls waiting behind it
 // reuse what it found, a failure included. A document opening many charts
@@ -487,10 +481,15 @@ func (r *runner) ensureTested(ctx context.Context) error {
 	}
 	defer unlock()
 
-	fresh := timeutil.Now().Sub(r.testedAt) < _statusTTL
+	ttl := _statusTTL
+	if r.tested.Error() != nil {
+		ttl = _failureTTL
+	}
 
-	// the calls that waited behind a failing test hold the runner it
-	// dropped, and the failure is their answer.
+	fresh := timeutil.Now().Sub(r.testedAt) < ttl
+
+	// a recent failure answers every call, the ones holding a runner the
+	// manager let go since included.
 	if fresh {
 		if serr := r.tested.Error(); serr != nil {
 			return serr
@@ -526,13 +525,7 @@ func (r *runner) ensureTested(ctx context.Context) error {
 	r.testedAt = timeutil.Now()
 	r.tested = cs
 
-	if serr := cs.Error(); serr != nil {
-		r.m.drop(r)
-
-		return serr
-	}
-
-	return nil
+	return cs.Error()
 }
 
 // recordStatus keeps the stored status honest about what the connection

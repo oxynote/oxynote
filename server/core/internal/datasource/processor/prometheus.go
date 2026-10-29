@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"slices"
 	"strings"
 
@@ -28,7 +27,8 @@ const (
 
 // Prometheus represents a Prometheus data source processor.
 type Prometheus struct {
-	inp Input
+	inp       Input
+	transport ownTransport
 }
 
 // NewPrometheus creates a new Prometheus data source processor.
@@ -38,9 +38,12 @@ func NewPrometheus(inp Input) *Prometheus {
 	}
 }
 
-// Close does nothing: the connections a Prometheus client opens belong to
-// the transport every client shares.
+// Close closes the idle connections of the data source's own transport.
+// Without a CA certificate its connections belong to the transport every
+// client shares.
 func (p *Prometheus) Close() error {
+	p.transport.close()
+
 	return nil
 }
 
@@ -49,8 +52,12 @@ func (p *Prometheus) TestConnection(ctx context.Context) (ConnectionStatus, erro
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	client, err := createPrometheusClient(p.inp.URL(), p.inp.Credentials())
+	client, err := p.client()
 	if err != nil {
+		if errors.Is(err, _errInvalidCACertificate) {
+			return ConnectionStatusInvalidCACertificate, nil
+		}
+
 		return "", fmt.Errorf("error creating prometheus client: %w", err)
 	}
 
@@ -76,7 +83,7 @@ func (p *Prometheus) Metadata(ctx context.Context) (*PrometheusMetadataResult, e
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	client, err := createPrometheusClient(p.inp.URL(), p.inp.Credentials())
+	client, err := p.client()
 	if err != nil {
 		return nil, fmt.Errorf("error creating prometheus client: %w", err)
 	}
@@ -96,7 +103,7 @@ func (p *Prometheus) QueryRange(ctx context.Context, q string, tr TimeRange) (*P
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	client, err := createPrometheusClient(p.inp.URL(), p.inp.Credentials())
+	client, err := p.client()
 	if err != nil {
 		return nil, fmt.Errorf("error creating prometheus client: %w", err)
 	}
@@ -129,7 +136,7 @@ func (p *Prometheus) LabelNames(ctx context.Context, matchers []string, tr TimeR
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	client, err := createPrometheusClient(p.inp.URL(), p.inp.Credentials())
+	client, err := p.client()
 	if err != nil {
 		return nil, fmt.Errorf("error creating prometheus client: %w", err)
 	}
@@ -164,7 +171,7 @@ func (p *Prometheus) LabelValues(ctx context.Context, label string, matchers []s
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	client, err := createPrometheusClient(p.inp.URL(), p.inp.Credentials())
+	client, err := p.client()
 	if err != nil {
 		return nil, fmt.Errorf("error creating prometheus client: %w", err)
 	}
@@ -200,7 +207,7 @@ func (p *Prometheus) Series(ctx context.Context, matchers []string, tr TimeRange
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	client, err := createPrometheusClient(p.inp.URL(), p.inp.Credentials())
+	client, err := p.client()
 	if err != nil {
 		return nil, fmt.Errorf("error creating prometheus client: %w", err)
 	}
@@ -224,26 +231,34 @@ func (p *Prometheus) Series(ctx context.Context, matchers []string, tr TimeRange
 	}, nil
 }
 
-// createPrometheusClient creates a Prometheus API client using the provided URL and credentials.
-func createPrometheusClient(url string, creds Credentials) (v1.API, error) {
-	var roundTripper http.RoundTripper
+// client creates a Prometheus API client for the data source's URL and
+// credentials.
+func (p *Prometheus) client() (v1.API, error) {
+	rawCreds := p.inp.Credentials()
 
-	if len(creds.data) > 0 {
-		var promCreds BasicCredentials
+	creds, err := rawCreds.basic()
+	if err != nil {
+		return nil, err
+	}
 
-		if err := json.Unmarshal(creds.data, &promCreds); err != nil {
-			return nil, fmt.Errorf("error unmarshaling credentials: %w", err)
-		}
+	address := p.inp.URL()
 
+	roundTripper, err := p.transport.roundTripper(api.DefaultRoundTripper, address, creds)
+	if err != nil {
+		return nil, err
+	}
+
+	// credentials holding only a CA certificate authenticate nobody.
+	if creds.Username != "" || creds.Password != "" {
 		roundTripper = config.NewBasicAuthRoundTripper(
-			config.NewInlineSecret(promCreds.Username),
-			config.NewInlineSecret(promCreds.Password),
-			api.DefaultRoundTripper,
+			config.NewInlineSecret(creds.Username),
+			config.NewInlineSecret(creds.Password),
+			roundTripper,
 		)
 	}
 
 	client, err := api.NewClient(api.Config{
-		Address:      url,
+		Address:      address,
 		RoundTripper: roundTripper,
 	})
 	if err != nil {

@@ -749,6 +749,7 @@
 					"empty": "[empty]",
 					"prometheus": "Enter a PromQL query...",
 					"postgresql": "Enter a SQL query...",
+					"supabase": "Enter a SQL query...",
 					"mysql": "Enter a SQL query...",
 					"mariadb": "Enter a SQL query..."
 				},

@@ -3,6 +3,7 @@ package datasource
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -57,6 +58,11 @@ func (h *Handler) CreateDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := input.Validate(); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	ds := datasourceCore.NewDataSource(input, session.ActiveOrganizationID)
 
 	status, err := h.runners.Runner(*ds).TestConnection(r.Context())
@@ -77,7 +83,14 @@ func (h *Handler) CreateDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpserver.Respond(h.log, w, ds, http.StatusCreated)
+	res, rerr := newDataSourceResponse(ds)
+	if rerr != nil {
+		// NOCOV: the input was validated, so its credentials can be read.
+		httpserver.RespondError(h.log, w, rerr)
+		return
+	}
+
+	httpserver.Respond(h.log, w, res, http.StatusCreated)
 }
 
 // FetchDataSource handles retrieving a single data source by ID.
@@ -99,7 +112,13 @@ func (h *Handler) FetchDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpserver.Respond(h.log, w, ds, http.StatusOK)
+	res, err := newDataSourceResponse(ds)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	httpserver.Respond(h.log, w, res, http.StatusOK)
 }
 
 // TestDataSourceConnection handles testing the connection of a data source.
@@ -154,7 +173,19 @@ func (h *Handler) FetchDataSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpserver.Respond(h.log, w, sources, http.StatusOK)
+	res := make([]dataSourceResponse, 0, len(sources))
+
+	for i := range sources {
+		item, rerr := newDataSourceResponse(&sources[i])
+		if rerr != nil {
+			httpserver.RespondError(h.log, w, rerr)
+			return
+		}
+
+		res = append(res, item)
+	}
+
+	httpserver.Respond(h.log, w, res, http.StatusOK)
 }
 
 // UpdateDataSource handles updating an existing data source.
@@ -208,7 +239,13 @@ func (h *Handler) UpdateDataSource(w http.ResponseWriter, r *http.Request) {
 
 	h.runners.Evict(ds.ID)
 
-	httpserver.Respond(h.log, w, ds, http.StatusOK)
+	res, rerr := newDataSourceResponse(ds)
+	if rerr != nil {
+		httpserver.RespondError(h.log, w, rerr)
+		return
+	}
+
+	httpserver.Respond(h.log, w, res, http.StatusOK)
 }
 
 // DeleteDataSource handles deleting a data source.
@@ -252,6 +289,10 @@ func (h *Handler) persistDataSourceStatus(
 	if uerr := h.db.UpdateDataSource(r.Context(), ds); uerr != nil {
 		h.log.Error("cannot update data source status", slog.String("error", uerr.Error()))
 	}
+
+	// the kept runner remembers the test before this one. A source someone
+	// just fixed would otherwise keep failing until that failure expires.
+	h.runners.Evict(ds.ID)
 }
 
 // substitute returns the texts with the session user's variables
@@ -277,6 +318,28 @@ func (h *Handler) substitute(r *http.Request, session auth.Session, texts ...str
 	}
 
 	return vars.Substitute(overrides, texts...), nil
+}
+
+// dataSourceResponse is a data source as the API returns it: with which of
+// its credentials are set, never their values.
+type dataSourceResponse struct {
+	datasourceCore.DataSource
+
+	// Configured specifies the credentials that are set.
+	Configured map[string]bool `json:"configured,omitempty"`
+}
+
+// newDataSourceResponse builds the API response for the data source.
+func newDataSourceResponse(ds *datasourceCore.DataSource) (dataSourceResponse, error) {
+	configured, err := ds.Credentials.Configured()
+	if err != nil {
+		return dataSourceResponse{}, fmt.Errorf("error reading configured credentials: %w", err)
+	}
+
+	return dataSourceResponse{
+		DataSource: *ds,
+		Configured: configured,
+	}, nil
 }
 
 // DB is an interface that handles communication with the data source database.

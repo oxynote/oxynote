@@ -3,6 +3,7 @@ export enum DataSourceType {
 
 	// SQL
 	PostgreSQL = "postgresql",
+	Supabase = "supabase",
 	MySQL = "mysql",
 	MariaDB = "mariadb",
 }
@@ -12,6 +13,7 @@ export function isDataSourceSQLBased(
 ): boolean {
 	switch (type) {
 		case DataSourceType.PostgreSQL:
+		case DataSourceType.Supabase:
 		case DataSourceType.MySQL:
 		case DataSourceType.MariaDB:
 			return true
@@ -27,6 +29,7 @@ export enum DataSourceStatus {
 	VersionNotSupported = "version_not_supported",
 	NotReadOnly = "not_read_only",
 	InvalidEncryptionKey = "invalid_encryption_key",
+	InvalidCACertificate = "invalid_ca_certificate",
 
 	// local-only
 	LocalOptimisticInsert = "local_optimistic_insert", // aka pending
@@ -38,6 +41,7 @@ export const DataSourceErrorStatuses = [
 	DataSourceStatus.VersionNotSupported,
 	DataSourceStatus.NotReadOnly,
 	DataSourceStatus.InvalidEncryptionKey,
+	DataSourceStatus.InvalidCACertificate,
 ] as const
 
 export interface DataSource {
@@ -48,16 +52,22 @@ export interface DataSource {
 	status: DataSourceStatus
 	createdAt: Date | string
 	updatedAt: Date | string | null
+	// which credentials are set, never their values; an older server omits it
+	configured?: Partial<Record<DataSourceCredentialKey, boolean>>
 }
+
+export type DataSourceCredentialKey = "username" | "password" | "caCertificate"
 
 export interface DataSourceCredentialsPrometheus {
 	username: string
 	password: string
+	caCertificate?: string
 }
 
 export interface DataSourceCredentialsSQL {
 	username: string
 	password: string
+	caCertificate?: string
 }
 
 export type DataSourceCredentials =

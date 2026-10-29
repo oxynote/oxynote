@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +31,11 @@ const (
 // connection.
 var _errClosed = errors.New("the data source processor is closed")
 
+// _errInvalidCACertificate is returned when the credentials carry a CA
+// certificate that cannot verify anything: it does not parse, or the data
+// source connects without TLS.
+var _errInvalidCACertificate = errors.New("the ca certificate cannot be used")
+
 // ConnectionStatus represents the status of a connection test.
 type ConnectionStatus string
 
@@ -52,6 +58,11 @@ const (
 	// ConnectionStatusInvalidEncryptionKey indicates that the stored
 	// credentials cannot be decrypted with the configured keys.
 	ConnectionStatusInvalidEncryptionKey ConnectionStatus = "invalid_encryption_key"
+
+	// ConnectionStatusInvalidCACertificate indicates that the credentials
+	// carry a CA certificate that does not parse, or that the data source
+	// connects without TLS for it to verify.
+	ConnectionStatusInvalidCACertificate ConnectionStatus = "invalid_ca_certificate"
 )
 
 // Error returns an error corresponding to the ConnectionStatus.
@@ -70,6 +81,12 @@ func (cs ConnectionStatus) Error() error {
 			http.StatusBadRequest,
 			"data_source.invalid_encryption_key",
 			"The data source credentials cannot be decrypted with the configured keys and must be entered again.",
+		)
+	case ConnectionStatusInvalidCACertificate:
+		return errutil.New(
+			http.StatusBadRequest,
+			"data_source.invalid_ca_certificate",
+			"The CA certificate must be a PEM certificate, and the data source must connect over TLS.",
 		)
 	default:
 		return nil
@@ -189,6 +206,46 @@ func (c *Credentials) Decrypt(keys *cryptoutil.Keyring, aad []byte) error {
 	return nil
 }
 
+// basic returns what the credentials hold. Empty credentials hold nothing.
+func (c *Credentials) basic() (BasicCredentials, error) {
+	var bc BasicCredentials
+
+	if len(c.data) == 0 {
+		return bc, nil
+	}
+
+	if err := json.Unmarshal(c.data, &bc); err != nil {
+		return BasicCredentials{}, fmt.Errorf("error unmarshaling credentials: %w", err)
+	}
+
+	return bc, nil
+}
+
+// Configured reports which credentials are set, never their values. Empty
+// credentials, and credentials that could not be read, set none.
+func (c *Credentials) Configured() (map[string]bool, error) {
+	bc, err := c.basic()
+	if err != nil {
+		return nil, err
+	}
+
+	configured := make(map[string]bool)
+
+	if bc.Username != "" {
+		configured["username"] = true
+	}
+
+	if bc.Password != "" {
+		configured["password"] = true
+	}
+
+	if bc.CACertificate != "" {
+		configured["caCertificate"] = true
+	}
+
+	return configured, nil
+}
+
 // CredentialsUpdateInput represents the input for updating credentials.
 type CredentialsUpdateInput []byte
 
@@ -200,13 +257,29 @@ func (cui *CredentialsUpdateInput) UnmarshalJSON(data []byte) error {
 }
 
 // BasicCredentials represents the username and password every data source
-// authenticates with.
+// authenticates with, and the CA certificate it verifies the server with.
 type BasicCredentials struct {
 	// Username is the username for the data source.
 	Username string `json:"username"`
 
 	// Password is the password for the data source.
 	Password string `json:"password"`
+
+	// CACertificate is the PEM certificate the server's TLS certificate
+	// must chain to. When set, it is the only one trusted, and the data
+	// source always connects over TLS.
+	CACertificate string `json:"caCertificate,omitempty"`
+}
+
+// rootCAs returns the pool holding the CA certificate.
+func (bc BasicCredentials) rootCAs() (*x509.CertPool, error) {
+	pool := x509.NewCertPool()
+
+	if !pool.AppendCertsFromPEM([]byte(bc.CACertificate)) {
+		return nil, _errInvalidCACertificate
+	}
+
+	return pool, nil
 }
 
 // BasicCredentialsUpdate represents the input for updating credentials. An
@@ -217,6 +290,10 @@ type BasicCredentialsUpdate struct {
 
 	// Password is the password for the data source.
 	Password null.String `json:"password"`
+
+	// CACertificate is the PEM certificate the server's TLS certificate
+	// must chain to.
+	CACertificate null.String `json:"caCertificate"`
 }
 
 // UpdateBasicCredentials applies the update input to the stored credentials.
@@ -248,7 +325,11 @@ func UpdateBasicCredentials(rawCreds Credentials, inp CredentialsUpdateInput) (C
 		creds.Password = update.Password.String
 	}
 
-	if creds.Username == "" && creds.Password == "" {
+	if update.CACertificate.Valid {
+		creds.CACertificate = update.CACertificate.String
+	}
+
+	if creds.Username == "" && creds.Password == "" && creds.CACertificate == "" {
 		return Credentials{}, nil
 	}
 

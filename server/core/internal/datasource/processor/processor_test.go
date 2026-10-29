@@ -2,12 +2,19 @@ package processor
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net/http"
 	"strconv"
 	"testing"
@@ -37,6 +44,32 @@ var _testKeys = func() *cryptoutil.Keyring {
 
 // _testAAD is the associated data credentials crypto tests seal with.
 var _testAAD = []byte("data-source-id")
+
+// _testCA is a self-signed CA certificate, PEM-encoded, that signed no
+// server the tests start.
+var _testCA = func() string {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		panic("cannot generate test ca key: " + err.Error())
+	}
+
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "oxynote test ca"},
+		NotBefore:             timeutil.Now().Add(-time.Hour),
+		NotAfter:              timeutil.Now().Add(time.Hour),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		panic("cannot create test ca certificate: " + err.Error())
+	}
+
+	return pemCertificate(der)
+}()
 
 const (
 	// _testDB is the database name used in the throwaway containers.
@@ -151,6 +184,9 @@ func TestMain(m *testing.M) {
 			fmt.Sprintf("CREATE ROLE %s LOGIN PASSWORD '%s'", _readerUser, _readerPass),
 			fmt.Sprintf("ALTER ROLE %s SET default_transaction_read_only = on", _readerUser),
 			"GRANT SELECT ON metrics TO "+_readerUser,
+			// a schema Supabase keeps for its own services.
+			"CREATE SCHEMA auth",
+			"CREATE TABLE auth.users (id INT, email TEXT)",
 		),
 	))
 	if err != nil {
@@ -222,6 +258,14 @@ func Test_ConnectionStatus_Error(t *testing.T) {
 				http.StatusBadRequest,
 				"data_source.invalid_encryption_key",
 				"The data source credentials cannot be decrypted with the configured keys and must be entered again.",
+			),
+		},
+		"Invalid CA certificate status": {
+			Status: ConnectionStatusInvalidCACertificate,
+			Err: errutil.New(
+				http.StatusBadRequest,
+				"data_source.invalid_ca_certificate",
+				"The CA certificate must be a PEM certificate, and the data source must connect over TLS.",
 			),
 		},
 		"Success status": {
@@ -450,6 +494,43 @@ func Test_Credentials_Decrypt(t *testing.T) {
 	}
 }
 
+func Test_Credentials_basic(t *testing.T) {
+	cc := map[string]struct {
+		Creds  Credentials
+		Result BasicCredentials
+		Err    error
+	}{
+		"Error returned by json.Unmarshal": {
+			Creds: NewCredentials([]byte(`{`)),
+			Err:   assert.AnError,
+		},
+		"Empty credentials": {},
+		"Successful read": {
+			Creds: NewCredentials([]byte(`{"username":"user","password":"pass","caCertificate":"pem"}`)),
+			Result: BasicCredentials{
+				Username:      "user",
+				Password:      "pass",
+				CACertificate: "pem",
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			bc, err := c.Creds.basic()
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, bc)
+		})
+	}
+}
+
 func Test_CredentialsUpdateInput_UnmarshalJSON(t *testing.T) {
 	t.Parallel()
 
@@ -457,6 +538,86 @@ func Test_CredentialsUpdateInput_UnmarshalJSON(t *testing.T) {
 
 	require.NoError(t, cui.UnmarshalJSON([]byte(`{"username":"user"}`)))
 	assert.Equal(t, CredentialsUpdateInput(`{"username":"user"}`), cui)
+}
+
+func Test_Credentials_Configured(t *testing.T) {
+	cc := map[string]struct {
+		Creds  Credentials
+		Result map[string]bool
+		Err    error
+	}{
+		"Error returned by Credentials.basic": {
+			Creds: NewCredentials([]byte(`{`)),
+			Err:   assert.AnError,
+		},
+		"Empty credentials": {
+			Result: map[string]bool{},
+		},
+		"Credentials that could not be read": {
+			Creds:  Credentials{unreadable: true},
+			Result: map[string]bool{},
+		},
+		"Some credentials set": {
+			Creds: NewCredentials([]byte(`{"username":"user","password":"","caCertificate":"pem"}`)),
+			Result: map[string]bool{
+				"username":      true,
+				"caCertificate": true,
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			configured, err := c.Creds.Configured()
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, configured)
+		})
+	}
+}
+
+func Test_BasicCredentials_rootCAs(t *testing.T) {
+	cc := map[string]struct {
+		CACertificate string
+		Err           error
+	}{
+		"Certificate that is not PEM": {
+			CACertificate: "not a certificate",
+			Err:           _errInvalidCACertificate,
+		},
+		"Successful pool": {
+			CACertificate: _testCA,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			pool, err := BasicCredentials{CACertificate: c.CACertificate}.rootCAs()
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			// the pool trusts the CA, so the CA verifies against it.
+			block, _ := pem.Decode([]byte(c.CACertificate))
+			require.NotNil(t, block)
+
+			cert, err := x509.ParseCertificate(block.Bytes)
+			require.NoError(t, err)
+
+			_, err = cert.Verify(x509.VerifyOptions{Roots: pool})
+			assert.NoError(t, err)
+		})
+	}
 }
 
 func Test_UpdateBasicCredentials(t *testing.T) {
@@ -493,6 +654,21 @@ func Test_UpdateBasicCredentials(t *testing.T) {
 			Inp:    CredentialsUpdateInput(`{"username":"user","password":"pass"}`),
 			Result: NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
 		},
+		"Updated CA certificate retains username and password": {
+			Creds:  NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+			Inp:    CredentialsUpdateInput(`{"caCertificate":"pem"}`),
+			Result: NewCredentials([]byte(`{"username":"user","password":"pass","caCertificate":"pem"}`)),
+		},
+		"Credentials holding only a CA certificate": {
+			Creds:  NewCredentials([]byte(`{"username":"user","password":"pass","caCertificate":"pem"}`)),
+			Inp:    CredentialsUpdateInput(`{"username":"","password":""}`),
+			Result: NewCredentials([]byte(`{"username":"","password":"","caCertificate":"pem"}`)),
+		},
+		"Cleared CA certificate": {
+			Creds:  NewCredentials([]byte(`{"username":"user","password":"pass","caCertificate":"pem"}`)),
+			Inp:    CredentialsUpdateInput(`{"caCertificate":""}`),
+			Result: NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+		},
 	}
 
 	for cn, c := range cc {
@@ -509,4 +685,22 @@ func Test_UpdateBasicCredentials(t *testing.T) {
 			assert.Equal(t, c.Result, creds)
 		})
 	}
+}
+
+// pemCertificate encodes a DER certificate as PEM.
+func pemCertificate(der []byte) string {
+	return string(pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: der,
+	}))
+}
+
+// caCredentials returns credentials carrying only the CA certificate.
+func caCredentials(ca string) Credentials {
+	data, err := json.Marshal(map[string]string{"caCertificate": ca})
+	if err != nil {
+		panic("cannot marshal test credentials: " + err.Error())
+	}
+
+	return NewCredentials(data)
 }

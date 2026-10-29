@@ -50,6 +50,25 @@ const sections = computed(() => {
 			},
 		},
 		{
+			key: DataSourceType.Supabase,
+			icon: "devicon:supabase",
+			items:
+				fetchDataSources.state.value.data?.filter(
+					(ds) =>
+						ds.type === DataSourceType.Supabase &&
+						ds.status !== DataSourceStatus.LocalOptimisticInsert,
+				) ?? [],
+			create: () => {
+				emit("data-source-creation", DataSourceType.Supabase)
+			},
+			update: (dataSource: DataSource) => {
+				emit("data-source-update", dataSource)
+			},
+			delete: (dataSource: DataSource) => {
+				emit("data-source-removal", dataSource)
+			},
+		},
+		{
 			key: DataSourceType.MySQL,
 			icon: "devicon:mysql",
 			items:

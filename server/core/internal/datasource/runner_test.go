@@ -541,49 +541,6 @@ func Test_Manager_Evict(t *testing.T) {
 	}
 }
 
-func Test_Manager_drop(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		// Replaced indicates whether another runner took the dropped one's
-		// place before the drop.
-		Replaced bool
-		Closes   int32
-	}{
-		"Current runner": {Closes: 1},
-		// the replacement closed it already.
-		"Replaced runner": {Replaced: true},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			m := prepManager(t, nil)
-			stub := &stubClient{}
-			r := prepStubRunner(m, stub, timeutil.Now())
-
-			replacement := &runner{m: m, ds: r.ds, client: &stubClient{}}
-
-			if c.Replaced {
-				m.runners[r.ds.ID] = replacement
-			}
-
-			m.drop(r)
-			m.supv.Wait()
-
-			assert.Equal(t, c.Closes, stub.closes.Load())
-
-			if c.Replaced {
-				assert.Same(t, replacement, m.runners[r.ds.ID])
-				return
-			}
-
-			assert.Empty(t, m.runners)
-		})
-	}
-}
-
 func Test_Manager_keeps(t *testing.T) {
 	t.Parallel()
 
@@ -715,6 +672,7 @@ func Test_Manager_newClient(t *testing.T) {
 		"Demo Prometheus":     {Type: TypePrometheus, URL: demo.URL, Client: &demo.Client{}},
 		"Unknown demo source": {Type: TypePrometheus, URL: demo.Scheme + "nope", Err: demo.ErrUnknownSource},
 		"PostgreSQL":          {Type: TypePostgreSQL, Client: &processor.PostgreSQL{}},
+		"Supabase":            {Type: TypeSupabase, Client: &processor.PostgreSQL{}},
 		"MySQL":               {Type: TypeMySQL, Client: &processor.MySQL{}},
 		"MariaDB":             {Type: TypeMariaDB, Client: &processor.MySQL{}},
 		"Loki":                {Type: TypeLoki, Client: &processor.Loki{}},
@@ -1009,6 +967,12 @@ func Test_runner_Prometheus(t *testing.T) {
 
 			if c.Err != nil {
 				assert.Nil(t, client)
+
+				// the next call gets the same answer without a new login.
+				_, aerr := r.m.Runner(r.ds).Prometheus(context.Background())
+				testutil.AssertEqualError(t, c.Err, aerr)
+				assert.Len(t, store.UpdateDataSourceStatusCalls(), c.Written)
+				assert.Equal(t, c.Tests, hits.Load())
 				assert.Equal(t, c.Conns, conns.Load())
 
 				return
@@ -1176,6 +1140,10 @@ func Test_runner_PostgreSQL(t *testing.T) {
 			Type:   TypePostgreSQL,
 			Client: passingPostgreSQL{},
 		},
+		"A Supabase data source hands out its cached client": {
+			Type:   TypeSupabase,
+			Client: passingPostgreSQL{},
+		},
 		// a PostgreSQL data source pointed nowhere still resolves its
 		// processor; what fails is the connection, which the accessor
 		// reports as the error it is.
@@ -1285,6 +1253,11 @@ func Test_runner_SQL(t *testing.T) {
 	}{
 		"A PostgreSQL data source with no address": {
 			Type:    TypePostgreSQL,
+			Written: 1,
+			Err:     assert.AnError,
+		},
+		"A Supabase data source with no address": {
+			Type:    TypeSupabase,
 			Written: 1,
 			Err:     assert.AnError,
 		},
@@ -1490,6 +1463,23 @@ func Test_runner_ensureTested(t *testing.T) {
 		"A test older than _statusTTL is repeated": {
 			Client:    &stubClient{status: processor.ConnectionStatusSuccess},
 			TestedAgo: _statusTTL,
+			Found:     processor.ConnectionStatusSuccess,
+			Callers:   1,
+			Tests:     1,
+			Tested:    true,
+		},
+		// each test of a misconfigured data source is a failed login.
+		"A failure older than _statusTTL is not repeated": {
+			Client:    &stubClient{status: processor.ConnectionStatusSuccess},
+			TestedAgo: _statusTTL * 2,
+			Found:     processor.ConnectionStatusUnreachable,
+			Callers:   1,
+			Tested:    true,
+			Err:       processor.ConnectionStatusUnreachable.Error(),
+		},
+		"A failure older than _failureTTL is repeated": {
+			Client:    &stubClient{status: processor.ConnectionStatusSuccess},
+			TestedAgo: _failureTTL,
 			Found:     processor.ConnectionStatusUnreachable,
 			Callers:   1,
 			Tests:     1,
@@ -1502,31 +1492,28 @@ func Test_runner_ensureTested(t *testing.T) {
 			Tests:   1,
 			Tested:  true,
 		},
-		"A failing test drops the runner": {
+		// the runner stays, so its failure answers the calls that follow.
+		"A failing test keeps the runner": {
 			Client:  &stubClient{status: processor.ConnectionStatusUnreachable},
 			Callers: 1,
 			Tests:   1,
 			Written: 1,
 			Tested:  true,
-			Dropped: true,
-			Closes:  1,
 			Err:     processor.ConnectionStatusUnreachable.Error(),
 		},
 		// the calls waiting behind a failing test get its answer rather
-		// than each testing the connection it closed.
+		// than each logging in again.
 		"Calls at once share one failing test": {
 			Client:  &stubClient{status: processor.ConnectionStatusUnreachable},
 			Callers: 5,
 			Tests:   1,
 			Written: 1,
 			Tested:  true,
-			Dropped: true,
-			Closes:  1,
 			Err:     processor.ConnectionStatusUnreachable.Error(),
 		},
-		// the calls that waited behind a failing test hold the runner it
-		// dropped, and the failure is their answer.
-		"A dropped runner hands its failure to the calls that waited": {
+		// the calls that waited behind a failing test still hold the
+		// runner, and the failure is their answer.
+		"A runner let go after a failing test": {
 			Client:    &stubClient{status: processor.ConnectionStatusSuccess},
 			TestedAgo: _statusTTL / 2,
 			Found:     processor.ConnectionStatusUnreachable,

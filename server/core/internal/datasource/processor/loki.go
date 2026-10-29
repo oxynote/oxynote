@@ -98,7 +98,8 @@ var _errLokiResponseTooLarge = NewInvalidQueryError(
 
 // Loki represents a Loki data source processor.
 type Loki struct {
-	inp Input
+	inp       Input
+	transport ownTransport
 }
 
 // NewLoki creates a new Loki data source processor.
@@ -108,9 +109,12 @@ func NewLoki(inp Input) *Loki {
 	}
 }
 
-// Close does nothing: the connections a Loki client opens belong to the
-// transport every client shares.
+// Close closes the idle connections of the data source's own transport.
+// Without a CA certificate its connections belong to the transport every
+// client shares.
 func (l *Loki) Close() error {
+	l.transport.close()
+
 	return nil
 }
 
@@ -124,6 +128,10 @@ func (l *Loki) TestConnection(ctx context.Context) (ConnectionStatus, error) {
 
 	client, err := l.client()
 	if err != nil {
+		if errors.Is(err, _errInvalidCACertificate) {
+			return ConnectionStatusInvalidCACertificate, nil
+		}
+
 		return "", err
 	}
 
@@ -467,32 +475,35 @@ func (l *Loki) request(
 // client returns the HTTP client that authenticates with the data
 // source's credentials and stays on the data source's own address.
 func (l *Loki) client() (*http.Client, error) {
-	client := &http.Client{
+	rawCreds := l.inp.Credentials()
+
+	creds, err := rawCreds.basic()
+	if err != nil {
+		return nil, err
+	}
+
+	transport, err := l.transport.roundTripper(http.DefaultTransport, l.inp.URL(), creds)
+	if err != nil {
+		return nil, err
+	}
+
+	// credentials holding only a CA certificate authenticate nobody.
+	if creds.Username != "" || creds.Password != "" {
+		transport = config.NewBasicAuthRoundTripper(
+			config.NewInlineSecret(creds.Username),
+			config.NewInlineSecret(creds.Password),
+			transport,
+		)
+	}
+
+	return &http.Client{
+		Transport: transport,
 		// a followed redirect could lead to any host, whose error answers
 		// would then reach the user.
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
-	}
-	creds := l.inp.Credentials()
-
-	if len(creds.data) == 0 {
-		return client, nil
-	}
-
-	var basic BasicCredentials
-
-	if err := json.Unmarshal(creds.data, &basic); err != nil {
-		return nil, fmt.Errorf("unmarshaling credentials: %w", err)
-	}
-
-	client.Transport = config.NewBasicAuthRoundTripper(
-		config.NewInlineSecret(basic.Username),
-		config.NewInlineSecret(basic.Password),
-		http.DefaultTransport,
-	)
-
-	return client, nil
+	}, nil
 }
 
 // lokiQueryResponse is the answer to a query_range request.

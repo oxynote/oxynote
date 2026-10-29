@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"testing"
 	"time"
@@ -456,6 +457,19 @@ func Test_NewPostgreSQL(t *testing.T) {
 	assert.False(t, p.closed)
 }
 
+func Test_NewSupabase(t *testing.T) {
+	t.Parallel()
+
+	inp := &InputMock{}
+
+	p := NewSupabase(inp)
+	require.NotNil(t, p)
+	assert.Same(t, inp, p.inp)
+	assert.Equal(t, _supabaseSchemas, p.hiddenSchemas)
+	assert.Nil(t, p.pool)
+	assert.False(t, p.closed)
+}
+
 func Test_PostgreSQL_Close(t *testing.T) {
 	cc := map[string]struct {
 		// Used indicates whether a query built the pool before the close.
@@ -499,12 +513,14 @@ func Test_PostgreSQL_Close(t *testing.T) {
 func Test_PostgreSQL_TestConnection(t *testing.T) {
 	cc := map[string]struct {
 		URL              string
+		Creds            Credentials
 		Result           ConnectionStatus
 		CredentialsCalls int
 	}{
 		"Error returned by connect": {
-			URL:    "://",
-			Result: ConnectionStatusUnreachable,
+			URL:              "://",
+			Result:           ConnectionStatusUnreachable,
+			CredentialsCalls: 1,
 		},
 		"Unreachable database": {
 			URL:              "postgres://127.0.0.1:1/db",
@@ -527,6 +543,20 @@ func Test_PostgreSQL_TestConnection(t *testing.T) {
 			Result:           ConnectionStatusSuccess,
 			CredentialsCalls: 1,
 		},
+		"Invalid CA certificate": {
+			URL:              fmt.Sprintf("postgres://%s:%s@%s/%s", _readerUser, _readerPass, _pgAddr, _testDB),
+			Creds:            caCredentials("not a certificate"),
+			Result:           ConnectionStatusInvalidCACertificate,
+			CredentialsCalls: 1,
+		},
+		// the server has no TLS. A CA certificate allows no plaintext
+		// fallback, whatever sslmode the URL asks for.
+		"CA certificate against a server without TLS": {
+			URL:              fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", _readerUser, _readerPass, _pgAddr, _testDB),
+			Creds:            caCredentials(_testCA),
+			Result:           ConnectionStatusUnreachable,
+			CredentialsCalls: 1,
+		},
 	}
 
 	for cn, c := range cc {
@@ -534,7 +564,8 @@ func Test_PostgreSQL_TestConnection(t *testing.T) {
 			t.Parallel()
 
 			inp := &InputMock{
-				URLFunc: func() string { return c.URL },
+				URLFunc:         func() string { return c.URL },
+				CredentialsFunc: func() Credentials { return c.Creds },
 			}
 
 			p := NewPostgreSQL(inp)
@@ -550,16 +581,98 @@ func Test_PostgreSQL_TestConnection(t *testing.T) {
 	}
 }
 
-func Test_PostgreSQL_Metadata(t *testing.T) {
+func Test_pgConnectionStatus(t *testing.T) {
 	cc := map[string]struct {
-		URL              string
+		Err    error
+		Result ConnectionStatus
+	}{
+		"Invalid CA certificate": {
+			Err:    fmt.Errorf("connecting: %w", _errInvalidCACertificate),
+			Result: ConnectionStatusInvalidCACertificate,
+		},
+		"Error that is not from the server": {
+			Err:    assert.AnError,
+			Result: ConnectionStatusUnreachable,
+		},
+		"Refused password": {
+			Err:    &pgconn.PgError{Code: "28P01", Message: `password authentication failed for user "reader"`},
+			Result: ConnectionStatusUnauthorized,
+		},
+		"Unknown database": {
+			Err:    &pgconn.PgError{Code: "3D000", Message: `database "nosuchdb" does not exist`},
+			Result: ConnectionStatusUnreachable,
+		},
+		"Supavisor without the project": {
+			Err:    &pgconn.PgError{Code: "XX000", Message: "(ENOTFOUND) tenant/user reader.ref not found"},
+			Result: ConnectionStatusUnauthorized,
+		},
+		"Supavisor given a user without a project": {
+			Err:    &pgconn.PgError{Code: "XX000", Message: "(ENOIDENTIFIER) no tenant identifier provided (external_id or sni_hostname required)"},
+			Result: ConnectionStatusUnauthorized,
+		},
+		"Supavisor given a role the database lacks": {
+			Err:    &pgconn.PgError{Code: "XX000", Message: "(EAUTHQUERY) user not found in the database"},
+			Result: ConnectionStatusUnauthorized,
+		},
+		// the database behind the pooler is down or paused.
+		"Supavisor unable to reach the database": {
+			Err:    &pgconn.PgError{Code: "XX000", Message: "(EAUTHQUERY) auth_query connection failed: timeout"},
+			Result: ConnectionStatusUnreachable,
+		},
+		"Supavisor pool full": {
+			Err:    &pgconn.PgError{Code: "XX000", Message: "(EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15"},
+			Result: ConnectionStatusUnreachable,
+		},
+		"Supavisor blocking after failed logins": {
+			Err:    &pgconn.PgError{Code: "XX000", Message: "(ECIRCUITBREAKER) too many authentication failures, new connections are temporarily blocked"},
+			Result: ConnectionStatusUnreachable,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, pgConnectionStatus(c.Err))
+		})
+	}
+}
+
+func Test_PostgreSQL_Metadata(t *testing.T) {
+	ownerURL := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", _pgUser, _pgPass, _pgAddr, _testDB)
+	publicTables := map[string]SQLTable{
+		"public.metrics": {
+			Columns: []SQLColumn{
+				{Name: "time"},
+				{Name: "host"},
+				{Name: "value"},
+			},
+		},
+		"public.typed_metrics": {
+			Columns: []SQLColumn{
+				{Name: "time"},
+				{Name: "host"},
+				{Name: "ratio"},
+				{Name: "total"},
+			},
+		},
+	}
+
+	cc := map[string]struct {
+		URL string
+
+		// Supabase indicates whether the processor is the one for a
+		// Supabase project.
+		Supabase bool
+
 		Result           *SQLMetadataResult
 		Err              error
 		CredentialsCalls int
 	}{
 		"Error returned by connect": {
-			URL: "://",
-			Err: assert.AnError,
+			URL:              "://",
+			Err:              assert.AnError,
+			CredentialsCalls: 1,
 		},
 		"Error returned by pgxpool.Pool.Query": {
 			URL:              "postgres://127.0.0.1:1/db",
@@ -567,25 +680,29 @@ func Test_PostgreSQL_Metadata(t *testing.T) {
 			CredentialsCalls: 1,
 		},
 		"Successful retrieval": {
-			URL: fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", _pgUser, _pgPass, _pgAddr, _testDB),
+			URL: ownerURL,
 			Result: &SQLMetadataResult{
-				Tables: map[string]SQLTable{
-					"public.metrics": {
+				Tables: func() map[string]SQLTable {
+					tables := maps.Clone(publicTables)
+					tables["auth.users"] = SQLTable{
 						Columns: []SQLColumn{
-							{Name: "time"},
-							{Name: "host"},
-							{Name: "value"},
+							{Name: "id"},
+							{Name: "email"},
 						},
-					},
-					"public.typed_metrics": {
-						Columns: []SQLColumn{
-							{Name: "time"},
-							{Name: "host"},
-							{Name: "ratio"},
-							{Name: "total"},
-						},
-					},
-				},
+					}
+
+					return tables
+				}(),
+				DefaultSchema: "public",
+			},
+			CredentialsCalls: 1,
+		},
+		// the schemas Supabase keeps for its own services are left out.
+		"Successful retrieval from a Supabase project": {
+			URL:      ownerURL,
+			Supabase: true,
+			Result: &SQLMetadataResult{
+				Tables:        publicTables,
 				DefaultSchema: "public",
 			},
 			CredentialsCalls: 1,
@@ -601,6 +718,9 @@ func Test_PostgreSQL_Metadata(t *testing.T) {
 			}
 
 			p := NewPostgreSQL(inp)
+			if c.Supabase {
+				p = NewSupabase(inp)
+			}
 
 			t.Cleanup(func() { assert.NoError(t, p.Close()) })
 
@@ -628,9 +748,10 @@ func Test_PostgreSQL_QueryLabels(t *testing.T) {
 		CredentialsCalls int
 	}{
 		"Error returned by connect": {
-			URL:   "://",
-			Query: "SELECT 1",
-			Err:   assert.AnError,
+			URL:              "://",
+			Query:            "SELECT 1",
+			Err:              assert.AnError,
+			CredentialsCalls: 1,
 		},
 		"Error returned by pgxpool.Pool.Query": {
 			URL:              "postgres://127.0.0.1:1/db",
@@ -712,9 +833,10 @@ func Test_PostgreSQL_Query(t *testing.T) {
 		Check            func(t *testing.T, p *PostgreSQL)
 	}{
 		"Error returned by connect": {
-			URL:   "://",
-			Query: "SELECT 1",
-			Err:   assert.AnError,
+			URL:              "://",
+			Query:            "SELECT 1",
+			Err:              assert.AnError,
+			CredentialsCalls: 1,
 		},
 		"Error returned by pgxpool.Pool.Query": {
 			URL:              "postgres://127.0.0.1:1/db",
@@ -769,6 +891,24 @@ func Test_PostgreSQL_Query(t *testing.T) {
 					{float64(1700000000), "web-1", 10.5},
 					{float64(1700000060), "web-2", 20.5},
 				},
+			},
+			CredentialsCalls: 1,
+		},
+		// the table changes shape between two runs of the same query on one
+		// connection. A named statement would still describe the old shape.
+		"Query after its table changed shape": {
+			URL: ownerURL,
+			Before: []string{
+				"DROP TABLE IF EXISTS reshaped",
+				"CREATE TABLE reshaped (a int)",
+				"INSERT INTO reshaped VALUES (1)",
+				"SELECT * FROM reshaped",
+				"ALTER TABLE reshaped ADD COLUMN b text DEFAULT 'x'",
+			},
+			Query: "SELECT * FROM reshaped",
+			Result: &PostgreSQLQueryResult{
+				Columns: []string{"a", "b"},
+				Rows:    [][]any{{float64(1), "x"}},
 			},
 			CredentialsCalls: 1,
 		},
@@ -846,13 +986,45 @@ func Test_PostgreSQL_Query(t *testing.T) {
 func Test_PostgreSQL_connect(t *testing.T) {
 	cc := map[string]struct {
 		URL              string
+		Creds            Credentials
 		Closed           bool
 		Err              error
 		CredentialsCalls int
+
+		// RootCAs indicates whether every TLS config trusts the CA
+		// certificate alone.
+		RootCAs bool
 	}{
+		"Error returned by Credentials.basic": {
+			URL:              "postgres://127.0.0.1:1/db",
+			Creds:            NewCredentials([]byte(`{`)),
+			Err:              assert.AnError,
+			CredentialsCalls: 1,
+		},
 		"Error returned by buildConnectionString": {
-			URL: "://",
-			Err: assert.AnError,
+			URL:              "://",
+			Err:              assert.AnError,
+			CredentialsCalls: 1,
+		},
+		"Error returned by BasicCredentials.rootCAs": {
+			URL:              "postgres://127.0.0.1:1/db",
+			Creds:            caCredentials("not a certificate"),
+			Err:              _errInvalidCACertificate,
+			CredentialsCalls: 1,
+		},
+		// a URL without a host falls back to a Unix socket directory such
+		// as /tmp, which connects without TLS.
+		"CA certificate on a Unix socket": {
+			URL:              "postgres:///db",
+			Creds:            caCredentials(_testCA),
+			Err:              _errInvalidCACertificate,
+			CredentialsCalls: 1,
+		},
+		"CA certificate on a host list ending in a Unix socket": {
+			URL:              "postgres:///db?host=db1.test,/var/run/postgresql",
+			Creds:            caCredentials(_testCA),
+			Err:              _errInvalidCACertificate,
+			CredentialsCalls: 1,
 		},
 		"Closed processor": {
 			URL:    "postgres://127.0.0.1:1/db",
@@ -887,6 +1059,13 @@ func Test_PostgreSQL_connect(t *testing.T) {
 			URL:              fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", _pgUser, _pgPass, _pgAddr, _testDB),
 			CredentialsCalls: 1,
 		},
+		// each host gets a TLS config of its own.
+		"Successful pool verified with a CA certificate": {
+			URL:              "postgres://db1.test:5432,db2.test:5433/db?sslmode=disable",
+			Creds:            caCredentials(_testCA),
+			RootCAs:          true,
+			CredentialsCalls: 1,
+		},
 	}
 
 	for cn, c := range cc {
@@ -894,7 +1073,8 @@ func Test_PostgreSQL_connect(t *testing.T) {
 			t.Parallel()
 
 			inp := &InputMock{
-				URLFunc: func() string { return c.URL },
+				URLFunc:         func() string { return c.URL },
+				CredentialsFunc: func() Credentials { return c.Creds },
 			}
 
 			p := NewPostgreSQL(inp)
@@ -918,8 +1098,17 @@ func Test_PostgreSQL_connect(t *testing.T) {
 
 			cfg := pool.Config()
 			assert.Equal(t, int32(_pgMaxConns), cfg.MaxConns)
-			assert.Equal(t, pgx.QueryExecModeCacheStatement, cfg.ConnConfig.DefaultQueryExecMode)
+			assert.Equal(t, pgx.QueryExecModeCacheDescribe, cfg.ConnConfig.DefaultQueryExecMode)
 			assert.Equal(t, _connectTimeout, cfg.ConnConfig.ConnectTimeout)
+
+			if c.RootCAs {
+				require.NotNil(t, cfg.ConnConfig.TLSConfig)
+				assert.NotNil(t, cfg.ConnConfig.TLSConfig.RootCAs)
+				assert.False(t, cfg.ConnConfig.TLSConfig.InsecureSkipVerify)
+				require.Len(t, cfg.ConnConfig.Fallbacks, 1)
+				require.NotNil(t, cfg.ConnConfig.Fallbacks[0].TLSConfig)
+				assert.NotNil(t, cfg.ConnConfig.Fallbacks[0].TLSConfig.RootCAs)
+			}
 
 			// the pool is built once and handed to every later call.
 			again, err := p.connect(context.Background())
@@ -932,38 +1121,41 @@ func Test_PostgreSQL_connect(t *testing.T) {
 
 func Test_PostgreSQL_buildConnectionString(t *testing.T) {
 	cc := map[string]struct {
-		URL              string
-		Creds            Credentials
-		Result           string
-		Err              error
-		CredentialsCalls int
+		URL    string
+		Creds  BasicCredentials
+		Result string
+		Err    error
 	}{
 		"Error returned by url.Parse": {
 			URL: "://",
 			Err: assert.AnError,
 		},
-		"Error returned by json.Unmarshal": {
-			URL:              "postgres://dbhost:5432/mydb",
-			Creds:            NewCredentials([]byte(`{`)),
-			Err:              assert.AnError,
-			CredentialsCalls: 1,
-		},
 		"Credentials override url user": { //nolint:gosec // static test credentials
-			URL:              "postgres://olduser:oldpass@dbhost:5432/mydb",
-			Creds:            NewCredentials([]byte(`{"username":"credsuser","password":"credspass"}`)),
-			Result:           "postgres://credsuser:credspass@dbhost:5432/mydb",
-			CredentialsCalls: 1,
+			URL: "postgres://olduser:oldpass@dbhost:5432/mydb",
+			Creds: BasicCredentials{
+				Username: "credsuser",
+				Password: "credspass",
+			},
+			Result: "postgres://credsuser:credspass@dbhost:5432/mydb",
+		},
+		"Password keeps the url user": { //nolint:gosec // static test credentials
+			URL:    "postgres://reader.ref@dbhost:6543/postgres",
+			Creds:  BasicCredentials{Password: "credspass"},
+			Result: "postgres://reader.ref:credspass@dbhost:6543/postgres",
+		},
+		"Username keeps the url password": { //nolint:gosec // static test credentials
+			URL:    "postgres://olduser:oldpass@dbhost:5432/mydb",
+			Creds:  BasicCredentials{Username: "credsuser"},
+			Result: "postgres://credsuser:oldpass@dbhost:5432/mydb",
 		},
 		"Empty credentials keep url user": { //nolint:gosec // static test credentials
-			URL:              "postgres://olduser:oldpass@dbhost:5432/mydb",
-			Creds:            NewCredentials([]byte(`{"username":"","password":""}`)),
-			Result:           "postgres://olduser:oldpass@dbhost:5432/mydb",
-			CredentialsCalls: 1,
+			URL:    "postgres://olduser:oldpass@dbhost:5432/mydb",
+			Result: "postgres://olduser:oldpass@dbhost:5432/mydb",
 		},
-		"No credentials keep url unchanged": {
-			URL:              "postgres://dbhost:5432/mydb",
-			Result:           "postgres://dbhost:5432/mydb",
-			CredentialsCalls: 1,
+		"CA certificate forces verify-full": { //nolint:gosec // static test credentials
+			URL:    "postgres://user:pass@dbhost:5432/mydb?connect_timeout=5&sslmode=disable",
+			Creds:  BasicCredentials{CACertificate: "pem"},
+			Result: "postgres://user:pass@dbhost:5432/mydb?connect_timeout=5&sslmode=verify-full",
 		},
 	}
 
@@ -972,16 +1164,15 @@ func Test_PostgreSQL_buildConnectionString(t *testing.T) {
 			t.Parallel()
 
 			inp := &InputMock{
-				URLFunc:         func() string { return c.URL },
-				CredentialsFunc: func() Credentials { return c.Creds },
+				URLFunc: func() string { return c.URL },
 			}
 
 			p := NewPostgreSQL(inp)
 
-			connStr, err := p.buildConnectionString()
+			connStr, err := p.buildConnectionString(c.Creds)
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Len(t, inp.URLCalls(), 1)
-			assert.Len(t, inp.CredentialsCalls(), c.CredentialsCalls)
+			assert.Empty(t, inp.CredentialsCalls())
 
 			if err != nil {
 				return

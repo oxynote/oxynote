@@ -476,6 +476,7 @@ export function useSQLQueryExtension(
 
 			switch (toValue(dataSourceType)) {
 				case DataSourceType.PostgreSQL:
+				case DataSourceType.Supabase:
 					dialect = PostgreSQL
 					autocompletions = (localT) => postgreSQLCompletions(localT)
 

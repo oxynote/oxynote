@@ -1098,6 +1098,14 @@ func Test_queryDataSource_Execute(t *testing.T) {
 			Contains:   `"columns":["time","value"]`,
 			Calls:      dataSourceCalls{FetchDataSource: 1, Runner: 1, Type: 1, MySQL: 1, MySQLQuery: 1},
 		},
+		"Supabase charted": {
+			Type:       datasource.TypeSupabase,
+			PostgreSQL: pg(),
+			MySQL:      my(),
+			Args:       `{"data_source_id":"` + id + `","query":"select 1","chart_type":"line_chart"}`,
+			Contains:   `"status"`,
+			Calls:      dataSourceCalls{FetchDataSource: 1, Runner: 1, Type: 1, PostgreSQL: 1, PostgreSQLQuery: 1},
+		},
 		"MariaDB charted": {
 			Type:       datasource.TypeMariaDB,
 			PostgreSQL: pg(),

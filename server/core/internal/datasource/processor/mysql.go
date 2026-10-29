@@ -2,9 +2,10 @@
 package processor
 
 import (
+	"cmp"
 	"context"
+	"crypto/tls"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -110,6 +111,10 @@ var _mysqlAuthErrors = map[uint16]bool{
 // indistinguishable to the user otherwise, and a typo in the password is the
 // far more common of them.
 func mysqlConnectionStatus(err error) ConnectionStatus {
+	if errors.Is(err, _errInvalidCACertificate) {
+		return ConnectionStatusInvalidCACertificate
+	}
+
 	if mysqlErr, ok := errors.AsType[*mysql.MySQLError](err); ok && _mysqlAuthErrors[mysqlErr.Number] {
 		return ConnectionStatusUnauthorized
 	}
@@ -299,17 +304,17 @@ func (m *MySQL) connect() (*sql.DB, error) {
 		return m.db, nil
 	}
 
-	dsn, err := m.buildDSN()
+	cfg, err := m.buildConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	db, err := sql.Open("mysql", dsn)
+	connector, err := mysql.NewConnector(cfg)
 	if err != nil {
-		// NOCOV: the driver is registered and buildDSN formats the DSN
-		// itself, so opening has nothing left to reject.
 		return nil, fmt.Errorf("error connecting to mysql: %w", err)
 	}
+
+	db := sql.OpenDB(connector)
 
 	db.SetMaxOpenConns(_mysqlMaxConns)
 	db.SetMaxIdleConns(_mysqlMaxConns)
@@ -320,13 +325,12 @@ func (m *MySQL) connect() (*sql.DB, error) {
 	return db, nil
 }
 
-// buildDSN builds a MySQL DSN from the URL and credentials.
-// Input URL format: mysql://user:pass@host:3306/db
-// Output DSN format: user:pass@tcp(host:port)/db?parseTime=true&timeout=10s.
-func (m *MySQL) buildDSN() (string, error) {
+// buildConfig builds the MySQL driver configuration from the URL and
+// credentials. The URL has the form mysql://user:pass@host:3306/db.
+func (m *MySQL) buildConfig() (*mysql.Config, error) {
 	u, err := url.Parse(m.inp.URL())
 	if err != nil {
-		return "", fmt.Errorf("error parsing mysql url: %w", err)
+		return nil, fmt.Errorf("error parsing mysql url: %w", err)
 	}
 
 	var (
@@ -339,18 +343,17 @@ func (m *MySQL) buildDSN() (string, error) {
 		password, _ = u.User.Password()
 	}
 
-	if inpCreds := m.inp.Credentials(); len(inpCreds.data) > 0 {
-		var creds BasicCredentials
+	rawCreds := m.inp.Credentials()
 
-		if err := json.Unmarshal(inpCreds.data, &creds); err != nil {
-			return "", fmt.Errorf("error unmarshaling credentials: %w", err)
-		}
-
-		if creds.Username != "" || creds.Password != "" {
-			username = creds.Username
-			password = creds.Password
-		}
+	creds, err := rawCreds.basic()
+	if err != nil {
+		return nil, err
 	}
+
+	// each typed credential replaces only its own part of the URL, so a
+	// password typed for a user written in the URL keeps that user.
+	username = cmp.Or(creds.Username, username)
+	password = cmp.Or(creds.Password, password)
 
 	host := u.Hostname()
 	port := u.Port()
@@ -370,14 +373,31 @@ func (m *MySQL) buildDSN() (string, error) {
 	cfg.ParseTime = true
 	cfg.Timeout = _mysqlConnectTimeout
 
+	// a CA certificate replaces whatever TLS the URL asks for, which could
+	// skip the certificate the CA is there to check. The driver checks it
+	// against the host.
+	if creds.CACertificate != "" {
+		roots, rerr := creds.rootCAs()
+		if rerr != nil {
+			return nil, rerr
+		}
+
+		cfg.TLS = &tls.Config{
+			RootCAs:    roots,
+			MinVersion: tls.VersionTLS12,
+		}
+
+		return cfg, nil
+	}
+
 	// carry the recognised connection parameters over from the URL; without
 	// this a data source cannot ask for TLS and credentials cross the wire in
 	// the clear.
-	if tls := u.Query().Get("tls"); tls != "" {
-		cfg.TLSConfig = tls
+	if mode := u.Query().Get("tls"); mode != "" {
+		cfg.TLSConfig = mode
 	}
 
-	return cfg.FormatDSN(), nil
+	return cfg, nil
 }
 
 // MySQLQueryResult represents the result of a MySQL query.

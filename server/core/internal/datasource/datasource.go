@@ -3,11 +3,13 @@ package datasource
 
 import (
 	"errors"
+	"net/http"
 	"time"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/demo"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
@@ -22,6 +24,10 @@ const (
 	// TypePostgreSQL represents a PostgreSQL data source.
 	TypePostgreSQL Type = "postgresql"
 
+	// TypeSupabase represents a Supabase project, whose database is a
+	// PostgreSQL one.
+	TypeSupabase Type = "supabase"
+
 	// TypeMariaDB represents a MariaDB data source.
 	TypeMariaDB Type = "mariadb"
 
@@ -30,6 +36,14 @@ const (
 
 	// TypeLoki represents a Loki data source.
 	TypeLoki Type = "loki"
+)
+
+// ErrInvalidCredentials is returned when the credentials of a data source
+// are not an object of strings.
+var ErrInvalidCredentials = errutil.New(
+	http.StatusBadRequest,
+	"data_source.invalid_credentials",
+	"credentials must be an object of strings",
 )
 
 // DataSource represents a generic data source.
@@ -111,8 +125,11 @@ func (ds *DataSource) ApplyUpdate(ui UpdateInput) error {
 		ds.Name = ui.Name.String
 	}
 
-	if ui.URL.Valid {
+	// credentials belong to the endpoint they were entered for. A new URL
+	// starts without them, or with only those the update brings.
+	if ui.URL.Valid && ui.URL.String != ds.URL {
 		ds.URL = ui.URL.String
+		ds.Credentials = processor.Credentials{}
 	}
 
 	err := ds.updateCredentials(ui.Credentials)
@@ -132,7 +149,7 @@ func (ds *DataSource) updateCredentials(inp null.Value[processor.CredentialsUpda
 	}
 
 	switch ds.Type {
-	case TypePrometheus, TypePostgreSQL, TypeMariaDB, TypeMySQL, TypeLoki:
+	case TypePrometheus, TypePostgreSQL, TypeSupabase, TypeMariaDB, TypeMySQL, TypeLoki:
 		// OK.
 	default:
 		return errors.New("invalid data source type")
@@ -173,6 +190,16 @@ type CreateInput struct {
 
 	// Credentials holds the authentication credentials for the data source.
 	Credentials processor.Credentials `json:"credentials"`
+}
+
+// Validate checks that the credentials can be read. A connection test does
+// not always read them first: the demo data source passes without them.
+func (ci CreateInput) Validate() error {
+	if _, err := ci.Credentials.Configured(); err != nil {
+		return ErrInvalidCredentials
+	}
+
+	return nil
 }
 
 // UpdateInput represents the data required to update an existing freshness hook.

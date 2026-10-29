@@ -288,6 +288,21 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 				wasExecutorClientCalled(0, 0, 1),
 			),
 		},
+		"Supabase dispatch": {
+			DB:      stubDB(stubDataSource(datasourceCore.TypeSupabase), nil),
+			Clients: stubPostgreSQLQueryClients(processor.ConnectionStatusSuccess, nil, nil),
+			Target:  _testGenericQueryTarget,
+			ID:      _testID.String(),
+			Checks: checks(
+				hasResp(http.StatusOK, `{"status":"no-data"}`),
+				wasExecutorQueryCalled(0, 0, 1),
+				wasVariableManagerFetchTreeCalled(0),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTypeCalled(1),
+				wasExecutorClientCalled(0, 0, 1),
+			),
+		},
 		"MariaDB dispatch": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypeMariaDB), nil),
 			Clients: stubMySQLQueryClients(processor.ConnectionStatusSuccess, nil, nil),

@@ -410,6 +410,7 @@ func Test_MySQL_Close(t *testing.T) {
 func Test_MySQL_TestConnection(t *testing.T) {
 	cc := map[string]struct {
 		URL              string
+		Creds            Credentials
 		Result           ConnectionStatus
 		CredentialsCalls int
 	}{
@@ -438,6 +439,18 @@ func Test_MySQL_TestConnection(t *testing.T) {
 			Result:           ConnectionStatusSuccess,
 			CredentialsCalls: 1,
 		},
+		"Invalid CA certificate": {
+			URL:              fmt.Sprintf("mysql://%s:%s@%s/%s", _readerUser, _readerPass, _mysqlAddr, _testDB),
+			Creds:            caCredentials("not a certificate"),
+			Result:           ConnectionStatusInvalidCACertificate,
+			CredentialsCalls: 1,
+		},
+		"Server the CA certificate did not sign": {
+			URL:              fmt.Sprintf("mysql://%s:%s@%s/%s", _readerUser, _readerPass, _mysqlAddr, _testDB),
+			Creds:            caCredentials(_testCA),
+			Result:           ConnectionStatusUnreachable,
+			CredentialsCalls: 1,
+		},
 	}
 
 	for cn, c := range cc {
@@ -445,7 +458,8 @@ func Test_MySQL_TestConnection(t *testing.T) {
 			t.Parallel()
 
 			inp := &InputMock{
-				URLFunc: func() string { return c.URL },
+				URLFunc:         func() string { return c.URL },
+				CredentialsFunc: func() Credentials { return c.Creds },
 			}
 
 			m := NewMySQL(inp)
@@ -747,9 +761,14 @@ func Test_MySQL_connect(t *testing.T) {
 		Err              error
 		CredentialsCalls int
 	}{
-		"Error returned by buildDSN": {
+		"Error returned by buildConfig": {
 			URL: "://",
 			Err: assert.AnError,
+		},
+		"Error returned by mysql.NewConnector": {
+			URL:              "mysql://127.0.0.1:1/db?tls=bogus",
+			Err:              assert.AnError,
+			CredentialsCalls: 1,
 		},
 		"Closed processor": {
 			URL:    "mysql://127.0.0.1:1/db",
@@ -799,7 +818,7 @@ func Test_MySQL_connect(t *testing.T) {
 	}
 }
 
-func Test_MySQL_buildDSN(t *testing.T) {
+func Test_MySQL_buildConfig(t *testing.T) {
 	cc := map[string]struct {
 		URL              string
 		Creds            Credentials
@@ -808,6 +827,7 @@ func Test_MySQL_buildDSN(t *testing.T) {
 		Addr             string
 		DBName           string
 		TLS              string
+		RootCAs          bool
 		Err              error
 		CredentialsCalls int
 	}{
@@ -815,10 +835,16 @@ func Test_MySQL_buildDSN(t *testing.T) {
 			URL: "://",
 			Err: assert.AnError,
 		},
-		"Error returned by json.Unmarshal": {
+		"Error returned by Credentials.basic": {
 			URL:              "mysql://dbhost/mydb",
 			Creds:            NewCredentials([]byte(`{`)),
 			Err:              assert.AnError,
+			CredentialsCalls: 1,
+		},
+		"Error returned by BasicCredentials.rootCAs": {
+			URL:              "mysql://dbhost/mydb",
+			Creds:            caCredentials("not a certificate"),
+			Err:              _errInvalidCACertificate,
 			CredentialsCalls: 1,
 		},
 		"URL credentials with default port": { //nolint:gosec // static test credentials
@@ -833,6 +859,15 @@ func Test_MySQL_buildDSN(t *testing.T) {
 			URL:              "mysql://urluser:urlpass@dbhost:3307/mydb",
 			Creds:            NewCredentials([]byte(`{"username":"credsuser","password":"credspass"}`)),
 			User:             "credsuser",
+			Password:         "credspass",
+			Addr:             "dbhost:3307",
+			DBName:           "mydb",
+			CredentialsCalls: 1,
+		},
+		"Password keeps the url user": {
+			URL:              "mysql://urluser@dbhost:3307/mydb",
+			Creds:            NewCredentials([]byte(`{"password":"credspass"}`)),
+			User:             "urluser",
 			Password:         "credspass",
 			Addr:             "dbhost:3307",
 			DBName:           "mydb",
@@ -854,6 +889,16 @@ func Test_MySQL_buildDSN(t *testing.T) {
 			TLS:              "true",
 			CredentialsCalls: 1,
 		},
+		// a TLS parameter could skip the certificate the CA is there to
+		// check.
+		"CA certificate replaces the TLS parameter": {
+			URL:              "mysql://dbhost/mydb?tls=skip-verify",
+			Creds:            caCredentials(_testCA),
+			Addr:             "dbhost:3306",
+			DBName:           "mydb",
+			RootCAs:          true,
+			CredentialsCalls: 1,
+		},
 		"No user info": {
 			URL:              "mysql://dbhost/mydb",
 			Addr:             "dbhost:3306",
@@ -873,7 +918,7 @@ func Test_MySQL_buildDSN(t *testing.T) {
 
 			m := NewMySQL(inp)
 
-			dsn, err := m.buildDSN()
+			cfg, err := m.buildConfig()
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Len(t, inp.URLCalls(), 1)
 			assert.Len(t, inp.CredentialsCalls(), c.CredentialsCalls)
@@ -882,8 +927,6 @@ func Test_MySQL_buildDSN(t *testing.T) {
 				return
 			}
 
-			cfg, err := mysql.ParseDSN(dsn)
-			require.NoError(t, err)
 			assert.Equal(t, c.User, cfg.User)
 			assert.Equal(t, c.Password, cfg.Passwd)
 			assert.Equal(t, c.Addr, cfg.Addr)
@@ -891,6 +934,7 @@ func Test_MySQL_buildDSN(t *testing.T) {
 			assert.True(t, cfg.ParseTime)
 			assert.Equal(t, 10*time.Second, cfg.Timeout)
 			assert.Equal(t, c.TLS, cfg.TLSConfig)
+			assert.Equal(t, c.RootCAs, cfg.TLS != nil && cfg.TLS.RootCAs != nil)
 		})
 	}
 }

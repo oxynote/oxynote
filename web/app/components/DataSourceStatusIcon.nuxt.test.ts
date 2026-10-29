@@ -33,6 +33,7 @@ describe("<DataSourceStatusIcon>", () => {
 	it.for([
 		{ type: DataSourceType.Prometheus, expected: "devicon:prometheus" },
 		{ type: DataSourceType.PostgreSQL, expected: "devicon:postgresql" },
+		{ type: DataSourceType.Supabase, expected: "devicon:supabase" },
 		{ type: DataSourceType.MySQL, expected: "devicon:mysql" },
 		{ type: DataSourceType.MariaDB, expected: "devicon:mariadb" },
 	])("shows the $type logo", async ({ type, expected }, { expect }) => {

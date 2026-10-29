@@ -201,6 +201,11 @@ func Test_Query(t *testing.T) {
 			Result: (&processor.PostgreSQLQueryResult{Columns: rows.Columns, Rows: rows.Rows}).Transform(processor.ChartTypeLine),
 			Calls:  stubCalls{Type: 1, PostgreSQL: 1, PostgreSQLQuery: 1},
 		},
+		"Supabase result transformed": {
+			Runner: stubRunner{typ: TypeSupabase, postgreSQL: rows},
+			Result: (&processor.PostgreSQLQueryResult{Columns: rows.Columns, Rows: rows.Rows}).Transform(processor.ChartTypeLine),
+			Calls:  stubCalls{Type: 1, PostgreSQL: 1, PostgreSQLQuery: 1},
+		},
 		"MySQL result transformed": {
 			Runner: stubRunner{typ: TypeMySQL, mySQL: &processor.MySQLQueryResult{Columns: rows.Columns, Rows: rows.Rows}},
 			Result: (&processor.MySQLQueryResult{Columns: rows.Columns, Rows: rows.Rows}).Transform(processor.ChartTypeLine),

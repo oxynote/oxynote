@@ -204,6 +204,15 @@ func stubDataSource(typ datasourceCore.Type) *datasourceCore.DataSource {
 	}
 }
 
+// stubDataSourceWithCredentials returns a PostgreSQL data source holding
+// the given credentials JSON.
+func stubDataSourceWithCredentials(creds string) *datasourceCore.DataSource {
+	ds := stubDataSource(datasourceCore.TypePostgreSQL)
+	ds.Credentials = processor.NewCredentials([]byte(creds))
+
+	return ds
+}
+
 // stubDB returns a DB mock whose FetchDataSource returns the provided
 // data source or error.
 func stubDB(ds *datasourceCore.DataSource, fetchErr error) *DBMock {
@@ -516,9 +525,27 @@ func Test_Handler_CreateDataSource(t *testing.T) {
 
 					assert.Equal(t, http.StatusCreated, rec.Code)
 
-					exp, err := json.Marshal(ds)
+					exp, err := json.Marshal(dataSourceResponse{
+						DataSource: *ds,
+						Configured: map[string]bool{"username": true},
+					})
 					require.NoError(t, err)
 					assert.JSONEq(t, string(exp), rec.Body.String())
+				},
+			),
+		},
+		// nothing is stored, so a list of the organisation's data sources
+		// never meets credentials it cannot read.
+		"Error returned by CreateInput.Validate": {
+			Clients: &clientMocks{status: processor.ConnectionStatusSuccess, statusErr: nil},
+			Body:    `{"type":"prometheus","name":"test-source","url":"http://source.test","credentials":[1]}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"data_source.invalid_credentials","message":"credentials must be an object of strings"}`),
+				func(t *testing.T, db *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+					t.Helper()
+
+					assert.Empty(t, exec.runner.TestConnectionCalls())
+					assert.Empty(t, db.InsertDataSourceCalls())
 				},
 			),
 		},
@@ -578,11 +605,31 @@ func Test_Handler_FetchDataSource(t *testing.T) {
 				wasDBFetchDataSourceCalled(1),
 			),
 		},
+		"Error returned by Credentials.Configured": {
+			DB: stubDB(stubDataSourceWithCredentials(`{`), nil),
+			ID: _testID.String(),
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasDBFetchDataSourceCalled(1),
+			),
+		},
 		"Successful fetch": {
 			DB: stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			ID: _testID.String(),
 			Checks: checks(
 				hasJSONResp(http.StatusOK, stubDataSource(datasourceCore.TypePrometheus)),
+				wasDBFetchDataSourceCalled(1),
+			),
+		},
+		// which credentials are set is shown, never their values.
+		"Successful fetch with credentials": {
+			DB: stubDB(stubDataSourceWithCredentials(`{"username":"user","password":"pass","caCertificate":"pem"}`), nil),
+			ID: _testID.String(),
+			Checks: checks(
+				hasJSONResp(http.StatusOK, dataSourceResponse{
+					DataSource: *stubDataSource(datasourceCore.TypePostgreSQL),
+					Configured: map[string]bool{"username": true, "password": true, "caCertificate": true},
+				}),
 				wasDBFetchDataSourceCalled(1),
 			),
 		},
@@ -623,6 +670,7 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
 				wasDBUpdateDataSourceCalled(0),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Missing data source id": {
@@ -632,6 +680,7 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
 				wasDBUpdateDataSourceCalled(0),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Error returned by db.FetchDataSource": {
@@ -643,6 +692,7 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
 				wasDBUpdateDataSourceCalled(0),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Error returned by Runner.TestConnection": {
@@ -655,6 +705,7 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 				wasRunnersRunnerCalled(1),
 				wasExecutorTestConnectionCalled(1),
 				wasDBUpdateDataSourceCalled(0),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Unchanged status skips the update": {
@@ -667,6 +718,7 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 				wasRunnersRunnerCalled(1),
 				wasExecutorTestConnectionCalled(1),
 				wasDBUpdateDataSourceCalled(0),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Changed status updates the data source": {
@@ -679,6 +731,7 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 				wasRunnersRunnerCalled(1),
 				wasExecutorTestConnectionCalled(1),
 				wasDBUpdateDataSourceCalled(1),
+				wasRunnersEvictCalled(1),
 			),
 		},
 		"Credentials that cannot be decrypted are reported": {
@@ -699,6 +752,7 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 				// would store an encryption of the credentials it could
 				// not read in place of the ones it could not.
 				wasDBUpdateDataSourceCalled(0),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Error returned by db.UpdateDataSource": {
@@ -718,6 +772,7 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 				wasRunnersRunnerCalled(1),
 				wasExecutorTestConnectionCalled(1),
 				wasDBUpdateDataSourceCalled(1),
+				wasRunnersEvictCalled(1),
 				hasUpdateFailedLog(),
 			),
 		},
@@ -778,14 +833,34 @@ func Test_Handler_FetchDataSources(t *testing.T) {
 				wasDBFetchDataSourcesCalled(1),
 			),
 		},
-		"Successful fetch": {
+		"Error returned by Credentials.Configured": {
 			DB: &DBMock{
 				FetchDataSourcesFunc: func(_ context.Context, _ string) ([]datasourceCore.DataSource, error) {
-					return []datasourceCore.DataSource{*stubDataSource(datasourceCore.TypePrometheus)}, nil
+					return []datasourceCore.DataSource{*stubDataSourceWithCredentials(`{`)}, nil
 				},
 			},
 			Checks: checks(
-				hasJSONResp(http.StatusOK, []datasourceCore.DataSource{*stubDataSource(datasourceCore.TypePrometheus)}),
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasDBFetchDataSourcesCalled(1),
+			),
+		},
+		"Successful fetch": {
+			DB: &DBMock{
+				FetchDataSourcesFunc: func(_ context.Context, _ string) ([]datasourceCore.DataSource, error) {
+					return []datasourceCore.DataSource{
+						*stubDataSource(datasourceCore.TypePrometheus),
+						*stubDataSourceWithCredentials(`{"caCertificate":"pem"}`),
+					}, nil
+				},
+			},
+			Checks: checks(
+				hasJSONResp(http.StatusOK, []dataSourceResponse{
+					{DataSource: *stubDataSource(datasourceCore.TypePrometheus)},
+					{
+						DataSource: *stubDataSource(datasourceCore.TypePostgreSQL),
+						Configured: map[string]bool{"caCertificate": true},
+					},
+				}),
 				wasDBFetchDataSourcesCalled(1),
 			),
 		},
@@ -929,6 +1004,20 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 				wasExecutorTestConnectionCalled(1),
 				wasDBUpdateDataSourceCalled(1),
 				wasRunnersEvictCalled(0),
+			),
+		},
+		"Error returned by Credentials.Configured": {
+			DB:      stubDB(stubDataSourceWithCredentials(`[1]`), nil),
+			Clients: &clientMocks{status: processor.ConnectionStatusSuccess, statusErr: nil},
+			Body:    body,
+			ID:      _testID.String(),
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasDBFetchDataSourceCalled(1),
+				wasRunnersRunnerCalled(1),
+				wasExecutorTestConnectionCalled(1),
+				wasDBUpdateDataSourceCalled(1),
+				wasRunnersEvictCalled(1),
 			),
 		},
 		"Successful update": {
@@ -1096,6 +1185,48 @@ func Test_Handler_substitute(t *testing.T) {
 				ch(t, db, exec, vars, httptest.NewRecorder(), logs)
 			}
 
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
+}
+
+func Test_newDataSourceResponse(t *testing.T) {
+	cc := map[string]struct {
+		DataSource *datasourceCore.DataSource
+		Result     dataSourceResponse
+		Err        error
+	}{
+		"Error returned by Credentials.Configured": {
+			DataSource: stubDataSourceWithCredentials(`[1]`),
+			Err:        assert.AnError,
+		},
+		"No credentials": {
+			DataSource: stubDataSource(datasourceCore.TypePrometheus),
+			Result: dataSourceResponse{
+				DataSource: *stubDataSource(datasourceCore.TypePrometheus),
+				Configured: map[string]bool{},
+			},
+		},
+		"Some credentials set": {
+			DataSource: stubDataSourceWithCredentials(`{"username":"user","caCertificate":"pem"}`),
+			Result: dataSourceResponse{
+				DataSource: *stubDataSourceWithCredentials(`{"username":"user","caCertificate":"pem"}`),
+				Configured: map[string]bool{"username": true, "caCertificate": true},
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := newDataSourceResponse(c.DataSource)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {

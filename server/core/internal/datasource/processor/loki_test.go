@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -328,8 +329,15 @@ func Test_Loki_TestConnection(t *testing.T) {
 		Inp     *InputMock
 		Handler http.Handler
 		Version string
-		Result  ConnectionStatus
-		Err     error
+
+		// TLS indicates whether the handler is served over TLS, with
+		// CACertificate as the credentials' CA, or the server's own
+		// certificate when it is empty.
+		TLS           bool
+		CACertificate string
+
+		Result ConnectionStatus
+		Err    error
 	}{
 		"Error returned by Loki.client": {
 			Inp: &InputMock{
@@ -337,9 +345,27 @@ func Test_Loki_TestConnection(t *testing.T) {
 			},
 			Err: assert.AnError,
 		},
+		"Invalid CA certificate": {
+			Inp: &InputMock{
+				URLFunc:         func() string { return "https://loki.test" },
+				CredentialsFunc: func() Credentials { return caCredentials("not a certificate") },
+			},
+			Result: ConnectionStatusInvalidCACertificate,
+		},
 		"Unreachable data source": {
 			Inp:    &InputMock{URLFunc: func() string { return "http://127.0.0.1:1" }},
 			Result: ConnectionStatusUnreachable,
+		},
+		"Server the CA certificate did not sign": {
+			Handler:       testutil.JSONHandler(_lokiBuildInfoPath, http.StatusOK, `{"version":"v3.7.9"}`),
+			TLS:           true,
+			CACertificate: _testCA,
+			Result:        ConnectionStatusUnreachable,
+		},
+		"Successful connection verified with a CA certificate": {
+			Handler: testutil.JSONHandler(_lokiBuildInfoPath, http.StatusOK, `{"version":"v3.7.9"}`),
+			TLS:     true,
+			Result:  ConnectionStatusSuccess,
 		},
 		"Unauthorized data source": {
 			Handler: testutil.JSONHandler(_lokiBuildInfoPath, http.StatusUnauthorized, `no org id`),
@@ -397,7 +423,13 @@ func Test_Loki_TestConnection(t *testing.T) {
 			t.Parallel()
 
 			inp := c.Inp
-			if inp == nil {
+
+			switch {
+			case inp != nil:
+				t.Cleanup(http.DefaultTransport.(*http.Transport).CloseIdleConnections)
+			case c.TLS:
+				inp = prepTLSInput(t, c.Handler, c.CACertificate)
+			default:
 				target := ""
 				if c.Version != "" {
 					target = "http://" + _lokiAddrs[c.Version]
@@ -407,11 +439,13 @@ func Test_Loki_TestConnection(t *testing.T) {
 				inp.CredentialsFunc = func() Credentials {
 					return NewCredentials([]byte(`{"username":"user","password":"pass"}`))
 				}
-			} else {
-				t.Cleanup(http.DefaultTransport.(*http.Transport).CloseIdleConnections)
 			}
 
-			cs, err := NewLoki(inp).TestConnection(context.Background())
+			l := NewLoki(inp)
+
+			t.Cleanup(func() { assert.NoError(t, l.Close()) })
+
+			cs, err := l.TestConnection(context.Background())
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -1123,20 +1157,36 @@ func Test_Loki_request(t *testing.T) {
 
 func Test_Loki_client(t *testing.T) {
 	cc := map[string]struct {
+		URL         string
 		Credentials Credentials
-		Basic       bool
-		Err         error
+
+		// TLS indicates whether the data source is served over TLS, with
+		// its own certificate as the credentials' CA.
+		TLS bool
+
+		// Auth is the Authorization header the data source receives.
+		Auth string
+
+		Err error
 	}{
-		"No credentials": {
-			Credentials: Credentials{},
-		},
 		"Credentials that do not decode": {
+			URL:         "http://loki.test",
 			Credentials: NewCredentials([]byte(`{`)),
 			Err:         assert.AnError,
 		},
+		"Error returned by ownTransport.roundTripper": {
+			URL:         "http://loki.test",
+			Credentials: caCredentials("not a certificate"),
+			Err:         _errInvalidCACertificate,
+		},
+		"No credentials": {},
 		"Basic credentials": {
 			Credentials: NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
-			Basic:       true,
+			Auth:        "Basic dXNlcjpwYXNz",
+		},
+		// credentials holding only a CA certificate authenticate nobody.
+		"Only a CA certificate": {
+			TLS: true,
 		},
 	}
 
@@ -1144,18 +1194,48 @@ func Test_Loki_client(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			client, err := NewLoki(&InputMock{
-				CredentialsFunc: func() Credentials { return c.Credentials },
-			}).client()
+			var auth atomic.Value
+
+			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				auth.Store(r.Header.Get("Authorization"))
+				w.WriteHeader(http.StatusNoContent)
+			})
+
+			var inp *InputMock
+
+			switch {
+			case c.URL != "":
+				inp = &InputMock{URLFunc: func() string { return c.URL }}
+			case c.TLS:
+				inp = prepTLSInput(t, h, "")
+			default:
+				inp = prepLokiInput(t, "", h)
+			}
+
+			if !c.TLS {
+				inp.CredentialsFunc = func() Credentials { return c.Credentials }
+			}
+
+			l := NewLoki(inp)
+
+			t.Cleanup(func() { assert.NoError(t, l.Close()) })
+
+			client, err := l.client()
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
 
-			require.NotNil(t, client)
-			assert.Equal(t, c.Basic, client.Transport != nil)
-			assert.NotNil(t, client.CheckRedirect)
+			require.NotNil(t, client.CheckRedirect)
+
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, inp.URL(), http.NoBody)
+			require.NoError(t, err)
+
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+			assert.Equal(t, c.Auth, auth.Load())
 		})
 	}
 }

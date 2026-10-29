@@ -1,3 +1,4 @@
+import type { DOMWrapper } from "@vue/test-utils"
 import { setResponseStatus } from "h3"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
@@ -10,6 +11,7 @@ import DataSourceUpsertAction from "./DataSourceUpsertAction.vue"
 import {
 	at,
 	findButtonByText,
+	clearTeleportedOverlays,
 	mountWithFrozenClock,
 	settleActionSubmit,
 	t,
@@ -29,11 +31,27 @@ const EXISTING: DataSource = {
 	updatedAt: null,
 }
 
+const EXISTING_WITH_LOGIN: DataSource = {
+	...EXISTING,
+	configured: { username: true, password: true },
+}
+
+const EXISTING_WITH_CA: DataSource = {
+	...EXISTING,
+	configured: { caCertificate: true },
+}
+
+const UPSERT = "settings.action-modals.data-source-upsert"
+
+const CA_CERTIFICATE =
+	"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
+
 function mountAction(props: Record<string, unknown>) {
 	return mountWithFrozenClock(DataSourceUpsertAction, { props: props })
 }
 
-// name, url, username, password — in template order
+// name, url, username, password — in template order — and the CA
+// certificate, the only textarea
 function fields(wrapper: Awaited<ReturnType<typeof mountAction>>) {
 	const inputs = wrapper.findAll("input")
 
@@ -42,6 +60,7 @@ function fields(wrapper: Awaited<ReturnType<typeof mountAction>>) {
 		url: at(inputs, 1),
 		username: at(inputs, 2),
 		password: at(inputs, 3),
+		caCertificate: wrapper.get("textarea"),
 	}
 }
 
@@ -138,6 +157,36 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			})
 		})
 
+		it("offers no CA certificate reset", async ({ expect }) => {
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Prometheus,
+			})
+
+			expect(resetButtons(wrapper)).toHaveLength(0)
+		})
+
+		it("sends a CA certificate with the credentials", async ({ expect }) => {
+			const calls = mockEndpoint("POST", "/api/data-sources", () => ({
+				id: EXISTING.id,
+			}))
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Prometheus,
+			})
+			await fields(wrapper).name.setValue("Prod metrics")
+			await fields(wrapper).url.setValue("https://prometheus.test")
+			await fields(wrapper).caCertificate.setValue(CA_CERTIFICATE)
+
+			await submit(wrapper)
+
+			expect(calls[0]?.body).toMatchObject({
+				credentials: {
+					username: "",
+					password: "",
+					caCertificate: CA_CERTIFICATE,
+				},
+			})
+		})
+
 		it("confirms and closes once the data source is connected", async ({
 			expect,
 		}) => {
@@ -189,6 +238,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			DataSourceStatus.Unreachable,
 			DataSourceStatus.VersionNotSupported,
 			DataSourceStatus.NotReadOnly,
+			DataSourceStatus.InvalidCACertificate,
 		])(
 			"explains a %s rejection from the server",
 			async (status, { expect }) => {
@@ -266,14 +316,80 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			expect(fields(wrapper).url.element.value).toBe("http://prometheus.test")
 		})
 
-		it("hides the stored credentials behind a placeholder", async ({
+		it("locks the stored credentials until they are reset", async ({
 			expect,
 		}) => {
-			const wrapper = await mountAction({ updateTarget: EXISTING })
+			const wrapper = await mountAction({ updateTarget: EXISTING_WITH_LOGIN })
 
-			expect(fields(wrapper).username.attributes("placeholder")).toBe(
-				t("settings.action-modals.data-source-upsert.hidden-placeholder"),
+			for (const field of [
+				fields(wrapper).username,
+				fields(wrapper).password,
+			]) {
+				expect(field.attributes("disabled")).toBeDefined()
+				expect(field.attributes("placeholder")).toBe(
+					t(`${UPSERT}.hidden-placeholder`),
+				)
+			}
+
+			// no CA certificate is stored, so there is none to lock
+			expect(fields(wrapper).caCertificate.attributes("placeholder")).toBe(
+				t(`${UPSERT}.creds-ca-field.placeholder`),
 			)
+			expect(
+				fields(wrapper).caCertificate.attributes("disabled"),
+			).toBeUndefined()
+			expect(resetButtons(wrapper)).toHaveLength(2)
+			expect(wrapper.text()).not.toContain(
+				t(`${UPSERT}.url-field.credentials-reset`),
+			)
+		})
+
+		it("clears a stored password after a reset", async ({ expect }) => {
+			const calls = mockEndpoint(
+				"PUT",
+				`/api/data-sources/${EXISTING.id}`,
+				() => ({ id: EXISTING.id }),
+			)
+			const wrapper = await mountAction({ updateTarget: EXISTING_WITH_LOGIN })
+			await at(resetButtons(wrapper), 1).trigger("click")
+
+			await submit(wrapper)
+
+			expect(fields(wrapper).password.attributes("disabled")).toBeUndefined()
+			expect(fields(wrapper).username.attributes("disabled")).toBeDefined()
+			expect(calls[0]?.body).toEqual({ credentials: { password: "" } })
+		})
+
+		it("replaces a stored username after a reset", async ({ expect }) => {
+			const calls = mockEndpoint(
+				"PUT",
+				`/api/data-sources/${EXISTING.id}`,
+				() => ({ id: EXISTING.id }),
+			)
+			const wrapper = await mountAction({ updateTarget: EXISTING_WITH_LOGIN })
+			await at(resetButtons(wrapper), 0).trigger("click")
+			await fields(wrapper).username.setValue("reader")
+
+			await submit(wrapper)
+
+			expect(calls[0]?.body).toEqual({ credentials: { username: "reader" } })
+		})
+
+		it("warns that a new url clears the stored credentials", async ({
+			expect,
+		}) => {
+			const wrapper = await mountAction({ updateTarget: EXISTING_WITH_LOGIN })
+
+			await fields(wrapper).url.setValue("http://other.test")
+
+			expect(wrapper.text()).toContain(
+				t(`${UPSERT}.url-field.credentials-reset`),
+			)
+			expect(fields(wrapper).username.attributes("disabled")).toBeUndefined()
+			expect(fields(wrapper).username.attributes("placeholder")).toBe(
+				t(`${UPSERT}.creds-username-field.prometheus.placeholder`),
+			)
+			expect(resetButtons(wrapper)).toHaveLength(0)
 		})
 
 		it("sends only the fields that actually changed", async ({ expect }) => {
@@ -303,6 +419,107 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			await submit(wrapper)
 
 			expect(calls[0]?.body).toEqual({
+				credentials: { password: "new-secret" },
+			})
+		})
+
+		it("sends a new CA certificate on its own", async ({ expect }) => {
+			const calls = mockEndpoint(
+				"PUT",
+				`/api/data-sources/${EXISTING.id}`,
+				() => ({ id: EXISTING.id }),
+			)
+			const wrapper = await mountAction({ updateTarget: EXISTING })
+			await fields(wrapper).caCertificate.setValue(CA_CERTIFICATE)
+
+			await submit(wrapper)
+
+			expect(calls[0]?.body).toEqual({
+				credentials: { caCertificate: CA_CERTIFICATE },
+			})
+		})
+
+		it("locks a stored CA certificate until it is reset", async ({
+			expect,
+		}) => {
+			const wrapper = await mountAction({ updateTarget: EXISTING_WITH_CA })
+
+			expect(fields(wrapper).caCertificate.attributes("disabled")).toBeDefined()
+			expect(fields(wrapper).caCertificate.attributes("placeholder")).toBe(
+				t(`${UPSERT}.hidden-placeholder`),
+			)
+			expect(resetButtons(wrapper)).toHaveLength(1)
+		})
+
+		it("clears the stored CA certificate after a reset", async ({ expect }) => {
+			const calls = mockEndpoint(
+				"PUT",
+				`/api/data-sources/${EXISTING.id}`,
+				() => ({ id: EXISTING.id }),
+			)
+			const wrapper = await mountAction({ updateTarget: EXISTING_WITH_CA })
+			await at(resetButtons(wrapper), 0).trigger("click")
+
+			await submit(wrapper)
+
+			expect(
+				fields(wrapper).caCertificate.attributes("disabled"),
+			).toBeUndefined()
+			expect(resetButtons(wrapper)).toHaveLength(0)
+			expect(calls[0]?.body).toEqual({
+				credentials: { caCertificate: "" },
+			})
+		})
+
+		it("replaces the stored CA certificate after a reset", async ({
+			expect,
+		}) => {
+			const calls = mockEndpoint(
+				"PUT",
+				`/api/data-sources/${EXISTING.id}`,
+				() => ({ id: EXISTING.id }),
+			)
+			const wrapper = await mountAction({ updateTarget: EXISTING_WITH_CA })
+			await at(resetButtons(wrapper), 0).trigger("click")
+			await fields(wrapper).caCertificate.setValue(CA_CERTIFICATE)
+
+			await submit(wrapper)
+
+			expect(calls[0]?.body).toEqual({
+				credentials: { caCertificate: CA_CERTIFICATE },
+			})
+		})
+
+		it("unlocks the CA certificate when the url changes", async ({
+			expect,
+		}) => {
+			const wrapper = await mountAction({ updateTarget: EXISTING_WITH_CA })
+
+			await fields(wrapper).url.setValue("http://other.test")
+
+			expect(
+				fields(wrapper).caCertificate.attributes("disabled"),
+			).toBeUndefined()
+			expect(fields(wrapper).caCertificate.attributes("placeholder")).toBe(
+				t(`${UPSERT}.creds-ca-field.placeholder`),
+			)
+			expect(resetButtons(wrapper)).toHaveLength(0)
+		})
+
+		it("sends the credentials typed with a new url", async ({ expect }) => {
+			const calls = mockEndpoint(
+				"PUT",
+				`/api/data-sources/${EXISTING.id}`,
+				() => ({ id: EXISTING.id }),
+			)
+			const wrapper = await mountAction({ updateTarget: EXISTING })
+			await fields(wrapper).url.setValue("http://other.test")
+			await fields(wrapper).password.setValue("new-secret")
+
+			await submit(wrapper)
+
+			expect(calls[0]?.body).toEqual({
+				url: "http://other.test",
 				credentials: { password: "new-secret" },
 			})
 		})
@@ -378,6 +595,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 
 		it.for([
 			DataSourceType.PostgreSQL,
+			DataSourceType.Supabase,
 			DataSourceType.MySQL,
 			DataSourceType.MariaDB,
 		])("warns that %s needs a read-only user", async (type, { expect }) => {
@@ -386,4 +604,80 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			expect(wrapper.text()).toContain("read-only")
 		})
 	})
+
+	describe("field help", { concurrent: false }, () => {
+		beforeEach(clearTeleportedOverlays)
+
+		it("explains where supabase keeps its connection string", async ({
+			expect,
+		}) => {
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Supabase,
+			})
+			const help = helpButtons(wrapper)
+
+			await openPopover(at(help, 0))
+
+			expect(help).toHaveLength(2)
+			expect(document.body.textContent).toContain(
+				t(`${UPSERT}.url-field.supabase-help.placeholders.credentials`),
+			)
+			expect(document.body.textContent).toContain(
+				t(`${UPSERT}.url-field.supabase-help.placeholders.user`),
+			)
+		})
+
+		it("explains where supabase keeps its CA certificate", async ({
+			expect,
+		}) => {
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Supabase,
+			})
+
+			await openPopover(at(helpButtons(wrapper), 1))
+
+			expect(document.body.textContent).toContain(
+				t(`${UPSERT}.creds-ca-field.help`),
+			)
+			expect(document.body.textContent).toContain(
+				t(`${UPSERT}.creds-ca-field.supabase-help.placeholders.file`),
+			)
+		})
+
+		it("gives postgresql only the CA certificate help", async ({ expect }) => {
+			const wrapper = await mountAction({
+				creationType: DataSourceType.PostgreSQL,
+			})
+			const help = helpButtons(wrapper)
+
+			await openPopover(at(help, 0))
+
+			expect(help).toHaveLength(1)
+			expect(document.body.textContent).toContain(
+				t(`${UPSERT}.creds-ca-field.help`),
+			)
+			expect(document.body.textContent).not.toContain(
+				t(`${UPSERT}.creds-ca-field.supabase-help.placeholders.file`),
+			)
+		})
+	})
 })
+
+function helpButtons(wrapper: Awaited<ReturnType<typeof mountAction>>) {
+	return wrapper
+		.findAll("button")
+		.filter((b) => b.text() === t(`${UPSERT}.help-button`))
+}
+
+// reka opens a popover on the pointerdown and click a user's click sends
+async function openPopover(trigger: DOMWrapper<HTMLButtonElement>) {
+	await trigger.trigger("pointerdown", { button: 0 })
+	await trigger.trigger("click")
+	await nextTick()
+}
+
+function resetButtons(wrapper: Awaited<ReturnType<typeof mountAction>>) {
+	return wrapper
+		.findAll("button")
+		.filter((b) => b.text() === t(`${UPSERT}.reset-button`))
+}

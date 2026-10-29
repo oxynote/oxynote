@@ -22,6 +22,11 @@ describe("<HelpPopoverContent>", () => {
 				"editor.metrics.config.query-explanations.postgresql.main-placeholders.postgresql-queries",
 		},
 		{
+			type: DataSourceType.Supabase,
+			expectedKey:
+				"editor.metrics.config.query-explanations.postgresql.main-placeholders.postgresql-queries",
+		},
+		{
 			type: DataSourceType.MySQL,
 			expectedKey:
 				"editor.metrics.config.query-explanations.mysql.main-placeholders.mysql-queries",

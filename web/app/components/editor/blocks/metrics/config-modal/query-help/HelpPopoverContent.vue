@@ -14,7 +14,10 @@ const props = defineProps<{
 	>
 		<PrometheusHelp v-if="props.dataSourceType === DataSourceType.Prometheus" />
 		<PostgreSQLHelp
-			v-else-if="props.dataSourceType === DataSourceType.PostgreSQL"
+			v-else-if="
+				props.dataSourceType === DataSourceType.PostgreSQL ||
+				props.dataSourceType === DataSourceType.Supabase
+			"
 		/>
 		<MySQLHelp v-else-if="props.dataSourceType === DataSourceType.MySQL" />
 		<MariaDBHelp v-else-if="props.dataSourceType === DataSourceType.MariaDB" />

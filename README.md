@@ -134,9 +134,9 @@ To run from source, see [CONTRIBUTING.md](CONTRIBUTING.md).
 </picture>
 
 A `Live Metrics` block shows a time series, a bar chart or a gauge, built
-from one or more Prometheus or SQL queries, with PostgreSQL, MySQL and
-MariaDB supported on the SQL side. A metric grid is several of those blocks
-side by side. In Grafana that would be a dashboard. In Oxynote it is a
+from one or more Prometheus or SQL queries, with PostgreSQL, Supabase,
+MySQL and MariaDB supported on the SQL side. A metric grid is several of
+those blocks side by side. In Grafana that would be a dashboard. In Oxynote it is a
 dashboard inside a page, which means the explanation goes around it: what a
 chart shows, why the threshold sits where it does, what to do when it is
 crossed, all on the same page as the charts.

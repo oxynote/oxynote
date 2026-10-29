@@ -22,6 +22,7 @@ declare module "nuxt/schema" {
 		privacyPolicyURL: string
 		docsURL: string
 		postgresqlReadOnlyUserSetupGuideURL: string
+		supabaseReadOnlyUserSetupGuideURL: string
 		mysqlReadOnlyUserSetupGuideURL: string
 		mariadbReadOnlyUserSetupGuideURL: string
 		prometheusQueryGuideURL: string

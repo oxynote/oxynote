@@ -1,11 +1,12 @@
 package processor
 
 import (
+	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,10 +48,52 @@ var _pgAllowedConnKeys = []string{
 	"connect_timeout",
 }
 
+// _pgSystemSchemas are the schemas PostgreSQL keeps for itself. No data
+// source's metadata lists them.
+var _pgSystemSchemas = []string{
+	"information_schema",
+	"pg_catalog",
+}
+
+// _supabaseSchemas are the schemas a Supabase project keeps for its own
+// services. Some hold user records and secrets, and none holds what a chart
+// reads. extensions and cron stay listed, since their views and job history
+// are worth charting.
+var _supabaseSchemas = []string{
+	"auth",
+	"storage",
+	"realtime",
+	"_realtime",
+	"vault",
+	"graphql",
+	"graphql_public",
+	"pgbouncer",
+	"supabase_functions",
+	"supabase_migrations",
+	"net",
+	"pgsodium",
+	"pgsodium_masks",
+	"_analytics",
+}
+
+// _supavisorIdentityErrors are the message prefixes of the refusals
+// Supavisor, the pooler in front of Supabase, sends for an unknown project,
+// a user without one, or a role the database lacks. It sends them as
+// XX000, not as class 28.
+var _supavisorIdentityErrors = []string{
+	"(ENOTFOUND)",
+	"(ENOIDENTIFIER)",
+	"(EAUTHQUERY) user not found",
+}
+
 // PostgreSQL represents a PostgreSQL data source processor. It keeps a
 // pool of connections to the data source until it is closed.
 type PostgreSQL struct {
 	inp Input
+
+	// hiddenSchemas are left out of the metadata on top of the system
+	// schemas.
+	hiddenSchemas []string
 
 	mu     sync.Mutex
 	pool   *pgxpool.Pool
@@ -61,6 +104,16 @@ type PostgreSQL struct {
 func NewPostgreSQL(inp Input) *PostgreSQL {
 	return &PostgreSQL{
 		inp: inp,
+	}
+}
+
+// NewSupabase creates a PostgreSQL data source processor for a Supabase
+// project. Its metadata leaves out the schemas Supabase keeps for its own
+// services.
+func NewSupabase(inp Input) *PostgreSQL {
+	return &PostgreSQL{
+		inp:           inp,
+		hiddenSchemas: _supabaseSchemas,
 	}
 }
 
@@ -118,8 +171,23 @@ func (p *PostgreSQL) TestConnection(ctx context.Context) (ConnectionStatus, erro
 // indistinguishable to the user otherwise, and a typo in the password is the
 // far more common of them.
 func pgConnectionStatus(err error) ConnectionStatus {
+	if errors.Is(err, _errInvalidCACertificate) {
+		return ConnectionStatusInvalidCACertificate
+	}
+
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok {
+		return ConnectionStatusUnreachable
+	}
+
 	// class 28 is "invalid authorization specification".
-	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && strings.HasPrefix(pgErr.Code, "28") {
+	if strings.HasPrefix(pgErr.Code, "28") {
+		return ConnectionStatusUnauthorized
+	}
+
+	if pgErr.Code == "XX000" && slices.ContainsFunc(_supavisorIdentityErrors, func(prefix string) bool {
+		return strings.HasPrefix(pgErr.Message, prefix)
+	}) {
 		return ConnectionStatusUnauthorized
 	}
 
@@ -137,7 +205,8 @@ func (p *PostgreSQL) Metadata(ctx context.Context) (*SQLMetadataResult, error) {
 	}
 
 	rows, err := pool.Query(ctx,
-		"SELECT table_schema, table_name, column_name FROM information_schema.columns WHERE table_schema NOT IN ('information_schema', 'pg_catalog') ORDER BY table_schema, table_name, ordinal_position",
+		"SELECT table_schema, table_name, column_name FROM information_schema.columns WHERE table_schema::text <> ALL($1::text[]) ORDER BY table_schema, table_name, ordinal_position",
+		slices.Concat(_pgSystemSchemas, p.hiddenSchemas),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching metadata: %w", err)
@@ -289,7 +358,9 @@ func (p *PostgreSQL) Query(ctx context.Context, q string, tr TimeRange) (*Postgr
 //
 // The query execution mode is pinned to the extended protocol whatever the
 // data source URL asks for, so a stored query runs one statement and cannot
-// chain more behind it.
+// chain more behind it. Its statements are unnamed: behind a pooler in
+// transaction mode, a named one can reach a server connection that never
+// prepared it, or one where another client prepared the same name.
 func (p *PostgreSQL) connect(ctx context.Context) (*pgxpool.Pool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -302,7 +373,14 @@ func (p *PostgreSQL) connect(ctx context.Context) (*pgxpool.Pool, error) {
 		return p.pool, nil
 	}
 
-	connStr, err := p.buildConnectionString()
+	rawCreds := p.inp.Credentials()
+
+	creds, err := rawCreds.basic()
+	if err != nil {
+		return nil, err
+	}
+
+	connStr, err := p.buildConnectionString(creds)
 	if err != nil {
 		return nil, err
 	}
@@ -314,8 +392,31 @@ func (p *PostgreSQL) connect(ctx context.Context) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("error parsing postgresql connection string: %w", err)
 	}
 
-	connCfg.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
+	connCfg.DefaultQueryExecMode = pgx.QueryExecModeCacheDescribe
 	connCfg.ConnectTimeout = _connectTimeout
+
+	if creds.CACertificate != "" {
+		roots, rerr := creds.rootCAs()
+		if rerr != nil {
+			return nil, rerr
+		}
+
+		// a Unix socket host gets no TLS config whatever the sslmode, so
+		// the CA would verify nothing on it.
+		if connCfg.TLSConfig == nil || slices.ContainsFunc(connCfg.Fallbacks, func(fb *pgconn.FallbackConfig) bool {
+			return fb.TLSConfig == nil
+		}) {
+			return nil, _errInvalidCACertificate
+		}
+
+		// verify-full gives every host one TLS config and no plaintext
+		// fallback. The configs of the other hosts are copies of their own.
+		connCfg.TLSConfig.RootCAs = roots
+
+		for _, fb := range connCfg.Fallbacks {
+			fb.TLSConfig.RootCAs = roots
+		}
+	}
 
 	// pgxpool accepts only a config it parsed itself. What it parses here
 	// is replaced by connCfg, so the key allowlist above still decides
@@ -343,22 +444,25 @@ func (p *PostgreSQL) connect(ctx context.Context) (*pgxpool.Pool, error) {
 }
 
 // buildConnectionString builds a PostgreSQL connection string from the URL and credentials.
-func (p *PostgreSQL) buildConnectionString() (string, error) {
+func (p *PostgreSQL) buildConnectionString(creds BasicCredentials) (string, error) {
 	u, err := url.Parse(p.inp.URL())
 	if err != nil {
 		return "", fmt.Errorf("error parsing postgresql url: %w", err)
 	}
 
-	if inpCreds := p.inp.Credentials(); len(inpCreds.data) > 0 {
-		var creds BasicCredentials
+	// each typed credential replaces only its own part of the URL, so a
+	// password typed for a user written in the URL keeps that user.
+	if creds.Username != "" || creds.Password != "" {
+		password, _ := u.User.Password()
+		u.User = url.UserPassword(cmp.Or(creds.Username, u.User.Username()), cmp.Or(creds.Password, password))
+	}
 
-		if err := json.Unmarshal(inpCreds.data, &creds); err != nil {
-			return "", fmt.Errorf("error unmarshaling credentials: %w", err)
-		}
-
-		if creds.Username != "" || creds.Password != "" {
-			u.User = url.UserPassword(creds.Username, creds.Password)
-		}
+	// any other sslmode would let the connection skip the certificate the
+	// CA is there to check, or fall back to plaintext.
+	if creds.CACertificate != "" {
+		q := u.Query()
+		q.Set("sslmode", "verify-full")
+		u.RawQuery = q.Encode()
 	}
 
 	return u.String(), nil

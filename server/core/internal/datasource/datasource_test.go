@@ -90,6 +90,35 @@ func Test_DataSource_Info(t *testing.T) {
 	}, ds.Info())
 }
 
+func Test_CreateInput_Validate(t *testing.T) {
+	cc := map[string]struct {
+		Credentials processor.Credentials
+		Err         error
+	}{
+		"Credentials that are not an object": {
+			Credentials: processor.NewCredentials([]byte(`[1]`)),
+			Err:         ErrInvalidCredentials,
+		},
+		"Credentials holding a number": {
+			Credentials: processor.NewCredentials([]byte(`{"username":1}`)),
+			Err:         ErrInvalidCredentials,
+		},
+		"No credentials": {},
+		"Valid credentials": {
+			Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			err := CreateInput{Credentials: c.Credentials}.Validate()
+			testutil.AssertEqualError(t, c.Err, err)
+		})
+	}
+}
+
 func Test_DataSource_ApplyUpdate(t *testing.T) {
 	cc := map[string]struct {
 		DataSource *DataSource
@@ -131,6 +160,49 @@ func Test_DataSource_ApplyUpdate(t *testing.T) {
 			},
 			Name: "new",
 			URL:  "http://new.test",
+		},
+		// the stored credentials were entered for the old endpoint.
+		"Changed url clears credentials": {
+			DataSource: &DataSource{
+				Type:        TypePrometheus,
+				Name:        "old",
+				URL:         "http://old.test",
+				Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+			},
+			Inp: UpdateInput{
+				URL: null.StringFrom("http://new.test"),
+			},
+			Name: "old",
+			URL:  "http://new.test",
+		},
+		"Changed url keeps only the credentials sent with it": {
+			DataSource: &DataSource{
+				Type:        TypePrometheus,
+				Name:        "old",
+				URL:         "http://old.test",
+				Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+			},
+			Inp: UpdateInput{
+				URL:         null.StringFrom("http://new.test"),
+				Credentials: null.ValueFrom(processor.CredentialsUpdateInput(`{"password":"new"}`)),
+			},
+			Name:  "old",
+			URL:   "http://new.test",
+			Creds: processor.NewCredentials([]byte(`{"username":"","password":"new"}`)),
+		},
+		"Unchanged url keeps credentials": {
+			DataSource: &DataSource{
+				Type:        TypePrometheus,
+				Name:        "old",
+				URL:         "http://old.test",
+				Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+			},
+			Inp: UpdateInput{
+				URL: null.StringFrom("http://old.test"),
+			},
+			Name:  "old",
+			URL:   "http://old.test",
+			Creds: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
 		},
 		"Successful update of credentials": {
 			DataSource: &DataSource{
@@ -212,6 +284,11 @@ func Test_DataSource_updateCredentials(t *testing.T) {
 		},
 		"Successful postgresql update": {
 			DataSource: &DataSource{Type: TypePostgreSQL},
+			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
+			Creds:      processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
+		},
+		"Successful supabase update": {
+			DataSource: &DataSource{Type: TypeSupabase},
 			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
 			Creds:      processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
 		},

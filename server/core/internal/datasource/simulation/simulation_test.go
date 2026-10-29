@@ -348,6 +348,22 @@ func Test_Checker_Check(t *testing.T) {
 				QueryCalls:           1,
 			}
 		}(),
+		"Supabase answers too": func() tcase {
+			runner, pg, _ := sqlRunner(datasourceCore.TypeSupabase)
+
+			return tcase{
+				Attrs:                metricAttrs(),
+				Runner:               runner,
+				PostgreSQL:           pg,
+				Cleared:              true,
+				FetchDataSourceCalls: 1,
+				RunnerCalls:          1,
+				TypeCalls:            1,
+				PostgreSQLCalls:      1,
+				ApplyCalls:           1,
+				QueryCalls:           1,
+			}
+		}(),
 		"MySQL answers too": func() tcase {
 			runner, _, my := sqlRunner(datasourceCore.TypeMySQL)
 

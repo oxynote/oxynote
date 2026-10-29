@@ -40,7 +40,7 @@ func Query(
 		}
 
 		return res.Transform(ct), nil
-	case TypePostgreSQL:
+	case TypePostgreSQL, TypeSupabase:
 		client, err := r.PostgreSQL(ctx)
 		if err != nil {
 			return nil, err
