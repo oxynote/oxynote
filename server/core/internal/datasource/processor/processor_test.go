@@ -228,7 +228,18 @@ func TestMain(m *testing.M) {
 		_lokiAddrs[v] = lokiContainer.DefaultAddress()
 	}
 
-	goleak.VerifyTestMain(m, goleak.IgnoreCurrent())
+	// goleak.VerifyTestMain ends in os.Exit, which skips the deferred
+	// container stops. Returning runs them, and the test binary then exits
+	// with the code from m.Run.
+	ignore := goleak.IgnoreCurrent()
+
+	if m.Run() != 0 {
+		return
+	}
+
+	if err = goleak.Find(ignore); err != nil {
+		panic("goroutines leaked: " + err.Error())
+	}
 }
 
 func Test_ConnectionStatus_Error(t *testing.T) {

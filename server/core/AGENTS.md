@@ -232,7 +232,9 @@ merged or split; test files pair 1:1 (`expand.go` → `expand_test.go`).
 casing (`Test_agent_CreateNotification`); only `TestMain` lacks the
 underscore. Every package has `func TestMain(m *testing.M) {
 goleak.VerifyTestMain(m) }`, with `IgnoreCurrent`/`IgnoreTopFunction` only
-for known third-party leaks. Serialization types get `Test_X_UnmarshalJSON`,
+for known third-party leaks. One that stops containers in a `defer` runs
+`m.Run` and `goleak.Find` and returns, as `VerifyTestMain`'s `os.Exit` skips
+defers. Serialization types get `Test_X_UnmarshalJSON`,
 `Test_X_MarshalJSON` (`assert.JSONEq`), `Test_X_Value`, `Test_X_Scan`.
 
 **Table tests** are the default for anything with more than one path: a

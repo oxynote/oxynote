@@ -353,10 +353,21 @@ describe("<signup>", { concurrent: false }, () => {
 			.toBeUndefined()
 	})
 
-	it("sends a new email/password account to check its inbox", async ({
-		expect,
-	}) => {
+	it.for([
+		{
+			name: "sends a new email/password account to check its inbox",
+			query: "",
+			expected: "http://test.local/login?verified=true",
+		},
+		{
+			name: "keeps an invitee's invitation in the emailed verification link",
+			query: "?next=%252Faccept-invite%253Fid%253Dinvite-1",
+			expected:
+				"http://test.local/login?verified=true&next=%252Faccept-invite%253Fid%253Dinvite-1",
+		},
+	])("$name", async ({ query, expected }, { expect }) => {
 		seedAuthConfig()
+		arrangeRoute(query)
 		const calls = mockEmailSignUp()
 		const wrapper = await mountSuspended(Signup)
 
@@ -372,7 +383,7 @@ describe("<signup>", { concurrent: false }, () => {
 			email: "ada@example.com",
 			password: PASSWORD,
 			name: "ada",
-			callbackURL: "http://test.local/login?verified=true",
+			callbackURL: expected,
 		})
 		expect.soft(navigateToMock).toHaveBeenCalledWith({
 			path: "/verify-email",

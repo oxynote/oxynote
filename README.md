@@ -4,42 +4,47 @@
 
 **Your system, with subtitles.**
 
-A self-hosted workspace that puts a live metric chart next to the paragraph
-explaining it, gives your internal APIs Stripe-style docs, and lets a change
-go through a draft, a diff and an approval. From the authors of
+A self-hosted workspace that puts live metric charts inside the pages that
+explain them. The charts run your Prometheus and SQL queries, and a change
+to a page goes through a draft, a diff and an approval, like a pull
+request. From the authors of
 [ttlcache](https://github.com/jellydator/ttlcache).
 
 [![License](https://img.shields.io/github/license/oxynote/oxynote)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/oxynote/oxynote)](https://github.com/oxynote/oxynote/releases)
-[![CI](https://img.shields.io/github/check-runs/oxynote/oxynote/main?label=CI)](https://github.com/oxynote/oxynote/actions)
 [![Discord](https://img.shields.io/discord/1559252157826469988?label=Discord&logo=discord&logoColor=white&color=5865F2)](https://discord.gg/mNJd5zJkvC)
 
 </div>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
-  <img src="docs/images/hero-light.png" alt="The Shipments page of a Booking API in Oxynote: a Split Documentation block with the response fields on the left and, on the right, a curl request under a GET /v1/shipments/{id} title and a live p99 latency chart with Degraded and Heavy delay thresholds. Tags and maintainers in the page header, the page tree and tag list in the sidebar.">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-and-explanation-dark.webp">
+  <img src="docs/images/chart-and-explanation-light.webp" alt="An Oxynote page about delayed shipments: a live Position feed latency chart with p50, p95 and p99 lines and a Stale feed threshold at 200 ms, then a paragraph on when to restart the feed and the kubectl commands that do it. The page tree and tags fill the sidebar.">
 </picture>
 
+## Why Oxynote Exists
 
-## Why Oxynote?
+Keeping a service running takes several tools. You read about it in a wiki
+such as Notion and watch its metric charts in Grafana or Datadog, while the
+commands that fix it sit in a terminal history or a chat thread. When
+something breaks, you connect all of that by hand, across tools with
+separate logins and separate histories.
 
-The place Grafana gives you to explain a panel is its description field, a
-tooltip behind an info icon that Grafana's own docs tell you to keep short.
-Keep the explanation in Notion instead, and the chart can only appear there
-as an embedded Grafana panel, which renders only for someone already signed
-in to Grafana, and not at all on Grafana Cloud. Each tool keeps its own
-history, so nobody ever reviews the chart and its explanation as one change.
-In Oxynote the chart runs its own query inside the page, the explanation is
-whatever you type under it, and a draft branch carries both through one diff
-and one approval.
+Oxynote is a new kind of tool because it puts the explanation and the live
+metric charts on one page. Each chart runs its own Prometheus or SQL query,
+and one draft carries a change to the chart and its text through the same
+review.
+
+The goal is to watch and run the service from that same page. Its uptime
+monitor, its logs, a view into its database and its admin actions would sit
+next to the explanation, and changes to them would go through the same
+review. All of them are in development.
 
 <details>
 <summary>The long version is a bit of a rant, but it explains the <em>personal</em> why</summary>
 
 For a long time, the most reliable documentation at my company was the
 Slack chat I had with myself. How it got that way starts with
-dashboards. We had a lot of them: Grafana, Sentry, for some reason a bit
+metric charts. We had a lot of them: Grafana, Sentry, for some reason a bit
 of Datadog, and a few custom self-hosted HTML pages with charts on them.
 On top of that, I was encouraged to run my own health checks for the
 deployments I owned (why that could not live in Grafana or anything like
@@ -48,7 +53,7 @@ financial market data over websockets. Under heavy volume they leaked
 memory and got OOM killed. There was a bug in there somewhere that we
 were chasing and could not find for a while, and in the meantime every
 kill meant missed events, and missed events meant running backfill
-scripts by hand. None of our dashboards showed any of that. So: cron, curl
+scripts by hand. None of those charts showed any of that. So: cron, curl
 against each service's status endpoint, and the result posted to me
 privately on Slack. Not convenient at all.
 
@@ -97,127 +102,190 @@ time. Datadog's UI is convoluted, though, and nothing explained what any
 chart tracked, so David never found it. An AI agent connected to Datadog's
 MCP server did.
 
-What both of us wanted was the graph, the explanation, the command and
-the flag on one page, edited together, reviewed like code, and readable
-by a tired person at night or by an agent. Every tool we had was built
-to be great at one of those things and to never look sideways at the
-others. That gap is what Oxynote is for. It starts with the pieces we
-needed most: live Notion-like docs, metric charts, review flows, and
-Stripe-like split docs for real-time systems. The other pieces of the
-puzzle are coming.
+What both of us wanted was the metric chart, the explanation, the command
+and the flag on one page, edited together, reviewed like a pull request,
+and readable by a tired person at night or by an agent. Each tool we had
+was great at one of those things and paid little attention to the others.
+So Oxynote starts with the pieces we needed most: pages people edit
+together, live metric charts, reviews and Stripe-style API docs. Uptime
+monitors, AI evals, a database viewer and admin actions are in
+development.
 
 </details>
 
-## Quick start
+## Quick Start
 
-Oxynote is one container. This is all it takes:
+Oxynote is one container. Start it with Docker:
 
 ```sh
-docker run -d --name oxynote \
-  -p 8080:8080 \
+docker run -d -p 8080:8080 \
   -v oxynote_data:/oxynote/data \
-  ghcr.io/oxynote/oxynote:latest
+  ghcr.io/oxynote/oxynote
 ```
 
-Open http://localhost:8080 and log in with `admin@example.com` and
-`oxynote-admin-1234`.
+Open http://localhost:8080 and sign in as `admin@example.com` with the
+password `oxynote-admin-1234`. The login page shows both until you change
+the password, so change it in the settings before anyone else can reach the
+instance.
 
-To run from source, see [CONTRIBUTING.md](CONTRIBUTING.md).
+[docker/prod/README.md](docker/prod/README.md) covers the configuration,
+from a real domain to an external PostgreSQL. To run from source, see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
-## What is in the box
+## Features
 
-### Metric grids
+Oxynote keeps the pages about your systems, such as architecture notes, API
+references, on-call steps and release checklists, in one page tree. Those
+pages can query Prometheus, PostgreSQL, Supabase, MySQL or MariaDB, so the
+live metrics sit right where you write about them.
+
+### Live Metric Charts
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/metric-grid-dark.png">
-  <img src="docs/images/metric-grid-light.png" alt="The Release health page in Oxynote: a paragraph and a section called The Friday rule, then a metric grid with a Friday deploys bar chart, a hotfixes per release line chart with a Needs attention threshold, and deploy confidence gauges.">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-editor-dark.webp">
+  <img src="docs/images/chart-editor-light.webp" alt="The Live Metrics editor: a Hotfixes per release bar chart redrawn above its PromQL query, which uses $__rate_interval and a $hotfix_budget variable. On the right, the chart type, the Prometheus data source, the unit and an Over budget threshold at 100.">
 </picture>
 
-A `Live Metrics` block shows a time series, a bar chart or a gauge, built
-from one or more Prometheus or SQL queries, with PostgreSQL, Supabase,
-MySQL and MariaDB supported on the SQL side. A metric grid is several of
-those blocks side by side. In Grafana that would be a dashboard. In Oxynote it is a
-dashboard inside a page, which means the explanation goes around it: what a
-chart shows, why the threshold sits where it does, what to do when it is
-crossed, all on the same page as the charts.
+A Live Metrics block draws a time series, a bar chart or a gauge from one
+or more PromQL or SQL queries, and the editor redraws it as you type.
+Thresholds and units sit next to the query. Grafana macros such as
+`$__rate_interval` and `$__timeFilter` work too, so a query you already
+use in Grafana usually moves over with a paste.
+
+No metric yet? Pick a pattern such as latency or error rate, and the chart
+draws simulated data until the real series arrives. SQL sources need a
+read-only database user, so a page can never change your data.
+
+### Variables
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/dashboard-dark.webp">
+  <img src="docs/images/dashboard-light.webp" alt="The Variables panel open beside a page of live metric charts. The built-in metric time range is set to the last 6 hours, and an Engineering group holds a hotfix budget of 2. The page shows a review turnaround line chart, a deploy confidence gauge and a hotfixes per release bar chart.">
+</picture>
+
+Variables are defined once for the whole workspace, and any query on any
+page can read them. `$metric_range` comes built in: set it to the last six
+hours, and each chart that uses it shows the last six hours from then on.
+The values you pick apply only to you, so they change your charts and
+nobody else's.
+
+### Blocks
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/slash-command-dark.webp">
+  <img src="docs/images/slash-command-light.webp" alt="The block menu open under a slash on an Oxynote page, listing headings, lists, a checklist, a code block, a callout, an image, a file, a Figma embed, a divider, a Mermaid diagram, Split Documentation and Live Metrics, each with its Markdown shortcut.">
+</picture>
+
+Type `/` for the block menu: headings, lists, checklists, code, callouts,
+images, files, Figma embeds, Mermaid diagrams, Stripe-style API docs and
+live metrics. Markdown shortcuts such as `##` work as you type. Two go
+further: `%%` adds a live metric chart, and `||` starts an API doc with the
+fields on one side and an example request on the other.
+
+### Search
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/search-box-dark.webp">
+  <img src="docs/images/search-box-light.webp" alt="Search results for “feed”, grouped by page: a time series chart title, two paragraphs and a Bash snippet from one page, then matches on two more pages. The footer counts 14 matches on 8 pages.">
+</picture>
+
+`⌘K` searches the whole workspace, down to a single line in a code block or
+a diagram's source. Results come grouped by page, and each one says what it
+matched, such as a Bash snippet or a time series chart. Typos are fine too.
 
 ### Reviews
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/review-dark.png">
-  <img src="docs/images/review-light.png" alt="A draft of the quote-engine page under review in Oxynote with Show Changes on: removed text in red and added text in green across a paragraph, the endpoint title of a code block, parameter names and the JSON response. Maintainers, a reviewer and an Approve Draft button in the header.">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/review-dark.webp">
+  <img src="docs/images/review-light.webp" alt="A draft of the Tracking API page with Show Changes on: removed text in red and added text in green across the intro, a new callout, an endpoint path, a path parameter and its JSON response. A Merge Draft into Main button, the maintainers and an approving reviewer sit in the header.">
 </picture>
 
-Any page can be made reviewable, and from then on every change goes
-into a draft. The diff understands blocks, not just text: a renamed
-endpoint, a renamed response field and a reworded sentence show up in one
-view, red and green, in place. Reviewers approve, the draft merges into
-main, and main can be protected so nobody edits it directly.
+Make a page reviewable, and its main branch stops taking direct edits.
+Changes go into a draft branch instead. The diff works on blocks, so a
+renamed API parameter and a moved chart threshold show up in red and green
+right where they sit.
+
+Reviewers approve the draft on the page itself. Merging is a separate step,
+so an approved draft can wait until the change it describes goes live.
 
 ### Collaboration
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/collaboration-dark.png">
-  <img src="docs/images/collaboration-light.png" alt="Two people editing the Quote lifecycle page in Oxynote at the same time: one has a chart block selected, the other is typing in the source of a Mermaid state diagram. A comment thread is open on the words 8s timeout in that source, with a reply, a reply box and a Resolve button. The inbox in the sidebar shows one unread item.">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/collaboration-dark.webp">
+  <img src="docs/images/collaboration-light.webp" alt="Two people on a 2027 roadmap page at once, their named cursors on a sentence and on a Gantt chart. A comment thread on “arrival above 92 percent” is open, with a question, a reply and an unsent answer in the reply box.">
 </picture>
 
-Pages are edited live, so you see who is on the page, which block they
-are holding and where they are typing, and nobody overwrites anybody.
-Comments attach to a word, to a line in a diagram's source or to a whole
-chart, carry replies and get resolved when the change lands. Every
-mention and reply arrives in your inbox.
+Everyone on a page shows up as a named cursor, along with the block they're
+holding, and edits from several people merge as they type. Comments attach
+to a single word or a whole block. New comments and replies land in your
+inbox, and one click there opens the block they're on.
 
-### The rest
+### Agents and MCP
 
-- Blocks: headings, lists, checklists, quotes, titled code blocks,
-  callouts, images, files, Figma embeds, Mermaid diagrams.
-- Freshness hooks: a block or page tracks the GitHub files, container
-  image, web page or date it depends on, and its maintainers get a
-  reminder when that changes.
-- A page tree with sub pages, tags, full-text search, keyboard shortcuts
-  for everything, light and dark themes.
-- Workspaces with invitations, GitHub and Slack apps, and social login
-  through GitHub, Google or Slack.
-- Rubber Duck, the built-in assistant, edits pages and runs the same
-  queries the blocks run, with the model of your choice: Anthropic,
-  OpenAI, Google, OpenRouter, or a local one through Ollama. MCP clients
-  such as Claude Code and Codex get the same tools over OAuth.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/mcp-dark.webp">
+  <img src="docs/images/mcp-light.webp" alt="Claude Code in a terminal over an Oxynote page, with a prompt asking it to add a failed bookings chart with a threshold at 2%. The page already shows that chart under the position feed latency chart.">
+</picture>
 
-## Simple on purpose
+Oxynote is designed for people first, and agents get an interface of their
+own. Claude Code, Codex and many other MCP clients connect once you approve
+them. They read each page as structured blocks and change only the blocks
+they need. Their edits appear live, and on a reviewable page they wait in a
+draft until a person approves them.
 
-A few honest words about who this is for.
+Rubber Duck, the built-in assistant, does the same inside the app. It runs
+on a model from Anthropic, OpenAI, Google or OpenRouter, or a local one
+through Ollama. Both stay optional: the assistant is off until you set it
+up, as [docs/ai.md](docs/ai.md) describes, and the rest of Oxynote works
+without either.
 
-Oxynote is for you if:
+## Simple on Purpose
 
-- you explain systems to other tech people and want the metric chart and
-  the explanation on one page
-- you want Stripe-style docs for internal services without a doc
-  generator
-- you want changes to a page to go through a draft, a diff and an
-  approval, like a pull request
-- you want one page that your team and your agents both read
-- you self-host
+Oxynote has few settings, on purpose. Each job has one way to get done,
+with defaults that already fit, so there is less to learn. The rest of the
+design follows from a few fixed choices:
 
-Probably not for you if:
+- Protected pages change only through approved drafts, so each change
+  carries a diff and the name of whoever approved it.
+- Only people you invite can open your workspace, and an AI agent gets in
+  only after you approve it.
+- A page can depend on things outside Oxynote, such as a config file in
+  your repository, the container image you deploy or a vendor's API docs.
+  An optional freshness hook watches each one, and when it changes, the
+  page's maintainers get a reminder to update the parts that rely on it.
+- The code is Apache-2.0 licensed and developed in public.
+- Oxynote runs as one container on your own servers, so your data and your
+  upgrade schedule stay with you.
 
-- you want a hosted service. There is none for now
-- you want a wiki for the whole company. This is for tech people and the
-  systems they run
-- you want every option under the sun. Oxynote is opinionated, ships good
-  defaults and keeps the option count low
+## In Development
+
+The goal is one place to explain, watch and run your systems. Uptime
+monitors, AI evals, a database viewer and admin actions are in development,
+along with logs, traces and alerting.
 
 ## FAQ
 
-**Does it replace Grafana?** That is the goal. Today it covers metric
-charts and dashboard-style grids from Prometheus and SQL, with the
-explanation written next to them. Logs and alerting are not there yet, but we
-are working on them.
+**Can it replace Grafana or Datadog?** That is the goal. Metric charts are
+covered today: Oxynote runs your Prometheus and SQL queries, Grafana's
+macros included, inside pages you can write around and review like a pull
+request. Logs, traces and alerting are in development.
 
-**Why the name?** Internally we first called this "breathing docs".
-Breathing needs oxygen, so oxy became the prefix, and note followed.
+**Is there a cloud version?** Not yet. A cloud version is planned, and
+today Oxynote runs as one container on your own servers.
+
+**Do I need AI to use it?** No. The assistant stays off until you set it
+up, and the MCP server is optional too.
+
+**Is it worth using by myself?** Yes. A workspace works fine with one
+person, and when you do invite others, a self-hosted install has no member
+limit.
+
+**Why the name?** In the beginning, Oxynote was called "breathing docs".
+Breathing needs oxygen, so "oxy" became the prefix and "note" followed.
 
 ## Community
 
-Join the [Discord](https://discord.gg/mNJd5zJkvC) to ask questions, share
-how you use Oxynote and talk with the people building it. Found a bug or
-have an idea? [Open an issue](https://github.com/oxynote/oxynote/issues).
+Ask questions on [Discord](https://discord.gg/mNJd5zJkvC), where the people
+building Oxynote answer them. For a bug or an idea,
+[open an issue](https://github.com/oxynote/oxynote/issues). To report a
+vulnerability, follow [SECURITY.md](SECURITY.md).

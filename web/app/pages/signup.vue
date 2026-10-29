@@ -189,13 +189,19 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 	// after verifying — absolute against the app origin (a relative path
 	// would resolve against the auth server's origin, which does not
 	// serve the frontend in host-dev mode), with a flag the login page
-	// confirms via a toast.
+	// confirms via a toast. It keeps next, so an invitee who verifies
+	// lands back on the invitation once logged in.
+	const callbackQuery = new URLSearchParams({ verified: "true" })
+	if (route.query.next) {
+		callbackQuery.set("next", route.query.next as string)
+	}
+
 	const res = (await signUpEmailPassword({
 		email: values.email,
 		password: values.password,
 		// NOCOV: unreachable. The form rules require a local part.
 		name: values.email.split("@")[0] || values.email,
-		callbackURL: `${config.public.appBaseURL}/login?verified=true`,
+		callbackURL: `${config.public.appBaseURL}/login?${callbackQuery.toString()}`,
 	})) as AuthResponse
 	// no duplicate-email branch on purpose: where email is sent,
 	// better-auth answers duplicate signups with a synthetic success so the
