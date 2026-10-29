@@ -67,10 +67,10 @@ export interface DocumentHook {
 	settings: DocumentHookSettings
 	// null until the hook is set up
 	state: DocumentHookState | null
-	// active, initializing, or why the last check failed. Score and state
-	// keep their last values while a check fails.
+	// active, initializing, or why the last check failed. Triggered and
+	// state keep their last values while a check fails.
 	status: DocumentHookStatus
-	score: string // decimal; between 0 and 100 (default: 100)
+	triggered: boolean
 	createdAt: Date | string
 	updatedAt?: Date | string | null
 	softDeletedAt?: Date | string | null
@@ -137,14 +137,11 @@ export type DocumentHookStatusContainerImageWatcher =
 	"active" | "initializing" | "unauthorized" | "image_not_found"
 
 export interface DocumentHookSettingsScheduledReminder {
-	scale: "linear"
 	duration: string | null // duration
 	schedule: Date | string
 }
 
-export interface DocumentHookStateScheduledReminder {
-	lastActiveAt: Date | string
-}
+export type DocumentHookStateScheduledReminder = Record<string, never>
 
 export interface DocumentHookSettingsGitHubTracking {
 	repository: string
@@ -260,9 +257,7 @@ export function defaultDocumentHookState(
 ): DocumentHookState {
 	switch (type) {
 		case DocumentHookType.ScheduledReminder:
-			return {
-				lastActiveAt: new Date(),
-			}
+			return {}
 		case DocumentHookType.GitHubTracking:
 			return {
 				pathsChecksums: {},
@@ -412,6 +407,13 @@ export interface BranchReviewer {
 }
 
 export type BranchReviewersResponse = BranchReviewer[]
+
+export interface BranchView {
+	userId: string
+	viewedAt: string
+}
+
+export type BranchViewsResponse = BranchView[]
 
 export interface WSDocumentMetadataPayload {
 	branchId: string

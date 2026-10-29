@@ -167,17 +167,24 @@ const mainArea = useTemplateRef("main")
 const { width: mainAreaWidth } = useElementSize(mainArea)
 watchImmediate(mainAreaWidth, editorStore.updateMainAreaWidth)
 const pageReady = usePageReady()
+// the document the url names, read from the url alone. The tree may
+// no longer hold it.
+const urlDocId = computed(() => {
+	const slug = pageRoute.params.documentSlug
+	if (typeof slug !== "string") {
+		return null
+	}
+
+	return extractDocInfoFromSlug(slug)?.id ?? null
+})
 const activeDocMetadata = computed(() => {
-	const docInfo = extractDocInfoFromSlug(
-		pageRoute.params.documentSlug as string,
-	)
-	if (!docInfo) {
+	if (!urlDocId.value) {
 		return null
 	}
 
 	const elem = extractDocumentTreeElement(
 		fetchDocumentTree.data.value ?? [],
-		docInfo.id,
+		urlDocId.value,
 	)
 	if (!elem) {
 		return null
@@ -223,13 +230,13 @@ onUnmounted(() => {
 })
 
 watch(fetchDocumentTree.state, (newV) => {
-	if (!activeDocMetadata.value?.id) {
+	if (!urlDocId.value) {
 		return
 	}
 
 	// handle the case where the current document got deleted or the user lost
 	// access to it, by redirecting to the first available document
-	if (!isIdInDocumentTree(newV.data ?? [], activeDocMetadata.value.id)) {
+	if (!isIdInDocumentTree(newV.data ?? [], urlDocId.value)) {
 		void redirectToFirst(null, fetchOrganization, fetchDocumentTree, null)
 	}
 })
@@ -241,6 +248,7 @@ watchImmediate(
 		pageReady.value = false
 
 		if (import.meta.dev) {
+			// NOCOV: dev-only load timing; tests run a production build.
 			startLoadProgress()
 		}
 	},
@@ -277,6 +285,7 @@ watchImmediate(
 )
 
 if (import.meta.dev) {
+	// NOCOV: dev-only load timing; tests run a production build.
 	watchOnce(
 		() => loadedSections.value.sidebar,
 		() => {
@@ -412,6 +421,7 @@ watch(
 	{ flush: "sync" },
 )
 
+// NOCOV: the server-side render skips this; tests run the client bundle.
 if (import.meta.client) {
 	watchImmediate(
 		() => activeDocMetadata.value?.id,
@@ -552,6 +562,7 @@ function syncBranchQuery(dropLinkedBlock = false) {
 
 function applyDocumentNameChange(name: string) {
 	if (!activeDocMetadata.value) {
+		// NOCOV: the container that sends this renders only with a document.
 		return
 	}
 
@@ -597,6 +608,7 @@ function refreshOrganizationRouteSlug() {
 
 function applyIconChange(icon: string) {
 	if (!activeDocMetadata.value) {
+		// NOCOV: the container that sends this renders only with a document.
 		return
 	}
 
@@ -723,6 +735,7 @@ function updateDocumentTreeBranchProtected(
 	protectedMode: boolean,
 ) {
 	if (!activeDocMetadata.value) {
+		// NOCOV: the page listens for changes only while a document is open.
 		return
 	}
 

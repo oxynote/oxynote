@@ -13,7 +13,7 @@ import (
 )
 
 func Test_NewBytesStore(t *testing.T) {
-	bs := NewBytesStore(time.Hour * 168)
+	bs := NewBytesStore(time.Hour*168, 0)
 	require.NotNil(t, bs)
 	require.NotNil(t, bs.cache)
 
@@ -25,7 +25,7 @@ func Test_NewBytesStore(t *testing.T) {
 func Test_BytesStore_Start(t *testing.T) {
 	t.Parallel()
 
-	bs := NewBytesStore(time.Hour * 168)
+	bs := NewBytesStore(time.Hour*168, 0)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -68,7 +68,7 @@ func Test_BytesStore_Set(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			bs := NewBytesStore(time.Hour * 168)
+			bs := NewBytesStore(time.Hour*168, 0)
 
 			if c.Existing != nil {
 				bs.cache.Set("test", c.Existing, ttlcache.DefaultTTL)
@@ -169,7 +169,7 @@ func Test_BytesStore_Delete(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			bs := NewBytesStore(time.Hour * 168)
+			bs := NewBytesStore(time.Hour*168, 0)
 
 			if c.Stored != nil {
 				bs.cache.Set("test", c.Stored, ttlcache.DefaultTTL)

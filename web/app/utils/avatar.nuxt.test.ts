@@ -93,12 +93,12 @@ describe("defaultAvatar", () => {
 		)
 	})
 
-	it("animates some organizations and leaves others still", ({ expect }) => {
+	it("never animates an organization", ({ expect }) => {
 		const animated = Array.from({ length: 50 }, (_, i) =>
 			svg(defaultAvatar("organization", `org-${i}`)).includes("@keyframes"),
 		)
 
-		expect(new Set(animated)).toEqual(new Set([true, false]))
+		expect(animated).not.toContain(true)
 	})
 })
 

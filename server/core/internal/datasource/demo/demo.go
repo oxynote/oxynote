@@ -1,7 +1,7 @@
-// Package demo serves a self-contained Prometheus data source: its metrics
-// are synthesized on demand from a fixed seed instead of being scraped from
-// a running server, so a fresh install shows populated charts with nothing
-// else deployed.
+// Package demo serves a self-contained Prometheus and Loki data source:
+// its metrics and log lines are synthesized on demand from a fixed seed
+// instead of being read from a running server, so a fresh install shows
+// populated charts and logs with nothing else deployed.
 package demo
 
 import (

@@ -54,7 +54,7 @@ function makeHook(id: string): DocumentHook {
 		settings: { repository: "acme/docs", branch: "main", paths: ["a.md"] },
 		state: { pathsChecksums: { "a.md": "sum-a" } },
 		status: "missing_branch",
-		score: "100",
+		triggered: false,
 		createdAt: "2024-01-01T00:00:00.000Z",
 		updatedAt: "2024-01-01T00:00:00.000Z",
 	}
@@ -220,7 +220,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 					settings: CREATE_REQ.settings,
 					state: { pathsChecksums: {} },
 					status: "active",
-					score: "100",
+					triggered: false,
 					createdAt: ANY_DATE,
 					updatedAt: ANY_DATE,
 				},

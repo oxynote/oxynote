@@ -206,6 +206,8 @@ func (h *Handler) UpdateDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.runners.Evict(ds.ID)
+
 	httpserver.Respond(h.log, w, ds, http.StatusOK)
 }
 
@@ -226,6 +228,8 @@ func (h *Handler) DeleteDataSource(w http.ResponseWriter, r *http.Request) {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
+
+	h.runners.Evict(id)
 
 	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
@@ -303,6 +307,10 @@ type Runners interface {
 	// Runner should return the runner that operates the given data
 	// source.
 	Runner(ds datasourceCore.DataSource) datasourceCore.Runner
+
+	// Evict should close the connections of the data source the id
+	// names, so the next call connects with what is stored then.
+	Evict(id xid.ID)
 }
 
 // VariableManager hands out the variables a query references.

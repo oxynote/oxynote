@@ -33,6 +33,15 @@ export default defineNuxtRouteMiddleware(async (to) => {
 	}
 
 	if (session && !session.activeOrganizationId && to.name !== "onboarding") {
+		// an invitee who has just logged in has no workspace yet, but the
+		// invitation they came from is where they should go, not onboarding
+		const nextUrl = to.query.next
+		if (to.meta.skipAuth && isInvitationRedirect(nextUrl)) {
+			return nuxtApp.runWithContext(() =>
+				navigateTo(decodeURIComponent(nextUrl as string), { replace: true }),
+			)
+		}
+
 		return nuxtApp.runWithContext(() =>
 			navigateTo({ name: "onboarding" }, { replace: true }),
 		)

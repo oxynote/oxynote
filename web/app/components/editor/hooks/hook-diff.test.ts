@@ -317,7 +317,7 @@ function makeHook(
 		settings: settings,
 		state: {},
 		status: "active",
-		score: "100",
+		triggered: false,
 		createdAt: "2026-01-01",
 	}
 }
@@ -344,7 +344,6 @@ function imageHook(id: string, blockId: string, image: string): DocumentHook {
 
 function reminderHook(schedule: string, blockId = "block-1"): DocumentHook {
 	return makeHook("r1", DocumentHookType.ScheduledReminder, blockId, {
-		scale: "linear",
 		duration: "24h",
 		schedule: schedule,
 	})

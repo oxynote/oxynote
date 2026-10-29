@@ -9,7 +9,6 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
-	"github.com/shopspring/decimal"
 )
 
 // ErrUnreachable is returned when a processor cannot reach the service it
@@ -58,13 +57,14 @@ const (
 )
 
 // Status tells whether a processor could check what it watches. Only an
-// active result carries a score and a state.
+// active result says whether the hook triggered and carries a state.
 type Status string
 
 // Result is the outcome of a processor run.
 type Result struct {
-	// Score is the freshness score. It is meaningful only when active.
-	Score decimal.Decimal
+	// Triggered indicates that what the hook watches changed or came due.
+	// It is meaningful only when active.
+	Triggered bool
 
 	// State is the processor's new state. It is meaningful only when
 	// active.
@@ -80,16 +80,16 @@ func inactive(status Status) Result {
 }
 
 // active returns the result of a run that checked its target.
-func active(score decimal.Decimal, state any) (Result, error) {
+func active(triggered bool, state any) (Result, error) {
 	raw, err := json.Marshal(state)
 	if err != nil {
 		return Result{}, fmt.Errorf("marshaling state: %w", err)
 	}
 
 	return Result{
-		Score:  score,
-		State:  raw,
-		Status: StatusActive,
+		Triggered: triggered,
+		State:     raw,
+		Status:    StatusActive,
 	}, nil
 }
 

@@ -223,6 +223,10 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 						const newIds = newNodes
 							.map(({ node }) => node.attrs[attributeName] as string | null)
 							.filter((id) => id !== null)
+						// found once per range, and again only after a swap below
+						// edits newIds. Finding them for every node is too slow on a
+						// large document.
+						let duplicatedNewIds: Set<string> | null = null
 
 						newNodes.forEach(({ node, pos }, i) => {
 							// instead of checking `node.attrs[attributeName]` directly
@@ -290,16 +294,17 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 									[attributeName]: generatedId,
 								})
 								newIds[i] = generatedId
+								duplicatedNewIds = null
 
 								return tr
 							}
 
-							const duplicatedNewIds = findDuplicates(newIds)
+							duplicatedNewIds ??= new Set(findDuplicates(newIds) as string[])
 
 							// check if the node doesn’t exist in the old state
 							const { deleted } = mapping.invert().mapResult(pos)
 
-							const newNode = deleted && duplicatedNewIds.includes(id)
+							const newNode = deleted && duplicatedNewIds.has(id)
 
 							if (newNode) {
 								tr.setNodeMarkup(pos, undefined, {

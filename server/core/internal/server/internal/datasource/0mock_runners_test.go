@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
+	"github.com/rs/xid"
 )
 
 // Ensure, that RunnersMock does implement Runners.
@@ -19,6 +20,9 @@ var _ Runners = &RunnersMock{}
 //
 //		// make and configure a mocked Runners
 //		mockedRunners := &RunnersMock{
+//			EvictFunc: func(id xid.ID)  {
+//				panic("mock out the Evict method")
+//			},
 //			RunnerFunc: func(ds datasourceCore.DataSource) datasourceCore.Runner {
 //				panic("mock out the Runner method")
 //			},
@@ -29,18 +33,59 @@ var _ Runners = &RunnersMock{}
 //
 //	}
 type RunnersMock struct {
+	// EvictFunc mocks the Evict method.
+	EvictFunc func(id xid.ID)
+
 	// RunnerFunc mocks the Runner method.
 	RunnerFunc func(ds datasourceCore.DataSource) datasourceCore.Runner
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// Evict holds details about calls to the Evict method.
+		Evict []struct {
+			// ID is the id argument value.
+			ID xid.ID
+		}
 		// Runner holds details about calls to the Runner method.
 		Runner []struct {
 			// Ds is the ds argument value.
 			Ds datasourceCore.DataSource
 		}
 	}
+	lockEvict  sync.RWMutex
 	lockRunner sync.RWMutex
+}
+
+// Evict calls EvictFunc.
+func (mock *RunnersMock) Evict(id xid.ID) {
+	callInfo := struct {
+		ID xid.ID
+	}{
+		ID: id,
+	}
+	mock.lockEvict.Lock()
+	mock.calls.Evict = append(mock.calls.Evict, callInfo)
+	mock.lockEvict.Unlock()
+	if mock.EvictFunc == nil {
+		return
+	}
+	mock.EvictFunc(id)
+}
+
+// EvictCalls gets all the calls that were made to Evict.
+// Check the length with:
+//
+//	len(mockedRunners.EvictCalls())
+func (mock *RunnersMock) EvictCalls() []struct {
+	ID xid.ID
+} {
+	var calls []struct {
+		ID xid.ID
+	}
+	mock.lockEvict.RLock()
+	calls = mock.calls.Evict
+	mock.lockEvict.RUnlock()
+	return calls
 }
 
 // Runner calls RunnerFunc.

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -23,6 +24,9 @@ const (
 
 	// _mysqlConnectTimeout bounds the initial MySQL dial.
 	_mysqlConnectTimeout = 10 * time.Second
+
+	// _mysqlMaxConns caps the connections one data source's pool holds.
+	_mysqlMaxConns = 10
 )
 
 // _mysqlReadOnlyPrivileges is the set of MySQL/MariaDB privileges considered read-only.
@@ -36,9 +40,14 @@ var _mysqlReadOnlyPrivileges = map[string]struct{}{
 	"USAGE":              {},
 }
 
-// MySQL represents a MySQL data source processor.
+// MySQL represents a MySQL data source processor. It keeps a pool of
+// connections to the data source until it is closed.
 type MySQL struct {
 	inp Input
+
+	mu     sync.Mutex
+	db     *sql.DB
+	closed bool
 }
 
 // NewMySQL creates a new MySQL data source processor.
@@ -48,13 +57,29 @@ func NewMySQL(inp Input) *MySQL {
 	}
 }
 
-// TestConnection tests the connection to the MySQL data source.
+// Close closes the pool, waiting for the queries it is running.
+func (m *MySQL) Close() error {
+	m.mu.Lock()
+	db := m.db
+	m.closed = true
+	m.mu.Unlock()
+
+	if db == nil {
+		return nil
+	}
+
+	return db.Close()
+}
+
+// TestConnection tests the connection to the MySQL data source. The data
+// source passes only when its account holds read-only grants: queries run on
+// sessions nothing else makes read-only, so the grants are what keep them
+// from writing.
 func (m *MySQL) TestConnection(ctx context.Context) (ConnectionStatus, error) {
-	db, err := m.connect(ctx)
+	db, err := m.connect()
 	if err != nil {
 		return mysqlConnectionStatus(err), nil
 	}
-	defer db.Close() //nolint:errcheck // error provides no meaningful info
 
 	if err = db.PingContext(ctx); err != nil {
 		return mysqlConnectionStatus(err), nil
@@ -97,11 +122,10 @@ func (m *MySQL) Metadata(ctx context.Context) (*SQLMetadataResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	db, err := m.connect(ctx)
+	db, err := m.connect()
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to mysql: %w", err)
 	}
-	defer db.Close() //nolint:errcheck // error provides no meaningful info
 
 	rows, err := db.QueryContext(ctx, //nolint:rowserrcheck // scanInformationSchema checks rows.Err
 		"SELECT table_schema, table_name, column_name FROM information_schema.columns WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys') ORDER BY table_schema, table_name, ordinal_position",
@@ -138,11 +162,10 @@ func (m *MySQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (map[st
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	db, err := m.connect(ctx)
+	db, err := m.connect()
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to mysql: %w", err)
 	}
-	defer db.Close() //nolint:errcheck // error provides no meaningful info
 
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
@@ -196,11 +219,10 @@ func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange) (*MySQLQueryR
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	db, err := m.connect(ctx)
+	db, err := m.connect()
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to mysql: %w", err)
 	}
-	defer db.Close() //nolint:errcheck // error provides no meaningful info
 
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
@@ -242,12 +264,7 @@ func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange) (*MySQLQueryR
 
 		for i, v := range dest {
 			payloadSize += estimateValueSize(v)
-
-			// The MySQL driver returns string values as []byte.
-			// Convert to string so they JSON-marshal as strings, not base64.
-			if b, ok := v.([]byte); ok {
-				dest[i] = string(b)
-			}
+			dest[i] = mysqlNormalizeValue(v)
 		}
 
 		if payloadSize > _queryPayloadLimit {
@@ -268,13 +285,20 @@ func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange) (*MySQLQueryR
 	}, nil
 }
 
-// connect creates a database/sql connection using the data source URL and
-// credentials. The session is put into read-only mode, so the server itself
-// rejects any write the query text attempts instead of the code trusting the
-// grants recorded earlier on a different connection. The pool is capped at a
-// single connection and lives for one call, so the setting lands on the
-// connection the queries then use.
-func (m *MySQL) connect(ctx context.Context) (*sql.DB, error) {
+// connect returns the pool of connections to the data source, opening it
+// on first use.
+func (m *MySQL) connect() (*sql.DB, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.closed {
+		return nil, _errClosed
+	}
+
+	if m.db != nil {
+		return m.db, nil
+	}
+
 	dsn, err := m.buildDSN()
 	if err != nil {
 		return nil, err
@@ -282,18 +306,16 @@ func (m *MySQL) connect(ctx context.Context) (*sql.DB, error) {
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
+		// NOCOV: the driver is registered and buildDSN formats the DSN
+		// itself, so opening has nothing left to reject.
 		return nil, fmt.Errorf("error connecting to mysql: %w", err)
 	}
 
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
+	db.SetMaxOpenConns(_mysqlMaxConns)
+	db.SetMaxIdleConns(_mysqlMaxConns)
 	db.SetConnMaxLifetime(_mysqlConnMaxLifetime)
 
-	if _, err = db.ExecContext(ctx, "SET SESSION TRANSACTION READ ONLY"); err != nil {
-		db.Close() //nolint:errcheck,gosec // error provides no meaningful info
-
-		return nil, fmt.Errorf("error enforcing a read-only session: %w", err)
-	}
+	m.db = db
 
 	return db, nil
 }
@@ -369,9 +391,14 @@ type MySQLQueryResult struct {
 	// ColumnTypes contains the database type of each column, which is what
 	// separates a numeric column from a label: the driver hands DECIMAL
 	// over as bytes, exactly like a VARCHAR, so the value alone cannot
-	// tell them apart. Kept out of the payload; it exists for
-	// classification.
-	ColumnTypes []string `json:"-"`
+	// tell them apart. It is encoded so a cached result still classifies
+	// its columns.
+	ColumnTypes []string `json:"columnTypes"`
+}
+
+// HasData reports whether the result holds any row.
+func (mqr *MySQLQueryResult) HasData() bool {
+	return mqr != nil && len(mqr.Rows) > 0
 }
 
 // sql returns the dialect-agnostic view of the result, which is where the
@@ -479,17 +506,43 @@ func mysqlCheckReadOnly(ctx context.Context, db *sql.DB) (bool, error) {
 	return true, nil
 }
 
+// mysqlNormalizeValue converts native driver row values into the
+// JSON-shaped values the rest of the pipeline expects, so a result reads
+// the same before and after it goes through JSON. The driver hands strings
+// over as []byte, FLOAT as float32 and integers as int64 or, unsigned
+// BIGINT, uint64; dates become RFC3339 strings.
+func mysqlNormalizeValue(v any) any {
+	switch val := v.(type) {
+	case []byte:
+		return string(val)
+	case float32:
+		return float64(val)
+	case int64:
+		return float64(val)
+	case uint64:
+		return float64(val)
+	case time.Time:
+		return val.Format(time.RFC3339Nano)
+	default:
+		return v
+	}
+}
+
 // mysqlParseTimestamp parses a timestamp value from a MySQL result row.
-// It handles float64 (unix seconds), int64 (unix seconds), time.Time, and string (RFC3339) values.
+// It handles float64 (unix seconds), int64 (unix seconds), and string (unix seconds or RFC3339) values.
 func mysqlParseTimestamp(v any) (int64, bool) {
 	switch val := v.(type) {
 	case float64:
 		return int64(val), true
 	case int64:
 		return val, true
-	case time.Time:
-		return val.Unix(), true
 	case string:
+		// MySQL types a $__timeGroup bucket as DECIMAL, which the driver
+		// hands over as []byte and Query converts to a string.
+		if n, err := strconv.ParseFloat(val, 64); err == nil {
+			return int64(n), true
+		}
+
 		t, err := time.Parse(time.RFC3339Nano, val)
 		if err != nil {
 			t, err = time.Parse(time.RFC3339, val)

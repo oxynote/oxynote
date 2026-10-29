@@ -55,6 +55,17 @@ describe("<auth-error>", { concurrent: false }, () => {
 		expect(navigateToMock).toHaveBeenCalledWith("/")
 	})
 
+	it("lets a visitor with an error code through", async ({ expect }) => {
+		const to = {
+			query: { error: "invalid_client" },
+		} as unknown as RouteLocationNormalized
+
+		const result = await pageMiddleware()(to, to)
+
+		expect(result).toBeUndefined()
+		expect(navigateToMock).not.toHaveBeenCalled()
+	})
+
 	it("offers a way back home", async ({ expect }) => {
 		const wrapper = await mountError()
 

@@ -44,6 +44,12 @@ func Test_NewPrometheus(t *testing.T) {
 	assert.Same(t, inp, p.inp)
 }
 
+func Test_Prometheus_Close(t *testing.T) {
+	t.Parallel()
+
+	assert.NoError(t, NewPrometheus(&InputMock{}).Close())
+}
+
 func Test_Prometheus_TestConnection(t *testing.T) {
 	cc := map[string]struct {
 		Inp     *InputMock
@@ -392,6 +398,95 @@ func Test_createPrometheusClient(t *testing.T) {
 			}
 
 			assert.NotNil(t, client)
+		})
+	}
+}
+
+func Test_PrometheusQueryResult_UnmarshalJSON(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		JSON   string
+		Result *PrometheusQueryResult
+		Err    error
+	}{
+		"Invalid JSON": {
+			JSON: `{`,
+			Err:  assert.AnError,
+		},
+		"Matrix that does not decode": {
+			JSON: `{"type":"matrix","result":{"not":"a matrix"}}`,
+			Err:  assert.AnError,
+		},
+		// the type a range query answers with comes back as itself, which
+		// is what the assistant's raw series caps rely on.
+		"Matrix": {
+			JSON: `{"warnings":["slow"],"type":"matrix","result":[{"metric":{"job":"api"},"values":[[1700000000,"1"]]}]}`,
+			Result: &PrometheusQueryResult{
+				Warnings: []string{"slow"},
+				Type:     model.ValMatrix,
+				Result: model.Matrix{
+					{
+						Metric: model.Metric{"job": "api"},
+						Values: []model.SamplePair{{Timestamp: 1700000000000, Value: 1}},
+					},
+				},
+			},
+		},
+		"Any other result is kept as it decodes": {
+			JSON: `{"type":"scalar","result":[1700000000,"1"]}`,
+			Result: &PrometheusQueryResult{
+				Type:   model.ValScalar,
+				Result: []any{float64(1700000000), "1"},
+			},
+		},
+		"No result": {
+			JSON: `{"type":"matrix"}`,
+			Result: &PrometheusQueryResult{
+				Type: model.ValMatrix,
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var res PrometheusQueryResult
+
+			err := res.UnmarshalJSON([]byte(c.JSON))
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, &res)
+		})
+	}
+}
+
+func Test_PrometheusQueryResult_HasData(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Result *PrometheusQueryResult
+		Has    bool
+	}{
+		"No result":    {},
+		"Empty matrix": {Result: &PrometheusQueryResult{Type: model.ValMatrix, Result: model.Matrix{}}},
+		"Matrix with a series": {
+			Result: &PrometheusQueryResult{Type: model.ValMatrix, Result: model.Matrix{{Metric: model.Metric{"job": "api"}}}},
+			Has:    true,
+		},
+		"Result of another type": {Result: &PrometheusQueryResult{Type: model.ValScalar, Result: []any{float64(1), "1"}}},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Has, c.Result.HasData())
 		})
 	}
 }

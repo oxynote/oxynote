@@ -301,8 +301,7 @@ const DynamicPlaceholder = Extension.create<DynamicPlaceholderOptions>({
 
 						const isEmptyDoc = this.editor.isEmpty
 
-						doc.descendants((node, pos) => {
-							const nodeParent = doc.resolve(pos).parent
+						doc.descendants((node, pos, parent) => {
 							const hasAnchor = anchor >= pos && anchor <= pos + node.nodeSize
 							const isEmpty = !node.isLeaf && isNodeEmpty(node)
 
@@ -311,7 +310,7 @@ const DynamicPlaceholder = Extension.create<DynamicPlaceholderOptions>({
 								Array.isArray(this.options.showOnlyNodes) &&
 								this.options.showOnlyNodes.some((nodeFilter) => {
 									if (nodeFilter.parent) {
-										return nodeFilter.name === nodeParent.type.name
+										return nodeFilter.name === parent?.type.name
 									}
 
 									return nodeFilter.name === node.type.name

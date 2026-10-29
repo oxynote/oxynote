@@ -90,7 +90,8 @@ function makeMenuEditor(
 			schema: { nodes: {} },
 		},
 		view: { dispatch: dispatch },
-		commands: { hasNodeComment: hasNodeComment, focus: focus },
+		commands: { focus: focus },
+		can: () => ({ hasNodeComment: hasNodeComment }),
 	})
 
 	return { editor, commands, dispatch, focus, deletedRanges, hasNodeComment }

@@ -85,7 +85,7 @@ function metricBlock(uid: string | null, str: string): PMNode {
 // a website hook whose last check failed
 function failedHook(blockId: string): DocumentHook {
 	return {
-		...hook(blockId, "100"),
+		...hook(blockId, false),
 		type: DocumentHookType.URLWatcher,
 		settings: { url: "https://example.com" },
 		state: { lastCheckedAt: "2026-01-01T00:00:00Z" },
@@ -93,7 +93,7 @@ function failedHook(blockId: string): DocumentHook {
 	}
 }
 
-function hook(blockId: string | null, score = "0"): DocumentHook {
+function hook(blockId: string | null, triggered = true): DocumentHook {
 	return {
 		id: `hook-${blockId ?? "none"}`,
 		crossBranchId: `hook-${blockId ?? "none"}`,
@@ -103,13 +103,12 @@ function hook(blockId: string | null, score = "0"): DocumentHook {
 		branchId: "branch-1",
 		blockId,
 		settings: {
-			scale: "linear",
 			duration: null,
 			schedule: "2026-01-01T00:00:00Z",
 		},
-		state: { lastActiveAt: "2026-01-01T00:00:00Z" },
+		state: {},
 		status: "active",
-		score,
+		triggered,
 		createdAt: "2026-01-01T00:00:00Z",
 	}
 }
@@ -199,24 +198,16 @@ describe("HookDecorator", () => {
 
 	it.for([
 		{
-			name: "decorates a block whose hook score is zero",
-			hooks: [hook("u1", "0")],
+			name: "decorates a block whose hook is triggered",
+			hooks: [hook("u1", true)],
 			expected: [
 				[0, 4, "node"],
 				[1, 1, "widget"],
 			],
 		},
 		{
-			name: "decorates a block whose decimal hook score evaluates to zero",
-			hooks: [hook("u1", "0.00")],
-			expected: [
-				[0, 4, "node"],
-				[1, 1, "widget"],
-			],
-		},
-		{
-			name: "ignores hooks with a non-zero score",
-			hooks: [hook("u1", "100")],
+			name: "ignores hooks that are not triggered",
+			hooks: [hook("u1", false)],
 			expected: [],
 		},
 		{
@@ -238,7 +229,7 @@ describe("HookDecorator", () => {
 	it.for([
 		{
 			name: "marks a block with a triggered hook as triggered",
-			hooks: () => [hook("u1"), hook("u1", "100")],
+			hooks: () => [hook("u1"), hook("u1", false)],
 			expected: ["triggered"],
 		},
 		{

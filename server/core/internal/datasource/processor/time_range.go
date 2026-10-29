@@ -82,19 +82,24 @@ func (tr TimeRange) QueryStep() time.Duration {
 
 // Normalize adjusts the From and To times to align with the specified step duration.
 func (tr TimeRange) Normalize() TimeRange {
-	step := tr.QueryStep()
+	return tr.AlignTo(tr.QueryStep())
+}
 
+// AlignTo rounds From down and To up to a multiple of d, so ranges a few
+// seconds apart within one interval of d become the same range. A zero
+// time is left as it is.
+func (tr TimeRange) AlignTo(d time.Duration) TimeRange {
 	from := tr.From
 	to := tr.To
 
-	stepSeconds := int64(step.Seconds())
+	seconds := int64(d.Seconds())
 
 	if !from.IsZero() {
-		from = time.Unix((from.Unix()/stepSeconds)*stepSeconds, 0).UTC()
+		from = time.Unix((from.Unix()/seconds)*seconds, 0).UTC()
 	}
 
 	if !to.IsZero() {
-		to = time.Unix(((to.Unix() + stepSeconds - 1) / stepSeconds * stepSeconds), 0).UTC()
+		to = time.Unix(((to.Unix() + seconds - 1) / seconds * seconds), 0).UTC()
 	}
 
 	return TimeRange{

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"testing"
+	"time"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
 	"github.com/orlangure/gnomock"
@@ -18,6 +19,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -164,7 +166,44 @@ func TestMain(m *testing.M) {
 
 	_pgAddr = pgContainer.Host + ":" + strconv.Itoa(pgContainer.DefaultPort())
 
-	goleak.VerifyTestMain(m, goleak.IgnoreCurrent())
+	// the corpus sits two hours back, so it is old enough to backfill and
+	// young enough for the ingesters to keep without a long chunk age.
+	_logsWindow = TimeRange{
+		From: timeutil.Now().UTC().Truncate(time.Hour).Add(-2 * time.Hour),
+	}
+	_logsWindow.To = _logsWindow.From.Add(time.Hour)
+	_logsCorpus = newLogsCorpus(_logsWindow.From)
+
+	lokiContainers := make([]*gnomock.Container, 0, len(_lokiVersions))
+
+	defer func() {
+		if serr := gnomock.Stop(lokiContainers...); serr != nil {
+			panic("cannot clean up loki: " + serr.Error())
+		}
+	}()
+
+	for _, v := range _lokiVersions {
+		lokiContainer, lerr := startLoki(v, _logsCorpus)
+		if lerr != nil {
+			panic("cannot set up loki " + v + ": " + lerr.Error())
+		}
+
+		lokiContainers = append(lokiContainers, lokiContainer)
+		_lokiAddrs[v] = lokiContainer.DefaultAddress()
+	}
+
+	// goleak.VerifyTestMain ends in os.Exit, which skips the deferred
+	// container stops. Returning runs them, and the test binary then exits
+	// with the code from m.Run.
+	ignore := goleak.IgnoreCurrent()
+
+	if m.Run() != 0 {
+		return
+	}
+
+	if err = goleak.Find(ignore); err != nil {
+		panic("goroutines leaked: " + err.Error())
+	}
 }
 
 func Test_ConnectionStatus_Error(t *testing.T) {

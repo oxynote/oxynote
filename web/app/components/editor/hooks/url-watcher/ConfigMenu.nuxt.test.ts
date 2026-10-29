@@ -86,7 +86,7 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("says the page of a triggered hook changed", async ({ expect }) => {
-		await mountMenu({ hook: urlHook({ score: "0" }) })
+		await mountMenu({ hook: urlHook({ triggered: true }) })
 
 		const detail = t("editor.hooks.url-watcher.detail-triggered")
 		expect(menuText()).toContain(
@@ -339,7 +339,7 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 		const calls = mockEndpoint("PUT", `${HOOK_PATH}/reset`, () => ({
 			id: HOOK_ID,
 		}))
-		await mountMenu({ hook: urlHook({ score: "0" }) })
+		await mountMenu({ hook: urlHook({ triggered: true }) })
 		await openHookSubMenu(t(TITLE))
 
 		expect(hookNotice().dataset.hookStatus).toBe("triggered")
@@ -385,7 +385,7 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 			const calls = mockEndpoint("PUT", `${HOOK_PATH}/reset`, () => ({
 				id: HOOK_ID,
 			}))
-			await mountMenu({ hook: urlHook({ score: "0" }) })
+			await mountMenu({ hook: urlHook({ triggered: true }) })
 			await openHookSubMenu(t(TITLE))
 
 			menuButton(t("editor.hooks.reset")).click()
@@ -409,7 +409,7 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 		])(
 			"says what a triggered hook on $name did",
 			async ({ nodeId, key }, { expect }) => {
-				await mountMenu({ hook: urlHook({ score: "0" }), nodeId: nodeId })
+				await mountMenu({ hook: urlHook({ triggered: true }), nodeId: nodeId })
 
 				await openHookSubMenu(t(TITLE))
 
@@ -479,7 +479,7 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 
 		it("keeps a triggered hook from being dismissed", async ({ expect }) => {
 			await mountMenu({
-				hook: urlHook({ score: "0" }),
+				hook: urlHook({ triggered: true }),
 				diff: {
 					status: DiffStatus.Unchanged,
 					targetHook: null,

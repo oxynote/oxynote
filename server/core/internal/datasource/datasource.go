@@ -27,6 +27,9 @@ const (
 
 	// TypeMySQL represents a MySQL data source.
 	TypeMySQL Type = "mysql"
+
+	// TypeLoki represents a Loki data source.
+	TypeLoki Type = "loki"
 )
 
 // DataSource represents a generic data source.
@@ -73,15 +76,24 @@ func NewDataSource(ci CreateInput, organizationID string) *DataSource {
 	}
 }
 
-// NewDemoDataSource creates the demo Prometheus data source a fresh
-// organization starts with.
-func NewDemoDataSource(organizationID string) *DataSource {
-	return NewDataSource(CreateInput{
-		Type:        TypePrometheus,
-		Name:        "Demo",
-		URL:         demo.URL,
-		Credentials: processor.NewCredentials([]byte(`{}`)),
-	}, organizationID)
+// NewDemoDataSources creates the demo data sources a fresh organization
+// starts with. They share one URL; each type picks what it answers as.
+func NewDemoDataSources(organizationID string) []*DataSource {
+	return []*DataSource{
+		NewDataSource(CreateInput{
+			Type:        TypePrometheus,
+			Name:        "Demo Metrics",
+			URL:         demo.URL,
+			Credentials: processor.NewCredentials([]byte(`{}`)),
+		}, organizationID),
+		// TODO: uncomment once the web app can show loki data sources.
+		// NewDataSource(CreateInput{
+		// 	Type:        TypeLoki,
+		// 	Name:        "Demo Logs",
+		// 	URL:         demo.URL,
+		// 	Credentials: processor.NewCredentials([]byte(`{}`)),
+		// }, organizationID),
+	}
 }
 
 // Info returns a subset of data source fields for external use.
@@ -120,7 +132,7 @@ func (ds *DataSource) updateCredentials(inp null.Value[processor.CredentialsUpda
 	}
 
 	switch ds.Type {
-	case TypePrometheus, TypePostgreSQL, TypeMariaDB, TypeMySQL:
+	case TypePrometheus, TypePostgreSQL, TypeMariaDB, TypeMySQL, TypeLoki:
 		// OK.
 	default:
 		return errors.New("invalid data source type")

@@ -168,7 +168,7 @@ func (getDocument) Execute(inp *input) (string, error) {
 	if in.BlockUID != "" {
 		b, ok := markup.Readable(blocks, in.BlockUID)
 		if !ok {
-			return "", fmt.Errorf("block %s: %w", in.BlockUID, errUnknownBlock)
+			return "", fmt.Errorf("block %s: %w", in.BlockUID, _errUnknownBlock)
 		}
 
 		blocks = []document.Block{b}

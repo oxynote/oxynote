@@ -48,7 +48,8 @@
 			"timestamp": {
 				"short-edited": "Edited {time}",
 				"full-edited": "Edited by {user} on {time}",
-				"full-created": "Created by {user} on {time}"
+				"full-created": "Created by {user} on {time}",
+				"viewed-by": "Viewed by"
 			},
 			"toggle-edit-mode": "Toggle Edit Mode",
 			"toggle-read-mode": "Toggle Read Mode",

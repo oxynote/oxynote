@@ -528,7 +528,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		const calls = mockEndpoint("PUT", `${HOOK_PATH}/reset`, () => ({
 			id: HOOK_ID,
 		}))
-		await mountMenu({ hook: githubHook({ score: "0" }) })
+		await mountMenu({ hook: githubHook({ triggered: true }) })
 		await openHookSubMenu(t(TITLE))
 
 		await vi.waitFor(() => {
@@ -552,7 +552,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		mockGitHub()
 		await mountMenu({
 			hook: githubHook({
-				score: "0",
+				triggered: true,
 				status: "missing_branch",
 			}),
 		})
@@ -597,7 +597,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 			const calls = mockEndpoint("PUT", `${HOOK_PATH}/reset`, () => ({
 				id: HOOK_ID,
 			}))
-			await mountMenu({ hook: githubHook({ score: "0" }) })
+			await mountMenu({ hook: githubHook({ triggered: true }) })
 			await openHookSubMenu(t(TITLE))
 
 			menuButton(t("editor.hooks.reset")).click()
@@ -622,7 +622,10 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 			"says what a triggered hook on $name did",
 			async ({ nodeId, key }, { expect }) => {
 				mockGitHub()
-				await mountMenu({ hook: githubHook({ score: "0" }), nodeId: nodeId })
+				await mountMenu({
+					hook: githubHook({ triggered: true }),
+					nodeId: nodeId,
+				})
 
 				await openHookSubMenu(t(TITLE))
 

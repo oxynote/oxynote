@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-import { newCredentials, revealForm, submitLoginForm } from "../helpers/auth"
+import { newCredentials, submitLoginForm } from "../helpers/auth"
 import { inviteTeamMember } from "../helpers/collaboration"
 import { waitForEditor } from "../helpers/editor"
 import { t } from "../helpers/i18n"
@@ -33,12 +33,9 @@ test.describe("a single-workspace instance", () => {
 	}) => {
 		await visit(page, `${SINGLE_WORKSPACE_URL}/login`)
 
-		await revealForm(
-			page.getByRole("button", {
-				name: t("onboarding.login.login-email-password"),
-			}),
+		await expect(
 			page.getByText(t("onboarding.login.default-admin.intro")),
-		)
+		).toBeVisible()
 		await expect(page.getByRole("listitem")).toHaveText([
 			DEFAULT_ADMIN.email,
 			DEFAULT_ADMIN.password,
@@ -145,14 +142,11 @@ test.describe("a single-workspace instance", () => {
 		await admin.close()
 
 		await visit(page, `${SINGLE_WORKSPACE_URL}/login`)
-		await revealForm(
-			page.getByRole("button", {
-				name: t("onboarding.login.login-email-password"),
-			}),
+		await expect(
 			page.getByPlaceholder(
 				t("onboarding.login.email-password-form.email-placeholder"),
 			),
-		)
+		).toBeVisible()
 
 		await expect(
 			page.getByText(t("onboarding.login.default-admin.intro")),

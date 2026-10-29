@@ -6,9 +6,7 @@ import (
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
-	"github.com/oxynote/oxynote/server/core/pkg/mathutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
-	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -89,7 +87,7 @@ func Test_GithubTracking_Process(t *testing.T) {
 	cc := map[string]struct {
 		Inp             *fakeGithubInput
 		Paths           []string
-		WantScore       decimal.Decimal
+		WantTriggered   bool
 		WantStatus      Status
 		WantChanged     int
 		WantGithubCalls int
@@ -115,22 +113,22 @@ func Test_GithubTracking_Process(t *testing.T) {
 			Inp: &fakeGithubInput{state: State("{not json")},
 			Err: assert.AnError,
 		},
-		"Unchanged path scores full": {
+		"Unchanged path is not triggered": {
 			Inp: &fakeGithubInput{
 				state: State(`{"pathsChecksums":{"doc.md":"sum"}}`),
 				tree:  github.Tree{{Name: "doc.md", Checksum: "sum"}},
 			},
-			WantScore:       mathutil.Hundred,
 			WantStatus:      StatusActive,
 			WantGithubCalls: 1,
 			WantFetchCalls:  1,
 		},
-		"Changed checksum scores zero": {
+		"Changed checksum triggers": {
 			Inp: &fakeGithubInput{
 				state: State(`{"pathsChecksums":{"doc.md":"old"}}`),
 				tree:  github.Tree{{Name: "doc.md", Checksum: "sum"}},
 			},
 			WantStatus:      StatusActive,
+			WantTriggered:   true,
 			WantChanged:     1,
 			WantGithubCalls: 1,
 			WantFetchCalls:  1,
@@ -145,6 +143,7 @@ func Test_GithubTracking_Process(t *testing.T) {
 			},
 			Paths:           []string{"doc.md", "api.md", "gone.md"},
 			WantStatus:      StatusActive,
+			WantTriggered:   true,
 			WantChanged:     2,
 			WantGithubCalls: 1,
 			WantFetchCalls:  1,
@@ -154,37 +153,37 @@ func Test_GithubTracking_Process(t *testing.T) {
 				state: State(`{"pathsChecksums":{"doc.md":"sum"},"changedPaths":3}`),
 				tree:  github.Tree{{Name: "doc.md", Checksum: "sum"}},
 			},
-			WantScore:       mathutil.Hundred,
 			WantStatus:      StatusActive,
 			WantGithubCalls: 1,
 			WantFetchCalls:  1,
 		},
-		"Path deleted since reset scores zero": {
+		"Path deleted since reset triggers": {
 			Inp: &fakeGithubInput{
 				state: State(`{"pathsChecksums":{"doc.md":"sum"}}`),
 				tree:  github.Tree{},
 			},
 			WantStatus:      StatusActive,
+			WantTriggered:   true,
 			WantChanged:     1,
 			WantGithubCalls: 1,
 			WantFetchCalls:  1,
 		},
-		"Path absent since reset scores full": {
+		"Path absent since reset is not triggered": {
 			Inp: &fakeGithubInput{
 				state: State(`{"pathsChecksums":{}}`),
 				tree:  github.Tree{},
 			},
-			WantScore:       mathutil.Hundred,
 			WantStatus:      StatusActive,
 			WantGithubCalls: 1,
 			WantFetchCalls:  1,
 		},
-		"Path appeared after reset scores zero": {
+		"Path appeared after reset triggers": {
 			Inp: &fakeGithubInput{
 				state: State(`{"pathsChecksums":{}}`),
 				tree:  github.Tree{{Name: "doc.md", Checksum: "sum"}},
 			},
 			WantStatus:      StatusActive,
+			WantTriggered:   true,
 			WantChanged:     1,
 			WantGithubCalls: 1,
 			WantFetchCalls:  1,
@@ -217,7 +216,7 @@ func Test_GithubTracking_Process(t *testing.T) {
 			}
 
 			assert.Equal(t, c.WantStatus, res.Status)
-			assert.True(t, res.Score.Equal(c.WantScore), "score = %s, want %s", res.Score, c.WantScore)
+			assert.Equal(t, c.WantTriggered, res.Triggered)
 
 			if c.WantStatus != StatusActive {
 				assert.Nil(t, res.State)
@@ -289,7 +288,7 @@ func Test_GithubTracking_Reset(t *testing.T) {
 
 			if c.WantState != "" {
 				assert.JSONEq(t, c.WantState, string(res.State))
-				assert.True(t, res.Score.Equal(mathutil.Hundred))
+				assert.False(t, res.Triggered)
 			}
 		})
 	}

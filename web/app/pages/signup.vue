@@ -66,6 +66,11 @@ const showEmailPasswordForm = ref(false)
 const enabledMethods = computed(
 	() => fetchAuthConfig.state.value.data?.methods ?? [],
 )
+const isEmailPasswordOnly = computed(
+	() =>
+		enabledMethods.value.length === 1 &&
+		enabledMethods.value.includes("email-password"),
+)
 const noMethodsConfigured = computed(
 	() =>
 		fetchAuthConfig.state.value.status === "success" &&
@@ -79,6 +84,7 @@ const primaryMethod = computed(() => {
 		return null
 	}
 
+	// NOCOV: the null fallback is unreachable. Every method is one of the four.
 	return (
 		(["google", "github", "slack", "email-password"] as const).find((m) =>
 			enabledMethods.value.includes(m),
@@ -127,6 +133,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+	// NOCOV: the timer is missing only in the desktop build.
 	if (redirectTimeout !== undefined) clearTimeout(redirectTimeout)
 })
 
@@ -182,12 +189,19 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 	// after verifying — absolute against the app origin (a relative path
 	// would resolve against the auth server's origin, which does not
 	// serve the frontend in host-dev mode), with a flag the login page
-	// confirms via a toast.
+	// confirms via a toast. It keeps next, so an invitee who verifies
+	// lands back on the invitation once logged in.
+	const callbackQuery = new URLSearchParams({ verified: "true" })
+	if (route.query.next) {
+		callbackQuery.set("next", route.query.next as string)
+	}
+
 	const res = (await signUpEmailPassword({
 		email: values.email,
 		password: values.password,
+		// NOCOV: unreachable. The form rules require a local part.
 		name: values.email.split("@")[0] || values.email,
-		callbackURL: `${config.public.appBaseURL}/login?verified=true`,
+		callbackURL: `${config.public.appBaseURL}/login?${callbackQuery.toString()}`,
 	})) as AuthResponse
 	// no duplicate-email branch on purpose: where email is sent,
 	// better-auth answers duplicate signups with a synthetic success so the
@@ -241,7 +255,10 @@ function methodVariant(method: AuthMethod) {
 					{{ $t("onboarding.signup.title") }}
 				</div>
 			</div>
-			<div v-if="!showEmailPasswordForm" class="flex w-full flex-col gap-3">
+			<div
+				v-if="!showEmailPasswordForm && !isEmailPasswordOnly"
+				class="flex w-full flex-col gap-3"
+			>
 				<ShadcnUiButton
 					v-if="enabledMethods.includes('google')"
 					size="lg"
@@ -404,6 +421,7 @@ function methodVariant(method: AuthMethod) {
 					{{ $t("onboarding.signup.email-password-form.continue") }}
 				</ShadcnUiButton>
 				<ShadcnUiButton
+					v-if="!isEmailPasswordOnly"
 					type="button"
 					size="lg"
 					variant="ghost"

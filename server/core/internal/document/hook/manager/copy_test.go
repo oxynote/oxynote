@@ -51,12 +51,12 @@ func Test_CopyHooks(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			block := stubHook(t, fromBranchID, time.Now().Add(time.Hour), time.Now())
+			block := stubHook(t, fromBranchID, time.Now().Add(time.Hour))
 			block.BlockID = null.StringFrom("old-uid")
 
-			doc := stubHook(t, fromBranchID, time.Now().Add(time.Hour), time.Now())
+			doc := stubHook(t, fromBranchID, time.Now().Add(time.Hour))
 
-			gone := stubHook(t, fromBranchID, time.Now().Add(time.Hour), time.Now())
+			gone := stubHook(t, fromBranchID, time.Now().Add(time.Hour))
 			gone.BlockID = null.StringFrom("gone-uid")
 
 			tx := &CopyTxMock{

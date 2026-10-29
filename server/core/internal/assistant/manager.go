@@ -143,7 +143,7 @@ func NewManager(
 		history = redkit.NewValueStore[[]*schema.Message](pool, _sessionExpiration)
 		pendings = redkit.NewValueStore[persist.PendingConfirm](pool, _sessionExpiration)
 	} else {
-		blobs = memkit.NewBytesStore(_sessionExpiration)
+		blobs = memkit.NewBytesStore(_sessionExpiration, 0)
 		history = memkit.NewValueStore[[]*schema.Message](_sessionExpiration)
 		pendings = memkit.NewValueStore[persist.PendingConfirm](_sessionExpiration)
 	}

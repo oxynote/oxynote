@@ -20,10 +20,8 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
-	"github.com/oxynote/oxynote/server/core/pkg/mathutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
-	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -99,17 +97,13 @@ func (f *fakeChangeDetection) deletedWatchers() []string {
 }
 
 // stubHook builds a scheduled-reminder hook attached to the given branch,
-// due at the given schedule with the state started at startedAt.
-func stubHook(t *testing.T, branchID xid.ID, schedule, startedAt time.Time) hook.Hook {
+// due at the given schedule.
+func stubHook(t *testing.T, branchID xid.ID, schedule time.Time) hook.Hook {
 	t.Helper()
 
 	settings, err := json.Marshal(map[string]any{
-		"scale":    "linear",
 		"schedule": schedule,
 	})
-	require.NoError(t, err)
-
-	state, err := json.Marshal(processor.ScheduledReminderState{StartedAt: startedAt})
 	require.NoError(t, err)
 
 	return hook.Hook{
@@ -119,9 +113,8 @@ func stubHook(t *testing.T, branchID xid.ID, schedule, startedAt time.Time) hook
 		OrganizationID: null.StringFrom("org-1"),
 		BranchID:       null.ValueFrom(branchID),
 		Settings:       processor.Settings(settings),
-		State:          null.ValueFrom(processor.State(state)),
+		State:          null.ValueFrom(processor.State(`{}`)),
 		Status:         processor.StatusActive,
-		Score:          mathutil.Hundred,
 	}
 }
 
@@ -166,7 +159,6 @@ func urlWatcherHook(branchID xid.ID) hook.Hook {
 		Settings:       processor.Settings(`{"url":"https://example.com"}`),
 		State:          null.ValueFrom(processor.State(`{"watcherId":"w1"}`)),
 		Status:         processor.StatusActive,
-		Score:          mathutil.Hundred,
 	}
 }
 
@@ -253,9 +245,9 @@ func Test_Manager_SetUpBranch(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			set := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+			set := stubHook(t, branchID, time.Now().Add(time.Hour))
 
-			unset := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+			unset := stubHook(t, branchID, time.Now().Add(time.Hour))
 			unset.State = null.Value[processor.State]{}
 
 			hooks := []hook.Hook{set, unset}
@@ -374,9 +366,9 @@ func Test_Manager_processHooks(t *testing.T) {
 		}
 	}
 
-	hasUpdatedScore := func(expected decimal.Decimal) check {
+	hasUpdatedTriggered := func(expected bool) check {
 		return hasUpdated(func(t *testing.T, h hook.Hook) {
-			assert.True(t, h.Score.Equal(expected), "score %s, want %s", h.Score, expected)
+			assert.Equal(t, expected, h.Triggered)
 		})
 	}
 
@@ -426,7 +418,7 @@ func Test_Manager_processHooks(t *testing.T) {
 		},
 		"Error returned by db.FetchDocumentHook skips the hook": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				return []hook.Hook{stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())}
+				return []hook.Hook{stubHook(t, branchID, time.Now().Add(time.Hour))}
 			},
 			StoredErr: assert.AnError,
 			Checks: checks(
@@ -443,11 +435,11 @@ func Test_Manager_processHooks(t *testing.T) {
 		},
 		"Hook a write holds is run as the write stored it": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				return []hook.Hook{stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())}
+				return []hook.Hook{stubHook(t, branchID, time.Now().Add(time.Hour))}
 			},
 			Doc: stubDocument(),
 			Write: func(h hook.Hook) hook.Hook {
-				h.Settings = processor.Settings(`{"scale":"linear","schedule":"2999-01-01T00:00:00Z"}`)
+				h.Settings = processor.Settings(`{"schedule":"2999-01-01T00:00:00Z"}`)
 
 				return h
 			},
@@ -455,7 +447,7 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasUpdateCalled(1),
 				hasUpdated(func(t *testing.T, h hook.Hook) {
-					assert.JSONEq(t, `{"scale":"linear","schedule":"2999-01-01T00:00:00Z"}`, string(h.Settings))
+					assert.JSONEq(t, `{"schedule":"2999-01-01T00:00:00Z"}`, string(h.Settings))
 				}),
 				wasFetchPaginatedCalled(1),
 				wasFetchHookCalled(1),
@@ -468,7 +460,7 @@ func Test_Manager_processHooks(t *testing.T) {
 		},
 		"Hook deleted meanwhile is skipped": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				return []hook.Hook{stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())}
+				return []hook.Hook{stubHook(t, branchID, time.Now().Add(time.Hour))}
 			},
 			StoredErr: sql.ErrNoRows,
 			Checks: checks(
@@ -485,7 +477,7 @@ func Test_Manager_processHooks(t *testing.T) {
 		},
 		"Orphaned hook without a branch is deleted": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				h := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				h := stubHook(t, branchID, time.Now().Add(time.Hour))
 				h.BranchID = null.Value[xid.ID]{}
 
 				return []hook.Hook{h}
@@ -504,7 +496,7 @@ func Test_Manager_processHooks(t *testing.T) {
 		},
 		"Orphaned hook without a document is deleted": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				h := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				h := stubHook(t, branchID, time.Now().Add(time.Hour))
 				h.DocumentID = null.Value[xid.ID]{}
 
 				return []hook.Hook{h}
@@ -525,7 +517,7 @@ func Test_Manager_processHooks(t *testing.T) {
 		// documents with it; the hook row is what is left of the watcher.
 		"Orphaned hook without an organization is deleted": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				h := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				h := stubHook(t, branchID, time.Now().Add(time.Hour))
 				h.OrganizationID = null.String{}
 
 				return []hook.Hook{h}
@@ -664,11 +656,11 @@ func Test_Manager_processHooks(t *testing.T) {
 		},
 		"Processing failure still persists the cleared soft deletion": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				h := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				h := stubHook(t, branchID, time.Now().Add(time.Hour))
 				h.BlockID = null.StringFrom("b1")
 				h.SoftDeletedAt = null.TimeFrom(time.Now().Add(-time.Hour))
 				// unparsable settings make Process fail.
-				h.Settings = processor.Settings(`{"scale": 1}`)
+				h.Settings = processor.Settings(`{"schedule": 1}`)
 
 				return []hook.Hook{h}
 			},
@@ -689,7 +681,7 @@ func Test_Manager_processHooks(t *testing.T) {
 		"Unconfigured integration is a status and notifies once": {
 			Hooks: func(_ *testing.T) []hook.Hook {
 				h := urlWatcherHook(branchID)
-				h.Score = decimal.NewFromInt(40)
+				h.Triggered = true
 
 				return []hook.Hook{h}
 			},
@@ -698,7 +690,7 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasUpdateCalled(1),
 				hasUpdatedStatus(processor.StatusUnconfigured),
-				hasUpdatedScore(decimal.NewFromInt(40)),
+				hasUpdatedTriggered(true),
 				wasPublished(notification.NotificationDocumentHookNeedsAttention),
 				wasFetchPaginatedCalled(1),
 				wasFetchHookCalled(1),
@@ -730,7 +722,7 @@ func Test_Manager_processHooks(t *testing.T) {
 		},
 		"Missing document deletes the hook": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				return []hook.Hook{stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())}
+				return []hook.Hook{stubHook(t, branchID, time.Now().Add(time.Hour))}
 			},
 			DocErr: sql.ErrNoRows,
 			Checks: checks(
@@ -747,7 +739,7 @@ func Test_Manager_processHooks(t *testing.T) {
 		},
 		"Document fetch failure skips the hook": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				return []hook.Hook{stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())}
+				return []hook.Hook{stubHook(t, branchID, time.Now().Add(time.Hour))}
 			},
 			DocErr: assert.AnError,
 			Checks: checks(
@@ -764,13 +756,13 @@ func Test_Manager_processHooks(t *testing.T) {
 		},
 		"Healthy hook is processed and updated": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				return []hook.Hook{stubHook(t, branchID, time.Now().Add(1000*time.Hour), time.Now())}
+				return []hook.Hook{stubHook(t, branchID, time.Now().Add(1000*time.Hour))}
 			},
 			Doc: stubDocument(),
 			Checks: checks(
 				hasError(false),
 				wasUpdateCalled(1),
-				hasUpdatedScore(decimal.NewFromInt(100)),
+				hasUpdatedTriggered(false),
 				wasPublished(),
 				wasChangeCalled(0),
 				wasFetchPaginatedCalled(1),
@@ -780,15 +772,15 @@ func Test_Manager_processHooks(t *testing.T) {
 				wasFetchMaintainersCalled(0),
 			),
 		},
-		"Full-to-zero score drop notifies the maintainers": {
+		"Hook that triggers notifies the maintainers": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				return []hook.Hook{stubHook(t, branchID, time.Now().Add(-time.Hour), time.Now().Add(-2*time.Hour))}
+				return []hook.Hook{stubHook(t, branchID, time.Now().Add(-time.Hour))}
 			},
 			Doc: stubDocument(),
 			Checks: checks(
 				hasError(false),
 				wasUpdateCalled(1),
-				hasUpdatedScore(decimal.Zero),
+				hasUpdatedTriggered(true),
 				wasPublished(notification.NotificationDocumentHookTriggered),
 				wasChangeCalled(1),
 				wasFetchPaginatedCalled(1),
@@ -798,34 +790,10 @@ func Test_Manager_processHooks(t *testing.T) {
 				wasFetchMaintainersCalled(1),
 			),
 		},
-		// the score decays gradually, so by the time it reaches zero the
-		// previous one is somewhere below full: the notification has to
-		// trigger on the arrival at zero, not on a full-to-zero jump.
-		"Partly decayed score reaching zero notifies the maintainers": {
+		"Already triggered hook is not re-notified": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				h := stubHook(t, branchID, time.Now().Add(-time.Hour), time.Now().Add(-2*time.Hour))
-				h.Score = decimal.NewFromInt(40)
-
-				return []hook.Hook{h}
-			},
-			Doc: stubDocument(),
-			Checks: checks(
-				hasError(false),
-				hasUpdatedScore(decimal.Zero),
-				wasPublished(notification.NotificationDocumentHookTriggered),
-				wasFetchPaginatedCalled(1),
-				wasFetchHookCalled(1),
-				wasFetchDocumentCalled(1),
-				wasUpdateCalled(1),
-				wasDeleteCalled(0),
-				wasFetchMaintainersCalled(1),
-				wasChangeCalled(1),
-			),
-		},
-		"Already zero score is not re-notified": {
-			Hooks: func(t *testing.T) []hook.Hook {
-				h := stubHook(t, branchID, time.Now().Add(-time.Hour), time.Now().Add(-2*time.Hour))
-				h.Score = decimal.Zero
+				h := stubHook(t, branchID, time.Now().Add(-time.Hour))
+				h.Triggered = true
 
 				return []hook.Hook{h}
 			},
@@ -842,11 +810,11 @@ func Test_Manager_processHooks(t *testing.T) {
 				wasChangeCalled(0),
 			),
 		},
-		// the unpersisted score would be recomputed into the same
+		// the unpersisted result would be recomputed into the same
 		// transition on the next cycle, notifying again every five minutes.
 		"Failed update suppresses the notification": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				return []hook.Hook{stubHook(t, branchID, time.Now().Add(-time.Hour), time.Now().Add(-2*time.Hour))}
+				return []hook.Hook{stubHook(t, branchID, time.Now().Add(-time.Hour))}
 			},
 			Doc:       stubDocument(),
 			UpdateErr: assert.AnError,
@@ -862,13 +830,12 @@ func Test_Manager_processHooks(t *testing.T) {
 				wasChangeCalled(0),
 			),
 		},
-		// the hook kept its score while it could not check, so its return at
-		// zero is the arrival to announce.
-		"Inactive hook back at zero notifies the maintainers": {
+		// the hook kept its triggered flag while it could not check, so
+		// coming back triggered is the transition to announce.
+		"Inactive hook back as triggered notifies the maintainers": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				h := stubHook(t, branchID, time.Now().Add(-time.Hour), time.Now().Add(-2*time.Hour))
+				h := stubHook(t, branchID, time.Now().Add(-time.Hour))
 				h.Status = processor.StatusUnconfigured
-				h.Score = decimal.NewFromInt(40)
 
 				return []hook.Hook{h}
 			},
@@ -876,7 +843,7 @@ func Test_Manager_processHooks(t *testing.T) {
 			Checks: checks(
 				hasError(false),
 				hasUpdatedStatus(processor.StatusActive),
-				hasUpdatedScore(decimal.Zero),
+				hasUpdatedTriggered(true),
 				wasPublished(notification.NotificationDocumentHookTriggered),
 				wasChangeCalled(1),
 				wasFetchPaginatedCalled(1),
@@ -889,7 +856,7 @@ func Test_Manager_processHooks(t *testing.T) {
 		},
 		"Maintainer fetch failure suppresses the notification": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				return []hook.Hook{stubHook(t, branchID, time.Now().Add(-time.Hour), time.Now().Add(-2*time.Hour))}
+				return []hook.Hook{stubHook(t, branchID, time.Now().Add(-time.Hour))}
 			},
 			Doc:      stubDocument(),
 			MaintErr: assert.AnError,
@@ -908,8 +875,8 @@ func Test_Manager_processHooks(t *testing.T) {
 		"Documents are fetched once per branch": {
 			Hooks: func(t *testing.T) []hook.Hook {
 				return []hook.Hook{
-					stubHook(t, branchID, time.Now().Add(time.Hour), time.Now()),
-					stubHook(t, branchID, time.Now().Add(time.Hour), time.Now()),
+					stubHook(t, branchID, time.Now().Add(time.Hour)),
+					stubHook(t, branchID, time.Now().Add(time.Hour)),
 				}
 			},
 			Doc: stubDocument(),
@@ -927,7 +894,7 @@ func Test_Manager_processHooks(t *testing.T) {
 		},
 		"Missing block soft-deletes the hook": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				h := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				h := stubHook(t, branchID, time.Now().Add(time.Hour))
 				h.BlockID = null.StringFrom("missing-block")
 
 				return []hook.Hook{h}
@@ -946,12 +913,12 @@ func Test_Manager_processHooks(t *testing.T) {
 				wasChangeCalled(1),
 			),
 		},
-		// the hook's block is gone, so its score would describe nothing: the
-		// elapsed schedule must not drop the score to zero, and no
-		// notification about the vanished block may go out.
+		// the hook's block is gone, so its result would describe nothing: the
+		// elapsed schedule must not trigger it, and no notification about
+		// the vanished block may go out.
 		"Soft-deleted hook is not processed or notified": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				h := stubHook(t, branchID, time.Now().Add(-time.Hour), time.Now().Add(-2*time.Hour))
+				h := stubHook(t, branchID, time.Now().Add(-time.Hour))
 				h.BlockID = null.StringFrom("missing-block")
 
 				return []hook.Hook{h}
@@ -960,7 +927,7 @@ func Test_Manager_processHooks(t *testing.T) {
 			Checks: checks(
 				hasError(false),
 				wasUpdateCalled(1),
-				hasUpdatedScore(decimal.NewFromInt(100)),
+				hasUpdatedTriggered(false),
 				hasUpdatedSoftDeletion(true),
 				wasPublished(),
 				wasFetchPaginatedCalled(1),
@@ -973,7 +940,7 @@ func Test_Manager_processHooks(t *testing.T) {
 		},
 		"Reappearing block clears the soft deletion": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				h := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				h := stubHook(t, branchID, time.Now().Add(time.Hour))
 				h.BlockID = null.StringFrom("b1")
 				h.SoftDeletedAt = null.TimeFrom(time.Now().Add(-time.Hour))
 
@@ -995,7 +962,7 @@ func Test_Manager_processHooks(t *testing.T) {
 		},
 		"Retention-expired soft-deleted hook is deleted": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				h := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				h := stubHook(t, branchID, time.Now().Add(time.Hour))
 				h.BlockID = null.StringFrom("missing-block")
 				h.SoftDeletedAt = null.TimeFrom(time.Now().Add(-_hookRetentionDuration - time.Hour))
 
@@ -1113,14 +1080,18 @@ func Test_Manager_notifyTransition(t *testing.T) {
 	failedHook.Status = processor.StatusUnreachableURL
 
 	triggeredHook := urlHook
-	triggeredHook.Score = decimal.Zero
+	triggeredHook.Triggered = true
+
+	// a copy carries its source's triggered flag into its first run.
+	triggeredCopyHook := triggeredHook
+	triggeredCopyHook.Status = processor.StatusInitializing
 
 	githubHook := urlHook
 	githubHook.Type = hook.TypeGithubTracking
 	githubHook.Settings = processor.Settings(`{"repository":"repo","branch":"main","paths":["a.md","b.md","c.md"]}`)
 
 	triggeredGithubHook := githubHook
-	triggeredGithubHook.Score = decimal.Zero
+	triggeredGithubHook.Triggered = true
 	triggeredGithubHook.State = null.ValueFrom(processor.State(`{"pathsChecksums":{},"changedPaths":2}`))
 
 	malformedGithubHook := triggeredGithubHook
@@ -1134,10 +1105,20 @@ func Test_Manager_notifyTransition(t *testing.T) {
 		Cores   []notification.Core
 		Log     string
 	}{
-		"Hook that keeps its status and score": {
+		"Hook that keeps its status and triggered flag": {
 			DB:   &DBMock{},
 			Prev: urlHook,
 			Hook: urlHook,
+		},
+		"Hook that stays triggered": {
+			DB:   &DBMock{},
+			Prev: triggeredHook,
+			Hook: triggeredHook,
+		},
+		"Copy that was triggered at its source": {
+			DB:   &DBMock{},
+			Prev: triggeredCopyHook,
+			Hook: triggeredHook,
 		},
 		"Error returned by DB.FetchDocumentMaintainers": {
 			DB: &DBMock{
@@ -1165,7 +1146,7 @@ func Test_Manager_notifyTransition(t *testing.T) {
 				),
 			},
 		},
-		"Hook that ran out of freshness": {
+		"Hook that triggered": {
 			DB:      &DBMock{},
 			Prev:    urlHook,
 			Hook:    triggeredHook,
@@ -1181,7 +1162,7 @@ func Test_Manager_notifyTransition(t *testing.T) {
 				),
 			},
 		},
-		"GitHub hook that ran out of freshness": {
+		"GitHub hook that triggered": {
 			DB:      &DBMock{},
 			Prev:    githubHook,
 			Hook:    triggeredGithubHook,
@@ -1197,7 +1178,7 @@ func Test_Manager_notifyTransition(t *testing.T) {
 				),
 			},
 		},
-		"GitHub hook that ran out of freshness with a malformed state": {
+		"GitHub hook that triggered with a malformed state": {
 			DB:      &DBMock{},
 			Prev:    githubHook,
 			Hook:    malformedGithubHook,

@@ -155,12 +155,12 @@ func Test_decodeHookSettings(t *testing.T) {
 		"Unknown type":       {Raw: `{"type":"bogus"}`, Err: fmt.Errorf("type %q: %w", "bogus", hook.ErrInvalidType)},
 		"Malformed settings": {Raw: `{`, Err: assert.AnError},
 		"Malformed type":     {Raw: `{"type":1}`, Err: assert.AnError},
-		// the editor labels a linear reminder with a custom duration as
-		// a date, which is what a tool call sets.
+		// the editor labels a reminder with a custom duration as a date,
+		// which is what a tool call sets.
 		"Scheduled reminder": {
 			Raw:    `{"type":"scheduled-reminder","schedule":"2030-01-01T00:00:00Z"}`,
 			Type:   hook.TypeScheduledReminder,
-			Result: `{"scale":"linear","duration":"custom","schedule":"2030-01-01T00:00:00Z"}`,
+			Result: `{"duration":"custom","schedule":"2030-01-01T00:00:00Z"}`,
 		},
 		"Scheduled reminder without a schedule": {
 			Raw: `{"type":"scheduled-reminder"}`,
@@ -205,6 +205,10 @@ func Test_decodeHookSettings(t *testing.T) {
 		"Scheduled reminder with a url": {
 			Raw: `{"type":"scheduled-reminder","schedule":"2030-01-01T00:00:00Z","url":"https://example.com"}`,
 			Err: fmt.Errorf("%s is not a %s setting", "url", hook.TypeScheduledReminder),
+		},
+		"Scheduled reminder with a scale": {
+			Raw: `{"type":"scheduled-reminder","schedule":"2030-01-01T00:00:00Z","scale":"linear"}`,
+			Err: fmt.Errorf("%s is not a %s setting", "scale", hook.TypeScheduledReminder),
 		},
 		"URL watcher with github paths": {
 			Raw: `{"type":"url-watcher","url":"https://example.com","paths":["a"]}`,
@@ -339,8 +343,8 @@ func Test_listHooks_Execute(t *testing.T) {
 			BranchFetches: 1,
 			HookLists:     1,
 			Result: `{"hooks":[{"id":"` + _testHookID.String() + `","type":"scheduled-reminder","block_uid":null,` +
-				`"settings":{"scale":"linear","duration":"custom","schedule":"2030-01-01T00:00:00Z"},` +
-				`"score":"100","state":{"startedAt":"2026-01-01T00:00:00Z"},"status":"active",` +
+				`"settings":{"duration":"custom","schedule":"2030-01-01T00:00:00Z"},` +
+				`"triggered":false,"state":{},"status":"active",` +
 				`"created_at":"2026-01-01T00:00:00Z","updated_at":null}]}`,
 		},
 	}
@@ -377,7 +381,7 @@ func Test_newHookRow(t *testing.T) {
 		Type:      hook.TypeScheduledReminder,
 		BlockUID:  null.StringFrom("b"),
 		Settings:  json.RawMessage(hk.Settings),
-		Score:     hk.Score,
+		Triggered: hk.Triggered,
 		State:     json.RawMessage(hk.State.V),
 		Status:    processor.StatusActive,
 		CreatedAt: hk.CreatedAt,
@@ -582,7 +586,7 @@ func Test_createHook_Execute(t *testing.T) {
 			Args:          `{` + targetArgs(_stubBranchID) + `,` + scheduled + `,"block_uid":"nope"}`,
 			BranchFetches: 1,
 			Creates:       1,
-			Err:           fmt.Errorf("block %s: %w", "nope", errUnknownBlock),
+			Err:           fmt.Errorf("block %s: %w", "nope", _errUnknownBlock),
 		},
 		"GitHub tracking without the app": {
 			DB:            stubHookDB(),
@@ -651,9 +655,9 @@ func Test_createHook_Execute(t *testing.T) {
 			assert.False(t, row.ID.IsNil())
 			assert.Equal(t, hook.TypeScheduledReminder, row.Type)
 			assert.Equal(t, c.BlockUID, row.BlockUID)
-			assert.JSONEq(t, `{"scale":"linear","duration":"custom","schedule":"`+_stubSchedule+`"}`, string(row.Settings))
-			assert.Equal(t, "100", row.Score.String())
-			assert.Contains(t, string(row.State), "startedAt")
+			assert.JSONEq(t, `{"duration":"custom","schedule":"`+_stubSchedule+`"}`, string(row.Settings))
+			assert.False(t, row.Triggered)
+			assert.JSONEq(t, `{}`, string(row.State))
 		})
 	}
 }
@@ -714,7 +718,7 @@ func Test_updateHookArgs_settingsFor(t *testing.T) {
 		},
 		"Settings of the hook type": {
 			Settings: `{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `"}`,
-			Result:   `{"scale":"linear","duration":"custom","schedule":"` + _stubSchedule + `"}`,
+			Result:   `{"duration":"custom","schedule":"` + _stubSchedule + `"}`,
 		},
 	}
 
@@ -871,7 +875,7 @@ func Test_updateHook_Execute(t *testing.T) {
 			DB:          stubHookDB(),
 			Args:        `{` + hookArgs(_unknownHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `"}}`,
 			HookFetches: 1,
-			Err:         fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, errUnknownHook),
+			Err:         fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, _errUnknownHook),
 		},
 		"Settings without a type": {
 			DB:   stubHookDB(),
@@ -917,7 +921,7 @@ func Test_updateHook_Execute(t *testing.T) {
 			Args:        `{` + hookArgs(_testHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + later.Format(time.RFC3339) + `"}}`,
 			HookFetches: 1,
 			Updates:     1,
-			Settings:    `{"scale":"linear","duration":"custom","schedule":"2031-06-01T12:00:00Z"}`,
+			Settings:    `{"duration":"custom","schedule":"2031-06-01T12:00:00Z"}`,
 		},
 		"Reset keeping the settings": {
 			DB:          stubHookDB(),
@@ -1065,7 +1069,7 @@ func Test_deleteHook_Execute(t *testing.T) {
 			DB:          stubHookDB(),
 			Args:        `{` + hookArgs(_unknownHookID) + `}`,
 			HookFetches: 1,
-			Err:         fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, errUnknownHook),
+			Err:         fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, _errUnknownHook),
 		},
 		"Error returned by hookMan.DeleteHook": {
 			DB:          stubHookDB(),
@@ -1137,7 +1141,7 @@ func Test_hookRefArgs_fetchHookAndBranch(t *testing.T) {
 		"Unknown hook": {
 			DB:     stubHookDB(),
 			HookID: _unknownHookID,
-			Err:    fmt.Errorf("fetch hook: %w", fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, errUnknownHook)),
+			Err:    fmt.Errorf("fetch hook: %w", fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, _errUnknownHook)),
 		},
 		"Error returned by db.FetchDocumentByBranchID": {
 			DB:            failingDoc,

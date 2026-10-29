@@ -96,15 +96,15 @@ export function useSidebarDraggable(
 	const { x, y } = useDraggable(elem, {
 		disabled: opts.disabled,
 		axis: "both",
-		onStart: () => {
-			document.documentElement.classList.add(
-				cn("select-none!"),
-				cn("[&_*]:select-none!"),
-			)
-		},
 		onMove: (pos) => {
 			if (!dragFirstPosition) {
 				dragFirstPosition = pos
+				// these classes restyle the whole page, which is slow on a long
+				// document. A click never moves, so it never pays for them.
+				document.documentElement.classList.add(
+					cn("select-none!"),
+					cn("[&_*]:select-none!"),
+				)
 				return
 			}
 

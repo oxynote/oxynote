@@ -305,6 +305,45 @@ func Test_ParseTimeRange(t *testing.T) {
 	}
 }
 
+func Test_TimeRange_AlignTo(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		TimeRange TimeRange
+		Result    TimeRange
+	}{
+		"Zero bounds are left unchanged": {},
+		"Bounds round outwards to the grid": {
+			TimeRange: TimeRange{
+				From: time.Date(2024, 1, 1, 12, 0, 4, 0, time.UTC),
+				To:   time.Date(2024, 1, 31, 12, 0, 4, 0, time.UTC),
+			},
+			Result: TimeRange{
+				From: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+				To:   time.Date(2024, 1, 31, 12, 0, 15, 0, time.UTC),
+			},
+		},
+		"Bounds already on the grid stay": {
+			TimeRange: TimeRange{
+				From: time.Date(2024, 1, 1, 12, 0, 15, 0, time.UTC),
+				To:   time.Date(2024, 1, 1, 13, 0, 30, 0, time.UTC),
+			},
+			Result: TimeRange{
+				From: time.Date(2024, 1, 1, 12, 0, 15, 0, time.UTC),
+				To:   time.Date(2024, 1, 1, 13, 0, 30, 0, time.UTC),
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.TimeRange.AlignTo(15*time.Second))
+		})
+	}
+}
+
 func Test_TimeRange_QueryStep(t *testing.T) {
 	cc := map[string]struct {
 		TimeRange TimeRange

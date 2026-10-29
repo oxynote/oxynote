@@ -49,8 +49,8 @@ for free.
   `oxynote://documents/{id}/branches/{branch_id}`.
 - **Every error names the next step**: what was wrong, then the tool or
   argument that fixes it (`edit.Result.Err` rewrites the realtime
-  service's errors; `ErrUnknownDocument`, `errUnknownBlock`,
-  `errBranchProtected`, `errUnknownParent` follow suit).
+  service's errors; `ErrUnknownDocument`, `_errUnknownBlock`,
+  `_errBranchProtected`, `_errUnknownParent` follow suit).
 - **`Decode` is the only way into arguments.** Every tool has a `<tool>Args`
   type with `Validate() error` (`errRequired(key)`); ids are `xid.ID`,
   timestamps `time.Time`, enums self-validating; `encoding/json/v2` reports

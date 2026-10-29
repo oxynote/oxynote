@@ -10,8 +10,6 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/apps/registry"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
-	"github.com/oxynote/oxynote/server/core/pkg/mathutil"
-	"github.com/shopspring/decimal"
 )
 
 // ErrInvalidImage is returned when a container image watcher's image
@@ -36,7 +34,7 @@ func (ciw *ContainerImageWatcher) Validate() error {
 	return nil
 }
 
-// Process scores the hook down once the image digest moved since the reset.
+// Process triggers the hook once the image digest moved since the reset.
 func (ciw *ContainerImageWatcher) Process(ctx context.Context, inp Input) (Result, error) {
 	var ciws ContainerImageWatcherState
 
@@ -53,12 +51,7 @@ func (ciw *ContainerImageWatcher) Process(ctx context.Context, inp Input) (Resul
 		return inactive(status), nil
 	}
 
-	score := mathutil.Hundred
-	if ciws.Digest != digest {
-		score = decimal.Zero
-	}
-
-	return active(score, ciws)
+	return active(ciws.Digest != digest, ciws)
 }
 
 // Reset records the image's current digest as the baseline.
@@ -72,7 +65,7 @@ func (ciw *ContainerImageWatcher) Reset(ctx context.Context, _ Input) (Result, e
 		return inactive(status), nil
 	}
 
-	return active(mathutil.Hundred, ContainerImageWatcherState{Digest: digest})
+	return active(false, ContainerImageWatcherState{Digest: digest})
 }
 
 // digest fetches the image digest. A status other than active means the

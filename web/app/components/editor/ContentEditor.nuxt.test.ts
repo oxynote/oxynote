@@ -304,7 +304,7 @@ describe("<ContentEditor>", { concurrent: false }, () => {
 				{
 					id: "hook-1",
 					blockId: "block-1",
-					score: "0",
+					triggered: true,
 					state: {},
 					status: "active",
 				} as unknown as DocumentHook,

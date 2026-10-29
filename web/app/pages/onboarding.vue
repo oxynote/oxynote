@@ -59,6 +59,7 @@ const onSubmit = form.handleSubmit(async (values) => {
 	loading.value = "submit"
 	await delay(300) // show loading spinner for at least a moment
 
+	// NOCOV: the empty side is unreachable. The form rules require a slug.
 	if (values.workspaceSlug) {
 		const res = (await checkOrganizationSlug({
 			slug: values.workspaceSlug,

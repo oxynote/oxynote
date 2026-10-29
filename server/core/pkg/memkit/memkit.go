@@ -24,8 +24,10 @@ var _sweepInterval = time.Minute * 5
 
 // newCache creates the cache backing a store. An expireAfter below one
 // second holds entries without an expiry, matching the redis stores,
-// where the equivalent "EX 0" is rejected.
-func newCache(expireAfter time.Duration) *ttlcache.Cache[string, []byte] {
+// where the equivalent "EX 0" is rejected. A maxBytes of 0 holds entries
+// of any total size; past it, the entries least recently read or written
+// make room.
+func newCache(expireAfter time.Duration, maxBytes uint64) *ttlcache.Cache[string, []byte] {
 	ttl := ttlcache.NoTTL
 
 	if expireAfter >= time.Second {
@@ -37,6 +39,9 @@ func newCache(expireAfter time.Duration) *ttlcache.Cache[string, []byte] {
 	return ttlcache.New(
 		ttlcache.WithTTL[string, []byte](ttl),
 		ttlcache.WithDisableTouchOnHit[string, []byte](),
+		ttlcache.WithMaxCost(maxBytes, func(item ttlcache.CostItem[string, []byte]) uint64 {
+			return uint64(len(item.Value))
+		}),
 	)
 }
 

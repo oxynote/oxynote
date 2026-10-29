@@ -141,17 +141,17 @@ describe("<HookConfigPanel>", { concurrent: false }, () => {
 	}>([
 		{
 			name: "a fresh hook plainly",
-			input: { score: "100", state: {}, status: "active" },
+			input: { triggered: false, state: {}, status: "active" },
 			expected: { status: "fresh", icon: "mingcute:earth-2-line" },
 		},
 		{
 			name: "a triggered hook in its colour",
-			input: { score: "0", state: {}, status: "active" },
+			input: { triggered: true, state: {}, status: "active" },
 			expected: { status: "triggered", icon: "mingcute:earth-2-line" },
 		},
 		{
 			name: "a failed check as a warning",
-			input: { score: "100", state: {}, status: "unreachable_url" },
+			input: { triggered: false, state: {}, status: "unreachable_url" },
 			expected: { status: "needs-attention", icon: "mingcute:alert-fill" },
 		},
 	])("shows $name", async ({ input, expected }, { expect }) => {
@@ -195,7 +195,7 @@ describe("<HookConfigPanel>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		await mountPanel({
-			hook: makeHook({ score: "0" }),
+			hook: makeHook({ triggered: true }),
 			noticeStatus: "fresh",
 			noticeIcon: "mingcute:information-fill",
 		})
@@ -209,7 +209,7 @@ describe("<HookConfigPanel>", { concurrent: false }, () => {
 	it("dismisses a triggered hook from its notice", async ({ expect }) => {
 		const onAcknowledge = vi.fn()
 		await mountPanel({
-			hook: makeHook({ score: "0" }),
+			hook: makeHook({ triggered: true }),
 			acknowledgeLabel: t("editor.hooks.reset"),
 			onAcknowledge: onAcknowledge,
 		})
@@ -226,7 +226,7 @@ describe("<HookConfigPanel>", { concurrent: false }, () => {
 		useEditorMeta().setEditable(false)
 		const onAcknowledge = vi.fn()
 		await mountPanel({
-			hook: makeHook({ score: "0" }),
+			hook: makeHook({ triggered: true }),
 			acknowledgeLabel: t("editor.hooks.reset"),
 			onAcknowledge: onAcknowledge,
 		})
@@ -242,7 +242,7 @@ describe("<HookConfigPanel>", { concurrent: false }, () => {
 	}) => {
 		useEditorStore().setReviewableDiffActive(true)
 		await mountPanel({
-			hook: makeHook({ score: "0" }),
+			hook: makeHook({ triggered: true }),
 			diff: {
 				status: DiffStatus.Unchanged,
 				targetHook: null,
@@ -266,7 +266,7 @@ describe("<HookConfigPanel>", { concurrent: false }, () => {
 	}) => {
 		useEditorStore().setReviewableDiffActive(true)
 		await mountPanel({
-			hook: makeHook({ score: "0" }),
+			hook: makeHook({ triggered: true }),
 			diff: { status: DiffStatus.Removed, targetHook: null, signColumn: false },
 		})
 
@@ -274,6 +274,33 @@ describe("<HookConfigPanel>", { concurrent: false }, () => {
 
 		expect(hookNotice().textContent.trim()).toBe(t("editor.hooks.removed"))
 		expect(hookNotice().dataset.hookStatus).toBe("fresh")
+	})
+
+	it.for([
+		{
+			name: "keeps Tab inside the panel",
+			input: { key: "Tab" },
+			expected: 0,
+		},
+		{
+			name: "leaves Escape to the menu",
+			input: { key: "Escape" },
+			expected: 1,
+		},
+	])("$name", async ({ input, expected }, { expect }) => {
+		await mountPanel()
+		await openHookSubMenu(TITLE)
+		const field = document.body.querySelector<HTMLInputElement>(
+			`input[placeholder='${FIELD}']`,
+		)
+		const reachedMenu = vi.fn()
+		field?.closest("[role='menu']")?.addEventListener("keydown", reachedMenu)
+
+		field?.dispatchEvent(
+			new KeyboardEvent("keydown", { key: input.key, bubbles: true }),
+		)
+
+		expect(reachedMenu).toHaveBeenCalledTimes(expected)
 	})
 })
 

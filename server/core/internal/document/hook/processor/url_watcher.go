@@ -11,8 +11,6 @@ import (
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
-	"github.com/oxynote/oxynote/server/core/pkg/mathutil"
-	"github.com/shopspring/decimal"
 )
 
 // ErrInvalidURL is returned when a URL watcher's URL is not an absolute
@@ -71,15 +69,13 @@ func (uw *URLWatcher) Process(ctx context.Context, inp Input) (Result, error) {
 		return inactive(StatusUnreachableURL), nil
 	}
 
-	score := mathutil.Hundred
+	triggered := uws.LastChangedAt.Valid && watch.LastChangedAt.After(uws.LastChangedAt.Time)
 
 	if !uws.LastChangedAt.Valid {
 		uws.LastChangedAt = null.TimeFrom(watch.LastChangedAt)
-	} else if watch.LastChangedAt.After(uws.LastChangedAt.Time) {
-		score = decimal.Zero
 	}
 
-	return active(score, uws)
+	return active(triggered, uws)
 }
 
 // Reset points the watcher at the current URL and takes its last change
@@ -97,7 +93,7 @@ func (uw *URLWatcher) Reset(ctx context.Context, inp Input) (Result, error) {
 
 	switch {
 	case err == nil:
-		return active(mathutil.Hundred, uws)
+		return active(false, uws)
 	case errors.Is(err, webchange.ErrNotConfigured):
 		return inactive(StatusUnconfigured), nil
 	default:

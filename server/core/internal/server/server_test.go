@@ -209,7 +209,7 @@ func Test_NewServer(t *testing.T) {
 				// SetTreeNotifier, which must not race another parallel
 				// case's identical call on a shared manager.
 				assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, &SearchQueueMock{}, nil, githubMan, nil, nil, nil, "claude", false),
-				datasourceCore.NewManager(log, nil),
+				datasourceCore.NewManager(log, nil, nil, fc),
 				nil,
 				githubMan,
 				slackMan,

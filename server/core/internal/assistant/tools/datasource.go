@@ -38,15 +38,15 @@ const (
 // the check saves.
 const _maxPreviewSeries = 10
 
-// errUnknownDataSource is what a lookup reports for an id that names
+// _errUnknownDataSource is what a lookup reports for an id that names
 // nothing in the session's organisation. Another organisation's id
 // lands here too, which is the point: the tools cannot be used to
 // discover that a data source exists elsewhere.
-var errUnknownDataSource = errors.New("no data source with that id in this organisation; call list_data_sources for the ids that exist")
+var _errUnknownDataSource = errors.New("no data source with that id in this organisation; call list_data_sources for the ids that exist")
 
-// errInvertedTimeRange reports a range whose start falls after its end,
+// _errInvertedTimeRange reports a range whose start falls after its end,
 // once either absent end has been defaulted.
-var errInvertedTimeRange = errors.New("'from' is after 'to'; the range start must be the earlier timestamp")
+var _errInvertedTimeRange = errors.New("'from' is after 'to'; the range start must be the earlier timestamp")
 
 // _timeRangeProps are the from and to arguments every ranged read takes.
 var _timeRangeProps = map[string]any{
@@ -81,7 +81,7 @@ func (a timeRangeArgs) resolve() (processor.TimeRange, error) {
 	}
 
 	if out.From.After(out.To) {
-		return processor.TimeRange{}, errInvertedTimeRange
+		return processor.TimeRange{}, _errInvertedTimeRange
 	}
 
 	return out, nil

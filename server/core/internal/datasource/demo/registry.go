@@ -112,6 +112,24 @@ func (r registry) labelValues(name string, sets [][]*labels.Matcher) []string {
 	return sortedKeys(values)
 }
 
+// bucketValue returns the reading of the named family's bucket, or nil
+// when the registry declares no such bucket.
+func (r registry) bucketValue(name, label string) func(tick int64) float64 {
+	for _, f := range r {
+		if f.name != name {
+			continue
+		}
+
+		for _, b := range f.buckets {
+			if b.label == label {
+				return b.value
+			}
+		}
+	}
+
+	return nil
+}
+
 // seriesLabels returns the label set the given bucket of the given family
 // is published under.
 func seriesLabels(f family, b bucket) labels.Labels {

@@ -18,18 +18,33 @@ func TestMain(m *testing.M) {
 func Test_newCache(t *testing.T) {
 	cc := map[string]struct {
 		ExpireAfter time.Duration
+		MaxBytes    uint64
 		TTL         time.Duration
+
+		// Kept are the keys left after "a", "b" and "c" are set in turn.
+		Kept []string
 	}{
 		"Zero expiry holds entries without an expiry": {
-			TTL: ttlcache.NoTTL,
+			TTL:  ttlcache.NoTTL,
+			Kept: []string{"a", "b", "c"},
 		},
 		"Sub-second expiry holds entries without an expiry": {
 			ExpireAfter: time.Millisecond,
 			TTL:         ttlcache.NoTTL,
+			Kept:        []string{"a", "b", "c"},
 		},
 		"Expiry of a second or more is applied": {
 			ExpireAfter: time.Hour * 168,
 			TTL:         time.Hour * 168,
+			Kept:        []string{"a", "b", "c"},
+		},
+		// "a" was last read before "b" and "c" were written, so it is the
+		// entry least recently used when the third entry needs room.
+		"Byte budget makes room by dropping the least recently used entry": {
+			ExpireAfter: time.Hour,
+			MaxBytes:    6,
+			TTL:         time.Hour,
+			Kept:        []string{"b", "c"},
 		},
 	}
 
@@ -37,15 +52,20 @@ func Test_newCache(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			cache := newCache(c.ExpireAfter)
+			cache := newCache(c.ExpireAfter, c.MaxBytes)
 			require.NotNil(t, cache)
 
-			item := cache.Set("test", []byte("123"), ttlcache.DefaultTTL)
+			item := cache.Set("a", []byte("123"), ttlcache.DefaultTTL)
 			require.NotNil(t, item)
 			assert.Equal(t, c.TTL, item.TTL())
 
 			// a read must leave the entry's expiry where it was.
-			assert.Equal(t, item.ExpiresAt(), cache.Get("test").ExpiresAt())
+			assert.Equal(t, item.ExpiresAt(), cache.Get("a").ExpiresAt())
+
+			cache.Set("b", []byte("456"), ttlcache.DefaultTTL)
+			cache.Set("c", []byte("789"), ttlcache.DefaultTTL)
+
+			assert.ElementsMatch(t, c.Kept, cache.Keys())
 		})
 	}
 }

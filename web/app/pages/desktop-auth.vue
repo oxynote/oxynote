@@ -21,7 +21,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-	if (redirectTimeout !== undefined) clearTimeout(redirectTimeout)
+	// NOCOV: the timer is missing only in the desktop build.
+	if (redirectTimeout !== undefined) {
+		clearTimeout(redirectTimeout)
+	}
 })
 </script>
 

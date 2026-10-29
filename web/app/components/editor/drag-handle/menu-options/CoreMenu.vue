@@ -66,9 +66,11 @@ const lastValidHovered = useLastValidRef(() => {
 					props.hovered.nodePos,
 					[SplitDocumentationRightSide.name],
 				),
-				hasNodeComment: props.editor.commands.hasNodeComment(
-					props.hovered.nodePos,
-				),
+				// can() only checks. A command would dispatch a transaction,
+				// which reruns this getter, which dispatches again.
+				hasNodeComment: props.editor
+					.can()
+					.hasNodeComment(props.hovered.nodePos),
 			}
 		: null
 })

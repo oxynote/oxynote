@@ -373,7 +373,7 @@ func Test_confirming_interrupt(t *testing.T) {
 		"Block the document does not hold is refused": {
 			Args:                         `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"zzz","content":"<p>x</p>"}`,
 			FetchDocumentByBranchIDCalls: 1,
-			Rejected:                     fmt.Sprintf("%s: block zzz: %v", NameReplaceBlocks, errUnknownBlock),
+			Rejected:                     fmt.Sprintf("%s: block zzz: %v", NameReplaceBlocks, _errUnknownBlock),
 		},
 		"Described write is parked": {
 			Args:                         `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","content":"<p id=\"a\">hi</p>"}`,

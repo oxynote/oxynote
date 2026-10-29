@@ -1,5 +1,7 @@
 import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
+import type { RouteMiddleware } from "#app"
+import type { RouteLocationNormalized } from "vue-router"
 import { toast } from "vue-sonner"
 import {
 	clearQueryCache,
@@ -23,9 +25,13 @@ vi.mock("vue-sonner", () => ({
 
 // route.query is a readonly proxy, so the route itself is what a test
 // arranges
-const { useRouteMock } = vi.hoisted(() => ({ useRouteMock: vi.fn() }))
+const { useRouteMock, navigateToMock } = vi.hoisted(() => ({
+	useRouteMock: vi.fn(),
+	navigateToMock: vi.fn(),
+}))
 
 mockNuxtImport("useRoute", () => useRouteMock)
+mockNuxtImport("navigateTo", () => navigateToMock)
 
 function mockClientName(clientName: string) {
 	return mockEndpoint(
@@ -53,17 +59,38 @@ async function mountConsent(
 	return wrapper
 }
 
-// the vue-sonner and useRoute module mocks are app-wide singletons every
-// mount in the file shares
+// the vue-sonner, useRoute and navigateTo module mocks are app-wide
+// singletons every mount in the file shares
 describe("<oauth-consent>", { concurrent: false }, () => {
 	// restoreMocks does not touch hand-made vi.fn() singletons in vitest 4
 	beforeEach(() => {
 		clearQueryCache()
 		vi.mocked(toast.custom).mockReset()
 		useRouteMock.mockReset()
+		navigateToMock.mockReset()
 	})
 
 	afterEach(disposeMockEndpoints)
+
+	it("sends a visitor without a client id home", async ({ expect }) => {
+		const to = { query: {} } as unknown as RouteLocationNormalized
+
+		await pageMiddleware()(to, to)
+
+		expect(navigateToMock).toHaveBeenCalledTimes(1)
+		expect(navigateToMock).toHaveBeenCalledWith("/")
+	})
+
+	it("lets a visitor with a client id through", async ({ expect }) => {
+		const to = {
+			query: { client_id: "client1" },
+		} as unknown as RouteLocationNormalized
+
+		const result = await pageMiddleware()(to, to)
+
+		expect(result).toBeUndefined()
+		expect(navigateToMock).not.toHaveBeenCalled()
+	})
 
 	it("names the client asking for access", async ({ expect }) => {
 		mockClientName("Claude Code")
@@ -205,3 +232,18 @@ describe("<oauth-consent>", { concurrent: false }, () => {
 		).toBeUndefined()
 	})
 })
+
+// pageMiddleware is the guard definePageMeta attached to the page's
+// route, the way the router would run it before rendering
+function pageMiddleware() {
+	const route = useRouter()
+		.getRoutes()
+		.find((r) => r.name === "oauth-consent")
+	const middleware = route?.meta.middleware
+
+	if (typeof middleware !== "function") {
+		throw new Error("the oauth-consent page registers no inline middleware")
+	}
+
+	return middleware as RouteMiddleware
+}

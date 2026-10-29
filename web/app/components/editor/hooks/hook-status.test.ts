@@ -11,14 +11,14 @@ import {
 	type DocumentHookStatus,
 } from "~/utils/api/document"
 
-const FRESH = { score: "100", status: "active" as const }
-const TRIGGERED = { score: "0", status: "active" as const }
-const FAILED = { score: "100", status: "unreachable_url" as const }
+const FRESH = { triggered: false, status: "active" as const }
+const TRIGGERED = { triggered: true, status: "active" as const }
+const FAILED = { triggered: false, status: "unreachable_url" as const }
 
 describe("hookStatus", () => {
 	it.for<{
 		name: string
-		input: { score: string; status: DocumentHookStatus }
+		input: { triggered: boolean; status: DocumentHookStatus }
 		expected: HookStatus
 	}>([
 		{
@@ -27,13 +27,13 @@ describe("hookStatus", () => {
 			expected: "fresh",
 		},
 		{
-			name: "shows a hook at score 0 as triggered",
+			name: "shows a triggered hook as triggered",
 			input: TRIGGERED,
 			expected: "triggered",
 		},
 		{
-			name: "shows a copy being set up by its source's score",
-			input: { score: "0", status: "initializing" },
+			name: "shows a copy being set up as its source was",
+			input: { triggered: true, status: "initializing" },
 			expected: "triggered",
 		},
 		{
@@ -43,32 +43,32 @@ describe("hookStatus", () => {
 		},
 		{
 			name: "shows an integration missing on the server as needing attention",
-			input: { score: "100", status: "unconfigured" },
+			input: { triggered: false, status: "unconfigured" },
 			expected: "needs-attention",
 		},
 		{
 			name: "shows an unreachable image as needing attention",
-			input: { score: "100", status: "unauthorized" },
+			input: { triggered: false, status: "unauthorized" },
 			expected: "needs-attention",
 		},
 		{
 			name: "shows a missing image as needing attention",
-			input: { score: "100", status: "image_not_found" },
+			input: { triggered: false, status: "image_not_found" },
 			expected: "needs-attention",
 		},
 		{
 			name: "shows a missing github installation as needing attention",
-			input: { score: "100", status: "missing_installation" },
+			input: { triggered: false, status: "missing_installation" },
 			expected: "needs-attention",
 		},
 		{
 			name: "shows a repository too large to compare as needing attention",
-			input: { score: "100", status: "tree_truncated" },
+			input: { triggered: false, status: "tree_truncated" },
 			expected: "needs-attention",
 		},
 		{
 			name: "puts a failed check before a trigger",
-			input: { score: "0", status: "unreachable_url" },
+			input: { triggered: true, status: "unreachable_url" },
 			expected: "needs-attention",
 		},
 	])("$name", ({ input, expected }, { expect }) => {
@@ -79,7 +79,7 @@ describe("hookStatus", () => {
 describe("hookGroupStatus", () => {
 	it.for<{
 		name: string
-		input: { score: string; status: DocumentHookStatus }[]
+		input: { triggered: boolean; status: DocumentHookStatus }[]
 		expected: HookGroupStatus | null
 	}>([
 		{
@@ -103,8 +103,8 @@ describe("hookGroupStatus", () => {
 			expected: "needs-attention",
 		},
 		{
-			name: "counts a failed check that also scored 0 as the failure alone",
-			input: [{ score: "0", status: "unreachable_url" }],
+			name: "counts a failed check that also triggered as the failure alone",
+			input: [{ triggered: true, status: "unreachable_url" }],
 			expected: "needs-attention",
 		},
 		{
@@ -118,7 +118,7 @@ describe("hookGroupStatus", () => {
 })
 
 function makeHook(input: {
-	score: string
+	triggered: boolean
 	status: DocumentHookStatus
 }): DocumentHook {
 	return {
@@ -132,7 +132,7 @@ function makeHook(input: {
 		settings: { url: "https://example.com" },
 		state: {},
 		status: input.status,
-		score: input.score,
+		triggered: input.triggered,
 		createdAt: new Date("2026-01-01T00:00:00Z"),
 	}
 }

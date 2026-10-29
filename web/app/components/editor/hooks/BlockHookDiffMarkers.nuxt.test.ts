@@ -99,27 +99,33 @@ describe("<BlockHookDiffMarkers>", { concurrent: false }, () => {
 	it.for([
 		{
 			name: "triggered for a triggered hook",
-			score: "0",
+			removed: false,
 			expected: "triggered",
 		},
-		{ name: "neutral for removed hooks alone", score: null, expected: null },
-	])("colours the hook icon $name", async ({ score, expected }, { expect }) => {
-		const { editor } = fakeEditor([
-			{ uid: "block-1", rect: new DOMRect(50, 100, 600, 40) },
-		])
-		const triggered = { ...urlHook("block-1", "https://new.test"), score: "0" }
+		{ name: "neutral for removed hooks alone", removed: true, expected: null },
+	])(
+		"colours the hook icon $name",
+		async ({ removed, expected }, { expect }) => {
+			const { editor } = fakeEditor([
+				{ uid: "block-1", rect: new DOMRect(50, 100, 600, 40) },
+			])
+			const triggered = {
+				...urlHook("block-1", "https://new.test"),
+				triggered: true,
+			}
 
-		const wrapper = await mountMarkers(
-			editor,
-			score === null
-				? { targetBranchHooks: [urlHook("block-1", "https://old.test")] }
-				: { activeBranchHooks: [triggered] },
-		)
+			const wrapper = await mountMarkers(
+				editor,
+				removed
+					? { targetBranchHooks: [urlHook("block-1", "https://old.test")] }
+					: { activeBranchHooks: [triggered] },
+			)
 
-		expect(wrapper.getComponent(HookDiffMarker).props("hookStatus")).toBe(
-			expected,
-		)
-	})
+			expect(wrapper.getComponent(HookDiffMarker).props("hookStatus")).toBe(
+				expected,
+			)
+		},
+	)
 
 	it("colours the hook icon as the hook button would be for a failed check", async ({
 		expect,

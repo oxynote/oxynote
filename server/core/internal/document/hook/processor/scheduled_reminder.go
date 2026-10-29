@@ -2,60 +2,37 @@ package processor
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
-	"github.com/oxynote/oxynote/server/core/pkg/mathutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
-	"github.com/shopspring/decimal"
 )
-
-// ErrInvalidScaleType is returned when a scheduled reminder carries a scale
-// the processor does not implement.
-var ErrInvalidScaleType = errutil.New(http.StatusBadRequest, "document_hook.invalid_scale_type", "invalid scale type")
 
 // ErrMissingSchedule is returned when a scheduled reminder has no schedule.
 var ErrMissingSchedule = errutil.New(http.StatusBadRequest, "document_hook.missing_schedule", "schedule is required")
 
-// ScaleType represents the type of scale used for scoring.
-type ScaleType string
-
-const (
-	// ScaleTypeLinear represents a linear scale.
-	ScaleTypeLinear ScaleType = "linear"
-)
-
 // _scheduleGracePeriod is the minimum lead time a schedule must have on
-// reset; anything closer scores zero immediately.
+// reset; anything closer triggers immediately.
 const _scheduleGracePeriod = time.Second * 5
 
-// ScheduledReminder specifies a processor that calculates the
-// score based on a scheduled time.
+// ScheduledReminder specifies a processor that triggers at a scheduled
+// time.
 type ScheduledReminder struct {
 	PlainDeleter
 	PlainSummarizer
-
-	// Scale is the type of scale used for scoring.
-	Scale ScaleType `json:"scale"`
 
 	// Duration is a duration value (not parsed by backend).
 	// This is used only by the frontend for display purposes.
 	Duration null.String `json:"duration"`
 
-	// Schedule is the concrete time when the score should reach 0.
+	// Schedule is the concrete time when the reminder triggers.
 	Schedule time.Time `json:"schedule"`
 }
 
 // Validate checks the reminder's settings.
 func (sr *ScheduledReminder) Validate() error {
-	if sr.Scale != ScaleTypeLinear {
-		return ErrInvalidScaleType
-	}
-
 	if sr.Schedule.IsZero() {
 		return ErrMissingSchedule
 	}
@@ -63,50 +40,13 @@ func (sr *ScheduledReminder) Validate() error {
 	return nil
 }
 
-// Process calculates the scheduled reminder score.
-func (sr *ScheduledReminder) Process(_ context.Context, inp Input) (Result, error) {
-	var srs ScheduledReminderState
-
-	if err := json.Unmarshal(inp.State(), &srs); err != nil {
-		return Result{}, fmt.Errorf("unmarshaling scheduled reminder state: %w", err)
-	}
-
-	score := mathutil.Hundred
-
-	totalDuration := sr.Schedule.Sub(srs.StartedAt)
-	elapsed := timeutil.Now().Sub(srs.StartedAt)
-
-	if elapsed >= totalDuration {
-		score = decimal.Zero
-	} else {
-		elapsedPercent := mathutil.SafeDiv(
-			decimal.NewFromInt(elapsed.Nanoseconds()),
-			decimal.NewFromInt(totalDuration.Nanoseconds()),
-		).Mul(mathutil.Hundred)
-		score = score.Sub(elapsedPercent).Round(0)
-	}
-
-	return active(score, srs)
+// Process triggers the reminder once its schedule has passed.
+func (sr *ScheduledReminder) Process(_ context.Context, _ Input) (Result, error) {
+	return active(!timeutil.Now().Before(sr.Schedule), struct{}{})
 }
 
-// Reset resets the state of the scheduled reminder processor.
+// Reset restarts the reminder. A schedule inside the grace period
+// triggers it right away.
 func (sr *ScheduledReminder) Reset(_ context.Context, _ Input) (Result, error) {
-	srs := ScheduledReminderState{
-		StartedAt: timeutil.Now(),
-	}
-
-	score := mathutil.Hundred
-
-	if srs.StartedAt.Add(_scheduleGracePeriod).After(sr.Schedule) {
-		score = decimal.Zero
-	}
-
-	return active(score, srs)
-}
-
-// ScheduledReminderState represents the state of
-// a scheduled reminder.
-type ScheduledReminderState struct {
-	// StartedAt is the time when the reminder was started/reset.
-	StartedAt time.Time `json:"startedAt"`
+	return active(timeutil.Now().Add(_scheduleGracePeriod).After(sr.Schedule), struct{}{})
 }

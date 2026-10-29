@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
@@ -287,6 +288,27 @@ func Test_PostgreSQLQueryResult_Transform(t *testing.T) {
 	}
 }
 
+func Test_PostgreSQLQueryResult_HasData(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Result *PostgreSQLQueryResult
+		Has    bool
+	}{
+		"No result": {},
+		"No rows":   {Result: &PostgreSQLQueryResult{Columns: []string{"value"}}},
+		"A row":     {Result: &PostgreSQLQueryResult{Columns: []string{"value"}, Rows: [][]any{{1.0}}}, Has: true},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Has, c.Result.HasData())
+		})
+	}
+}
+
 func Test_sqlSetLimit(t *testing.T) {
 	// the query is bounded by wrapping rather than by rewriting its tail,
 	// so every shape produces the same envelope.
@@ -386,6 +408,14 @@ func Test_pgNormalizeValue(t *testing.T) {
 			In:       int16(3),
 			Expected: 3.0,
 		},
+		"Oid becomes a decimal string": {
+			In:       uint32(16384),
+			Expected: "16384",
+		},
+		"Xid8 becomes a decimal string": {
+			In:       uint64(18446744073709551615),
+			Expected: "18446744073709551615",
+		},
 		"Numeric becomes float64": {
 			In:       numeric,
 			Expected: 42.5,
@@ -422,6 +452,48 @@ func Test_NewPostgreSQL(t *testing.T) {
 	p := NewPostgreSQL(inp)
 	require.NotNil(t, p)
 	assert.Same(t, inp, p.inp)
+	assert.Nil(t, p.pool)
+	assert.False(t, p.closed)
+}
+
+func Test_PostgreSQL_Close(t *testing.T) {
+	cc := map[string]struct {
+		// Used indicates whether a query built the pool before the close.
+		Used bool
+	}{
+		"Pool never built": {},
+		"Pool in use":      {Used: true},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			p := NewPostgreSQL(&InputMock{
+				URLFunc: func() string {
+					return fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", _pgUser, _pgPass, _pgAddr, _testDB)
+				},
+			})
+
+			if c.Used {
+				_, err := p.Query(context.Background(), "SELECT 1", _testTimeRange)
+				require.NoError(t, err)
+			}
+
+			require.NoError(t, p.Close())
+			assert.True(t, p.closed)
+
+			// a closed processor hands out no connection, and builds no new
+			// pool that nothing would close.
+			_, err := p.connect(context.Background())
+			testutil.AssertEqualError(t, _errClosed, err)
+
+			if c.Used {
+				require.NotNil(t, p.pool)
+				assert.Error(t, p.pool.Ping(context.Background()))
+			}
+		})
+	}
 }
 
 func Test_PostgreSQL_TestConnection(t *testing.T) {
@@ -467,6 +539,8 @@ func Test_PostgreSQL_TestConnection(t *testing.T) {
 
 			p := NewPostgreSQL(inp)
 
+			t.Cleanup(func() { assert.NoError(t, p.Close()) })
+
 			cs, err := p.TestConnection(context.Background())
 			require.NoError(t, err)
 			assert.Equal(t, c.Result, cs)
@@ -483,11 +557,11 @@ func Test_PostgreSQL_Metadata(t *testing.T) {
 		Err              error
 		CredentialsCalls int
 	}{
-		"Error returned by buildConnectionString": {
+		"Error returned by connect": {
 			URL: "://",
 			Err: assert.AnError,
 		},
-		"Error returned by pgx.ConnectConfig": {
+		"Error returned by pgxpool.Pool.Query": {
 			URL:              "postgres://127.0.0.1:1/db",
 			Err:              assert.AnError,
 			CredentialsCalls: 1,
@@ -528,6 +602,8 @@ func Test_PostgreSQL_Metadata(t *testing.T) {
 
 			p := NewPostgreSQL(inp)
 
+			t.Cleanup(func() { assert.NoError(t, p.Close()) })
+
 			result, err := p.Metadata(context.Background())
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Len(t, inp.URLCalls(), 1)
@@ -551,12 +627,12 @@ func Test_PostgreSQL_QueryLabels(t *testing.T) {
 		Err              error
 		CredentialsCalls int
 	}{
-		"Error returned by buildConnectionString": {
+		"Error returned by connect": {
 			URL:   "://",
 			Query: "SELECT 1",
 			Err:   assert.AnError,
 		},
-		"Error returned by pgx.ConnectConfig": {
+		"Error returned by pgxpool.Pool.Query": {
 			URL:              "postgres://127.0.0.1:1/db",
 			Query:            "SELECT 1",
 			Err:              assert.AnError,
@@ -597,6 +673,8 @@ func Test_PostgreSQL_QueryLabels(t *testing.T) {
 
 			p := NewPostgreSQL(inp)
 
+			t.Cleanup(func() { assert.NoError(t, p.Close()) })
+
 			labels, err := p.QueryLabels(context.Background(), c.Query, _testTimeRange)
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Len(t, inp.URLCalls(), 1)
@@ -616,20 +694,29 @@ func Test_PostgreSQL_QueryLabels(t *testing.T) {
 }
 
 func Test_PostgreSQL_Query(t *testing.T) {
+	ownerURL := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", _pgUser, _pgPass, _pgAddr, _testDB)
+
 	cc := map[string]struct {
-		URL              string
+		URL string
+
+		// Before are the queries run first. A case with Before or Check
+		// runs every query on one connection, so each sees what the one
+		// before it left behind.
+		Before []string
+
 		Query            string
 		Result           *PostgreSQLQueryResult
 		ErrStatus        int
 		Err              error
 		CredentialsCalls int
+		Check            func(t *testing.T, p *PostgreSQL)
 	}{
-		"Error returned by buildConnectionString": {
+		"Error returned by connect": {
 			URL:   "://",
 			Query: "SELECT 1",
 			Err:   assert.AnError,
 		},
-		"Error returned by pgx.ConnectConfig": {
+		"Error returned by pgxpool.Pool.Query": {
 			URL:              "postgres://127.0.0.1:1/db",
 			Query:            "SELECT 1",
 			Err:              assert.AnError,
@@ -643,6 +730,17 @@ func Test_PostgreSQL_Query(t *testing.T) {
 			Result: &PostgreSQLQueryResult{
 				Columns: []string{"ratio", "total"},
 				Rows:    [][]any{{0.25, 10.5}},
+			},
+			CredentialsCalls: 1,
+		},
+		// pgx decodes oid as uint32 and xid8 as uint64. As strings they
+		// stay labels, and a cached copy reads the same.
+		"Oid and xid8 columns become decimal strings": {
+			URL:   fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", _pgUser, _pgPass, _pgAddr, _testDB),
+			Query: "SELECT 16384::oid AS datid, '7'::xid8 AS xmin",
+			Result: &PostgreSQLQueryResult{
+				Columns: []string{"datid", "xmin"},
+				Rows:    [][]any{{"16384", "7"}},
 			},
 			CredentialsCalls: 1,
 		},
@@ -674,6 +772,22 @@ func Test_PostgreSQL_Query(t *testing.T) {
 			},
 			CredentialsCalls: 1,
 		},
+		"A released connection serves the next query": {
+			URL:    ownerURL,
+			Before: []string{"SELECT time FROM metrics ORDER BY time", "SELECT time FROM metrics ORDER BY time"},
+			Query:  "SELECT time FROM metrics ORDER BY time",
+			Result: &PostgreSQLQueryResult{
+				Columns: []string{"time"},
+				Rows:    [][]any{{float64(1700000000)}, {float64(1700000060)}},
+			},
+			CredentialsCalls: 1,
+			// the held connections plus the one every query shared.
+			Check: func(t *testing.T, p *PostgreSQL) {
+				t.Helper()
+
+				assert.Equal(t, int64(_pgMaxConns), p.pool.Stat().NewConnsCount())
+			},
+		},
 	}
 
 	for cn, c := range cc {
@@ -686,6 +800,27 @@ func Test_PostgreSQL_Query(t *testing.T) {
 
 			p := NewPostgreSQL(inp)
 
+			t.Cleanup(func() { assert.NoError(t, p.Close()) })
+
+			// with all but one connection held until the test ends, every
+			// query lands on the one left.
+			if len(c.Before) > 0 || c.Check != nil {
+				pool, perr := p.connect(context.Background())
+				require.NoError(t, perr)
+
+				for range _pgMaxConns - 1 {
+					held, aerr := pool.Acquire(context.Background())
+					require.NoError(t, aerr)
+
+					t.Cleanup(held.Release)
+				}
+			}
+
+			for _, q := range c.Before {
+				_, berr := p.Query(context.Background(), q, _testTimeRange)
+				require.NoError(t, berr)
+			}
+
 			result, err := p.Query(context.Background(), c.Query, _testTimeRange)
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Len(t, inp.URLCalls(), 1)
@@ -693,6 +828,10 @@ func Test_PostgreSQL_Query(t *testing.T) {
 
 			if c.ErrStatus != 0 {
 				assert.Equal(t, c.ErrStatus, errutil.StatusCode(err, false))
+			}
+
+			if c.Check != nil {
+				c.Check(t, p)
 			}
 
 			if err != nil {
@@ -706,48 +845,46 @@ func Test_PostgreSQL_Query(t *testing.T) {
 
 func Test_PostgreSQL_connect(t *testing.T) {
 	cc := map[string]struct {
-		URL string
-
-		// Query runs through Query when set, since the lockdown only shows
-		// once a statement runs on the connection.
-		Query            string
+		URL              string
+		Closed           bool
+		Err              error
 		CredentialsCalls int
 	}{
 		"Error returned by buildConnectionString": {
 			URL: "://",
+			Err: assert.AnError,
 		},
-		"Error returned by pgx.ConnectConfig": {
-			URL:              "postgres://127.0.0.1:1/db",
-			CredentialsCalls: 1,
+		"Closed processor": {
+			URL:    "postgres://127.0.0.1:1/db",
+			Closed: true,
+			Err:    _errClosed,
 		},
-		// the session refuses writes, and connection-string keys outside the
-		// allowlist are rejected at parse, so the simple protocol cannot be
-		// re-enabled through the data source URL to smuggle a second
-		// statement past the gate, and the URL cannot reach the local
-		// filesystem.
-		"Write statement": {
-			URL:              fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", _pgUser, _pgPass, _pgAddr, _testDB),
-			Query:            "DELETE FROM metrics",
-			CredentialsCalls: 1,
-		},
-		"Write smuggled through the simple protocol": {
+		// connection-string keys outside the allowlist are rejected at
+		// parse, so the simple protocol cannot be re-enabled through the
+		// data source URL to chain a second statement, and the URL cannot
+		// reach the local filesystem.
+		"Disallowed default_query_exec_mode key": {
 			URL:              fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&default_query_exec_mode=simple_protocol", _pgUser, _pgPass, _pgAddr, _testDB),
-			Query:            "SET transaction_read_only = off; DELETE FROM metrics",
+			Err:              assert.AnError,
 			CredentialsCalls: 1,
 		},
 		"Disallowed sslkey key": {
 			URL:              fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&sslkey=/tmp/key", _pgUser, _pgPass, _pgAddr, _testDB),
-			Query:            "SELECT time FROM metrics",
+			Err:              assert.AnError,
 			CredentialsCalls: 1,
 		},
 		"Disallowed servicefile key": {
 			URL:              fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&servicefile=/tmp/service", _pgUser, _pgPass, _pgAddr, _testDB),
-			Query:            "SELECT time FROM metrics",
+			Err:              assert.AnError,
 			CredentialsCalls: 1,
 		},
 		"Disallowed options key": {
 			URL:              fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&options=-csearch_path%%3Dpublic", _pgUser, _pgPass, _pgAddr, _testDB),
-			Query:            "SELECT time FROM metrics",
+			Err:              assert.AnError,
+			CredentialsCalls: 1,
+		},
+		"Successful pool": {
+			URL:              fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", _pgUser, _pgPass, _pgAddr, _testDB),
 			CredentialsCalls: 1,
 		},
 	}
@@ -762,29 +899,33 @@ func Test_PostgreSQL_connect(t *testing.T) {
 
 			p := NewPostgreSQL(inp)
 
-			var err error
+			t.Cleanup(func() { assert.NoError(t, p.Close()) })
 
-			if c.Query == "" {
-				_, err = p.connect(context.Background())
-			} else {
-				_, err = p.Query(context.Background(), c.Query, _testTimeRange)
+			if c.Closed {
+				require.NoError(t, p.Close())
 			}
 
-			assert.Error(t, err)
-			assert.Len(t, inp.URLCalls(), 1)
+			pool, err := p.connect(context.Background())
+			testutil.AssertEqualError(t, c.Err, err)
 			assert.Len(t, inp.CredentialsCalls(), c.CredentialsCalls)
 
-			// the rows are still there, checked over a clean URL since the
-			// case's own URL may be the thing being rejected.
-			p = NewPostgreSQL(&InputMock{
-				URLFunc: func() string {
-					return fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", _pgUser, _pgPass, _pgAddr, _testDB)
-				},
-			})
+			if err != nil {
+				assert.Nil(t, p.pool)
+				return
+			}
 
-			res, err := p.Query(context.Background(), "SELECT time FROM metrics ORDER BY time", _testTimeRange)
+			require.NotNil(t, pool)
+
+			cfg := pool.Config()
+			assert.Equal(t, int32(_pgMaxConns), cfg.MaxConns)
+			assert.Equal(t, pgx.QueryExecModeCacheStatement, cfg.ConnConfig.DefaultQueryExecMode)
+			assert.Equal(t, _connectTimeout, cfg.ConnConfig.ConnectTimeout)
+
+			// the pool is built once and handed to every later call.
+			again, err := p.connect(context.Background())
 			require.NoError(t, err)
-			assert.Len(t, res.Rows, 2)
+			assert.Same(t, pool, again)
+			assert.Len(t, inp.URLCalls(), 1)
 		})
 	}
 }

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/oxynote/oxynote/security/advisories/new
+    about: Report it privately. See SECURITY.md.
+  - name: Questions and help
+    url: https://discord.gg/mNJd5zJkvC
+    about: Ask on Discord.

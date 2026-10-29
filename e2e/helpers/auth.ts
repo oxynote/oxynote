@@ -26,15 +26,12 @@ export function newCredentials(): Credentials {
 	}
 }
 
-// revealForm clicks the method button until the form it reveals is on
-// the page. The button is server-rendered and visible before vue has
-// bound its handler; visit() waits for the app instance, but under load
-// the handler can still land a beat later, and a click in that window
-// does nothing at all — no request, no error, just the same page.
-export async function revealForm(
-	button: Locator,
-	field: Locator,
-): Promise<void> {
+// revealForm clicks a button until the form it reveals is on the page.
+// The button is server-rendered and visible before vue has bound its
+// handler; visit() waits for the app instance, but under load the
+// handler can still land a beat later, and a click in that window does
+// nothing at all — no request, no error, just the same page.
+async function revealForm(button: Locator, field: Locator): Promise<void> {
 	await expect(async () => {
 		await button.click()
 		await expect(field).toBeVisible({ timeout: 1_000 })
@@ -59,17 +56,11 @@ export async function fillSignupForm(
 	page: Page,
 	credentials: Credentials,
 ): Promise<void> {
-	const email = page.getByPlaceholder(
-		t("onboarding.signup.email-password-form.email-placeholder"),
-	)
-	await revealForm(
-		page.getByRole("button", {
-			name: t("onboarding.signup.signup-email-password"),
-		}),
-		email,
-	)
-
-	await email.fill(credentials.email)
+	await page
+		.getByPlaceholder(
+			t("onboarding.signup.email-password-form.email-placeholder"),
+		)
+		.fill(credentials.email)
 	await page
 		.getByPlaceholder(
 			t("onboarding.signup.email-password-form.password-placeholder"),
@@ -101,17 +92,11 @@ export async function fillLoginForm(
 	page: Page,
 	credentials: Credentials,
 ): Promise<void> {
-	const email = page.getByPlaceholder(
-		t("onboarding.login.email-password-form.email-placeholder"),
-	)
-	await revealForm(
-		page.getByRole("button", {
-			name: t("onboarding.login.login-email-password"),
-		}),
-		email,
-	)
-
-	await email.fill(credentials.email)
+	await page
+		.getByPlaceholder(
+			t("onboarding.login.email-password-form.email-placeholder"),
+		)
+		.fill(credentials.email)
 	await page
 		.getByPlaceholder(
 			t("onboarding.login.email-password-form.password-placeholder"),
@@ -143,17 +128,10 @@ export async function resetPassword(
 	)
 	await revealForm(
 		page.getByRole("button", {
-			name: t("onboarding.login.login-email-password"),
-		}),
-		page.getByPlaceholder(
-			t("onboarding.login.email-password-form.email-placeholder"),
-		),
-	)
-	await page
-		.getByRole("button", {
 			name: t("onboarding.login.forgot-password.placeholders.reset"),
-		})
-		.click()
+		}),
+		emailField,
+	)
 
 	await emailField.fill(email)
 	await page

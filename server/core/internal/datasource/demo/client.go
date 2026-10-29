@@ -37,12 +37,13 @@ func newEngine() *promql.Engine {
 	})
 }
 
-// Client answers Prometheus operations out of the demo registry.
+// Client answers Prometheus operations out of the demo registry, and Loki
+// log operations out of the log sources that follow it.
 //
 // One client serves every query a process answers. The registry it holds
-// caches the history its walks replay, and a data source runner is built
-// per request, so a client built per request would throw that cache away
-// every time.
+// caches the history its walks replay, and runners come and go with the
+// data sources they read, so a client built per runner would throw that
+// cache away each time.
 type Client struct {
 	// engine evaluates the queries asked of the registry.
 	engine *promql.Engine
@@ -53,15 +54,27 @@ type Client struct {
 
 	// registry is everything this client publishes.
 	registry registry
+
+	// logSources are the streams of lines the registry's counts drive.
+	logSources []logSource
 }
 
 // NewClient creates a fresh instance of Client.
 func NewClient() *Client {
+	reg := newRegistry()
+
 	return &Client{
-		engine:   newEngine(),
-		parser:   parser.NewParser(parser.Options{}),
-		registry: newRegistry(),
+		engine:     newEngine(),
+		parser:     parser.NewParser(parser.Options{}),
+		registry:   reg,
+		logSources: newLogSources(reg),
 	}
+}
+
+// Close does nothing: one client serves the whole process, whichever data
+// source lets go of it.
+func (c *Client) Close() error {
+	return nil
 }
 
 // TestConnection tests the connection to the demo data source, which is

@@ -18,6 +18,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
+	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -154,6 +155,18 @@ func wasRunnersRunnerCalled(count int) check {
 	}
 }
 
+// wasRunnersEvictCalled returns a check asserting the number of
+// Runners.Evict calls, each for the test data source.
+func wasRunnersEvictCalled(count int) check {
+	return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+		require.Len(t, exec.evicted, count)
+
+		for _, id := range exec.evicted {
+			assert.Equal(t, _testID, id)
+		}
+	}
+}
+
 // wasExecutorPrometheusCalled returns a check asserting the number of
 // Runner.Prometheus calls.
 func wasExecutorPrometheusCalled(count int) check {
@@ -167,6 +180,14 @@ func wasExecutorPrometheusCalled(count int) check {
 func wasExecutorSQLCalled(count int) check {
 	return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
 		require.Len(t, exec.runner.SQLCalls(), count)
+	}
+}
+
+// wasExecutorLogsCalled returns a check asserting the number of
+// Runner.Logs calls.
+func wasExecutorLogsCalled(count int) check {
+	return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+		require.Len(t, exec.runner.LogsCalls(), count)
 	}
 }
 
@@ -223,12 +244,14 @@ func prepRequest(method, target, body string, session bool, id string) *http.Req
 // refusal that stands in for a data source that cannot serve any of
 // them.
 type clientMocks struct {
-	// prometheus, sql, postgreSQL and mySQL are the clients the
-	// accessors return. A check reads back what the handler asked them.
+	// prometheus, sql, postgreSQL, mySQL and logSource are the clients
+	// the accessors return. A check reads back what the handler asked
+	// them.
 	prometheus *datasourceMock.Prometheus
 	sql        *datasourceMock.SQL
 	postgreSQL *datasourceMock.PostgreSQL
 	mySQL      *datasourceMock.MySQL
+	logSource  *datasourceMock.Logs
 
 	// status and statusErr are what TestConnection reports.
 	status    processor.ConnectionStatus
@@ -254,6 +277,10 @@ type runnerMock struct {
 	// dataSources are the data sources a runner was asked for, in call
 	// order.
 	dataSources []datasourceCore.DataSource
+
+	// evicted are the data source ids whose connections the handler had
+	// closed, in call order.
+	evicted []xid.ID
 }
 
 // Runner records the data source and hands back the one runner.
@@ -261,6 +288,11 @@ func (m *runnerMock) Runner(ds datasourceCore.DataSource) datasourceCore.Runner 
 	m.dataSources = append(m.dataSources, ds)
 
 	return m.runner
+}
+
+// Evict records the data source id.
+func (m *runnerMock) Evict(id xid.ID) {
+	m.evicted = append(m.evicted, id)
 }
 
 // stubVariables returns a variable manager whose tree resolves $metric to
@@ -313,6 +345,10 @@ func prepHandler(db *DBMock, clients *clientMocks, vars *VariableManagerMock) (*
 		clients.mySQL = &datasourceMock.MySQL{}
 	}
 
+	if clients.logSource == nil {
+		clients.logSource = &datasourceMock.Logs{}
+	}
+
 	if vars == nil {
 		vars = &VariableManagerMock{}
 	}
@@ -354,6 +390,13 @@ func prepHandler(db *DBMock, clients *clientMocks, vars *VariableManagerMock) (*
 
 			return clients.mySQL, nil
 		},
+		LogsFunc: func(context.Context) (datasourceCore.Logs, error) {
+			if clients.err != nil {
+				return nil, clients.err
+			}
+
+			return clients.logSource, nil
+		},
 	}
 
 	logs := &bytes.Buffer{}
@@ -374,7 +417,7 @@ func Test_NewHandler(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 	db := &DBMock{}
 
-	runners := datasourceCore.NewManager(log, &datasourceMock.StatusStore{})
+	runners := datasourceCore.NewManager(log, &datasourceMock.StatusStore{}, nil, metricutil.NewFactory("test", nil))
 
 	variables := &VariableManagerMock{}
 
@@ -787,6 +830,7 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
 				wasDBUpdateDataSourceCalled(0),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Missing data source id": {
@@ -797,6 +841,7 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
 				wasDBUpdateDataSourceCalled(0),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Invalid JSON body": {
@@ -808,6 +853,7 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
 				wasDBUpdateDataSourceCalled(0),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Error returned by db.FetchDataSource": {
@@ -820,6 +866,7 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
 				wasDBUpdateDataSourceCalled(0),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Error returned by DataSource.ApplyUpdate": {
@@ -832,6 +879,7 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
 				wasDBUpdateDataSourceCalled(0),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Error returned by Runner.TestConnection": {
@@ -845,6 +893,7 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 				wasRunnersRunnerCalled(1),
 				wasExecutorTestConnectionCalled(1),
 				wasDBUpdateDataSourceCalled(0),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Unsuccessful connection status": {
@@ -858,6 +907,7 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 				wasRunnersRunnerCalled(1),
 				wasExecutorTestConnectionCalled(1),
 				wasDBUpdateDataSourceCalled(0),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Error returned by db.UpdateDataSource": {
@@ -878,6 +928,7 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 				wasRunnersRunnerCalled(1),
 				wasExecutorTestConnectionCalled(1),
 				wasDBUpdateDataSourceCalled(1),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Successful update": {
@@ -904,6 +955,7 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 				wasDBFetchDataSourceCalled(1),
 				wasRunnersRunnerCalled(1),
 				wasExecutorTestConnectionCalled(1),
+				wasRunnersEvictCalled(1),
 			),
 		},
 	}
@@ -939,12 +991,14 @@ func Test_Handler_DeleteDataSource(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
 				wasDBDeleteDataSourceCalled(0),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Missing data source id": {
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
 				wasDBDeleteDataSourceCalled(0),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Error returned by db.DeleteDataSource": {
@@ -957,6 +1011,7 @@ func Test_Handler_DeleteDataSource(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBDeleteDataSourceCalled(1),
+				wasRunnersEvictCalled(0),
 			),
 		},
 		"Successful deletion": {
@@ -964,6 +1019,7 @@ func Test_Handler_DeleteDataSource(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusNoContent, ""),
 				wasDBDeleteDataSourceCalled(1),
+				wasRunnersEvictCalled(1),
 			),
 		},
 	}

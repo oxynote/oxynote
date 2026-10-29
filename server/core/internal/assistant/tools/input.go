@@ -41,11 +41,11 @@ var ErrUnknownVariable = errors.New("no variable with that id in this organisati
 // id that names nothing in the session's organisation.
 var ErrUnknownVariableGroup = errors.New("no variable group with that id in this organisation; call list_variables for the ids that exist")
 
-// errUnknownHook is what a hook lookup reports for an id the addressed
+// _errUnknownHook is what a hook lookup reports for an id the addressed
 // document does not hold. A hook of another document, another
 // organisation or a deleted document lands here too: the tools cannot
 // be used to reach a hook through a document it is not on.
-var errUnknownHook = errors.New("no hook with that id on this document; call list_hooks for the ids it has")
+var _errUnknownHook = errors.New("no hook with that id on this document; call list_hooks for the ids it has")
 
 // Deps carries the wiring a tool set is built from: the services every
 // tool reaches through and the (organization, user) pair every call is
@@ -229,7 +229,7 @@ func (i *input) FetchDataSource(dataSourceID xid.ID) (*datasource.DataSource, er
 	ds, err := i.db.FetchDataSource(i.ctx, dataSourceID, i.orgID)
 	if err != nil {
 		if errutil.IsNotFound(err) {
-			return nil, errUnknownDataSource
+			return nil, _errUnknownDataSource
 		}
 
 		return nil, fmt.Errorf("fetching data source: %w", err)
@@ -370,7 +370,7 @@ func (i *input) FetchDocumentBlock(documentID, branchID xid.ID, blockUID string)
 
 	b, ok := doc.Content.FindByUID(blockUID)
 	if !ok {
-		return document.Block{}, fmt.Errorf("block %s: %w", blockUID, errUnknownBlock)
+		return document.Block{}, fmt.Errorf("block %s: %w", blockUID, _errUnknownBlock)
 	}
 
 	return b, nil
@@ -452,7 +452,7 @@ func (i *input) CreateDocument(doc document.Document) error {
 	if doc.ParentID.Valid {
 		if err := i.db.CheckDocumentExists(i.ctx, doc.ParentID.V, i.orgID); err != nil {
 			if errutil.IsNotFound(err) {
-				return fmt.Errorf("parent %s: %w", doc.ParentID.V, errUnknownParent)
+				return fmt.Errorf("parent %s: %w", doc.ParentID.V, _errUnknownParent)
 			}
 
 			return fmt.Errorf("checking parent: %w", err)
@@ -492,19 +492,19 @@ func (i *input) CreateDocument(doc document.Document) error {
 	return nil
 }
 
-// errCyclicParent is what a move reports when the new parent is the
+// _errCyclicParent is what a move reports when the new parent is the
 // document itself or sits under it.
-var errCyclicParent = errors.New("a document cannot be moved under itself or one of its descendants; pick a parent outside its subtree")
+var _errCyclicParent = errors.New("a document cannot be moved under itself or one of its descendants; pick a parent outside its subtree")
 
-// errUnknownBlock is what a block read or write reports for a uid the
+// _errUnknownBlock is what a block read or write reports for a uid the
 // document does not hold. The message names the read that lists the
 // current uids, since a stale uid is the usual cause.
-var errUnknownBlock = errors.New("no block with that uid in this document; call get_document for the current uids")
+var _errUnknownBlock = errors.New("no block with that uid in this document; call get_document for the current uids")
 
-// errUnknownParent is what a create or move reports for a parent id
+// _errUnknownParent is what a create or move reports for a parent id
 // that names no document in the organisation. It says where the ids the
 // model may use come from.
-var errUnknownParent = errors.New("no document with that id to use as parent; call list_documents for the ids that exist")
+var _errUnknownParent = errors.New("no document with that id to use as parent; call list_documents for the ids that exist")
 
 // ErrUnknownDocument is what a document lookup reports for an id that
 // names nothing in the session's organisation. Another organisation's
@@ -568,7 +568,7 @@ func (i *input) MoveDocument(doc *document.Document, parentID null.Value[xid.ID]
 	if parentID.Valid { //nolint:nestif // the branching is sequential and readable
 		if err := i.db.CheckDocumentExists(i.ctx, parentID.V, i.orgID); err != nil {
 			if errutil.IsNotFound(err) {
-				return fmt.Errorf("new parent %s: %w", parentID.V, errUnknownParent)
+				return fmt.Errorf("new parent %s: %w", parentID.V, _errUnknownParent)
 			}
 
 			return fmt.Errorf("checking parent: %w", err)
@@ -580,7 +580,7 @@ func (i *input) MoveDocument(doc *document.Document, parentID null.Value[xid.ID]
 		}
 
 		if cycle {
-			return errCyclicParent
+			return _errCyclicParent
 		}
 	}
 
@@ -632,10 +632,10 @@ func (i *input) Warn(msg string, attrs ...slog.Attr) {
 		append([]slog.Attr{slog.String("tool", string(i.name))}, attrs...)...)
 }
 
-// errBranchProtected is what a content write reports for a branch that
+// _errBranchProtected is what a content write reports for a branch that
 // is protected. Reading it stays allowed; the caller is told which of
 // the document's branches would take the write instead.
-var errBranchProtected = errors.New("this branch is protected and takes no edits")
+var _errBranchProtected = errors.New("this branch is protected and takes no edits")
 
 // ErrUnknownBranch is what a branch lookup reports for an id the
 // document does not have. The document's branches travel with it, since
@@ -648,15 +648,15 @@ var ErrUnknownBranch = errors.New("this document has no branch with that id")
 func (i *input) protectedBranch(doc *document.Document) error {
 	branches, err := i.FetchDocumentBranches(doc.ID)
 	if err != nil {
-		return fmt.Errorf("branch %s: %w; %w", doc.BranchName, errBranchProtected, err)
+		return fmt.Errorf("branch %s: %w; %w", doc.BranchName, _errBranchProtected, err)
 	}
 
 	open := slices.DeleteFunc(branches, func(b document.BranchSummary) bool { return b.Protected })
 	if len(open) == 0 {
-		return fmt.Errorf("branch %s: %w; the document has no unprotected branch to write to", doc.BranchName, errBranchProtected)
+		return fmt.Errorf("branch %s: %w; the document has no unprotected branch to write to", doc.BranchName, _errBranchProtected)
 	}
 
-	return fmt.Errorf("branch %s: %w; write to one of %s", doc.BranchName, errBranchProtected, branchLabels(open))
+	return fmt.Errorf("branch %s: %w; write to one of %s", doc.BranchName, _errBranchProtected, branchLabels(open))
 }
 
 // branchLabels lists the branches, each as "name (id)": the name is what
@@ -1097,14 +1097,14 @@ func (i *input) FetchHook(documentID, hookID xid.ID) (*hook.Hook, error) {
 	hk, err := i.db.FetchDocumentHook(i.ctx, hookID, i.orgID)
 	if err != nil {
 		if errutil.IsNotFound(err) {
-			return nil, fmt.Errorf("hook %s on document %s: %w", hookID, documentID, errUnknownHook)
+			return nil, fmt.Errorf("hook %s on document %s: %w", hookID, documentID, _errUnknownHook)
 		}
 
 		return nil, fmt.Errorf("fetching hook: %w", err)
 	}
 
 	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID {
-		return nil, fmt.Errorf("hook %s on document %s: %w", hookID, documentID, errUnknownHook)
+		return nil, fmt.Errorf("hook %s on document %s: %w", hookID, documentID, _errUnknownHook)
 	}
 
 	return hk, nil
@@ -1149,7 +1149,7 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 	}, doc.ID, i.orgID, i.userID)
 	if err != nil {
 		if errors.Is(err, hook.ErrBlockNotFound) {
-			return nil, fmt.Errorf("block %s: %w", blockUID, errUnknownBlock)
+			return nil, fmt.Errorf("block %s: %w", blockUID, _errUnknownBlock)
 		}
 
 		return nil, err
@@ -1158,8 +1158,8 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 	return hk, nil
 }
 
-// UpdateHook replaces the hook's settings and resets its score and state,
-// as a fresh hook with those settings would have them.
+// UpdateHook replaces the hook's settings and resets its triggered flag and
+// state, as a fresh hook with those settings would have them.
 func (i *input) UpdateHook(hk *hook.Hook, settings processor.Settings) error {
 	updated, err := i.hookMan.UpdateHook(i.ctx, hk.ID, hk.DocumentID.V, i.orgID, hook.UpdateInput{Settings: settings}, i.userID)
 	if err != nil {
@@ -1171,7 +1171,8 @@ func (i *input) UpdateHook(hk *hook.Hook, settings processor.Settings) error {
 	return nil
 }
 
-// ResetHook restores the hook's score and state, keeping its settings.
+// ResetHook restores the hook's triggered flag and state, keeping its
+// settings.
 func (i *input) ResetHook(hk *hook.Hook) error {
 	reset, err := i.hookMan.ResetHook(i.ctx, hk.ID, hk.DocumentID.V, i.orgID)
 	if err != nil {

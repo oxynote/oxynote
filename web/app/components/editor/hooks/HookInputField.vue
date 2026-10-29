@@ -18,6 +18,10 @@ const value = defineModel<string | undefined>()
 		<div class="mb-1 text-left text-2sm font-medium text-foreground">
 			<slot name="label" />
 		</div>
+		<!--
+			reka-ui's sub menu closes on ArrowLeft wherever inside it the key is
+			pressed. So ArrowLeft stays with the field, to move the cursor
+		-->
 		<ShadcnUiInput
 			v-model="value"
 			:class="props.inputClass"
@@ -25,6 +29,7 @@ const value = defineModel<string | undefined>()
 			:placeholder="props.placeholder"
 			:disabled="props.disabled"
 			disable-focus-effect
+			@keydown.arrow-left.stop
 		/>
 	</div>
 </template>

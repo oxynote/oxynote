@@ -13,7 +13,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
-	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -28,7 +27,6 @@ func reminderSettings(t *testing.T, schedule time.Time) processor.Settings {
 	t.Helper()
 
 	raw, err := json.Marshal(map[string]any{
-		"scale":    "linear",
 		"schedule": schedule,
 	})
 	require.NoError(t, err)
@@ -79,9 +77,9 @@ func Test_NewHook(t *testing.T) {
 		"Invalid settings": {
 			Inp: CreateInput{
 				Type:     TypeScheduledReminder,
-				Settings: processor.Settings(`{"scale":"bogus","schedule":"2030-01-01T00:00:00Z"}`),
+				Settings: processor.Settings(`{"duration":"custom"}`),
 			},
-			Err: processor.ErrInvalidScaleType,
+			Err: processor.ErrMissingSchedule,
 		},
 		"Unknown type": {
 			Inp: CreateInput{
@@ -127,8 +125,8 @@ func Test_NewHook(t *testing.T) {
 			assert.Equal(t, c.Inp.BlockID, h.BlockID)
 			assert.False(t, h.CreatedAt.IsZero())
 
-			// the reset scored the fresh future schedule at full.
-			assert.True(t, h.Score.Equal(decimal.NewFromInt(100)))
+			// the reset left the future schedule untriggered.
+			assert.False(t, h.Triggered)
 			assert.True(t, h.State.Valid)
 			assert.Equal(t, processor.StatusActive, h.Status)
 		})
@@ -149,7 +147,7 @@ func Test_Hook_NewCopy(t *testing.T) {
 		Settings:       processor.Settings(`{"url":"https://example.com"}`),
 		State:          null.ValueFrom(processor.State(`{"watcherId":"w1"}`)),
 		Status:         processor.StatusUnreachableURL,
-		Score:          decimal.NewFromInt(10),
+		Triggered:      true,
 	}
 
 	cc := map[string]struct {
@@ -181,7 +179,7 @@ func Test_Hook_NewCopy(t *testing.T) {
 			assert.Equal(t, null.StringFrom("b2"), cp.BlockID)
 			assert.Equal(t, src.Settings, cp.Settings)
 			assert.Equal(t, processor.StatusInitializing, cp.Status)
-			assert.Equal(t, "10", cp.Score.String())
+			assert.True(t, cp.Triggered)
 			assert.False(t, cp.CreatedAt.IsZero())
 
 			// the source's state names its own watcher, which the copy must
@@ -210,7 +208,7 @@ func Test_Hook_ApplyUpdate(t *testing.T) {
 			Settings: processor.Settings(`{not json`),
 			Err:      ErrInvalidSettings,
 		},
-		// an already elapsed schedule resets the score straight to zero.
+		// a schedule inside the grace period triggers the reset at once.
 		"Successful update": {
 			Settings: reminderSettings(t, time.Now().Add(time.Second)),
 		},
@@ -235,19 +233,13 @@ func Test_Hook_ApplyUpdate(t *testing.T) {
 
 			assert.Equal(t, c.Settings, h.Settings)
 			assert.True(t, h.UpdatedAt.Valid)
-			assert.True(t, h.Score.Equal(decimal.Zero))
+			assert.True(t, h.Triggered)
 		})
 	}
 }
 
 func Test_Hook_Process(t *testing.T) {
 	t.Parallel()
-
-	// the state started two hours ago, so the schedule has elapsed.
-	elapsed, err := json.Marshal(processor.ScheduledReminderState{
-		StartedAt: time.Now().Add(-2 * time.Hour),
-	})
-	require.NoError(t, err)
 
 	cc := map[string]struct {
 		Hook  Hook
@@ -263,17 +255,29 @@ func Test_Hook_Process(t *testing.T) {
 			},
 			Err: assert.AnError,
 		},
-		"Elapsed schedule scores zero": {
+		"Elapsed schedule triggers": {
 			Hook: Hook{
 				Type:     TypeScheduledReminder,
 				Settings: reminderSettings(t, time.Now().Add(-time.Hour)),
-				State:    null.ValueFrom(processor.State(elapsed)),
-				Score:    decimal.NewFromInt(100),
+				State:    null.ValueFrom(processor.State(`{}`)),
 				Status:   processor.StatusActive,
 			},
 			Check: func(t *testing.T, h Hook) {
 				assert.Equal(t, processor.StatusActive, h.Status)
-				assert.True(t, h.Score.Equal(decimal.Zero))
+				assert.True(t, h.Triggered)
+			},
+		},
+		"Reminder stored with scale and startedAt still processes": {
+			Hook: Hook{
+				Type:     TypeScheduledReminder,
+				Settings: processor.Settings(`{"scale":"linear","duration":"24h","schedule":"2020-01-01T00:00:00Z"}`),
+				State:    null.ValueFrom(processor.State(`{"startedAt":"2019-12-31T00:00:00Z"}`)),
+				Status:   processor.StatusActive,
+			},
+			Check: func(t *testing.T, h Hook) {
+				assert.Equal(t, processor.StatusActive, h.Status)
+				assert.True(t, h.Triggered)
+				assert.JSONEq(t, `{}`, string(h.State.V))
 			},
 		},
 		"Hook never set up is reset": {
@@ -284,21 +288,21 @@ func Test_Hook_Process(t *testing.T) {
 			},
 			Check: func(t *testing.T, h Hook) {
 				assert.True(t, h.State.Valid)
-				assert.True(t, h.Score.Equal(decimal.NewFromInt(100)))
+				assert.False(t, h.Triggered)
 			},
 		},
-		"Run that cannot check keeps score and state": {
+		"Run that cannot check keeps the triggered flag and state": {
 			Hook: Hook{
-				Type:     TypeURLWatcher,
-				Settings: processor.Settings(`{"url":"https://example.com"}`),
-				State:    null.ValueFrom(processor.State(`{"watcherId":"w1"}`)),
-				Score:    decimal.NewFromInt(40),
-				Status:   processor.StatusActive,
+				Type:      TypeURLWatcher,
+				Settings:  processor.Settings(`{"url":"https://example.com"}`),
+				State:     null.ValueFrom(processor.State(`{"watcherId":"w1"}`)),
+				Status:    processor.StatusActive,
+				Triggered: true,
 			},
 			Input: NewInput("org-1", nil, webchange.NewClient("", "")),
 			Check: func(t *testing.T, h Hook) {
 				assert.Equal(t, processor.StatusUnconfigured, h.Status)
-				assert.True(t, h.Score.Equal(decimal.NewFromInt(40)))
+				assert.True(t, h.Triggered)
 				assert.Equal(t, processor.State(`{"watcherId":"w1"}`), h.State.V)
 			},
 		},
@@ -425,7 +429,6 @@ func Test_Hook_ChangedFrom(t *testing.T) {
 
 	base := Hook{
 		Status: processor.StatusActive,
-		Score:  decimal.NewFromInt(100),
 		State:  null.ValueFrom(processor.State(`{}`)),
 	}
 
@@ -445,8 +448,8 @@ func Test_Hook_ChangedFrom(t *testing.T) {
 			Change:  func(h *Hook) { h.Status = processor.StatusUnconfigured },
 			Changed: true,
 		},
-		"Score": {
-			Change:  func(h *Hook) { h.Score = decimal.Zero },
+		"Triggered": {
+			Change:  func(h *Hook) { h.Triggered = true },
 			Changed: true,
 		},
 		"Set up": {
@@ -481,7 +484,7 @@ func Test_Hook_ensurePrepared(t *testing.T) {
 	}{
 		"Scheduled reminder settings prepare": {
 			Type:     TypeScheduledReminder,
-			Settings: processor.Settings(`{"scale": "linear"}`),
+			Settings: processor.Settings(`{"schedule": "2030-01-01T00:00:00Z"}`),
 		},
 		"Github tracking settings prepare": {
 			Type:     TypeGithubTracking,

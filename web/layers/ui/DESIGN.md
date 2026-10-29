@@ -153,7 +153,7 @@ Tailwind's scale:
 | **`text-2sm`** | **13 / 15px** | **default UI text**: menus, sidebar rows, toasts, tooltips, small buttons |
 | `text-sm` | 14 / 20px | default buttons, inputs, callout text, code |
 | `text-2base` | 15 / 19px | document body, modal section headings, large inputs |
-| `text-base` | 16 / 24px | inputs on phones (avoids iOS zoom) |
+| `text-base` | 16 / 24px | dialog titles, empty-state headings |
 | `text-lg` | 18px | auth page headings |
 | `text-2xl` | 24px | document title, settings modal title |
 
@@ -280,8 +280,8 @@ Sizes: `default` 36px, `sm` 32px, `2sm` 28px with 13px text, `lg` 40px.
 
 **Inputs.** `rounded-md border border-input bg-transparent px-3 py-1`,
 `muted-foreground` placeholder. Focus: border turns `ring` with a 3px
-`ring/50` halo. Invalid: `destructive` border. Text is 16px on phones and
-14px from `md`. Textareas match inputs: no fill and no shadow. In dark
+`ring/50` halo. Invalid: `destructive` border. Text is `text-sm`, or
+`text-2sm` in compact forms. Textareas match inputs: no fill and no shadow. In dark
 mode outline buttons get a faint `input/30` fill.
 
 **Checkbox.** 16px square, `rounded-md`, hairline; checked is navy with a

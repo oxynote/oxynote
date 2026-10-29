@@ -272,12 +272,12 @@ CREATE TABLE public.document_hooks (
     block_id text,
     settings jsonb NOT NULL,
     state text,
-    score integer NOT NULL,
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone,
     soft_deleted_at timestamp without time zone,
     cross_branch_id text NOT NULL,
-    status text DEFAULT 'active'::text NOT NULL
+    status text DEFAULT 'active'::text NOT NULL,
+    triggered boolean DEFAULT false NOT NULL
 );
 
 ALTER TABLE ONLY public.document_hooks

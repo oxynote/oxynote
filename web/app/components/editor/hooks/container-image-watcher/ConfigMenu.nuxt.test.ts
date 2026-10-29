@@ -331,7 +331,7 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 		const calls = mockEndpoint("PUT", `${HOOK_PATH}/reset`, () => ({
 			id: HOOK_ID,
 		}))
-		await mountMenu({ hook: imageHook({ score: "0" }) })
+		await mountMenu({ hook: imageHook({ triggered: true }) })
 		await openHookSubMenu(t(TITLE))
 
 		expect(hookNotice().dataset.hookStatus).toBe("triggered")
@@ -377,7 +377,7 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 			const calls = mockEndpoint("PUT", `${HOOK_PATH}/reset`, () => ({
 				id: HOOK_ID,
 			}))
-			await mountMenu({ hook: imageHook({ score: "0" }) })
+			await mountMenu({ hook: imageHook({ triggered: true }) })
 			await openHookSubMenu(t(TITLE))
 
 			menuButton(t("editor.hooks.reset")).click()
@@ -401,7 +401,10 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 		])(
 			"says what a triggered hook on $name did",
 			async ({ nodeId, key }, { expect }) => {
-				await mountMenu({ hook: imageHook({ score: "0" }), nodeId: nodeId })
+				await mountMenu({
+					hook: imageHook({ triggered: true }),
+					nodeId: nodeId,
+				})
 
 				await openHookSubMenu(t(TITLE))
 
@@ -456,7 +459,7 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 
 		it("keeps a triggered hook from being dismissed", async ({ expect }) => {
 			await mountMenu({
-				hook: imageHook({ score: "0" }),
+				hook: imageHook({ triggered: true }),
 				diff: {
 					status: DiffStatus.Unchanged,
 					targetHook: null,

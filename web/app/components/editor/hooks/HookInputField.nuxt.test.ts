@@ -1,5 +1,5 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
-import { describe, it } from "vitest"
+import { describe, it, vi } from "vitest"
 import HookInputField from "./HookInputField.vue"
 import { t } from "~/components/test-helpers"
 
@@ -81,5 +81,32 @@ describe("<HookInputField>", () => {
 		const wrapper = await mountField({ type: "url" })
 
 		expect(wrapper.get("input").attributes("type")).toBe("url")
+	})
+
+	it.for([
+		{
+			name: "keeps ArrowLeft in the field",
+			input: { key: "ArrowLeft" },
+			expected: 0,
+		},
+		{
+			name: "leaves Escape to the menu",
+			input: { key: "Escape" },
+			expected: 1,
+		},
+	])("$name", async ({ input, expected }, { expect }) => {
+		const wrapper = await mountField()
+		const reachedMenu = vi.fn()
+		wrapper
+			.get("input")
+			.element.parentElement?.addEventListener("keydown", reachedMenu)
+
+		wrapper
+			.get("input")
+			.element.dispatchEvent(
+				new KeyboardEvent("keydown", { key: input.key, bubbles: true }),
+			)
+
+		expect(reachedMenu).toHaveBeenCalledTimes(expected)
 	})
 })

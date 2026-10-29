@@ -329,6 +329,25 @@ describe("useSidebarDraggable", { concurrent: false }, () => {
 		).toBe(false)
 	})
 
+	it("blocks text selection only once the pointer moves", ({ expect }) => {
+		const item = makeInstance("a")
+		item.dragOptions.onStart?.()
+		const afterPress =
+			document.documentElement.classList.contains("[&_*]:select-none!")
+
+		item.dragOptions.onMove?.({ x: 0, y: 0 })
+		const afterMove =
+			document.documentElement.classList.contains("[&_*]:select-none!")
+
+		item.dragOptions.onEnd?.()
+
+		expect(afterPress).toBe(false)
+		expect(afterMove).toBe(true)
+		expect(
+			document.documentElement.classList.contains("[&_*]:select-none!"),
+		).toBe(false)
+	})
+
 	it("ends without a confirm when nothing was targeted", ({ expect }) => {
 		const item = makeInstance("a")
 		startDrag(item)

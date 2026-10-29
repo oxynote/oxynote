@@ -17,9 +17,10 @@ type BytesStore struct {
 }
 
 // NewBytesStore creates a new byte store instance. An expireAfter below
-// one second stores values without an expiry.
-func NewBytesStore(expireAfter time.Duration) *BytesStore {
-	return &BytesStore{cache: newCache(expireAfter)}
+// one second stores values without an expiry, and a maxBytes of 0 holds
+// values of any total size.
+func NewBytesStore(expireAfter time.Duration, maxBytes uint64) *BytesStore {
+	return &BytesStore{cache: newCache(expireAfter, maxBytes)}
 }
 
 // Start runs the store's sweep of expired entries until ctx is

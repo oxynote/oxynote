@@ -14,7 +14,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
-	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,7 +40,6 @@ func prepDocumentHooks(t *testing.T, db *DB, count int, fn func(int, *hook.Hook)
 			Settings:  processor.Settings(`{"url": "http://watched.test"}`),
 			State:     null.ValueFrom(processor.State(`{"watcherId":"w1"}`)),
 			Status:    processor.StatusActive,
-			Score:     decimal.NewFromInt(50),
 			CreatedAt: now,
 		}
 
@@ -73,7 +71,7 @@ func prepDocumentHooks(t *testing.T, db *DB, count int, fn func(int, *hook.Hook)
 				"settings":           hk.Settings,
 				"state":              hk.State,
 				"status":             hk.Status,
-				"score":              hk.Score,
+				"triggered":          hk.Triggered,
 				"created_at":         hk.CreatedAt,
 				"updated_at":         hk.UpdatedAt,
 				"soft_deleted_at":    hk.SoftDeletedAt,
@@ -114,7 +112,7 @@ func Test_agent_InsertDocumentHook(t *testing.T) {
 					BranchID:       null.ValueFrom(branch.BranchID),
 					Settings:       processor.Settings(`{"schedule": "0 0 * * * *"}`),
 					Status:         processor.StatusActive,
-					Score:          decimal.NewFromInt(100),
+					Triggered:      true,
 					CreatedAt:      timeutil.Now().Truncate(time.Second),
 					UpdatedAt:      null.TimeFrom(timeutil.Now().Truncate(time.Second)),
 				},
@@ -307,7 +305,7 @@ func Test_agent_UpdateDocumentHook(t *testing.T) {
 			hk.Settings = processor.Settings(`{"url": "http://updated.test"}`)
 			hk.State = null.ValueFrom(processor.State(`{"watcherId":"w2"}`))
 			hk.Status = processor.StatusUnreachableURL
-			hk.Score = decimal.NewFromInt(10)
+			hk.Triggered = true
 			hk.UpdatedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))
 			hk.SoftDeletedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))
 

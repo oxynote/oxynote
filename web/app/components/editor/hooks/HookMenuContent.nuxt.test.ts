@@ -29,10 +29,9 @@ const ADD_NEW = "editor.hooks.add-new"
 
 function reminder(overrides: Partial<DocumentHook> = {}) {
 	return makeHook({
-		id: `reminder-${overrides.score ?? "100"}`,
+		id: `reminder-${String(overrides.triggered ?? false)}`,
 		type: DocumentHookType.ScheduledReminder,
 		settings: {
-			scale: "linear",
 			duration: "24h",
 			schedule: new Date("2026-09-01T10:00:00Z"),
 		},
@@ -283,10 +282,10 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 			name: "a hook that was updated last",
 			input: { updatedAt: new Date("2026-03-01T00:00:00Z") },
 		},
-		{ name: "a triggered hook", input: { score: "0" } },
+		{ name: "a triggered hook", input: { triggered: true } },
 		{
 			name: "a hook that needs attention",
-			input: { score: "0", state: {}, status: "unreachable_url" as const },
+			input: { triggered: true, state: {}, status: "unreachable_url" as const },
 		},
 	])("keeps $name in its place", async ({ input }, { expect }) => {
 		mockGitHub(true)
@@ -326,7 +325,7 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 		mockGitHub(true)
 
 		await mountContent({
-			activeBranchHooks: [reminder(), urlWatcher({ score: "0" })],
+			activeBranchHooks: [reminder(), urlWatcher({ triggered: true })],
 		})
 
 		expect(headerText()).toContain(
@@ -440,7 +439,7 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 		}) => {
 			await mountContent({
 				activeBranchHooks: [reminder()],
-				targetBranchHooks: [reminder(), urlWatcher({ score: "0" })],
+				targetBranchHooks: [reminder(), urlWatcher({ triggered: true })],
 			})
 
 			expect(headerText()).toContain(t("editor.hooks.status.fresh"))
@@ -499,7 +498,7 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 			await mountContent({
 				activeBranchHooks: [urlWatcher(), reminder()],
 				targetBranchHooks: [
-					reminder({ id: "reminder-target", crossBranchId: "reminder-100" }),
+					reminder({ id: "reminder-target", crossBranchId: "reminder-false" }),
 				],
 			})
 

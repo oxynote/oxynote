@@ -18,7 +18,7 @@ type ValueStore[V any] struct {
 // NewValueStore creates a new value store instance. An expireAfter below
 // one second stores values without an expiry.
 func NewValueStore[V any](expireAfter time.Duration) *ValueStore[V] {
-	return &ValueStore[V]{cache: newCache(expireAfter)}
+	return &ValueStore[V]{cache: newCache(expireAfter, 0)}
 }
 
 // Start runs the store's sweep of expired entries until ctx is

@@ -900,13 +900,15 @@ function bottomAction(page: Page, name: string): Locator {
 }
 
 // the menu is teleported out of the content pane, so its entry is looked
-// up on the whole page
+// up on the whole page. The editor takes focus a frame after the click,
+// and a key typed before that lands in the closing menu.
 async function addRightSideBlock(page: Page, name: string): Promise<void> {
 	await bottomAction(
 		page,
 		t("editor.split-documentation.bottom-action-trigger-label"),
 	).click()
 	await page.getByRole("menuitem", { name: name }).click()
+	await expect(contentEditor(page)).toBeFocused()
 }
 
 // typeParameter fills the parameter the caret has just been placed in:

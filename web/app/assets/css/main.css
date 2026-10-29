@@ -7,11 +7,6 @@
 	--muted-foreground-50: oklch(55.553% 0.00006 271.152 / 0.5);
 	--muted-foreground-7: oklch(55.553% 0.00006 271.152 / 0.07);
 
-	--status-info: oklch(0.5309 0.1628 244.25);
-	--status-success: oklch(0.6371 0.1749 146.7);
-	--status-warning: oklch(0.7074 0.1455 95.22);
-	--status-error: oklch(0.577 0.245 27.325);
-
 	--drag-target: oklch(0.8985 0.0419 244.63);
 
 	--hook-status-fresh: oklch(0.6 0.15 150);
@@ -209,11 +204,6 @@
 @theme inline {
 	--color-background-warning: var(--background-warning);
 	--color-muted-50-real: var(--muted-50-real);
-
-	--color-status-info: var(--status-info);
-	--color-status-success: var(--status-success);
-	--color-status-warning: var(--status-warning);
-	--color-status-error: var(--status-error);
 
 	--color-drag-target: var(--drag-target);
 	--color-hook-status-fresh: var(--hook-status-fresh);

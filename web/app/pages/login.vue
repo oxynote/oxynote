@@ -51,6 +51,18 @@ const resetEmail = ref("")
 const enabledMethods = computed(
 	() => fetchAuthConfig.state.value.data?.methods ?? [],
 )
+const isEmailPasswordOnly = computed(
+	() =>
+		enabledMethods.value.length === 1 &&
+		enabledMethods.value.includes("email-password"),
+)
+// with email-password the only method there is nothing to pick, so the
+// methods view opens on its form.
+const shownView = computed(() =>
+	view.value === "methods" && isEmailPasswordOnly.value
+		? "email-password"
+		: view.value,
+)
 // shown only while the default password still works.
 const defaultAdminLogin = computed(() => {
 	const admin = defaultAdmin.value
@@ -73,6 +85,7 @@ const primaryMethod = computed(() => {
 		return null
 	}
 
+	// NOCOV: the null fallback is unreachable. Every method is one of the four.
 	return (
 		(["google", "github", "slack", "email-password"] as const).find((m) =>
 			enabledMethods.value.includes(m),
@@ -116,7 +129,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-	if (redirectTimeout !== undefined) clearTimeout(redirectTimeout)
+	// NOCOV: the timer is missing only in the desktop build.
+	if (redirectTimeout !== undefined) {
+		clearTimeout(redirectTimeout)
+	}
 })
 
 async function logInWithProvider(provider: "github" | "google" | "slack") {
@@ -209,6 +225,7 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 		return
 	}
 
+	// NOCOV: desktop-only tail; __DESKTOP_BUILD__ is literal false in tests.
 	// the desktop bridge signs in from Electron's main process, where no
 	// window follows the redirect, so the renderer navigates itself. The
 	// session query still caches the signed-out null within its staleTime —
@@ -281,7 +298,7 @@ function methodVariant(method: AuthMethod) {
 					{{ $t("onboarding.login.title") }}
 				</div>
 			</div>
-			<div v-if="view === 'methods'" class="flex w-full flex-col gap-3">
+			<div v-if="shownView === 'methods'" class="flex w-full flex-col gap-3">
 				<ShadcnUiButton
 					v-if="enabledMethods.includes('google')"
 					size="lg"
@@ -354,7 +371,7 @@ function methodVariant(method: AuthMethod) {
 				</div>
 			</div>
 			<form
-				v-else-if="view === 'email-password'"
+				v-else-if="shownView === 'email-password'"
 				class="flex w-full flex-col gap-3"
 				@submit="onEmailPasswordSubmit"
 			>
@@ -466,6 +483,7 @@ function methodVariant(method: AuthMethod) {
 					{{ $t("onboarding.login.email-password-form.continue") }}
 				</ShadcnUiButton>
 				<ShadcnUiButton
+					v-if="!isEmailPasswordOnly"
 					type="button"
 					size="lg"
 					variant="ghost"
@@ -477,7 +495,7 @@ function methodVariant(method: AuthMethod) {
 				</ShadcnUiButton>
 			</form>
 			<form
-				v-else-if="view === 'reset-request'"
+				v-else-if="shownView === 'reset-request'"
 				class="flex w-full flex-col gap-3"
 				@submit.prevent="onPasswordResetSubmit"
 			>
@@ -560,7 +578,7 @@ function methodVariant(method: AuthMethod) {
 				</ShadcnUiButton>
 			</div>
 			<i18n-t
-				v-if="view === 'email-password' && isEmailEnabled"
+				v-if="shownView === 'email-password' && isEmailEnabled"
 				scope="global"
 				keypath="onboarding.login.forgot-password.main"
 				tag="div"

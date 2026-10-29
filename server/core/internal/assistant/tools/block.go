@@ -298,7 +298,7 @@ func (replaceBlocks) Summary(inp DescribeInput) (ActionSummary, error) {
 	// then refused.
 	target, ok := doc.Content.FindByUID(in.BlockUID)
 	if !ok {
-		return ActionSummary{}, fmt.Errorf("block %s: %w", in.BlockUID, errUnknownBlock)
+		return ActionSummary{}, fmt.Errorf("block %s: %w", in.BlockUID, _errUnknownBlock)
 	}
 
 	blocks, err := markup.Build(in.Content, document.RootBlock{Content: []document.Block{target}})

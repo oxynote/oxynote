@@ -56,7 +56,7 @@ func Test_Input_ChangeDetection(t *testing.T) {
 func Test_stateInput_State(t *testing.T) {
 	t.Parallel()
 
-	state := processor.State(`{"startedAt": "2026-01-01T00:00:00Z"}`)
+	state := processor.State(`{"watcherId": "w1"}`)
 
 	si := newStateInput(NewInput("org-1", nil, nil), state)
 

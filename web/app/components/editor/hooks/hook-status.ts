@@ -40,13 +40,13 @@ export const HOOK_BAR_STATUS_CLASS: Record<
 
 // hookStatus puts a failed check first. A hook that cannot check what it
 // watches needs fixing before its trigger means anything. A copy still
-// being set up has not failed. It shows the score its source had.
+// being set up has not failed. It shows whether its source was triggered.
 export function hookStatus(hook: DocumentHook): HookStatus {
 	if (hook.status !== "active" && hook.status !== "initializing") {
 		return "needs-attention"
 	}
 
-	return Number(hook.score) === 0 ? "triggered" : "fresh"
+	return hook.triggered ? "triggered" : "fresh"
 }
 
 // hookGroupStatus is null without hooks, so that nothing is coloured as

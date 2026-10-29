@@ -28,7 +28,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
-	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -257,10 +256,9 @@ func stubHook() *hook.Hook {
 		DocumentID:     null.ValueFrom(_testDocID),
 		OrganizationID: null.StringFrom("org"),
 		BranchID:       null.ValueFrom(_stubBranchID),
-		Settings:       processor.Settings(`{"scale":"linear","duration":"custom","schedule":"2030-01-01T00:00:00Z"}`),
-		State:          null.ValueFrom(processor.State(`{"startedAt":"2026-01-01T00:00:00Z"}`)),
+		Settings:       processor.Settings(`{"duration":"custom","schedule":"2030-01-01T00:00:00Z"}`),
+		State:          null.ValueFrom(processor.State(`{}`)),
 		Status:         processor.StatusActive,
-		Score:          decimal.NewFromInt(100),
 		CreatedAt:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
 }
@@ -297,7 +295,7 @@ func stubBranches(mainProtected, draftProtected bool) func(context.Context, xid.
 }
 
 // _stubSchedule is the schedule every scheduled-reminder argument stub
-// carries, far enough ahead that a reset scores it fresh.
+// carries, far enough ahead that a reset leaves it untriggered.
 const _stubSchedule = "2030-01-01T00:00:00Z"
 
 // _stubBranchName is the non-default branch every branch stub lists.
@@ -547,7 +545,7 @@ func Test_input_CreateDocument(t *testing.T) {
 				return sql.ErrNoRows
 			}
 
-			return tcase{DB: db, Queue: stubQueue(nil), Parent: null.ValueFrom(parentID), Exists: 1, Err: fmt.Errorf("parent %s: %w", parentID, errUnknownParent)}
+			return tcase{DB: db, Queue: stubQueue(nil), Parent: null.ValueFrom(parentID), Exists: 1, Err: fmt.Errorf("parent %s: %w", parentID, _errUnknownParent)}
 		}(),
 		"Error returned by db.BeginTx": func() tcase {
 			return tcase{DB: stubDB(nil, assert.AnError), Queue: stubQueue(nil), Begins: 1, Err: assert.AnError}
@@ -853,7 +851,7 @@ func Test_input_MoveDocument(t *testing.T) {
 			DB:     moveDB(sql.ErrNoRows, false, nil, nil),
 			Parent: parentID,
 			Checks: 1,
-			Err:    fmt.Errorf("new parent %s: %w", parentID.V, errUnknownParent),
+			Err:    fmt.Errorf("new parent %s: %w", parentID.V, _errUnknownParent),
 		},
 		"Error returned by db.CheckDocumentCycle": {
 			DB:     moveDB(nil, false, assert.AnError, nil),
@@ -867,7 +865,7 @@ func Test_input_MoveDocument(t *testing.T) {
 			Parent: parentID,
 			Checks: 1,
 			Cycles: 1,
-			Err:    errCyclicParent,
+			Err:    _errCyclicParent,
 		},
 		"Error returned by db.UpdateDocumentParentID": {
 			DB:      moveDB(nil, false, nil, assert.AnError),
@@ -954,7 +952,7 @@ func Test_input_ApplyEdit(t *testing.T) {
 			DB:       protectedDocumentDB(),
 			Applier:  stubApplier(),
 			Listings: 1,
-			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID),
+			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", _errBranchProtected, _stubBranchID),
 		},
 		"Protected branch with no alternative says so": func() tcase {
 			db := protectedDocumentDB()
@@ -964,7 +962,7 @@ func Test_input_ApplyEdit(t *testing.T) {
 				DB:       db,
 				Applier:  stubApplier(),
 				Listings: 1,
-				Err:      fmt.Errorf("branch main: %w; the document has no unprotected branch to write to", errBranchProtected),
+				Err:      fmt.Errorf("branch main: %w; the document has no unprotected branch to write to", _errBranchProtected),
 			}
 		}(),
 		"Applied to a named branch": func() tcase {
@@ -1141,7 +1139,7 @@ func Test_input_CheckDataSources(t *testing.T) {
 		"Id the organisation owns nothing for": {
 			Blocks:  grid(metric(_testDataSourceID.String()), metric(unknown)),
 			Fetches: 2,
-			Err:     fmt.Errorf("metric dataSourceId %q: %w", unknown, errUnknownDataSource),
+			Err:     fmt.Errorf("metric dataSourceId %q: %w", unknown, _errUnknownDataSource),
 		},
 	}
 
@@ -1182,7 +1180,7 @@ func Test_input_FetchDataSource(t *testing.T) {
 		// failure rather than as a zero data source.
 		"Unknown data source": {
 			ID:  xid.New(),
-			Err: errUnknownDataSource,
+			Err: _errUnknownDataSource,
 		},
 		"Successful fetch": {
 			ID: _testDataSourceID,
@@ -1237,7 +1235,7 @@ func Test_input_DataSourceRunner(t *testing.T) {
 		// names nothing at all, and says so in terms the model can act on.
 		"Unknown data source": {
 			ID:  xid.New(),
-			Err: errUnknownDataSource,
+			Err: _errUnknownDataSource,
 		},
 		"Successful lookup": {
 			ID:      _testDataSourceID,
@@ -1294,7 +1292,7 @@ func Test_input_FetchDocumentBlock(t *testing.T) {
 			DB:     stubContentDB(nil),
 			Branch: _stubMainBranchID,
 			UID:    "zzz",
-			Err:    fmt.Errorf("block zzz: %w", errUnknownBlock),
+			Err:    fmt.Errorf("block zzz: %w", _errUnknownBlock),
 		},
 		"Block found": {
 			DB:     stubContentDB(nil),
@@ -1811,11 +1809,11 @@ func Test_input_protectedBranch(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			Err: fmt.Errorf("branch main: %w; %w", errBranchProtected, fmt.Errorf("fetching branches: %w", assert.AnError)),
+			Err: fmt.Errorf("branch main: %w; %w", _errBranchProtected, fmt.Errorf("fetching branches: %w", assert.AnError)),
 		},
 		"Unprotected branches are offered": {
 			DB:  protectedDocumentDB(),
-			Err: fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID),
+			Err: fmt.Errorf("branch main: %w; write to one of draft (%s)", _errBranchProtected, _stubBranchID),
 		},
 	}
 
@@ -2095,7 +2093,7 @@ func Test_input_AssignTag(t *testing.T) {
 			DB:       protectedDocumentDB(),
 			Branch:   _stubMainBranchID,
 			Listings: 1,
-			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID),
+			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", _errBranchProtected, _stubBranchID),
 		},
 		"Unknown tag": {
 			DB: func() *DBMock {
@@ -2186,7 +2184,7 @@ func Test_input_UnassignTag(t *testing.T) {
 			Branch:   _stubMainBranchID,
 			Tag:      _testTagID,
 			Listings: 1,
-			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID),
+			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", _errBranchProtected, _stubBranchID),
 		},
 		// the repository treats a tag the branch does not carry as
 		// nothing to do, so an id naming nothing is caught here.
@@ -2511,7 +2509,7 @@ func Test_input_FetchHook(t *testing.T) {
 		"Unknown hook": {
 			DB:  stubHookDB(),
 			ID:  _unknownHookID,
-			Err: fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, errUnknownHook),
+			Err: fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, _errUnknownHook),
 		},
 		// the repository scopes by organisation, so another one's hook
 		// is as absent as an id that names nothing.
@@ -2522,7 +2520,7 @@ func Test_input_FetchHook(t *testing.T) {
 				},
 			},
 			ID:  _testHookID,
-			Err: fmt.Errorf("hook %s on document %s: %w", _testHookID, _testDocID, errUnknownHook),
+			Err: fmt.Errorf("hook %s on document %s: %w", _testHookID, _testDocID, _errUnknownHook),
 		},
 		"Hook of another document": {
 			DB: &DBMock{
@@ -2531,7 +2529,7 @@ func Test_input_FetchHook(t *testing.T) {
 				},
 			},
 			ID:  _testHookID,
-			Err: fmt.Errorf("hook %s on document %s: %w", _testHookID, _testDocID, errUnknownHook),
+			Err: fmt.Errorf("hook %s on document %s: %w", _testHookID, _testDocID, _errUnknownHook),
 		},
 		"Hook of a deleted document": {
 			DB: &DBMock{
@@ -2540,7 +2538,7 @@ func Test_input_FetchHook(t *testing.T) {
 				},
 			},
 			ID:  _testHookID,
-			Err: fmt.Errorf("hook %s on document %s: %w", _testHookID, _testDocID, errUnknownHook),
+			Err: fmt.Errorf("hook %s on document %s: %w", _testHookID, _testDocID, _errUnknownHook),
 		},
 		"Known hook": {
 			DB: stubHookDB(),
@@ -2573,7 +2571,7 @@ func Test_input_FetchHook(t *testing.T) {
 func Test_input_CreateHook(t *testing.T) {
 	t.Parallel()
 
-	scheduled := processor.Settings(`{"scale":"linear","duration":"custom","schedule":"` + _stubSchedule + `"}`)
+	scheduled := processor.Settings(`{"duration":"custom","schedule":"` + _stubSchedule + `"}`)
 
 	failing := stubHookManager()
 	failing.CreateHookFunc = func(context.Context, hook.CreateInput, xid.ID, string, string) (*hook.Hook, error) {
@@ -2610,7 +2608,7 @@ func Test_input_CreateHook(t *testing.T) {
 			Type:     hook.TypeScheduledReminder,
 			Settings: scheduled,
 			Listings: 1,
-			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID),
+			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", _errBranchProtected, _stubBranchID),
 		},
 		"Unknown block": {
 			DB:       stubHookDB(),
@@ -2620,7 +2618,7 @@ func Test_input_CreateHook(t *testing.T) {
 			Type:     hook.TypeScheduledReminder,
 			Settings: scheduled,
 			Inserts:  1,
-			Err:      fmt.Errorf("block %s: %w", "nope", errUnknownBlock),
+			Err:      fmt.Errorf("block %s: %w", "nope", _errUnknownBlock),
 		},
 		"GitHub tracking without the app": {
 			DB:       stubHookDB(),
@@ -2719,13 +2717,13 @@ func Test_input_UpdateHook(t *testing.T) {
 		"Error returned by hookMan.UpdateHook": {
 			DB:       stubHookDB(),
 			Man:      failing,
-			Settings: processor.Settings(`{"scale":"linear","duration":"custom","schedule":"2031-01-01T00:00:00Z"}`),
+			Settings: processor.Settings(`{"duration":"custom","schedule":"2031-01-01T00:00:00Z"}`),
 			Updates:  1,
 			Err:      assert.AnError,
 		},
 		"Updated and recorded": {
 			DB:       stubHookDB(),
-			Settings: processor.Settings(`{"scale":"linear","duration":"custom","schedule":"2031-01-01T00:00:00Z"}`),
+			Settings: processor.Settings(`{"duration":"custom","schedule":"2031-01-01T00:00:00Z"}`),
 			Updates:  1,
 		},
 	}
@@ -2842,7 +2840,7 @@ func Test_input_DeleteHook(t *testing.T) {
 			DB:       protectedDocumentDB(),
 			Hook:     stubHook(),
 			Listings: 1,
-			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID),
+			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", _errBranchProtected, _stubBranchID),
 		},
 		"Hook without a branch is deleted": {
 			DB: failingDocumentDB(),

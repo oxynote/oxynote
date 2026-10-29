@@ -1330,11 +1330,11 @@ func Test_timeRangeArgs_resolve(t *testing.T) {
 	}{
 		"An inverted range": {
 			Args: timeRangeArgs{From: to, To: from},
-			Err:  errInvertedTimeRange,
+			Err:  _errInvertedTimeRange,
 		},
 		"A future start with no end given": {
 			Args: timeRangeArgs{From: timeutil.Now().Add(time.Hour)},
-			Err:  errInvertedTimeRange,
+			Err:  _errInvertedTimeRange,
 		},
 		"Both ends given": {
 			Args: timeRangeArgs{From: from, To: to},

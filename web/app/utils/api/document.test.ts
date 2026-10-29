@@ -90,19 +90,10 @@ describe("docNameByIdInDocumentTree", () => {
 })
 
 describe("defaultDocumentHookState", () => {
-	it("stamps the scheduled reminder state with the current time", ({
-		expect,
-	}) => {
-		vi.useFakeTimers()
-		vi.setSystemTime(new Date("2024-06-15T12:00:00Z"))
-
-		try {
-			expect(
-				defaultDocumentHookState(DocumentHookType.ScheduledReminder),
-			).toEqual({ lastActiveAt: new Date("2024-06-15T12:00:00Z") })
-		} finally {
-			vi.useRealTimers()
-		}
+	it("returns an empty state for the scheduled reminder", ({ expect }) => {
+		expect(
+			defaultDocumentHookState(DocumentHookType.ScheduledReminder),
+		).toEqual({})
 	})
 
 	it("stamps the url watcher state with the current time", ({ expect }) => {

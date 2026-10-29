@@ -173,7 +173,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, "Demo", ff[0].Ds.Name)
+			assert.Equal(t, "Demo Metrics", ff[0].Ds.Name)
 			assert.Equal(t, datasource.TypePrometheus, ff[0].Ds.Type)
 			assert.Equal(t, demo.URL, ff[0].Ds.URL)
 			assert.Equal(t, "org2", ff[0].Ds.OrganizationID)
@@ -1288,7 +1288,7 @@ func Test_Handler_TeardownOrganization(t *testing.T) {
 						DocumentID:     null.ValueFrom(xid.New()),
 						OrganizationID: null.StringFrom("org2"),
 						BranchID:       null.ValueFrom(xid.New()),
-						Settings:       processor.Settings(`{"scale":"linear"}`),
+						Settings:       processor.Settings(`{"duration":"24h"}`),
 						State:          null.ValueFrom(processor.State(`{}`)),
 						Status:         processor.StatusActive,
 					}}, nil
@@ -1429,7 +1429,7 @@ func Test_Handler_TeardownOrganization(t *testing.T) {
 						DocumentID:     null.ValueFrom(xid.New()),
 						OrganizationID: null.StringFrom("org2"),
 						BranchID:       null.ValueFrom(xid.New()),
-						Settings:       processor.Settings(`{"scale":"linear"}`),
+						Settings:       processor.Settings(`{"duration":"24h"}`),
 						State:          null.ValueFrom(processor.State(`{}`)),
 						Status:         processor.StatusActive,
 					}}, nil

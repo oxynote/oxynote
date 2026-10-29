@@ -176,7 +176,7 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 							DocumentID:     null.ValueFrom(_documentID),
 							OrganizationID: null.StringFrom("org1"),
 							BranchID:       null.ValueFrom(_branchID),
-							Settings:       processor.Settings(`{"scale":"linear"}`),
+							Settings:       processor.Settings(`{"duration":"24h"}`),
 						},
 					}, nil
 				},
@@ -254,7 +254,7 @@ func hookRequest(method, body string, noSession, omitDoc, omitHook bool) *http.R
 }
 
 func Test_Handler_CreateDocumentHook(t *testing.T) {
-	validBody := `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","settings":{"scale":"linear"}}`
+	validBody := `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","settings":{"duration":"24h"}}`
 
 	cc := map[string]struct {
 		Man       *ManagerMock
@@ -309,11 +309,11 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 						DocumentID:     null.ValueFrom(_documentID),
 						OrganizationID: null.StringFrom("org1"),
 						BranchID:       null.ValueFrom(_branchID),
-						Settings:       processor.Settings(`{"scale":"linear"}`),
+						Settings:       processor.Settings(`{"duration":"24h"}`),
 					}, nil
 				},
 			},
-			Body:     `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","blockId":"b1","settings":{"scale":"linear"}}`,
+			Body:     `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","blockId":"b1","settings":{"duration":"24h"}}`,
 			RespCode: http.StatusCreated,
 			Creates:  1,
 		},
@@ -326,7 +326,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 						DocumentID:     null.ValueFrom(_documentID),
 						OrganizationID: null.StringFrom("org1"),
 						BranchID:       null.ValueFrom(_branchID),
-						Settings:       processor.Settings(`{"scale":"linear"}`),
+						Settings:       processor.Settings(`{"duration":"24h"}`),
 					}, nil
 				},
 			},
@@ -367,7 +367,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 }
 
 func Test_Handler_UpdateDocumentHook(t *testing.T) {
-	validBody := `{"settings":{"scale":"linear","duration":"48h"}}`
+	validBody := `{"settings":{"duration":"48h"}}`
 
 	cc := map[string]struct {
 		Man       *ManagerMock
@@ -433,7 +433,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 						DocumentID:     null.ValueFrom(_documentID),
 						OrganizationID: null.StringFrom("org1"),
 						BranchID:       null.ValueFrom(_branchID),
-						Settings:       processor.Settings(`{"scale":"linear"}`),
+						Settings:       processor.Settings(`{"duration":"24h"}`),
 					}, nil
 				},
 			},
@@ -466,7 +466,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 				assert.Equal(t, _hookID, ff[0].ID)
 				assert.Equal(t, _documentID, ff[0].DocumentID)
 				assert.Equal(t, "org1", ff[0].OrganizationID)
-				assert.JSONEq(t, `{"scale":"linear","duration":"48h"}`, string(ff[0].UI.Settings))
+				assert.JSONEq(t, `{"duration":"48h"}`, string(ff[0].UI.Settings))
 				assert.Equal(t, "u1", ff[0].UpdatedBy)
 			}
 		})
@@ -524,7 +524,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 						DocumentID:     null.ValueFrom(_documentID),
 						OrganizationID: null.StringFrom("org1"),
 						BranchID:       null.ValueFrom(_branchID),
-						Settings:       processor.Settings(`{"scale":"linear"}`),
+						Settings:       processor.Settings(`{"duration":"24h"}`),
 					}, nil
 				},
 			},

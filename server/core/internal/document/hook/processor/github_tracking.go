@@ -10,8 +10,6 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
-	"github.com/oxynote/oxynote/server/core/pkg/mathutil"
-	"github.com/shopspring/decimal"
 )
 
 var (
@@ -52,7 +50,7 @@ func (gt *GithubTracking) Validate() error {
 	return nil
 }
 
-// Process scores the hook down once a tracked path changed since the reset,
+// Process triggers the hook once a tracked path changed since the reset,
 // and records how many did.
 func (gt *GithubTracking) Process(ctx context.Context, inp Input) (Result, error) {
 	var gts GithubTrackingState
@@ -84,13 +82,7 @@ func (gt *GithubTracking) Process(ctx context.Context, inp Input) (Result, error
 		}
 	}
 
-	score := mathutil.Hundred
-
-	if gts.ChangedPaths > 0 {
-		score = decimal.Zero
-	}
-
-	return active(score, gts)
+	return active(gts.ChangedPaths > 0, gts)
 }
 
 // Reset records the checksums of the tracked paths as the baseline.
@@ -113,14 +105,14 @@ func (gt *GithubTracking) Reset(ctx context.Context, inp Input) (Result, error) 
 		if !ok {
 			// a path absent at reset stays out of the checksum map;
 			// Process reads the omission as recorded absence and only
-			// scores the hook down when the path appears.
+			// triggers the hook when the path appears.
 			continue
 		}
 
 		gts.PathsChecksums[path] = item.Checksum
 	}
 
-	return active(mathutil.Hundred, gts)
+	return active(false, gts)
 }
 
 // Summary returns how many tracked paths changed on the last run.

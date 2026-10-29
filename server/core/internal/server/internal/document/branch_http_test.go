@@ -28,7 +28,7 @@ func storedHook() hookCore.Hook {
 		DocumentID:     null.ValueFrom(_documentID),
 		OrganizationID: null.StringFrom("org1"),
 		BranchID:       null.ValueFrom(_branchID),
-		Settings:       processor.Settings(`{"scale":"linear"}`),
+		Settings:       processor.Settings(`{"duration":"24h"}`),
 		State:          null.ValueFrom(processor.State(`{}`)),
 	}
 }
@@ -1900,6 +1900,118 @@ func Test_Handler_RecordDocumentBranchView(t *testing.T) {
 			if c.RespCode == http.StatusNoContent {
 				assert.Empty(t, rec.Body.String())
 			}
+		})
+	}
+}
+
+func Test_Handler_FetchDocumentBranchViews(t *testing.T) {
+	viewedAt := time.Date(2026, 10, 27, 8, 0, 0, 0, time.UTC)
+
+	cc := map[string]struct {
+		DB                       *DBMock
+		NoSession                bool
+		OmitDoc                  bool
+		OmitBranch               bool
+		RespCode                 int
+		RespJSON                 string
+		FetchDocumentByBranchID  int
+		FetchDocumentBranchViews int
+	}{
+		"No session in context": {
+			DB:        &DBMock{},
+			NoSession: true,
+			RespCode:  http.StatusUnauthorized,
+		},
+		"Missing document ID parameter": {
+			DB:       &DBMock{},
+			OmitDoc:  true,
+			RespCode: http.StatusNotFound,
+		},
+		"Missing branch ID parameter": {
+			DB:         &DBMock{},
+			OmitBranch: true,
+			RespCode:   http.StatusNotFound,
+		},
+		"Error returned by DB.FetchDocumentByBranchID": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return nil, assert.AnError
+				},
+			},
+			RespCode:                http.StatusInternalServerError,
+			FetchDocumentByBranchID: 1,
+		},
+		"Branch of another document": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					doc := branchDoc(_branchID)
+					doc.ID = xid.New()
+
+					return doc, nil
+				},
+			},
+			RespCode:                http.StatusNotFound,
+			RespJSON:                `{"code":"document.branch_mismatch","message":"branch does not belong to the document"}`,
+			FetchDocumentByBranchID: 1,
+		},
+		"Error returned by DB.FetchDocumentBranchViews": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID), nil
+				},
+				FetchDocumentBranchViewsFunc: func(context.Context, xid.ID, string) ([]documentCore.BranchView, error) {
+					return nil, assert.AnError
+				},
+			},
+			RespCode:                 http.StatusInternalServerError,
+			FetchDocumentByBranchID:  1,
+			FetchDocumentBranchViews: 1,
+		},
+		"Successful fetch": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID), nil
+				},
+				FetchDocumentBranchViewsFunc: func(context.Context, xid.ID, string) ([]documentCore.BranchView, error) {
+					return []documentCore.BranchView{
+						{UserID: "u2", ViewedAt: viewedAt},
+						{UserID: "u1", ViewedAt: viewedAt.Add(-time.Hour)},
+					}, nil
+				},
+			},
+			RespCode:                 http.StatusOK,
+			RespJSON:                 `[{"userId":"u2","viewedAt":"2026-10-27T08:00:00Z"},{"userId":"u1","viewedAt":"2026-10-27T07:00:00Z"}]`,
+			FetchDocumentByBranchID:  1,
+			FetchDocumentBranchViews: 1,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
+
+			rec := httptest.NewRecorder()
+
+			hdl.FetchDocumentBranchViews(rec, newRequest(http.MethodGet, "", c.NoSession, c.OmitDoc, c.OmitBranch))
+
+			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchID)
+
+			if c.RespJSON != "" {
+				assert.JSONEq(t, c.RespJSON, rec.Body.String())
+			}
+
+			ff := c.DB.FetchDocumentBranchViewsCalls()
+			require.Len(t, ff, c.FetchDocumentBranchViews)
+
+			if c.FetchDocumentBranchViews == 0 {
+				return
+			}
+
+			assert.Equal(t, _branchID, ff[0].BranchID)
+			assert.Equal(t, "org1", ff[0].OrganizationID)
 		})
 	}
 }

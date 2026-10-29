@@ -78,7 +78,7 @@ export default function () {
 				settings: req.settings,
 				state: defaultDocumentHookState(req.type),
 				status: "active",
-				score: "100",
+				triggered: false,
 				createdAt: new Date(),
 				updatedAt: new Date(),
 			}

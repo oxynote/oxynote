@@ -21,6 +21,9 @@ var _ datasource.Runner = &Runner{}
 //
 //		// make and configure a mocked datasource.Runner
 //		mockedRunner := &Runner{
+//			LogsFunc: func(ctx context.Context) (datasource.Logs, error) {
+//				panic("mock out the Logs method")
+//			},
 //			MySQLFunc: func(ctx context.Context) (datasource.MySQL, error) {
 //				panic("mock out the MySQL method")
 //			},
@@ -46,6 +49,9 @@ var _ datasource.Runner = &Runner{}
 //
 //	}
 type Runner struct {
+	// LogsFunc mocks the Logs method.
+	LogsFunc func(ctx context.Context) (datasource.Logs, error)
+
 	// MySQLFunc mocks the MySQL method.
 	MySQLFunc func(ctx context.Context) (datasource.MySQL, error)
 
@@ -66,6 +72,11 @@ type Runner struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// Logs holds details about calls to the Logs method.
+		Logs []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+		}
 		// MySQL holds details about calls to the MySQL method.
 		MySQL []struct {
 			// Ctx is the ctx argument value.
@@ -95,12 +106,49 @@ type Runner struct {
 		Type []struct {
 		}
 	}
+	lockLogs           sync.RWMutex
 	lockMySQL          sync.RWMutex
 	lockPostgreSQL     sync.RWMutex
 	lockPrometheus     sync.RWMutex
 	lockSQL            sync.RWMutex
 	lockTestConnection sync.RWMutex
 	lockType           sync.RWMutex
+}
+
+// Logs calls LogsFunc.
+func (mock *Runner) Logs(ctx context.Context) (datasource.Logs, error) {
+	callInfo := struct {
+		Ctx context.Context
+	}{
+		Ctx: ctx,
+	}
+	mock.lockLogs.Lock()
+	mock.calls.Logs = append(mock.calls.Logs, callInfo)
+	mock.lockLogs.Unlock()
+	if mock.LogsFunc == nil {
+		var (
+			logsOut datasource.Logs
+			errOut  error
+		)
+		return logsOut, errOut
+	}
+	return mock.LogsFunc(ctx)
+}
+
+// LogsCalls gets all the calls that were made to Logs.
+// Check the length with:
+//
+//	len(mockedRunner.LogsCalls())
+func (mock *Runner) LogsCalls() []struct {
+	Ctx context.Context
+} {
+	var calls []struct {
+		Ctx context.Context
+	}
+	mock.lockLogs.RLock()
+	calls = mock.calls.Logs
+	mock.lockLogs.RUnlock()
+	return calls
 }
 
 // MySQL calls MySQLFunc.

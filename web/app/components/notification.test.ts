@@ -110,7 +110,6 @@ describe("hookNotificationLine", () => {
 			input: {
 				type: DocumentHookType.ScheduledReminder,
 				hookSettings: {
-					scale: "linear",
 					duration: "168h",
 					schedule: new Date(2026, 2, 14, 9, 0, 0),
 				},

@@ -80,21 +80,29 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// the demo data source is inserted before the transaction opens: a
+	// the demo data sources are inserted before the transaction opens: a
 	// failed statement aborts a Postgres transaction, so logging and
 	// carrying on inside one would only move the failure to the commit.
-	// The welcome document drops its charts when the source is missing
-	// rather than pointing them at an id that was never stored. The
-	// failure is logged rather than returned: the demo content is a
+	// The welcome document drops its charts when the metrics source is
+	// missing rather than pointing them at an id that was never stored.
+	// A failure is logged rather than returned: the demo content is a
 	// nicety, and an organization without it is still fully initialized.
-	var dataSourceID null.Value[xid.ID]
+	var metricsDataSourceID null.Value[xid.ID]
 
-	ds := datasource.NewDemoDataSource(id)
+	for _, ds := range datasource.NewDemoDataSources(id) {
+		if err = h.db.InsertDataSource(r.Context(), ds); err != nil {
+			h.log.Error(
+				"cannot insert demo data source",
+				slog.String("type", string(ds.Type)),
+				slog.String("error", err.Error()),
+			)
 
-	if err = h.db.InsertDataSource(r.Context(), ds); err != nil {
-		h.log.Error("inserting demo data source", slog.String("error", err.Error()))
-	} else {
-		dataSourceID = null.ValueFrom(ds.ID)
+			continue
+		}
+
+		if ds.Type == datasource.TypePrometheus {
+			metricsDataSourceID = null.ValueFrom(ds.ID)
+		}
 	}
 
 	var tx Tx
@@ -107,7 +115,7 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
-	doc, err := document.NewWelcomeDocument(id, members[0], dataSourceID)
+	doc, err := document.NewWelcomeDocument(id, members[0], metricsDataSourceID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return

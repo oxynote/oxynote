@@ -39,7 +39,7 @@ var (
 
 	// _errMethodNotAllowed is returned when request's method is not
 	// supported for the requested endpoint.
-	_errMethodNotAllowed = errutil.New(http.StatusMethodNotAllowed, "request.method_not_allowed", "method not allowed") //nolint:errname // unexported globals are _-prefixed by convention
+	_errMethodNotAllowed = errutil.New(http.StatusMethodNotAllowed, "request.method_not_allowed", "method not allowed")
 
 	// ErrInvalidJSON is returned when request's body contains invalid
 	// JSON data.

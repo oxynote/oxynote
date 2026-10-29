@@ -90,6 +90,10 @@ let cooldownTimeout: ReturnType<typeof setTimeout> | null = null
 /** Cooldown period in milliseconds - subsequent calls batch until this expires */
 const REPOSITION_COOLDOWN_MS = 3000
 
+// gap zones created since the last frame. The next frame positions them
+// together, so a new document forces one layout instead of one per zone.
+const pendingGapZones = new Set<HTMLElement>()
+
 /**
  * Clears the repositioning cooldown state.
  * Call this when drag ends to allow immediate repositioning on next interaction.
@@ -429,23 +433,6 @@ function applyGapPosition(
 }
 
 /**
- * Position a single gap zone element based on its siblings.
- * Used for initial positioning in createGapWidget.
- */
-function positionGapZone(el: HTMLElement, yOffset: number) {
-	const isVertical = el.getAttribute("data-gap-orientation") === "vertical"
-	const measurement = measureGapZone(el)
-	if (!measurement) return
-
-	if (isVertical) {
-		const xOffset = parseFloat(el.getAttribute("data-gap-x-offset") || "0")
-		applyGapPosition(el, measurement, xOffset)
-	} else {
-		applyGapPosition(el, measurement, yOffset)
-	}
-}
-
-/**
  * Check if a node type can be inserted at a gap position using ProseMirror's schema.
  * This uses the schema's contentMatch to determine valid drop targets.
  *
@@ -552,17 +539,10 @@ function canInsertNodeAt(
 }
 
 /**
- * Performs the actual gap zone repositioning.
+ * Positions the given gap zones between their siblings.
  * Uses batched DOM reads/writes to minimize layout thrashing.
  */
-function doRepositionGapZones() {
-	const elements = document.querySelectorAll(
-		".pm-gap-zone:not(.pm-gap-zone-secondary)",
-	)
-	if (elements.length === 0) {
-		return
-	}
-
+function positionGapZones(elements: HTMLElement[]) {
 	// Phase 1: Collect element data (minimal reads)
 	const elementData: {
 		el: HTMLElement
@@ -571,13 +551,11 @@ function doRepositionGapZones() {
 	}[] = []
 
 	elements.forEach((el) => {
-		const htmlEl = el as HTMLElement
-		const isVertical =
-			htmlEl.getAttribute("data-gap-orientation") === "vertical"
+		const isVertical = el.getAttribute("data-gap-orientation") === "vertical"
 		const offset = isVertical
-			? parseFloat(htmlEl.getAttribute("data-gap-x-offset") || "0")
-			: parseFloat(htmlEl.dataset.yOffset || "0")
-		elementData.push({ el: htmlEl, isVertical, offset })
+			? parseFloat(el.getAttribute("data-gap-x-offset") || "0")
+			: parseFloat(el.dataset.yOffset || "0")
+		elementData.push({ el, isVertical, offset })
 	})
 
 	// Phase 2: Batch all DOM measurements (reads)
@@ -621,7 +599,11 @@ export function repositionGapZones() {
 
 	requestAnimationFrame(() => {
 		repositionScheduled = false
-		doRepositionGapZones()
+		positionGapZones([
+			...document.querySelectorAll<HTMLElement>(
+				".pm-gap-zone:not(.pm-gap-zone-secondary)",
+			),
+		])
 
 		// Start cooldown period
 		cooldownTimeout = setTimeout(() => {
@@ -942,9 +924,15 @@ function createGapWidget(gap: GapInfo, docSize: number): Decoration | null {
 			}
 
 			// Position the element in the middle of the gap
-			requestAnimationFrame(() => {
-				positionGapZone(el, yOffset)
-			})
+			if (pendingGapZones.size === 0) {
+				requestAnimationFrame(() => {
+					const zones = [...pendingGapZones]
+					pendingGapZones.clear()
+					positionGapZones(zones)
+				})
+			}
+
+			pendingGapZones.add(el)
 
 			wrapper.appendChild(el)
 			return wrapper

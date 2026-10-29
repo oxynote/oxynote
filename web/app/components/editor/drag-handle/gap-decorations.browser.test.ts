@@ -426,6 +426,22 @@ describe("gap decorations", { concurrent: false }, () => {
 	})
 
 	describe("horizontal gap positioning", () => {
+		it("positions every new zone in one shared frame", async ({ expect }) => {
+			const raf = vi.spyOn(globalThis, "requestAnimationFrame")
+			const { host } = mountEditor(docOf(para("p1"), para("p2"), para("p3")))
+
+			expect(raf).toHaveBeenCalledOnce()
+
+			await nextFrame()
+
+			const tops = [...host.querySelectorAll<HTMLElement>(".pm-gap-zone")].map(
+				(el) => el.style.top,
+			)
+
+			expect(tops).toHaveLength(4)
+			expect(tops).not.toContain("")
+		})
+
 		it("centres a middle gap between its two siblings", async ({ expect }) => {
 			const { host } = mountEditor(docOf(para("p1"), para("p2")))
 			await nextFrame()

@@ -136,7 +136,6 @@ async function submit() {
 	}
 
 	const next = {
-		scale: "linear" as const,
 		duration: duration,
 		schedule:
 			duration === "custom" && selectedSchedule.value
@@ -164,7 +163,6 @@ async function remindAgain() {
 
 	await actions.update(
 		{
-			scale: "linear",
 			duration: preset,
 			schedule: addDurationToDate(new Date(), preset),
 		},

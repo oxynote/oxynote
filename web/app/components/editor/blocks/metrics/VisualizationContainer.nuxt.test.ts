@@ -1001,6 +1001,10 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 		it("queries the window of the built-in time range it follows", async ({
 			expect,
 		}) => {
+			// the window counts calendar days, so a week spanning a daylight
+			// saving change is an hour off. This date is far from any.
+			vi.useFakeTimers({ toFake: ["Date"] })
+			vi.setSystemTime(new Date("2026-06-15T12:00:00Z"))
 			const calls = mockEndpoint("GET", QUERY_URL, () => seriesResult())
 
 			await mountContainer(

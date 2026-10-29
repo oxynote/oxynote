@@ -1,0 +1,57 @@
+name: Bug report
+description: Something in Oxynote does not work as it should.
+type: Bug
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Add screenshots or a recording if it helps.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: If it only happens sometimes, say what you were doing when it did.
+      placeholder: |
+        1. Open a document
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it happen?
+      options:
+        - Web app in a browser
+        - Desktop app
+        - MCP client
+        - Server or setup, outside the app
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Oxynote version
+      description: The image tag or the `version` field in the server logs. For the desktop app, its About window. For a source checkout, the commit hash.
+      placeholder: 0.9.2
+    validations:
+      required: true
+  - type: input
+    id: browser-os
+    attributes:
+      label: Browser and operating system
+      placeholder: Safari on iOS 26
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant output from `docker logs` or the browser console.
+      render: shell

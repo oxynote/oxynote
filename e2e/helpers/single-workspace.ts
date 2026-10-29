@@ -6,10 +6,10 @@ import {
 	type BrowserContext,
 	type Page,
 } from "@playwright/test"
-import { fillSignupForm, submitLoginForm, type Credentials } from "./auth"
+import { fillLoginForm, fillSignupForm, type Credentials } from "./auth"
 import { t } from "./i18n"
 import { fetchVerificationLink } from "./mailpit"
-import { visit } from "./page"
+import { hydrated, visit } from "./page"
 
 // the prod stack's third instance of the image, started with the default
 // workspace limits (oxynote-single-workspace in docker-compose.prod.yaml).
@@ -93,14 +93,22 @@ export async function joinThroughInvitation(
 	await expect(page).toHaveURL(/\/verify-email\?/, { timeout: 15_000 })
 
 	await page.goto(await fetchVerificationLink(request, credentials.email))
-	await expect(page).toHaveURL(`${SINGLE_WORKSPACE_URL}/login?verified=true`)
+	await expect(page).toHaveURL(
+		(url) =>
+			url.origin === SINGLE_WORKSPACE_URL &&
+			url.pathname === "/login" &&
+			url.searchParams.get("verified") === "true" &&
+			decodeURIComponent(url.searchParams.get("next") ?? "").startsWith(
+				"/accept-invite?",
+			),
+	)
 
-	await submitLoginForm(page, credentials, SINGLE_WORKSPACE_URL)
-	// a fresh account has no workspace yet, so the login redirect lands on
-	// onboarding. The invitation is what gets them out of it.
-	await expect(page).toHaveURL(/\/welcome$/, { timeout: 15_000 })
+	await hydrated(page)
+	await fillLoginForm(page, credentials)
+	// the verification link kept the invitation, so the login lands on it
+	// rather than on onboarding
+	await expect(page).toHaveURL(/\/accept-invite\?/, { timeout: 15_000 })
 
-	await visit(page, inviteLink)
 	await page
 		.getByRole("button", { name: t("onboarding.accept-invite.accept-button") })
 		.click()

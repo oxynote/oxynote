@@ -3,65 +3,349 @@ package datasource
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/gomodule/redigo/redis"
+	"github.com/jellydator/xync"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/demo"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/memkit"
+	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
+	"github.com/oxynote/oxynote/server/core/pkg/redkit"
+	"github.com/oxynote/oxynote/server/core/pkg/syncutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
+	"golang.org/x/sync/singleflight"
+)
+
+const (
+	// _statusTTL is how long a passing connection test vouches for a data
+	// source before a call tests it again.
+	_statusTTL = 10 * time.Second
+
+	// _idleAfter is how long a runner may go unasked for before its
+	// connections are closed.
+	_idleAfter = 5 * time.Minute
+
+	// _sweepInterval is how often the manager looks for idle runners.
+	_sweepInterval = time.Minute
+)
+
+// _errDataSourceChanged is returned when a data source is edited or
+// removed while a call is reading it.
+var _errDataSourceChanged = errutil.New(
+	http.StatusConflict,
+	"data_source.changed",
+	"The data source changed while it was being read. Try again.",
 )
 
 // Manager hands out the runner for a data source.
 //
-// It is what the per-data-source runners share: the store their
-// observations are recorded in, and the log those recordings complain
-// to. A runner is built per call and holds only the data source it
-// reads, so anything longer-lived than one call belongs here.
+// It keeps one runner per data source, so the connections a runner opens
+// serve every call that reads the same data source. A runner goes, and its
+// connections close, when the data source changes, when a connection test
+// fails, or when nobody has asked for it in _idleAfter. What the runners
+// share lives here too: the store their observations are recorded in, the
+// log those recordings complain to, the demo client, and the cache their
+// queries are answered from.
 type Manager struct {
-	log   *slog.Logger
-	store StatusStore
-	demo  *demo.Client
+	log     *slog.Logger
+	store   StatusStore
+	cache   queryCache
+	demo    *demo.Client
+	metrics *metrics
+
+	// tests lets one call at a time test a data source's connection. The
+	// calls waiting behind it reuse what it found.
+	tests *syncutil.KeyedMutex[xid.ID]
+
+	// flights lets identical queries arriving together share one run.
+	flights singleflight.Group
+
+	// mu guards runners and the status and usedAt of each runner. It is
+	// never held across I/O.
+	mu      sync.Mutex
+	runners map[xid.ID]*runner
+
+	supv *xync.Supervisor
 }
 
-// NewManager creates a fresh instance of Manager.
-func NewManager(log *slog.Logger, store StatusStore) *Manager {
+// NewManager creates a fresh instance of Manager. Query answers are kept in
+// valkey when pool is set, so every core process shares them, and in this
+// process otherwise.
+func NewManager(
+	log *slog.Logger,
+	store StatusStore,
+	pool *redis.Pool,
+	fc metricutil.Factory,
+) *Manager {
+	var cache queryCache = memkit.NewBytesStore(_cacheTTL, _cacheMaxBytes)
+
+	if pool != nil {
+		cache = redkit.NewBytesStore(pool, _cacheTTL)
+	}
+
 	return &Manager{
-		log:   log.With("component", "datasource"),
-		store: store,
-		demo:  demo.NewClient(),
+		log:     log.With("component", "datasource"),
+		store:   store,
+		cache:   cache,
+		demo:    demo.NewClient(),
+		metrics: newMetrics(fc),
+		tests:   syncutil.NewKeyedMutex[xid.ID](),
+		runners: make(map[xid.ID]*runner),
+		supv:    xync.NewSupervisor(),
 	}
 }
 
-// Runner returns the runner that operates the given data source.
-func (m *Manager) Runner(ds DataSource) Runner {
-	return &runner{ds: ds, log: m.log, store: m.store, demo: m.demo}
+// Start runs the upkeep of the query cache and closes the connections of
+// idle runners until ctx is cancelled. It blocks, so the caller owns the
+// goroutine it runs on.
+func (m *Manager) Start(ctx context.Context) {
+	supv := xync.NewSupervisor(xync.WithSupervisorBaseContext(ctx))
+	defer supv.Close()
+
+	supv.Go(m.cache.Start)
+	supv.Go(timeutil.NewPeriodicExec(_sweepInterval, 0, m.closeIdle, nil, false).Start)
+
+	supv.Wait()
 }
 
-// runner operates one data source.
+// Close closes the connections of every runner, waiting for the queries
+// still running on them.
+func (m *Manager) Close() error {
+	m.mu.Lock()
+
+	for id, r := range m.runners {
+		delete(m.runners, id)
+		m.release(r)
+	}
+
+	m.mu.Unlock()
+
+	m.supv.CloseAndWait()
+
+	return nil
+}
+
+// Runner returns the runner that operates the given data source: the one
+// the manager keeps while the data source is unchanged, or a new one.
+//
+// A new runner is kept only once a query connects through it (see adopt),
+// so a connection test of a data source being created or edited never
+// replaces the runner its readers use.
+func (m *Manager) Runner(ds DataSource) Runner {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := timeutil.Now()
+
+	r, ok := m.runners[ds.ID]
+	if ok && r.ds.UpdatedAt.Equal(ds.UpdatedAt) {
+		// the caller read the stored status just now, so a status observed
+		// later has to be compared with this one.
+		r.status = ds.Status
+		r.usedAt = now
+
+		return r
+	}
+
+	r = &runner{
+		m:      m,
+		ds:     ds,
+		status: ds.Status,
+		usedAt: now,
+	}
+	r.client, r.clientErr = m.newClient(ds)
+
+	return r
+}
+
+// adopt keeps r as the runner of its data source, closing the connections
+// of the one kept for an earlier version of it. When another call already
+// kept a runner for the same version, that one is returned instead; r has
+// not connected yet, so dropping it leaves nothing open. A runner the
+// manager already let go is not kept again.
+func (m *Manager) adopt(r *runner) *runner {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	kept, ok := m.runners[r.ds.ID]
+
+	switch {
+	case r.released, ok && kept == r:
+		return r
+	case ok && kept.ds.UpdatedAt.Equal(r.ds.UpdatedAt):
+		kept.status = r.status
+		kept.usedAt = timeutil.Now()
+
+		return kept
+	case ok:
+		m.release(kept)
+	}
+
+	m.runners[r.ds.ID] = r
+
+	return r
+}
+
+// Evict closes the connections of the data source the id names. The next
+// call builds a runner from the data source as it is then.
+func (m *Manager) Evict(id xid.ID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if r, ok := m.runners[id]; ok {
+		delete(m.runners, id)
+		m.release(r)
+	}
+}
+
+// drop closes the connections of a runner whose connection test failed.
+// A runner already replaced had them closed then.
+func (m *Manager) drop(r *runner) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.runners[r.ds.ID] != r {
+		return
+	}
+
+	delete(m.runners, r.ds.ID)
+	m.release(r)
+}
+
+// keeps reports whether r is the runner the manager keeps for its data
+// source.
+func (m *Manager) keeps(r *runner) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.runners[r.ds.ID] == r
+}
+
+// closeIdle closes the connections of the runners nobody asked for in
+// _idleAfter.
+func (m *Manager) closeIdle(context.Context) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := timeutil.Now()
+
+	for id, r := range m.runners {
+		if now.Sub(r.usedAt) >= _idleAfter {
+			delete(m.runners, id)
+			m.release(r)
+		}
+	}
+}
+
+// release closes the connections of a runner the caller took out of the
+// map while holding m.mu. Closing waits for the queries still running on
+// them, so it happens off the caller's path.
+func (m *Manager) release(r *runner) {
+	r.released = true
+
+	if r.client == nil {
+		return
+	}
+
+	m.supv.Go(func(context.Context) {
+		if err := r.client.Close(); err != nil {
+			m.log.Error(
+				"cannot close data source connections",
+				slog.String("data_source_id", r.ds.ID.String()),
+				slog.String("error", err.Error()),
+			)
+		}
+	})
+}
+
+// newClient builds the processor the data source's type calls for.
+func (m *Manager) newClient(ds DataSource) (ownedClient, error) {
+	switch ds.Type {
+	case TypePrometheus:
+		return m.prometheusClient(ds)
+	case TypePostgreSQL:
+		return processor.NewPostgreSQL(newStateInput(ds.URL, ds.Credentials)), nil
+	case TypeMariaDB, TypeMySQL:
+		return processor.NewMySQL(newStateInput(ds.URL, ds.Credentials)), nil
+	case TypeLoki:
+		return m.lokiClient(ds)
+	default:
+		return nil, errors.New("invalid data source type")
+	}
+}
+
+// prometheusClient resolves which Prometheus a data source speaks to. The
+// demo scheme names a source this process synthesizes rather than one it
+// dials, and only the one demo source exists — a URL that merely looks
+// like it is a mistake worth reporting, not a second demo.
+func (m *Manager) prometheusClient(ds DataSource) (ownedClient, error) {
+	if ds.URL == demo.URL {
+		return m.demo, nil
+	}
+
+	if strings.HasPrefix(ds.URL, demo.Scheme) {
+		return nil, demo.ErrUnknownSource
+	}
+
+	return processor.NewPrometheus(newStateInput(ds.URL, ds.Credentials)), nil
+}
+
+// lokiClient resolves which Loki a data source speaks to. The demo URL
+// is the same one the demo Prometheus answers at, served as Loki for this
+// type.
+func (m *Manager) lokiClient(ds DataSource) (ownedClient, error) {
+	if ds.URL == demo.URL {
+		return m.demo, nil
+	}
+
+	if strings.HasPrefix(ds.URL, demo.Scheme) {
+		return nil, demo.ErrUnknownSource
+	}
+
+	return processor.NewLoki(newStateInput(ds.URL, ds.Credentials)), nil
+}
+
+// runner operates one data source. The manager keeps it, so every call
+// that reads the data source shares it and the connections its client
+// holds.
 type runner struct {
-	// ds is the data source being operated, which is everything a
-	// connection needs plus the identity its status is recorded under.
+	// m is the manager that keeps the runner.
+	m *Manager
+
+	// ds is the data source the runner was built from.
 	ds DataSource
 
-	// log records a status that could not be stored.
-	log *slog.Logger
+	// client is the processor the data source's type resolves to, or nil
+	// when clientErr says why there is none.
+	client    ownedClient
+	clientErr error
 
-	// store is where an observed status is recorded.
-	store StatusStore
+	// status is the connection status stored for the data source, as far
+	// as this process knows. Guarded by m.mu.
+	status processor.ConnectionStatus
 
-	// prepared reports whether client holds the processor for this data
-	// source's type yet.
-	prepared bool
+	// usedAt is when a call last asked the manager for the runner.
+	// Guarded by m.mu.
+	usedAt time.Time
 
-	// client is the processor this runner's type resolves to.
-	client connectionTester
+	// released indicates whether the manager let the runner go and closed
+	// its connections. Guarded by m.mu.
+	released bool
 
-	// demo answers the data source this process synthesizes, shared with
-	// every other runner the manager hands out.
-	demo *demo.Client
+	// testedAt is when the connection was last tested, or zero, and tested
+	// is what that test found. Guarded by the manager's test lock for the
+	// data source.
+	testedAt time.Time
+	tested   processor.ConnectionStatus
 }
 
 // Type reports what the data source speaks.
@@ -72,35 +356,57 @@ func (r *runner) Type() Type {
 // TestConnection tests the connection to the data source and reports
 // what it found.
 //
-// It does not record the answer. Callers ask this about a data source
-// that is being created or changed — one whose stored row is not the
-// thing being described yet — while the accessors below ask it about a
-// data source in use, which is the observation worth keeping.
+// It does not record the answer, and it tests through a client of its own,
+// closed afterwards, rather than the runner's. Callers ask this about a data
+// source that is being created or changed, one whose stored row is not the
+// thing being described yet, or about one a person asked to check, which a
+// test remembered from a moment ago would not answer. The accessors below
+// ask it about a data source in use, which is the observation worth keeping.
 func (r *runner) TestConnection(ctx context.Context) (processor.ConnectionStatus, error) {
 	if !r.ds.Credentials.IsValid() {
 		return processor.ConnectionStatusInvalidEncryptionKey, nil
 	}
 
-	if err := r.ensurePrepared(); err != nil {
+	client, err := r.m.newClient(r.ds)
+	if err != nil {
 		return "", err
 	}
+	defer client.Close() //nolint:errcheck // error provides no meaningful info
 
-	return r.client.TestConnection(ctx)
+	return client.TestConnection(ctx)
 }
 
-// Prometheus returns the data source's Prometheus client.
+// Prometheus returns the data source's Prometheus client, whose range
+// queries are answered out of the query cache.
 func (r *runner) Prometheus(ctx context.Context) (Prometheus, error) {
-	return connect[Prometheus](ctx, r, TypePrometheus)
+	client, err := connect[Prometheus](ctx, r, TypePrometheus)
+	if err != nil {
+		return nil, err
+	}
+
+	return cachedPrometheus{Prometheus: client, m: r.m, ds: r.ds}, nil
 }
 
-// PostgreSQL returns the data source's PostgreSQL client.
+// PostgreSQL returns the data source's PostgreSQL client, whose queries are
+// answered out of the query cache.
 func (r *runner) PostgreSQL(ctx context.Context) (PostgreSQL, error) {
-	return connect[PostgreSQL](ctx, r, TypePostgreSQL)
+	client, err := connect[PostgreSQL](ctx, r, TypePostgreSQL)
+	if err != nil {
+		return nil, err
+	}
+
+	return cachedPostgreSQL{PostgreSQL: client, m: r.m, ds: r.ds}, nil
 }
 
-// MySQL returns the data source's MySQL client.
+// MySQL returns the data source's MySQL client, whose queries are answered
+// out of the query cache.
 func (r *runner) MySQL(ctx context.Context) (MySQL, error) {
-	return connect[MySQL](ctx, r, TypeMariaDB, TypeMySQL)
+	client, err := connect[MySQL](ctx, r, TypeMariaDB, TypeMySQL)
+	if err != nil {
+		return nil, err
+	}
+
+	return cachedMySQL{MySQL: client, m: r.m, ds: r.ds}, nil
 }
 
 // SQL returns the data source's dialect-agnostic SQL client.
@@ -108,8 +414,19 @@ func (r *runner) SQL(ctx context.Context) (SQL, error) {
 	return connect[SQL](ctx, r, TypePostgreSQL, TypeMariaDB, TypeMySQL)
 }
 
-// connect resolves the client of the wanted type, tests the connection
-// and records what it found.
+// Logs returns the data source's log client, whose reads are answered out
+// of the query cache.
+func (r *runner) Logs(ctx context.Context) (Logs, error) {
+	client, err := connect[Logs](ctx, r, TypeLoki)
+	if err != nil {
+		return nil, err
+	}
+
+	return cachedLogs{client: client, m: r.m, ds: r.ds}, nil
+}
+
+// connect resolves the client of the wanted type, testing the connection
+// unless a test passed a moment ago.
 //
 // A data source that cannot serve the client asked for is an error
 // rather than a status the caller has to inspect: there is nothing to
@@ -136,19 +453,14 @@ func connect[C any](ctx context.Context, r *runner, allowed ...Type) (C, error) 
 		return zero, processor.ConnectionStatusInvalidEncryptionKey.Error()
 	}
 
-	if err := r.ensurePrepared(); err != nil {
-		return zero, err
+	if r.clientErr != nil {
+		return zero, r.clientErr
 	}
 
-	cs, err := r.client.TestConnection(ctx)
-	if err != nil {
+	r = r.m.adopt(r)
+
+	if err := r.ensureTested(ctx); err != nil {
 		return zero, err
-	}
-
-	r.recordStatus(ctx, cs)
-
-	if serr := cs.Error(); serr != nil {
-		return zero, serr
 	}
 
 	client, ok := r.client.(C)
@@ -161,6 +473,68 @@ func connect[C any](ctx context.Context, r *runner, allowed ...Type) (C, error) 
 	return client, nil
 }
 
+// ensureTested tests the connection unless it passed a test within
+// _statusTTL, and records what it found. A failing test drops the runner,
+// so the next call starts over with new connections and a new test.
+//
+// One call at a time tests a data source, and the calls waiting behind it
+// reuse what it found, a failure included. A document opening many charts
+// at once would otherwise test the same connection once per chart.
+func (r *runner) ensureTested(ctx context.Context) error {
+	unlock, err := r.m.tests.Lock(ctx, r.ds.ID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	fresh := timeutil.Now().Sub(r.testedAt) < _statusTTL
+
+	// the calls that waited behind a failing test hold the runner it
+	// dropped, and the failure is their answer.
+	if fresh {
+		if serr := r.tested.Error(); serr != nil {
+			return serr
+		}
+	}
+
+	// a runner the manager let go has its connections closed, so it can
+	// neither hand them out nor test them.
+	if !r.m.keeps(r) {
+		return _errDataSourceChanged
+	}
+
+	if fresh {
+		return nil
+	}
+
+	cs, err := r.client.TestConnection(ctx)
+	if err != nil {
+		return err
+	}
+
+	// a test the caller gave up on says nothing about the data source, and
+	// neither does one whose connections were closed under it.
+	if cerr := ctx.Err(); cerr != nil {
+		return cerr
+	}
+
+	if !r.m.keeps(r) {
+		return _errDataSourceChanged
+	}
+
+	r.recordStatus(ctx, cs)
+	r.testedAt = timeutil.Now()
+	r.tested = cs
+
+	if serr := cs.Error(); serr != nil {
+		r.m.drop(r)
+
+		return serr
+	}
+
+	return nil
+}
+
 // recordStatus keeps the stored status honest about what the connection
 // last reported.
 //
@@ -169,63 +543,23 @@ func connect[C any](ctx context.Context, r *runner, allowed ...Type) (C, error) 
 // source, and what its row says about connectivity is not the answer
 // they were waiting for.
 func (r *runner) recordStatus(ctx context.Context, cs processor.ConnectionStatus) {
-	if cs == r.ds.Status || r.store == nil {
+	r.m.mu.Lock()
+	unchanged := cs == r.status
+	r.status = cs
+	r.m.mu.Unlock()
+
+	if unchanged || r.m.store == nil {
 		return
 	}
 
-	r.ds.Status = cs
-
-	if err := r.store.UpdateDataSourceStatus(ctx, r.ds.ID, r.ds.OrganizationID, cs); err != nil {
-		r.log.Error(
+	if err := r.m.store.UpdateDataSourceStatus(ctx, r.ds.ID, r.ds.OrganizationID, cs); err != nil {
+		r.m.log.Error(
 			"cannot record data source status",
 			slog.String("data_source_id", r.ds.ID.String()),
 			slog.String("status", string(cs)),
 			slog.String("error", err.Error()),
 		)
 	}
-}
-
-// ensurePrepared builds the processor this data source's type calls for.
-func (r *runner) ensurePrepared() error {
-	if r.prepared {
-		return nil
-	}
-
-	switch r.ds.Type {
-	case TypePrometheus:
-		client, err := r.prometheusClient()
-		if err != nil {
-			return err
-		}
-
-		r.client = client
-	case TypePostgreSQL:
-		r.client = processor.NewPostgreSQL(newStateInput(r.ds.URL, r.ds.Credentials))
-	case TypeMariaDB, TypeMySQL:
-		r.client = processor.NewMySQL(newStateInput(r.ds.URL, r.ds.Credentials))
-	default:
-		return errors.New("invalid data source type")
-	}
-
-	r.prepared = true
-
-	return nil
-}
-
-// prometheusClient resolves which Prometheus a data source speaks to. The
-// demo scheme names a source this process synthesizes rather than one it
-// dials, and only the one demo source exists — a URL that merely looks
-// like it is a mistake worth reporting, not a second demo.
-func (r *runner) prometheusClient() (connectionTester, error) {
-	if r.ds.URL == demo.URL {
-		return r.demo, nil
-	}
-
-	if strings.HasPrefix(r.ds.URL, demo.Scheme) {
-		return nil, demo.ErrUnknownSource
-	}
-
-	return processor.NewPrometheus(newStateInput(r.ds.URL, r.ds.Credentials)), nil
 }
 
 // Runner operates one data source: it hands out the typed client for
@@ -252,6 +586,9 @@ type Runner interface {
 
 	// SQL should return the data source's dialect-agnostic SQL client.
 	SQL(ctx context.Context) (SQL, error)
+
+	// Logs should return the data source's log client.
+	Logs(ctx context.Context) (Logs, error)
 }
 
 // StatusStore records what a data source's connection last reported.
@@ -318,9 +655,41 @@ type MySQL interface {
 	Query(ctx context.Context, q string, tr processor.TimeRange) (*processor.MySQLQueryResult, error)
 }
 
+// Logs represents a log data source processor.
+//
+//go:generate ../../scripts/codegen/mock Logs logs
+type Logs interface {
+	connectionTester
+
+	// Logs should read one page of the lines q matches in the window.
+	Logs(ctx context.Context, q string, tr processor.TimeRange, page processor.LogsPage) (*processor.LogsResult, error)
+
+	// LogsVolume should count the lines q matches per time bucket, split
+	// by level.
+	LogsVolume(ctx context.Context, q string, tr processor.TimeRange) (*processor.QueryResult, error)
+
+	// LogFields should list the field names the lines carry in the
+	// window, narrowed to the lines q matches when q is given.
+	LogFields(ctx context.Context, q string, tr processor.TimeRange) (*processor.LogFieldsResult, error)
+
+	// LogFieldValues should list the values one field takes in the
+	// window, narrowed to the lines q matches when q is given.
+	LogFieldValues(ctx context.Context, field, q string, tr processor.TimeRange) (*processor.LogFieldValuesResult, error)
+}
+
 // connectionTester is what every processor can do regardless of what it
 // speaks.
 type connectionTester interface {
 	// TestConnection tests the data source connection.
 	TestConnection(ctx context.Context) (processor.ConnectionStatus, error)
+}
+
+// ownedClient is the processor a runner owns. Close stays off the
+// interfaces the accessors hand out: their callers share the connections
+// it closes.
+type ownedClient interface {
+	connectionTester
+
+	// Close closes the connections the processor holds.
+	io.Closer
 }

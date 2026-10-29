@@ -120,10 +120,10 @@ export default defineConfig({
 			// grow. 100% is not the target: genuinely untestable branches
 			// stay visible in the report, marked with NOCOV comments in place
 			thresholds: {
-				statements: 83.9,
-				branches: 74,
-				functions: 86.9,
-				lines: 84.1,
+				statements: 89.4,
+				branches: 80.7,
+				functions: 92.6,
+				lines: 89.6,
 			},
 		},
 

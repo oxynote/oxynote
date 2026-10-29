@@ -6,6 +6,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/rs/xid"
 )
@@ -68,4 +69,30 @@ func (a *agent) FetchRecentlyViewedDocuments(
 	}
 
 	return docs, nil
+}
+
+// FetchDocumentBranchViews fetches the latest view of the branch by each
+// user in the organization, most recent first.
+func (a *agent) FetchDocumentBranchViews(
+	ctx context.Context,
+	branchID xid.ID,
+	organizationID string,
+) ([]document.BranchView, error) {
+	q, args := a.builder.Select("fk_user_id", "viewed_at").
+		From("document_branch_views").
+		Where(sq.Eq{
+			"fk_branch_id":       branchID,
+			"fk_organization_id": organizationID,
+			"viewed_from":        search.ViewFromAll,
+		}).
+		OrderBy("viewed_at DESC", "fk_user_id ASC").
+		MustSql()
+
+	views := []document.BranchView{}
+
+	if err := sqlx.SelectContext(ctx, a.sql, &views, q, args...); err != nil {
+		return nil, err
+	}
+
+	return views, nil
 }

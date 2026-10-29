@@ -63,10 +63,11 @@ function draw(kind: AvatarKind, seed: string) {
 		})
 	}
 
-	// the seed picks between a still planet and the slowest animation
+	// always a still planet. The browser redraws an animated one on every
+	// frame for as long as the page is open
 	return new Avatar(organizationStyle, {
 		seed,
-		animationVariant: ["none", "slowest"],
+		animationVariant: "none",
 		planetColor: PLANET_COLORS,
 		starVariant: ["large", "sparkle"],
 		moonsVariant: ["one", "two"],

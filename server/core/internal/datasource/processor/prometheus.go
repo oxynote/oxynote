@@ -38,6 +38,12 @@ func NewPrometheus(inp Input) *Prometheus {
 	}
 }
 
+// Close does nothing: the connections a Prometheus client opens belong to
+// the transport every client shares.
+func (p *Prometheus) Close() error {
+	return nil
+}
+
 // TestConnection tests the connection to the Prometheus data source.
 func (p *Prometheus) TestConnection(ctx context.Context) (ConnectionStatus, error) {
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
@@ -263,6 +269,61 @@ type PrometheusQueryResult struct {
 
 	// Result contains the query result data.
 	Result any `json:"result,omitempty"`
+}
+
+// UnmarshalJSON decodes the result into the model type a range query
+// answers with, a matrix, so a result that went through JSON reads like the
+// one QueryRange returned. Any other result is kept as it decodes.
+func (pqr *PrometheusQueryResult) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Warnings []string        `json:"warnings"`
+		Type     model.ValueType `json:"type"`
+		Result   json.RawMessage `json:"result"`
+	}
+
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("decoding prometheus query result: %w", err)
+	}
+
+	*pqr = PrometheusQueryResult{
+		Warnings: raw.Warnings,
+		Type:     raw.Type,
+	}
+
+	if len(raw.Result) == 0 {
+		return nil
+	}
+
+	if raw.Type == model.ValMatrix {
+		var matrix model.Matrix
+
+		if err := json.Unmarshal(raw.Result, &matrix); err != nil {
+			return fmt.Errorf("decoding prometheus matrix: %w", err)
+		}
+
+		pqr.Result = matrix
+
+		return nil
+	}
+
+	// NOCOV: raw.Result was cut out of a document that decoded, so it
+	// decodes on its own as well.
+	if err := json.Unmarshal(raw.Result, &pqr.Result); err != nil {
+		return fmt.Errorf("decoding prometheus query result: %w", err)
+	}
+
+	return nil
+}
+
+// HasData reports whether the result holds any series.
+func (pqr *PrometheusQueryResult) HasData() bool {
+	if pqr == nil {
+		return false
+	}
+
+	matrix, ok := pqr.Result.(model.Matrix)
+
+	return ok && len(matrix) > 0
 }
 
 // Transform transforms a PrometheusQueryResult into a unified QueryResult

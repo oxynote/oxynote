@@ -9,7 +9,6 @@ import (
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
-	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -97,39 +96,37 @@ func Test_URLWatcher_Process(t *testing.T) {
 	changed := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	cc := map[string]struct {
-		CD      *fakeChangeDetection
-		State   State
-		Score   decimal.Decimal
-		Status  Status
-		Fetched []string
-		Created []string
-		Updated [][2]string
-		Err     error
+		CD        *fakeChangeDetection
+		State     State
+		Triggered bool
+		Status    Status
+		Fetched   []string
+		Created   []string
+		Updated   [][2]string
+		Err       error
 	}{
-		"Unchanged watch keeps the full score": {
+		"Unchanged watch is not triggered": {
 			CD: &fakeChangeDetection{
 				watch: &webchange.Watch{URL: "https://example.com", LastChangedAt: changed},
 			},
 			State:   watcherState(t, "w-1", null.TimeFrom(changed)),
-			Score:   decimal.NewFromInt(100),
 			Status:  StatusActive,
 			Fetched: []string{"w-1"},
 		},
-		"Newer change drops the score to zero": {
+		"Newer change triggers": {
 			CD: &fakeChangeDetection{
 				watch: &webchange.Watch{URL: "https://example.com", LastChangedAt: changed.Add(time.Hour)},
 			},
-			State:   watcherState(t, "w-1", null.TimeFrom(changed)),
-			Score:   decimal.Zero,
-			Status:  StatusActive,
-			Fetched: []string{"w-1"},
+			State:     watcherState(t, "w-1", null.TimeFrom(changed)),
+			Triggered: true,
+			Status:    StatusActive,
+			Fetched:   []string{"w-1"},
 		},
 		"Missing baseline adopts the watch timestamp": {
 			CD: &fakeChangeDetection{
 				watch: &webchange.Watch{URL: "https://example.com", LastChangedAt: changed},
 			},
 			State:   watcherState(t, "w-1", null.Time{}),
-			Score:   decimal.NewFromInt(100),
 			Status:  StatusActive,
 			Fetched: []string{"w-1"},
 		},
@@ -146,7 +143,6 @@ func Test_URLWatcher_Process(t *testing.T) {
 				watch: &webchange.Watch{URL: "https://old.example.com", LastChangedAt: changed},
 			},
 			State:   watcherState(t, "w-1", null.TimeFrom(changed)),
-			Score:   decimal.NewFromInt(100),
 			Status:  StatusActive,
 			Fetched: []string{"w-1", "w-1"},
 			Updated: [][2]string{{"w-1", "https://example.com"}},
@@ -157,7 +153,6 @@ func Test_URLWatcher_Process(t *testing.T) {
 				createdID: "w-new",
 			},
 			State:   watcherState(t, "w-1", null.Time{}),
-			Score:   decimal.NewFromInt(100),
 			Status:  StatusActive,
 			Fetched: []string{"w-1", "w-1"},
 			Created: []string{"https://example.com"},
@@ -199,7 +194,7 @@ func Test_URLWatcher_Process(t *testing.T) {
 			}
 
 			assert.Equal(t, c.Status, res.Status)
-			assert.True(t, res.Score.Equal(c.Score), "score %s", res.Score)
+			assert.Equal(t, c.Triggered, res.Triggered)
 
 			if c.Status != StatusActive {
 				assert.Nil(t, res.State)
@@ -227,7 +222,6 @@ func Test_URLWatcher_Reset(t *testing.T) {
 			Created: []string{"https://example.com"},
 			Result: Result{
 				Status: StatusActive,
-				Score:  decimal.NewFromInt(100),
 				State:  watcherState(t, "w-new", null.Time{}),
 			},
 		},
@@ -239,7 +233,6 @@ func Test_URLWatcher_Reset(t *testing.T) {
 			Fetched: []string{"w-1"},
 			Result: Result{
 				Status: StatusActive,
-				Score:  decimal.NewFromInt(100),
 				State:  watcherState(t, "w-1", null.TimeFrom(changed)),
 			},
 		},
@@ -252,7 +245,6 @@ func Test_URLWatcher_Reset(t *testing.T) {
 			Updated: [][2]string{{"w-1", "https://example.com"}},
 			Result: Result{
 				Status: StatusActive,
-				Score:  decimal.NewFromInt(100),
 				State:  watcherState(t, "w-1", null.Time{}),
 			},
 		},
@@ -266,7 +258,6 @@ func Test_URLWatcher_Reset(t *testing.T) {
 			Created: []string{"https://example.com"},
 			Result: Result{
 				Status: StatusActive,
-				Score:  decimal.NewFromInt(100),
 				State:  watcherState(t, "w-new", null.Time{}),
 			},
 		},
@@ -315,7 +306,7 @@ func Test_URLWatcher_Reset(t *testing.T) {
 			}
 
 			assert.Equal(t, c.Result.Status, res.Status)
-			assert.True(t, res.Score.Equal(c.Result.Score), "score %s", res.Score)
+			assert.Equal(t, c.Result.Triggered, res.Triggered)
 			assert.Equal(t, c.Result.State, res.State)
 		})
 	}

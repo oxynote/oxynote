@@ -26,6 +26,10 @@ const (
 	_jsonNumericSize = 8
 )
 
+// _errClosed is returned when a closed processor is asked for a
+// connection.
+var _errClosed = errors.New("the data source processor is closed")
+
 // ConnectionStatus represents the status of a connection test.
 type ConnectionStatus string
 

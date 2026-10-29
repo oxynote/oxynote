@@ -451,7 +451,7 @@ describe("<NameEditor>", { concurrent: false }, () => {
 					id: "hook-1",
 					type: DocumentHookType.URLWatcher,
 					blockId: null,
-					score: "100",
+					triggered: false,
 					settings: { url: "https://oxynote.test" },
 					state: {},
 					status: "active",
@@ -460,7 +460,7 @@ describe("<NameEditor>", { concurrent: false }, () => {
 					id: "hook-2",
 					type: DocumentHookType.URLWatcher,
 					blockId: "block-1",
-					score: "100",
+					triggered: false,
 					settings: { url: "https://other.test" },
 					state: {},
 					status: "active",
@@ -734,7 +734,7 @@ describe("<NameEditor>", { concurrent: false }, () => {
 					id: "hook-1",
 					type: DocumentHookType.URLWatcher,
 					blockId: null,
-					score: "0",
+					triggered: true,
 					settings: { url: "https://oxynote.test" },
 					state: {},
 					status: "active",
@@ -762,7 +762,7 @@ describe("<NameEditor>", { concurrent: false }, () => {
 		{
 			name: "stripes the page's hook icon and bar when one hook triggered and another failed",
 			input: () => [
-				{ ...pageHook("a.test"), score: "0" },
+				{ ...pageHook("a.test"), triggered: true },
 				{ ...pageHook("b.test"), status: FAILED_STATUS },
 			],
 			expected: { status: "mixed", bar: "bg-hook-status-mixed" },
@@ -770,7 +770,7 @@ describe("<NameEditor>", { concurrent: false }, () => {
 		{
 			name: "ignores the hooks of blocks when it colours the page's hook icon and bar",
 			input: () => [
-				{ ...pageHook("a.test"), score: "0" },
+				{ ...pageHook("a.test"), triggered: true },
 				{ ...pageHook("b.test"), blockId: "block-1", status: FAILED_STATUS },
 			],
 			expected: { status: "triggered", bar: "bg-hook-status-triggered" },
@@ -990,7 +990,7 @@ function pageHook(url: string): DocumentHook {
 		crossBranchId: url,
 		type: DocumentHookType.URLWatcher,
 		blockId: null,
-		score: "100",
+		triggered: false,
 		settings: { url: url },
 		state: {},
 		status: "active",

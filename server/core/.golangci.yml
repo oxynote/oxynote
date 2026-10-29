@@ -261,6 +261,13 @@ linters:
       - linters:
           - gochecknoglobals
         text: ^_.+
+      # unexported globals are _-prefixed, error sentinels included, which
+      # the error naming checks expect to start with err.
+      - linters:
+          - errname
+          - revive
+          - staticcheck
+        text: '(sentinel error name `|error var )_err[A-Z]'
       # the demo registry is tuned sampling parameters read as a block: every
       # bound, target and spike chance is one row of demo tuning, not a
       # threshold logic branches on. Naming each would bury the table, and a

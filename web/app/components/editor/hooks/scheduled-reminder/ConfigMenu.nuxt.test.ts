@@ -54,15 +54,15 @@ function reminderHook(overrides: Partial<DocumentHook> = {}) {
 		type: DocumentHookType.ScheduledReminder,
 		documentId: DOCUMENT_ID,
 		branchId: BRANCH_ID,
-		settings: { scale: "linear", duration: "24h", schedule: SCHEDULE },
-		state: { lastActiveAt: NOW },
+		settings: { duration: "24h", schedule: SCHEDULE },
+		state: {},
 		...overrides,
 	})
 }
 
 function customReminderHook(overrides: Partial<DocumentHook> = {}) {
 	return reminderHook({
-		settings: { scale: "linear", duration: "custom", schedule: SCHEDULE },
+		settings: { duration: "custom", schedule: SCHEDULE },
 		...overrides,
 	})
 }
@@ -126,7 +126,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 	it("says how long ago a triggered reminder went out", async ({ expect }) => {
 		vi.setSystemTime(new Date(SCHEDULE.getTime() + DAY_MS))
 
-		await mountMenu({ hook: reminderHook({ score: "0" }) })
+		await mountMenu({ hook: reminderHook({ triggered: true }) })
 
 		expect(menuText()).toContain(
 			t("editor.hooks.subtext-detail", {
@@ -182,7 +182,6 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 			branchId: BRANCH_ID,
 			blockId: "block-1",
 			settings: {
-				scale: "linear",
 				duration: "24h",
 				schedule: new Date(NOW.getTime() + DAY_MS).toISOString(),
 			},
@@ -363,7 +362,6 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 		}, WAIT_FOR_OPTIONS)
 		expect(calls[0]?.body).toEqual({
 			settings: {
-				scale: "linear",
 				duration: "72h",
 				schedule: new Date(NOW.getTime() + 3 * DAY_MS).toISOString(),
 			},
@@ -392,7 +390,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("asks for a new pick on a triggered reminder", async ({ expect }) => {
-		const wrapper = await mountMenu({ hook: reminderHook({ score: "0" }) })
+		const wrapper = await mountMenu({ hook: reminderHook({ triggered: true }) })
 
 		await openHookSubMenu(t(TITLE))
 
@@ -411,7 +409,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 		})
 		const wrapper = await mountHookMenu(ConfigMenu, props)
 
-		props.hook = reminderHook({ score: "0" })
+		props.hook = reminderHook({ triggered: true })
 		await nextTick()
 
 		expect(wrapper.findComponent(Select).exists()).toBe(false)
@@ -420,7 +418,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("tells when a triggered reminder went out", async ({ expect }) => {
-		await mountMenu({ hook: reminderHook({ score: "0" }) })
+		await mountMenu({ hook: reminderHook({ triggered: true }) })
 
 		await openHookSubMenu(t(TITLE))
 
@@ -434,7 +432,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 
 	it("renews a triggered reminder", async ({ expect }) => {
 		const calls = mockEndpoint("PUT", HOOK_PATH, () => ({ id: HOOK_ID }))
-		const wrapper = await mountMenu({ hook: reminderHook({ score: "0" }) })
+		const wrapper = await mountMenu({ hook: reminderHook({ triggered: true }) })
 		await openHookSubMenu(t(TITLE))
 		await pickDuration(wrapper, "72h")
 
@@ -445,7 +443,6 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 		}, WAIT_FOR_OPTIONS)
 		expect(calls[0]?.body).toEqual({
 			settings: {
-				scale: "linear",
 				duration: "72h",
 				schedule: new Date(NOW.getTime() + 3 * DAY_MS).toISOString(),
 			},
@@ -460,7 +457,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 
 			return { message: "boom" }
 		})
-		const wrapper = await mountMenu({ hook: reminderHook({ score: "0" }) })
+		const wrapper = await mountMenu({ hook: reminderHook({ triggered: true }) })
 		await openHookSubMenu(t(TITLE))
 		await pickDuration(wrapper, "72h")
 
@@ -522,7 +519,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 
 		it("renews a triggered reminder by its own preset", async ({ expect }) => {
 			const calls = mockEndpoint("PUT", HOOK_PATH, () => ({ id: HOOK_ID }))
-			await mountMenu({ hook: reminderHook({ score: "0" }) })
+			await mountMenu({ hook: reminderHook({ triggered: true }) })
 			await openHookSubMenu(t(TITLE))
 
 			menuButton(
@@ -534,7 +531,6 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 			}, WAIT_FOR_OPTIONS)
 			expect(calls[0]?.body).toEqual({
 				settings: {
-					scale: "linear",
 					duration: "24h",
 					schedule: new Date(NOW.getTime() + DAY_MS).toISOString(),
 				},
@@ -547,7 +543,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 
 				return { message: "boom" }
 			})
-			await mountMenu({ hook: reminderHook({ score: "0" }) })
+			await mountMenu({ hook: reminderHook({ triggered: true }) })
 			await openHookSubMenu(t(TITLE))
 
 			menuButton(
@@ -564,7 +560,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 		it("renews nothing for a reminder without a preset", async ({ expect }) => {
 			const calls = mockEndpoint("PUT", HOOK_PATH, () => ({ id: HOOK_ID }))
 			const wrapper = await mountMenu({
-				hook: customReminderHook({ score: "0" }),
+				hook: customReminderHook({ triggered: true }),
 			})
 			await openHookSubMenu(t(TITLE))
 
@@ -577,7 +573,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 		it("says a triggered custom reminder will not repeat", async ({
 			expect,
 		}) => {
-			await mountMenu({ hook: customReminderHook({ score: "0" }) })
+			await mountMenu({ hook: customReminderHook({ triggered: true }) })
 
 			await openHookSubMenu(t(TITLE))
 
@@ -601,7 +597,10 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 		])(
 			"says when a triggered reminder on $name went out",
 			async ({ nodeId, key }, { expect }) => {
-				await mountMenu({ hook: reminderHook({ score: "0" }), nodeId: nodeId })
+				await mountMenu({
+					hook: reminderHook({ triggered: true }),
+					nodeId: nodeId,
+				})
 
 				await openHookSubMenu(t(TITLE))
 
@@ -628,7 +627,6 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 					status: DiffStatus.Modified,
 					targetHook: reminderHook({
 						settings: {
-							scale: "linear",
 							duration: "24h",
 							schedule: oldSchedule,
 						},
@@ -666,7 +664,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 		it("keeps a triggered reminder from being renewed", async ({ expect }) => {
 			useEditorMeta().setEditable(false)
 			await mountMenu({
-				hook: reminderHook({ score: "0" }),
+				hook: reminderHook({ triggered: true }),
 				diff: {
 					status: DiffStatus.Unchanged,
 					targetHook: null,

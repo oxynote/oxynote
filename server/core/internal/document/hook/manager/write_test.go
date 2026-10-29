@@ -589,13 +589,13 @@ func Test_Manager_DeleteHook(t *testing.T) {
 		"Hook another write holds": {
 			Held: true,
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				return stubHook(t, branchID, time.Now().Add(time.Hour))
 			},
 			Err: context.DeadlineExceeded,
 		},
 		"Error returned by db.FetchDocumentHook": {
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				return stubHook(t, branchID, time.Now().Add(time.Hour))
 			},
 			FetchErr: sql.ErrNoRows,
 			Fetches:  1,
@@ -603,7 +603,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 		},
 		"Hook of another document": {
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				return stubHook(t, branchID, time.Now().Add(time.Hour))
 			},
 			OtherDocument: true,
 			Fetches:       1,
@@ -611,7 +611,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 		},
 		"Error returned by db.FetchDocumentByBranchID": {
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				return stubHook(t, branchID, time.Now().Add(time.Hour))
 			},
 			BranchFetchErr: sql.ErrNoRows,
 			Fetches:        1,
@@ -620,7 +620,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 		},
 		"Hook on a protected branch is refused": {
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				return stubHook(t, branchID, time.Now().Add(time.Hour))
 			},
 			Protected:     true,
 			Fetches:       1,
@@ -629,7 +629,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 		},
 		"Error returned by flusher.Flush": {
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				return stubHook(t, branchID, time.Now().Add(time.Hour))
 			},
 			FlushErr:      assert.AnError,
 			Fetches:       1,
@@ -664,7 +664,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 		},
 		"Error returned by db.BeginTx": {
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				return stubHook(t, branchID, time.Now().Add(time.Hour))
 			},
 			BeginErr:      assert.AnError,
 			Fetches:       1,
@@ -675,7 +675,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 		},
 		"Error returned by tx.DeleteDocumentHook": {
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				return stubHook(t, branchID, time.Now().Add(time.Hour))
 			},
 			DelErr:        assert.AnError,
 			Fetches:       1,
@@ -688,7 +688,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 		},
 		"Error returned by tx.RecordDocumentBranchHistoryEntry": {
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				return stubHook(t, branchID, time.Now().Add(time.Hour))
 			},
 			RecordErr:     assert.AnError,
 			Fetches:       1,
@@ -702,7 +702,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 		},
 		"Error returned by tx.Commit": {
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				return stubHook(t, branchID, time.Now().Add(time.Hour))
 			},
 			CommitErr:     assert.AnError,
 			Fetches:       1,
@@ -733,7 +733,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 		},
 		"Hook without a branch has no history": {
 			Hook: func(t *testing.T) hook.Hook {
-				hk := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				hk := stubHook(t, branchID, time.Now().Add(time.Hour))
 				hk.BranchID = null.Value[xid.ID]{}
 
 				return hk
@@ -746,7 +746,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 		},
 		"Successful deletion": {
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				return stubHook(t, branchID, time.Now().Add(time.Hour))
 			},
 			Fetches:       1,
 			BranchFetches: 1,
@@ -885,13 +885,13 @@ func Test_Manager_ResetHook(t *testing.T) {
 		"Hook another write holds": {
 			Held: true,
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				return stubHook(t, branchID, time.Now().Add(time.Hour))
 			},
 			Err: context.DeadlineExceeded,
 		},
 		"Error returned by db.FetchDocumentHook": {
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				return stubHook(t, branchID, time.Now().Add(time.Hour))
 			},
 			FetchErr: sql.ErrNoRows,
 			Fetches:  1,
@@ -899,7 +899,7 @@ func Test_Manager_ResetHook(t *testing.T) {
 		},
 		"Hook of another document": {
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				return stubHook(t, branchID, time.Now().Add(time.Hour))
 			},
 			OtherDocument: true,
 			Fetches:       1,
@@ -946,7 +946,10 @@ func Test_Manager_ResetHook(t *testing.T) {
 		},
 		"Successful reset": {
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now().Add(-time.Hour))
+				h := stubHook(t, branchID, time.Now().Add(time.Hour))
+				h.Triggered = true
+
+				return h
 			},
 			Fetches: 1,
 			Updates: 1,
@@ -1031,6 +1034,7 @@ func Test_Manager_ResetHook(t *testing.T) {
 
 			assert.Equal(t, *hk, ff[0].Hk)
 			assert.Equal(t, c.Status, hk.Status)
+			assert.False(t, hk.Triggered)
 			assert.True(t, hk.UpdatedAt.Valid)
 			assert.Equal(t, []hook.Hook{*hk}, changes)
 		})

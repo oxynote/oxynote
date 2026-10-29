@@ -571,7 +571,7 @@ func Test_replaceBlocks_Summary(t *testing.T) {
 			DB:                           stubContentDB(nil),
 			Args:                         `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"zzz","content":"<p>x</p>"}`,
 			FetchDocumentByBranchIDCalls: 1,
-			Err:                          fmt.Errorf("block %s: %w", "zzz", errUnknownBlock),
+			Err:                          fmt.Errorf("block %s: %w", "zzz", _errUnknownBlock),
 		},
 		"Error returned by db.FetchDocumentByBranchID": {
 			DB:                           failingDocumentDB(),

@@ -13,7 +13,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
-	"github.com/shopspring/decimal"
 )
 
 // ErrInvalidType is returned when a hook carries a type the processors do
@@ -125,11 +124,13 @@ type Hook struct {
 	State null.Value[processor.State] `json:"state" db:"state"`
 
 	// Status tells whether the hook could check its target on its last run.
-	// Score and state are left as they were while it is not active.
+	// The triggered flag and state are left as they were while it is not
+	// active.
 	Status processor.Status `json:"status" db:"status"`
 
-	// Score is the freshness score of the hook.
-	Score decimal.Decimal `json:"score" db:"score"`
+	// Triggered indicates that what the hook watches changed or came due
+	// since its last reset.
+	Triggered bool `json:"triggered" db:"triggered"`
 
 	// CreatedAt is the time when the hook was created.
 	CreatedAt time.Time `json:"createdAt" db:"created_at"`
@@ -179,8 +180,8 @@ func NewHook(
 
 // NewCopy returns a copy of the hook for another branch, anchored to the
 // given block. The copy is initializing, with no state, since the source's
-// state may name the source's own watcher. It keeps the score, so its
-// first run does not announce a change the source already had. A copy
+// state may name the source's own watcher. It keeps the triggered flag, so
+// its first run does not announce a change the source already had. A copy
 // within the document keeps the cross-branch ID.
 func (h *Hook) NewCopy(documentID, branchID xid.ID, blockID null.String) Hook {
 	id := xid.New()
@@ -195,7 +196,7 @@ func (h *Hook) NewCopy(documentID, branchID xid.ID, blockID null.String) Hook {
 		BlockID:        blockID,
 		Settings:       h.Settings,
 		Status:         processor.StatusInitializing,
-		Score:          h.Score,
+		Triggered:      h.Triggered,
 		CreatedAt:      timeutil.Now(),
 	}
 
@@ -220,8 +221,8 @@ func (h *Hook) ApplyUpdate(ctx context.Context, ui UpdateInput, inp *Input) erro
 	return h.setUp(ctx, inp)
 }
 
-// Process processes the hook and updates its score and state. A hook that
-// was never set up is reset instead.
+// Process processes the hook and updates its triggered flag and state. A
+// hook that was never set up is reset instead.
 func (h *Hook) Process(ctx context.Context, inp *Input) error {
 	if !h.State.Valid {
 		return h.Reset(ctx, inp)
@@ -289,13 +290,13 @@ func (h *Hook) Summary() (any, error) {
 // show of it.
 func (h *Hook) ChangedFrom(prev Hook) bool {
 	return h.Status != prev.Status ||
-		!h.Score.Equal(prev.Score) ||
+		h.Triggered != prev.Triggered ||
 		h.State.Valid != prev.State.Valid ||
 		h.SoftDeletedAt.Valid != prev.SoftDeletedAt.Valid
 }
 
 // apply stores a run's result. A run that could not check its target
-// leaves the score and state as they were.
+// leaves the triggered flag and state as they were.
 func (h *Hook) apply(res processor.Result) {
 	h.Status = res.Status
 
@@ -303,7 +304,7 @@ func (h *Hook) apply(res processor.Result) {
 		return
 	}
 
-	h.Score = res.Score
+	h.Triggered = res.Triggered
 	h.State = null.ValueFrom(res.State)
 }
 
@@ -441,7 +442,7 @@ type runner interface {
 	// Validate checks the settings without reaching any service.
 	Validate() error
 
-	// Process calculates the freshness score for the hook.
+	// Process should check the hook's target and say whether it triggered.
 	Process(ctx context.Context, inp processor.Input) (processor.Result, error)
 
 	// Reset resets the state of the hook to its initial state.

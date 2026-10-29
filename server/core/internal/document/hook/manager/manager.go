@@ -247,11 +247,11 @@ func (m *Manager) runHook(ctx context.Context, doc *document.Document, h *hook.H
 		}
 	}
 
-	// a soft-deleted hook's block is gone, so its score describes nothing.
+	// a soft-deleted hook's block is gone, so its result describes nothing.
 	// The mark is still stored, since it starts the retention clock.
 	if !h.SoftDeletedAt.Valid {
 		if err := h.Process(ctx, m.input(h.OrganizationID.String)); err != nil {
-			// a failed run keeps the stored score and state.
+			// a failed run keeps the stored triggered flag and state.
 			m.log.With("hook_id", h.ID).
 				With("error", err).
 				Error("processing document hook")
@@ -319,7 +319,7 @@ func (m *Manager) deleteHook(ctx context.Context, h hook.Hook) bool {
 }
 
 // notifyTransition tells the document's maintainers when an active hook
-// ran out of freshness, or when a hook can no longer check its target.
+// triggers, or when a hook can no longer check its target.
 // Both fire on the transition only.
 func (m *Manager) notifyTransition(ctx context.Context, prev, h hook.Hook) {
 	var core notification.Core
@@ -334,9 +334,7 @@ func (m *Manager) notifyTransition(ctx context.Context, prev, h hook.Hook) {
 			h.Status,
 			h.Settings,
 		)
-	// a scheduled reminder decays through 99…1, so the transition is the
-	// arrival at zero, not a drop from full.
-	case h.Status == processor.StatusActive && !prev.Score.IsZero() && h.Score.IsZero():
+	case h.Status == processor.StatusActive && !prev.Triggered && h.Triggered:
 		summary, err := h.Summary()
 		if err != nil {
 			// the notification still goes out without the summary.

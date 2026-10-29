@@ -176,6 +176,34 @@ describe("01.redirect.global", { concurrent: false }, () => {
 			)
 		})
 
+		it.for([
+			{
+				name: "sends a session without an organization on to the invitation it was heading to",
+				input: "/accept-invite?id=invite-1",
+				expected: ["/accept-invite?id=invite-1", { replace: true }],
+			},
+			{
+				name: "sends a session without an organization to onboarding rather than any other next page",
+				input: "/Some-Org/some-doc",
+				expected: [{ name: "onboarding" }, { replace: true }],
+			},
+		])("$name", async ({ input, expected }, { expect }) => {
+			arrange({ session: { activeOrganizationId: null } })
+
+			const result = await redirectMiddleware(
+				route({
+					name: "login",
+					path: "/login",
+					skipAuth: true,
+					query: { next: encodeURIComponent(input) },
+				}),
+				route({}),
+			)
+
+			expect(result).toBe("navigated")
+			expect(navigateToMock).toHaveBeenCalledExactlyOnceWith(...expected)
+		})
+
 		it("keeps an onboarded user away from onboarding", async ({ expect }) => {
 			arrange({ session: { activeOrganizationId: "org1" } })
 

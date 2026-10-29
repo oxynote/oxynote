@@ -343,3 +343,27 @@ func Test_registry_labelValues(t *testing.T) {
 		})
 	}
 }
+
+func Test_registry_bucketValue(t *testing.T) {
+	reg := newRegistry()
+
+	cc := map[string]struct {
+		Family string
+		Bucket string
+		Found  bool
+	}{
+		"Bucket of a family": {Family: _namespace + "friday_deploys_count", Bucket: "attempted", Found: true},
+		"Unlabelled family":  {Family: _namespace + "pr_time_to_first_review_minutes", Bucket: "", Found: true},
+		"Unknown bucket":     {Family: _namespace + "friday_deploys_count", Bucket: "cancelled", Found: false},
+		"Unknown family":     {Family: _namespace + "coffee_count", Bucket: "attempted", Found: false},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			value := reg.bucketValue(c.Family, c.Bucket)
+			assert.Equal(t, c.Found, value != nil)
+		})
+	}
+}

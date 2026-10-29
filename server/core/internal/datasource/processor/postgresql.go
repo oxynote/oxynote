@@ -6,12 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -25,6 +28,9 @@ const (
 
 	// _queryPayloadLimit is the maximum estimated payload size (in bytes) for a query result.
 	_queryPayloadLimit = 5 * 1024 * 1024 // 5 MB
+
+	// _pgMaxConns caps the connections one data source's pool holds.
+	_pgMaxConns = 10
 )
 
 // _pgAllowedConnKeys lists the connection-string keys a data-source URL may
@@ -41,9 +47,14 @@ var _pgAllowedConnKeys = []string{
 	"connect_timeout",
 }
 
-// PostgreSQL represents a PostgreSQL data source processor.
+// PostgreSQL represents a PostgreSQL data source processor. It keeps a
+// pool of connections to the data source until it is closed.
 type PostgreSQL struct {
 	inp Input
+
+	mu     sync.Mutex
+	pool   *pgxpool.Pool
+	closed bool
 }
 
 // NewPostgreSQL creates a new PostgreSQL data source processor.
@@ -53,30 +64,46 @@ func NewPostgreSQL(inp Input) *PostgreSQL {
 	}
 }
 
-// TestConnection tests the connection to the PostgreSQL data source.
+// Close closes the pool, waiting for the queries it is running.
+func (p *PostgreSQL) Close() error {
+	p.mu.Lock()
+	pool := p.pool
+	p.closed = true
+	p.mu.Unlock()
+
+	if pool != nil {
+		pool.Close()
+	}
+
+	return nil
+}
+
+// TestConnection tests the connection to the PostgreSQL data source. The
+// data source passes only when its account is read-only: queries run on
+// sessions nothing else makes read-only, so the account is what keeps them
+// from writing.
 func (p *PostgreSQL) TestConnection(ctx context.Context) (ConnectionStatus, error) {
-	conn, err := p.connect(ctx)
+	pool, err := p.connect(ctx)
 	if err != nil {
 		return pgConnectionStatus(err), nil
 	}
-	defer conn.Close(ctx) //nolint:errcheck // error provides no meaningful info
 
-	if err = conn.Ping(ctx); err != nil {
+	if err = pool.Ping(ctx); err != nil {
 		return pgConnectionStatus(err), nil
 	}
 
 	var readOnly bool
 
-	// connect puts the session into read-only mode, which masks
-	// current_setting; reset_val still reports the value the data source
-	// itself defines through the server, database or role.
-	err = conn.QueryRow(ctx,
+	// reset_val reports the value the data source itself defines through
+	// the server, database or role, which a SET an earlier query left on the
+	// pooled session cannot mask.
+	err = pool.QueryRow(ctx,
 		"SELECT COALESCE((SELECT reset_val FROM pg_settings "+
 			"WHERE name = 'default_transaction_read_only') = 'on', false) "+
 			"OR pg_is_in_recovery()",
 	).Scan(&readOnly)
 	if err != nil {
-		return ConnectionStatusUnreachable, nil
+		return pgConnectionStatus(err), nil
 	}
 
 	if !readOnly {
@@ -104,13 +131,12 @@ func (p *PostgreSQL) Metadata(ctx context.Context) (*SQLMetadataResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	conn, err := p.connect(ctx)
+	pool, err := p.connect(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to postgresql: %w", err)
 	}
-	defer conn.Close(ctx) //nolint:errcheck // error provides no meaningful info
 
-	rows, err := conn.Query(ctx,
+	rows, err := pool.Query(ctx,
 		"SELECT table_schema, table_name, column_name FROM information_schema.columns WHERE table_schema NOT IN ('information_schema', 'pg_catalog') ORDER BY table_schema, table_name, ordinal_position",
 	)
 	if err != nil {
@@ -127,7 +153,7 @@ func (p *PostgreSQL) Metadata(ctx context.Context) (*SQLMetadataResult, error) {
 
 	// a role with its own search_path, or a database without a public
 	// schema, would otherwise be told its tables live somewhere they do not.
-	if serr := conn.QueryRow(ctx, "SELECT current_schema()").Scan(&defaultSchema); serr != nil {
+	if serr := pool.QueryRow(ctx, "SELECT current_schema()").Scan(&defaultSchema); serr != nil {
 		return nil, fmt.Errorf("error reading the default schema: %w", serr)
 	}
 
@@ -146,13 +172,12 @@ func (p *PostgreSQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (m
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	conn, err := p.connect(ctx)
+	pool, err := p.connect(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to postgresql: %w", err)
 	}
-	defer conn.Close(ctx) //nolint:errcheck // error provides no meaningful info
 
-	rows, err := conn.Query(ctx, q)
+	rows, err := pool.Query(ctx, q)
 	if err != nil {
 		return nil, pgQueryError(err)
 	}
@@ -208,13 +233,12 @@ func (p *PostgreSQL) Query(ctx context.Context, q string, tr TimeRange) (*Postgr
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	conn, err := p.connect(ctx)
+	pool, err := p.connect(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to postgresql: %w", err)
 	}
-	defer conn.Close(ctx) //nolint:errcheck // error provides no meaningful info
 
-	rows, err := conn.Query(ctx, q)
+	rows, err := pool.Query(ctx, q)
 	if err != nil {
 		return nil, pgQueryError(err)
 	}
@@ -260,43 +284,62 @@ func (p *PostgreSQL) Query(ctx context.Context, q string, tr TimeRange) (*Postgr
 	}, nil
 }
 
-// connect creates a pgx connection using the data source URL and credentials.
+// connect returns the pool of connections to the data source, building it
+// on first use.
 //
-// Two things are locked down on every connection. The query execution mode is
-// pinned to the extended protocol whatever the data source URL asks for: under
-// the simple protocol a single stored query may carry several statements,
-// which would let a leading "SET transaction_read_only = off" disarm the
-// read-only gate. The session is then put into read-only mode, so the server
-// itself rejects any write the query text attempts instead of the code
-// trusting a status recorded earlier on a different connection.
-func (p *PostgreSQL) connect(ctx context.Context) (*pgx.Conn, error) {
+// The query execution mode is pinned to the extended protocol whatever the
+// data source URL asks for, so a stored query runs one statement and cannot
+// chain more behind it.
+func (p *PostgreSQL) connect(ctx context.Context) (*pgxpool.Pool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.closed {
+		return nil, _errClosed
+	}
+
+	if p.pool != nil {
+		return p.pool, nil
+	}
+
 	connStr, err := p.buildConnectionString()
 	if err != nil {
 		return nil, err
 	}
 
-	cfg, err := pgx.ParseConfigWithOptions(connStr, pgx.ParseConfigOptions{
+	connCfg, err := pgx.ParseConfigWithOptions(connStr, pgx.ParseConfigOptions{
 		ConnStringAllowedKeys: _pgAllowedConnKeys,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error parsing postgresql connection string: %w", err)
 	}
 
-	cfg.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
-	cfg.ConnectTimeout = _connectTimeout
+	connCfg.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
+	connCfg.ConnectTimeout = _connectTimeout
 
-	conn, err := pgx.ConnectConfig(ctx, cfg)
+	// pgxpool accepts only a config it parsed itself. What it parses here
+	// is replaced by connCfg, so the key allowlist above still decides
+	// what the URL may set.
+	cfg, err := pgxpool.ParseConfig(connStr)
 	if err != nil {
-		return nil, fmt.Errorf("error connecting to postgresql: %w", err)
+		// NOCOV: connCfg parsed the same string, and the allowlist leaves
+		// pgxpool no key of its own to reject.
+		return nil, fmt.Errorf("error parsing postgresql connection string: %w", err)
 	}
 
-	if _, err = conn.Exec(ctx, "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY"); err != nil {
-		conn.Close(ctx) //nolint:errcheck,gosec // error provides no meaningful info
+	cfg.ConnConfig = connCfg
+	cfg.MaxConns = _pgMaxConns
 
-		return nil, fmt.Errorf("error enforcing a read-only session: %w", err)
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		// NOCOV: a pool without a minimum size dials nothing here, and the
+		// config came from ParseConfig, so there is nothing left to fail.
+		return nil, fmt.Errorf("error creating postgresql pool: %w", err)
 	}
 
-	return conn, nil
+	p.pool = pool
+
+	return pool, nil
 }
 
 // buildConnectionString builds a PostgreSQL connection string from the URL and credentials.
@@ -330,6 +373,11 @@ type PostgreSQLQueryResult struct {
 	Rows [][]any `json:"rows"`
 }
 
+// HasData reports whether the result holds any row.
+func (pqr *PostgreSQLQueryResult) HasData() bool {
+	return pqr != nil && len(pqr.Rows) > 0
+}
+
 // sql returns the dialect-agnostic view of the result, which is where the
 // transformation into series lives. pgx reports no column types, so the
 // classification falls back to the values' own shape.
@@ -349,11 +397,17 @@ func (pqr *PostgreSQLQueryResult) Transform(ct ChartType) *QueryResult {
 // pgNormalizeValue converts native pgx row values into the JSON-shaped values
 // the rest of the pipeline expects (Transform, HTTP responses). Timestamps
 // become RFC3339 strings and all numeric types become float64, mirroring what
-// JSON marshaling produces for these types.
+// JSON marshaling produces for these types. The unsigned ones pgx decodes
+// (oid, xid, cid, xid8) are identifiers, so they become decimal strings and
+// stay labels.
 func pgNormalizeValue(v any) any {
 	switch val := v.(type) {
 	case time.Time:
 		return val.Format(time.RFC3339Nano)
+	case uint32:
+		return strconv.FormatUint(uint64(val), 10)
+	case uint64:
+		return strconv.FormatUint(val, 10)
 	case int64:
 		return float64(val)
 	case int32:

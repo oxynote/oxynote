@@ -130,6 +130,31 @@ func Test_MySQLQueryResult_Transform(t *testing.T) {
 				},
 			},
 		},
+		// MySQL types a $__timeGroupAlias bucket as DECIMAL, so the time
+		// arrives as a numeric string.
+		"Time column as DECIMAL string": {
+			Result: MySQLQueryResult{
+				Columns:     []string{"time", "value"},
+				ColumnTypes: []string{"DECIMAL", "BIGINT"},
+				Rows: [][]any{
+					{"1700000000", int64(10)},
+					{"1700003600", int64(20)},
+				},
+			},
+			ChartType: ChartTypeLine,
+			Expected: QueryResult{
+				Status: QueryStatusOK,
+				Data: []QueryResultSeries{
+					{
+						Labels: map[string]string{},
+						Metrics: [][2]any{
+							{int64(1700000000), float64(10)},
+							{int64(1700003600), float64(20)},
+						},
+					},
+				},
+			},
+		},
 		"Single value column with labels": {
 			Result: MySQLQueryResult{
 				Columns: []string{"time", "host", "value"},
@@ -309,6 +334,27 @@ func Test_MySQLQueryResult_Transform(t *testing.T) {
 	}
 }
 
+func Test_MySQLQueryResult_HasData(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Result *MySQLQueryResult
+		Has    bool
+	}{
+		"No result": {},
+		"No rows":   {Result: &MySQLQueryResult{Columns: []string{"value"}}},
+		"A row":     {Result: &MySQLQueryResult{Columns: []string{"value"}, Rows: [][]any{{int64(1)}}}, Has: true},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Has, c.Result.HasData())
+		})
+	}
+}
+
 func Test_NewMySQL(t *testing.T) {
 	t.Parallel()
 
@@ -317,6 +363,48 @@ func Test_NewMySQL(t *testing.T) {
 	m := NewMySQL(inp)
 	require.NotNil(t, m)
 	assert.Same(t, inp, m.inp)
+	assert.Nil(t, m.db)
+	assert.False(t, m.closed)
+}
+
+func Test_MySQL_Close(t *testing.T) {
+	cc := map[string]struct {
+		// Used indicates whether a query opened the pool before the close.
+		Used bool
+	}{
+		"Pool never opened": {},
+		"Pool in use":       {Used: true},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			m := NewMySQL(&InputMock{
+				URLFunc: func() string {
+					return fmt.Sprintf("mysql://%s:%s@%s/%s", _mysqlRootUser, _mysqlRootPass, _mysqlAddr, _testDB)
+				},
+			})
+
+			if c.Used {
+				_, err := m.Query(context.Background(), "SELECT 1", _testTimeRange)
+				require.NoError(t, err)
+			}
+
+			require.NoError(t, m.Close())
+			assert.True(t, m.closed)
+
+			// a closed processor hands out no connection, and opens no new
+			// pool that nothing would close.
+			_, err := m.connect()
+			testutil.AssertEqualError(t, _errClosed, err)
+
+			if c.Used {
+				require.NotNil(t, m.db)
+				assert.Error(t, m.db.PingContext(context.Background()))
+			}
+		})
+	}
 }
 
 func Test_MySQL_TestConnection(t *testing.T) {
@@ -361,6 +449,8 @@ func Test_MySQL_TestConnection(t *testing.T) {
 			}
 
 			m := NewMySQL(inp)
+
+			t.Cleanup(func() { assert.NoError(t, m.Close()) })
 
 			cs, err := m.TestConnection(context.Background())
 			require.NoError(t, err)
@@ -421,6 +511,8 @@ func Test_MySQL_Metadata(t *testing.T) {
 			}
 
 			m := NewMySQL(inp)
+
+			t.Cleanup(func() { assert.NoError(t, m.Close()) })
 
 			result, err := m.Metadata(context.Background())
 			testutil.AssertEqualError(t, c.Err, err)
@@ -483,6 +575,8 @@ func Test_MySQL_QueryLabels(t *testing.T) {
 
 			m := NewMySQL(inp)
 
+			t.Cleanup(func() { assert.NoError(t, m.Close()) })
+
 			labels, err := m.QueryLabels(context.Background(), c.Query, _testTimeRange)
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Len(t, inp.URLCalls(), 1)
@@ -502,13 +596,28 @@ func Test_MySQL_QueryLabels(t *testing.T) {
 }
 
 func Test_MySQL_Query(t *testing.T) {
+	rootURL := fmt.Sprintf("mysql://%s:%s@%s/%s", _mysqlRootUser, _mysqlRootPass, _mysqlAddr, _testDB)
+
+	// connectionID reads the id of the connection a query runs on.
+	connectionID := func(t *testing.T, m *MySQL) any {
+		t.Helper()
+
+		res, err := m.Query(context.Background(), "SELECT CONNECTION_ID()", _testTimeRange)
+		require.NoError(t, err)
+		require.Len(t, res.Rows, 1)
+
+		return res.Rows[0][0]
+	}
+
 	cc := map[string]struct {
-		URL              string
+		URL string
+
 		Query            string
 		Result           *MySQLQueryResult
 		ErrStatus        int
 		Err              error
 		CredentialsCalls int
+		Check            func(t *testing.T, m *MySQL)
 	}{
 		"Error returned by connect": {
 			URL:   "://",
@@ -536,7 +645,19 @@ func Test_MySQL_Query(t *testing.T) {
 			Result: &MySQLQueryResult{
 				Columns:     []string{"time", "code", "total"},
 				ColumnTypes: []string{"BIGINT", "VARCHAR", "DECIMAL"},
-				Rows:        [][]any{{int64(1700000000), "200", "10.50"}},
+				Rows:        [][]any{{float64(1700000000), "200", "10.50"}},
+			},
+			CredentialsCalls: 1,
+		},
+		// rows come back in the shape JSON gives them, so a cached copy
+		// draws the same chart as the fresh one.
+		"FLOAT, unsigned BIGINT and DATE columns": {
+			URL:   fmt.Sprintf("mysql://%s:%s@%s/%s", _mysqlRootUser, _mysqlRootPass, _mysqlAddr, _testDB),
+			Query: "SELECT CAST(1.5 AS FLOAT) AS ratio, CAST(9223372036854775808 AS UNSIGNED) AS hits, DATE('2024-01-01') AS day",
+			Result: &MySQLQueryResult{
+				Columns:     []string{"ratio", "hits", "day"},
+				ColumnTypes: []string{"FLOAT", "UNSIGNED BIGINT", "DATE"},
+				Rows:        [][]any{{1.5, float64(9223372036854775808), "2024-01-01T00:00:00Z"}},
 			},
 			CredentialsCalls: 1,
 		},
@@ -547,11 +668,27 @@ func Test_MySQL_Query(t *testing.T) {
 				Columns:     []string{"time", "host", "value"},
 				ColumnTypes: []string{"BIGINT", "VARCHAR", "DOUBLE"},
 				Rows: [][]any{
-					{int64(1700000000), "web-1", 10.5},
-					{int64(1700000060), "web-2", 20.5},
+					{float64(1700000000), "web-1", 10.5},
+					{float64(1700000060), "web-2", 20.5},
 				},
 			},
 			CredentialsCalls: 1,
+		},
+		"A plain read keeps its connection": {
+			URL:   rootURL,
+			Query: "SELECT 1 AS one",
+			Result: &MySQLQueryResult{
+				Columns:     []string{"one"},
+				ColumnTypes: []string{"INT"},
+				Rows:        [][]any{{float64(1)}},
+			},
+			CredentialsCalls: 1,
+			Check: func(t *testing.T, m *MySQL) {
+				t.Helper()
+
+				first := connectionID(t, m)
+				assert.Equal(t, first, connectionID(t, m))
+			},
 		},
 	}
 
@@ -565,6 +702,22 @@ func Test_MySQL_Query(t *testing.T) {
 
 			m := NewMySQL(inp)
 
+			t.Cleanup(func() { assert.NoError(t, m.Close()) })
+
+			// with all but one connection held until the test ends, every
+			// query lands on the one left.
+			if c.Check != nil {
+				db, derr := m.connect()
+				require.NoError(t, derr)
+
+				for range _mysqlMaxConns - 1 {
+					held, cerr := db.Conn(context.Background())
+					require.NoError(t, cerr)
+
+					t.Cleanup(func() { assert.NoError(t, held.Close()) })
+				}
+			}
+
 			result, err := m.Query(context.Background(), c.Query, _testTimeRange)
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Len(t, inp.URLCalls(), 1)
@@ -572,6 +725,10 @@ func Test_MySQL_Query(t *testing.T) {
 
 			if c.ErrStatus != 0 {
 				assert.Equal(t, c.ErrStatus, errutil.StatusCode(err, false))
+			}
+
+			if c.Check != nil {
+				c.Check(t, m)
 			}
 
 			if err != nil {
@@ -586,6 +743,7 @@ func Test_MySQL_Query(t *testing.T) {
 func Test_MySQL_connect(t *testing.T) {
 	cc := map[string]struct {
 		URL              string
+		Closed           bool
 		Err              error
 		CredentialsCalls int
 	}{
@@ -593,14 +751,12 @@ func Test_MySQL_connect(t *testing.T) {
 			URL: "://",
 			Err: assert.AnError,
 		},
-		"Error returned by db.ExecContext": {
-			URL:              "mysql://127.0.0.1:1/db",
-			Err:              assert.AnError,
-			CredentialsCalls: 1,
+		"Closed processor": {
+			URL:    "mysql://127.0.0.1:1/db",
+			Closed: true,
+			Err:    _errClosed,
 		},
-		// the session refuses writes even for a user whose grants allow
-		// them.
-		"Successful read-only session": {
+		"Successful pool": {
 			URL:              fmt.Sprintf("mysql://%s:%s@%s/%s", _mysqlRootUser, _mysqlRootPass, _mysqlAddr, _testDB),
 			CredentialsCalls: 1,
 		},
@@ -616,21 +772,29 @@ func Test_MySQL_connect(t *testing.T) {
 
 			m := NewMySQL(inp)
 
-			db, err := m.connect(context.Background())
+			t.Cleanup(func() { assert.NoError(t, m.Close()) })
+
+			if c.Closed {
+				require.NoError(t, m.Close())
+			}
+
+			db, err := m.connect()
 			testutil.AssertEqualError(t, c.Err, err)
-			assert.Len(t, inp.URLCalls(), 1)
 			assert.Len(t, inp.CredentialsCalls(), c.CredentialsCalls)
 
 			if err != nil {
+				assert.Nil(t, m.db)
 				return
 			}
 
 			require.NotNil(t, db)
+			assert.Equal(t, _mysqlMaxConns, db.Stats().MaxOpenConnections)
 
-			_, err = db.ExecContext(context.Background(), "DELETE FROM metrics")
-			assert.Error(t, err)
-
-			require.NoError(t, db.Close())
+			// the pool is opened once and handed to every later call.
+			again, err := m.connect()
+			require.NoError(t, err)
+			assert.Same(t, db, again)
+			assert.Len(t, inp.URLCalls(), 1)
 		})
 	}
 }
@@ -825,6 +989,34 @@ func Test_mysqlCheckReadOnly(t *testing.T) {
 	}
 }
 
+func Test_mysqlNormalizeValue(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Value  any
+		Result any
+	}{
+		"Bytes become a string":           {Value: []byte("web-1"), Result: "web-1"},
+		"FLOAT becomes float64":           {Value: float32(1.5), Result: 1.5},
+		"BIGINT becomes float64":          {Value: int64(7), Result: float64(7)},
+		"Unsigned BIGINT becomes float64": {Value: uint64(5), Result: float64(5)},
+		"Date becomes an RFC3339 string": {
+			Value:  time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			Result: "2024-01-01T00:00:00Z",
+		},
+		"Anything else is kept": {Value: "web-1", Result: "web-1"},
+		"Null is kept":          {},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, mysqlNormalizeValue(c.Value))
+		})
+	}
+}
+
 func Test_mysqlParseTimestamp(t *testing.T) {
 	cc := map[string]struct {
 		Value  any
@@ -841,11 +1033,6 @@ func Test_mysqlParseTimestamp(t *testing.T) {
 			Result: 1700000000,
 			OK:     true,
 		},
-		"Time value": {
-			Value:  time.Date(2023, 11, 14, 22, 13, 20, 0, time.UTC),
-			Result: 1700000000,
-			OK:     true,
-		},
 		"RFC3339 string": {
 			Value:  "2023-11-14T22:13:20Z",
 			Result: 1700000000,
@@ -853,6 +1040,11 @@ func Test_mysqlParseTimestamp(t *testing.T) {
 		},
 		"RFC3339 string with fraction": {
 			Value:  "2023-11-14T22:13:20.5Z",
+			Result: 1700000000,
+			OK:     true,
+		},
+		"Numeric string": {
+			Value:  "1700000000",
 			Result: 1700000000,
 			OK:     true,
 		},
