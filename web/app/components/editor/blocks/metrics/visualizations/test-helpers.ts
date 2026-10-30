@@ -32,6 +32,7 @@ export interface ChartOption {
 	title: { show: boolean; text?: string }
 	legend: { show?: boolean; data?: string[] }
 	grid: { top: number; bottom: number }
+	xAxis: { axisLabel: { formatter: (value: number) => string } }
 	yAxis: {
 		min?: number
 		max?: number

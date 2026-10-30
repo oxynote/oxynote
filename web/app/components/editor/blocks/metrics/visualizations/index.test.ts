@@ -580,6 +580,24 @@ describe("xAxisLabelFormatter", () => {
 			expected: "Aug 19",
 		},
 		{
+			name: "formats hours and minutes off midnight at one day of range",
+			points: [at(14, 0, 0, 28, 9), at(14, 0, 0, 29, 9)],
+			value: at(18, 0, 0, 28, 9),
+			expected: "18:00",
+		},
+		{
+			name: "formats month and day at midnight for a one-day range",
+			points: [at(14, 0, 0, 28, 9), at(14, 0, 0, 29, 9)],
+			value: at(0, 0, 0, 29, 9),
+			expected: "Oct 29",
+		},
+		{
+			name: "formats hours and minutes off midnight for a multi-day range",
+			points: [at(0, 0, 0, 1, 6), at(0, 0, 0, 8, 6)],
+			value: at(12, 0, 0, 3, 6),
+			expected: "12:00",
+		},
+		{
 			name: "formats month and day for a multi-week range",
 			points: [at(0, 0, 0, 1, 6), at(0, 0, 0, 19, 7)],
 			value: at(0, 0, 0, 3, 6),

@@ -281,9 +281,10 @@ const ONE_DAY = 24 * ONE_HOUR
 const ONE_YEAR = 365 * ONE_DAY
 
 /**
- * Computes the time range of the series data and returns a consistent
- * formatter function for x-axis labels. All ticks use the same format
- * so labels never mix e.g. "16:34" with "16:34:40".
+ * Computes the time range of the series data and returns a formatter
+ * function for x-axis labels. Below a day all ticks use the same format
+ * so labels never mix e.g. "16:34" with "16:34:40". From a day up, a tick
+ * at midnight shows the date and any other tick its time of day.
  */
 export function xAxisLabelFormatter(
 	data: MultipleLineChartData | MultipleBarChartData,
@@ -317,7 +318,11 @@ export function xAxisLabelFormatter(
 		}
 
 		if (range < ONE_YEAR) {
-			// sub-year: show short month + day
+			// sub-year: show short month + day at midnight, HH:mm otherwise
+			if (d.getHours() !== 0 || d.getMinutes() !== 0) {
+				return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+			}
+
 			const month = d.toLocaleString("en", { month: "short" })
 			return `${month} ${d.getDate()}`
 		}
