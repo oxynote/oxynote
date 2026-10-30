@@ -1,6 +1,7 @@
 import { enableAutoUnmount } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import LineChart from "./LineChart.vue"
+import ChartTitle from "./ChartTitle.vue"
 import {
 	chartOption,
 	chartSeries,
@@ -118,16 +119,13 @@ describe("<LineChart>", { concurrent: false }, () => {
 	it("hides the title area when there is no title", async ({ expect }) => {
 		const wrapper = await mountLine()
 
-		expect(chartOption(wrapper).title.show).toBe(false)
+		expect(wrapper.findComponent(ChartTitle).exists()).toBe(false)
 	})
 
 	it("shows the title it was given", async ({ expect }) => {
 		const wrapper = await mountLine({ title: "Requests" })
 
-		const option = chartOption(wrapper)
-
-		expect(option.title.show).toBe(true)
-		expect(option.title.text).toBe("Requests")
+		expect(wrapper.findComponent(ChartTitle).text()).toBe("Requests")
 	})
 
 	it("moves the title and the plot down by the offset it was given", async ({
@@ -136,7 +134,8 @@ describe("<LineChart>", { concurrent: false }, () => {
 		const moved = await mountLine({ title: "Requests", titleOffsetTop: 6.5 })
 		const kept = await mountLine({ title: "Requests" })
 
-		expect(chartOption(moved).title.top).toBe(chartOption(kept).title.top + 6.5)
+		expect(moved.findComponent(ChartTitle).props("offsetTop")).toBe(6.5)
+		expect(kept.findComponent(ChartTitle).props("offsetTop")).toBeUndefined()
 		expect(chartOption(moved).grid.top).toBe(chartOption(kept).grid.top + 6.5)
 	})
 
