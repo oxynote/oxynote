@@ -29,7 +29,6 @@ export interface ChartSeries {
 
 // the slice of the echarts option the suites assert on
 export interface ChartOption {
-	title: { show: boolean; text?: string }
 	legend: { show?: boolean; data?: string[] }
 	grid: { top: number; bottom: number }
 	xAxis: { axisLabel: { formatter: (value: number) => string } }

@@ -2,14 +2,12 @@
 import { use } from "echarts/core"
 import { CanvasRenderer } from "echarts/renderers"
 import { GaugeChart as EChartsGaugeChart } from "echarts/charts"
-import { TooltipComponent, TitleComponent } from "echarts/components"
+import { TooltipComponent } from "echarts/components"
 import VChart from "vue-echarts"
+import ChartTitle from "./ChartTitle.vue"
 import type { ComposeOption } from "echarts/core"
 import type { GaugeSeriesOption } from "echarts/charts"
-import type {
-	TooltipComponentOption,
-	TitleComponentOption,
-} from "echarts/components"
+import type { TooltipComponentOption } from "echarts/components"
 import { chartStyles } from "~/assets/css"
 import {
 	calculateGaugeAxisBounds,
@@ -21,12 +19,10 @@ import {
 import type { VisualizationUnit } from "../utils"
 
 // Register ECharts modules
-use([CanvasRenderer, EChartsGaugeChart, TooltipComponent, TitleComponent])
+use([CanvasRenderer, EChartsGaugeChart, TooltipComponent])
 
 // Define the option type
-type ECOption = ComposeOption<
-	GaugeSeriesOption | TooltipComponentOption | TitleComponentOption
->
+type ECOption = ComposeOption<GaugeSeriesOption | TooltipComponentOption>
 
 const props = defineProps<{
 	title?: string
@@ -46,11 +42,11 @@ const props = defineProps<{
 const { color } = useAppearance()
 const containerRef = useTemplateRef<HTMLDivElement>("chart-container")
 const chartElem = useTemplateRef<InstanceType<typeof VChart>>("chart")
-const { width: containerWidth, height: containerHeight } = useChartSize(
-	containerRef,
-	chartElem,
-	() => option.value,
-)
+const {
+	width: containerWidth,
+	height: containerHeight,
+	redraw,
+} = useChartSize(containerRef, chartElem, () => option.value)
 
 const MIN_GAUGE_SIZE = 180 // minimum size for a single gauge in pixels
 const SIDE_PADDING = 10 // padding on each side in pixels
@@ -108,6 +104,10 @@ watch(
 		}, 30)
 	},
 )
+
+// the canvas host is as wide as the gauges need, which changes with their
+// count while the container keeps its size
+watch(() => gaugeLayout.value.totalWidth, redraw, { flush: "post" })
 
 function buildGaugeSeries(
 	gauge: GaugeChartData,
@@ -291,33 +291,7 @@ const option = computed<ECOption>(() => {
 	// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 	themeVersion.value
 
-	const st = chartStyles()
-
-	// echarts does not support dynamic width with ellipsis, so we calculate a
-	// fixed width based on container size
-	const titleRightPadding = props.titleRightPadding ?? 0
-	const titleWidth = Math.max(
-		containerWidth.value * 0.9 - titleRightPadding,
-		50,
-	)
 	const res: ECOption = {
-		title: {
-			show: !!props.title,
-			text: props.title,
-			top: 10,
-			left: 10,
-			padding: 0,
-			textStyle: {
-				fontSize: 15, // text-2base
-				lineHeight: 17,
-				fontWeight: "normal",
-				fontFamily: st.fontFamily,
-				color: st.lineChart.text,
-				overflow: "truncate",
-				width: titleWidth,
-				ellipsis: "...",
-			},
-		},
 		series: [],
 	}
 
@@ -387,19 +361,25 @@ const chartStyle = computed(() => {
 </script>
 
 <template>
-	<!-- printing keeps the chart at its screen width, as vue cannot render
-	before the page is printed, so the container clips it there instead of
-	printing a scrollbar -->
-	<div
-		ref="chart-container"
-		class="size-full min-w-0 overflow-x-auto overflow-y-hidden print:overflow-hidden"
-	>
-		<VChart
-			ref="chart"
-			:style="chartStyle"
-			:option="option"
-			:update-options="{ notMerge: true }"
-			autoresize
+	<div class="relative size-full min-w-0">
+		<!-- printing keeps the chart at its screen width, as vue cannot render
+		before the page is printed, so the container clips it there instead of
+		printing a scrollbar -->
+		<div
+			ref="chart-container"
+			class="size-full min-w-0 overflow-x-auto overflow-y-hidden print:overflow-hidden"
+		>
+			<VChart
+				ref="chart"
+				:style="chartStyle"
+				:option="option"
+				:update-options="{ notMerge: true }"
+			/>
+		</div>
+		<ChartTitle
+			v-if="props.title"
+			:title="props.title"
+			:right-padding="props.titleRightPadding"
 		/>
 	</div>
 </template>
