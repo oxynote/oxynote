@@ -33,6 +33,17 @@ const SERIES: MultipleBarChartData = [
 	},
 ]
 
+// local-time components keep the x-axis expectations timezone-independent
+const DAY_SERIES: MultipleBarChartData = [
+	{
+		name: "web-1",
+		data: [
+			[new Date(2026, 9, 28, 14), 1],
+			[new Date(2026, 9, 29, 14), 3],
+		],
+	},
+]
+
 function mountBar(props: Record<string, unknown> = {}) {
 	return mountChart(BarChart, {
 		seriesData: SERIES,
@@ -167,5 +178,14 @@ describe("<BarChart>", { concurrent: false }, () => {
 		const label = chartOption(wrapper).yAxis.axisLabel.formatter
 
 		expect(label(1024)).toBe("1 KB")
+	})
+
+	it("labels the time axis by hour between midnights", async ({ expect }) => {
+		const wrapper = await mountBar({ seriesData: DAY_SERIES })
+
+		const label = chartOption(wrapper).xAxis.axisLabel.formatter
+
+		expect(label(new Date(2026, 9, 28, 18).getTime())).toBe("18:00")
+		expect(label(new Date(2026, 9, 29).getTime())).toBe("Oct 29")
 	})
 })
