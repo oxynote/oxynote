@@ -599,7 +599,9 @@
 					"success": "Successfully connected",
 					"unauthorized": "Authentication credentials are incorrect",
 					"unreachable": "Prometheus server is unreachable",
-					"version_not_supported": "Prometheus version not supported"
+					"version_not_supported": "Prometheus version not supported",
+					"invalid_encryption_key": "Stored credentials can no longer be read",
+					"invalid_ca_certificate": "CA certificate is invalid, or the connection does not use TLS"
 				},
 				"errors": {
 					"install": {
@@ -630,7 +632,10 @@
 					"success": "Successfully connected",
 					"unauthorized": "Authentication credentials are incorrect",
 					"unreachable": "PostgreSQL server is unreachable",
-					"version_not_supported": "PostgreSQL version not supported"
+					"version_not_supported": "PostgreSQL version not supported",
+					"not_read_only": "User has write access, but must be read-only",
+					"invalid_encryption_key": "Stored credentials can no longer be read",
+					"invalid_ca_certificate": "CA certificate is invalid, or the connection does not use TLS"
 				},
 				"errors": {
 					"install": {
@@ -661,7 +666,10 @@
 					"success": "Successfully connected",
 					"unauthorized": "Authentication credentials are incorrect",
 					"unreachable": "Supabase project is unreachable",
-					"version_not_supported": "Supabase Postgres version not supported"
+					"version_not_supported": "Supabase Postgres version not supported",
+					"not_read_only": "User has write access, but must be read-only",
+					"invalid_encryption_key": "Stored credentials can no longer be read",
+					"invalid_ca_certificate": "CA certificate is invalid, or the connection does not use TLS"
 				},
 				"errors": {
 					"install": {
@@ -692,7 +700,10 @@
 					"success": "Successfully connected",
 					"unauthorized": "Authentication credentials are incorrect",
 					"unreachable": "MySQL server is unreachable",
-					"version_not_supported": "MySQL version not supported"
+					"version_not_supported": "MySQL version not supported",
+					"not_read_only": "User has write access, but must be read-only",
+					"invalid_encryption_key": "Stored credentials can no longer be read",
+					"invalid_ca_certificate": "CA certificate is invalid, or the connection does not use TLS"
 				},
 				"errors": {
 					"install": {
@@ -723,7 +734,10 @@
 					"success": "Successfully connected",
 					"unauthorized": "Authentication credentials are incorrect",
 					"unreachable": "MariaDB server is unreachable",
-					"version_not_supported": "MariaDB version not supported"
+					"version_not_supported": "MariaDB version not supported",
+					"not_read_only": "User has write access, but must be read-only",
+					"invalid_encryption_key": "Stored credentials can no longer be read",
+					"invalid_ca_certificate": "CA certificate is invalid, or the connection does not use TLS"
 				},
 				"errors": {
 					"install": {

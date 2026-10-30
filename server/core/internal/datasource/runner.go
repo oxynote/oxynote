@@ -56,10 +56,11 @@ var _errDataSourceChanged = errutil.New(
 //
 // It keeps one runner per data source, so the connections a runner opens
 // serve every call that reads the same data source. A runner goes, and its
-// connections close, when the data source changes or when nobody has asked
-// for it in _idleAfter. What the runners share lives here too: the store
-// their observations are recorded in, the log those recordings complain to,
-// the demo client, and the cache their queries are answered from.
+// connections close, when the data source changes, when a connection test
+// fails, or when nobody has asked for it in _idleAfter. What the runners
+// share lives here too: the store their observations are recorded in, the
+// log those recordings complain to, the demo client, and the cache their
+// queries are answered from.
 type Manager struct {
 	log     *slog.Logger
 	store   StatusStore
@@ -210,6 +211,33 @@ func (m *Manager) Evict(id xid.ID) {
 		delete(m.runners, id)
 		m.release(r)
 	}
+}
+
+// renew replaces r, whose connection test failed, with a runner of the same
+// data source that remembers the failure, and closes the connections of r.
+// A session keeps the settings it started with, so a test on them would
+// keep failing after the data source is fixed. A runner the manager already
+// let go is left as it is.
+func (m *Manager) renew(r *runner) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.runners[r.ds.ID] != r {
+		return
+	}
+
+	nr := &runner{
+		m:        m,
+		ds:       r.ds,
+		status:   r.status,
+		usedAt:   r.usedAt,
+		testedAt: r.testedAt,
+		tested:   r.tested,
+	}
+	nr.client, nr.clientErr = m.newClient(r.ds)
+
+	m.runners[r.ds.ID] = nr
+	m.release(r)
 }
 
 // keeps reports whether r is the runner the manager keeps for its data
@@ -468,8 +496,9 @@ func connect[C any](ctx context.Context, r *runner, allowed ...Type) (C, error) 
 
 // ensureTested tests the connection unless it passed a test within
 // _statusTTL or failed one within _failureTTL, and records what it found.
-// A failing test keeps the runner, so its failure answers the calls that
-// follow without a new login.
+// A failing test renews the runner. The new one remembers the failure, so
+// it answers the calls that follow without a new login, and its next test
+// opens new connections.
 //
 // One call at a time tests a data source, and the calls waiting behind it
 // reuse what it found, a failure included. A document opening many charts
@@ -525,7 +554,13 @@ func (r *runner) ensureTested(ctx context.Context) error {
 	r.testedAt = timeutil.Now()
 	r.tested = cs
 
-	return cs.Error()
+	if serr := cs.Error(); serr != nil {
+		r.m.renew(r)
+
+		return serr
+	}
+
+	return nil
 }
 
 // recordStatus keeps the stored status honest about what the connection

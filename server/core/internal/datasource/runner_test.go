@@ -541,6 +541,72 @@ func Test_Manager_Evict(t *testing.T) {
 	}
 }
 
+func Test_Manager_renew(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		// Held is what the manager keeps for the data source before the
+		// call: the runner itself, another one, or nothing.
+		Held    string
+		Renewed bool
+	}{
+		"Runner kept":           {Held: "self", Renewed: true},
+		"Another runner kept":   {Held: "other"},
+		"No runner kept at all": {},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			m := prepManager(t, nil)
+			stub := &stubClient{}
+
+			r := &runner{
+				m: m,
+				ds: DataSource{
+					ID:             xid.New(),
+					OrganizationID: "org",
+					Type:           TypePrometheus,
+				},
+				client:   stub,
+				status:   processor.ConnectionStatusNotReadOnly,
+				usedAt:   timeutil.Now(),
+				testedAt: timeutil.Now(),
+				tested:   processor.ConnectionStatusNotReadOnly,
+			}
+
+			runners := map[string]*runner{"self": r, "other": {m: m, ds: r.ds}}
+
+			if kept := runners[c.Held]; kept != nil {
+				m.runners[r.ds.ID] = kept
+			}
+
+			m.renew(r)
+			m.supv.Wait()
+
+			held := m.runners[r.ds.ID]
+
+			if !c.Renewed {
+				assert.Same(t, runners[c.Held], held)
+				assert.Zero(t, stub.closes.Load())
+
+				return
+			}
+
+			require.NotNil(t, held)
+			assert.NotSame(t, r, held)
+			assert.NotNil(t, held.client)
+			assert.Equal(t, r.ds, held.ds)
+			assert.Equal(t, r.status, held.status)
+			assert.Equal(t, r.usedAt, held.usedAt)
+			assert.Equal(t, r.testedAt, held.testedAt)
+			assert.Equal(t, r.tested, held.tested)
+			assert.Equal(t, int32(1), stub.closes.Load())
+		})
+	}
+}
+
 func Test_Manager_keeps(t *testing.T) {
 	t.Parallel()
 
@@ -1434,6 +1500,7 @@ func Test_runner_ensureTested(t *testing.T) {
 		Written int
 		Tested  bool
 		Dropped bool
+		Renewed bool
 		Closes  int32
 		Err     error
 	}
@@ -1492,13 +1559,16 @@ func Test_runner_ensureTested(t *testing.T) {
 			Tests:   1,
 			Tested:  true,
 		},
-		// the runner stays, so its failure answers the calls that follow.
-		"A failing test keeps the runner": {
+		// the new runner remembers the failure, so it answers the calls that
+		// follow, and its next test opens new connections.
+		"A failing test renews the runner": {
 			Client:  &stubClient{status: processor.ConnectionStatusUnreachable},
 			Callers: 1,
 			Tests:   1,
 			Written: 1,
 			Tested:  true,
+			Renewed: true,
+			Closes:  1,
 			Err:     processor.ConnectionStatusUnreachable.Error(),
 		},
 		// the calls waiting behind a failing test get its answer rather
@@ -1509,6 +1579,8 @@ func Test_runner_ensureTested(t *testing.T) {
 			Tests:   1,
 			Written: 1,
 			Tested:  true,
+			Renewed: true,
+			Closes:  1,
 			Err:     processor.ConnectionStatusUnreachable.Error(),
 		},
 		// the calls that waited behind a failing test still hold the
@@ -1644,9 +1716,23 @@ func Test_runner_ensureTested(t *testing.T) {
 			assert.Len(t, store.UpdateDataSourceStatusCalls(), c.Written)
 			assert.Equal(t, c.Tested, !r.testedAt.IsZero())
 
-			_, held := m.runners[r.ds.ID]
-			assert.Equal(t, !c.Dropped, held)
+			held, ok := m.runners[r.ds.ID]
+			assert.Equal(t, !c.Dropped, ok)
 			assert.Equal(t, c.Closes, c.Client.closes.Load())
+
+			if !ok {
+				return
+			}
+
+			if !c.Renewed {
+				assert.Same(t, r, held)
+
+				return
+			}
+
+			assert.NotSame(t, r, held)
+			assert.Equal(t, r.testedAt, held.testedAt)
+			assert.Equal(t, r.tested, held.tested)
 		})
 	}
 }
