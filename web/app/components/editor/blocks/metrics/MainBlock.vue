@@ -345,7 +345,7 @@ function disableVisualizationRefreshTemporarily() {
 		as="div"
 		:class="
 			cn(
-				'not-prose relative h-80 rounded-md border border-border caret-transparent select-none',
+				'not-prose relative h-80 break-inside-avoid rounded-md border border-border caret-transparent select-none print:overflow-hidden',
 				lastOtherEditingUser && 'rounded-tl-none',
 			)
 		"
@@ -371,7 +371,7 @@ function disableVisualizationRefreshTemporarily() {
 				{{ lastOtherEditingUser.name }}
 			</div>
 			<div
-				class="absolute top-1.5 right-1.5 z-1 flex items-center rounded-md bg-background has-[>:not(button)]:pl-0.5"
+				class="absolute top-1.5 right-1.5 z-1 flex items-center rounded-md bg-background has-[>:not(button)]:pl-0.5 print:hidden"
 			>
 				<DiffChangeMarker :node="props.node" class="mr-1">
 					<MetricDiffDetails :node="props.node" />

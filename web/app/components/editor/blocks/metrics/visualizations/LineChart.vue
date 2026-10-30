@@ -71,8 +71,12 @@ const props = defineProps<{
 }>()
 
 const containerElem = useTemplateRef<HTMLDivElement>("chart-container")
-const { width: containerWidth } = useElementSize(containerElem)
 const chartElem = useTemplateRef<InstanceType<typeof VChart>>("chart")
+const { width: containerWidth } = useChartSize(
+	containerElem,
+	chartElem,
+	() => option.value,
+)
 const { color } = useAppearance()
 const { browserType } = useDetectHost()
 const tooltipPin = useTooltipPin(chartElem, containerElem)
