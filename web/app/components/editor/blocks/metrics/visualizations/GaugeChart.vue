@@ -10,7 +10,6 @@ import type {
 	TooltipComponentOption,
 	TitleComponentOption,
 } from "echarts/components"
-import { useElementSize } from "@vueuse/core"
 import { chartStyles } from "~/assets/css"
 import {
 	calculateGaugeAxisBounds,
@@ -45,9 +44,13 @@ const props = defineProps<{
 }>()
 
 const { color } = useAppearance()
-const containerRef = useTemplateRef("chart-container")
-const { width: containerWidth, height: containerHeight } =
-	useElementSize(containerRef)
+const containerRef = useTemplateRef<HTMLDivElement>("chart-container")
+const chartElem = useTemplateRef<InstanceType<typeof VChart>>("chart")
+const { width: containerWidth, height: containerHeight } = useChartSize(
+	containerRef,
+	chartElem,
+	() => option.value,
+)
 
 const MIN_GAUGE_SIZE = 180 // minimum size for a single gauge in pixels
 const SIDE_PADDING = 10 // padding on each side in pixels
@@ -384,11 +387,15 @@ const chartStyle = computed(() => {
 </script>
 
 <template>
+	<!-- printing keeps the chart at its screen width, as vue cannot render
+	before the page is printed, so the container clips it there instead of
+	printing a scrollbar -->
 	<div
 		ref="chart-container"
-		class="size-full min-w-0 overflow-x-auto overflow-y-hidden"
+		class="size-full min-w-0 overflow-x-auto overflow-y-hidden print:overflow-hidden"
 	>
 		<VChart
+			ref="chart"
 			:style="chartStyle"
 			:option="option"
 			:update-options="{ notMerge: true }"

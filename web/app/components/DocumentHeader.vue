@@ -163,7 +163,7 @@ function activateBranch(branch: "default" | "draft") {
 <template>
 	<header
 		ref="header"
-		class="sticky top-0 z-navbar h-10 w-full border-b border-border bg-background pr-2 pl-2"
+		class="sticky top-0 z-navbar h-10 w-full border-b border-border bg-background pr-2 pl-2 print:hidden"
 	>
 		<Transition v-bind="defaultTransitionProps">
 			<div
