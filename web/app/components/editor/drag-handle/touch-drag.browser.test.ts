@@ -65,6 +65,10 @@ describe("startTouchDrag", { concurrent: false }, () => {
 	})
 
 	afterEach(() => {
+		// run the pending frame before the real timers drop it. New gap
+		// zones wait for one shared frame, and a dropped one leaves the
+		// zones of every later test unplaced.
+		vi.advanceTimersToNextFrame()
 		vi.useRealTimers()
 	})
 
