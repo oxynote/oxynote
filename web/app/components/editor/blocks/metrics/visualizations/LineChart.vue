@@ -347,11 +347,17 @@ async function toggleTooltipPin(event: { offsetX: number; offsetY: number }) {
 		return
 	}
 
+	// a click on the legend or the title has no instant to pin
+	const chart = chartElem.value
+	if (!chart?.containPixel("grid", [event.offsetX, event.offsetY])) {
+		return
+	}
+
 	tooltipPinned.value = true
 	// echarts lets the mouse into the tooltip only from its next show, so it
 	// is shown again at the click once the chart has the new option
 	await nextTick()
-	chartElem.value?.dispatchAction({
+	chart.dispatchAction({
 		type: "showTip",
 		x: event.offsetX,
 		y: event.offsetY,

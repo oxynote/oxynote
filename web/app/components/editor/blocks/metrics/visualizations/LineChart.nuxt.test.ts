@@ -16,6 +16,7 @@ const echarts = await vi.hoisted(async () => {
 	return {
 		tooltipParams: shallowRef<unknown[]>([]),
 		dispatchAction: vi.fn(),
+		containPixel: vi.fn(),
 	}
 })
 
@@ -30,7 +31,10 @@ vi.mock("vue-echarts", async () => {
 			name: "VChart",
 			props: { option: { type: Object, required: true } },
 			setup: (_props, { slots, expose }) => {
-				expose({ dispatchAction: echarts.dispatchAction })
+				expose({
+					dispatchAction: echarts.dispatchAction,
+					containPixel: echarts.containPixel,
+				})
 
 				return () => h("div", slots.tooltip?.(echarts.tooltipParams.value))
 			},
@@ -93,10 +97,16 @@ function mountLine(
 // chartStyles paints colours onto a canvas, so every mount needs the
 // stand-in context installed first
 describe("<LineChart>", { concurrent: false }, () => {
+	// a chart listens on the document for the keys and presses that let go
+	// of a pinned tooltip, so each one is taken down before the next test
+	enableAutoUnmount(afterEach)
+
 	beforeEach(() => {
 		stubChartColorContext()
 		echarts.tooltipParams.value = []
 		echarts.dispatchAction.mockReset()
+		echarts.containPixel.mockReset()
+		echarts.containPixel.mockReturnValue(true)
 	})
 
 	it("draws one line per series", async ({ expect }) => {
@@ -232,10 +242,6 @@ describe("<LineChart>", { concurrent: false }, () => {
 	})
 
 	describe("tooltip", () => {
-		// a pinned tooltip listens on the document, so each chart is taken
-		// down before the next test sends its own key or press
-		enableAutoUnmount(afterEach)
-
 		it("stays inside the chart", async ({ expect }) => {
 			const wrapper = await mountLine()
 
@@ -307,6 +313,21 @@ describe("<LineChart>", { concurrent: false }, () => {
 
 			expect(pinState(wrapper)).toEqual(PINNED)
 			expect.soft(echarts.dispatchAction.mock.calls).toEqual([[SHOW_TIP]])
+		})
+
+		it("ignores a click outside the plot, such as on the legend", async ({
+			expect,
+		}) => {
+			echarts.containPixel.mockReturnValue(false)
+			const wrapper = await mountLine()
+
+			await clickChart(wrapper)
+
+			expect(pinState(wrapper)).toEqual(UNPINNED)
+			expect
+				.soft(echarts.containPixel)
+				.toHaveBeenCalledExactlyOnceWith("grid", [120, 40])
+			expect.soft(echarts.dispatchAction).not.toHaveBeenCalled()
 		})
 
 		it("follows the cursor again after a second click", async ({ expect }) => {
