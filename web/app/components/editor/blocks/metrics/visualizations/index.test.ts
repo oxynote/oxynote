@@ -430,6 +430,12 @@ describe("mergeVisualizationResults", () => {
 			expected: "api/",
 		},
 		{
+			name: "falls back to the ordered legend label when nothing is left",
+			format: "{{missing}} {{other}}",
+			labels: { job: "api" },
+			expected: "auto-line_chart",
+		},
+		{
 			name: "substitutes a variable containing a colon",
 			format: "{{job:name}}",
 			labels: { "job:name": "api" },

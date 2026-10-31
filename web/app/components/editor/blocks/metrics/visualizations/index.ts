@@ -198,13 +198,16 @@ function nameFromMetric(
 	orderedLegendLabelFn: (type: GenericQueryChartType) => string,
 	labels: Record<string, string>,
 ) {
-	if (legendLabelFormat) {
-		return legendLabelFormat.replace(
-			/\{\{([a-zA-Z_][\w:]*)\}\}/g,
-			(_match: string, variable: string) => {
-				return labels[variable] ?? ""
-			},
-		)
+	const name = legendLabelFormat.replace(
+		/\{\{([a-zA-Z_][\w:]*)\}\}/g,
+		(_match: string, variable: string) => {
+			return labels[variable] ?? ""
+		},
+	)
+	// echarts reads an empty legend name as a line break, so a format whose
+	// labels are all missing gets the default name instead
+	if (name.trim()) {
+		return name
 	}
 
 	return orderedLegendLabelFn(type)
