@@ -27,7 +27,7 @@ const isMobile = useMediaQuery("(max-width: 1250px)")
 	</ShadcnUiSheet>
 	<div
 		v-else
-		class="sticky top-0 h-svh shrink-0 overflow-hidden border-l border-border bg-sidebar transition-[width] duration-200 ease-out"
+		class="sticky top-0 h-svh shrink-0 overflow-hidden border-l border-border bg-sidebar transition-[width] duration-200 ease-out print:hidden"
 		:style="{ width: editorStore.aiAssistantOpen ? '30rem' : '0rem' }"
 	>
 		<EditorAiChatBox class="w-120" />

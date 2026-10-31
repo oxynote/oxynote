@@ -1,5 +1,6 @@
 import { beforeEach, describe, it, vi } from "vitest"
 import LineChart from "./LineChart.vue"
+import ChartTitle from "./ChartTitle.vue"
 import { chartOption, chartSeries, mountChart } from "./test-helpers"
 import { stubChartColorContext } from "../test-helpers"
 import { VisualizationDataUnit } from "../utils"
@@ -80,16 +81,13 @@ describe("<LineChart>", { concurrent: false }, () => {
 	it("hides the title area when there is no title", async ({ expect }) => {
 		const wrapper = await mountLine()
 
-		expect(chartOption(wrapper).title.show).toBe(false)
+		expect(wrapper.findComponent(ChartTitle).exists()).toBe(false)
 	})
 
 	it("shows the title it was given", async ({ expect }) => {
 		const wrapper = await mountLine({ title: "Requests" })
 
-		const option = chartOption(wrapper)
-
-		expect(option.title.show).toBe(true)
-		expect(option.title.text).toBe("Requests")
+		expect(wrapper.findComponent(ChartTitle).text()).toBe("Requests")
 	})
 
 	it("leaves room above the plot for a title", async ({ expect }) => {

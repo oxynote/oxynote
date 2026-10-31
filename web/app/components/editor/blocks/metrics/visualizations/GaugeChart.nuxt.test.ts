@@ -1,5 +1,6 @@
 import { beforeEach, describe, it, vi } from "vitest"
 import GaugeChart from "./GaugeChart.vue"
+import ChartTitle from "./ChartTitle.vue"
 import {
 	chartOption,
 	chartSeries,
@@ -11,6 +12,17 @@ import { stubChartColorContext } from "../test-helpers"
 import { VisualizationDataUnit } from "../utils"
 import type { MultipleGaugeChartData } from "."
 
+// the stand-in chart reports a canvas that never fits its host, so every
+// redraw the component asks for reaches resize
+const { chartStub } = vi.hoisted(() => ({
+	chartStub: {
+		resize: vi.fn(),
+		getDom: () => ({ clientWidth: 1, clientHeight: 1 }),
+		getWidth: () => 0,
+		getHeight: () => 0,
+	},
+}))
+
 // echarts draws onto a canvas happy-dom does not implement; the option
 // the component builds is the whole contract under test
 vi.mock("vue-echarts", async () => {
@@ -20,7 +32,11 @@ vi.mock("vue-echarts", async () => {
 		default: defineComponent({
 			name: "VChart",
 			props: { option: { type: Object, required: true } },
-			setup: () => () => h("div"),
+			setup: (_, { expose }) => {
+				expose({ chart: chartStub })
+
+				return () => h("div")
+			},
 		}),
 	}
 })
@@ -28,6 +44,11 @@ vi.mock("vue-echarts", async () => {
 const BASE_COLOR = "#8a3ffc"
 
 const GAUGES: MultipleGaugeChartData = [{ name: "cpu", value: 40 }]
+
+const FIVE_GAUGES: MultipleGaugeChartData = Array.from(
+	{ length: 5 },
+	(_, i) => ({ name: `cpu-${i}`, value: 40 }),
+)
 
 function mountGauge(props: Record<string, unknown> = {}) {
 	return mountChart(GaugeChart, {
@@ -46,7 +67,10 @@ function valueRing(option: ChartOption, index = 0): ChartSeries {
 // chartStyles paints colours onto a canvas, so every mount needs the
 // stand-in context installed first
 describe("<GaugeChart>", { concurrent: false }, () => {
-	beforeEach(stubChartColorContext)
+	beforeEach(() => {
+		stubChartColorContext()
+		chartStub.resize.mockReset()
+	})
 
 	it("draws the value and its name", async ({ expect }) => {
 		const wrapper = await mountGauge()
@@ -75,6 +99,26 @@ describe("<GaugeChart>", { concurrent: false }, () => {
 		).toEqual(["cpu", "memory"])
 	})
 
+	it("redraws the chart when its gauges need a wider row", async ({
+		expect,
+	}) => {
+		const wrapper = await mountGauge()
+
+		await wrapper.setProps({ gauges: FIVE_GAUGES })
+
+		expect(chartStub.resize).toHaveBeenCalledTimes(1)
+	})
+
+	it("leaves the chart alone when its gauges keep the row's width", async ({
+		expect,
+	}) => {
+		const wrapper = await mountGauge()
+
+		await wrapper.setProps({ gauges: [{ name: "cpu", value: 70 }] })
+
+		expect(chartStub.resize).toHaveBeenCalledTimes(0)
+	})
+
 	it("draws nothing for an empty result", async ({ expect }) => {
 		const wrapper = await mountGauge({ gauges: [] })
 
@@ -84,16 +128,13 @@ describe("<GaugeChart>", { concurrent: false }, () => {
 	it("hides the title area when there is no title", async ({ expect }) => {
 		const wrapper = await mountGauge()
 
-		expect(chartOption(wrapper).title.show).toBe(false)
+		expect(wrapper.findComponent(ChartTitle).exists()).toBe(false)
 	})
 
 	it("shows the title it was given", async ({ expect }) => {
 		const wrapper = await mountGauge({ title: "CPU" })
 
-		const option = chartOption(wrapper)
-
-		expect(option.title.show).toBe(true)
-		expect(option.title.text).toBe("CPU")
+		expect(wrapper.findComponent(ChartTitle).text()).toBe("CPU")
 	})
 
 	it("animates by default", async ({ expect }) => {

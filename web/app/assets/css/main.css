@@ -187,6 +187,13 @@
 	opacity: 0.5;
 }
 
+/* gap zones are placed from the screen layout. In print they would reach
+past the page and make the browser shrink the whole page to fit. Important,
+as the secondary zone sets its display inline. */
+.pm-gap-zone {
+	@apply print:hidden!;
+}
+
 /* defaults: https://tailwindcss.com/docs/theme#default-theme-variable-reference */
 @theme {
 	/* note that we also use these values as theme(zIndex.modal) */

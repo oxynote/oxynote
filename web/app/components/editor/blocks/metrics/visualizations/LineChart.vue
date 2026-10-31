@@ -3,17 +3,16 @@ import { use } from "echarts/core"
 import { CanvasRenderer } from "echarts/renderers"
 import { LineChart as EChartsLineChart } from "echarts/charts"
 import {
-	TitleComponent,
 	TooltipComponent,
 	LegendComponent,
 	GridComponent,
 	MarkLineComponent,
 } from "echarts/components"
 import VChart from "vue-echarts"
+import ChartTitle from "./ChartTitle.vue"
 import type { ComposeOption } from "echarts/core"
 import type { LineSeriesOption } from "echarts/charts"
 import type {
-	TitleComponentOption,
 	TooltipComponentOption,
 	LegendComponentOption,
 	GridComponentOption,
@@ -36,7 +35,6 @@ import type { VisualizationUnit } from "../utils"
 use([
 	CanvasRenderer,
 	EChartsLineChart,
-	TitleComponent,
 	TooltipComponent,
 	LegendComponent,
 	GridComponent,
@@ -46,7 +44,6 @@ use([
 // Define the option type
 type ECOption = ComposeOption<
 	| LineSeriesOption
-	| TitleComponentOption
 	| TooltipComponentOption
 	| LegendComponentOption
 	| GridComponentOption
@@ -69,8 +66,8 @@ const props = defineProps<{
 }>()
 
 const containerElem = useTemplateRef<HTMLDivElement>("chart-container")
-const { width: containerWidth } = useElementSize(containerElem)
 const chartElem = useTemplateRef<InstanceType<typeof VChart>>("chart")
+useChartSize(containerElem, chartElem, () => option.value)
 const { color } = useAppearance()
 const { browserType } = useDetectHost()
 
@@ -99,33 +96,8 @@ const option = computed<ECOption>(() => {
 
 	const st = chartStyles()
 
-	// echarts does not support dynamic width with ellipsis, so we calculate a
-	// fixed width based on container size
-	const titleRightPadding = props.titleRightPadding ?? 0
-	const titleWidth = Math.max(
-		containerWidth.value * 0.9 - titleRightPadding,
-		50,
-	)
-
 	return {
 		color: st.dataColors,
-		title: {
-			show: !!props.title,
-			text: props.title,
-			top: 10,
-			left: 10,
-			padding: 0,
-			textStyle: {
-				fontSize: 15, // text-2base
-				lineHeight: 17,
-				fontWeight: "normal",
-				fontFamily: st.fontFamily,
-				color: st.lineChart.text,
-				overflow: "truncate",
-				width: titleWidth,
-				ellipsis: "...",
-			},
-		},
 		tooltip: {
 			show: true,
 			trigger: "axis",
@@ -309,12 +281,11 @@ const legendHandler = computed(() => {
 })
 </script>
 <template>
-	<div ref="chart-container" class="size-full">
+	<div ref="chart-container" class="relative size-full">
 		<VChart
 			ref="chart"
 			class="size-full"
 			:option="option"
-			autoresize
 			@legendselectchanged="
 				(p: unknown) => legendHandler(p as LegendSelectChangedPayload)
 			"
@@ -355,5 +326,10 @@ const legendHandler = computed(() => {
 				</div>
 			</template>
 		</VChart>
+		<ChartTitle
+			v-if="props.title"
+			:title="props.title"
+			:right-padding="props.titleRightPadding"
+		/>
 	</div>
 </template>
