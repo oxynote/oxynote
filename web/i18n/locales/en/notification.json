@@ -4,6 +4,14 @@
 		"read-all-button": "Mark all as read",
 		"empty-title": "All caught up",
 		"empty-description": "You'll receive notifications here for page review invitations, triggered hooks, and more",
+		"filtered-empty-title": "No matching notifications",
+		"filtered-empty-description": "Try a different filter",
+		"filters": {
+			"label": "Filter notifications",
+			"all": "All",
+			"unread": "Unread",
+			"read": "Read"
+		},
 		"document-fallback": "Deleted Page",
 		"hook-fallback": "Unknown",
 		"days": {

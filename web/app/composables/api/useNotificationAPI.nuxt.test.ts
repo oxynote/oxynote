@@ -1,9 +1,10 @@
 import type { EntryKey, UseInfiniteQueryData } from "@pinia/colada"
-import { afterEach, beforeEach, describe, it } from "vitest"
+import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import {
 	clearQueryCache,
 	disposeMockEndpoints,
 	mockEndpoint,
+	mockDeferredEndpoint,
 	readQueryData,
 	runInApp,
 	seedQueryData,
@@ -12,8 +13,10 @@ import useNotificationAPI from "./useNotificationAPI"
 
 type NotificationPages = UseInfiniteQueryData<NotificationsResponse, number>
 
-const LIST_KEY_A = ["notifications", "list", 10] as const
-const LIST_KEY_B = ["notifications", "list", 5] as const
+const LIST_KEY_A = ["notifications", "list", 10, "all"] as const
+const LIST_KEY_B = ["notifications", "list", 5, "all"] as const
+const UNREAD_KEY = ["notifications", "list", 10, false] as const
+const READ_KEY = ["notifications", "list", 10, true] as const
 
 function makeNotificationAPI() {
 	return runInApp(() => useNotificationAPI())
@@ -76,6 +79,27 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 	afterEach(disposeMockEndpoints)
 
 	describe("useFetchManyNotifications", () => {
+		it.for([
+			{ read: false, expected: "false" },
+			{ read: true, expected: "true" },
+		])(
+			"filters notifications on the server with read=$read",
+			async ({ read, expected }, { expect }) => {
+				const page = makePage([makeNotification("n1", read)])
+				const calls = mockEndpoint("GET", "/api/notifications", () => page)
+				const api = makeNotificationAPI()
+				const params = { limit: 10, read }
+				const list = runInApp(() => api.useFetchManyNotifications(params))
+
+				await list.refresh()
+
+				expect(list.data.value).toEqual(makePages(page))
+				expect(calls.map((call) => call.query)).toEqual([
+					{ limit: "10", page: "1", "filter-read_eq": expected },
+				])
+			},
+		)
+
 		it("fetches the first notification page", async ({ expect }) => {
 			const page = makePage([makeNotification("n1", false)])
 			const listCalls = mockEndpoint("GET", "/api/notifications", () => page)
@@ -111,6 +135,123 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 			)
 			expect(list.hasNextPage.value).toBe(false)
 			expect(listCalls.map((call) => call.query.page)).toEqual(["1", "2"])
+		})
+
+		it("keeps all, unread and read pages in separate caches when switching filters", async ({
+			expect,
+		}) => {
+			const calls = mockEndpoint("GET", "/api/notifications", (call) =>
+				makePage(
+					[
+						makeNotification(
+							notificationPageId(call.query),
+							call.query["filter-read_eq"] === "true",
+						),
+					],
+					2,
+				),
+			)
+			const api = makeNotificationAPI()
+			const params = ref<NotificationsParams>({ limit: 10 })
+			const list = runInApp(() => api.useFetchManyNotifications(params))
+			await list.refresh()
+			await list.loadNextPage()
+			params.value = { limit: 10, read: false }
+			await nextTick()
+			await list.refresh()
+			await list.loadNextPage()
+			params.value = { limit: 10, read: true }
+			await nextTick()
+			await list.refresh()
+
+			params.value = { limit: 10 }
+			await nextTick()
+			await list.refresh()
+
+			expect(list.data.value?.pageParams).toEqual([1, 2])
+			expect(
+				getPages(LIST_KEY_A)?.pages.flatMap((page) =>
+					page.notifications.map((notification) => notification.id),
+				),
+			).toEqual(["all-1", "all-2"])
+			expect(
+				getPages(UNREAD_KEY)?.pages.flatMap((page) =>
+					page.notifications.map((notification) => notification.id),
+				),
+			).toEqual(["false-1", "false-2"])
+			expect(
+				getPages(READ_KEY)?.pages.flatMap((page) =>
+					page.notifications.map((notification) => notification.id),
+				),
+			).toEqual(["true-1"])
+			expect(calls.map((call) => call.query)).toEqual([
+				{ limit: "10", page: "1" },
+				{ limit: "10", page: "2" },
+				{ limit: "10", page: "1", "filter-read_eq": "false" },
+				{ limit: "10", page: "2", "filter-read_eq": "false" },
+				{ limit: "10", page: "1", "filter-read_eq": "true" },
+			])
+		})
+
+		it("keeps an in-flight multipage refetch on its original filter", async ({
+			expect,
+		}) => {
+			let releasePage: () => void = () => undefined
+			let reachedPage: () => void = () => undefined
+			const reached = new Promise<void>((resolve) => {
+				reachedPage = resolve
+			})
+			const release = new Promise<void>((resolve) => {
+				releasePage = resolve
+			})
+			let hold = false
+			const calls = mockEndpoint("GET", "/api/notifications", async (call) => {
+				if (
+					hold &&
+					call.query.page === "1" &&
+					call.query["filter-read_eq"] === undefined
+				) {
+					reachedPage()
+					await release
+				}
+
+				return makePage(
+					[makeNotification(notificationPageId(call.query), false)],
+					2,
+				)
+			})
+			const api = makeNotificationAPI()
+			const params = ref<NotificationsParams>({ limit: 10 })
+			const list = runInApp(() => api.useFetchManyNotifications(params))
+			await list.refresh()
+			await list.loadNextPage()
+			hold = true
+			const pending = list.refetch()
+			await reached
+
+			params.value = { limit: 10, read: false }
+			await nextTick()
+			await list.refresh()
+			releasePage()
+			await pending
+
+			expect(
+				getPages(LIST_KEY_A)?.pages.flatMap((page) =>
+					page.notifications.map((notification) => notification.id),
+				),
+			).toEqual(["all-1", "all-2"])
+			expect(
+				list.data.value?.pages.flatMap((page) =>
+					page.notifications.map((notification) => notification.id),
+				),
+			).toEqual(["false-1"])
+			expect(calls.map((call) => call.query)).toEqual([
+				{ limit: "10", page: "1" },
+				{ limit: "10", page: "2" },
+				{ limit: "10", page: "1" },
+				{ limit: "10", page: "1", "filter-read_eq": "false" },
+				{ limit: "10", page: "2" },
+			])
 		})
 
 		it("refetches every loaded page in order", async ({ expect }) => {
@@ -159,6 +300,146 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 	})
 
 	describe("markNotificationsRead", () => {
+		it("preserves the error when preparing the optimistic update fails", async ({
+			expect,
+		}) => {
+			const listCalls = mockEndpoint("GET", "/api/notifications", () =>
+				makePage([]),
+			)
+			const countCalls = mockEndpoint(
+				"GET",
+				"/api/notifications/count",
+				() => ({ count: 0 }),
+			)
+			const putCalls = mockEndpoint(
+				"PUT",
+				"/api/notifications/read-status",
+				() => ({}),
+			)
+			const page = makePage([makeNotification("n1", false)])
+			seedPages(LIST_KEY_A, page)
+			const api = makeNotificationAPI()
+			const queryCache = runInApp(() => useQueryCache())
+			const error = new Error("Cache unavailable")
+			const getQueryData = vi
+				.spyOn(queryCache, "getQueryData")
+				.mockImplementationOnce(() => {
+					throw error
+				})
+
+			try {
+				await expect(
+					api.markNotificationsRead.mutateAsync({ ids: ["n1"] }),
+				).rejects.toBe(error)
+				expect(getQueryData).toHaveBeenCalledExactlyOnceWith(LIST_KEY_A)
+				expect(putCalls).toHaveLength(0)
+				expect(listCalls).toHaveLength(0)
+				expect(countCalls).toHaveLength(0)
+			} finally {
+				getQueryData.mockRestore()
+			}
+
+			expect(getPages(LIST_KEY_A)).toEqual(makePages(page))
+		})
+
+		it.for([
+			{ name: "one notification", ids: ["n1"], remaining: ["n2"] },
+			{ name: "all notifications", ids: [], remaining: [] },
+		])(
+			"removes $name from unread pages while updating all pages",
+			async ({ ids, remaining }, { expect }) => {
+				const put = mockDeferredEndpoint(
+					"PUT",
+					"/api/notifications/read-status",
+				)
+				seedPages(
+					LIST_KEY_A,
+					makePage([
+						makeNotification("n1", false),
+						makeNotification("n2", false),
+					]),
+				)
+				seedPages(
+					UNREAD_KEY,
+					makePage([makeNotification("n1", false)]),
+					makePage([makeNotification("n2", false)]),
+				)
+				seedPages(READ_KEY, makePage([makeNotification("n3", true)]))
+				const api = makeNotificationAPI()
+
+				const pending = api.markNotificationsRead.mutateAsync({ ids })
+				await put.reached
+
+				expect(
+					getPages(UNREAD_KEY)?.pages.flatMap((page) =>
+						page.notifications.map((notification) => notification.id),
+					),
+				).toEqual(remaining)
+				expect(readStates(LIST_KEY_A)).toEqual([[true, ids.length === 0]])
+				expect(getPages(READ_KEY)).toEqual(
+					makePages(makePage([makeNotification("n3", true)])),
+				)
+				expect(put.calls.map((call) => call.body)).toEqual([{ ids }])
+				put.resolve({})
+				await pending
+			},
+		)
+
+		it("restores unread page membership when marking read fails", async ({
+			expect,
+		}) => {
+			const put = mockDeferredEndpoint("PUT", "/api/notifications/read-status")
+			const unreadPage = makePage([makeNotification("n1", false)])
+			seedPages(LIST_KEY_A, unreadPage)
+			seedPages(UNREAD_KEY, unreadPage)
+			seedPages(READ_KEY, makePage([makeNotification("n2", true)]))
+			const api = makeNotificationAPI()
+			const pending = api.markNotificationsRead.mutateAsync({ ids: ["n1"] })
+			await put.reached
+			expect(getPages(UNREAD_KEY)?.pages[0]?.notifications).toEqual([])
+
+			put.reject(createError({ statusCode: 500 }))
+
+			await expect(pending).rejects.toThrow()
+			expect(getPages(UNREAD_KEY)).toEqual(makePages(unreadPage))
+			expect(getPages(LIST_KEY_A)).toEqual(makePages(unreadPage))
+			expect(readStates(READ_KEY)).toEqual([[true]])
+			expect(put.calls).toHaveLength(1)
+		})
+
+		it("rolls back touched pages when a different filter loads during a failed mutation", async ({
+			expect,
+		}) => {
+			const unreadPage = makePage([makeNotification("n1", false)])
+			const calls = mockEndpoint("GET", "/api/notifications", (call) =>
+				call.query["filter-read_eq"] === "false" ? unreadPage : makePage([]),
+			)
+			const put = mockDeferredEndpoint("PUT", "/api/notifications/read-status")
+			seedPages(LIST_KEY_A, unreadPage)
+			const api = makeNotificationAPI()
+			const params = ref<NotificationsParams>({ limit: 10, read: false })
+			const list = runInApp(() => api.useFetchManyNotifications(params))
+			await list.refresh()
+			const pending = api.markNotificationsRead.mutateAsync({ ids: ["n1"] })
+			await put.reached
+			expect(getPages(UNREAD_KEY)?.pages[0]?.notifications).toEqual([])
+			params.value = { limit: 10, read: true }
+			await nextTick()
+			await list.refresh()
+
+			put.reject(createError({ statusCode: 500 }))
+
+			await expect(pending).rejects.toThrow()
+			expect(getPages(UNREAD_KEY)).toEqual(makePages(unreadPage))
+			expect(getPages(LIST_KEY_A)).toEqual(makePages(unreadPage))
+			expect(getPages(READ_KEY)).toEqual(makePages(makePage([])))
+			expect(calls.map((call) => call.query["filter-read_eq"])).toEqual([
+				"false",
+				"true",
+			])
+			expect(put.calls).toHaveLength(1)
+		})
+
 		it("marks every cached notification as read when no ids are given", async ({
 			expect,
 		}) => {
@@ -406,3 +687,10 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 		})
 	})
 })
+
+function notificationPageId(query: Record<string, unknown>) {
+	const read = query["filter-read_eq"]
+	const filter = typeof read === "string" ? read : "all"
+
+	return `${filter}-${String(query.page)}`
+}
