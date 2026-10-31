@@ -424,10 +424,10 @@ describe("mergeVisualizationResults", () => {
 			expected: "api on node-1",
 		},
 		{
-			name: "leaves an unknown template variable untouched",
+			name: "drops a template variable the series has no label for",
 			format: "{{job}}/{{missing}}",
 			labels: { job: "api" },
-			expected: "api/{{missing}}",
+			expected: "api/",
 		},
 		{
 			name: "substitutes a variable containing a colon",

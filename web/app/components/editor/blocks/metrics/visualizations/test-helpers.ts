@@ -31,6 +31,14 @@ export interface ChartSeries {
 export interface ChartOption {
 	title: { show: boolean; text?: string }
 	legend: { show?: boolean; data?: string[] }
+	tooltip: {
+		confine?: boolean
+		triggerOn?: string
+		enterable?: boolean
+		alwaysShowContent?: boolean
+		appendTo?: unknown
+		className?: string
+	}
 	grid: { top: number; bottom: number }
 	xAxis: { axisLabel: { formatter: (value: number) => string } }
 	yAxis: {
@@ -44,8 +52,9 @@ export interface ChartOption {
 export function mountChart(
 	component: TestComponent,
 	props: Record<string, unknown>,
+	options: { attachTo?: Element } = {},
 ) {
-	return mountSuspended(component, { props: props })
+	return mountSuspended(component, { props: props, ...options })
 }
 
 // the whole drawing contract of a chart component is the option object it

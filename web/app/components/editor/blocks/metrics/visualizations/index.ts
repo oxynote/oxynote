@@ -201,8 +201,8 @@ function nameFromMetric(
 	if (legendLabelFormat) {
 		return legendLabelFormat.replace(
 			/\{\{([a-zA-Z_][\w:]*)\}\}/g,
-			(match: string, variable: string) => {
-				return labels[variable] ?? match
+			(_match: string, variable: string) => {
+				return labels[variable] ?? ""
 			},
 		)
 	}

@@ -861,6 +861,10 @@
 					"http_latency": "Request latency",
 					"error_rate": "Error rate"
 				}
+			},
+			"tooltip": {
+				"pin-hint": "{count} series · Click to pin and scroll",
+				"unpin-hint": "{count} series · Click elsewhere or press Esc to unpin"
 			}
 		},
 		"no-document-indicator": {
