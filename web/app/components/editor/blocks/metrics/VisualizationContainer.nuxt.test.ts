@@ -14,6 +14,7 @@ import {
 	clearQueryCache,
 	disposeMockEndpoints,
 	makeXid,
+	mockDeferredEndpoint,
 	mockEndpoint,
 	seedQueryData,
 } from "~/composables/api/test-helpers"
@@ -196,6 +197,39 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 		)
 	})
 
+	it("shows that the data is loading while the first answer is on its way", async ({
+		expect,
+	}) => {
+		const query = mockDeferredEndpoint("GET", QUERY_URL)
+
+		const wrapper = await mountContainer(metricConfig())
+		await query.reached
+		await flushPromises()
+
+		expect(wrapper.text()).toContain(t("editor.metrics.status.loading.title"))
+		expect(wrapper.text()).not.toContain(
+			t("editor.metrics.status.no-data-loaded.title"),
+		)
+		expect(chartNames(wrapper)).toEqual([])
+	})
+
+	it("replaces the loading state with the chart once the answer arrives", async ({
+		expect,
+	}) => {
+		const query = mockDeferredEndpoint("GET", QUERY_URL)
+		const wrapper = await mountContainer(metricConfig())
+		await query.reached
+
+		query.resolve(seriesResult())
+
+		await vi.waitFor(() => {
+			expect(chartNames(wrapper)).toEqual(["LineChart"])
+		}, WAIT_FOR_OPTIONS)
+		expect(wrapper.text()).not.toContain(
+			t("editor.metrics.status.loading.title"),
+		)
+	})
+
 	it("draws a line chart from the returned series", async ({ expect }) => {
 		mockEndpoint("GET", QUERY_URL, () => seriesResult())
 
@@ -346,6 +380,49 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 			)
 		}, WAIT_FOR_OPTIONS)
 		expect(wrapper.text()).toContain("Query 2:")
+	})
+
+	it("reports a failed request with the server's message", async ({
+		expect,
+	}) => {
+		mockEndpoint("GET", QUERY_URL, (_call, event) => {
+			setResponseStatus(event, 502)
+
+			return { code: "data_source.unreachable", message: "connection refused" }
+		})
+
+		const wrapper = await mountContainer(metricConfig())
+
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain(
+				t("editor.metrics.status.query-error.title"),
+			)
+		}, WAIT_FOR_OPTIONS)
+		expect(wrapper.text()).toContain("Connection refused")
+		expect(wrapper.text()).not.toContain(
+			t("editor.metrics.status.no-data-loaded.title"),
+		)
+	})
+
+	it("reports a failed request without a message as a failed load", async ({
+		expect,
+	}) => {
+		mockEndpoint("GET", QUERY_URL, (_call, event) => {
+			setResponseStatus(event, 500)
+
+			return ""
+		})
+
+		const wrapper = await mountContainer(metricConfig())
+
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain(
+				t("editor.metrics.status.query-error.title"),
+			)
+		}, WAIT_FOR_OPTIONS)
+		expect(wrapper.text()).toContain(
+			t("editor.metrics.status.query-error.request-failed"),
+		)
 	})
 
 	it("reports data the chosen chart cannot show", async ({ expect }) => {

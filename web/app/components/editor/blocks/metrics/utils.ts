@@ -335,6 +335,25 @@ export function resolveTimeRange(
 	}
 }
 
+// the message the server sent along with a failed request, or null when it
+// sent none
+export function requestErrorMessage(err: unknown): string | null {
+	if (
+		!err ||
+		typeof err !== "object" ||
+		!("data" in err) ||
+		!err.data ||
+		typeof err.data !== "object" ||
+		!("message" in err.data) ||
+		typeof err.data.message !== "string" ||
+		!err.data.message
+	) {
+		return null
+	}
+
+	return err.data.message
+}
+
 export function refreshIntervalToMs(interval: RefreshInterval): number {
 	switch (interval) {
 		case RefreshInterval.S5:

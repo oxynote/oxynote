@@ -5,6 +5,7 @@ import GaugeChart from "./visualizations/GaugeChart.vue"
 import {
 	CONFIG_DEBOUNCE_MS,
 	refreshIntervalToMs,
+	requestErrorMessage,
 	resolveTimeRange,
 	type MetricConfig,
 	type MetricSimulationPreset,
@@ -216,6 +217,16 @@ const drawnSimulationPreset = computed(() => {
 	)
 })
 
+// the first answer is still on its way, which is not the same as a query
+// that returned nothing. Later refreshes keep the chart that is drawn.
+const awaitingFirstAnswer = computed(() => {
+	return (
+		!drawnSimulationPreset.value &&
+		fetchMetricData.state.value.data === undefined &&
+		fetchMetricData.asyncStatus.value === "loading"
+	)
+})
+
 const processedQueries = computed(() => {
 	const res = fetchMetricData.state.value.data
 	const queries = debouncedConfig.value.queries
@@ -251,6 +262,20 @@ const data = computed<{
 			debouncedConfig.value.decimals || null,
 			orderedLegendLabel(),
 		)
+	}
+
+	// a request that failed outright has no results to look at, so it is
+	// shown as the query error it is rather than as an empty answer
+	if (fetchMetricData.state.value.status === "error") {
+		return {
+			status: GenericQueryResultStatus.QueryError,
+			queryErrorMessage:
+				requestErrorMessage(fetchMetricData.state.value.error) ??
+				t("editor.metrics.status.query-error.request-failed"),
+			queryIndex: 0,
+			multipleQueries: false,
+			data: null,
+		}
 	}
 
 	const results = fetchMetricData.state.value.data ?? []
@@ -468,7 +493,21 @@ function openModal() {
 </script>
 <template>
 	<div class="relative flex size-full min-w-0 items-center justify-center">
-		<template v-if="data.status === GenericQueryResultStatus.Ok && data.data">
+		<div v-if="awaitingFirstAnswer" class="text-foreground">
+			<ShadcnUiEmpty>
+				<ShadcnUiEmptyHeader>
+					<ShadcnUiEmptyMedia variant="icon" class="size-9">
+						<Icon name="mingcute:loading-line" class="size-6 animate-spin" />
+					</ShadcnUiEmptyMedia>
+					<ShadcnUiEmptyTitle>
+						{{ $t("editor.metrics.status.loading.title") }}
+					</ShadcnUiEmptyTitle>
+				</ShadcnUiEmptyHeader>
+			</ShadcnUiEmpty>
+		</div>
+		<template
+			v-else-if="data.status === GenericQueryResultStatus.Ok && data.data"
+		>
 			<LineChart
 				v-if="props.config.visualizationType === GenericQueryChartType.Line"
 				:series-data="data.data as MultipleLineChartData"
