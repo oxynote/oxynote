@@ -98,6 +98,12 @@ function truncToDecimals(num: number, decimals: number | null) {
 		}
 	}
 
+	// toFixed throws above 100 digits. Values that small print in exponent
+	// form anyway.
+	if (decimals > 100) {
+		return num
+	}
+
 	return parseFloat(num.toFixed(decimals))
 }
 
@@ -344,12 +350,29 @@ export function yAxisLabelFormatter(
 		return `${value}`
 	}
 
-	if (unit.type === VisualizationCoreUnit.Custom && unit.custom) {
-		return `${value} ${unit.custom.slice(0, VISUALIZATION_MAX_CUSTOM_UNIT_LENGTH)}`
-	}
-
 	const formatScaledNumber = (num: number) =>
 		`${truncToDecimals(num, decimals)}`
+
+	// abbreviates large values with K, M, B and T (e.g. 1234567 -> 1.235M)
+	const formatShortNumber = (num: number) => {
+		const suffixes = ["", "K", "M", "B", "T"]
+		let scaled = num
+		let index = 0
+		let formatted = truncToDecimals(scaled, decimals)
+
+		// check the rounded value, so 999999.9 becomes 1M and not 1000K
+		while (index < suffixes.length - 1 && Math.abs(formatted) >= 1000) {
+			scaled /= 1000
+			index += 1
+			formatted = truncToDecimals(scaled, decimals)
+		}
+
+		return `${formatted}${suffixes[index] ?? ""}`
+	}
+
+	if (unit.type === VisualizationCoreUnit.Custom && unit.custom) {
+		return `${formatShortNumber(value)} ${unit.custom.slice(0, VISUALIZATION_MAX_CUSTOM_UNIT_LENGTH)}`
+	}
 
 	type ScalableUnit = VisualizationTimeUnit | VisualizationDataUnit
 	interface UnitScale {
@@ -476,7 +499,7 @@ export function yAxisLabelFormatter(
 			return `${value * 100}%`
 	}
 
-	return `${value}`
+	return formatShortNumber(value)
 }
 
 /**

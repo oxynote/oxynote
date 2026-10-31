@@ -678,6 +678,48 @@ describe("yAxisLabelFormatter", () => {
 	})
 
 	it.for([
+		{ value: 999, expected: "999" },
+		{ value: 1500, expected: "1.5K" },
+		{ value: -2500, expected: "-2.5K" },
+		{ value: 1234567, expected: "1.235M" },
+		{ value: 3e9, expected: "3B" },
+		{ value: 4.5e12, expected: "4.5T" },
+		{ value: 1e15, expected: "1000T" },
+		{ value: 999.9999, expected: "1K" },
+		{ value: 999999.9, expected: "1M" },
+		{ value: 0, expected: "0" },
+		{ value: 12.345678, expected: "12.346" },
+		{ value: 1e-99, expected: "1e-99" },
+	])(
+		"abbreviates a unitless $value to $expected",
+		({ value, expected }, { expect }) => {
+			expect(yAxisLabelFormatter({}, value)).toBe(expected)
+		},
+	)
+
+	it("abbreviates a value with a custom unit", ({ expect }) => {
+		expect(
+			yAxisLabelFormatter(
+				{ type: VisualizationCoreUnit.Custom, custom: "req/s" },
+				1234567,
+			),
+		).toBe("1.235M req/s")
+	})
+
+	it("applies the configured decimal count to an abbreviated value", ({
+		expect,
+	}) => {
+		expect(yAxisLabelFormatter({}, 1234567, 2)).toBe("1.23M")
+		expect(
+			yAxisLabelFormatter(
+				{ type: VisualizationCoreUnit.Custom, custom: "req/s" },
+				1234567,
+				2,
+			),
+		).toBe("1.23M req/s")
+	})
+
+	it.for([
 		{ unit: VisualizationTimeUnit.Nanoseconds, value: 1, expected: "1 ns" },
 		{
 			unit: VisualizationTimeUnit.Nanoseconds,
