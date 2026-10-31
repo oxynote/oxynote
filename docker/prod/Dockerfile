@@ -137,7 +137,7 @@ FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c03
 # /usr/libexec/postgresql18 paths: a data directory only opens under the
 # major that wrote it, so a major bump needs an upgrade path for existing
 # volumes, not only a new pin.
-ARG NODE_APK_VERSION=24.22.1-r0
+ARG NODE_APK_VERSION=24.22.1-r1
 ARG ICU_DATA_APK_VERSION=78.1-r0
 ARG POSTGRESQL_APK_VERSION=18.6-r0
 
