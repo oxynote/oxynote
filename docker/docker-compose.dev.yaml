@@ -1,6 +1,6 @@
 services:
   caddy:
-    image: caddy:2.11.4-alpine
+    image: caddy:2.11.6-alpine
     container_name: caddy
     volumes:
       - caddy_data:/data
@@ -156,7 +156,7 @@ services:
         max-file: "3"
   mailpit:
     container_name: mailpit
-    image: axllent/mailpit:v1.31.3
+    image: axllent/mailpit:v1.32.0
     environment:
       - MP_QUIET=true
     restart: unless-stopped
@@ -168,7 +168,7 @@ services:
         max-file: "3"
   valkey:
     container_name: valkey
-    image: valkey/valkey:9.1.2-alpine
+    image: valkey/valkey:9.1.3-alpine
     command: ["valkey-server", "--loglevel", "warning"]
     volumes:
       - valkey_data:/data
@@ -186,7 +186,7 @@ services:
         max-file: "3"
   changedetection:
     container_name: changedetection
-    image: dgtlmoon/changedetection.io:0.60.8
+    image: dgtlmoon/changedetection.io:0.60.10
     volumes:
       - changedetection_data:/datastore
     environment:
@@ -220,7 +220,7 @@ services:
       - MAX_CONCURRENT_CHROME_PROCESSES=10
       - LOG_LEVEL=WARNING
   grafana:
-    image: grafana/grafana:13.2.2
+    image: grafana/grafana:13.3.0
     container_name: grafana
     ports:
       - "8083:3000"
