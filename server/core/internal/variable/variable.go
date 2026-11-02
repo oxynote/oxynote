@@ -543,7 +543,7 @@ func (vi Input) Validate() error {
 		return ErrUnexpectedDefault
 	}
 
-	seen := make(map[xid.ID]bool, len(vi.Options))
+	seenIDs := make(map[xid.ID]bool, len(vi.Options))
 	seenValues := make(map[string]bool, len(vi.Options))
 
 	for _, oi := range vi.Options {
@@ -565,11 +565,11 @@ func (vi Input) Validate() error {
 			continue
 		}
 
-		if seen[oi.ID.V] {
+		if seenIDs[oi.ID.V] {
 			return ErrDuplicateOption
 		}
 
-		seen[oi.ID.V] = true
+		seenIDs[oi.ID.V] = true
 	}
 
 	return nil
