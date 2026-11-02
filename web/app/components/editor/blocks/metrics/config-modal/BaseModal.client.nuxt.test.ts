@@ -196,8 +196,10 @@ describe("<MetricConfigBaseModal>", { concurrent: false }, () => {
 
 		await mountModal()
 
-		const timeRange = t("editor.metrics.config.variable-time-range")
-		const refreshInterval = t("editor.metrics.config.variable-refresh-interval")
+		const timeRange = t("editor.config-modal-utils.variable-time-range")
+		const refreshInterval = t(
+			"editor.config-modal-utils.variable-refresh-interval",
+		)
 
 		// each button names the shared setting, not what it resolves to
 		expect(teleportedButton(timeRange).textContent.trim()).toBe(timeRange)
@@ -210,12 +212,12 @@ describe("<MetricConfigBaseModal>", { concurrent: false }, () => {
 		{
 			name: "offers the global time first",
 			trigger: () => t("general.time-range-options.last_24_hours"),
-			label: () => t("editor.metrics.config.variable-time-range"),
+			label: () => t("editor.config-modal-utils.variable-time-range"),
 		},
 		{
 			name: "offers the global refresh first",
 			trigger: () => t("general.refresh-interval-options-short.30s"),
-			label: () => t("editor.metrics.config.variable-refresh-interval"),
+			label: () => t("editor.config-modal-utils.variable-refresh-interval"),
 		},
 	])("$name", async ({ trigger, label }, { expect }) => {
 		activateBlock({

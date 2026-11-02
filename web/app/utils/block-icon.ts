@@ -19,6 +19,7 @@ export const BLOCK_ICONS = {
 	mermaidBlock: "lucide:network",
 	splitDocumentation: "lucide:square-split-horizontal",
 	metricBlock: "lucide:chart-line",
+	logBlock: "mingcute:terminal-box-line",
 } as const
 
 export const HEADING_LEVEL_ICONS = {

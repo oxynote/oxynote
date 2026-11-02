@@ -15,13 +15,14 @@ import (
 var _contentDescription = "The blocks as XML, one element per block. " +
 	"Elements: <p>; <h1> to <h3>, plain text; <ul> and <ol start> of <li>, and <tasks> of <task checked>, where an entry holds its text and then any blocks nested under it; " +
 	"<blockquote> and <callout icon> holding blocks; <pre language> with raw code, taking a title only on a split_doc's right side; <mermaid> with raw source; " +
-	"<hr/>; <img src alt title width/>; <figma src width height/>; <metrics> of <metric>, which holds a JSON object of its attributes; " +
-	"<split_doc inversed> holding <left>, an <h1> then <p>, lists or <callout> then any <params header> of <param name type>description</param>, and <right>, a titled <pre>, <metric> or <mermaid>. " +
-	"Inline text takes <b>, <i>, <u>, <s>, <code> and <a href>; outside <pre>, <mermaid> and <metric>, write & as &amp; and < as &lt;. " +
+	"<hr/>; <img src alt title width/>; <figma src width height/>; <grid>, only at the top level, of <metrics> and <logs>, each holding a JSON object of its attributes; " +
+	"<split_doc inversed> holding <left>, an <h1> then <p>, lists or <callout> then any <params header> of <param name type>description</param>, and <right>, a titled <pre>, <metrics> or <mermaid>. " +
+	"Inline text takes <b>, <i>, <u>, <s>, <code> and <a href>; outside <pre>, <mermaid>, <metrics> and <logs>, write & as &amp; and < as &lt;. " +
 	"Content inside them is raw, so write it as it is. Raw content with no < at all is decoded as escaped text, so write a literal &lt; there as &amp;lt;. " +
 	"A callout's icon takes the ids create_document's icon does. " +
 	"Mermaid ends a gantt task name or timeline period at its first colon, so write a colon inside one as #58;. " +
-	"A metric's attributes: " + markup.MetricReference() + "."
+	"A metric block's attributes: " + markup.MetricReference() + ". " +
+	"A log block's attributes: " + markup.LogReference() + "."
 
 // docTarget names the document, and the branch of it, a content tool
 // reads or writes. Both are required: the default branch is a branch

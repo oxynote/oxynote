@@ -25,7 +25,9 @@ import { nanoid } from "nanoid"
 // Custom blocks
 import { CalloutBlock } from "./callout.js"
 import { MermaidBlock } from "./mermaid.js"
-import { MetricBlock, MetricGrid } from "./metric.js"
+import { MetricBlock } from "./metric.js"
+import { BlockGrid, MetricGrid } from "./grid.js"
+import { LogBlock } from "./log.js"
 import { ImageBlock } from "./image.js"
 import { FileBlock } from "./file.js"
 import { FigmaBlock } from "./figma.js"
@@ -48,6 +50,17 @@ import {
 import { AddedMark, DeletedMark, CommentMark } from "./marks.js"
 import { NodeComment } from "./node-comment.js"
 
+// the document root. Only it takes the root-only blocks, such as grids.
+const ContentDocument = Document.extend({
+	content: "(block | rootOnlyBlock)+",
+})
+
+// the editor schema version a client needs to write. An older client opens
+// in read-only mode, because its editor would delete every node it does not
+// know. Raise it together with the web client's when a node type is added or
+// renamed.
+export const EDITOR_SCHEMA_VERSION = 2
+
 const contentExtensionsWithIDs: Extensions = [
 	Paragraph,
 	Heading.configure({ levels: [1, 2, 3] }).extend({
@@ -67,6 +80,9 @@ const contentExtensionsWithIDs: Extensions = [
 	SplitDocumentationRightSide,
 	TitledCodeBlock,
 	MetricBlock,
+	LogBlock,
+	BlockGrid,
+	// legacy: documents may still hold metricGrid
 	MetricGrid,
 	ImageBlock,
 	FileBlock,
@@ -91,7 +107,7 @@ export function getEditorExtensions(): Extensions {
 		...contentExtensionsWithIDs,
 
 		// Base extensions
-		Document,
+		ContentDocument,
 		Text,
 
 		// Text formatting marks

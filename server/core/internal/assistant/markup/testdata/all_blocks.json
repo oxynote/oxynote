@@ -415,7 +415,7 @@
    }
   },
   {
-   "type": "metricGrid",
+   "type": "blockGrid",
    "attrs": {
     "uid": "g1"
    },
@@ -439,6 +439,25 @@
       "refreshInterval": "1m",
       "width": "standard",
       "title": null
+     }
+    },
+    {
+     "type": "logBlock",
+     "attrs": {
+      "uid": "lb1",
+      "title": "Errors",
+      "dataSourceId": "ds1",
+      "queries": [
+       {
+        "name": "Q",
+        "query": "{app=\"api\"} |= \"error\""
+       }
+      ],
+      "timeRange": "last_1_hour",
+      "refreshInterval": "1m",
+      "timestampFormat": "rfc3339_milli",
+      "order": "newest_first",
+      "width": "standard"
      }
     }
    ]

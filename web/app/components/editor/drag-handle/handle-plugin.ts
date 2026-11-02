@@ -317,7 +317,7 @@ function handleDragData(
 	// Find the parent list type if dragging a list item
 	const parentListType = findParentListType(doc, nodePos, node)
 
-	// Find the source wrapper bounds if dragging a wrapped node (e.g., MetricBlock in MetricGrid)
+	// Find the source wrapper bounds if dragging a wrapped node (e.g., grid item in block grid)
 	const sourceWrapperBounds = findSourceWrapperBounds(doc, nodePos, node)
 
 	// Store the slice, parent list type, and wrapper bounds in view.dragging

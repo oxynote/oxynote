@@ -12,6 +12,7 @@ import { BulletList, OrderedList, TaskList } from "@tiptap/extension-list"
 import { ParameterList } from "../blocks/split-documentation/parameter-list"
 import { CalloutBlock } from "../blocks/callout"
 import { insertMetricBlock } from "../blocks/metrics"
+import { insertLogBlock } from "../blocks/logs"
 import { ImageBlock } from "../blocks/image"
 import { FileBlock } from "../blocks/file"
 import {
@@ -21,6 +22,7 @@ import {
 import {
 	CODE_BLOCK_NAME,
 	FIGMA_BLOCK_NAME,
+	LOG_BLOCK_NAME,
 	METRIC_BLOCK_NAME,
 	MERMAID_BLOCK_NAME,
 } from "../blocks/node-names"
@@ -568,6 +570,30 @@ export const allItems: CommandItem[] = [
 			}
 
 			insertMetricBlock(editor, range)
+		},
+	},
+	{
+		titleI18nKey: "editor.slash-commands.items.live-logs.title",
+		descriptionI18nKey: "editor.slash-commands.items.live-logs.description",
+		nodeType: LOG_BLOCK_NAME,
+		icon: BLOCK_ICONS.logBlock,
+		group: CommandGroup.PowerBlock,
+		command: ({ editor, range }: CommandData) => {
+			// block if another user is editing in the paragraph being replaced
+			const $pos = editor.state.doc.resolve(range.from)
+			const provider = extractHocuspocusProviderFromEditor(editor)
+			if (
+				isRangeBeingEditedByOther(
+					provider,
+					editor.state.doc,
+					$pos.before(),
+					$pos.after(),
+				)
+			) {
+				return
+			}
+
+			insertLogBlock(editor, range)
 		},
 	},
 ]

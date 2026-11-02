@@ -19,7 +19,7 @@ const schema = new Schema<
 	| "doc"
 	| "paragraph"
 	| "atomBlock"
-	| "metricGrid"
+	| "blockGrid"
 	| typeof CODE_BLOCK_NAME
 	| typeof MERMAID_BLOCK_NAME
 	| typeof METRIC_BLOCK_NAME
@@ -37,7 +37,7 @@ const schema = new Schema<
 			atom: true,
 			attrs: { uid: { default: null } },
 		},
-		metricGrid: { group: "block", content: "metricBlock+" },
+		blockGrid: { group: "block", content: "metricBlock+" },
 		[CODE_BLOCK_NAME]: {
 			group: "block",
 			content: "text*",
@@ -74,8 +74,8 @@ function atomBlock(uid: string | null): PMNode {
 	return schema.nodes.atomBlock.create({ uid })
 }
 
-function metricGrid(...blocks: PMNode[]): PMNode {
-	return schema.nodes.metricGrid.create(null, blocks)
+function blockGrid(...blocks: PMNode[]): PMNode {
+	return schema.nodes.blockGrid.create(null, blocks)
 }
 
 function metricBlock(uid: string | null, str: string): PMNode {
@@ -304,7 +304,7 @@ describe("HookDecorator", () => {
 		expect,
 	}) => {
 		const { plugin, state } = makeState(
-			docOf(para(null, "x"), metricGrid(metricBlock("m1", "val"))),
+			docOf(para(null, "x"), blockGrid(metricBlock("m1", "val"))),
 			() => [hook("m1")],
 		)
 

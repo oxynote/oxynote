@@ -3,6 +3,13 @@ import { describe, it, vi } from "vitest"
 import { nextTick, shallowRef } from "vue"
 import * as Y from "yjs"
 import { useDiffEditor } from "./useDiffEditor"
+import {
+	BlockGridStub,
+	MetricBlockStub,
+} from "~/components/editor/test-helpers"
+
+// the document root takes grids, so a schema without one does not build
+const EXTENSIONS = [Paragraph, BlockGridStub, MetricBlockStub]
 
 function paragraphElem(text: string) {
 	const elem = new Y.XmlElement("paragraph")
@@ -25,7 +32,7 @@ describe("useDiffEditor", { concurrent: false }, () => {
 		const diff = useDiffEditor(
 			() => makeYdoc("hello"),
 			() => makeYdoc("hello", "world"),
-			[Paragraph],
+			EXTENSIONS,
 		)
 
 		expect(diff.editor.value?.getText()).toContain("hello")
@@ -41,7 +48,7 @@ describe("useDiffEditor", { concurrent: false }, () => {
 		const diff = useDiffEditor(
 			() => new Y.Doc(),
 			() => new Y.Doc(),
-			[Paragraph],
+			EXTENSIONS,
 		)
 
 		expect(diff.editor.value?.getText()).toBe("")
@@ -58,7 +65,7 @@ describe("useDiffEditor", { concurrent: false }, () => {
 			const diff = useDiffEditor(
 				() => makeYdoc("hello"),
 				() => active,
-				[Paragraph],
+				EXTENSIONS,
 			)
 
 			active.getXmlFragment("content").insert(1, [paragraphElem("world")])
@@ -83,7 +90,7 @@ describe("useDiffEditor", { concurrent: false }, () => {
 			const diff = useDiffEditor(
 				() => makeYdoc("hello"),
 				() => active,
-				[Paragraph],
+				EXTENSIONS,
 			)
 
 			diff.suppressNextRecompute()
@@ -111,7 +118,7 @@ describe("useDiffEditor", { concurrent: false }, () => {
 		const diff = useDiffEditor(
 			() => target.value,
 			() => makeYdoc("one"),
-			[Paragraph],
+			EXTENSIONS,
 		)
 
 		target.value = makeYdoc("two")
@@ -130,7 +137,7 @@ describe("useDiffEditor", { concurrent: false }, () => {
 			const diff = useDiffEditor(
 				() => makeYdoc("hello"),
 				() => active,
-				[Paragraph],
+				EXTENSIONS,
 			)
 
 			diff.destroy()

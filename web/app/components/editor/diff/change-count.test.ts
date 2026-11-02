@@ -19,6 +19,7 @@ import { SIMULATION_ACTIVE_ATTR } from "~/components/editor/blocks/metrics/simul
 import {
 	FILE_BLOCK_NAME,
 	IMAGE_BLOCK_NAME,
+	LOG_BLOCK_NAME,
 	METRIC_BLOCK_NAME,
 } from "~/components/editor/blocks/node-names"
 
@@ -80,6 +81,16 @@ const schema = new Schema({
 			attrs: {
 				uid: { default: null },
 				title: { default: null },
+				queries: { default: null },
+				diffStatus: { default: null },
+				oldNode: { default: null },
+			},
+		},
+		[LOG_BLOCK_NAME]: {
+			group: "block",
+			atom: true,
+			attrs: {
+				uid: { default: null },
 				queries: { default: null },
 				diffStatus: { default: null },
 				oldNode: { default: null },
@@ -286,6 +297,45 @@ describe("countNodeChanges", () => {
 
 	it.for([
 		{
+			name: "counts an added log query as one addition",
+			input: {
+				old: [logQuery('{app="api"}')],
+				new: [logQuery('{app="api"}'), logQuery('{app="web"}')],
+			},
+			expected: { removed: 0, added: 1 },
+		},
+		{
+			name: "counts an edited log query as one removal and one addition",
+			input: {
+				old: [logQuery('{app="api"}')],
+				new: [logQuery('{app="api"} |= "error"')],
+			},
+			expected: { removed: 1, added: 1 },
+		},
+		{
+			name: "ignores a renamed log query",
+			input: {
+				old: [{ ...logQuery('{app="api"}'), name: "Query 1" }],
+				new: [{ ...logQuery('{app="api"}'), name: "Query 2" }],
+			},
+			expected: { removed: 0, added: 0 },
+		},
+	])("$name", ({ input, expected }, { expect }) => {
+		const node = schema.nodes[LOG_BLOCK_NAME].create({
+			uid: "log-1",
+			queries: input.new,
+			diffStatus: DiffStatus.Modified,
+			oldNode: {
+				type: LOG_BLOCK_NAME,
+				attrs: { uid: "log-1", queries: input.old },
+			},
+		})
+
+		expect(countNodeChanges(node)).toEqual(expected)
+	})
+
+	it.for([
+		{
 			name: "counts a replaced run as one removal and one addition",
 			input: [
 				["graph TD\n"],
@@ -463,6 +513,10 @@ describe("textSegments", () => {
 
 function query(expr: string, legendFormat: string): Record<string, unknown> {
 	return { name: "Query", query: expr, legendFormat: legendFormat }
+}
+
+function logQuery(expr: string): Record<string, unknown> {
+	return { name: "Query", query: expr }
 }
 
 function storedFile(name: string): Record<string, unknown> {

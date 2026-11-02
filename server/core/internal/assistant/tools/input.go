@@ -255,13 +255,18 @@ func (i *input) FetchDataSources() ([]datasource.DataSource, error) {
 func (i *input) CheckDataSources(blocks []document.Block) error {
 	for _, b := range blocks {
 		if raw := b.Attrs.Get(document.AttrDataSourceID).String(); raw != "" {
+			block := "metric block"
+			if b.Type == document.BlockNodeLogBlock {
+				block = "log block"
+			}
+
 			id, err := xid.FromString(raw)
 			if err != nil {
-				return fmt.Errorf("metric %s %q: %w", document.AttrDataSourceID, raw, err)
+				return fmt.Errorf("%s %s %q: %w", block, document.AttrDataSourceID, raw, err)
 			}
 
 			if _, err := i.FetchDataSource(id); err != nil {
-				return fmt.Errorf("metric %s %q: %w", document.AttrDataSourceID, raw, err)
+				return fmt.Errorf("%s %s %q: %w", block, document.AttrDataSourceID, raw, err)
 			}
 		}
 

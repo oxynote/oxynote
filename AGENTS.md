@@ -145,6 +145,12 @@ Component commands are in the nested files.
   (`server/auth-realtime/src/ydocument.ts`). Read the document-storage
   section of [server/AGENTS.md](server/AGENTS.md) before touching branch
   content.
+- **Editor schema version**: y-prosemirror deletes every node its schema
+  does not know, and the delete syncs to everyone. Adding or renaming a node
+  type raises `EDITOR_SCHEMA_VERSION` in both
+  `web/app/components/editor/schema-extensions.ts` and
+  `server/auth-realtime/src/schema/index.ts`; auth-realtime opens an older
+  client read-only.
 - **System writes**: a protected branch accepts only core's own persists,
   marked through `edit.Client.Apply`'s `system` argument and recognised by
   `onStoreDocument` only while every change came from core. Protection is

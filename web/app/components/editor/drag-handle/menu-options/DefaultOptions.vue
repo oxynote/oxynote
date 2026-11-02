@@ -4,7 +4,7 @@ import type { JSONContent } from "@tiptap/core"
 import type { Node } from "@tiptap/pm/model"
 import type { Editor } from "@tiptap/vue-3"
 import { ListItem, TaskItem } from "@tiptap/extension-list"
-import { METRIC_BLOCK_NAME } from "../../blocks/node-names"
+import { BLOCK_GRID_NAMES, GRID_ITEM_NAMES } from "../../blocks/grid/utils"
 
 const props = defineProps<{
 	editor: Editor
@@ -94,14 +94,14 @@ function resolveInsertTargetBounds(
 	nodePos: number,
 	node: Node,
 ): { startPos: number; endPos: number } {
-	// Metric blocks are wrapped by metricGrid at root level; when inserting a
+	// grid items are wrapped by a grid at root level; when inserting a
 	// neighbor, target the wrapper bounds to add above/below the whole grid.
-	if (node.type.name === METRIC_BLOCK_NAME) {
+	if (GRID_ITEM_NAMES.has(node.type.name)) {
 		const $pos = editor.state.doc.resolve(nodePos + 1)
 
 		for (let d = $pos.depth; d > 0; d--) {
 			const ancestor = $pos.node(d)
-			if (ancestor.type.name === "metricGrid") {
+			if (BLOCK_GRID_NAMES.has(ancestor.type.name)) {
 				return {
 					startPos: $pos.before(d),
 					endPos: $pos.after(d),

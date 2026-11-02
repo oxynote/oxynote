@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -45,6 +46,17 @@ func Test_Build(t *testing.T) {
 
 		return out
 	}
+
+	grid, ok := root.FindByUID("g1")
+	require.True(t, ok)
+
+	legacyGrid := grid
+	legacyGrid.Type = document.BlockNodeMetricGrid
+	legacyGrid.Attrs = document.Attributes{document.AttrUID: "g1", document.AttrCommentID: "nc-g1"}
+
+	unknown := document.Block{Type: "mysteryBlock", Attrs: document.Attributes{document.AttrUID: "x1"}}
+	mixedGrid := grid
+	mixedGrid.Content = append(slices.Clone(grid.Content), unknown)
 
 	type tcase struct {
 		Markup string
@@ -160,16 +172,58 @@ func Test_Build(t *testing.T) {
 			},
 		},
 		"New metric follows the built-in variables": {
-			Markup: `<metric>{}</metric>`,
-			Result: "<metric>{\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\"}</metric>\n",
+			Markup: `<metrics>{}</metrics>`,
+			Result: "<metrics>{\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\"}</metrics>\n",
 		},
 		"Metric drops a simulation flag the markup sent": {
-			Markup: `<metric>{"simulationActive":true,"uid":"x","nodeCommentId":"c"}</metric>`,
+			Markup: `<metrics>{"simulationActive":true,"uid":"x","nodeCommentId":"c"}</metrics>`,
 			Check: func(t *testing.T, got []document.Block) {
 				t.Helper()
 				assert.NotContains(t, got[0].Attrs, document.AttrSimulationActive)
 				assert.NotEqual(t, "x", got[0].Attrs[document.AttrUID])
 				assert.NotContains(t, got[0].Attrs, document.AttrCommentID)
+			},
+		},
+		"New metrics build a block grid": {
+			Markup: `<grid><metrics>{}</metrics></grid>`,
+			Check: func(t *testing.T, got []document.Block) {
+				t.Helper()
+				assert.Equal(t, document.BlockNodeBlockGrid, got[0].Type)
+			},
+		},
+		"Metric under its former name builds a metric": {
+			Markup: `<grid><metric>{"title":"Up"}</metric></grid>`,
+			Result: "<grid>\n  <metrics>{\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\",\"title\":\"Up\"}</metrics>\n</grid>\n",
+		},
+		"New logs build a log block": {
+			Markup: `<grid><logs>{"title":"Errors","order":"oldest_first"}</logs></grid>`,
+			Result: "<grid>\n  <logs>{\"order\":\"oldest_first\",\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\",\"title\":\"Errors\"}</logs>\n</grid>\n",
+		},
+		"Logs drop the uid and comment the markup sent": {
+			Markup: `<logs>{"uid":"x","nodeCommentId":"c"}</logs>`,
+			Check: func(t *testing.T, got []document.Block) {
+				t.Helper()
+				assert.Equal(t, document.BlockNodeLogBlock, got[0].Type)
+				assert.NotEqual(t, "x", got[0].Attrs[document.AttrUID])
+				assert.NotContains(t, got[0].Attrs, document.AttrCommentID)
+			},
+		},
+		"Legacy grid kept by its id becomes a block grid": {
+			Markup: Render([]document.Block{legacyGrid}),
+			Stored: document.RootBlock{Content: []document.Block{legacyGrid}},
+			Check: func(t *testing.T, got []document.Block) {
+				t.Helper()
+				assert.Equal(t, document.BlockNodeBlockGrid, got[0].Type)
+				assert.Equal(t, legacyGrid.Attrs, got[0].Attrs)
+				assert.Equal(t, legacyGrid.Content, got[0].Content)
+			},
+		},
+		"Grid keeps a block it cannot write by its id": {
+			Markup: Render([]document.Block{mixedGrid}),
+			Stored: document.RootBlock{Content: []document.Block{mixedGrid}},
+			Check: func(t *testing.T, got []document.Block) {
+				t.Helper()
+				assert.Equal(t, mixedGrid.Content, got[0].Content)
 			},
 		},
 		"Entry with a kept p keeps it nested": {
@@ -250,14 +304,16 @@ func Test_Build(t *testing.T) {
 		"Text in params":             {Markup: `<params header="h">x</params>`, Err: errors.New("line 1: text in <params> has to sit in a <param>")},
 		"Param with an unknown id":   {Markup: `<params header="h"><param id="nope" name="a"/></params>`, Stored: root, Err: errors.New(`line 1: id "nope" is not a block this write can keep; leave id out for a new block`)},
 		"Width that is not a number": {Markup: `<img src="x" width="wide"/>`, Err: errors.New("line 1: <img> width has to be a positive whole number")},
-		"Metric that is not JSON":    {Markup: "<metric>{</metric>", Err: assert.AnError},
+		"Metric that is not JSON":    {Markup: "<metrics>{</metrics>", Err: assert.AnError},
 		"No block":                   {Markup: "  \n ", Err: errors.New("the markup holds no block; to remove one, use delete_block")},
 		"More blocks than one call takes": {
 			Markup: strings.Repeat("<hr/>", _maxBlocks+1),
 			Err:    errors.New("501 blocks are over the limit of 500 per call; send them in several calls"),
 		},
-		"Metric with a bad value": {Markup: `<metric>{"width":"huge"}</metric>`, Err: assert.AnError},
-		"New file":                {Markup: `<file src="x"/>`, Err: errors.New("line 1: <file> can only keep a block get_document showed as <file>, by its id")},
+		"Metric with a bad value":  {Markup: `<metrics>{"width":"huge"}</metrics>`, Err: assert.AnError},
+		"Logs with a bad value":    {Markup: `<logs>{"order":"sideways"}</logs>`, Err: assert.AnError},
+		"Grid of the wrong blocks": {Markup: "<grid><p>x</p></grid>", Err: errors.New("line 1: <grid> holds only <metrics> or <logs>, not <p>")},
+		"New file":                 {Markup: `<file src="x"/>`, Err: errors.New("line 1: <file> can only keep a block get_document showed as <file>, by its id")},
 		"Unsupported keeping a known block": {
 			Markup: `<unsupported id="p1"/>`,
 			Stored: root,

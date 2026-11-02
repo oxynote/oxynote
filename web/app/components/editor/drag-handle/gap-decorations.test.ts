@@ -11,7 +11,7 @@ import {
 } from "./gap-decorations"
 import {
 	METRIC_BLOCK_NAME,
-	METRIC_GRID_NAME,
+	BLOCK_GRID_NAME,
 	SPLIT_DOCUMENTATION_LEFT_SIDE_NAME,
 	SPLIT_DOCUMENTATION_NAME,
 	SPLIT_DOCUMENTATION_PARAMETER_LIST_HEADER_NAME,
@@ -75,7 +75,7 @@ const schema = new Schema({
 			content: "inline*",
 			attrs: { uid: { default: null } },
 		},
-		[METRIC_GRID_NAME]: {
+		[BLOCK_GRID_NAME]: {
 			group: "block",
 			content: `${METRIC_BLOCK_NAME}*`,
 			attrs: { uid: { default: null } },
@@ -142,8 +142,8 @@ const taskList = (uid: string | null, ...items: PMNode[]) =>
 const taskItem = (uid: string | null, ...content: PMNode[]) =>
 	block("taskItem", { uid }, ...content)
 
-const metricGrid = (uid: string | null, ...blocks: PMNode[]) =>
-	block(METRIC_GRID_NAME, { uid }, ...blocks)
+const blockGrid = (uid: string | null, ...blocks: PMNode[]) =>
+	block(BLOCK_GRID_NAME, { uid }, ...blocks)
 
 const metricBlock = (uid: string | null) =>
 	block(METRIC_BLOCK_NAME, { uid }, "ab")
@@ -363,7 +363,7 @@ describe("gap collection", () => {
 		expect,
 	}) => {
 		const { plugin, state } = makeState(
-			docOf(metricGrid("mg", metricBlock("m1"), metricBlock("m2"))),
+			docOf(blockGrid("mg", metricBlock("m1"), metricBlock("m2"))),
 		)
 
 		expect(gapRows(plugin, state)).toEqual([
@@ -376,7 +376,7 @@ describe("gap collection", () => {
 	})
 
 	it("collects no inner gaps for an empty metric grid", ({ expect }) => {
-		const { plugin, state } = makeState(docOf(metricGrid("mg")))
+		const { plugin, state } = makeState(docOf(blockGrid("mg")))
 
 		expect(gapRows(plugin, state)).toEqual([
 			["doc:before:mg", 0],

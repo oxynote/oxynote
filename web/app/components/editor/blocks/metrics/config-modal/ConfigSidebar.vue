@@ -1,11 +1,11 @@
 <script lang="ts" setup>
 import { cn } from "#layers/ui/app/lib/utils"
-import ConfigField from "../ConfigField.vue"
+import ConfigField from "../../config-modal-utils/ConfigField.vue"
 import { VISUALIZATION_MAX_DECIMALS, type MetricConfig } from "../utils"
 import ThresholdInput from "./ThresholdInput.vue"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 import VisualizationTypeSelect from "./VisualizationTypeSelect.vue"
-import DataSourceSelect from "./DataSourceSelect.vue"
+import DataSourceSelect from "../../config-modal-utils/DataSourceSelect.vue"
 import UnitSelectWithCustom from "./UnitSelectWithCustom.vue"
 import SimulationPresetSelect from "./SimulationPresetSelect.vue"
 

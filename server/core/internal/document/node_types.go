@@ -87,8 +87,17 @@ const (
 	// an opaque configuration payload.
 	BlockNodeMetricBlock BlockNodeType = "metricBlock"
 
-	// BlockNodeMetricGrid wraps one or more metricBlock children
-	// at the top level of a document.
+	// BlockNodeLogBlock is a log view of a data source's queries.
+	BlockNodeLogBlock BlockNodeType = "logBlock"
+
+	// BlockNodeBlockGrid lays metricBlock and logBlock children
+	// side by side at the top level of a document.
+	BlockNodeBlockGrid BlockNodeType = "blockGrid"
+
+	// BlockNodeMetricGrid is the legacy name of blockGrid. Editors
+	// convert it to blockGrid on the first edit that touches it,
+	// but a protected branch is never edited, so readers must
+	// accept both.
 	BlockNodeMetricGrid BlockNodeType = "metricGrid"
 
 	// BlockNodeSplitDoc is the splitDocumentation macro: a

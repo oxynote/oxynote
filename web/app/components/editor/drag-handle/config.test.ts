@@ -25,7 +25,9 @@ import {
 	IMAGE_BLOCK_NAME,
 	MERMAID_BLOCK_NAME,
 	METRIC_BLOCK_NAME,
-	METRIC_GRID_NAME,
+	LOG_BLOCK_NAME,
+	BLOCK_GRID_NAME,
+	LEGACY_METRIC_GRID_NAME,
 	SPLIT_DOCUMENTATION_LEFT_SIDE_NAME,
 	SPLIT_DOCUMENTATION_NAME,
 	SPLIT_DOCUMENTATION_PARAMETER_LIST_ITEM_NAME,
@@ -99,11 +101,13 @@ describe("DRAG_COMPOSITE_DRAG_NODES", () => {
 		{ typeName: SPLIT_DOCUMENTATION_PARAMETER_LIST_ITEM_NAME, expected: true },
 		{ typeName: CALLOUT_BLOCK_NAME, expected: true },
 		{ typeName: METRIC_BLOCK_NAME, expected: true },
+		{ typeName: LOG_BLOCK_NAME, expected: true },
 		{ typeName: "taskItem", expected: true },
 		{ typeName: "listItem", expected: true },
 		{ typeName: "blockquote", expected: true },
 		{ typeName: "paragraph", expected: false },
-		{ typeName: METRIC_GRID_NAME, expected: false },
+		{ typeName: BLOCK_GRID_NAME, expected: false },
+		{ typeName: LEGACY_METRIC_GRID_NAME, expected: false },
 		{ typeName: SPLIT_DOCUMENTATION_PARAMETER_LIST_NAME, expected: false },
 	])(
 		"reports $expected for $typeName",
@@ -115,7 +119,7 @@ describe("DRAG_COMPOSITE_DRAG_NODES", () => {
 	it("absorbs both list item flavours so their children are not targets", ({
 		expect,
 	}) => {
-		expect([...DRAG_COMPOSITE_DRAG_NODES]).toHaveLength(7)
+		expect([...DRAG_COMPOSITE_DRAG_NODES]).toHaveLength(8)
 	})
 })
 
@@ -127,7 +131,8 @@ describe("DRAG_CONTAINER_NODE_TYPES", () => {
 		{ typeName: "bulletList", expected: true },
 		{ typeName: "orderedList", expected: true },
 		{ typeName: "taskList", expected: true },
-		{ typeName: METRIC_GRID_NAME, expected: true },
+		{ typeName: BLOCK_GRID_NAME, expected: true },
+		{ typeName: LEGACY_METRIC_GRID_NAME, expected: true },
 		{ typeName: SPLIT_DOCUMENTATION_NAME, expected: false },
 		{ typeName: "paragraph", expected: false },
 		{ typeName: CALLOUT_BLOCK_NAME, expected: false },
@@ -146,26 +151,27 @@ describe("DRAG_CONTAINER_NODE_TYPES", () => {
 })
 
 describe("gapZoneConfigByType", () => {
-	it("returns a vertical gap for a metric block inside a metric grid", ({
-		expect,
-	}) => {
-		expect(
-			gapZoneConfigByType(METRIC_BLOCK_NAME, undefined, METRIC_GRID_NAME),
-		).toEqual({
-			height: "100%",
-			width: "1rem",
-			verticalGap: true,
-			includeBeforeFirst: true,
-			xOffsetFirst: 0,
-			xOffsetMiddle: 0,
-			xOffsetLast: 0,
-			debugColor: "rgba(128, 0, 200, 0.3)",
-		})
-	})
+	it.for([
+		{ child: METRIC_BLOCK_NAME, parent: BLOCK_GRID_NAME },
+		{ child: LOG_BLOCK_NAME, parent: BLOCK_GRID_NAME },
+		{ child: METRIC_BLOCK_NAME, parent: LEGACY_METRIC_GRID_NAME },
+	])(
+		"returns a vertical gap for a $child inside a $parent",
+		({ child, parent }, { expect }) => {
+			expect(gapZoneConfigByType(child, undefined, parent)).toEqual({
+				height: "100%",
+				width: "1rem",
+				verticalGap: true,
+				includeBeforeFirst: true,
+				xOffsetFirst: 0,
+				xOffsetMiddle: 0,
+				xOffsetLast: 0,
+				debugColor: "rgba(128, 0, 200, 0.3)",
+			})
+		},
+	)
 
-	it("returns the horizontal metric block gap outside a metric grid", ({
-		expect,
-	}) => {
+	it("returns the horizontal grid item gap outside a grid", ({ expect }) => {
 		expect(
 			gapZoneConfigByType(METRIC_BLOCK_NAME, undefined, CALLOUT_BLOCK_NAME),
 		).toEqual({
@@ -175,9 +181,9 @@ describe("gapZoneConfigByType", () => {
 		})
 	})
 
-	it("ignores the metric grid parent for other child types", ({ expect }) => {
+	it("ignores the grid parent for other child types", ({ expect }) => {
 		expect(
-			gapZoneConfigByType("paragraph", undefined, METRIC_GRID_NAME),
+			gapZoneConfigByType("paragraph", undefined, BLOCK_GRID_NAME),
 		).toEqual({
 			height: "1.5rem",
 			includeBeforeFirst: true,
@@ -314,8 +320,17 @@ describe("gapZoneConfigByType", () => {
 			},
 		},
 		{
-			name: "metric grid gaps are a plain row",
-			childNodeType: METRIC_GRID_NAME,
+			name: "block grid gaps are a plain row",
+			childNodeType: BLOCK_GRID_NAME,
+			expected: {
+				height: "1.5rem",
+				includeBeforeFirst: true,
+				debugColor: "rgba(128, 64, 64, 0.2)",
+			},
+		},
+		{
+			name: "legacy grid gaps are a plain row",
+			childNodeType: LEGACY_METRIC_GRID_NAME,
 			expected: {
 				height: "1.5rem",
 				includeBeforeFirst: true,
@@ -557,8 +572,20 @@ describe("cursorOffsetByType", () => {
 			expected: { before: 10, after: -7 },
 		},
 		{
-			name: "metric grid",
-			nodeTypeName: METRIC_GRID_NAME,
+			name: "log block",
+			nodeTypeName: LOG_BLOCK_NAME,
+			indentationLevel: 0,
+			expected: { before: 10, after: -7 },
+		},
+		{
+			name: "block grid",
+			nodeTypeName: BLOCK_GRID_NAME,
+			indentationLevel: 0,
+			expected: { before: 12, after: -7 },
+		},
+		{
+			name: "legacy grid",
+			nodeTypeName: LEGACY_METRIC_GRID_NAME,
 			indentationLevel: 0,
 			expected: { before: 12, after: -7 },
 		},
@@ -656,9 +683,10 @@ describe("LIST_ITEM_TO_DEFAULT_LIST_TYPE", () => {
 
 describe("NODE_TO_WRAPPER_TYPE", () => {
 	it.for([
-		{ typeName: METRIC_BLOCK_NAME, expected: METRIC_GRID_NAME },
+		{ typeName: METRIC_BLOCK_NAME, expected: BLOCK_GRID_NAME },
+		{ typeName: LOG_BLOCK_NAME, expected: BLOCK_GRID_NAME },
 		{ typeName: "paragraph", expected: undefined },
-		{ typeName: METRIC_GRID_NAME, expected: undefined },
+		{ typeName: BLOCK_GRID_NAME, expected: undefined },
 	])("maps $typeName to $expected", ({ typeName, expected }, { expect }) => {
 		expect(NODE_TO_WRAPPER_TYPE.get(typeName)).toBe(expected)
 	})
@@ -711,10 +739,11 @@ describe("DRAGGABLE_NODE_TYPES", () => {
 		{ typeName: SPLIT_DOCUMENTATION_PARAMETER_LIST_NAME, expected: true },
 		{ typeName: SPLIT_DOCUMENTATION_PARAMETER_LIST_ITEM_NAME, expected: true },
 		{ typeName: METRIC_BLOCK_NAME, expected: true },
+		{ typeName: LOG_BLOCK_NAME, expected: true },
 		{ typeName: "horizontalRule", expected: true },
 		{ typeName: "doc", expected: false },
 		{ typeName: "text", expected: false },
-		{ typeName: METRIC_GRID_NAME, expected: false },
+		{ typeName: BLOCK_GRID_NAME, expected: false },
 		{ typeName: "bulletList", expected: false },
 		{ typeName: "taskList", expected: false },
 		{ typeName: SPLIT_DOCUMENTATION_LEFT_SIDE_NAME, expected: false },
@@ -740,9 +769,14 @@ describe("DRAG_DISABLED_EXCEPT_RULES", () => {
 			expected: ["taskItem", "listItem"],
 		},
 		{
-			name: "metric grids only allow metric blocks",
-			typeName: METRIC_GRID_NAME,
-			expected: [METRIC_BLOCK_NAME],
+			name: "block grids only allow grid items",
+			typeName: BLOCK_GRID_NAME,
+			expected: [METRIC_BLOCK_NAME, LOG_BLOCK_NAME],
+		},
+		{
+			name: "legacy grids only allow grid items",
+			typeName: LEGACY_METRIC_GRID_NAME,
+			expected: [METRIC_BLOCK_NAME, LOG_BLOCK_NAME],
 		},
 		{
 			name: "split documentation allows its own block vocabulary",

@@ -142,6 +142,14 @@ func Test_Scope_entries(t *testing.T) {
 			},
 			Result: map[string]Block{"m1": metric},
 		},
+		// a log block's title is an attribute, not a text child.
+		"Log block": {
+			Block: document.Block{
+				Type:  document.BlockNodeLogBlock,
+				Attrs: document.Attributes{"uid": "l1", "title": "API errors", "dataSourceId": "ds1"},
+			},
+			Result: map[string]Block{"l1": scope.Block("l1", "logBlock", "API errors")},
+		},
 		// a code block keeps its language. An empty or mistyped kept
 		// attribute is left out.
 		"Code block with a language": {

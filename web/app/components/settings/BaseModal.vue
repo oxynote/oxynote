@@ -10,9 +10,7 @@ const ORG_SECTION_ID = "settings-org"
 const APP_SECTION_ID = "settings-apps"
 const DATA_SOURCE_SECTION_ID = "settings-data-sources"
 
-const open = defineModel<
-	boolean | "org-members" | "github" | "metric-data-sources"
->({
+const open = defineModel<boolean | "org-members" | "github" | "data-sources">({
 	default: false,
 })
 const emit = defineEmits<{
@@ -88,7 +86,7 @@ whenever(open, async (val) => {
 			behavior: "instant",
 			block: "start",
 		})
-	} else if (val === "metric-data-sources") {
+	} else if (val === "data-sources") {
 		await nextTick()
 		document.getElementById(DATA_SOURCE_SECTION_ID)?.scrollIntoView({
 			behavior: "instant",

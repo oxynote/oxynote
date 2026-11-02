@@ -22,11 +22,14 @@ import { ImageBlock } from "../blocks/image"
 import Heading from "@tiptap/extension-heading"
 import Blockquote from "@tiptap/extension-blockquote"
 import HorizontalRule from "@tiptap/extension-horizontal-rule"
-import { MetricGrid } from "../blocks/metrics"
+import { BLOCK_GRID_NAMES, GRID_ITEM_NAMES } from "../blocks/grid/utils"
 import {
+	BLOCK_GRID_NAME,
 	CODE_BLOCK_NAME,
 	FIGMA_BLOCK_NAME,
 	FILE_BLOCK_NAME,
+	LEGACY_METRIC_GRID_NAME,
+	LOG_BLOCK_NAME,
 	MERMAID_BLOCK_NAME,
 	METRIC_BLOCK_NAME,
 	TITLED_CODE_BLOCK_NAME,
@@ -35,9 +38,9 @@ import {
 // we need to be careful with this value because it might trigger the
 // drag handle of the nearby nodes even when you are in another node
 // (especially when it comes to nodes that are close to each other like
-// MetricBlocks in MetricGrid; with values above 10 when you try to click/hover
-// on the settings icon of a MetricBlock sometimes the drag handle of the
-// neighboring MetricBlock shows up instead)
+// the blocks in a grid; with values above 10 when you try to click/hover
+// on the settings icon of a grid item sometimes the drag handle of the
+// neighboring grid item shows up instead)
 export const DRAG_HANDLE_APPROX_WIDTH_PX = 9
 
 // widened to boolean on purpose: this is a debug toggle flipped by hand, and a
@@ -52,6 +55,7 @@ export const DRAG_COMPOSITE_DRAG_NODES = new Set([
 	ParameterListItem.name,
 	CalloutBlock.name,
 	METRIC_BLOCK_NAME,
+	LOG_BLOCK_NAME,
 	TaskItem.name,
 	ListItem.name,
 	Blockquote.name,
@@ -65,7 +69,9 @@ export const DRAG_CONTAINER_NODE_TYPES = new Set([
 	BulletList.name,
 	OrderedList.name,
 	TaskList.name,
-	MetricGrid.name,
+	BLOCK_GRID_NAME,
+	// legacy: documents may still hold metricGrid
+	LEGACY_METRIC_GRID_NAME,
 ])
 
 /**
@@ -74,9 +80,9 @@ export const DRAG_CONTAINER_NODE_TYPES = new Set([
 export interface GapZoneConfig {
 	/** Height of the gap zone (CSS value) - used for horizontal gaps */
 	height: string
-	/** Width of the gap zone (CSS value) - used for vertical gaps (e.g., MetricGrid) */
+	/** Width of the gap zone (CSS value) - used for vertical gaps (e.g., a block grid) */
 	width?: string
-	/** Whether this is a vertical gap zone (for horizontal layouts like MetricGrid) */
+	/** Whether this is a vertical gap zone (for horizontal layouts like a block grid) */
 	verticalGap?: boolean
 	/** Whether to also add a gap zone before this node if it's the first child */
 	includeBeforeFirst?: boolean
@@ -108,7 +114,7 @@ export interface GapZoneConfig {
  * Gap zones are useful when trying to increase sensitivity for dropping
  * nodes between specific nodes.
  * For list items, indentation level can be provided to customize config per depth.
- * For MetricBlock inside MetricGrid, returns vertical gap config.
+ * For a grid item inside a grid, returns vertical gap config.
  * Return null to skip creating a gap zone for this child.
  */
 export function gapZoneConfigByType(
@@ -116,10 +122,11 @@ export function gapZoneConfigByType(
 	indentationLevel?: number,
 	parentNodeType?: string,
 ): GapZoneConfig | null {
-	// Special case: MetricBlock inside MetricGrid uses vertical gaps
+	// Special case: a grid item inside a grid uses vertical gaps
 	if (
-		childNodeType === METRIC_BLOCK_NAME &&
-		parentNodeType === MetricGrid.name
+		GRID_ITEM_NAMES.has(childNodeType) &&
+		parentNodeType !== undefined &&
+		BLOCK_GRID_NAMES.has(parentNodeType)
 	) {
 		return {
 			height: "100%",
@@ -208,12 +215,14 @@ export function gapZoneConfigByType(
 				debugColor: "rgba(128, 0, 64, 0.2)",
 			}
 		case METRIC_BLOCK_NAME:
+		case LOG_BLOCK_NAME:
 			return {
 				height: "1.5rem",
 				includeBeforeFirst: true,
 				debugColor: "rgba(128, 0, 64, 0.2)",
 			}
-		case MetricGrid.name:
+		case BLOCK_GRID_NAME:
+		case LEGACY_METRIC_GRID_NAME: // legacy: documents may still hold metricGrid
 			return {
 				height: "1.5rem",
 				includeBeforeFirst: true,
@@ -333,8 +342,10 @@ export function cursorOffsetByType(
 		case Blockquote.name:
 			return { before: 11, after: -7 }
 		case METRIC_BLOCK_NAME:
+		case LOG_BLOCK_NAME:
 			return { before: 10, after: -7 }
-		case MetricGrid.name:
+		case BLOCK_GRID_NAME:
+		case LEGACY_METRIC_GRID_NAME: // legacy: documents may still hold metricGrid
 			return { before: 12, after: -7 }
 		case Heading.name:
 			return { before: 10, after: -7 }
@@ -373,7 +384,8 @@ export const LIST_ITEM_TO_DEFAULT_LIST_TYPE = new Map<string, string>([
  * Used when dropping a node at a position that doesn't accept it directly.
  */
 export const NODE_TO_WRAPPER_TYPE = new Map<string, string>([
-	[METRIC_BLOCK_NAME, MetricGrid.name],
+	[METRIC_BLOCK_NAME, BLOCK_GRID_NAME],
+	[LOG_BLOCK_NAME, BLOCK_GRID_NAME],
 ])
 
 /**
@@ -413,6 +425,7 @@ export const DRAGGABLE_NODE_TYPES = new Set([
 	ParameterList.name,
 	ParameterListItem.name,
 	METRIC_BLOCK_NAME,
+	LOG_BLOCK_NAME,
 	HorizontalRule.name,
 ])
 
@@ -425,7 +438,10 @@ export const DRAG_DISABLED_EXCEPT_RULES = new Map<string, Set<string>>([
 	[ListItem.name, new Set([TaskItem.name, ListItem.name])],
 	[CalloutBlock.name, new Set([])],
 	[METRIC_BLOCK_NAME, new Set([])],
-	[MetricGrid.name, new Set([METRIC_BLOCK_NAME])],
+	[LOG_BLOCK_NAME, new Set([])],
+	[BLOCK_GRID_NAME, new Set(GRID_ITEM_NAMES)],
+	// legacy: documents may still hold metricGrid
+	[LEGACY_METRIC_GRID_NAME, new Set(GRID_ITEM_NAMES)],
 	[Blockquote.name, new Set([])],
 	[
 		SplitDocumentation.name,

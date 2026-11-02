@@ -1,8 +1,8 @@
 <script lang="ts" setup>
 import type { MetricConfig } from "../utils"
-import LegendEditor from "./query/LegendEditor.vue"
-import QueryEditor from "./query/QueryEditor.vue"
-import ConfigField from "../ConfigField.vue"
+import LegendEditor from "./LegendEditor.vue"
+import QueryEditor from "../../config-modal-utils/query/QueryEditor.vue"
+import ConfigField from "../../config-modal-utils/ConfigField.vue"
 import { cn } from "#layers/ui/app/lib/utils"
 import HelpPopoverContent from "./query-help/HelpPopoverContent.vue"
 import { DiffStatus } from "~/components/editor/diff/position-map"

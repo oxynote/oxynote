@@ -2,9 +2,9 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import type { DOMWrapper, VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it } from "vitest"
 import ConfigSidebar from "./ConfigSidebar.vue"
-import ConfigField from "../ConfigField.vue"
+import ConfigField from "../../config-modal-utils/ConfigField.vue"
 import ThresholdInput from "./ThresholdInput.vue"
-import DataSourceSelect from "./DataSourceSelect.vue"
+import DataSourceSelect from "../../config-modal-utils/DataSourceSelect.vue"
 import SimulationPresetSelect from "./SimulationPresetSelect.vue"
 import {
 	defaultMetricConfig,

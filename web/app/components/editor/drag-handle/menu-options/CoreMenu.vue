@@ -17,11 +17,11 @@ import {
 } from "../../blocks/split-documentation/parameter-list"
 import SplitDocParameterListMenu from "./SplitDocParameterListMenu.vue"
 import SplitDocParameterListItemMenu from "./SplitDocParameterListItemMenu.vue"
-import { deleteEmptyMetricGrids } from "../../blocks/metrics"
-import MetricBlockMenu from "./MetricBlockMenu.vue"
+import { deleteEmptyBlockGrids } from "../../blocks/grid"
+import { BLOCK_GRID_NAMES, GRID_ITEM_NAMES } from "../../blocks/grid/utils"
+import GridItemMenu from "./GridItemMenu.vue"
 import { isNodeOrDescendantsBeingEditedByOther } from "../../collaboration"
 import { showToastMessage } from "~/components/toast"
-import { METRIC_BLOCK_NAME } from "../../blocks/node-names"
 import { SUPPRESS_SCROLL_TO_SELECTION_META } from "../../scroll-control"
 
 const props = defineProps<{
@@ -105,9 +105,9 @@ const optTypes = computed(() => {
 	) {
 		res.push("split-doc", "default")
 	} else if (
-		hoveredState.value.lastData.hovered.node.type.name === METRIC_BLOCK_NAME
+		GRID_ITEM_NAMES.has(hoveredState.value.lastData.hovered.node.type.name)
 	) {
-		res.push("metric-block", "default")
+		res.push("grid-item", "default")
 	} else {
 		res.push("default")
 	}
@@ -178,9 +178,9 @@ async function deleteBlock() {
 
 	let tr = props.editor.state.tr.delete(pos, pos + node.nodeSize)
 
-	// Clean up empty MetricGrids in the same transaction to avoid
+	// Clean up empty grids in the same transaction to avoid
 	// position corruption from appendTransaction
-	tr = deleteEmptyMetricGrids(tr, props.editor.state.schema)
+	tr = deleteEmptyBlockGrids(tr)
 
 	props.editor.view.dispatch(tr)
 	props.editor.commands.focus(undefined, { scrollIntoView: false })
@@ -231,8 +231,8 @@ function duplicateBlock() {
 	const chain = props.editor.chain()
 
 	if (
-		node.type.name === METRIC_BLOCK_NAME ||
-		node.type.name === "metricGrid" ||
+		GRID_ITEM_NAMES.has(node.type.name) ||
+		BLOCK_GRID_NAMES.has(node.type.name) ||
 		node.type.name === "image"
 	) {
 		chain.setMeta(SUPPRESS_SCROLL_TO_SELECTION_META, true)
@@ -273,8 +273,8 @@ function duplicateBlock() {
 			/>
 			<ShadcnUiDropdownMenuSeparator />
 		</template>
-		<template v-if="optTypes.includes('metric-block') && !isEditingDisabled">
-			<MetricBlockMenu :editor="props.editor" :hovered="props.hovered" />
+		<template v-if="optTypes.includes('grid-item') && !isEditingDisabled">
+			<GridItemMenu :editor="props.editor" :hovered="props.hovered" />
 			<ShadcnUiDropdownMenuSeparator />
 		</template>
 		<template v-if="optTypes.includes('default') && !isEditingDisabled">

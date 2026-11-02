@@ -1147,7 +1147,12 @@ func Test_input_CheckDataSources(t *testing.T) {
 		"Id the organisation owns nothing for": {
 			Blocks:  grid(metric(_testDataSourceID.String()), metric(unknown)),
 			Fetches: 2,
-			Err:     fmt.Errorf("metric dataSourceId %q: %w", unknown, _errUnknownDataSource),
+			Err:     fmt.Errorf("metric block dataSourceId %q: %w", unknown, _errUnknownDataSource),
+		},
+		"Log block naming a data source the organisation does not own": {
+			Blocks:  grid(document.Block{Type: document.BlockNodeLogBlock, Attrs: document.Attributes{document.AttrDataSourceID: unknown}}),
+			Fetches: 1,
+			Err:     fmt.Errorf("log block dataSourceId %q: %w", unknown, _errUnknownDataSource),
 		},
 	}
 

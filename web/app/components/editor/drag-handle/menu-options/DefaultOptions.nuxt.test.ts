@@ -6,7 +6,7 @@ import {
 	commandNames,
 	makeEditor,
 } from "../../test-helpers/node-view"
-import { METRIC_BLOCK_NAME, METRIC_GRID_NAME } from "../../blocks/node-names"
+import { METRIC_BLOCK_NAME, BLOCK_GRID_NAME } from "../../blocks/node-names"
 import { clearTeleportedOverlays, menuItem, t } from "~/components/test-helpers"
 
 const ADD_ABOVE = "editor.drag-handle.options.default.add-above-block"
@@ -26,7 +26,7 @@ function makeDocEditor(
 						: null,
 				resolve: () => ({
 					depth: gridBounds ? 1 : 0,
-					node: () => ({ type: { name: METRIC_GRID_NAME } }),
+					node: () => ({ type: { name: BLOCK_GRID_NAME } }),
 					before: () => gridBounds?.before ?? 0,
 					after: () => gridBounds?.after ?? 0,
 				}),

@@ -7,7 +7,7 @@ import {
 	SlashCommands,
 	processSlashCommandTransaction,
 } from "./slash/extension"
-import Document from "@tiptap/extension-document"
+import { ContentDocument } from "./blocks/document"
 import Paragraph from "@tiptap/extension-paragraph"
 import Text from "@tiptap/extension-text"
 import Collaboration from "@tiptap/extension-collaboration"
@@ -42,7 +42,7 @@ import CommentIndicatorContainer from "./comments/CommentIndicatorContainer.vue"
 import { createUploadFileHandler } from "./blocks/upload-handler"
 import { createFigmaLinkHandler } from "./blocks/figma"
 import { contentExtensionsWithIDs, editorProseClass } from "./schema-extensions"
-import { METRIC_BLOCK_NAME } from "./blocks/node-names"
+import { LOG_BLOCK_NAME, METRIC_BLOCK_NAME } from "./blocks/node-names"
 import { SUPPRESS_SCROLL_TO_SELECTION_META } from "./scroll-control"
 
 const props = defineProps<{
@@ -152,7 +152,7 @@ const contentEditor = useEditor({
 		},
 	},
 	extensions: [
-		Document,
+		ContentDocument,
 		Text,
 		...editorExtensions,
 		NodeComment.configure({
@@ -230,14 +230,8 @@ const contentEditor = useEditor({
 		showToastMessage("error", t("editor.errors.content-load-failed"))
 	},
 	onSelectionUpdate: ({ editor }) => {
-		// don't override awareness if metric config modal is open
-		if (
-			isEditingNodeInAwarenessOfType(
-				props.activeBranchProvider,
-				METRIC_BLOCK_NAME,
-			) &&
-			editorStore.activeMetricBlockConfig
-		) {
+		// don't override awareness if a block config modal is open
+		if (isConfigModalInAwareness()) {
 			return
 		}
 
@@ -266,14 +260,8 @@ const contentEditor = useEditor({
 			return
 		}
 
-		if (
-			isEditingNodeInAwarenessOfType(
-				props.activeBranchProvider,
-				METRIC_BLOCK_NAME,
-			) &&
-			editorStore.activeMetricBlockConfig
-		) {
-			// Don't clear awareness if metric config modal is open
+		if (isConfigModalInAwareness()) {
+			// Don't clear awareness if a block config modal is open
 			return
 		}
 
@@ -314,20 +302,39 @@ watchDeep(
 watchImmediate(
 	[
 		() => editorStore.activeMetricBlockConfig,
+		() => editorStore.activeLogBlockConfig,
 		() => contentEditor.value?.isEditable,
 	],
-	(newV) => {
-		if (!contentEditor.value || !newV[0] || !newV[1]) {
+	([metricUid, logUid, isEditable]) => {
+		const uid = metricUid ?? logUid
+		if (!contentEditor.value || !isEditable || !uid) {
 			setEditingNodeInAwareness(props.activeBranchProvider, null)
 			return
 		}
 
 		setEditingNodeInAwareness(props.activeBranchProvider, {
-			uid: newV[0],
-			type: METRIC_BLOCK_NAME,
+			uid: uid,
+			type: metricUid ? METRIC_BLOCK_NAME : LOG_BLOCK_NAME,
 		})
 	},
 )
+
+// a config modal shows its block as the one being edited, for as long as
+// it is open
+function isConfigModalInAwareness(): boolean {
+	return (
+		(isEditingNodeInAwarenessOfType(
+			props.activeBranchProvider,
+			METRIC_BLOCK_NAME,
+		) &&
+			!!editorStore.activeMetricBlockConfig) ||
+		(isEditingNodeInAwarenessOfType(
+			props.activeBranchProvider,
+			LOG_BLOCK_NAME,
+		) &&
+			!!editorStore.activeLogBlockConfig)
+	)
+}
 
 function editLink() {
 	// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this

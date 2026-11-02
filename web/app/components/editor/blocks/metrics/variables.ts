@@ -2,12 +2,13 @@ import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
 import {
 	METRIC_REFRESH_INTERVAL_REFERENCE,
 	METRIC_TIME_RANGE_REFERENCE,
+	type RefreshIntervalSetting,
 	referencedVariableValues,
 	referencedWords,
 	resolvedVariableValue,
+	type TimeRangeSetting,
 	variableByReference,
 } from "~/utils/variable"
-import type { MetricRefreshInterval, MetricTimeRange } from "./utils"
 
 // the built-ins' seeded defaults, for when the variables cannot load
 const FALLBACK_TIME_RANGE = TimeRangePreset.Last24Hours
@@ -33,7 +34,7 @@ export function useMetricVariables() {
 		return variable ? resolvedVariableValue(variable) : null
 	}
 
-	function timeRange(value: MetricTimeRange | null): TimeRangePreset | null {
+	function timeRange(value: TimeRangeSetting | null): TimeRangePreset | null {
 		if (value !== METRIC_TIME_RANGE_REFERENCE) {
 			return value
 		}
@@ -51,7 +52,7 @@ export function useMetricVariables() {
 	}
 
 	function refreshInterval(
-		value: MetricRefreshInterval | null,
+		value: RefreshIntervalSetting | null,
 	): RefreshInterval | null {
 		if (value !== METRIC_REFRESH_INTERVAL_REFERENCE) {
 			return value

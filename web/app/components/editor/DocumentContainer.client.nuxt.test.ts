@@ -19,6 +19,7 @@ import {
 } from "~/components/test-helpers"
 import { stubThemeColorContext } from "./test-helpers/theme"
 import { MERMAID_BLOCK_NAME } from "./blocks/node-names"
+import { EDITOR_SCHEMA_VERSION } from "./schema-extensions"
 import type WsState from "~/utils/websocket"
 import { makeWsHooksChangeTopic } from "~/utils"
 
@@ -27,6 +28,7 @@ import { makeWsHooksChangeTopic } from "~/utils"
 // callbacks the container passes it
 interface ProviderOptions {
 	name: string
+	url: string
 	onSynced: () => void
 	onConnect: () => void
 	onAuthenticationFailed: () => void
@@ -331,6 +333,16 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 		expect(providers.created.map((entry) => entry.name)).toEqual([
 			`${DOCUMENT_ID}-${BRANCH_ID}`,
 		])
+	})
+
+	it("tells the realtime service which editor schema it speaks", async ({
+		expect,
+	}) => {
+		await mountContainer()
+
+		expect(providerFor(BRANCH_ID).options.url).toBe(
+			`${useRuntimeConfig().public.authRealtimeAPIBaseWsURL}?schemaVersion=${EDITOR_SCHEMA_VERSION}`,
+		)
 	})
 
 	it("syncs the preloaded branches too", async ({ expect }) => {

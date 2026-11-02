@@ -29,7 +29,9 @@ import {
 } from "./blocks/split-documentation"
 import { CalloutBlock } from "./blocks/callout"
 import { CodeBlock, CodeBlockTitle, TitledCodeBlock } from "./blocks/code-block"
-import { MetricBlock, MetricGrid } from "./blocks/metrics"
+import { MetricBlock } from "./blocks/metrics"
+import { LogBlock } from "./blocks/logs"
+import { BlockGrid, LegacyMetricGrid } from "./blocks/grid"
 import { ImageBlock } from "./blocks/image"
 import { FileBlock } from "./blocks/file"
 import {
@@ -47,6 +49,12 @@ import { LinkMark } from "./link/link-mark"
 import { defaultContentPlaceholder } from "./placeholder"
 import { MermaidBlock } from "./blocks/mermaid"
 import { FigmaBlock } from "./blocks/figma"
+
+// the schema version this client speaks. Raise it together with
+// auth-realtime's EDITOR_SCHEMA_VERSION whenever a node type is added or
+// renamed. y-prosemirror deletes every node its schema does not know, so
+// the server makes a client with an older version read-only.
+export const EDITOR_SCHEMA_VERSION = 2
 
 /**
  * UniqueID extension with DOM id attribute rendering.
@@ -113,8 +121,11 @@ const nodeExtensions: Extensions = [
 	TaskList,
 	TaskItem.configure({ nested: true }),
 	CalloutBlock,
-	MetricGrid,
+	BlockGrid,
+	// legacy: documents may still hold metricGrid
+	LegacyMetricGrid,
 	MetricBlock,
+	LogBlock,
 	ImageBlock,
 	FileBlock,
 	MermaidBlock,
