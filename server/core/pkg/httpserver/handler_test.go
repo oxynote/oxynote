@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime/multipart"
@@ -167,6 +168,15 @@ func Test_RespondError(t *testing.T) {
 		"Internal server error": {
 			Inp:      assert.AnError,
 			RespCode: http.StatusInternalServerError,
+			Log:      `"msg":"internal server error"`,
+		},
+		"Context canceled by the client": {
+			Inp:      fmt.Errorf("fetching document: %w", context.Canceled),
+			RespCode: http.StatusGatewayTimeout,
+		},
+		"Context deadline exceeded": {
+			Inp:      fmt.Errorf("fetching document: %w", context.DeadlineExceeded),
+			RespCode: http.StatusGatewayTimeout,
 			Log:      `"msg":"internal server error"`,
 		},
 	}

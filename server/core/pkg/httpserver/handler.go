@@ -135,14 +135,23 @@ func Respond(
 
 // RespondError sends the provided error to the client.
 // Additionally if the error status code is greater than 500, it will log it
-// as critical error.
+// as critical error, unless the error wraps context.Canceled: the client
+// dropped the connection on its own, so there's nothing to act on and it's
+// logged at debug level instead.
 func RespondError(
 	log *slog.Logger,
 	w http.ResponseWriter,
 	err error,
 	headers ...ResponseHeader,
 ) {
-	if respondError(log, w, err, headers...) >= http.StatusInternalServerError {
+	statusCode := respondError(log, w, err, headers...)
+
+	if errors.Is(err, context.Canceled) {
+		log.Debug("client disconnected before the response was sent", "error", err)
+		return
+	}
+
+	if statusCode >= http.StatusInternalServerError {
 		logutil.CriticalSkipFrames(log, err, _criticalSkipFrames).Error("internal server error")
 	}
 }
