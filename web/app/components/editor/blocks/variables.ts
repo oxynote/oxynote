@@ -14,11 +14,11 @@ import {
 const FALLBACK_TIME_RANGE = TimeRangePreset.Last24Hours
 const FALLBACK_REFRESH_INTERVAL = RefreshInterval.M5
 
-// useMetricVariables resolves what a chart reads from the variables: the
-// built-ins it follows and the values its queries reference. Each answer
-// is null while the variables it needs are still loading, so a chart
-// never queries with a value it is about to replace.
-export function useMetricVariables() {
+// useBlockVariables resolves what a metric or log block reads from the
+// variables: the built-ins it follows and the values its queries
+// reference. Each answer is null while the variables it needs are still
+// loading, so a block never queries with a value it is about to replace.
+export function useBlockVariables() {
 	const { fetchVariables } = useVariableAPI()
 	const loading = computed(
 		() =>

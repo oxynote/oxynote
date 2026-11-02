@@ -25,6 +25,17 @@ export default defineI18nConfig(() => {
 					hour: "numeric",
 					minute: "numeric",
 				},
+				"hour-minute": {
+					hour: "2-digit",
+					minute: "2-digit",
+					hourCycle: "h23",
+				},
+				"time-with-seconds": {
+					hour: "2-digit",
+					minute: "2-digit",
+					second: "2-digit",
+					hourCycle: "h23",
+				},
 				"short-with-full-time": {
 					year: "numeric",
 					month: "short",

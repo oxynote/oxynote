@@ -16,7 +16,7 @@ import (
 // LogOrder). A value added there has to be added here, or the assistant
 // cannot write it.
 var _logOnlyEnums = map[string][]string{
-	document.AttrTimestampFormat: {"standard", "rfc3339", "rfc3339_milli", "rfc3339_nano"},
+	document.AttrTimestampFormat: {"none", "standard", "detailed", "detailed_milli", "detailed_nano"},
 	document.AttrOrder:           {"newest_first", "oldest_first"},
 }
 

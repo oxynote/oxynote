@@ -2,10 +2,11 @@ import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
 import type { RefreshIntervalSetting, TimeRangeSetting } from "~/utils/variable"
 
 export enum LogTimestampFormat {
+	None = "none",
 	Standard = "standard",
-	RFC3339 = "rfc3339",
-	RFC3339Milli = "rfc3339_milli",
-	RFC3339Nano = "rfc3339_nano",
+	Detailed = "detailed",
+	DetailedMilli = "detailed_milli",
+	DetailedNano = "detailed_nano",
 }
 
 export enum LogOrder {

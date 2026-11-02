@@ -41,12 +41,12 @@ func Test_decodeLogAttrs(t *testing.T) {
 		},
 		"A fully configured log block": {
 			Text: `{"title":"API errors","dataSourceId":"d1qbc8kv2vg000cnb6ag","queries":[{"name":"Query 1","query":"up"}],` +
-				`"timestampFormat":"rfc3339_nano","order":"oldest_first","width":"wide"}`,
+				`"timestampFormat":"detailed_nano","order":"oldest_first","width":"wide"}`,
 			Result: document.Attributes{
 				document.AttrTitle:           "API errors",
 				document.AttrDataSourceID:    "d1qbc8kv2vg000cnb6ag",
 				document.AttrQueries:         []any{map[string]any{"name": "Query 1", "query": "up"}},
-				document.AttrTimestampFormat: "rfc3339_nano",
+				document.AttrTimestampFormat: "detailed_nano",
 				document.AttrOrder:           "oldest_first",
 				document.AttrWidth:           "wide",
 			},
@@ -61,7 +61,7 @@ func Test_decodeLogAttrs(t *testing.T) {
 		},
 		"An enum that is not a string": {
 			Text: `{"timestampFormat":1}`,
-			Err:  errors.New("log block timestampFormat must be one of: standard, rfc3339, rfc3339_milli, rfc3339_nano"),
+			Err:  errors.New("log block timestampFormat must be one of: none, standard, detailed, detailed_milli, detailed_nano"),
 		},
 		"A time range that follows the built-in variable": {
 			Text:   `{"timeRange":"$metric_range","refreshInterval":"1m"}`,

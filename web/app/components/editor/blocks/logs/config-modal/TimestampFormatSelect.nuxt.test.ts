@@ -52,7 +52,7 @@ describe("<TimestampFormatSelect>", { concurrent: false }, () => {
 
 	it("checks the chosen format in the menu", async ({ expect }) => {
 		const wrapper = await mountFormatSelect({
-			modelValue: LogTimestampFormat.RFC3339Milli,
+			modelValue: LogTimestampFormat.DetailedMilli,
 		})
 
 		await openMenu(wrapper)
@@ -63,7 +63,7 @@ describe("<TimestampFormatSelect>", { concurrent: false }, () => {
 			),
 		).toEqual(
 			Object.values(LogTimestampFormat).map(
-				(format) => format === LogTimestampFormat.RFC3339Milli,
+				(format) => format === LogTimestampFormat.DetailedMilli,
 			),
 		)
 	})
@@ -74,11 +74,11 @@ describe("<TimestampFormatSelect>", { concurrent: false }, () => {
 		})
 		await openMenu(wrapper)
 
-		menuItem(titleOf(LogTimestampFormat.RFC3339Nano)).click()
+		menuItem(titleOf(LogTimestampFormat.DetailedNano)).click()
 		await nextTick()
 
 		expect(wrapper.emitted("update:modelValue")).toEqual([
-			[LogTimestampFormat.RFC3339Nano],
+			[LogTimestampFormat.DetailedNano],
 		])
 	})
 

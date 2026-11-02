@@ -1,4 +1,4 @@
-import { mountSuspended } from "@nuxt/test-utils/runtime"
+import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime"
 import { enableAutoUnmount, flushPromises } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import BaseModal from "./BaseModal.client.vue"
@@ -15,7 +15,9 @@ import {
 	disposeMockEndpoints,
 	makeXid,
 	mockEndpoint,
+	seedQueryData,
 } from "~/composables/api/test-helpers"
+import { VARIABLE_QUERY_KEYS } from "~/composables/api/useVariableAPI"
 import {
 	emitFrom,
 	stubViewportMatches,
@@ -33,8 +35,16 @@ const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("branch")
 const BLOCK_UID = "log-block"
 
-// the editor store, the editable flag, the viewport stub and the
-// teleported dialog body are all shared, so these tests cannot interleave
+// happy-dom lays nothing out, so the time controls never learn their
+// width. The tests set it by hand.
+const timeOptions = vi.hoisted(() => ({
+	width: null as unknown as { value: number },
+}))
+mockNuxtImport("useElementSize", () => () => ({ width: timeOptions.width }))
+
+// the editor store, the editable flag, the viewport stub, the measured
+// width and the teleported dialog body are all shared, so these tests
+// cannot interleave
 describe("<LogConfigBaseModal>", { concurrent: false }, () => {
 	// the dialog body is teleported into <body> and vue keeps patching it
 	// for as long as the modal is mounted, so each test's modal is taken
@@ -42,7 +52,9 @@ describe("<LogConfigBaseModal>", { concurrent: false }, () => {
 	enableAutoUnmount(afterEach)
 
 	beforeEach(() => {
+		timeOptions.width = ref(0)
 		clearQueryCache()
+		seedQueryData(VARIABLE_QUERY_KEYS.tree, [])
 		stubViewportMatches(true)
 		mockEndpoint("GET", "/api/data-sources", () => [])
 		useEditorMeta().setEditable(true)
@@ -215,6 +227,38 @@ describe("<LogConfigBaseModal>", { concurrent: false }, () => {
 			})
 		},
 	)
+
+	it("previews the block's lines without the view's own action button", async ({
+		expect,
+	}) => {
+		activateBlock({ config: configWith({ title: "API errors" }) })
+
+		await mountModal()
+
+		expect(dialog()?.querySelector(".text-2base")?.textContent).toBe(
+			"API errors",
+		)
+		expect(
+			dialog()?.querySelector("[data-slot='empty-title']")?.textContent,
+		).toBe(t("editor.logs.status.data-source-not-selected.title"))
+		expect(dialog()?.textContent).not.toContain(
+			t("editor.logs.status.data-source-not-selected.normal-action-button"),
+		)
+	})
+
+	it("keeps the preview's header clear of the time controls", async ({
+		expect,
+	}) => {
+		timeOptions.width.value = 160
+		activateBlock()
+
+		await mountModal()
+
+		expect(
+			dialog()?.querySelector<HTMLElement>(".text-2base")?.parentElement?.style
+				.paddingRight,
+		).toBe("calc(10rem + 0.625rem)")
+	})
 
 	it("shows the block's time range and refresh interval", async ({
 		expect,
@@ -488,7 +532,7 @@ describe("<LogConfigBaseModal>", { concurrent: false }, () => {
 function configWith(overrides: Partial<LogConfig> = {}): LogConfig {
 	return {
 		...defaultLogConfig(),
-		timestampFormat: LogTimestampFormat.RFC3339,
+		timestampFormat: LogTimestampFormat.Detailed,
 		order: LogOrder.OldestFirst,
 		...overrides,
 	}

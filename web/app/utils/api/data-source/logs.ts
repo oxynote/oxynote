@@ -13,11 +13,12 @@ export enum LogFieldKind {
 	Field = "field",
 }
 
-export interface LogQueryParams extends GenericQueryTimeRange {
-	q: string
+// the block's queries, each read on its own, which the view merges
+export interface LogQueriesParams extends GenericQueryTimeRange {
+	queries: string[]
 }
 
-export interface LogLinesParams extends LogQueryParams {
+export interface LogLinesParams extends LogQueriesParams {
 	limit?: number
 }
 
@@ -45,9 +46,11 @@ export interface LogLinesResult {
 	partial: boolean
 }
 
-// a page of lines with the window it was read from, as from and to query
-// parameters. Every older page reads the same window.
-export interface LogLinesPage extends LogLinesResult {
+// a page of every query's lines with the window it was read from, as
+// from and to query parameters. Every older page reads the same window. A
+// query's result is null on a page after it ran out of older lines.
+export interface LogLinesPage {
+	results: (LogLinesResult | null)[]
 	window: Record<string, string>
 }
 

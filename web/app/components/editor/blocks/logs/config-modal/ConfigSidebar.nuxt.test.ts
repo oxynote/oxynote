@@ -141,7 +141,7 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 	it("shows the timestamp format the config carries", async ({ expect }) => {
 		const wrapper = await mountSidebar({
 			modelValue: configWith({
-				timestampFormat: LogTimestampFormat.RFC3339Milli,
+				timestampFormat: LogTimestampFormat.DetailedMilli,
 			}),
 		})
 
@@ -149,7 +149,7 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 
 		expect(selects).toHaveLength(1)
 		expect(at(selects, 0).props("modelValue")).toBe(
-			LogTimestampFormat.RFC3339Milli,
+			LogTimestampFormat.DetailedMilli,
 		)
 		expect(at(selects, 0).props("diffStatus")).toBeNull()
 	})
@@ -162,11 +162,11 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 			wrapper,
 			TimestampFormatSelect,
 			"update:modelValue",
-			LogTimestampFormat.RFC3339Nano,
+			LogTimestampFormat.DetailedNano,
 		)
 		await nextTick()
 
-		expect(config.timestampFormat).toBe(LogTimestampFormat.RFC3339Nano)
+		expect(config.timestampFormat).toBe(LogTimestampFormat.DetailedNano)
 	})
 
 	it("shows the order the config carries", async ({ expect }) => {
@@ -246,7 +246,7 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 		}) => {
 			const wrapper = await mountSidebar({
 				modelValue: configWith({
-					timestampFormat: LogTimestampFormat.RFC3339,
+					timestampFormat: LogTimestampFormat.Detailed,
 				}),
 				diffStatus: DiffStatus.Modified,
 				oldConfig: configWith({
@@ -258,7 +258,7 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 
 			expect(selects).toHaveLength(2)
 			expect(at(selects, 0).props("modelValue")).toBe(
-				LogTimestampFormat.RFC3339,
+				LogTimestampFormat.Detailed,
 			)
 			expect(at(selects, 0).props("diffStatus")).toBe(DiffStatus.Added)
 			expect(at(selects, 1).props("modelValue")).toBe(
@@ -326,7 +326,7 @@ function changedConfig(): LogConfig {
 	return configWith({
 		title: "Before",
 		dataSourceId: OLD_DATA_SOURCE_ID,
-		timestampFormat: LogTimestampFormat.RFC3339Nano,
+		timestampFormat: LogTimestampFormat.DetailedNano,
 		order: LogOrder.OldestFirst,
 	})
 }

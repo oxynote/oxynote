@@ -13,15 +13,15 @@ import {
 	METRIC_REFRESH_INTERVAL_REFERENCE,
 	METRIC_TIME_RANGE_REFERENCE,
 } from "~/utils/variable"
-import { variableTree } from "./test-helpers"
-import { useMetricVariables } from "./variables"
+import { variableTree } from "./metrics/test-helpers"
+import { useBlockVariables } from "./variables"
 
 const TREE_URL = "/api/variables/tree"
 
 let scope: EffectScope | null = null
 
 // the tree is one app-wide cache entry, so the tests cannot interleave
-describe("useMetricVariables", { concurrent: false }, () => {
+describe("useBlockVariables", { concurrent: false }, () => {
 	beforeEach(() => {
 		clearQueryCache()
 	})
@@ -122,7 +122,7 @@ describe("useMetricVariables", { concurrent: false }, () => {
 function use() {
 	scope = effectScope()
 
-	const metric = scope.run(() => runInApp(() => useMetricVariables()))
+	const metric = scope.run(() => runInApp(() => useBlockVariables()))
 	if (!metric) {
 		throw new Error("the composable did not run")
 	}

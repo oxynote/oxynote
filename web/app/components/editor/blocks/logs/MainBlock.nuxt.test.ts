@@ -8,24 +8,35 @@ import {
 	makeNode,
 	mountNodeView,
 } from "../../test-helpers/node-view"
+import { logLine, logLinesResult, settleLogRequests } from "./test-helpers"
 import { DiffStatus } from "~/components/editor/diff/position-map"
-import { makeXid } from "~/composables/api/test-helpers"
+import {
+	clearQueryCache,
+	disposeMockEndpoints,
+	makeXid,
+	mockEndpoint,
+	seedQueryData,
+} from "~/composables/api/test-helpers"
+import { VARIABLE_QUERY_KEYS } from "~/composables/api/useVariableAPI"
 import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
 import { findButtonByText, t } from "~/components/test-helpers"
 
 const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("branch")
 const UID = "log-block-1"
+const DATA_SOURCE_ID = makeXid("ds")
 
 // the block keeps watching the store after its test
 enableAutoUnmount(afterEach)
 
-// the editor store and the editable flag are shared app-wide, so these
-// tests cannot interleave
+// the editor store, the query cache and the editable flag are shared
+// app-wide, so these tests cannot interleave
 describe("<LogMainBlock>", { concurrent: false }, () => {
 	beforeEach(() => {
 		const editorStore = useEditorStore()
 
+		clearQueryCache()
+		seedQueryData(VARIABLE_QUERY_KEYS.tree, [])
 		useEditorMeta().setEditable(true)
 		// leaving the document drops every block entry the last test stored
 		editorStore.updateActiveDocumentId(null)
@@ -34,6 +45,8 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 		editorStore.setReviewableDiffActive(false)
 		editorStore.activateLogBlockConfig(null)
 	})
+
+	afterEach(disposeMockEndpoints)
 
 	it("identifies the wrapper by the node's uid", async ({ expect }) => {
 		const wrapper = await mountBlock()
@@ -84,7 +97,7 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 				queries: [{ name: "Query 1", query: '{app="api"}' }],
 				timeRange: TimeRangePreset.Last1Hour,
 				refreshInterval: RefreshInterval.M1,
-				timestampFormat: LogTimestampFormat.RFC3339,
+				timestampFormat: LogTimestampFormat.Detailed,
 				order: LogOrder.OldestFirst,
 			},
 		})
@@ -95,7 +108,7 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 			queries: [{ name: "Query 1", query: '{app="api"}' }],
 			timeRange: TimeRangePreset.Last1Hour,
 			refreshInterval: RefreshInterval.M1,
-			timestampFormat: LogTimestampFormat.RFC3339,
+			timestampFormat: LogTimestampFormat.Detailed,
 			order: LogOrder.OldestFirst,
 		})
 		expect(storedDiffInfo()).toBeUndefined()
@@ -211,7 +224,7 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 		},
 		{
 			field: "timestamp format",
-			edit: { timestampFormat: LogTimestampFormat.RFC3339Milli },
+			edit: { timestampFormat: LogTimestampFormat.DetailedMilli },
 		},
 		{ field: "order", edit: { order: LogOrder.OldestFirst } },
 	])("stores an edited $field on the node", async ({ edit }, { expect }) => {
@@ -278,6 +291,43 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 		editStoredConfig({ title: "Renamed" })
 
 		expect(updateAttributes).toHaveBeenCalledTimes(0)
+	})
+
+	it("shows the block's lines under its title with the settings in the header", async ({
+		expect,
+	}) => {
+		mockEndpoint("GET", `/api/data-sources/${DATA_SOURCE_ID}/logs`, () =>
+			logLinesResult([logLine("deploy finished", "11:57:00Z")]),
+		)
+
+		const wrapper = await mountBlock({ attrs: queryingAttrs() })
+		await settleLogRequests()
+
+		const title = wrapper.get(".text-2base")
+
+		expect(title.text()).toBe("API errors")
+		expect(title.element.parentElement?.textContent).toContain(
+			t("editor.logs.config.modal-trigger-button-normal"),
+		)
+		expect(
+			wrapper.findAll("button[aria-expanded] .font-mono").map((m) => m.text()),
+		).toEqual(["deploy finished · env=prod"])
+	})
+
+	it("opens the config modal from the view's empty state", async ({
+		expect,
+	}) => {
+		const setNodeSelection = vi.fn()
+		const wrapper = await mountBlock({ setNodeSelection: setNodeSelection })
+
+		await findButtonByText(
+			wrapper,
+			t("editor.logs.status.data-source-not-selected.normal-action-button"),
+		).trigger("click")
+
+		expect(setNodeSelection).toHaveBeenCalledTimes(1)
+		expect(setNodeSelection).toHaveBeenCalledWith(5)
+		expect(useEditorStore().activeLogBlockConfig).toBe(UID)
 	})
 
 	it("opens the config modal from the settings button", async ({ expect }) => {
@@ -364,6 +414,16 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 		expect(wrapperClasses(wrapper)).not.toContain("rounded-tl-none")
 	})
 })
+
+// a block that reads its lines from a data source
+function queryingAttrs(): Record<string, unknown> {
+	return {
+		title: "API errors",
+		dataSourceId: DATA_SOURCE_ID,
+		queries: [{ name: "Query 1", query: '{app="api"}' }],
+		timeRange: TimeRangePreset.Last1Hour,
+	}
+}
 
 // the editor a log block reads: the collaboration composable takes
 // anything that is not a real Editor instance as the awareness provider,

@@ -2,8 +2,7 @@ import type { PrometheusClient } from "@prometheus-io/codemirror-promql"
 import type { MetricMetadata } from "@prometheus-io/codemirror-promql/dist/esm/client/prometheus"
 import type { Matcher } from "@prometheus-io/codemirror-promql/dist/esm/types"
 import { EqlRegex, EqlSingle, Neq, NeqRegex } from "@prometheus-io/lezer-promql"
-import { resolveTimeRange } from "~/components/editor/blocks/metrics/utils"
-import type { TimeRangePreset } from "~/utils/time-range"
+import { resolveTimeRange, type TimeRangePreset } from "~/utils/time-range"
 
 // based on: https://github.com/prometheus/prometheus/blob/main/web/ui/module/codemirror-promql/src/client/prometheus.ts#L83
 export class PrometheusDataSourceClient implements PrometheusClient {

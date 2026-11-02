@@ -26,7 +26,7 @@ import { tags } from "@lezer/highlight"
 import { cn } from "#layers/ui/app/lib/utils"
 import type { TimeRangePreset } from "~/utils/time-range"
 import { DiffStatus } from "~/components/editor/diff/position-map"
-import { useMetricVariables } from "../variables"
+import { useBlockVariables } from "../../variables"
 
 const props = defineProps<{
 	diffStatus?: DiffStatus | null
@@ -40,7 +40,7 @@ const { isDark } = useAppearance()
 const { isEditable } = useEditorMeta()
 const editorStore = useEditorStore()
 const legendEditorElem = useTemplateRef("legend-editor")
-const { variables } = useMetricVariables()
+const { variables } = useBlockVariables()
 const { fetchAllLabelNames, fetchExampleLabelValues } =
 	useLegendEditorExtension(
 		() => props.query,

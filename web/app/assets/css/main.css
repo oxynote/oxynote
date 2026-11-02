@@ -28,6 +28,13 @@
 	--http-method-trace: oklch(0.6456 0.028 94.88);
 	--url-path-param: oklch(0.7183 0.063 144.88);
 
+	--log-level-critical: oklch(0.591 0.293 322.896);
+	--log-level-error: oklch(0.577 0.245 27.325);
+	--log-level-warning: oklch(0.7074 0.1455 95.22);
+	--log-level-info: oklch(0.5309 0.1628 244.25);
+	--log-level-debug: oklch(0.6 0.118 184.704);
+	--log-level-trace: oklch(0.541 0.281 293.009);
+
 	--diff-added: oklch(53.282% 0.16399 143.531 / 0.3);
 	--diff-removed: oklch(57.909% 0.23191 28.689 / 0.3);
 	--diff-added-foreground: oklch(42% 0.13 143.5);
@@ -170,6 +177,13 @@
 	--http-method-trace: oklch(0.5077 0.0301 90.21);
 	--url-path-param: oklch(0.6036 0.0526 144.89);
 
+	--log-level-critical: oklch(0.518 0.253 323.949);
+	--log-level-error: oklch(0.704 0.191 22.216);
+	--log-level-warning: oklch(0.852 0.199 91.936);
+	--log-level-info: oklch(0.707 0.165 254.624);
+	--log-level-debug: oklch(0.777 0.152 181.912);
+	--log-level-trace: oklch(0.702 0.183 293.541);
+
 	--diff-added: oklch(64.522% 0.20475 143.722 / 0.25);
 	--diff-removed: oklch(49.991% 0.1933 29.256 / 0.25);
 	--diff-added-foreground: oklch(82% 0.15 143.7);
@@ -228,6 +242,13 @@
 	--color-http-method-connect: var(--http-method-connect);
 	--color-http-method-trace: var(--http-method-trace);
 	--color-url-path-param: var(--url-path-param);
+
+	--color-log-level-critical: var(--log-level-critical);
+	--color-log-level-error: var(--log-level-error);
+	--color-log-level-warning: var(--log-level-warning);
+	--color-log-level-info: var(--log-level-info);
+	--color-log-level-debug: var(--log-level-debug);
+	--color-log-level-trace: var(--log-level-trace);
 
 	--color-diff-added: var(--diff-added);
 	--color-diff-removed: var(--diff-removed);

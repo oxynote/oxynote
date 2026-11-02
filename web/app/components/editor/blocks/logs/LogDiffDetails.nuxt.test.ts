@@ -88,7 +88,7 @@ describe("<LogDiffDetails>", { concurrent: false }, () => {
 				title: "API errors",
 				timeRange: TimeRangePreset.Last5Minutes,
 				refreshInterval: RefreshInterval.M5,
-				timestampFormat: LogTimestampFormat.RFC3339Nano,
+				timestampFormat: LogTimestampFormat.DetailedNano,
 				order: LogOrder.OldestFirst,
 				width: GridItemWidth.Wide,
 			},
@@ -109,7 +109,7 @@ describe("<LogDiffDetails>", { concurrent: false }, () => {
 			[
 				t("editor.logs.config.timestamp-format-label"),
 				t("editor.logs.config.timestamp-format-options.standard.title"),
-				t("editor.logs.config.timestamp-format-options.rfc3339_nano.title"),
+				t("editor.logs.config.timestamp-format-options.detailed_nano.title"),
 			],
 			[
 				t("editor.logs.config.order-label"),

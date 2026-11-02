@@ -7,6 +7,7 @@ import { buildLogConfigFromNodeAttrs, type LogConfig } from "./utils"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 import DiffChangeMarker from "~/components/editor/diff/DiffChangeMarker.vue"
 import LogDiffDetails from "./LogDiffDetails.vue"
+import DataView from "./view/DataView.vue"
 
 const props = defineProps(nodeViewProps)
 
@@ -14,11 +15,11 @@ const { isEditable } = useEditorMeta()
 const editorStore = useEditorStore()
 const { editingUsersRef } = useCollaborationAwareness(() => props.editor)
 
-const sizeClass = computed(() => {
-	const size =
-		(props.node.attrs.width as GridItemWidth | null) ?? GridItemWidth.Standard
-	return `grid-item-${size}`
-})
+const size = computed(
+	() =>
+		(props.node.attrs.width as GridItemWidth | null) ?? GridItemWidth.Standard,
+)
+const sizeClass = computed(() => `grid-item-${size.value}`)
 const isEditingDisabled = computed(() => {
 	return !isEditable.value || editorStore.reviewableDiffActive
 })
@@ -152,29 +153,33 @@ function openModal() {
 			>
 				{{ lastOtherEditingUser.name }}
 			</div>
-			<div
-				class="absolute top-1 right-1.5 z-1 flex items-center rounded-md bg-background has-[>:not(button)]:pl-0.5"
+			<DataView
+				:config="config"
+				:uid="props.node.attrs.uid"
+				class="overflow-hidden rounded-md"
+				@configure="openModal"
 			>
-				<DiffChangeMarker :node="props.node" class="mr-1">
-					<LogDiffDetails :node="props.node" />
-				</DiffChangeMarker>
-				<ShadcnUiButton
-					variant="ghost-plain"
-					size="icon-sm"
-					class="size-6"
-					@click="openModal"
-				>
-					<Icon name="lucide:settings" />
-					<span class="sr-only">
-						{{
-							!isEditingDisabled
-								? $t("editor.logs.config.modal-trigger-button-normal")
-								: $t("editor.logs.config.modal-trigger-button-readonly")
-						}}
-					</span>
-				</ShadcnUiButton>
-			</div>
-			<!-- TODO: render the log rows the block's queries return -->
+				<template #actions>
+					<DiffChangeMarker :node="props.node" class="mx-0.5">
+						<LogDiffDetails :node="props.node" />
+					</DiffChangeMarker>
+					<ShadcnUiButton
+						variant="ghost-plain"
+						size="icon-sm"
+						class="size-6"
+						@click="openModal"
+					>
+						<Icon name="lucide:settings" />
+						<span class="sr-only">
+							{{
+								!isEditingDisabled
+									? $t("editor.logs.config.modal-trigger-button-normal")
+									: $t("editor.logs.config.modal-trigger-button-readonly")
+							}}
+						</span>
+					</ShadcnUiButton>
+				</template>
+			</DataView>
 		</div>
 	</NodeViewWrapper>
 </template>

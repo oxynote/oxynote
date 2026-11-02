@@ -455,7 +455,7 @@
       ],
       "timeRange": "last_1_hour",
       "refreshInterval": "1m",
-      "timestampFormat": "rfc3339_milli",
+      "timestampFormat": "detailed_milli",
       "order": "newest_first",
       "width": "standard"
      }

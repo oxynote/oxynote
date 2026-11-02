@@ -2,6 +2,7 @@
 import type { LogConfig } from "../utils"
 import BottomConfig from "./BottomConfig.vue"
 import ConfigSidebar from "./ConfigSidebar.vue"
+import DataView from "../view/DataView.vue"
 import RefreshIntervalSelect from "../../config-modal-utils/RefreshIntervalSelect.vue"
 import TimeRangeSelect from "../../config-modal-utils/TimeRangeSelect.vue"
 import { DiffStatus } from "~/components/editor/diff/position-map"
@@ -64,6 +65,8 @@ const oldConfig = computed<LogConfig | null>(() => {
 const isEditingDisabled = computed(() => {
 	return !isEditable.value || editorStore.reviewableDiffActive
 })
+const timeOptionsElem = useTemplateRef<HTMLDivElement>("time-options")
+const { width: timeOptionsWidth } = useElementSize(timeOptionsElem)
 const isDiffModified = computed(() => diffStatus.value === DiffStatus.Modified)
 const isTimeRangeModified = computed(() => {
 	return (
@@ -147,6 +150,7 @@ function openSettings() {
 					<div class="flex min-w-0 flex-1 flex-col self-stretch">
 						<div class="relative h-70 min-w-0 shrink-0 border-b">
 							<div
+								ref="time-options"
 								class="absolute top-1.5 right-1.5 z-1 flex flex-col items-end gap-0.5 pr-1 pl-2 md:flex-row md:items-center md:gap-2 md:bg-muted-50-real"
 							>
 								<TimeRangeSelect
@@ -166,7 +170,12 @@ function openSettings() {
 									"
 								/>
 							</div>
-							<!-- TODO: show the log rows the queries return -->
+							<DataView
+								:config="config"
+								:uid="editorStore.activeLogBlockConfig!"
+								hide-empty-action-button
+								:header-right-padding="timeOptionsWidth"
+							/>
 						</div>
 						<div v-if="!isMinWidth1024px" class="self-stretch border-b">
 							<ConfigSidebar

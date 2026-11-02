@@ -895,21 +895,25 @@
 				"title-empty-value-placeholder": "[empty]",
 				"timestamp-format-label": "Timestamp Format",
 				"timestamp-format-options": {
+					"none": {
+						"title": "None",
+						"example": "No timestamp"
+					},
 					"standard": {
 						"title": "Standard",
 						"example": "Oct 23, 2026 12:33:22"
 					},
-					"rfc3339": {
+					"detailed": {
 						"title": "Detailed",
-						"example": "2026-10-23T12:33:22Z"
+						"example": "2026-10-23 12:33:22"
 					},
-					"rfc3339_milli": {
+					"detailed_milli": {
 						"title": "Detailed with Milliseconds",
-						"example": "2026-10-23T12:33:22.123Z"
+						"example": "2026-10-23 12:33:22.123"
 					},
-					"rfc3339_nano": {
+					"detailed_nano": {
 						"title": "Detailed with Nanoseconds",
-						"example": "2026-10-23T12:33:22.123456789Z"
+						"example": "2026-10-23 12:33:22.123456789"
 					}
 				},
 				"order-label": "Order",
@@ -924,6 +928,56 @@
 			},
 			"diff": {
 				"size": "Size"
+			},
+			"levels": {
+				"critical": "Crit",
+				"error": "Error",
+				"warning": "Warn",
+				"info": "Info",
+				"debug": "Debug",
+				"trace": "Trace",
+				"unknown": "Unknown"
+			},
+			"view": {
+				"search-label": "Search lines",
+				"search-placeholder": "Search lines",
+				"clear-search": "Clear search",
+				"show-volume": "Show line volume",
+				"hide-volume": "Hide line volume",
+				"volume-label": "Line volume across the time range",
+				"line-heading": "Line",
+				"copy-line": "Copy line",
+				"line-copied": "Copied",
+				"indexed-heading": "Indexed fields",
+				"indexed-description": "Fast to filter on",
+				"unindexed-heading": "Unindexed fields",
+				"unindexed-description": "Filtering works but is slower",
+				"include-value": "Show only lines where {key} is this value",
+				"exclude-value": "Hide lines where {key} is this value",
+				"remove-filter": "Remove filter on {key}",
+				"clear-filters": "Clear filters"
+			},
+			"status": {
+				"data-source-not-selected": {
+					"title": "No Data Source Selected",
+					"description": "Choose a Loki data source to see log lines",
+					"normal-action-button": "Edit Logs",
+					"readonly-action-button": "View Logs"
+				},
+				"no-query": {
+					"title": "No Query",
+					"description": "Add a LogQL query to see log lines",
+					"normal-action-button": "Edit Logs",
+					"readonly-action-button": "View Logs"
+				},
+				"no-lines": {
+					"title": "No Log Lines",
+					"description": "Nothing matched in this time range"
+				},
+				"query-error": {
+					"title": "Query Error",
+					"description": "The data source could not run the query"
+				}
 			}
 		},
 		"no-document-indicator": {

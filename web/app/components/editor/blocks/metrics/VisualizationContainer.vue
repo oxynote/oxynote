@@ -4,13 +4,15 @@ import LineChart from "./visualizations/LineChart.vue"
 import GaugeChart from "./visualizations/GaugeChart.vue"
 import {
 	CONFIG_DEBOUNCE_MS,
-	refreshIntervalToMs,
 	requestErrorMessage,
-	resolveTimeRange,
 	type MetricConfig,
 	type MetricSimulationPreset,
 } from "./utils"
-import { RefreshInterval } from "~/utils/time-range"
+import {
+	RefreshInterval,
+	refreshIntervalToMs,
+	resolveTimeRange,
+} from "~/utils/time-range"
 import { paletteColors } from "~/assets/css"
 import {
 	DEFAULT_SIMULATION_PRESET,
@@ -25,7 +27,7 @@ import {
 	type MultipleGaugeChartData,
 	type MultipleLineChartData,
 } from "./visualizations"
-import { useMetricVariables } from "./variables"
+import { useBlockVariables } from "../variables"
 
 const props = defineProps<{
 	config: MetricConfig
@@ -45,7 +47,7 @@ const { fetchDataSources, useMultipleGenericQueries } = useDataSourceAPI()
 const { checkMetricBlockSimulation } = useDocumentAPI()
 const { isEditable } = useEditorMeta()
 const editorStore = useEditorStore()
-const metricVariables = useMetricVariables()
+const metricVariables = useBlockVariables()
 const isEditingDisabled = computed(() => {
 	return !isEditable.value || editorStore.reviewableDiffActive
 })

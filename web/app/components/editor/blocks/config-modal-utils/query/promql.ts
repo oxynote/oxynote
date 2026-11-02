@@ -10,8 +10,7 @@ import type {
 } from "@codemirror/autocomplete"
 import { parser } from "@prometheus-io/lezer-promql"
 import type { EditorState } from "@codemirror/state"
-import { resolveTimeRange } from "../../metrics/utils"
-import { TimeRangePreset } from "~/utils/time-range"
+import { resolveTimeRange, TimeRangePreset } from "~/utils/time-range"
 import type { VariableTreeResponse } from "~/utils"
 import { referencedVariableValues } from "~/utils/variable"
 import {

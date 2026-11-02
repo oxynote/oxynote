@@ -1,7 +1,7 @@
 const LOG_QUERY_KEYS = {
 	lines: (
 		dataSourceId: string,
-		query: string,
+		queries: string[],
 		timeRange: string,
 		limit: number | null,
 		variableValues: Record<string, string>,
@@ -10,18 +10,25 @@ const LOG_QUERY_KEYS = {
 			"logs",
 			dataSourceId,
 			"lines",
-			query,
+			...queries,
 			timeRange,
 			limit,
 			variableValues,
 		] as const,
 	volume: (
 		dataSourceId: string,
-		query: string,
+		queries: string[],
 		timeRange: string,
 		variableValues: Record<string, string>,
 	) =>
-		["logs", dataSourceId, "volume", query, timeRange, variableValues] as const,
+		[
+			"logs",
+			dataSourceId,
+			"volume",
+			...queries,
+			timeRange,
+			variableValues,
+		] as const,
 	fields: (
 		dataSourceId: string,
 		query: string,
@@ -47,9 +54,20 @@ const LOG_QUERY_KEYS = {
 		] as const,
 }
 
+// the next page's cursor of each query, null once a query has no older
+// lines, with the window of the first page
 interface LogLinesPageParam {
-	cursor: string
+	cursors: (string | null)[]
 	window: Record<string, string>
+}
+
+// canRunLogQueries reports whether a block has a query and none is blank.
+// Exported because a caller deciding whether to fetch has to ask the same
+// question the queries ask.
+export function canRunLogQueries(
+	queries: string[] | null | undefined,
+): queries is string[] {
+	return !!queries?.length && queries.every((q) => q.trim().length > 0)
 }
 
 export default function () {
@@ -65,10 +83,11 @@ export default function () {
 		}
 	}
 
-	// loads the newest page first. Each further page holds the lines older
-	// than the last one. A relative window such as the last hour moves
-	// while the reader scrolls, so every further page reads the window of
-	// the first one, or lines at its old start would never load.
+	// loads the newest page of every query first. Each further page holds
+	// the lines older than a query's last page, for each query that has
+	// any. A relative window such as the last hour moves while the reader
+	// scrolls, so every further page reads the window of the first one, or
+	// lines at its old start would never load.
 	function useLogLines(
 		dataSourceIdRef: MaybeRefOrGetter<string | null | undefined>,
 		paramsRef: MaybeRefOrGetter<LogLinesParams | null | undefined>,
@@ -80,7 +99,7 @@ export default function () {
 
 				return LOG_QUERY_KEYS.lines(
 					toValue(dataSourceIdRef) || "",
-					params?.q || "",
+					params?.queries ?? [],
 					params?.timeRangeKey || "",
 					params?.limit ?? null,
 					params?.variableValues ?? {},
@@ -90,41 +109,57 @@ export default function () {
 				const dataSourceId = toValue(dataSourceIdRef)
 				const params = toValue(paramsRef)
 
-				if (!dataSourceId || !params?.q.trim()) {
+				if (!dataSourceId || !params || !canRunLogQueries(params.queries)) {
 					return null
 				}
 
 				const window = pageParam?.window ?? formatQueryTimeRange(params)
-				const queryParams = new URLSearchParams({
-					q: params.q,
-					...window,
-					...formatQueryVariableValues(params.variableValues),
-				})
+				const results = await Promise.all(
+					params.queries.map(async (q, index) => {
+						const cursor = pageParam?.cursors[index]
 
-				if (params.limit !== undefined) {
-					queryParams.set("limit", String(params.limit))
-				}
+						if (pageParam && !cursor) {
+							return null
+						}
 
-				if (pageParam) {
-					queryParams.set("cursor", pageParam.cursor)
-				}
+						const queryParams = new URLSearchParams({
+							q: q,
+							...window,
+							...formatQueryVariableValues(params.variableValues),
+						})
 
-				const result = await $coreAPIClient<LogLinesResult>(
-					`/api/data-sources/${dataSourceId}/logs?${queryParams.toString()}`,
-					{ method: "GET" },
+						if (params.limit !== undefined) {
+							queryParams.set("limit", String(params.limit))
+						}
+
+						if (cursor) {
+							queryParams.set("cursor", cursor)
+						}
+
+						return await $coreAPIClient<LogLinesResult>(
+							`/api/data-sources/${dataSourceId}/logs?${queryParams.toString()}`,
+							{ method: "GET" },
+						)
+					}),
 				)
 
-				return { ...result, window: window }
+				return { results: results, window: window }
 			},
 			initialPageParam: null as LogLinesPageParam | null,
-			getNextPageParam: (lastPage) =>
-				lastPage?.cursor
-					? { cursor: lastPage.cursor, window: lastPage.window }
-					: null,
+			getNextPageParam: (lastPage) => {
+				const cursors = lastPage?.results.map((r) => r?.cursor ?? null) ?? []
+
+				return lastPage && cursors.some(Boolean)
+					? { cursors: cursors, window: lastPage.window }
+					: null
+			},
 			enabled: () =>
 				!!toValue(dataSourceIdRef) &&
-				!!toValue(paramsRef)?.q.trim() &&
+				canRunLogQueries(toValue(paramsRef)?.queries) &&
 				toValue(enableFetch),
+			// a narrowed or widened query keeps the lines it replaces until
+			// its own arrive, so the view does not flash empty
+			placeholderData: (previousData) => previousData,
 			refetchOnMount: false,
 			refetchOnWindowFocus: false,
 			refetchOnReconnect: false,
@@ -136,9 +171,10 @@ export default function () {
 		})
 	}
 
+	// counts the lines of every query per bucket, one result per query
 	function useLogVolume(
 		dataSourceIdRef: MaybeRefOrGetter<string | null | undefined>,
-		paramsRef: MaybeRefOrGetter<LogQueryParams | null | undefined>,
+		paramsRef: MaybeRefOrGetter<LogQueriesParams | null | undefined>,
 		enableFetch: MaybeRefOrGetter<boolean>,
 	) {
 		return useQuery({
@@ -147,7 +183,7 @@ export default function () {
 
 				return LOG_QUERY_KEYS.volume(
 					toValue(dataSourceIdRef) || "",
-					params?.q || "",
+					params?.queries ?? [],
 					params?.timeRangeKey || "",
 					params?.variableValues ?? {},
 				)
@@ -156,21 +192,32 @@ export default function () {
 				const dataSourceId = toValue(dataSourceIdRef)
 				const params = toValue(paramsRef)
 
-				if (!dataSourceId || !params?.q.trim()) {
+				if (!dataSourceId || !params || !canRunLogQueries(params.queries)) {
 					return null
 				}
 
-				const queryParams = new URLSearchParams(formatLogQueryParams(params))
+				return await Promise.all(
+					params.queries.map(async (q) => {
+						const queryParams = new URLSearchParams({
+							q: q,
+							...formatQueryTimeRange(params),
+							...formatQueryVariableValues(params.variableValues),
+						})
 
-				return await $coreAPIClient<GenericQueryResult>(
-					`/api/data-sources/${dataSourceId}/logs/volume?${queryParams.toString()}`,
-					{ method: "GET" },
+						return await $coreAPIClient<GenericQueryResult>(
+							`/api/data-sources/${dataSourceId}/logs/volume?${queryParams.toString()}`,
+							{ method: "GET" },
+						)
+					}),
 				)
 			},
 			enabled: () =>
 				!!toValue(dataSourceIdRef) &&
-				!!toValue(paramsRef)?.q.trim() &&
+				canRunLogQueries(toValue(paramsRef)?.queries) &&
 				toValue(enableFetch),
+			// a narrowed or widened query keeps the lines it replaces until
+			// its own arrive, so the view does not flash empty
+			placeholderData: (previousData) => previousData,
 			refetchOnMount: false,
 			refetchOnWindowFocus: false,
 			refetchOnReconnect: false,

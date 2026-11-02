@@ -43,7 +43,7 @@ describe("buildLogConfigFromNodeAttrs", () => {
 			queries: [{ name: "Query 1", query: '{app="api"}' }],
 			timeRange: METRIC_TIME_RANGE_REFERENCE,
 			refreshInterval: METRIC_REFRESH_INTERVAL_REFERENCE,
-			timestampFormat: LogTimestampFormat.RFC3339Nano,
+			timestampFormat: LogTimestampFormat.DetailedNano,
 			order: LogOrder.OldestFirst,
 			width: "wide",
 		})
@@ -54,7 +54,7 @@ describe("buildLogConfigFromNodeAttrs", () => {
 			queries: [{ name: "Query 1", query: '{app="api"}' }],
 			timeRange: METRIC_TIME_RANGE_REFERENCE,
 			refreshInterval: METRIC_REFRESH_INTERVAL_REFERENCE,
-			timestampFormat: LogTimestampFormat.RFC3339Nano,
+			timestampFormat: LogTimestampFormat.DetailedNano,
 			order: LogOrder.OldestFirst,
 		})
 	})
