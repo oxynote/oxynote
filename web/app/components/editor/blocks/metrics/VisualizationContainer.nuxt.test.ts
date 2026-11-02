@@ -232,6 +232,9 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 			t("editor.metrics.status.no-data-loaded.title"),
 		)
 		expect(chartNames(wrapper)).toEqual([])
+		expect(wrapper.find(".i-svg-spinners\\:blocks-shuffle-3").exists()).toBe(
+			true,
+		)
 	})
 
 	it("replaces the loading state with the chart once the answer arrives", async ({

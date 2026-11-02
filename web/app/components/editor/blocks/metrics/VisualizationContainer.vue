@@ -526,7 +526,7 @@ function openModal() {
 			<ShadcnUiEmpty v-if="loadingDelayPassed">
 				<ShadcnUiEmptyHeader>
 					<ShadcnUiEmptyMedia variant="icon" class="size-9">
-						<Icon name="mingcute:loading-line" class="size-6 animate-spin" />
+						<Icon name="svg-spinners:blocks-shuffle-3" class="size-6" />
 					</ShadcnUiEmptyMedia>
 					<ShadcnUiEmptyTitle>
 						{{ $t("editor.metrics.status.loading.title") }}
