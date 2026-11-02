@@ -2,13 +2,27 @@ package document
 
 import (
 	"net/http"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/rs/xid"
 )
 
+// _maxBranchNameLength is the most characters a branch name holds, since
+// the search index stores the name on every entry of the branch.
+const _maxBranchNameLength = 100
+
 var (
+	// ErrInvalidBranchName is returned when a branch is given a name that
+	// is empty or only white space.
+	ErrInvalidBranchName = errutil.New(http.StatusBadRequest, "document.invalid_branch_name", "branch name cannot be empty")
+
+	// ErrBranchNameTooLong is returned when a branch name holds more than
+	// _maxBranchNameLength characters.
+	ErrBranchNameTooLong = errutil.New(http.StatusBadRequest, "document.branch_name_too_long", "branch name cannot be longer than 100 characters")
+
 	// ErrDefaultBranchRename is returned when a rename targets the default
 	// branch.
 	ErrDefaultBranchRename = errutil.New(http.StatusBadRequest, "document.default_branch_rename", "the default branch cannot be renamed")
@@ -28,6 +42,20 @@ var (
 	// hangs off it, would change.
 	ErrBranchProtected = errutil.New(http.StatusForbidden, "document.branch_protected", "a protected branch cannot be changed")
 )
+
+// ValidateBranchName reports whether the name can be given to a branch: it
+// has to hold more than white space and stay within the length limit.
+func ValidateBranchName(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return ErrInvalidBranchName
+	}
+
+	if utf8.RuneCountInString(name) > _maxBranchNameLength {
+		return ErrBranchNameTooLong
+	}
+
+	return nil
+}
 
 // AllowsBranchRename reports whether the branch may take the given name.
 // The default branch is what the tree and content queries return, and its

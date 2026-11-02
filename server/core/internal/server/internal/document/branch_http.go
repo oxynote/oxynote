@@ -53,6 +53,13 @@ func (h *Handler) UpdateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if ui.Name.Valid {
+		if err := documentCore.ValidateBranchName(ui.Name.String); err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+	}
+
 	if err := doc.AllowsBranchRename(ui.Name); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -450,8 +457,8 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if inp.Branch == "" {
-		httpserver.RespondError(h.log, w, httpserver.ErrInvalidForm)
+	if err = documentCore.ValidateBranchName(inp.Branch); err != nil {
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -1108,6 +1109,26 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 			Body:     `{"branch":"","sourceBranchId":"` + _branchID.String() + `"}`,
 			RespCode: http.StatusBadRequest,
 		},
+		"Blank branch name": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx:       &TxMock{},
+			Body:     `{"branch":"   ","sourceBranchId":"` + _branchID.String() + `"}`,
+			RespCode: http.StatusBadRequest,
+		},
+		"Branch name over the length limit": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx:       &TxMock{},
+			Body:     `{"branch":"` + strings.Repeat("a", 101) + `","sourceBranchId":"` + _branchID.String() + `"}`,
+			RespCode: http.StatusBadRequest,
+		},
 		"Error returned by DB.FetchDocumentByBranchID": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
@@ -1634,6 +1655,36 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 				},
 			},
 			Body:                    "{",
+			RespCode:                http.StatusBadRequest,
+			FetchDocumentByBranchID: 1,
+		},
+		"Empty branch name": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID), nil
+				},
+			},
+			Body:                    `{"name":""}`,
+			RespCode:                http.StatusBadRequest,
+			FetchDocumentByBranchID: 1,
+		},
+		"Blank branch name": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID), nil
+				},
+			},
+			Body:                    `{"name":"   "}`,
+			RespCode:                http.StatusBadRequest,
+			FetchDocumentByBranchID: 1,
+		},
+		"Branch name over the length limit": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID), nil
+				},
+			},
+			Body:                    `{"name":"` + strings.Repeat("a", 101) + `"}`,
 			RespCode:                http.StatusBadRequest,
 			FetchDocumentByBranchID: 1,
 		},
