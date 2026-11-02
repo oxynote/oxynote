@@ -125,6 +125,7 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 	})
 
 	afterEach(() => {
+		vi.useRealTimers()
 		document.documentElement.style.removeProperty("--selectable-color-1")
 		document.documentElement.style.removeProperty("--selectable-color-6")
 		disposeMockEndpoints()
@@ -197,7 +198,7 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 		)
 	})
 
-	it("shows that the data is loading while the first answer is on its way", async ({
+	it("shows nothing while the first answer may still come quickly", async ({
 		expect,
 	}) => {
 		const query = mockDeferredEndpoint("GET", QUERY_URL)
@@ -206,7 +207,27 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 		await query.reached
 		await flushPromises()
 
-		expect(wrapper.text()).toContain(t("editor.metrics.status.loading.title"))
+		expect(wrapper.text()).not.toContain(
+			t("editor.metrics.status.loading.title"),
+		)
+		expect(wrapper.text()).not.toContain(
+			t("editor.metrics.status.no-data-loaded.title"),
+		)
+		expect(chartNames(wrapper)).toEqual([])
+	})
+
+	it("shows that the data is loading once the first answer is slow", async ({
+		expect,
+	}) => {
+		const query = mockDeferredEndpoint("GET", QUERY_URL)
+
+		const wrapper = await mountContainer(metricConfig())
+		await query.reached
+
+		// the delay starts with the mount, before fake timers could be set up
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain(t("editor.metrics.status.loading.title"))
+		}, WAIT_FOR_OPTIONS)
 		expect(wrapper.text()).not.toContain(
 			t("editor.metrics.status.no-data-loaded.title"),
 		)
@@ -219,12 +240,86 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 		const query = mockDeferredEndpoint("GET", QUERY_URL)
 		const wrapper = await mountContainer(metricConfig())
 		await query.reached
+		// the delay starts with the mount, before fake timers could be set up
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain(t("editor.metrics.status.loading.title"))
+		}, WAIT_FOR_OPTIONS)
 
 		query.resolve(seriesResult())
 
 		await vi.waitFor(() => {
 			expect(chartNames(wrapper)).toEqual(["LineChart"])
 		}, WAIT_FOR_OPTIONS)
+		expect(wrapper.text()).not.toContain(
+			t("editor.metrics.status.loading.title"),
+		)
+	})
+
+	it("shows that the data is loading for a new time range after no data", async ({
+		expect,
+	}) => {
+		let rangeChanged = false
+		const calls = mockEndpoint("GET", QUERY_URL, () => {
+			if (rangeChanged) {
+				return new Promise(() => undefined)
+			}
+
+			return { status: GenericQueryResultStatus.NoData, data: [] }
+		})
+		const config = metricConfig()
+		const wrapper = await mountContainer(config)
+
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain(
+				t("editor.metrics.status.no-data-loaded.title"),
+			)
+		}, WAIT_FOR_OPTIONS)
+
+		const asked = calls.length
+		rangeChanged = true
+		await wrapper.setProps({
+			config: { ...config, timeRange: TimeRangePreset.Last1Hour },
+		})
+
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain(t("editor.metrics.status.loading.title"))
+		}, WAIT_FOR_OPTIONS)
+		expect(wrapper.text()).not.toContain(
+			t("editor.metrics.status.no-data-loaded.title"),
+		)
+		expect(calls.length).toBeGreaterThan(asked)
+	})
+
+	it("keeps the drawn chart while a new time range loads", async ({
+		expect,
+	}) => {
+		let rangeChanged = false
+		const calls = mockEndpoint("GET", QUERY_URL, () => {
+			if (rangeChanged) {
+				return new Promise(() => undefined)
+			}
+
+			return seriesResult()
+		})
+		const config = metricConfig()
+		const wrapper = await mountContainer(config)
+
+		await vi.waitFor(() => {
+			expect(chartNames(wrapper)).toEqual(["LineChart"])
+		}, WAIT_FOR_OPTIONS)
+
+		const asked = calls.length
+		rangeChanged = true
+		vi.useFakeTimers()
+		await wrapper.setProps({
+			config: { ...config, timeRange: TimeRangePreset.Last1Hour },
+		})
+
+		// past the config debounce and the loading state's own delay
+		await vi.advanceTimersByTimeAsync(1_000)
+
+		expect(calls.length).toBeGreaterThan(asked)
+		expect(chartNames(wrapper)).toEqual(["LineChart"])
 		expect(wrapper.text()).not.toContain(
 			t("editor.metrics.status.loading.title"),
 		)

@@ -217,15 +217,35 @@ const drawnSimulationPreset = computed(() => {
 	)
 })
 
-// the first answer is still on its way, which is not the same as a query
-// that returned nothing. Later refreshes keep the chart that is drawn.
-const awaitingFirstAnswer = computed(() => {
+// an answer is on its way and no chart is drawn yet, which is not the same
+// as a query that returned nothing. A refresh or a new time range keeps a
+// drawn chart, as the previous answer stays as placeholder data.
+const awaitingAnswer = computed(() => {
+	if (
+		drawnSimulationPreset.value ||
+		fetchMetricData.asyncStatus.value !== "loading"
+	) {
+		return false
+	}
+
 	return (
-		!drawnSimulationPreset.value &&
-		fetchMetricData.state.value.data === undefined &&
-		fetchMetricData.asyncStatus.value === "loading"
+		fetchMetricData.state.value.data === undefined ||
+		(fetchMetricData.isPlaceholderData.value &&
+			data.value.status !== GenericQueryResultStatus.Ok)
 	)
 })
+
+// the loading state waits a moment, so a quick answer goes straight to its
+// chart or empty state without a flash
+const LOADING_STATE_DELAY_MS = 400
+const loadingDelayPassed = ref(false)
+const loadingDelay = useTimeoutFn(
+	() => {
+		loadingDelayPassed.value = true
+	},
+	LOADING_STATE_DELAY_MS,
+	{ immediate: false },
+)
 
 const processedQueries = computed(() => {
 	const res = fetchMetricData.state.value.data
@@ -378,6 +398,15 @@ watch(
 	},
 )
 
+watchImmediate(awaitingAnswer, (awaiting) => {
+	loadingDelayPassed.value = false
+	if (awaiting) {
+		loadingDelay.start()
+	} else {
+		loadingDelay.stop()
+	}
+})
+
 watchImmediate(
 	() => !!drawnSimulationPreset.value,
 	(visible) => {
@@ -493,8 +522,8 @@ function openModal() {
 </script>
 <template>
 	<div class="relative flex size-full min-w-0 items-center justify-center">
-		<div v-if="awaitingFirstAnswer" class="text-foreground">
-			<ShadcnUiEmpty>
+		<div v-if="awaitingAnswer" class="text-foreground">
+			<ShadcnUiEmpty v-if="loadingDelayPassed">
 				<ShadcnUiEmptyHeader>
 					<ShadcnUiEmptyMedia variant="icon" class="size-9">
 						<Icon name="mingcute:loading-line" class="size-6 animate-spin" />
