@@ -1,11 +1,13 @@
 package document
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -179,7 +181,13 @@ func Test_Document_Fork(t *testing.T) {
 	doc := stubDocument()
 	doc.Protected = true
 
-	forked := doc.Fork("feature-x", "user-2")
+	// error
+	_, err := doc.Fork(" \t ", "user-2")
+	testutil.AssertEqualError(t, ErrInvalidBranchName, err)
+
+	// success
+	forked, err := doc.Fork(" feature-x ", "user-2")
+	require.NoError(t, err)
 
 	// the document identity stays, the branch is a new one that is
 	// neither protected nor default whatever its source was.
@@ -221,14 +229,46 @@ func Test_Document_ApplyBranchUpdate(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
+		// Fork makes the branch a fork rather than the default branch.
+		Fork              bool
 		Name              null.String
 		Protected         null.Bool
+		Err               error
 		ExpectedName      string
 		ExpectedProtected bool
 	}{
+		"Empty name": {
+			Fork: true,
+			Name: null.StringFrom(""),
+			Err:  ErrInvalidBranchName,
+		},
+		"Name of white space only": {
+			Fork: true,
+			Name: null.StringFrom("   "),
+			Err:  ErrInvalidBranchName,
+		},
+		"Name over the length limit": {
+			Fork: true,
+			Name: null.StringFrom(strings.Repeat("a", _maxBranchNameLength+1)),
+			Err:  ErrBranchNameTooLong,
+		},
+		"Default branch renamed": {
+			Name: null.StringFrom("renamed"),
+			Err:  ErrDefaultBranchRename,
+		},
 		"Name only": {
+			Fork:         true,
 			Name:         null.StringFrom("renamed"),
 			ExpectedName: "renamed",
+		},
+		"Name padded with white space": {
+			Fork:         true,
+			Name:         null.StringFrom("  renamed\t"),
+			ExpectedName: "renamed",
+		},
+		"Default branch keeps its name": {
+			Name:         null.StringFrom(" " + DefaultBranch + " "),
+			ExpectedName: DefaultBranch,
 		},
 		"Protection only": {
 			Protected:         null.BoolFrom(true),
@@ -236,6 +276,7 @@ func Test_Document_ApplyBranchUpdate(t *testing.T) {
 			ExpectedProtected: true,
 		},
 		"Both": {
+			Fork:              true,
 			Name:              null.StringFrom("renamed"),
 			Protected:         null.BoolFrom(true),
 			ExpectedName:      "renamed",
@@ -251,8 +292,15 @@ func Test_Document_ApplyBranchUpdate(t *testing.T) {
 			t.Parallel()
 
 			doc := stubDocument()
+			doc.Default = !c.Fork
 
-			nd := doc.ApplyBranchUpdate(c.Name, c.Protected, "user-2")
+			nd, err := doc.ApplyBranchUpdate(c.Name, c.Protected, "user-2")
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
 
 			assert.Equal(t, c.ExpectedName, nd.BranchName)
 			assert.Equal(t, c.ExpectedProtected, nd.Protected)

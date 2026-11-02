@@ -159,7 +159,14 @@ func (d Document) MergeBranch(source Branch, mergedBy string) Document {
 // Comment marks are stripped because comments belong to one branch, and the
 // Yjs state is cleared so the first load rebuilds it from the stripped
 // content. A fork is never protected or default, whatever its source is.
-func (d Document) Fork(branchName, createdBy string) Document {
+// The name is kept without the white space around it, and a name that is
+// empty or too long fails.
+func (d Document) Fork(branchName, createdBy string) (Document, error) {
+	branchName, err := parseBranchName(branchName)
+	if err != nil {
+		return Document{}, err
+	}
+
 	now := timeutil.Now()
 
 	nd := d
@@ -178,7 +185,7 @@ func (d Document) Fork(branchName, createdBy string) Document {
 		LastUpdatedBy: null.StringFrom(createdBy),
 	}
 
-	return nd
+	return nd, nil
 }
 
 // ApplyProtection sets the protection status of the document branch.
@@ -222,8 +229,23 @@ type BranchSummary struct {
 }
 
 // ApplyBranchUpdate returns a new Document with only the name and protection
-// status updated. It does not modify content or the history.
-func (d Document) ApplyBranchUpdate(name null.String, protected null.Bool, updatedBy string) Document {
+// status updated. It does not modify content or the history. A new name is
+// kept without the white space around it. It fails when the name is empty or
+// too long, or when the branch may not be renamed.
+func (d Document) ApplyBranchUpdate(name null.String, protected null.Bool, updatedBy string) (Document, error) {
+	if name.Valid {
+		bname, err := parseBranchName(name.String)
+		if err != nil {
+			return Document{}, err
+		}
+
+		name = null.StringFrom(bname)
+	}
+
+	if err := d.allowsBranchRename(name); err != nil {
+		return Document{}, err
+	}
+
 	nd := d
 
 	if name.Valid {
@@ -237,7 +259,7 @@ func (d Document) ApplyBranchUpdate(name null.String, protected null.Bool, updat
 	nd.UpdatedAt = timeutil.Now()
 	nd.LastUpdatedBy = null.StringFrom(updatedBy)
 
-	return nd
+	return nd, nil
 }
 
 // Title names the document the way a status line or a confirm card

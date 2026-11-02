@@ -43,25 +43,26 @@ var (
 	ErrBranchProtected = errutil.New(http.StatusForbidden, "document.branch_protected", "a protected branch cannot be changed")
 )
 
-// ValidateBranchName reports whether the name can be given to a branch: it
-// has to hold more than white space and stay within the length limit.
-func ValidateBranchName(name string) error {
-	if strings.TrimSpace(name) == "" {
-		return ErrInvalidBranchName
+// parseBranchName returns the name without the white space around it. It
+// fails when nothing is left or when what is left is longer than the limit.
+func parseBranchName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", ErrInvalidBranchName
 	}
 
 	if utf8.RuneCountInString(name) > _maxBranchNameLength {
-		return ErrBranchNameTooLong
+		return "", ErrBranchNameTooLong
 	}
 
-	return nil
+	return name, nil
 }
 
-// AllowsBranchRename reports whether the branch may take the given name.
+// allowsBranchRename reports whether the branch may take the given name.
 // The default branch is what the tree and content queries return, and its
 // name is what the user sees the document under; a rename would leave the
 // two out of step.
-func (d Document) AllowsBranchRename(name null.String) error {
+func (d Document) allowsBranchRename(name null.String) error {
 	if d.Default && name.Valid && name.String != d.BranchName {
 		return ErrDefaultBranchRename
 	}
