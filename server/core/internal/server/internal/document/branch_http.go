@@ -48,7 +48,8 @@ func (h *Handler) UpdateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		Protected null.Bool   `json:"protected"`
 	}
 
-	if err := httpserver.DecodeJSON(r, &ui); err != nil {
+	err = httpserver.DecodeJSON(r, &ui)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
