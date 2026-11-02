@@ -6,10 +6,9 @@ live in [server/core/AGENTS.md](../../AGENTS.md).
 ## The demo data sources
 
 Every organization is seeded, unconditionally, with the Prometheus data
-source "Demo Metrics" at `demo://engineering`, and the welcome document whose
-charts query it. The Loki "Demo Logs" at the same URL is ready but stays
-commented out in `NewDemoDataSources` until the web app shows loki data
-sources.
+source "Demo Metrics" and the Loki data source "Demo Logs", both at
+`demo://engineering`, and the welcome document whose charts query the
+metrics one.
 
 - `demo/` synthesises both in-process. `Manager.newClient` picks it for
   exactly that URL under either type; any other `demo://` is

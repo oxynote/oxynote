@@ -18,6 +18,7 @@ import { DiffStatus } from "~/components/editor/diff/position-map"
 
 const PROMETHEUS_ID = makeXid("dsa")
 const BROKEN_ID = makeXid("dsb")
+const LOKI_ID = makeXid("dsc")
 
 function dataSources() {
 	return [
@@ -35,6 +36,13 @@ function dataSources() {
 			type: DataSourceType.Prometheus,
 			status: DataSourceStatus.Unreachable,
 		},
+		{
+			id: LOKI_ID,
+			name: "Prod Loki",
+			url: "https://loki.test",
+			type: DataSourceType.Loki,
+			status: DataSourceStatus.Success,
+		},
 	]
 }
 
@@ -43,7 +51,9 @@ function configWith(dataSourceId: string | null) {
 }
 
 function mountSelect(props: Record<string, unknown> = {}) {
-	return mountSuspended(DataSourceSelect, { props: props })
+	return mountSuspended(DataSourceSelect, {
+		props: { types: [DataSourceType.Prometheus], ...props },
+	})
 }
 
 async function openMenu(wrapper: VueWrapper) {
@@ -125,6 +135,24 @@ describe("<DataSourceSelect>", { concurrent: false }, () => {
 		}, WAIT_FOR_OPTIONS)
 	})
 
+	it("treats a data source of a type it does not accept as none set", async ({
+		expect,
+	}) => {
+		mockEndpoint("GET", "/api/data-sources", () => dataSources())
+
+		const wrapper = await mountSelect({ modelValue: configWith(LOKI_ID) })
+
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain(
+				t("editor.config-modal-utils.data-source-label-missing"),
+			)
+		}, WAIT_FOR_OPTIONS)
+		expect(wrapper.text()).not.toContain("Prod Loki")
+		expect(wrapper.text()).not.toContain(
+			t("editor.config-modal-utils.data-source-label-deleted"),
+		)
+	})
+
 	it("names the data source of the version a diff replaced", async ({
 		expect,
 	}) => {
@@ -158,7 +186,9 @@ describe("<DataSourceSelect>", { concurrent: false }, () => {
 		},
 	)
 
-	it("offers every connected data source", async ({ expect }) => {
+	it("offers every connected data source of the accepted types", async ({
+		expect,
+	}) => {
 		mockEndpoint("GET", "/api/data-sources", () => dataSources())
 		const wrapper = await mountSelect({ modelValue: configWith(null) })
 		await vi.waitFor(() => {
@@ -173,6 +203,52 @@ describe("<DataSourceSelect>", { concurrent: false }, () => {
 			expect(menuItem("Prod Prometheus")).toBeDefined()
 		}, WAIT_FOR_OPTIONS)
 		expect(menuItem("Broken").getAttribute("data-disabled")).not.toBeNull()
+		expect(document.body.textContent).not.toContain("Prod Loki")
+	})
+
+	it("offers only the data sources of the types it is given", async ({
+		expect,
+	}) => {
+		mockEndpoint("GET", "/api/data-sources", () => dataSources())
+		const wrapper = await mountSelect({
+			modelValue: configWith(null),
+			types: [DataSourceType.Loki],
+		})
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain(
+				t("editor.config-modal-utils.data-source-label-missing"),
+			)
+		}, WAIT_FOR_OPTIONS)
+
+		await openMenu(wrapper)
+
+		await vi.waitFor(() => {
+			expect(menuItem("Prod Loki")).toBeDefined()
+		}, WAIT_FOR_OPTIONS)
+		expect(document.body.textContent).not.toContain("Prod Prometheus")
+		expect(document.body.textContent).not.toContain("Broken")
+	})
+
+	it("points at the settings when no data source has an accepted type", async ({
+		expect,
+	}) => {
+		mockEndpoint("GET", "/api/data-sources", () => dataSources())
+		const wrapper = await mountSelect({
+			modelValue: configWith(null),
+			types: [DataSourceType.MySQL],
+		})
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain(
+				t("editor.config-modal-utils.data-source-label-missing"),
+			)
+		}, WAIT_FOR_OPTIONS)
+
+		await openMenu(wrapper)
+
+		expect(document.body.textContent).toContain(
+			t("editor.config-modal-utils.data-source-no-options.placeholder"),
+		)
+		expect(document.body.textContent).not.toContain("Prod Prometheus")
 	})
 
 	it("stores the data source the reader picked", async ({ expect }) => {

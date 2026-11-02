@@ -66,6 +66,7 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 		expect(at(selects, 0).props("modelValue")).toEqual(config)
 		expect(at(selects, 0).props("diffMode")).toBe(false)
 		expect(at(selects, 0).props("diffStatus")).toBeNull()
+		expect(at(selects, 0).props("types")).toEqual([DataSourceType.Loki])
 	})
 
 	it("asks the host to open the data source settings", async ({ expect }) => {
@@ -213,6 +214,8 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 			expect(at(selects, 1).props("oldConfig")).toEqual(oldConfig)
 			expect(at(selects, 1).props("diffMode")).toBe(true)
 			expect(at(selects, 1).props("diffStatus")).toBe(DiffStatus.Removed)
+			expect(at(selects, 0).props("types")).toEqual([DataSourceType.Loki])
+			expect(at(selects, 1).props("types")).toEqual([DataSourceType.Loki])
 		})
 
 		it("shows the title a diff replaced beside the new one", async ({

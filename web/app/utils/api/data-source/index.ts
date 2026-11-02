@@ -1,5 +1,6 @@
 export enum DataSourceType {
 	Prometheus = "prometheus",
+	Loki = "loki",
 
 	// SQL
 	PostgreSQL = "postgresql",
@@ -64,6 +65,12 @@ export interface DataSourceCredentialsPrometheus {
 	caCertificate?: string
 }
 
+export interface DataSourceCredentialsLoki {
+	username: string
+	password: string
+	caCertificate?: string
+}
+
 export interface DataSourceCredentialsSQL {
 	username: string
 	password: string
@@ -71,7 +78,9 @@ export interface DataSourceCredentialsSQL {
 }
 
 export type DataSourceCredentials =
-	DataSourceCredentialsPrometheus | DataSourceCredentialsSQL
+	| DataSourceCredentialsPrometheus
+	| DataSourceCredentialsLoki
+	| DataSourceCredentialsSQL
 
 export interface DataSourceCreateRequest {
 	type: DataSourceType

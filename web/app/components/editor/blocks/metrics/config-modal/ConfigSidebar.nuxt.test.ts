@@ -498,6 +498,29 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 		expect(at(rows, 1).props("color")).toBe("#222222")
 	})
 
+	it("lets both data source pickers of a diff offer only metric sources", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSidebar({
+			modelValue: configWith({ dataSourceId: "new" }),
+			diffStatus: DiffStatus.Modified,
+			oldConfig: configWith({ dataSourceId: "old" }),
+		})
+
+		const types = wrapper
+			.findAllComponents(DataSourceSelect)
+			.map((s) => s.props("types") as DataSourceType[])
+		const metricTypes = [
+			DataSourceType.Prometheus,
+			DataSourceType.PostgreSQL,
+			DataSourceType.Supabase,
+			DataSourceType.MySQL,
+			DataSourceType.MariaDB,
+		]
+
+		expect(types).toEqual([metricTypes, metricTypes])
+	})
+
 	it("asks the host to open the data source settings", async ({ expect }) => {
 		const wrapper = await mountSidebar()
 

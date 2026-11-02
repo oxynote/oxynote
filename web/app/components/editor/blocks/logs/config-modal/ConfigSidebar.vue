@@ -19,6 +19,7 @@ const emit = defineEmits<{
 const { isEditable } = useEditorMeta()
 const editorStore = useEditorStore()
 
+const dataSourceTypes = [DataSourceType.Loki]
 const isEditingDisabled = computed(() => {
 	return !isEditable.value || editorStore.reviewableDiffActive
 })
@@ -53,12 +54,14 @@ const isOrderModified = computed(
 			<div class="flex flex-col gap-1 px-1">
 				<DataSourceSelect
 					v-model="config"
+					:types="dataSourceTypes"
 					:diff-mode="!!props.diffStatus"
 					:diff-status="isDataSourceIdModified ? DiffStatus.Added : null"
 					@open-settings="emit('open-settings')"
 				/>
 				<DataSourceSelect
 					v-if="isDataSourceIdModified"
+					:types="dataSourceTypes"
 					:diff-mode="!!props.diffStatus"
 					:old-config="modifiedFrom"
 					:diff-status="DiffStatus.Removed"

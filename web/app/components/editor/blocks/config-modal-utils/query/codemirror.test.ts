@@ -58,6 +58,7 @@ const t = (key: string) => key
 const DATA_SOURCES = [
 	{ id: "prom-1", type: DataSourceType.Prometheus },
 	{ id: "pg-1", type: DataSourceType.PostgreSQL },
+	{ id: "loki-1", type: DataSourceType.Loki },
 ]
 
 interface StubOptions {
@@ -256,6 +257,7 @@ describe("useQueryEditorExtension", () => {
 	it.for([
 		{ name: "provides no extensions without a data source", id: null },
 		{ name: "provides no extensions for an unknown data source", id: "gone" },
+		{ name: "provides no extensions for a loki data source", id: "loki-1" },
 	])("$name", ({ id }, { expect }) => {
 		const { extensions } = makeEditor({ dataSourceId: id })
 
@@ -280,6 +282,12 @@ describe("useQueryEditorExtension", () => {
 			dataSourceId: "pg-1",
 			editingEnabled: true,
 			expected: "editor.config-modal-utils.query-placeholder.postgresql",
+		},
+		{
+			name: "prompts with the loki placeholder",
+			dataSourceId: "loki-1",
+			editingEnabled: true,
+			expected: "editor.config-modal-utils.query-placeholder.loki",
 		},
 		{
 			name: "prompts with the default placeholder without a data source",

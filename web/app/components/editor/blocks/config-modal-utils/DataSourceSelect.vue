@@ -9,6 +9,7 @@ interface DataSourceConfig {
 // either config or oldConfig must be provided; not both
 const config = defineModel<DataSourceConfig>()
 const props = defineProps<{
+	types: DataSourceType[]
 	diffMode?: boolean
 	diffStatus?: DiffStatus | null
 	oldConfig?: DataSourceConfig | null
@@ -24,6 +25,12 @@ const editorStore = useEditorStore()
 const isEditingDisabled = computed(() => {
 	return !isEditable.value || editorStore.reviewableDiffActive
 })
+const options = computed(
+	() =>
+		fetchDataSources.state.value.data?.filter((v) =>
+			props.types.includes(v.type),
+		) ?? [],
+)
 const selectedDataSource = computed(() => {
 	let id: string | null = null
 
@@ -35,7 +42,8 @@ const selectedDataSource = computed(() => {
 
 	const res = fetchDataSources.state.value.data?.find((v) => v.id === id)
 	if (res) {
-		return res
+		// a source of a type the block cannot query counts as none selected
+		return props.types.includes(res.type) ? res : null
 	}
 
 	if (id) {
@@ -124,7 +132,7 @@ function handleDataSourceSelection(dataSourceId: string) {
 			align="start"
 			loop
 		>
-			<template v-if="!fetchDataSources.state.value.data?.length">
+			<template v-if="!options.length">
 				<i18n-t
 					scope="global"
 					keypath="editor.config-modal-utils.data-source-no-options.main"
@@ -156,7 +164,7 @@ function handleDataSourceSelection(dataSourceId: string) {
 			</template>
 			<template v-else>
 				<ShadcnUiDropdownMenuItem
-					v-for="dataSource in fetchDataSources.state.value.data"
+					v-for="dataSource in options"
 					:key="dataSource.id"
 					:value="dataSource.id"
 					:disabled="dataSource.status !== DataSourceStatus.Success"
