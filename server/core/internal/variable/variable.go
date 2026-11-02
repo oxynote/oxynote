@@ -25,6 +25,10 @@ import (
 // a query that references one many times stays small.
 const _maxValueLength = 128
 
+// _maxOptions is the most options a list variable holds, so saving them
+// stays under the database parameter limit.
+const _maxOptions = 100
+
 // All available Type constants.
 const (
 	// TypeList is a variable whose value is one of its options.
@@ -95,6 +99,14 @@ var (
 	// ErrDuplicateOption is returned when a variable's input names the
 	// same option twice.
 	ErrDuplicateOption = errutil.New(http.StatusBadRequest, "variable.duplicate_option", "option is listed more than once")
+
+	// ErrTooManyOptions is returned when a list variable has more than
+	// _maxOptions options.
+	ErrTooManyOptions = errutil.New(http.StatusBadRequest, "variable.too_many_options", "list variable cannot have more than 100 options")
+
+	// ErrDuplicateOptionValue is returned when two options of a list variable
+	// hold the same value.
+	ErrDuplicateOptionValue = errutil.New(http.StatusBadRequest, "variable.duplicate_option_value", "option value is listed more than once")
 
 	// ErrUnknownOption is returned when an option id does not belong to
 	// the variable.
@@ -523,11 +535,16 @@ func (vi Input) Validate() error {
 		return ErrMissingOptions
 	}
 
+	if len(vi.Options) > _maxOptions {
+		return ErrTooManyOptions
+	}
+
 	if vi.DefaultValue.Valid {
 		return ErrUnexpectedDefault
 	}
 
 	seen := make(map[xid.ID]bool, len(vi.Options))
+	seenValues := make(map[string]bool, len(vi.Options))
 
 	for _, oi := range vi.Options {
 		if oi.Value == "" {
@@ -537,6 +554,12 @@ func (vi Input) Validate() error {
 		if utf8.RuneCountInString(oi.Value) > _maxValueLength {
 			return ErrValueTooLong
 		}
+
+		if seenValues[oi.Value] {
+			return ErrDuplicateOptionValue
+		}
+
+		seenValues[oi.Value] = true
 
 		if !oi.ID.Valid {
 			continue
