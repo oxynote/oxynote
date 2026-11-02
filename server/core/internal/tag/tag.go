@@ -4,7 +4,9 @@ package tag
 import (
 	"net/http"
 	"slices"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
@@ -29,7 +31,12 @@ var (
 	// ErrEmptyTagUpdate is returned when a tag update sets neither a name nor
 	// a colour.
 	ErrEmptyTagUpdate = errutil.New(http.StatusBadRequest, "tag.empty_update", "tag update needs a name or a colour")
+
+	// ErrTagNameTooLong is returned when a tag name length is longer than the maximum number of characters
+	ErrTagNameTooLong = errutil.New(http.StatusBadRequest, "tag.name_length", "tag name is longer than 64 characters")
 )
+
+const maxTagNameLength = 64
 
 // Tag represents a label a document can carry. A document may carry many
 // tags and a tag may be carried by many documents.
@@ -66,9 +73,15 @@ type CreateInput struct {
 }
 
 // Validate reports whether the input can become a tag.
-func (ci CreateInput) Validate() error {
+func (ci *CreateInput) Validate() error {
+	ci.TagName = strings.TrimSpace(ci.TagName)
+
 	if ci.TagName == "" {
 		return ErrInvalidTagName
+	}
+
+	if utf8.RuneCountInString(ci.TagName) > maxTagNameLength {
+		return ErrTagNameTooLong
 	}
 
 	if !ValidColor(ci.Color) {
@@ -108,13 +121,19 @@ type UpdateInput struct {
 
 // Validate reports whether the input changes a tag: at least one field has
 // to be set, and a set field is held to the same rules as on creation.
-func (ui UpdateInput) Validate() error {
+func (ui *UpdateInput) Validate() error {
 	if !ui.TagName.Valid && !ui.Color.Valid {
 		return ErrEmptyTagUpdate
 	}
 
+	ui.TagName.String = strings.TrimSpace(ui.TagName.String)
+
 	if ui.TagName.Valid && ui.TagName.String == "" {
 		return ErrInvalidTagName
+	}
+
+	if utf8.RuneCountInString(ui.TagName.String) > maxTagNameLength {
+		return ErrTagNameTooLong
 	}
 
 	if ui.Color.Valid && !ValidColor(ui.Color.String) {

@@ -122,7 +122,8 @@ func (a createTagArgs) Validate() error {
 		return errRequired("color")
 	}
 
-	return a.input().Validate()
+	inp := a.input()
+	return inp.Validate()
 }
 
 // input returns the arguments as the domain's create input.
@@ -215,7 +216,8 @@ func (a updateTagArgs) Validate() error {
 		return nil
 	}
 
-	return a.input().Validate()
+	inp := a.input()
+	return inp.Validate()
 }
 
 // renames reports whether the call changes the name or the colour, which
