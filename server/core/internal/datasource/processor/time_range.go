@@ -67,6 +67,14 @@ func ParseTimeRange(
 		}
 	}
 
+	if !from.IsZero() && from.After(to) {
+		return nil, errutil.New(
+			http.StatusBadRequest,
+			"from.after_to",
+			"From parameter must not be after the to parameter.",
+		)
+	}
+
 	return &TimeRange{
 		From: from,
 		To:   to,
