@@ -564,6 +564,29 @@ func Test_Input_Validate(t *testing.T) {
 			}),
 			Err: ErrDuplicateOption,
 		},
+		"List with too many options": {
+			Input: with(func(vi *Input) {
+				vi.Options = make([]OptionInput, _maxOptions+1)
+				for i := range vi.Options {
+					vi.Options[i] = OptionInput{Value: strings.Repeat("a", i+1)}
+				}
+			}),
+			Err: ErrTooManyOptions,
+		},
+		"List with the most options": {
+			Input: with(func(vi *Input) {
+				vi.Options = make([]OptionInput, _maxOptions)
+				for i := range vi.Options {
+					vi.Options[i] = OptionInput{Value: strings.Repeat("a", i+1)}
+				}
+			}),
+		},
+		"List repeating an option value": {
+			Input: with(func(vi *Input) {
+				vi.Options = []OptionInput{{Value: "a"}, {Value: "a"}}
+			}),
+			Err: ErrDuplicateOptionValue,
+		},
 		"List keeping two options": {
 			Input: with(func(vi *Input) {
 				vi.Options = []OptionInput{{ID: null.ValueFrom(xid.New()), Value: "a"}, {ID: null.ValueFrom(xid.New()), Value: "b"}, {Value: "c"}}
