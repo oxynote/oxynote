@@ -160,6 +160,7 @@ func Test_RespondError(t *testing.T) {
 		Inp      error
 		RespCode int
 		Log      string
+		DebugLog string
 	}{
 		"Client error": {
 			Inp:      ErrInvalidJSON,
@@ -173,6 +174,7 @@ func Test_RespondError(t *testing.T) {
 		"Context canceled by the client": {
 			Inp:      fmt.Errorf("fetching document: %w", context.Canceled),
 			RespCode: http.StatusGatewayTimeout,
+			DebugLog: `"level":"DEBUG","msg":"client disconnected before the response was sent"`,
 		},
 		"Context deadline exceeded": {
 			Inp:      fmt.Errorf("fetching document: %w", context.DeadlineExceeded),
@@ -203,12 +205,29 @@ func Test_RespondError(t *testing.T) {
 
 			if c.Log == "" {
 				assert.Empty(t, b.String())
+			} else {
+				strs := strings.Split(b.String(), "\n")
+				require.Len(t, strs, 2)
+				assert.Regexp(t, c.Log, strs[0])
+			}
+
+			if c.DebugLog == "" {
 				return
 			}
 
-			strs := strings.Split(b.String(), "\n")
-			require.Len(t, strs, 2)
-			assert.Regexp(t, c.Log, strs[0])
+			// debug records are filtered out by the handler above, so a
+			// dedicated debug-level logger is needed to assert on them.
+			var db bytes.Buffer
+
+			dout := bufio.NewWriter(&db)
+			dlog := slog.New(slog.NewJSONHandler(dout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+			RespondError(dlog, httptest.NewRecorder(), c.Inp)
+			require.NoError(t, dout.Flush())
+
+			dstrs := strings.Split(db.String(), "\n")
+			require.Len(t, dstrs, 2)
+			assert.Regexp(t, c.DebugLog, dstrs[0])
 		})
 	}
 }
