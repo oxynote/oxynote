@@ -14,6 +14,22 @@ export async function reported<T>(run: () => Promise<T>): Promise<T> {
 	}
 }
 
+// runs work for a hocuspocus hook. Hocuspocus prints whatever a hook
+// throws to stderr in full, and an axios error carries the request it
+// failed on, session cookie included. So the failure is reported here as
+// it is, and the hook sees a new error holding only the message.
+export async function reportedAsMessage<T>(run: () => Promise<T>): Promise<T> {
+	try {
+		return await run()
+	} catch (err) {
+		Sentry.captureException(err)
+		// eslint-disable-next-line preserve-caught-error -- a cause prints too.
+		throw new Error(
+			err instanceof Error ? err.message : String(err),
+		)
+	}
+}
+
 // runs an effect whose failure must not fail the caller: the work it
 // belongs to has already succeeded and the caller has nothing useful to do
 // about it. The error is reported and swallowed, so the failure is visible
