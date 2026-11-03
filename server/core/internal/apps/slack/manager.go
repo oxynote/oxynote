@@ -28,6 +28,9 @@ var (
 
 	// ErrNotConfigured is returned when the Slack App integration is not configured on this deployment.
 	ErrNotConfigured = errutil.New(http.StatusConflict, "slack.not_configured", "slack app is not configured")
+
+	// ErrInvalidSignature is returned when a Slack request signature is missing, expired or does not match.
+	ErrInvalidSignature = errutil.New(http.StatusUnauthorized, "slack.invalid_signature", "invalid request signature")
 )
 
 // _maxRequestBodyBytes bounds a Slack request body read during signature
@@ -224,7 +227,7 @@ func (m *Manager) VerifyMiddleware(r *http.Request) error {
 
 	verifier, err := goslack.NewSecretsVerifier(r.Header, m.opt.SignatureSecret)
 	if err != nil {
-		return err
+		return ErrInvalidSignature
 	}
 
 	// the payloads verified here are form-encoded, so a read failure is a
@@ -240,11 +243,11 @@ func (m *Manager) VerifyMiddleware(r *http.Request) error {
 	r.Body = io.NopCloser(bytes.NewBuffer(reqBody))
 
 	if _, err = verifier.Write(reqBody); err != nil {
-		return err
+		return ErrInvalidSignature
 	}
 
 	if err = verifier.Ensure(); err != nil {
-		return err
+		return ErrInvalidSignature
 	}
 
 	return nil
