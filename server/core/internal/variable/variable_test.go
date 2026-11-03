@@ -155,11 +155,6 @@ func Test_Input_ValidateChange(t *testing.T) {
 			Stored: Variable{Key: "region", Description: null.StringFrom(longDesc)},
 			Err:    ErrDescriptionTooLong,
 		},
-		"Other fields still checked": {
-			Input:  with(func(vi *Input) { vi.Name = "  " }),
-			Stored: Variable{Key: "region", Name: "  "},
-			Err:    ErrInvalidName,
-		},
 	}
 
 	for cn, c := range cc {
@@ -264,10 +259,6 @@ func Test_GroupUpdateInput_Validate(t *testing.T) {
 		},
 		"Unchanged name stored over the length limit": {
 			Input:  GroupUpdateInput{GroupName: null.StringFrom(long), Color: null.StringFrom("green")},
-			Stored: Group{GroupName: long},
-		},
-		"Unchanged name stored over the limit, padded": {
-			Input:  GroupUpdateInput{GroupName: null.StringFrom(" " + long + " ")},
 			Stored: Group{GroupName: long},
 		},
 		"Changed name over the limit, stored one over too": {

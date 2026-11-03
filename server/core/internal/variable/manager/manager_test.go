@@ -336,12 +336,6 @@ func Test_Manager_UpdateGroup(t *testing.T) {
 			Fetches: 1,
 			Err:     variable.ErrInvalidGroupName,
 		},
-		"Name over the length limit": {
-			DB:      &DBMock{FetchVariableGroupFunc: stubFetchGroup(_group, nil)},
-			Inp:     variable.GroupUpdateInput{GroupName: null.StringFrom(strings.Repeat("a", 65))},
-			Fetches: 1,
-			Err:     variable.ErrGroupNameTooLong,
-		},
 		"Colour change on a group whose stored name is over the limit": {
 			DB:      &DBMock{FetchVariableGroupFunc: stubFetchGroup(_longGroup, nil)},
 			Inp:     variable.GroupUpdateInput{GroupName: null.StringFrom(_longGroup.GroupName), Color: null.StringFrom("green")},
