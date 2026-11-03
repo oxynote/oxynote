@@ -14,6 +14,7 @@ import {
 	clearQueryCache,
 	disposeMockEndpoints,
 	makeXid,
+	mockDeferredEndpoint,
 	mockEndpoint,
 	seedQueryData,
 } from "~/composables/api/test-helpers"
@@ -124,6 +125,7 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 	})
 
 	afterEach(() => {
+		vi.useRealTimers()
 		document.documentElement.style.removeProperty("--selectable-color-1")
 		document.documentElement.style.removeProperty("--selectable-color-6")
 		disposeMockEndpoints()
@@ -193,6 +195,136 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 		}, WAIT_FOR_OPTIONS)
 		expect(wrapper.text()).toContain(
 			"The current configuration returned no data",
+		)
+	})
+
+	it("shows nothing while the first answer may still come quickly", async ({
+		expect,
+	}) => {
+		const query = mockDeferredEndpoint("GET", QUERY_URL)
+
+		const wrapper = await mountContainer(metricConfig())
+		await query.reached
+		await flushPromises()
+
+		expect(wrapper.text()).not.toContain(
+			t("editor.metrics.status.loading.title"),
+		)
+		expect(wrapper.text()).not.toContain(
+			t("editor.metrics.status.no-data-loaded.title"),
+		)
+		expect(chartNames(wrapper)).toEqual([])
+	})
+
+	it("shows that the data is loading once the first answer is slow", async ({
+		expect,
+	}) => {
+		const query = mockDeferredEndpoint("GET", QUERY_URL)
+
+		const wrapper = await mountContainer(metricConfig())
+		await query.reached
+
+		// the delay starts with the mount, before fake timers could be set up
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain(t("editor.metrics.status.loading.title"))
+		}, WAIT_FOR_OPTIONS)
+		expect(wrapper.text()).not.toContain(
+			t("editor.metrics.status.no-data-loaded.title"),
+		)
+		expect(chartNames(wrapper)).toEqual([])
+		expect(wrapper.find(".i-svg-spinners\\:blocks-shuffle-3").exists()).toBe(
+			true,
+		)
+	})
+
+	it("replaces the loading state with the chart once the answer arrives", async ({
+		expect,
+	}) => {
+		const query = mockDeferredEndpoint("GET", QUERY_URL)
+		const wrapper = await mountContainer(metricConfig())
+		await query.reached
+		// the delay starts with the mount, before fake timers could be set up
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain(t("editor.metrics.status.loading.title"))
+		}, WAIT_FOR_OPTIONS)
+
+		query.resolve(seriesResult())
+
+		await vi.waitFor(() => {
+			expect(chartNames(wrapper)).toEqual(["LineChart"])
+		}, WAIT_FOR_OPTIONS)
+		expect(wrapper.text()).not.toContain(
+			t("editor.metrics.status.loading.title"),
+		)
+	})
+
+	it("shows that the data is loading for a new time range after no data", async ({
+		expect,
+	}) => {
+		let rangeChanged = false
+		const calls = mockEndpoint("GET", QUERY_URL, () => {
+			if (rangeChanged) {
+				return new Promise(() => undefined)
+			}
+
+			return { status: GenericQueryResultStatus.NoData, data: [] }
+		})
+		const config = metricConfig()
+		const wrapper = await mountContainer(config)
+
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain(
+				t("editor.metrics.status.no-data-loaded.title"),
+			)
+		}, WAIT_FOR_OPTIONS)
+
+		const asked = calls.length
+		rangeChanged = true
+		await wrapper.setProps({
+			config: { ...config, timeRange: TimeRangePreset.Last1Hour },
+		})
+
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain(t("editor.metrics.status.loading.title"))
+		}, WAIT_FOR_OPTIONS)
+		expect(wrapper.text()).not.toContain(
+			t("editor.metrics.status.no-data-loaded.title"),
+		)
+		expect(calls.length).toBeGreaterThan(asked)
+	})
+
+	it("keeps the drawn chart while a new time range loads", async ({
+		expect,
+	}) => {
+		let rangeChanged = false
+		const calls = mockEndpoint("GET", QUERY_URL, () => {
+			if (rangeChanged) {
+				return new Promise(() => undefined)
+			}
+
+			return seriesResult()
+		})
+		const config = metricConfig()
+		const wrapper = await mountContainer(config)
+
+		await vi.waitFor(() => {
+			expect(chartNames(wrapper)).toEqual(["LineChart"])
+		}, WAIT_FOR_OPTIONS)
+
+		const asked = calls.length
+		rangeChanged = true
+		vi.useFakeTimers()
+		await wrapper.setProps({
+			config: { ...config, timeRange: TimeRangePreset.Last1Hour },
+		})
+
+		// past the config debounce and the loading state's own delay
+		await vi.advanceTimersByTimeAsync(1_000)
+
+		expect(calls.length).toBeGreaterThan(asked)
+		expect(chartNames(wrapper)).toEqual(["LineChart"])
+		expect(wrapper.text()).not.toContain(
+			t("editor.metrics.status.loading.title"),
 		)
 	})
 
@@ -346,6 +478,49 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 			)
 		}, WAIT_FOR_OPTIONS)
 		expect(wrapper.text()).toContain("Query 2:")
+	})
+
+	it("reports a failed request with the server's message", async ({
+		expect,
+	}) => {
+		mockEndpoint("GET", QUERY_URL, (_call, event) => {
+			setResponseStatus(event, 502)
+
+			return { code: "data_source.unreachable", message: "connection refused" }
+		})
+
+		const wrapper = await mountContainer(metricConfig())
+
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain(
+				t("editor.metrics.status.query-error.title"),
+			)
+		}, WAIT_FOR_OPTIONS)
+		expect(wrapper.text()).toContain("Connection refused")
+		expect(wrapper.text()).not.toContain(
+			t("editor.metrics.status.no-data-loaded.title"),
+		)
+	})
+
+	it("reports a failed request without a message as a failed load", async ({
+		expect,
+	}) => {
+		mockEndpoint("GET", QUERY_URL, (_call, event) => {
+			setResponseStatus(event, 500)
+
+			return ""
+		})
+
+		const wrapper = await mountContainer(metricConfig())
+
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain(
+				t("editor.metrics.status.query-error.title"),
+			)
+		}, WAIT_FOR_OPTIONS)
+		expect(wrapper.text()).toContain(
+			t("editor.metrics.status.query-error.request-failed"),
+		)
 	})
 
 	it("reports data the chosen chart cannot show", async ({ expect }) => {

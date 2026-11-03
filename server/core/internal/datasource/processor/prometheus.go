@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -63,7 +62,8 @@ func (p *Prometheus) TestConnection(ctx context.Context) (ConnectionStatus, erro
 
 	res, err := client.Buildinfo(ctx)
 	if err != nil {
-		if strings.Contains(err.Error(), "401") {
+		if perr, ok := errors.AsType[*v1.Error](err); ok && perr.Type == v1.ErrClient &&
+			(perr.Msg == "client error: 401" || perr.Msg == "client error: 403") {
 			return ConnectionStatusUnauthorized, nil
 		}
 
