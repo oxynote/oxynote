@@ -301,11 +301,17 @@ func Test_Manager_UpdateGroup(t *testing.T) {
 		Fetches int
 		Updates int
 		Changes int
+		Name    string
 		Err     error
 	}{
 		"Invalid input": {
 			DB:  &DBMock{},
 			Err: variable.ErrEmptyGroupUpdate,
+		},
+		"Name of white space only": {
+			DB:  &DBMock{},
+			Inp: variable.GroupUpdateInput{GroupName: null.StringFrom("  ")},
+			Err: variable.ErrInvalidGroupName,
 		},
 		"Error returned by DB.FetchVariableGroup": {
 			DB:      &DBMock{FetchVariableGroupFunc: stubFetchGroup(variable.Group{}, assert.AnError)},
@@ -337,6 +343,15 @@ func Test_Manager_UpdateGroup(t *testing.T) {
 			Fetches: 1,
 			Updates: 1,
 			Changes: 1,
+			Name:    "Deploys",
+		},
+		"Successful update of a padded name": {
+			DB:      &DBMock{FetchVariableGroupFunc: stubFetchGroup(_group, nil)},
+			Inp:     variable.GroupUpdateInput{GroupName: null.StringFrom(" Deploys ")},
+			Fetches: 1,
+			Updates: 1,
+			Changes: 1,
+			Name:    "Deploys",
 		},
 	}
 
@@ -351,6 +366,11 @@ func Test_Manager_UpdateGroup(t *testing.T) {
 			assert.Len(t, c.DB.FetchVariableGroupCalls(), c.Fetches)
 			assert.Len(t, c.DB.UpdateVariableGroupCalls(), c.Updates)
 			assert.Len(t, rec.changes, c.Changes)
+
+			if c.Name != "" {
+				require.Len(t, c.DB.UpdateVariableGroupCalls(), 1)
+				assert.Equal(t, c.Name, c.DB.UpdateVariableGroupCalls()[0].Inp.GroupName.String)
+			}
 		})
 	}
 }

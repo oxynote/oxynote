@@ -29,6 +29,15 @@ const _maxValueLength = 128
 // stays under the database parameter limit.
 const _maxOptions = 100
 
+// _maxNameLength is the most characters a variable name, a group name or a
+// key holds, since the whole tree is sent to every member of the
+// organization.
+const _maxNameLength = 64
+
+// _maxDescriptionLength is the most characters a variable description
+// holds, for the same reason as _maxNameLength.
+const _maxDescriptionLength = 500
+
 // All available Type constants.
 const (
 	// TypeList is a variable whose value is one of its options.
@@ -45,8 +54,13 @@ const (
 )
 
 var (
-	// ErrInvalidGroupName is returned when a group is given an empty name.
+	// ErrInvalidGroupName is returned when a group is given a name that is
+	// empty or only white space.
 	ErrInvalidGroupName = errutil.New(http.StatusBadRequest, "variable.invalid_group_name", "group name cannot be empty")
+
+	// ErrGroupNameTooLong is returned when a group name holds more than
+	// _maxNameLength characters.
+	ErrGroupNameTooLong = errutil.New(http.StatusBadRequest, "variable.group_name_too_long", "group name cannot be longer than 64 characters")
 
 	// ErrInvalidGroupColor is returned when a group is given a colour
 	// outside the palette.
@@ -76,8 +90,21 @@ var (
 	// organization already uses.
 	ErrDuplicateKey = errutil.New(http.StatusConflict, "variable.duplicate_key", "key is already in use")
 
-	// ErrInvalidName is returned when a variable is given an empty name.
+	// ErrInvalidName is returned when a variable is given a name that is
+	// empty or only white space.
 	ErrInvalidName = errutil.New(http.StatusBadRequest, "variable.invalid_name", "variable name cannot be empty")
+
+	// ErrNameTooLong is returned when a variable name holds more than
+	// _maxNameLength characters.
+	ErrNameTooLong = errutil.New(http.StatusBadRequest, "variable.name_too_long", "variable name cannot be longer than 64 characters")
+
+	// ErrKeyTooLong is returned when a variable key holds more than
+	// _maxNameLength characters.
+	ErrKeyTooLong = errutil.New(http.StatusBadRequest, "variable.key_too_long", "key cannot be longer than 64 characters")
+
+	// ErrDescriptionTooLong is returned when a variable description holds
+	// more than _maxDescriptionLength characters.
+	ErrDescriptionTooLong = errutil.New(http.StatusBadRequest, "variable.description_too_long", "description cannot be longer than 500 characters")
 
 	// ErrInvalidType is returned when a variable carries an unknown type.
 	ErrInvalidType = errutil.New(http.StatusBadRequest, "variable.invalid_type", "variable type must be list, number, text or time-range")
@@ -216,7 +243,7 @@ func NewGroup(inp GroupCreateInput, organizationID, userID string) Group {
 	return Group{
 		ID:             xid.New(),
 		OrganizationID: organizationID,
-		GroupName:      inp.GroupName,
+		GroupName:      strings.TrimSpace(inp.GroupName),
 		Color:          inp.Color,
 		CreatedAt:      timeutil.Now(),
 		CreatedBy:      null.StringFrom(userID),
@@ -245,12 +272,27 @@ type GroupCreateInput struct {
 
 // Validate reports whether the input can become a group.
 func (gci GroupCreateInput) Validate() error {
-	if gci.GroupName == "" {
-		return ErrInvalidGroupName
+	if err := validateGroupName(gci.GroupName); err != nil {
+		return err
 	}
 
 	if !tag.ValidColor(gci.Color) {
 		return ErrInvalidGroupColor
+	}
+
+	return nil
+}
+
+// validateGroupName reports whether the name, once the white space around
+// it is trimmed, is neither empty nor longer than _maxNameLength.
+func validateGroupName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ErrInvalidGroupName
+	}
+
+	if utf8.RuneCountInString(name) > _maxNameLength {
+		return ErrGroupNameTooLong
 	}
 
 	return nil
@@ -273,8 +315,10 @@ func (gui GroupUpdateInput) Validate() error {
 		return ErrEmptyGroupUpdate
 	}
 
-	if gui.GroupName.Valid && gui.GroupName.String == "" {
-		return ErrInvalidGroupName
+	if gui.GroupName.Valid {
+		if err := validateGroupName(gui.GroupName.String); err != nil {
+			return err
+		}
 	}
 
 	if gui.Color.Valid && !tag.ValidColor(gui.Color.String) {
@@ -282,6 +326,16 @@ func (gui GroupUpdateInput) Validate() error {
 	}
 
 	return nil
+}
+
+// Trimmed returns the input with the white space around the group name
+// removed.
+func (gui GroupUpdateInput) Trimmed() GroupUpdateInput {
+	if gui.GroupName.Valid {
+		gui.GroupName = null.StringFrom(strings.TrimSpace(gui.GroupName.String))
+	}
+
+	return gui
 }
 
 // GroupMoveInput is the input for moving a group to another position.
@@ -394,7 +448,7 @@ func (v Variable) Apply(inp Input) (Variable, error) {
 func (v Variable) apply(inp Input) Variable {
 	v.GroupID = inp.GroupID
 	v.Key = inp.Key
-	v.Name = inp.Name
+	v.Name = strings.TrimSpace(inp.Name)
 	v.Description = inp.Description
 	v.Type = inp.Type
 	v.DefaultValue = inp.DefaultValue
@@ -507,8 +561,21 @@ func (vi Input) Validate() error {
 		return ErrInvalidKey
 	}
 
-	if vi.Name == "" {
+	if utf8.RuneCountInString(vi.Key) > _maxNameLength {
+		return ErrKeyTooLong
+	}
+
+	name := strings.TrimSpace(vi.Name)
+	if name == "" {
 		return ErrInvalidName
+	}
+
+	if utf8.RuneCountInString(name) > _maxNameLength {
+		return ErrNameTooLong
+	}
+
+	if vi.Description.Valid && utf8.RuneCountInString(vi.Description.String) > _maxDescriptionLength {
+		return ErrDescriptionTooLong
 	}
 
 	if err := vi.Type.Validate(); err != nil {
