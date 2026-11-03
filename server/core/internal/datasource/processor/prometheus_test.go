@@ -63,6 +63,12 @@ func Test_Prometheus_TestConnection(t *testing.T) {
 		TLS           bool
 		CACertificate string
 
+		// URLPath is appended to the test server's URL. CloseServer stops
+		// the server before the connection test runs, so nothing listens
+		// on the address URLPath points at.
+		URLPath     string
+		CloseServer bool
+
 		Result ConnectionStatus
 		Err    error
 	}{
@@ -92,9 +98,23 @@ func Test_Prometheus_TestConnection(t *testing.T) {
 			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusUnauthorized, `{}`),
 			Result:  ConnectionStatusUnauthorized,
 		},
+		"Forbidden data source": {
+			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusForbidden, `{}`),
+			Result:  ConnectionStatusUnauthorized,
+		},
 		"Unreachable data source": {
 			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusInternalServerError, `{}`),
 			Result:  ConnectionStatusUnreachable,
+		},
+		"Unreachable data source with a bad gateway response": {
+			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusBadGateway, `{}`),
+			Result:  ConnectionStatusUnreachable,
+		},
+		"Unreachable data source with a status code in its address": {
+			URLPath:     "/prom401",
+			CloseServer: true,
+			Handler:     testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusOK, `{"status":"success","data":{"version":"2.50.0"}}`),
+			Result:      ConnectionStatusUnreachable,
 		},
 		"Unsupported version": {
 			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusOK, `{"status":"success","data":{"version":""}}`),
@@ -114,6 +134,11 @@ func Test_Prometheus_TestConnection(t *testing.T) {
 
 			switch {
 			case inp != nil:
+			case c.CloseServer:
+				srv := httptest.NewServer(c.Handler)
+				inp = &InputMock{URLFunc: func() string { return srv.URL + c.URLPath }}
+
+				srv.Close()
 			case c.TLS:
 				inp = prepTLSInput(t, c.Handler, c.CACertificate)
 			default:

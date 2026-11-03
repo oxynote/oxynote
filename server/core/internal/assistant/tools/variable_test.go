@@ -648,6 +648,10 @@ func Test_createVariableArgs_Validate(t *testing.T) {
 			Args: createVariableArgs{GroupID: _testVariableGroupID, Key: "$release", Name: "Release", Type: variable.TypeText},
 			Err:  variable.ErrInvalidKey,
 		},
+		"Repeated option values": {
+			Args: createVariableArgs{GroupID: _testVariableGroupID, Key: "region", Name: "Region", Type: variable.TypeList, Options: []string{"a", "a"}},
+			Err:  variable.ErrDuplicateOptionValue,
+		},
 		"Complete arguments": {
 			Args: createVariableArgs{GroupID: _testVariableGroupID, Key: "release", Name: "Release", Type: variable.TypeText},
 		},
@@ -880,7 +884,7 @@ func Test_updateVariableArgs_input(t *testing.T) {
 				},
 			},
 		},
-		"Repeated values name one option once": {
+		"Repeated values are passed on for validation to refuse": {
 			Args:    updateVariableArgs{Options: []string{"us-east-1", "us-east-1"}},
 			Current: list,
 			Result: variable.Input{
@@ -889,7 +893,7 @@ func Test_updateVariableArgs_input(t *testing.T) {
 				Name:        "Region",
 				Description: null.StringFrom("Cloud region"),
 				Type:        variable.TypeList,
-				Options:     []variable.OptionInput{{ID: null.ValueFrom(_testOtherOptionID), Value: "us-east-1"}},
+				Options:     []variable.OptionInput{{ID: null.ValueFrom(_testOtherOptionID), Value: "us-east-1"}, {ID: null.ValueFrom(_testOtherOptionID), Value: "us-east-1"}},
 			},
 		},
 		"List turned into text drops its options": {

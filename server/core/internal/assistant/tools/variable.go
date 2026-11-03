@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
@@ -624,11 +623,6 @@ func (a updateVariableArgs) input(current variable.Entry) variable.Input {
 		inp.Options = make([]variable.OptionInput, 0, len(a.Options))
 
 		for _, value := range a.Options {
-			// a repeated value would name the same option twice.
-			if slices.ContainsFunc(inp.Options, func(oi variable.OptionInput) bool { return oi.Value == value }) {
-				continue
-			}
-
 			oi := variable.OptionInput{Value: value}
 
 			for _, o := range current.Options {
