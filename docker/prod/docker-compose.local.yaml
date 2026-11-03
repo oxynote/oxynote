@@ -21,7 +21,7 @@ services:
         condition: service_started
 
   mailpit:
-    image: axllent/mailpit:v1.31.3
+    image: axllent/mailpit:v1.32.0
     environment:
       - MP_QUIET=true
     ports:
