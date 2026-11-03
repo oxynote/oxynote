@@ -34,8 +34,6 @@ export interface ChartOption {
 	tooltip: {
 		confine?: boolean
 		triggerOn?: string
-		enterable?: boolean
-		alwaysShowContent?: boolean
 		appendTo?: unknown
 		className?: string
 	}
@@ -52,9 +50,8 @@ export interface ChartOption {
 export function mountChart(
 	component: TestComponent,
 	props: Record<string, unknown>,
-	options: { attachTo?: Element } = {},
 ) {
-	return mountSuspended(component, { props: props, ...options })
+	return mountSuspended(component, { props: props })
 }
 
 // the whole drawing contract of a chart component is the option object it

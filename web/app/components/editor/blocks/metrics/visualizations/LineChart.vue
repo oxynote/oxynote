@@ -29,8 +29,9 @@ import {
 	type LineChartThreshold,
 	type MultipleLineChartData,
 } from "."
-import { cn } from "#layers/ui/app/lib/utils"
 import type { VisualizationUnit } from "../utils"
+import ChartTooltip from "./ChartTooltip.vue"
+import { useTooltipPin } from "./tooltip-pin"
 
 // Register ECharts modules
 use([
@@ -53,14 +54,6 @@ type ECOption = ComposeOption<
 	| MarkLineComponentOption
 >
 
-// one row of the axis tooltip, as echarts hands it to the slot
-interface TooltipParam {
-	seriesName: string
-	seriesIndex: number
-	marker: string
-	value: [Date, number]
-}
-
 const props = defineProps<{
 	title?: string
 	titleRightPadding?: number
@@ -81,13 +74,7 @@ const { width: containerWidth } = useElementSize(containerElem)
 const chartElem = useTemplateRef<InstanceType<typeof VChart>>("chart")
 const { color } = useAppearance()
 const { browserType } = useDetectHost()
-
-// about as many rows as the tooltip shows before its list scrolls
-const PIN_HINT_MIN_SERIES = 11
-
-// a pinned tooltip stays at its instant until a click elsewhere or Esc,
-// so the mouse can move into it and scroll a list taller than the chart
-const tooltipPinned = ref(false)
+const tooltipPin = useTooltipPin(chartElem, containerElem)
 
 const themeVersion = ref(0)
 watch(
@@ -160,11 +147,7 @@ const option = computed<ECOption>(() => {
 			borderColor: st.lineChart.tooltipBorder,
 			borderWidth: 1,
 			padding: 0,
-			confine: true,
-			triggerOn: tooltipPinned.value ? "none" : "mousemove",
-			enterable: tooltipPinned.value,
-			alwaysShowContent: tooltipPinned.value,
-			className: cn("z-tooltip max-w-full"),
+			...tooltipPin.tooltipOption.value,
 		},
 		legend: {
 			show: props.showLegend,
@@ -324,65 +307,6 @@ const legendHandler = computed(() => {
 
 	return installSoloLegendBehavior(chartElem.value)
 })
-
-useEventListener(document, "keydown", (event: KeyboardEvent) => {
-	if (event.key === "Escape") {
-		void unpinTooltip()
-	}
-})
-
-useEventListener(document, "pointerdown", (event: PointerEvent) => {
-	if (
-		!(event.target instanceof Node) ||
-		!containerElem.value?.contains(event.target)
-	) {
-		void unpinTooltip()
-	}
-})
-
-async function toggleTooltipPin(event: { offsetX: number; offsetY: number }) {
-	if (tooltipPinned.value) {
-		await unpinTooltip()
-
-		return
-	}
-
-	// a click on the legend or the title has no instant to pin
-	const chart = chartElem.value
-	if (!chart?.containPixel("grid", [event.offsetX, event.offsetY])) {
-		return
-	}
-
-	tooltipPinned.value = true
-	// echarts lets the mouse into the tooltip only from its next show, so it
-	// is shown again at the click once the chart has the new option
-	await nextTick()
-	chart.dispatchAction({
-		type: "showTip",
-		x: event.offsetX,
-		y: event.offsetY,
-	})
-}
-
-async function unpinTooltip() {
-	if (!tooltipPinned.value) {
-		return
-	}
-
-	tooltipPinned.value = false
-	// alwaysShowContent ignores a hide until the chart has the new option
-	await nextTick()
-	chartElem.value?.dispatchAction({ type: "hideTip" })
-}
-
-// the highest values first, so the rows that matter most are on top
-function tooltipRows(params: unknown): TooltipParam[] {
-	if (!Array.isArray(params)) {
-		return []
-	}
-
-	return [...(params as TooltipParam[])].sort((a, b) => b.value[1] - a.value[1])
-}
 </script>
 <template>
 	<div ref="chart-container" class="size-full">
@@ -394,55 +318,15 @@ function tooltipRows(params: unknown): TooltipParam[] {
 			@legendselectchanged="
 				(p: unknown) => legendHandler(p as LegendSelectChangedPayload)
 			"
-			@zr:click="toggleTooltipPin"
+			@zr:click="tooltipPin.togglePin"
 		>
 			<template #tooltip="params">
-				<div class="flex flex-col">
-					<div
-						v-if="Array.isArray(params) && params.length > 0"
-						class="px-2 pt-1 text-2sm text-foreground"
-					>
-						{{
-							$d((params[0] as any).value[0] as Date, "short-with-full-time")
-						}}
-					</div>
-					<div class="mt-1 mb-0.5 h-0.25 bg-border" />
-					<div class="flex max-h-44 flex-col overflow-y-auto px-2 pb-1">
-						<div
-							v-for="param in tooltipRows(params)"
-							:key="param.seriesIndex"
-							class="flex items-center"
-						>
-							<!-- eslint-disable-next-line vue/no-v-html -->
-							<div v-html="param.marker" />
-							<div class="min-w-0 truncate text-2sm text-foreground/60">
-								{{ param.seriesName }}
-							</div>
-							<div class="ml-1.5 shrink-0 text-2sm text-foreground">
-								{{
-									yAxisLabelFormatter(
-										props.unit,
-										param.value[1],
-										props.decimals ?? null,
-									)
-								}}
-							</div>
-						</div>
-					</div>
-					<div
-						v-if="tooltipRows(params).length >= PIN_HINT_MIN_SERIES"
-						class="border-t border-border px-2 py-1 text-2sm text-foreground/60"
-					>
-						{{
-							$t(
-								tooltipPinned
-									? "editor.metrics.tooltip.unpin-hint"
-									: "editor.metrics.tooltip.pin-hint",
-								{ count: tooltipRows(params).length },
-							)
-						}}
-					</div>
-				</div>
+				<ChartTooltip
+					:params="params"
+					:unit="props.unit"
+					:decimals="props.decimals"
+					:pinned="tooltipPin.pinned.value"
+				/>
 			</template>
 		</VChart>
 	</div>
