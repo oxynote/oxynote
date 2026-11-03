@@ -272,7 +272,7 @@ type GroupCreateInput struct {
 
 // Validate reports whether the input can become a group.
 func (gci GroupCreateInput) Validate() error {
-	if err := validateGroupName(gci.GroupName); err != nil {
+	if err := validateGroupName(gci.GroupName, false); err != nil {
 		return err
 	}
 
@@ -284,14 +284,16 @@ func (gci GroupCreateInput) Validate() error {
 }
 
 // validateGroupName reports whether the name, once the white space around
-// it is trimmed, is neither empty nor longer than _maxNameLength.
-func validateGroupName(name string) error {
+// it is trimmed, is neither empty nor longer than _maxNameLength. A name
+// equal to the stored one, kept is true, is exempt from the length limit
+// so a group saved before the limit existed can still be edited.
+func validateGroupName(name string, kept bool) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return ErrInvalidGroupName
 	}
 
-	if utf8.RuneCountInString(name) > _maxNameLength {
+	if !kept && utf8.RuneCountInString(name) > _maxNameLength {
 		return ErrGroupNameTooLong
 	}
 
@@ -308,15 +310,20 @@ type GroupUpdateInput struct {
 	Color null.String `json:"color"`
 }
 
-// Validate reports whether the input changes a group: at least one field
-// has to be set, and a set field is held to the same rules as on creation.
-func (gui GroupUpdateInput) Validate() error {
+// Validate reports whether the input changes the stored group: at least one
+// field has to be set, and a set field is held to the same rules as on
+// creation. A name that is not being changed is exempt from the length
+// limit.
+func (gui GroupUpdateInput) Validate(stored Group) error {
 	if !gui.GroupName.Valid && !gui.Color.Valid {
 		return ErrEmptyGroupUpdate
 	}
 
 	if gui.GroupName.Valid {
-		if err := validateGroupName(gui.GroupName.String); err != nil {
+		if err := validateGroupName(
+			gui.GroupName.String,
+			strings.TrimSpace(gui.GroupName.String) == strings.TrimSpace(stored.GroupName),
+		); err != nil {
 			return err
 		}
 	}
@@ -555,13 +562,27 @@ type Input struct {
 	Options []OptionInput `json:"options"`
 }
 
-// Validate reports whether the input can become a variable.
+// Validate reports whether the input can become a new variable.
 func (vi Input) Validate() error {
+	return vi.validate(Variable{}, false)
+}
+
+// ValidateChange reports whether the input can replace the definition of
+// the stored variable. A key, name or description that is not being
+// changed is exempt from its length limit, so a variable saved before the
+// limits existed can still be edited.
+func (vi Input) ValidateChange(stored Variable) error {
+	return vi.validate(stored, true)
+}
+
+// validate holds the rules behind Validate and ValidateChange. Only when
+// update is true are the stored variable's fields compared with the input.
+func (vi Input) validate(stored Variable, update bool) error {
 	if !_keyPattern.MatchString(vi.Key) {
 		return ErrInvalidKey
 	}
 
-	if utf8.RuneCountInString(vi.Key) > _maxNameLength {
+	if utf8.RuneCountInString(vi.Key) > _maxNameLength && !(update && vi.Key == stored.Key) {
 		return ErrKeyTooLong
 	}
 
@@ -570,11 +591,13 @@ func (vi Input) Validate() error {
 		return ErrInvalidName
 	}
 
-	if utf8.RuneCountInString(name) > _maxNameLength {
+	if utf8.RuneCountInString(name) > _maxNameLength && !(update && name == strings.TrimSpace(stored.Name)) {
 		return ErrNameTooLong
 	}
 
-	if vi.Description.Valid && utf8.RuneCountInString(vi.Description.String) > _maxDescriptionLength {
+	if vi.Description.Valid &&
+		utf8.RuneCountInString(vi.Description.String) > _maxDescriptionLength &&
+		!(update && vi.Description == stored.Description) {
 		return ErrDescriptionTooLong
 	}
 

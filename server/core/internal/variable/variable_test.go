@@ -98,6 +98,79 @@ func Test_NewGroup(t *testing.T) {
 	assert.False(t, g.Builtin)
 }
 
+func Test_Input_ValidateChange(t *testing.T) {
+	t.Parallel()
+
+	longKey := strings.Repeat("k", _maxNameLength+1)
+	longName := strings.Repeat("n", _maxNameLength+1)
+	longDesc := strings.Repeat("d", _maxDescriptionLength+1)
+
+	base := Input{
+		GroupID: xid.New(),
+		Key:     "region",
+		Name:    "Region",
+		Type:    TypeText,
+	}
+
+	with := func(fn func(*Input)) Input {
+		vi := base
+		fn(&vi)
+
+		return vi
+	}
+
+	cc := map[string]struct {
+		Input  Input
+		Stored Variable
+		Err    error
+	}{
+		"Unchanged key over the limit": {
+			Input:  with(func(vi *Input) { vi.Key = longKey }),
+			Stored: Variable{Key: longKey},
+		},
+		"Changed key over the limit": {
+			Input:  with(func(vi *Input) { vi.Key = longKey + "x" }),
+			Stored: Variable{Key: longKey},
+			Err:    ErrKeyTooLong,
+		},
+		"Unchanged name over the limit": {
+			Input:  with(func(vi *Input) { vi.Name = longName }),
+			Stored: Variable{Key: "region", Name: longName},
+		},
+		"Unchanged name over the limit, padded": {
+			Input:  with(func(vi *Input) { vi.Name = " " + longName + " " }),
+			Stored: Variable{Key: "region", Name: longName},
+		},
+		"Changed name over the limit": {
+			Input:  with(func(vi *Input) { vi.Name = longName + "x" }),
+			Stored: Variable{Key: "region", Name: longName},
+			Err:    ErrNameTooLong,
+		},
+		"Unchanged description over the limit": {
+			Input:  with(func(vi *Input) { vi.Description = null.StringFrom(longDesc) }),
+			Stored: Variable{Key: "region", Description: null.StringFrom(longDesc)},
+		},
+		"Changed description over the limit": {
+			Input:  with(func(vi *Input) { vi.Description = null.StringFrom(longDesc + "x") }),
+			Stored: Variable{Key: "region", Description: null.StringFrom(longDesc)},
+			Err:    ErrDescriptionTooLong,
+		},
+		"Other fields still checked": {
+			Input:  with(func(vi *Input) { vi.Name = "  " }),
+			Stored: Variable{Key: "region", Name: "  "},
+			Err:    ErrInvalidName,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Err, c.Input.ValidateChange(c.Stored))
+		})
+	}
+}
+
 func Test_Group_AllowsChange(t *testing.T) {
 	t.Parallel()
 
@@ -167,9 +240,12 @@ func Test_GroupCreateInput_Validate(t *testing.T) {
 func Test_GroupUpdateInput_Validate(t *testing.T) {
 	t.Parallel()
 
+	long := strings.Repeat("a", _maxNameLength+1)
+
 	cc := map[string]struct {
-		Input GroupUpdateInput
-		Err   error
+		Input  GroupUpdateInput
+		Stored Group
+		Err    error
 	}{
 		"Neither field set": {
 			Err: ErrEmptyGroupUpdate,
@@ -185,6 +261,23 @@ func Test_GroupUpdateInput_Validate(t *testing.T) {
 		"Name over the length limit": {
 			Input: GroupUpdateInput{GroupName: null.StringFrom(strings.Repeat("é", _maxNameLength+1))},
 			Err:   ErrGroupNameTooLong,
+		},
+		"Unchanged name stored over the length limit": {
+			Input:  GroupUpdateInput{GroupName: null.StringFrom(long), Color: null.StringFrom("green")},
+			Stored: Group{GroupName: long},
+		},
+		"Unchanged name stored over the limit, padded": {
+			Input:  GroupUpdateInput{GroupName: null.StringFrom(" " + long + " ")},
+			Stored: Group{GroupName: long},
+		},
+		"Changed name over the limit, stored one over too": {
+			Input:  GroupUpdateInput{GroupName: null.StringFrom(long + "b")},
+			Stored: Group{GroupName: long},
+			Err:    ErrGroupNameTooLong,
+		},
+		"Colour only, stored name over the limit": {
+			Input:  GroupUpdateInput{Color: null.StringFrom("green")},
+			Stored: Group{GroupName: long},
 		},
 		"Off-palette colour": {
 			Input: GroupUpdateInput{Color: null.StringFrom("#22c55e")},
@@ -202,7 +295,7 @@ func Test_GroupUpdateInput_Validate(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, c.Err, c.Input.Validate())
+			assert.Equal(t, c.Err, c.Input.Validate(c.Stored))
 		})
 	}
 }
