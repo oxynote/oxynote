@@ -575,14 +575,14 @@ func (vi Input) ValidateChange(stored Variable) error {
 	return vi.validate(stored, true)
 }
 
-// validate holds the rules behind Validate and ValidateChange. Only when
-// update is true are the stored variable's fields compared with the input.
-func (vi Input) validate(stored Variable, update bool) error {
+// validateText checks the key, name and description. A field that is
+// unchanged in an update is exempt from its length limit.
+func (vi Input) validateText(stored Variable, update bool) error {
 	if !_keyPattern.MatchString(vi.Key) {
 		return ErrInvalidKey
 	}
 
-	if utf8.RuneCountInString(vi.Key) > _maxNameLength && !(update && vi.Key == stored.Key) {
+	if utf8.RuneCountInString(vi.Key) > _maxNameLength && (!update || vi.Key != stored.Key) {
 		return ErrKeyTooLong
 	}
 
@@ -591,14 +591,24 @@ func (vi Input) validate(stored Variable, update bool) error {
 		return ErrInvalidName
 	}
 
-	if utf8.RuneCountInString(name) > _maxNameLength && !(update && name == strings.TrimSpace(stored.Name)) {
+	if utf8.RuneCountInString(name) > _maxNameLength && (!update || name != strings.TrimSpace(stored.Name)) {
 		return ErrNameTooLong
 	}
 
 	if vi.Description.Valid &&
 		utf8.RuneCountInString(vi.Description.String) > _maxDescriptionLength &&
-		!(update && vi.Description == stored.Description) {
+		(!update || vi.Description != stored.Description) {
 		return ErrDescriptionTooLong
+	}
+
+	return nil
+}
+
+// validate holds the rules behind Validate and ValidateChange. Only when
+// update is true are the stored variable's fields compared with the input.
+func (vi Input) validate(stored Variable, update bool) error {
+	if err := vi.validateText(stored, update); err != nil {
+		return err
 	}
 
 	if err := vi.Type.Validate(); err != nil {
