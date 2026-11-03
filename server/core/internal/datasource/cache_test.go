@@ -365,7 +365,11 @@ func Test_cachedLogs_Logs(t *testing.T) {
 	_, err = cl.Logs(context.Background(), `{app="web"}`, tr, page)
 	require.NoError(t, err)
 
-	assert.Equal(t, []processor.TimeRange{tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid)}, inner.ranges)
+	// so is a page read in another order.
+	_, err = cl.Logs(context.Background(), `{app="api"}`, tr, processor.LogsPage{Limit: 10, Cursor: page.Cursor, Order: processor.LogsOrderAsc})
+	require.NoError(t, err)
+
+	assert.Equal(t, []processor.TimeRange{tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid)}, inner.ranges)
 }
 
 func Test_cachedLogs_LogsVolume(t *testing.T) {

@@ -498,6 +498,21 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 		expect(at(rows, 1).props("color")).toBe("#222222")
 	})
 
+	it("tells the data source picker what to say without metric sources", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSidebar()
+
+		const select = wrapper.getComponent(DataSourceSelect)
+
+		expect(select.props("emptyTitle")).toBe(
+			t("editor.metrics.config.data-source-empty-title"),
+		)
+		expect(select.props("emptyDescription")).toBe(
+			t("editor.metrics.config.data-source-empty-description"),
+		)
+	})
+
 	it("lets both data source pickers of a diff offer only metric sources", async ({
 		expect,
 	}) => {

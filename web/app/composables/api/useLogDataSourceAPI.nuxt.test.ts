@@ -118,6 +118,7 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 						to: "2026-01-02T00:00:00.123456789Z",
 						timeRangeKey: "last-24h",
 						limit: 50,
+						order: LogOrder.Asc,
 						variableValues: { env: "prod" },
 					},
 					true,
@@ -145,7 +146,23 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 				to: "2026-01-02T00:00:00.123456789Z",
 				"var-env": "prod",
 				limit: "50",
+				order: "asc",
 			})
+		})
+
+		it("keeps the pages of each order apart", async ({ expect }) => {
+			const calls = mockEndpoint("GET", LINES_URL, () => NO_LINES)
+			const api = makeLogDataSourceAPI()
+			const params = { queries: ["{env}"], ...TIME_RANGE }
+
+			await runInApp(() =>
+				api.useLogLines("ds1", { ...params, order: LogOrder.Desc }, true),
+			).refresh()
+			await runInApp(() =>
+				api.useLogLines("ds1", { ...params, order: LogOrder.Asc }, true),
+			).refresh()
+
+			expect(calls.map((call) => call.query.order)).toEqual(["desc", "asc"])
 		})
 
 		it("fetches the newest page of every query into one page", async ({

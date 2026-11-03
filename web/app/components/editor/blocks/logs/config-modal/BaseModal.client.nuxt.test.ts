@@ -4,12 +4,7 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import BaseModal from "./BaseModal.client.vue"
 import BottomConfig from "./BottomConfig.vue"
 import ConfigSidebar from "./ConfigSidebar.vue"
-import {
-	defaultLogConfig,
-	LogOrder,
-	LogTimestampFormat,
-	type LogConfig,
-} from "../utils"
+import { defaultLogConfig, LogTimestampFormat, type LogConfig } from "../utils"
 import {
 	clearQueryCache,
 	disposeMockEndpoints,
@@ -257,7 +252,7 @@ describe("<LogConfigBaseModal>", { concurrent: false }, () => {
 		expect(
 			dialog()?.querySelector<HTMLElement>(".text-2base")?.parentElement?.style
 				.paddingRight,
-		).toBe("calc(10rem + 0.625rem)")
+		).toBe("calc(10rem + 0.125rem)")
 	})
 
 	it("shows the block's time range and refresh interval", async ({
@@ -533,7 +528,7 @@ function configWith(overrides: Partial<LogConfig> = {}): LogConfig {
 	return {
 		...defaultLogConfig(),
 		timestampFormat: LogTimestampFormat.Detailed,
-		order: LogOrder.OldestFirst,
+		order: LogOrder.Asc,
 		...overrides,
 	}
 }

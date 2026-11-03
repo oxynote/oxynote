@@ -6,12 +6,7 @@ import ConfigField from "../../config-modal-utils/ConfigField.vue"
 import DataSourceSelect from "../../config-modal-utils/DataSourceSelect.vue"
 import TimestampFormatSelect from "./TimestampFormatSelect.vue"
 import OrderSelect from "./OrderSelect.vue"
-import {
-	defaultLogConfig,
-	LogOrder,
-	LogTimestampFormat,
-	type LogConfig,
-} from "../utils"
+import { defaultLogConfig, LogTimestampFormat, type LogConfig } from "../utils"
 import {
 	at,
 	clearTeleportedOverlays,
@@ -43,14 +38,14 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 
 	afterEach(disposeMockEndpoints)
 
-	it("labels every setting it offers", async ({ expect }) => {
+	it("labels every setting it offers but the order", async ({ expect }) => {
 		const wrapper = await mountSidebar()
 
 		expect(wrapper.text()).toContain(t("editor.logs.config.title-label"))
 		expect(wrapper.text()).toContain(
 			t("editor.logs.config.timestamp-format-label"),
 		)
-		expect(wrapper.text()).toContain(t("editor.logs.config.order-label"))
+		expect(wrapper.text()).not.toContain(t("editor.logs.config.order-label"))
 	})
 
 	it("hands the data source picker the config outside a diff", async ({
@@ -67,6 +62,12 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 		expect(at(selects, 0).props("diffMode")).toBe(false)
 		expect(at(selects, 0).props("diffStatus")).toBeNull()
 		expect(at(selects, 0).props("types")).toEqual([DataSourceType.Loki])
+		expect(at(selects, 0).props("emptyTitle")).toBe(
+			t("editor.logs.config.data-source-empty-title"),
+		)
+		expect(at(selects, 0).props("emptyDescription")).toBe(
+			t("editor.logs.config.data-source-empty-description"),
+		)
 	})
 
 	it("asks the host to open the data source settings", async ({ expect }) => {
@@ -171,12 +172,12 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 
 	it("shows the order the config carries", async ({ expect }) => {
 		const wrapper = await mountSidebar({
-			modelValue: configWith({ order: LogOrder.OldestFirst }),
+			modelValue: configWith({ order: LogOrder.Asc }),
 		})
 
 		const select = wrapper.getComponent(OrderSelect)
 
-		expect(select.props("modelValue")).toBe(LogOrder.OldestFirst)
+		expect(select.props("modelValue")).toBe(LogOrder.Asc)
 		expect(select.props("isModified")).toBe(false)
 		expect(select.props("oldOrder")).toBeNull()
 	})
@@ -185,10 +186,10 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 		const config = configWith()
 		const wrapper = await mountSidebar({ modelValue: config })
 
-		emitFrom(wrapper, OrderSelect, "update:modelValue", LogOrder.OldestFirst)
+		emitFrom(wrapper, OrderSelect, "update:modelValue", LogOrder.Asc)
 		await nextTick()
 
-		expect(config.order).toBe(LogOrder.OldestFirst)
+		expect(config.order).toBe(LogOrder.Asc)
 	})
 
 	describe("in a diff", () => {
@@ -269,16 +270,16 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 
 		it("shows the order a diff replaced", async ({ expect }) => {
 			const wrapper = await mountSidebar({
-				modelValue: configWith({ order: LogOrder.OldestFirst }),
+				modelValue: configWith({ order: LogOrder.Asc }),
 				diffStatus: DiffStatus.Modified,
-				oldConfig: configWith({ order: LogOrder.NewestFirst }),
+				oldConfig: configWith({ order: LogOrder.Desc }),
 			})
 
 			const select = wrapper.getComponent(OrderSelect)
 
-			expect(select.props("modelValue")).toBe(LogOrder.OldestFirst)
+			expect(select.props("modelValue")).toBe(LogOrder.Asc)
 			expect(select.props("isModified")).toBe(true)
-			expect(select.props("oldOrder")).toBe(LogOrder.NewestFirst)
+			expect(select.props("oldOrder")).toBe(LogOrder.Desc)
 		})
 
 		it.for([
@@ -327,7 +328,7 @@ function changedConfig(): LogConfig {
 		title: "Before",
 		dataSourceId: OLD_DATA_SOURCE_ID,
 		timestampFormat: LogTimestampFormat.DetailedNano,
-		order: LogOrder.OldestFirst,
+		order: LogOrder.Asc,
 	})
 }
 

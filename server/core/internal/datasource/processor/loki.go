@@ -325,13 +325,18 @@ func (l *Loki) LogFieldValues(ctx context.Context, field, q string, tr TimeRange
 
 // fetchLines returns the fetcher that reads q's lines from Loki.
 func (l *Loki) fetchLines(q string) LogsFetcher {
-	return func(ctx context.Context, from, end time.Time, limit int) ([]LogLine, error) {
+	return func(ctx context.Context, from, end time.Time, limit int, order LogsOrder) ([]LogLine, error) {
+		direction := "backward"
+		if order == LogsOrderAsc {
+			direction = "forward"
+		}
+
 		params := url.Values{
 			"query":     {q},
 			"start":     {strconv.FormatInt(from.UnixNano(), 10)},
 			"end":       {strconv.FormatInt(end.UnixNano(), 10)},
 			"limit":     {strconv.Itoa(limit)},
-			"direction": {"backward"},
+			"direction": {direction},
 		}
 
 		var res lokiQueryResponse
@@ -367,9 +372,7 @@ func (l *Loki) fetchLines(q string) LogsFetcher {
 		}
 
 		// the result is sorted by stream labels, not by time.
-		slices.SortStableFunc(lines, func(a, b LogLine) int {
-			return b.Time.Compare(a.Time)
-		})
+		order.SortLines(lines)
 
 		return lines[:min(len(lines), limit)], nil
 	}

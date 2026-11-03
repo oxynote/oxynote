@@ -154,6 +154,7 @@ export default withNuxt([
 						"/^editor\\.logs\\.config\\.timestamp-format-options\\./",
 						"/^editor\\.logs\\.config\\.order-options\\./",
 						"/^editor\\.logs\\.levels\\./",
+						"/^editor\\.logs\\.level-names\\./",
 						"/^editor\\.logs\\.status\\./",
 						"/^general\\.refresh-interval-options(-short)?\\./",
 						"/^general\\.time-range-options\\./",

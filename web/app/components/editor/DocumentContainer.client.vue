@@ -19,6 +19,8 @@ interface BranchProviderEntry {
 	synced: Ref<boolean>
 }
 
+let unsubWsHooksChange: (() => void) | null | undefined = null
+
 // NOTE: this component is remounted every time the document ID
 // is changed (page change)
 const props = defineProps<{
@@ -57,7 +59,6 @@ const fetchTargetBranchHooks = documentHookAPI.useFetchDocumentHooksByDocID(
 )
 const queryCache = useQueryCache()
 const wsState = useWebSocketStateStore()
-let unsubWsHooksChange: (() => void) | null | undefined = null
 
 const userCaretDetails = computed(() => {
 	const caretColors = editorCaretColors()

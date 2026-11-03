@@ -28,27 +28,6 @@ import type { TimeRangePreset } from "~/utils/time-range"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 import { useBlockVariables } from "../../variables"
 
-const props = defineProps<{
-	diffStatus?: DiffStatus | null
-	dataSourceId: string | null | undefined // null disables the editor (it affects the autocompletions)
-	timeRange: TimeRangePreset | null | undefined
-	query: string | null | undefined
-}>()
-const legend = defineModel<string>({ default: "" })
-
-const { isDark } = useAppearance()
-const { isEditable } = useEditorMeta()
-const editorStore = useEditorStore()
-const legendEditorElem = useTemplateRef("legend-editor")
-const { variables } = useBlockVariables()
-const { fetchAllLabelNames, fetchExampleLabelValues } =
-	useLegendEditorExtension(
-		() => props.query,
-		() => props.dataSourceId,
-		() => props.timeRange,
-		variables,
-	)
-
 const legendFormatLanguage = StreamLanguage.define<{ inBraces: boolean }>({
 	name: "legend-formatting-syntax",
 	startState: () => ({ inBraces: false }),
@@ -87,6 +66,28 @@ const legendFormatLanguage = StreamLanguage.define<{ inBraces: boolean }>({
 		label: tags.variableName,
 	},
 })
+let wasFocusedAtLeastOnce = false
+
+const props = defineProps<{
+	diffStatus?: DiffStatus | null
+	dataSourceId: string | null | undefined // null disables the editor (it affects the autocompletions)
+	timeRange: TimeRangePreset | null | undefined
+	query: string | null | undefined
+}>()
+const legend = defineModel<string>({ default: "" })
+
+const { isDark } = useAppearance()
+const { isEditable } = useEditorMeta()
+const editorStore = useEditorStore()
+const legendEditorElem = useTemplateRef("legend-editor")
+const { variables } = useBlockVariables()
+const { fetchAllLabelNames, fetchExampleLabelValues } =
+	useLegendEditorExtension(
+		() => props.query,
+		() => props.dataSourceId,
+		() => props.timeRange,
+		variables,
+	)
 
 const isEditingDisabled = computed(
 	() => !isEditable.value || editorStore.reviewableDiffActive,
@@ -120,7 +121,6 @@ const extensions = computed(() => [
 	]),
 	singleLineExtension(),
 ])
-let wasFocusedAtLeastOnce = false
 
 function legendLabelCompletionSource() {
 	return async (ctx: CompletionContext) => {

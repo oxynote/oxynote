@@ -7,6 +7,8 @@ import DataSourceSelect from "../../config-modal-utils/DataSourceSelect.vue"
 import TimestampFormatSelect from "./TimestampFormatSelect.vue"
 import OrderSelect from "./OrderSelect.vue"
 
+const dataSourceTypes = [DataSourceType.Loki]
+
 const config = defineModel<LogConfig>({ required: true })
 const props = defineProps<{
 	diffStatus?: DiffStatus | null
@@ -19,7 +21,6 @@ const emit = defineEmits<{
 const { isEditable } = useEditorMeta()
 const editorStore = useEditorStore()
 
-const dataSourceTypes = [DataSourceType.Loki]
 const isEditingDisabled = computed(() => {
 	return !isEditable.value || editorStore.reviewableDiffActive
 })
@@ -50,11 +51,23 @@ const isOrderModified = computed(
 			cn('flex w-full flex-col gap-2 py-1.75', isEditingDisabled && 'pb-2')
 		"
 	>
+		<div class="flex flex-col gap-1">
+			<OrderSelect
+				v-model="config.order"
+				:is-modified="isOrderModified"
+				:old-order="isOrderModified ? modifiedFrom?.order : null"
+			/>
+		</div>
 		<div>
+			<div class="mb-1 h-px bg-border" />
 			<div class="flex flex-col gap-1 px-1">
 				<DataSourceSelect
 					v-model="config"
 					:types="dataSourceTypes"
+					:empty-title="$t('editor.logs.config.data-source-empty-title')"
+					:empty-description="
+						$t('editor.logs.config.data-source-empty-description')
+					"
 					:diff-mode="!!props.diffStatus"
 					:diff-status="isDataSourceIdModified ? DiffStatus.Added : null"
 					@open-settings="emit('open-settings')"
@@ -62,6 +75,10 @@ const isOrderModified = computed(
 				<DataSourceSelect
 					v-if="isDataSourceIdModified"
 					:types="dataSourceTypes"
+					:empty-title="$t('editor.logs.config.data-source-empty-title')"
+					:empty-description="
+						$t('editor.logs.config.data-source-empty-description')
+					"
 					:diff-mode="!!props.diffStatus"
 					:old-config="modifiedFrom"
 					:diff-status="DiffStatus.Removed"
@@ -121,20 +138,6 @@ const isOrderModified = computed(
 					v-if="isTimestampFormatModified && modifiedFrom"
 					:model-value="modifiedFrom.timestampFormat"
 					:diff-status="DiffStatus.Removed"
-				/>
-			</ConfigField>
-		</div>
-		<div class="px-1.75">
-			<ConfigField>
-				<template #label>
-					<span>
-						{{ $t("editor.logs.config.order-label") }}
-					</span>
-				</template>
-				<OrderSelect
-					v-model="config.order"
-					:is-modified="isOrderModified"
-					:old-order="isOrderModified ? modifiedFrom?.order : null"
 				/>
 			</ConfigField>
 		</div>

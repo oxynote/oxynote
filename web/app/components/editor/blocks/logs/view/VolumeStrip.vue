@@ -38,6 +38,8 @@ const STACK_ORDER = [
 	LogLevel.Trace,
 	LogLevel.Unknown,
 ]
+// the series that marks an interval without lines on the baseline
+const EMPTY_SERIES_ID = "empty"
 // how many times the axis names, spread evenly from start to end
 const AXIS_LABELS = 4
 // a window longer than this names days on its axis instead of times
@@ -75,7 +77,7 @@ const option = computed<ECOption>(() => {
 			trigger: "axis",
 			axisPointer: {
 				type: "shadow",
-				shadowStyle: { color: st.lineChart.gridLine, opacity: 0.5 },
+				shadowStyle: { color: st.lineChart.mutedText, opacity: 0.25 },
 			},
 			transitionDuration: 0.2,
 			backgroundColor: st.lineChart.tooltipBackground,
@@ -85,16 +87,30 @@ const option = computed<ECOption>(() => {
 			appendTo: () => document.body,
 			className: cn("z-tooltip"),
 		},
-		series: levels.map((level) => ({
-			id: level,
-			name: t(`editor.logs.levels.${level}`),
-			type: "bar",
-			stack: "volume",
-			barCategoryGap: "15%",
-			itemStyle: { color: st.logLevels[level], opacity: 0.8 },
-			emphasis: { disabled: true },
-			data: props.buckets.map((bucket) => bucket.counts[level]),
-		})),
+		series: [
+			...levels.map((level) => ({
+				id: level,
+				name: t(`editor.logs.level-names.${level}`),
+				type: "bar" as const,
+				stack: "volume",
+				barCategoryGap: "15%",
+				itemStyle: { color: st.logLevels[level], opacity: 0.8 },
+				emphasis: { disabled: true },
+				data: props.buckets.map((bucket) => bucket.counts[level]),
+			})),
+			// echarts draws a zero at barMinHeight, which leaves a dash on the
+			// baseline, and skips a null
+			{
+				id: EMPTY_SERIES_ID,
+				type: "bar" as const,
+				stack: "volume",
+				barCategoryGap: "15%",
+				barMinHeight: 2,
+				itemStyle: { color: st.logVolumeEmpty },
+				emphasis: { disabled: true },
+				data: props.buckets.map((bucket) => (isEmpty(bucket) ? 0 : null)),
+			},
+		],
 	}
 })
 const axisLabels = computed(() => {
@@ -118,14 +134,31 @@ watch(
 	},
 )
 
+function isEmpty(bucket: VolumeBucket): boolean {
+	return Object.values(bucket.counts).every((count) => count === 0)
+}
+
+function isEmptyAt(params: unknown): boolean {
+	const bucket = tooltipBucket(params)
+
+	return !!bucket && isEmpty(bucket)
+}
+
+function tooltipBucket(params: unknown): VolumeBucket | undefined {
+	const [first] = Array.isArray(params) ? (params as TooltipParam[]) : []
+
+	return first && props.buckets[first.dataIndex]
+}
+
 // tooltipRows reads the levels under the pointer, most severe first
 function tooltipRows(params: unknown): TooltipParam[] {
-	return Array.isArray(params) ? (params as TooltipParam[]) : []
+	return Array.isArray(params)
+		? (params as TooltipParam[]).filter((p) => p.seriesId !== EMPTY_SERIES_ID)
+		: []
 }
 
 function tooltipTime(params: unknown): string {
-	const [first] = tooltipRows(params)
-	const bucket = first && props.buckets[first.dataIndex]
+	const bucket = tooltipBucket(params)
 
 	return bucket ? d(new Date(bucket.start), "short-with-full-time") : ""
 }
@@ -134,34 +167,42 @@ function tooltipTime(params: unknown): string {
 	<div
 		role="img"
 		:aria-label="$t('editor.logs.view.volume-label')"
-		class="flex h-10 shrink-0 flex-col gap-0.5 px-2.5 pb-1"
+		class="flex shrink-0 flex-col gap-1.5 px-2.5 pt-1.5 pb-2.5"
 	>
-		<VChart class="h-7 w-full" :option="option" autoresize>
-			<template #tooltip="params">
-				<div class="flex flex-col">
-					<div class="px-2 pt-1 text-2sm text-foreground">
-						{{ tooltipTime(params) }}
-					</div>
-					<div class="mt-1 mb-0.5 h-0.25 bg-border" />
-					<div class="flex flex-col px-2 pb-1">
+		<div class="h-9">
+			<VChart class="size-full" :option="option" autoresize>
+				<template #tooltip="params">
+					<div class="flex flex-col">
+						<div class="px-2 pt-1 text-2sm text-foreground">
+							{{ tooltipTime(params) }}
+						</div>
+						<div class="mt-1 mb-0.5 h-0.25 bg-border" />
 						<div
-							v-for="row in tooltipRows(params)"
-							:key="row.seriesId"
-							class="flex items-center"
+							v-if="isEmptyAt(params)"
+							class="px-2 pb-1 text-2sm text-foreground/60"
 						>
-							<!-- eslint-disable-next-line vue/no-v-html -->
-							<div v-html="row.marker" />
-							<div class="text-2sm text-foreground/60">
-								{{ row.seriesName }}
-							</div>
-							<div class="ml-1.5 text-2sm text-foreground tabular-nums">
-								{{ row.value }}
+							{{ $t("editor.logs.view.volume-empty") }}
+						</div>
+						<div v-else class="flex flex-col px-2 pb-1">
+							<div
+								v-for="row in tooltipRows(params)"
+								:key="row.seriesId"
+								class="flex items-center"
+							>
+								<!-- eslint-disable-next-line vue/no-v-html -->
+								<div v-html="row.marker" />
+								<div class="text-2sm text-foreground/60">
+									{{ row.seriesName }}
+								</div>
+								<div class="ml-1.5 text-2sm text-foreground tabular-nums">
+									{{ row.value }}
+								</div>
 							</div>
 						</div>
 					</div>
-				</div>
-			</template>
-		</VChart>
+				</template>
+			</VChart>
+		</div>
 		<div
 			class="flex justify-between text-2xs leading-none text-muted-foreground tabular-nums"
 		>

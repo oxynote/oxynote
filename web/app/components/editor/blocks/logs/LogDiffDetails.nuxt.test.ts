@@ -4,7 +4,7 @@ import LogDiffDetails from "./LogDiffDetails.vue"
 import { makeNode } from "../../test-helpers/node-view"
 import { LOG_BLOCK_NAME } from "../node-names"
 import { GridItemWidth } from "../grid/utils"
-import { LogOrder, LogTimestampFormat } from "./utils"
+import { LogTimestampFormat } from "./utils"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 import { settleMutations, t } from "~/components/test-helpers"
 import {
@@ -81,7 +81,7 @@ describe("<LogDiffDetails>", { concurrent: false }, () => {
 				timeRange: TimeRangePreset.Last15Minutes,
 				refreshInterval: RefreshInterval.M1,
 				timestampFormat: LogTimestampFormat.Standard,
-				order: LogOrder.NewestFirst,
+				order: LogOrder.Desc,
 				width: GridItemWidth.Standard,
 			},
 			{
@@ -89,7 +89,7 @@ describe("<LogDiffDetails>", { concurrent: false }, () => {
 				timeRange: TimeRangePreset.Last5Minutes,
 				refreshInterval: RefreshInterval.M5,
 				timestampFormat: LogTimestampFormat.DetailedNano,
-				order: LogOrder.OldestFirst,
+				order: LogOrder.Asc,
 				width: GridItemWidth.Wide,
 			},
 		)
@@ -113,8 +113,8 @@ describe("<LogDiffDetails>", { concurrent: false }, () => {
 			],
 			[
 				t("editor.logs.config.order-label"),
-				t("editor.logs.config.order-options.newest_first"),
-				t("editor.logs.config.order-options.oldest_first"),
+				t("editor.logs.config.order-options.desc"),
+				t("editor.logs.config.order-options.asc"),
 			],
 			[
 				t("editor.logs.diff.size"),

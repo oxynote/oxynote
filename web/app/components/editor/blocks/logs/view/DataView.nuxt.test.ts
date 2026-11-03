@@ -5,12 +5,7 @@ import { setResponseStatus } from "h3"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import DataView from "./DataView.vue"
 import { logLine, logLinesResult, settleLogRequests } from "../test-helpers"
-import {
-	defaultLogConfig,
-	LogOrder,
-	LogTimestampFormat,
-	type LogConfig,
-} from "../utils"
+import { defaultLogConfig, LogTimestampFormat, type LogConfig } from "../utils"
 import {
 	clearQueryCache,
 	disposeMockEndpoints,
@@ -107,16 +102,32 @@ describe("<DataView>", { concurrent: false }, () => {
 			expect(wrapper.find(".host-action").exists()).toBe(true)
 		})
 
-		it("keeps clear of what the host lays over its right side", async ({
+		it("keeps clear of what the host lays over its right side, drawn closer", async ({
 			expect,
 		}) => {
 			const wrapper = await mountView(logConfig({ dataSourceId: null }), {
 				props: { headerRightPadding: 80 },
 			})
 
+			const header = wrapper.get(".text-2base").element.parentElement
+			expect(header?.style.paddingRight).toBe("calc(5rem + 0.125rem)")
+			expect(header?.classList.contains("gap-1")).toBe(false)
 			expect(
-				wrapper.get(".text-2base").element.parentElement?.style.paddingRight,
-			).toBe("calc(5rem + 0.625rem)")
+				wrapper.get("button[aria-pressed]").classes().includes("-mx-0.5"),
+			).toBe(true)
+		})
+
+		it("keeps its own spacing with nothing laid over it", async ({
+			expect,
+		}) => {
+			const wrapper = await mountView(logConfig({ dataSourceId: null }))
+
+			const header = wrapper.get(".text-2base").element.parentElement
+			expect(header?.style.paddingRight).toBe("")
+			expect(header?.classList.contains("gap-1")).toBe(true)
+			expect(
+				wrapper.get("button[aria-pressed]").classes().includes("-mx-0.5"),
+			).toBe(false)
 		})
 	})
 
@@ -324,10 +335,12 @@ describe("<DataView>", { concurrent: false }, () => {
 			expect(calls.map((call) => call.query)).toContainEqual({
 				q: '{job="api"}',
 				...WINDOW,
+				order: "desc",
 			})
 			expect(calls.map((call) => call.query)).toContainEqual({
 				q: '{job="db"}',
 				...WINDOW,
+				order: "desc",
 			})
 		})
 
@@ -355,23 +368,40 @@ describe("<DataView>", { concurrent: false }, () => {
 			expect(rows(wrapper).classes()).toContain("flex-col")
 		})
 
-		it("stacks the rows from the bottom when the oldest come first", async ({
+		it("scrolls back to the top and reads again when the order changes", async ({
 			expect,
 		}) => {
-			mockEndpoint("GET", LINES_URL, () =>
+			const calls = mockEndpoint("GET", LINES_URL, () =>
+				logLinesResult([logLine("a1", "11:57:00Z")]),
+			)
+			const wrapper = await mountView(logConfig())
+			await settleLogRequests()
+			rows(wrapper).element.scrollTop = 200
+
+			await wrapper.setProps({ config: logConfig({ order: LogOrder.Asc }) })
+			await settleLogRequests()
+
+			expect(rows(wrapper).element.scrollTop).toBe(0)
+			expect(calls.map((call) => call.query.order)).toEqual(["desc", "asc"])
+		})
+
+		it("reads the oldest lines first when the oldest come first", async ({
+			expect,
+		}) => {
+			const calls = mockEndpoint("GET", LINES_URL, () =>
 				logLinesResult([
-					logLine("a2", "11:59:00Z"),
 					logLine("a1", "11:57:00Z"),
+					logLine("a2", "11:59:00Z"),
 				]),
 			)
 
-			const wrapper = await mountView(
-				logConfig({ order: LogOrder.OldestFirst }),
-			)
+			const wrapper = await mountView(logConfig({ order: LogOrder.Asc }))
 			await settleLogRequests()
 
-			expect(rowMessages(wrapper)).toEqual(["a2", "a1"])
-			expect(rows(wrapper).classes()).toContain("flex-col-reverse")
+			expect(calls.map((call) => call.query.order)).toEqual(["asc"])
+			expect(rowMessages(wrapper)).toEqual(["a1", "a2"])
+			expect(rows(wrapper).classes()).toContain("flex-col")
+			expect(rows(wrapper).classes()).not.toContain("flex-col-reverse")
 		})
 
 		it("shows times in the block's format", async ({ expect }) => {
@@ -450,10 +480,12 @@ describe("<DataView>", { concurrent: false }, () => {
 			expect(calls.slice(2).map((call) => call.query)).toContainEqual({
 				q: '{job="api", env="prod"}',
 				...WINDOW,
+				order: "desc",
 			})
 			expect(calls.slice(2).map((call) => call.query)).toContainEqual({
 				q: '{job="db", env="prod"}',
 				...WINDOW,
+				order: "desc",
 			})
 			expect(chipTexts(wrapper)).toEqual(["env", "=", "prod"])
 		})
@@ -548,6 +580,7 @@ describe("<DataView>", { concurrent: false }, () => {
 				q: '{job="api"} |~ "(?i)timeout"',
 				from: "2026-01-01T11:55:00.300Z",
 				to: "2026-01-01T12:00:00.300Z",
+				order: "desc",
 			})
 		})
 	})
@@ -625,51 +658,58 @@ describe("<DataView>", { concurrent: false }, () => {
 			)
 			expect(volumeSeries(wrapper)).toEqual([
 				{ id: "error", data: [3, ...Array<number>(47).fill(0)] },
+				{ id: "empty", data: [null, ...Array<number>(47).fill(0)] },
 			])
 		})
 	})
 
 	describe("paging", () => {
 		it.for([
-			{ order: LogOrder.NewestFirst, edge: "bottom" as const },
-			{ order: LogOrder.OldestFirst, edge: "top" as const },
+			{
+				order: LogOrder.Desc,
+				first: logLine("a2", "11:59:00Z"),
+				next: logLine("a1", "11:57:00Z"),
+			},
+			{
+				order: LogOrder.Asc,
+				first: logLine("a1", "11:57:00Z"),
+				next: logLine("a2", "11:59:00Z"),
+			},
 		])(
-			"loads older lines at the $edge when the order is $order",
-			async ({ order, edge }, { expect }) => {
+			"loads the next page at the bottom when the order is $order",
+			async ({ order, first, next }, { expect }) => {
 				const calls = mockEndpoint("GET", LINES_URL, (call) =>
 					call.query.cursor
-						? logLinesResult([logLine("a1", "11:57:00Z")])
-						: logLinesResult([logLine("a2", "11:59:00Z")], "c1"),
+						? logLinesResult([next])
+						: logLinesResult([first], "c1"),
 				)
 				const wrapper = await mountView(logConfig({ order }))
 				await settleLogRequests()
 
-				scroll.arrivedState[edge] = true
+				scroll.arrivedState.bottom = true
 				await settleLogRequests()
 
 				expect(calls).toHaveLength(2)
 				expect(calls[1]?.query).toEqual({
 					q: '{job="api"}',
 					...WINDOW,
+					order: order,
 					cursor: "c1",
 				})
-				expect(rowMessages(wrapper)).toEqual(["a2", "a1"])
+				expect(rowMessages(wrapper)).toEqual([first.line, next.line])
 			},
 		)
 
-		it.for([
-			{ order: LogOrder.NewestFirst, edge: "top" as const },
-			{ order: LogOrder.OldestFirst, edge: "bottom" as const },
-		])(
-			"loads nothing at the $edge when the order is $order",
-			async ({ order, edge }, { expect }) => {
+		it.for([LogOrder.Desc, LogOrder.Asc])(
+			"loads nothing at the top when the order is %s",
+			async (order, { expect }) => {
 				const calls = mockEndpoint("GET", LINES_URL, () =>
 					logLinesResult([logLine("a2", "11:59:00Z")], "c1"),
 				)
 				await mountView(logConfig({ order }))
 				await settleLogRequests()
 
-				scroll.arrivedState[edge] = true
+				scroll.arrivedState.top = true
 				await settleLogRequests()
 
 				expect(calls).toHaveLength(1)
@@ -756,6 +796,7 @@ describe("<DataView>", { concurrent: false }, () => {
 				q: '{job="api"}',
 				from: "2026-01-01T11:55:05.000Z",
 				to: "2026-01-01T12:00:05.000Z",
+				order: "desc",
 			})
 			expect(useEditorStore().isLogBlockDueForRefresh(UID)).toBe(false)
 		})
@@ -886,7 +927,7 @@ function volumeToggle(wrapper: VueWrapper) {
 
 function volumeSeries(wrapper: VueWrapper) {
 	const option = wrapper.findComponent({ name: "VChart" }).props("option") as {
-		series: { id: string; data: number[] }[]
+		series: { id: string; data: (number | null)[] }[]
 	}
 
 	return option.series.map(({ id, data }) => ({ id, data }))

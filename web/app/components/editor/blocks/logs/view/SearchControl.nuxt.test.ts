@@ -20,6 +20,31 @@ describe("<SearchControl>", { concurrent: false }, () => {
 		).toBe(true)
 	})
 
+	it.for([
+		{
+			name: "overlaps its neighbours while closed and compact",
+			search: "",
+			compact: true,
+			expected: true,
+		},
+		{
+			name: "keeps its spacing while closed and not compact",
+			search: "",
+			compact: false,
+			expected: false,
+		},
+		{
+			name: "keeps its spacing while open and compact",
+			search: "timeout",
+			compact: true,
+			expected: false,
+		},
+	])("$name", async ({ search, compact, expected }, { expect }) => {
+		const wrapper = await mountSearch(search, compact)
+
+		expect(wrapper.classes().includes("-mx-0.5")).toBe(expected)
+	})
+
 	it("stays open while a search is applied", async ({ expect }) => {
 		const wrapper = await mountSearch("timeout")
 
@@ -104,10 +129,11 @@ describe("<SearchControl>", { concurrent: false }, () => {
 })
 
 // the model follows every update, as a parent's v-model would
-async function mountSearch(search: string) {
+async function mountSearch(search: string, compact = false) {
 	const wrapper: VueWrapper = await mountSuspended(SearchControl, {
 		props: {
 			modelValue: search,
+			compact: compact,
 			"onUpdate:modelValue": (value: string) =>
 				wrapper.setProps({ modelValue: value }),
 		},

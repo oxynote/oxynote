@@ -66,7 +66,11 @@ const isEditingDisabled = computed(() => {
 	return !isEditable.value || editorStore.reviewableDiffActive
 })
 const timeOptionsElem = useTemplateRef<HTMLDivElement>("time-options")
-const { width: timeOptionsWidth } = useElementSize(timeOptionsElem)
+// the border box holds the controls' own padding, which the header has to
+// clear as well
+const { width: timeOptionsWidth } = useElementSize(timeOptionsElem, undefined, {
+	box: "border-box",
+})
 const isDiffModified = computed(() => diffStatus.value === DiffStatus.Modified)
 const isTimeRangeModified = computed(() => {
 	return (
@@ -148,10 +152,10 @@ function openSettings() {
 					class="flex flex-col rounded-md border bg-muted/50 lg:h-126 lg:flex-row"
 				>
 					<div class="flex min-w-0 flex-1 flex-col self-stretch">
-						<div class="relative h-70 min-w-0 shrink-0 border-b">
+						<div class="relative h-82.5 min-w-0 shrink-0 border-b">
 							<div
 								ref="time-options"
-								class="absolute top-1.5 right-1.5 z-1 flex flex-col items-end gap-0.5 pr-1 pl-2 md:flex-row md:items-center md:gap-2 md:bg-muted-50-real"
+								class="absolute top-1.5 right-1.5 z-1 flex flex-col items-end gap-0.5 pr-1 pl-2 md:top-1 md:h-7 md:flex-row md:items-center md:gap-2 md:bg-muted-50-real"
 							>
 								<TimeRangeSelect
 									v-model="config.timeRange"

@@ -19,7 +19,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 			t("editor.logs.view.indexed-heading"),
 			t("editor.logs.view.unindexed-heading"),
 		])
-		expect(wrapper.get(".whitespace-pre-wrap").text()).toBe(
+		expect(wrapper.get(".whitespace-pre-wrap > span").text()).toBe(
 			'level=info msg="deploy finished"',
 		)
 	})
@@ -62,7 +62,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 		expect(sectionHeadings(wrapper)).toEqual(
 			expected.map((key) => t(`editor.logs.view.${key}`)),
 		)
-		expect(wrapper.findAll(".group")).toHaveLength(2)
+		expect(wrapper.findAll(".divide-y > div")).toHaveLength(2)
 	})
 
 	it.for([
@@ -168,7 +168,7 @@ function tableRows(wrapper: VueWrapper): string[][][] {
 		.findAll(".divide-y")
 		.map((table) =>
 			table
-				.findAll(".group")
+				.findAll(":scope > div")
 				.map((row) => row.findAll(".truncate").map((cell) => cell.text())),
 		)
 }

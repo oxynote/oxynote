@@ -10,6 +10,9 @@ interface DataSourceConfig {
 const config = defineModel<DataSourceConfig>()
 const props = defineProps<{
 	types: DataSourceType[]
+	// what the menu says when no data source of these types exists
+	emptyTitle: string
+	emptyDescription: string
 	diffMode?: boolean
 	diffStatus?: DiffStatus | null
 	oldConfig?: DataSourceConfig | null
@@ -133,34 +136,35 @@ function handleDataSourceSelection(dataSourceId: string) {
 			loop
 		>
 			<template v-if="!options.length">
-				<i18n-t
-					scope="global"
-					keypath="editor.config-modal-utils.data-source-no-options.main"
-					class="px-1 pt-0.75 pb-1 text-2sm text-popover-foreground"
-					tag="div"
-				>
-					<template #icon>
-						<Icon
-							name="mingcute:information-fill"
-							class="mr-0.5 inline-block -translate-y-px align-middle text-status-info"
-						/>
-					</template>
-					<template #placeholder>
-						<ShadcnUiButton
-							type="button"
-							variant="link"
-							size="custom"
-							class="h-fit p-0 text-2sm"
-							@click="emit('open-settings')"
-						>
-							{{
-								$t(
-									"editor.config-modal-utils.data-source-no-options.placeholder",
-								)
-							}}
-						</ShadcnUiButton>
-					</template>
-				</i18n-t>
+				<ShadcnUiEmpty class="gap-0 p-3 md:p-3">
+					<ShadcnUiEmptyHeader class="gap-1">
+						<ShadcnUiEmptyMedia class="mb-1">
+							<Icon
+								name="mingcute:server-line"
+								class="size-5 text-muted-foreground"
+							/>
+						</ShadcnUiEmptyMedia>
+						<ShadcnUiEmptyTitle class="text-2sm">
+							{{ props.emptyTitle }}
+						</ShadcnUiEmptyTitle>
+						<!--
+							the description ignores a class passed to it. So the text
+							takes its size from a child
+						-->
+						<ShadcnUiEmptyDescription>
+							<span class="block text-xs leading-4">
+								{{ props.emptyDescription }}
+							</span>
+						</ShadcnUiEmptyDescription>
+					</ShadcnUiEmptyHeader>
+				</ShadcnUiEmpty>
+				<ShadcnUiDropdownMenuSeparator />
+				<ShadcnUiDropdownMenuItem @click="emit('open-settings')">
+					<Icon name="mingcute:add-line" class="shrink-0" />
+					<span>
+						{{ $t("editor.config-modal-utils.data-source-empty.connect") }}
+					</span>
+				</ShadcnUiDropdownMenuItem>
 			</template>
 			<template v-else>
 				<ShadcnUiDropdownMenuItem

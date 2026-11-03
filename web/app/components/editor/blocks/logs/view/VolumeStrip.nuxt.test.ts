@@ -38,7 +38,8 @@ interface Series {
 	name: string
 	stack: string
 	itemStyle: { color: string }
-	data: number[]
+	barMinHeight?: number
+	data: (number | null)[]
 }
 
 // the tooltip params are module state, and chartStyles paints colours
@@ -75,29 +76,55 @@ describe("<VolumeStrip>", { concurrent: false }, () => {
 		).toEqual([
 			{
 				id: "error",
-				name: t("editor.logs.levels.error"),
+				name: t("editor.logs.level-names.error"),
 				stack: "volume",
 				data: [1, 3],
 			},
 			{
 				id: "info",
-				name: t("editor.logs.levels.info"),
+				name: t("editor.logs.level-names.info"),
 				stack: "volume",
 				data: [2, 0],
 			},
 			{
 				id: "unknown",
-				name: t("editor.logs.levels.unknown"),
+				name: t("editor.logs.level-names.unknown"),
 				stack: "volume",
 				data: [0, 4],
 			},
+			{ id: "empty", name: undefined, stack: "volume", data: [null, null] },
 		])
 	})
 
-	it("draws no series without lines", async ({ expect }) => {
-		const wrapper = await mountStrip([bucket(0), bucket(1)])
+	it("marks each interval without lines with a dash on the baseline", async ({
+		expect,
+	}) => {
+		const wrapper = await mountStrip([
+			bucket(0),
+			bucket(1, { info: 2 }),
+			bucket(2),
+		])
 
-		expect(chartSeries(wrapper)).toEqual([])
+		const empty = chartSeries(wrapper).at(-1)
+		expect(empty?.id).toBe("empty")
+		expect(empty?.stack).toBe("volume")
+		expect(empty?.barMinHeight).toBe(2)
+		expect(empty?.data).toEqual([0, null, 0])
+	})
+
+	it("says an interval under the pointer has no lines", async ({ expect }) => {
+		tooltip.params = [
+			tooltipParam(LogLevel.Info, 0, 0),
+			{ ...tooltipParam(LogLevel.Info, 0, 0), seriesId: "empty" },
+		]
+
+		const wrapper = await mountStrip([bucket(0), bucket(1, { info: 2 })])
+
+		expect(wrapper.get(".pt-1").text()).toBe(
+			useNuxtApp().$i18n.d(WINDOW.from, "short-with-full-time"),
+		)
+		expect(wrapper.text()).toContain(t("editor.logs.view.volume-empty"))
+		expect(wrapper.findAll(".flex-col > .flex-col > .flex")).toHaveLength(0)
 	})
 
 	it("lists the count of each level under the pointer with the bar's time", async ({
@@ -123,8 +150,8 @@ describe("<VolumeStrip>", { concurrent: false }, () => {
 			),
 		)
 		expect(lines).toEqual([
-			`${t("editor.logs.levels.error")}3`,
-			`${t("editor.logs.levels.unknown")}4`,
+			`${t("editor.logs.level-names.error")}3`,
+			`${t("editor.logs.level-names.unknown")}4`,
 		])
 	})
 
@@ -188,7 +215,7 @@ function bucket(
 function tooltipParam(level: LogLevel, dataIndex: number, value: number) {
 	return {
 		seriesId: level,
-		seriesName: t(`editor.logs.levels.${level}`),
+		seriesName: t(`editor.logs.level-names.${level}`),
 		marker: "",
 		value,
 		dataIndex,

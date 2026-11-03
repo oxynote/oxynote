@@ -370,10 +370,13 @@ test context).
 - **One assignment per statement** (`no-multi-assign`): no chaining, no
   assignment inside an expression such as `const group = (groups[key] ??=
   …)`. `??=` as its own statement is fine.
-- `<script setup>` order: imports; compiler macros (`defineProps`,
-  `defineEmits`, `defineModel`, `defineExpose`, …); store and composable
-  initializations; `ref`/`computed` and plain variables; lifecycle hooks;
-  watchers; functions.
+- `<script setup>` order: imports; constants and plain variables that read
+  nothing reactive (no props, emits, refs, stores or composables);
+  compiler macros (`defineProps`, `defineEmits`, `defineModel`,
+  `defineExpose`, …); store and composable initializations;
+  `ref`/`computed` and the variables built from them; lifecycle hooks;
+  watchers; functions. Break the order only where context clearly calls
+  for it.
 - Plain `.ts` modules follow the same shape: imports, then constants and
   module-level variables, then functions. No declarations between
   functions.

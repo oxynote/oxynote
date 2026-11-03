@@ -1,18 +1,18 @@
 <script lang="ts" setup>
 import { cn } from "#layers/ui/app/lib/utils"
 
-const props = defineProps<{
-	level: LogLevel
-}>()
-
 const LEVEL_CLASSES: Record<Exclude<LogLevel, LogLevel.Unknown>, string> = {
-	[LogLevel.Critical]: "bg-log-level-critical text-white",
+	[LogLevel.Critical]: "bg-log-level-critical/10 text-log-level-critical",
 	[LogLevel.Error]: "bg-log-level-error/10 text-log-level-error",
 	[LogLevel.Warning]: "bg-log-level-warning/10 text-log-level-warning",
 	[LogLevel.Info]: "bg-log-level-info/10 text-log-level-info",
 	[LogLevel.Debug]: "bg-log-level-debug/10 text-log-level-debug",
 	[LogLevel.Trace]: "bg-log-level-trace/10 text-log-level-trace",
 }
+
+const props = defineProps<{
+	level: LogLevel
+}>()
 </script>
 <template>
 	<!-- a line without a known level keeps the column, so the lines stay

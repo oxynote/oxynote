@@ -22,14 +22,15 @@ describe("<TimestampFormatSelect>", { concurrent: false }, () => {
 	})
 
 	it.for(Object.values(LogTimestampFormat))(
-		"shows the title and an example of the %s format",
+		"shows the title and example of the %s format while closed",
 		async (format, { expect }) => {
 			const wrapper = await mountFormatSelect({ modelValue: format })
 
 			expect(
 				trigger(wrapper)
-					.findAll("div")
-					.map((line) => line.text()),
+					.findAll("span")
+					.map((part) => part.text())
+					.filter(Boolean),
 			).toEqual([titleOf(format), exampleOf(format)])
 		},
 	)

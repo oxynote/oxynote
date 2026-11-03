@@ -7,7 +7,7 @@ import VolumeStrip from "./VolumeStrip.vue"
 import { useBlockVariables } from "../../variables"
 import { mergeQueryLines } from "../lines"
 import { withViewFilters, type LogFilter } from "../logql"
-import { LogOrder, type LogConfig } from "../utils"
+import type { LogConfig } from "../utils"
 import { volumeBuckets } from "../volume"
 import {
 	RefreshInterval,
@@ -45,6 +45,9 @@ const search = refDebounced(searchInput, SEARCH_DEBOUNCE_MS)
 const filters = ref<LogFilter[]>([])
 const expandedIds = ref(new Set<string>())
 const volumeVisible = ref(false)
+// under the modal's time controls the header's icons sit as close as the
+// controls' own items do
+const compact = computed(() => !!props.headerRightPadding)
 const isEditingDisabled = computed(
 	() => !isEditable.value || editorStore.reviewableDiffActive,
 )
@@ -52,7 +55,6 @@ const queries = refDebounced(
 	computed(() => (props.config.queries ?? []).map((q) => q.query)),
 	QUERY_DEBOUNCE_MS,
 )
-const oldestFirst = computed(() => props.config.order === LogOrder.OldestFirst)
 const refreshIntervalMs = computed(() =>
 	refreshIntervalToMs(
 		blockVariables.refreshInterval(props.config.refreshInterval) ??
@@ -61,7 +63,11 @@ const refreshIntervalMs = computed(() =>
 )
 const fetchLines = useLogLines(
 	() => props.config.dataSourceId,
-	viewParams,
+	() => {
+		const params = viewParams()
+
+		return params && { ...params, order: props.config.order }
+	},
 	true,
 )
 const fetchVolume = useLogVolume(
@@ -81,6 +87,7 @@ const lines = computed(() => {
 			lines: pages.flatMap((page) => page.results[index]?.lines ?? []),
 			hasMore: !!result?.cursor,
 		})),
+		props.config.order,
 	)
 })
 const buckets = computed(() =>
@@ -125,18 +132,19 @@ const actionIcon = computed(() =>
 	isEditingDisabled.value ? "mingcute:eye-line" : "mingcute:pencil-line",
 )
 // an element laid over the header's right end, as the modal's time
-// controls are, is as far in as the header's own buttons. The header keeps
-// that inset and a gap past it.
+// controls are, is as far in as the header's own buttons. The header clears
+// it, that inset and a little more, so the space before the element's first
+// icon matches the space between the header's own icons.
 const headerStyle = computed(() =>
 	props.headerRightPadding
 		? {
-				paddingRight: `calc(${props.headerRightPadding / 16}rem + 0.625rem)`,
+				paddingRight: `calc(${props.headerRightPadding / 16}rem + 0.125rem)`,
 			}
 		: undefined,
 )
 
 const { arrivedState } = useScroll(rows, {
-	offset: { top: LOAD_MORE_DISTANCE_PX, bottom: LOAD_MORE_DISTANCE_PX },
+	offset: { bottom: LOAD_MORE_DISTANCE_PX },
 })
 
 useIntervalFn(() => void refreshData(), refreshIntervalMs, {
@@ -148,13 +156,13 @@ onMounted(() => {
 	void refreshData()
 })
 
-// older lines load at the end the rows end on, which is the top when the
-// oldest come first. Rows too few to scroll sit at that end already, so
-// pages load until they fill the view. A failed load stops it, or the
-// next page would be asked for again at once, and without end.
+// the next page loads once the rows are scrolled to their end. Rows too
+// few to scroll sit at that end already, so pages load until they fill the
+// view. A failed load stops it, or the next page would be asked for again
+// at once, and without end.
 watch(
 	[
-		() => (oldestFirst.value ? arrivedState.top : arrivedState.bottom),
+		() => arrivedState.bottom,
 		() => lines.value.length,
 		() => fetchLines.isLoading.value,
 	],
@@ -166,6 +174,17 @@ watch(
 			fetchLines.status.value !== "error"
 		) {
 			void fetchLines.loadNextPage()
+		}
+	},
+)
+
+// a new order reads the window from its other end, so the rows start
+// again at the top
+watch(
+	() => props.config.order,
+	() => {
+		if (rows.value) {
+			rows.value.scrollTop = 0
 		}
 	},
 )
@@ -254,18 +273,25 @@ async function refreshData() {
 </script>
 <template>
 	<div class="@container flex size-full min-w-0 flex-col">
+		<!-- when compact, the icon buttons overlap their neighbours by part of
+		their blank edge -->
 		<div
-			class="flex h-8 shrink-0 items-center gap-1 pt-1 pr-1.5 pl-2.5"
+			:class="
+				cn(
+					'flex h-8 shrink-0 items-center pt-1 pr-1.5 pl-2.5',
+					!compact && 'gap-1',
+				)
+			"
 			:style="headerStyle"
 		>
 			<div class="min-w-0 flex-1 truncate text-2base text-foreground">
 				{{ props.config.title }}
 			</div>
-			<SearchControl v-model="searchInput" />
+			<SearchControl v-model="searchInput" :compact="compact" />
 			<ShadcnUiButton
 				variant="ghost-plain"
 				size="icon-sm"
-				class="size-6"
+				:class="cn('size-6', compact && '-mx-0.5')"
 				:aria-pressed="volumeVisible"
 				@click="volumeVisible = !volumeVisible"
 			>
@@ -292,15 +318,7 @@ async function refreshData() {
 			:buckets="buckets"
 			:window="volumeWindow"
 		/>
-		<div
-			ref="rows"
-			:class="
-				cn(
-					'flex min-h-0 flex-1 overflow-y-auto',
-					oldestFirst ? 'flex-col-reverse' : 'flex-col',
-				)
-			"
-		>
+		<div ref="rows" class="flex min-h-0 flex-1 flex-col overflow-y-auto">
 			<template v-if="state === 'lines'">
 				<Row
 					v-for="line in lines"
@@ -311,10 +329,7 @@ async function refreshData() {
 					:expanded="expandedIds.has(line.id)"
 					:class="
 						cn(
-							'shrink-0',
-							oldestFirst
-								? 'border-t last:border-t-0'
-								: 'border-b last:border-b-0',
+							'shrink-0 border-b last:border-b-0',
 							expandedIds.has(line.id)
 								? 'border-border'
 								: 'border-muted-highlight',

@@ -1,7 +1,7 @@
 import { enableAutoUnmount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import MainBlock from "./MainBlock.vue"
-import { LogOrder, LogTimestampFormat, type LogConfig } from "./utils"
+import { LogTimestampFormat, type LogConfig } from "./utils"
 import { GridItemWidth } from "../grid/utils"
 import {
 	makeEditor,
@@ -98,7 +98,7 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 				timeRange: TimeRangePreset.Last1Hour,
 				refreshInterval: RefreshInterval.M1,
 				timestampFormat: LogTimestampFormat.Detailed,
-				order: LogOrder.OldestFirst,
+				order: LogOrder.Asc,
 			},
 		})
 
@@ -109,7 +109,7 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 			timeRange: TimeRangePreset.Last1Hour,
 			refreshInterval: RefreshInterval.M1,
 			timestampFormat: LogTimestampFormat.Detailed,
-			order: LogOrder.OldestFirst,
+			order: LogOrder.Asc,
 		})
 		expect(storedDiffInfo()).toBeUndefined()
 	})
@@ -143,7 +143,7 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 			attrs: {
 				diffStatus: DiffStatus.Modified,
 				oldNode: {
-					attrs: { title: "Before", order: LogOrder.OldestFirst },
+					attrs: { title: "Before", order: LogOrder.Asc },
 				},
 			},
 		})
@@ -157,7 +157,7 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 				timeRange: null,
 				refreshInterval: null,
 				timestampFormat: LogTimestampFormat.Standard,
-				order: LogOrder.OldestFirst,
+				order: LogOrder.Asc,
 			},
 		})
 	})
@@ -226,7 +226,7 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 			field: "timestamp format",
 			edit: { timestampFormat: LogTimestampFormat.DetailedMilli },
 		},
-		{ field: "order", edit: { order: LogOrder.OldestFirst } },
+		{ field: "order", edit: { order: LogOrder.Asc } },
 	])("stores an edited $field on the node", async ({ edit }, { expect }) => {
 		const updateAttributes = vi.fn()
 		await mountBlock({ updateAttributes: updateAttributes })

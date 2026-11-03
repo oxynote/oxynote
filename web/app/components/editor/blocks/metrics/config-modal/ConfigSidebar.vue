@@ -9,6 +9,14 @@ import DataSourceSelect from "../../config-modal-utils/DataSourceSelect.vue"
 import UnitSelectWithCustom from "./UnitSelectWithCustom.vue"
 import SimulationPresetSelect from "./SimulationPresetSelect.vue"
 
+const dataSourceTypes = [
+	DataSourceType.Prometheus,
+	DataSourceType.PostgreSQL,
+	DataSourceType.Supabase,
+	DataSourceType.MySQL,
+	DataSourceType.MariaDB,
+]
+
 const config = defineModel<MetricConfig>({ required: true })
 const props = defineProps<{
 	diffStatus?: DiffStatus | null
@@ -21,13 +29,6 @@ const emit = defineEmits<{
 const { isEditable } = useEditorMeta()
 const editorStore = useEditorStore()
 
-const dataSourceTypes = [
-	DataSourceType.Prometheus,
-	DataSourceType.PostgreSQL,
-	DataSourceType.Supabase,
-	DataSourceType.MySQL,
-	DataSourceType.MariaDB,
-]
 const isEditingDisabled = computed(() => {
 	return !isEditable.value || editorStore.reviewableDiffActive
 })
@@ -299,6 +300,10 @@ function removeThreshold(index: number) {
 				<DataSourceSelect
 					v-model="config"
 					:types="dataSourceTypes"
+					:empty-title="$t('editor.metrics.config.data-source-empty-title')"
+					:empty-description="
+						$t('editor.metrics.config.data-source-empty-description')
+					"
 					:diff-mode="!!props.diffStatus"
 					:diff-status="isDataSourceIdModified ? DiffStatus.Added : null"
 					@open-settings="emit('open-settings')"
@@ -306,6 +311,10 @@ function removeThreshold(index: number) {
 				<DataSourceSelect
 					v-if="isDataSourceIdModified"
 					:types="dataSourceTypes"
+					:empty-title="$t('editor.metrics.config.data-source-empty-title')"
+					:empty-description="
+						$t('editor.metrics.config.data-source-empty-description')
+					"
 					:diff-mode="!!props.diffStatus"
 					:old-config="props.oldConfig"
 					:diff-status="isDataSourceIdModified ? DiffStatus.Removed : null"

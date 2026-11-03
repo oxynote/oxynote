@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -277,15 +278,13 @@ func corpusWhere(tr TimeRange, match func(corpusLine) bool) map[string]corpusLin
 	return out
 }
 
-// assertCorpusLines checks that lines are newest first and are exactly
+// assertCorpusLines checks that lines are in the given order and are exactly
 // the expected corpus lines, each read once, each with its time, level, message, labels
 // and metadata.
-func assertCorpusLines(t *testing.T, want map[string]corpusLine, lines []LogLine) {
+func assertCorpusLines(t *testing.T, order LogsOrder, want map[string]corpusLine, lines []LogLine) {
 	t.Helper()
 
-	assert.True(t, slices.IsSortedFunc(lines, func(a, b LogLine) int {
-		return b.Time.Compare(a.Time)
-	}), "lines are not newest first")
+	assertLinesOrdered(t, order, lines)
 
 	got := make(map[string]LogLine, len(lines))
 
@@ -498,6 +497,19 @@ func Test_Loki_Logs(t *testing.T) {
 				},
 			},
 		},
+		"Merged streams come back oldest first when asc": {
+			Handler: testutil.JSONHandler(_lokiQueryRangePath, http.StatusOK, streamsBody(`"encodingFlags":["categorize-labels"],`)),
+			Range:   TimeRange{From: time.Unix(0, 0), To: time.Unix(0, 4000)},
+			Page:    LogsPage{Limit: 10, Order: LogsOrderAsc},
+			Result: &LogsResult{
+				Status: QueryStatusOK,
+				Lines: []LogLine{
+					{Time: time.Unix(0, 1000).UTC(), Level: LogLevelError, Line: "first", Labels: map[string]string{"service_name": "a"}, Fields: map[string]string{"detected_level": "error"}},
+					{Time: time.Unix(0, 2000).UTC(), Level: LogLevelWarning, Line: "second", Labels: map[string]string{"service_name": "b"}, Fields: map[string]string{"level": "warn"}},
+					{Time: time.Unix(0, 3000).UTC(), Level: LogLevelUnknown, Line: "third", Labels: map[string]string{"service_name": "a"}, Fields: map[string]string{}},
+				},
+			},
+		},
 		"Label filter": {
 			Query:     `{service_name="checkout"}`,
 			Range:     _logsWindow,
@@ -540,6 +552,33 @@ func Test_Loki_Logs(t *testing.T) {
 			Match:     func(corpusLine) bool { return true },
 			WalkLimit: 100,
 		},
+		"First page of a hundred asc": {
+			Query: `{env="prod"}`,
+			Range: _logsWindow,
+			Page:  LogsPage{Limit: 100, Order: LogsOrderAsc},
+			Match: func(corpusLine) bool { return true },
+		},
+		"Asc walk at limit 7": {
+			Query:     `{env="prod"}`,
+			Range:     _logsWindow,
+			Page:      LogsPage{Order: LogsOrderAsc},
+			Match:     func(corpusLine) bool { return true },
+			WalkLimit: 7,
+		},
+		"Asc walk at limit 100": {
+			Query:     `{env="prod"}`,
+			Range:     _logsWindow,
+			Page:      LogsPage{Order: LogsOrderAsc},
+			Match:     func(corpusLine) bool { return true },
+			WalkLimit: 100,
+		},
+		"Asc walk with a label filter": {
+			Query:     `{service_name="checkout"}`,
+			Range:     _logsWindow,
+			Page:      LogsPage{Order: LogsOrderAsc},
+			Match:     func(l corpusLine) bool { return l.Service == "checkout" },
+			WalkLimit: _maxLogsLimit,
+		},
 	}
 
 	for cn, c := range cc {
@@ -575,16 +614,22 @@ func Test_Loki_Logs(t *testing.T) {
 						require.NoError(t, err)
 						require.NotEmpty(t, res.Lines)
 
-						oldest := res.Lines[len(res.Lines)-1].Time
-						assertCorpusLines(t, corpusWhere(c.Range, func(cl corpusLine) bool {
-							return !cl.Time.Before(oldest)
+						asc := c.Page.Order == LogsOrderAsc
+						last := res.Lines[len(res.Lines)-1].Time
+						assertCorpusLines(t, c.Page.Order, corpusWhere(c.Range, func(cl corpusLine) bool {
+							if asc {
+								return !cl.Time.After(last)
+							}
+
+							return !cl.Time.Before(last)
 						}), res.Lines)
 						assert.True(t, res.Cursor.Valid)
 
 						return
 					}
 
-					assertCorpusLines(t, want, walkLogs(t, l.fetchLines(c.Query), c.Range, c.WalkLimit, time.Nanosecond))
+					page := LogsPage{Limit: c.WalkLimit, Order: c.Page.Order}
+					assertCorpusLines(t, c.Page.Order, want, walkLogs(t, l.fetchLines(c.Query), c.Range, page, time.Nanosecond))
 				})
 			}
 		})
@@ -593,33 +638,52 @@ func Test_Loki_Logs(t *testing.T) {
 
 func Test_Loki_fetchLines(t *testing.T) {
 	cc := map[string]struct {
-		Handler http.Handler
-		Limit   int
-		Result  []LogLine
-		Err     error
+		Handler   http.Handler
+		Limit     int
+		Order     LogsOrder
+		Direction string
+		Result    []LogLine
+		Err       error
 	}{
 		"Error returned by Loki.get": {
-			Handler: testutil.JSONHandler(_lokiQueryRangePath, http.StatusBadRequest, `bad`),
-			Err:     NewInvalidQueryError("bad"),
+			Handler:   testutil.JSONHandler(_lokiQueryRangePath, http.StatusBadRequest, `bad`),
+			Direction: "backward",
+			Err:       NewInvalidQueryError("bad"),
 		},
 		"Metric query": {
-			Handler: testutil.JSONHandler(_lokiQueryRangePath, http.StatusOK, `{"data":{"resultType":"matrix","result":[]}}`),
-			Err:     NewInvalidQueryError("a logs block needs a log query; a metric query such as rate() belongs in a metrics block"),
+			Handler:   testutil.JSONHandler(_lokiQueryRangePath, http.StatusOK, `{"data":{"resultType":"matrix","result":[]}}`),
+			Direction: "backward",
+			Err:       NewInvalidQueryError("a logs block needs a log query; a metric query such as rate() belongs in a metrics block"),
 		},
 		"Encoding flag dropped": {
-			Handler: testutil.JSONHandler(_lokiQueryRangePath, http.StatusOK, `{"data":{"resultType":"streams","result":[]}}`),
-			Err:     ConnectionStatusVersionNotSupported.Error(),
+			Handler:   testutil.JSONHandler(_lokiQueryRangePath, http.StatusOK, `{"data":{"resultType":"streams","result":[]}}`),
+			Direction: "backward",
+			Err:       ConnectionStatusVersionNotSupported.Error(),
 		},
 		"Streams that do not decode": {
-			Handler: testutil.JSONHandler(_lokiQueryRangePath, http.StatusOK, `{"data":{"resultType":"streams","encodingFlags":["categorize-labels"],"result":{}}}`),
-			Err:     assert.AnError,
+			Handler:   testutil.JSONHandler(_lokiQueryRangePath, http.StatusOK, `{"data":{"resultType":"streams","encodingFlags":["categorize-labels"],"result":{}}}`),
+			Direction: "backward",
+			Err:       assert.AnError,
 		},
 		"Lines past the limit are dropped": {
 			Handler: testutil.JSONHandler(_lokiQueryRangePath, http.StatusOK, `{"data":{"resultType":"streams","encodingFlags":["categorize-labels"],"result":[`+
 				`{"stream":{},"values":[["2","b"],["1","a"]]}]}}`),
-			Limit: 1,
+			Limit:     1,
+			Order:     LogsOrderDesc,
+			Direction: "backward",
 			Result: []LogLine{
 				{Time: time.Unix(0, 2).UTC(), Level: LogLevelUnknown, Line: "b", Labels: map[string]string{}, Fields: map[string]string{}},
+			},
+		},
+		"Lines past the limit are dropped asc": {
+			Handler: testutil.JSONHandler(_lokiQueryRangePath, http.StatusOK, `{"data":{"resultType":"streams","encodingFlags":["categorize-labels"],"result":[`+
+				`{"stream":{"s":"b"},"values":[["2","b"]]},{"stream":{"s":"a"},"values":[["1","a"],["3","c"]]}]}}`),
+			Limit:     2,
+			Order:     LogsOrderAsc,
+			Direction: "forward",
+			Result: []LogLine{
+				{Time: time.Unix(0, 1).UTC(), Level: LogLevelUnknown, Line: "a", Labels: map[string]string{"s": "a"}, Fields: map[string]string{}},
+				{Time: time.Unix(0, 2).UTC(), Level: LogLevelUnknown, Line: "b", Labels: map[string]string{"s": "b"}, Fields: map[string]string{}},
 			},
 		},
 	}
@@ -628,18 +692,23 @@ func Test_Loki_fetchLines(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			var query http.Header
+			var (
+				query  http.Header
+				params url.Values
+			)
 
 			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				query = r.Header.Clone()
+				params = r.URL.Query()
 				c.Handler.ServeHTTP(w, r)
 			})
 
 			fetch := NewLoki(prepLokiInput(t, "", h)).fetchLines(`{a="b"}`)
 
-			lines, err := fetch(context.Background(), time.Unix(0, 0), time.Unix(0, 10), c.Limit)
+			lines, err := fetch(context.Background(), time.Unix(0, 0), time.Unix(0, 10), c.Limit, c.Order)
 
 			assert.Equal(t, _lokiCategorizeLabels, query.Get(_lokiEncodingFlagsHeader))
+			assert.Equal(t, c.Direction, params.Get("direction"))
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {

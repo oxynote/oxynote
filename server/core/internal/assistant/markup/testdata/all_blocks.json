@@ -456,7 +456,7 @@
       "timeRange": "last_1_hour",
       "refreshInterval": "1m",
       "timestampFormat": "detailed_milli",
-      "order": "newest_first",
+      "order": "desc",
       "width": "standard"
      }
     }

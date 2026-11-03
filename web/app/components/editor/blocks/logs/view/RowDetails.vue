@@ -34,33 +34,32 @@ async function copyLine() {
 		class="flex cursor-default flex-col gap-3 border-t border-muted-highlight bg-muted px-2.5 pt-2.5 pb-4 select-text"
 	>
 		<section class="flex flex-col gap-1.5">
-			<div class="flex items-center gap-2">
-				<h4
-					class="text-2xs font-semibold tracking-wide text-muted-foreground uppercase"
-				>
-					{{ $t("editor.logs.view.line-heading") }}
-				</h4>
+			<h4
+				class="text-2xs font-semibold tracking-wide text-muted-foreground uppercase"
+			>
+				{{ $t("editor.logs.view.line-heading") }}
+			</h4>
+			<div
+				class="relative rounded-md border bg-card py-2 pr-9 pl-3 font-mono text-xs leading-5 break-all whitespace-pre-wrap text-foreground"
+			>
+				<span>{{ props.line.line }}</span>
 				<ShadcnUiButton
-					variant="outline"
-					size="custom"
-					class="ml-auto h-6 gap-1 px-2 text-xs"
+					variant="ghost-plain"
+					size="icon-sm"
+					class="absolute top-1.5 right-1.5 size-6 text-muted-foreground hover:text-foreground"
 					@click="copyLine"
 				>
 					<Icon
 						:name="copied ? 'mingcute:check-line' : 'mingcute:copy-2-line'"
-						class="size-3.5"
 					/>
-					{{
-						copied
-							? $t("editor.logs.view.line-copied")
-							: $t("editor.logs.view.copy-line")
-					}}
+					<span class="sr-only">
+						{{
+							copied
+								? $t("editor.logs.view.line-copied")
+								: $t("editor.logs.view.copy-line")
+						}}
+					</span>
 				</ShadcnUiButton>
-			</div>
-			<div
-				class="rounded-md border bg-card px-3 py-2 font-mono text-xs leading-5 break-all whitespace-pre-wrap text-foreground"
-			>
-				{{ props.line.line }}
 			</div>
 		</section>
 		<section v-if="labels.length" class="flex flex-col gap-1.5">

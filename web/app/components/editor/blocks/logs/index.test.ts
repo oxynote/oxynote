@@ -9,7 +9,7 @@ import { BLOCK_GRID_NAME, GRID_ITEM_GROUP, LOG_BLOCK_NAME } from "../node-names"
 import { runCommand } from "../../comments/test-helpers"
 import { nodeType as nodeTypeOf } from "~/components/editor/test-helpers"
 import { insertLogBlock, LogBlock } from "."
-import { LogOrder, LogTimestampFormat } from "./utils"
+import { LogTimestampFormat } from "./utils"
 import { BlockGrid } from "../grid"
 import { GridItemWidth } from "../grid/utils"
 import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
@@ -67,7 +67,7 @@ describe("LogBlock", () => {
 				timeRange: TimeRangePreset.Last5Minutes,
 				refreshInterval: RefreshInterval.M5,
 				timestampFormat: LogTimestampFormat.Standard,
-				order: LogOrder.NewestFirst,
+				order: LogOrder.Desc,
 				width: GridItemWidth.Standard,
 			})
 		})

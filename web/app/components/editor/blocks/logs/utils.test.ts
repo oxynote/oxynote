@@ -2,7 +2,6 @@ import { describe, it } from "vitest"
 import {
 	buildLogConfigFromNodeAttrs,
 	defaultLogConfig,
-	LogOrder,
 	LogTimestampFormat,
 } from "./utils"
 import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
@@ -22,7 +21,7 @@ describe("defaultLogConfig", () => {
 			timeRange: TimeRangePreset.Last5Minutes,
 			refreshInterval: RefreshInterval.M5,
 			timestampFormat: LogTimestampFormat.Standard,
-			order: LogOrder.NewestFirst,
+			order: LogOrder.Desc,
 		})
 	})
 
@@ -44,7 +43,7 @@ describe("buildLogConfigFromNodeAttrs", () => {
 			timeRange: METRIC_TIME_RANGE_REFERENCE,
 			refreshInterval: METRIC_REFRESH_INTERVAL_REFERENCE,
 			timestampFormat: LogTimestampFormat.DetailedNano,
-			order: LogOrder.OldestFirst,
+			order: LogOrder.Asc,
 			width: "wide",
 		})
 
@@ -55,7 +54,7 @@ describe("buildLogConfigFromNodeAttrs", () => {
 			timeRange: METRIC_TIME_RANGE_REFERENCE,
 			refreshInterval: METRIC_REFRESH_INTERVAL_REFERENCE,
 			timestampFormat: LogTimestampFormat.DetailedNano,
-			order: LogOrder.OldestFirst,
+			order: LogOrder.Asc,
 		})
 	})
 
@@ -84,7 +83,7 @@ describe("buildLogConfigFromNodeAttrs", () => {
 			timeRange: null,
 			refreshInterval: null,
 			timestampFormat: LogTimestampFormat.Standard,
-			order: LogOrder.NewestFirst,
+			order: LogOrder.Desc,
 		})
 	})
 })

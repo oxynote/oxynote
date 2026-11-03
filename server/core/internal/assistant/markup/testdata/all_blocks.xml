@@ -33,7 +33,7 @@
 <file id="file1" src="/api/documents/d/files/f" name="a.pdf" contentType="application/pdf" size="1234"/>
 <grid id="g1">
   <metrics id="mb1">{"dataSourceId":"ds1","queries":[{"legendFormat":"","name":"Q","query":"up"}],"refreshInterval":"1m","simulationPreset":"cpu_usage","timeRange":"last_1_hour","visualizationType":"line_chart","width":"standard"}</metrics>
-  <logs id="lb1">{"dataSourceId":"ds1","order":"newest_first","queries":[{"name":"Q","query":"{app=\"api\"} |= \"error\""}],"refreshInterval":"1m","timeRange":"last_1_hour","timestampFormat":"detailed_milli","title":"Errors","width":"standard"}</logs>
+  <logs id="lb1">{"dataSourceId":"ds1","order":"desc","queries":[{"name":"Q","query":"{app=\"api\"} |= \"error\""}],"refreshInterval":"1m","timeRange":"last_1_hour","timestampFormat":"detailed_milli","title":"Errors","width":"standard"}</logs>
 </grid>
 <split_doc id="sd1" inversed="true">
   <left>

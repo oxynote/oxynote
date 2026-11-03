@@ -1,6 +1,10 @@
 <script lang="ts" setup>
 import { cn } from "#layers/ui/app/lib/utils"
-import { LogOrder } from "../utils"
+
+const options = [
+	{ value: LogOrder.Desc, icon: "mingcute:sort-descending-line" },
+	{ value: LogOrder.Asc, icon: "mingcute:sort-ascending-line" },
+]
 
 const order = defineModel<LogOrder>({ required: true })
 const props = defineProps<{
@@ -14,10 +18,6 @@ const editorStore = useEditorStore()
 const isEditingDisabled = computed(() => {
 	return !isEditable.value || editorStore.reviewableDiffActive
 })
-const options = [
-	{ value: LogOrder.NewestFirst, icon: "mingcute:sort-descending-line" },
-	{ value: LogOrder.OldestFirst, icon: "mingcute:sort-ascending-line" },
-]
 
 function select(value: LogOrder) {
 	if (!isEditingDisabled.value) {
@@ -26,7 +26,7 @@ function select(value: LogOrder) {
 }
 </script>
 <template>
-	<div class="flex gap-1">
+	<div class="flex gap-1 px-1.75">
 		<button
 			v-for="option in options"
 			:key="option.value"

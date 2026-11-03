@@ -158,7 +158,7 @@ function openSettings() {
 								ref="chart-top-options"
 								:class="
 									cn(
-										'absolute top-1.5 right-1.5 z-1 flex flex-col items-end gap-0.5 pr-1 pl-2 md:flex-row md:items-center md:gap-2 md:bg-muted-50-real',
+										'absolute top-1.5 right-1.5 z-1 flex flex-col items-end gap-0.5 pr-1 pl-2 md:top-1 md:h-7 md:flex-row md:items-center md:gap-2 md:bg-muted-50-real',
 									)
 								"
 							>

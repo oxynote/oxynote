@@ -52,7 +52,12 @@ function configWith(dataSourceId: string | null) {
 
 function mountSelect(props: Record<string, unknown> = {}) {
 	return mountSuspended(DataSourceSelect, {
-		props: { types: [DataSourceType.Prometheus], ...props },
+		props: {
+			types: [DataSourceType.Prometheus],
+			emptyTitle: EMPTY_TITLE,
+			emptyDescription: EMPTY_DESCRIPTION,
+			...props,
+		},
 	})
 }
 
@@ -69,6 +74,10 @@ async function openMenu(wrapper: VueWrapper) {
 // the editable flag is a shared cookie state, the editor store and the
 // query cache are app-wide, and the menu body is teleported into a shared
 // <body>, so these tests cannot interleave
+// the select shows whatever empty text its block hands it
+const EMPTY_TITLE = "No widget sources"
+const EMPTY_DESCRIPTION = "Connect a widget in the settings."
+
 describe("<DataSourceSelect>", { concurrent: false }, () => {
 	beforeEach(() => {
 		clearTeleportedOverlays()
@@ -245,9 +254,7 @@ describe("<DataSourceSelect>", { concurrent: false }, () => {
 
 		await openMenu(wrapper)
 
-		expect(document.body.textContent).toContain(
-			t("editor.config-modal-utils.data-source-no-options.placeholder"),
-		)
+		expect(document.body.textContent).toContain(EMPTY_TITLE)
 		expect(document.body.textContent).not.toContain("Prod Prometheus")
 	})
 
@@ -279,14 +286,10 @@ describe("<DataSourceSelect>", { concurrent: false }, () => {
 
 		await openMenu(wrapper)
 
-		const link = Array.from(
-			document.body.querySelectorAll<HTMLButtonElement>("button"),
-		).find((b) =>
-			b.textContent.includes(
-				t("editor.config-modal-utils.data-source-no-options.placeholder"),
-			),
-		)
-		link?.click()
+		expect(document.body.textContent).toContain(EMPTY_TITLE)
+		expect(document.body.textContent).toContain(EMPTY_DESCRIPTION)
+
+		menuItem(t("editor.config-modal-utils.data-source-empty.connect")).click()
 		await nextTick()
 
 		expect(wrapper.emitted("open-settings")).toHaveLength(1)

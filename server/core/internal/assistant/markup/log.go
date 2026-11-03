@@ -17,7 +17,7 @@ import (
 // cannot write it.
 var _logOnlyEnums = map[string][]string{
 	document.AttrTimestampFormat: {"none", "standard", "detailed", "detailed_milli", "detailed_nano"},
-	document.AttrOrder:           {"newest_first", "oldest_first"},
+	document.AttrOrder:           {"desc", "asc"},
 }
 
 // _logEnums maps each enum-valued log attribute to its values, without
@@ -42,7 +42,7 @@ func LogReference() string {
 		fmt.Fprintf(&sb, ", %s (%s)", key, strings.Join(_logOnlyEnums[key], "|"))
 	}
 
-	sb.WriteString(", and optionally title")
+	sb.WriteString(", and optionally title. order sorts the lines by time, desc showing the newest first")
 
 	return sb.String()
 }

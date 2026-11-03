@@ -26,7 +26,7 @@ function filter(key: string, value: string, exclude: boolean) {
 		<div
 			v-for="[key, value] in props.entries"
 			:key="key"
-			class="group flex h-7.5 items-center"
+			class="flex h-7.5 items-center"
 		>
 			<div
 				class="flex h-full w-31 shrink-0 items-center border-r border-muted-highlight px-2.5 font-mono text-xs text-muted-foreground @xl:w-44"
@@ -42,7 +42,7 @@ function filter(key: string, value: string, exclude: boolean) {
 				<ShadcnUiButton
 					variant="ghost-plain"
 					size="icon-sm"
-					class="size-6 text-muted-foreground/70 group-hover:text-muted-foreground"
+					class="size-6 text-muted-foreground/70 hover:text-muted-foreground"
 					@click="filter(key, value, false)"
 				>
 					<Icon name="mingcute:zoom-in-line" />
@@ -53,7 +53,7 @@ function filter(key: string, value: string, exclude: boolean) {
 				<ShadcnUiButton
 					variant="ghost-plain"
 					size="icon-sm"
-					class="size-6 text-muted-foreground/70 group-hover:text-muted-foreground"
+					class="size-6 text-muted-foreground/70 hover:text-muted-foreground"
 					@click="filter(key, value, true)"
 				>
 					<Icon name="mingcute:zoom-out-line" />

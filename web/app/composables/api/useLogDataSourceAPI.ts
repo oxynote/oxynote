@@ -4,6 +4,7 @@ const LOG_QUERY_KEYS = {
 		queries: string[],
 		timeRange: string,
 		limit: number | null,
+		order: LogOrder,
 		variableValues: Record<string, string>,
 	) =>
 		[
@@ -13,6 +14,7 @@ const LOG_QUERY_KEYS = {
 			...queries,
 			timeRange,
 			limit,
+			order,
 			variableValues,
 		] as const,
 	volume: (
@@ -102,6 +104,7 @@ export default function () {
 					params?.queries ?? [],
 					params?.timeRangeKey || "",
 					params?.limit ?? null,
+					params?.order ?? LogOrder.Desc,
 					params?.variableValues ?? {},
 				)
 			},
@@ -130,6 +133,10 @@ export default function () {
 
 						if (params.limit !== undefined) {
 							queryParams.set("limit", String(params.limit))
+						}
+
+						if (params.order !== undefined) {
+							queryParams.set("order", params.order)
 						}
 
 						if (cursor) {

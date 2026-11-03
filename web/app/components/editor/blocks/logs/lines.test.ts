@@ -268,7 +268,54 @@ describe("mergeQueryLines", () => {
 			expected: ["a", "b", "c"],
 		},
 	])("$name", ({ input, expected }, { expect }) => {
-		expect(mergeQueryLines(input()).map((l) => l.id)).toEqual(expected)
+		expect(mergeQueryLines(input(), LogOrder.Desc).map((l) => l.id)).toEqual(
+			expected,
+		)
+	})
+
+	it.for([
+		{
+			name: "orders one oldest-first query's lines oldest first",
+			input: () => [
+				{
+					lines: [line("b", "12:00:00.3Z"), line("a", "12:00:00.1Z")],
+					hasMore: false,
+				},
+			],
+			expected: ["a", "b"],
+		},
+		{
+			name: "hides lines newer than where an oldest-first query with more to load stopped",
+			input: () => [
+				{
+					lines: [line("a1", "12:00:01Z"), line("a2", "12:00:05Z")],
+					hasMore: false,
+				},
+				{
+					lines: [line("b1", "12:00:02Z"), line("b2", "12:00:03Z")],
+					hasMore: true,
+				},
+			],
+			expected: ["a1", "b1", "b2"],
+		},
+		{
+			name: "stops at the oldest point among oldest-first queries with more to load",
+			input: () => [
+				{
+					lines: [line("a1", "12:00:01Z"), line("a2", "12:00:04Z")],
+					hasMore: true,
+				},
+				{
+					lines: [line("b1", "12:00:02Z"), line("b2", "12:00:05Z")],
+					hasMore: true,
+				},
+			],
+			expected: ["a1", "b1", "a2"],
+		},
+	])("$name", ({ input, expected }, { expect }) => {
+		expect(mergeQueryLines(input(), LogOrder.Asc).map((l) => l.id)).toEqual(
+			expected,
+		)
 	})
 })
 

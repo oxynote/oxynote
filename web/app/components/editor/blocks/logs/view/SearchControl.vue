@@ -2,6 +2,11 @@
 import { cn } from "#layers/ui/app/lib/utils"
 
 const search = defineModel<string>({ required: true })
+const props = defineProps<{
+	// compact lets the closed button overlap its neighbours by part of its
+	// blank edge
+	compact?: boolean
+}>()
 
 const input = useTemplateRef<HTMLInputElement>("input")
 // a search with text stays open, so the header always shows it is applied
@@ -41,6 +46,7 @@ function clear() {
 			cn(
 				'flex h-6 shrink-0 items-center overflow-hidden rounded-md transition-[width] duration-150',
 				open ? 'w-65 max-w-full border bg-card' : 'w-6',
+				!open && props.compact && '-mx-0.5',
 			)
 		"
 	>

@@ -9,7 +9,7 @@ import (
 )
 
 // FetchDataSourceLogs handles reading one page of the lines a log query
-// matches in a window, newest first.
+// matches in a window, newest or oldest first.
 func (h *Handler) FetchDataSourceLogs(w http.ResponseWriter, r *http.Request) {
 	session, ok := auth.RequireSession(h.log, w, r)
 	if !ok {

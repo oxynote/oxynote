@@ -21,6 +21,8 @@ import type { TimeRangePreset } from "~/utils/time-range"
 import { indentWithTab } from "@codemirror/commands"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 
+let wasFocusedAtLeastOnce = false
+
 const props = defineProps<{
 	diffStatus?: DiffStatus | null
 	dataSourceId: string | null | undefined // null disables the editor (it affects the autocompletions)
@@ -86,7 +88,6 @@ const extensions = computed(() => {
 
 	return res
 })
-let wasFocusedAtLeastOnce = false
 
 function handleFocusChange(focused: boolean) {
 	if (focused) {

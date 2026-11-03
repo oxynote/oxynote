@@ -8,6 +8,12 @@ export enum LogLevel {
 	Unknown = "unknown",
 }
 
+// the order lines are read in, which is also a log block's order setting
+export enum LogOrder {
+	Desc = "desc",
+	Asc = "asc",
+}
+
 export enum LogFieldKind {
 	Label = "label",
 	Field = "field",
@@ -20,6 +26,7 @@ export interface LogQueriesParams extends GenericQueryTimeRange {
 
 export interface LogLinesParams extends LogQueriesParams {
 	limit?: number
+	order?: LogOrder
 }
 
 export interface LogFieldsParams extends GenericQueryTimeRange {

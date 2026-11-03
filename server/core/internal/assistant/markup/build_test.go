@@ -196,8 +196,8 @@ func Test_Build(t *testing.T) {
 			Result: "<grid>\n  <metrics>{\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\",\"title\":\"Up\"}</metrics>\n</grid>\n",
 		},
 		"New logs build a log block": {
-			Markup: `<grid><logs>{"title":"Errors","order":"oldest_first"}</logs></grid>`,
-			Result: "<grid>\n  <logs>{\"order\":\"oldest_first\",\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\",\"title\":\"Errors\"}</logs>\n</grid>\n",
+			Markup: `<grid><logs>{"title":"Errors","order":"asc"}</logs></grid>`,
+			Result: "<grid>\n  <logs>{\"order\":\"asc\",\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\",\"title\":\"Errors\"}</logs>\n</grid>\n",
 		},
 		"Logs drop the uid and comment the markup sent": {
 			Markup: `<logs>{"uid":"x","nodeCommentId":"c"}</logs>`,

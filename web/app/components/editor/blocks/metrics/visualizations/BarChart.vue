@@ -114,7 +114,7 @@ const option = computed<ECOption>(() => {
 		title: {
 			show: !!props.title,
 			text: props.title,
-			top: 10,
+			top: 11,
 			left: 10,
 			padding: 0,
 			textStyle: {

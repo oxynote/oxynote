@@ -23,7 +23,7 @@ describe("<FieldTable>", () => {
 	it("widens the key column once the view has room", async ({ expect }) => {
 		const wrapper = await mountTable({ entries: ENTRIES })
 
-		const keyCell = wrapper.get(".group > div").classes()
+		const keyCell = wrapper.get(".divide-y > div > div").classes()
 		expect(keyCell).toContain("w-31")
 		expect(keyCell).toContain("@xl:w-44")
 	})
@@ -59,6 +59,6 @@ function mountTable(props: { entries: KeyValue[]; indexed?: boolean }) {
 // each row's key and value, which are the cells that truncate
 function rows(wrapper: VueWrapper): string[][] {
 	return wrapper
-		.findAll(".group")
+		.findAll(".divide-y > div")
 		.map((row) => row.findAll(".truncate").map((cell) => cell.text()))
 }

@@ -117,12 +117,13 @@ shared meaning gets its own neutrally named token.
 | Drag and drop | `drag-target` | `#c7e1f8` | `#3699e2` 36% |
 | API docs | `http-method-get/post/put/patch/delete/…` | get `#045ad0`, post `#217005`, delete `#b13600`, rest muted | get `#2b9df6`, post `#3eae20`, delete `#f27400` |
 | | `url-path-param` | `#8caf8c` | `#6e8a6e` |
-| Log levels | `log-level-critical` (fill, white text) | `#c800de` | `#a800b7` |
+| Log levels | `log-level-critical` | `#9810fa` | `#c27aff` |
 | | `log-level-error` | `#e7000b` | `#ff6467` |
 | | `log-level-warning` | `#bd9f00` | `#fdc700` |
 | | `log-level-info` | `#0071c2` | `#51a2ff` |
-| | `log-level-debug` | `#009689` | `#00d5be` |
-| | `log-level-trace` | `#7f22fe` | `#a684ff` |
+| | `log-level-debug` | `#009966` | `#00d492` |
+| | `log-level-trace` | `#62748e` | `#90a1b9` |
+| | `log-volume-empty` (dash for an interval without lines) | `#a1a1a1` | `#525252` |
 
 Recurring pattern for a tinted feature surface: the feature colour at
 5–15% as the fill, 20–30% as the border, and the matching `-foreground`

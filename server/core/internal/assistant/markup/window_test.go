@@ -30,7 +30,7 @@ func Test_enumValues(t *testing.T) {
 		"A log enum without a reference": {
 			Enums:  _logEnums,
 			Key:    document.AttrOrder,
-			Result: []string{"newest_first", "oldest_first"},
+			Result: []string{"desc", "asc"},
 		},
 		"A log time range led by its reference": {
 			Enums:  _logEnums,

@@ -24,7 +24,7 @@ func Test_LogReference(t *testing.T) {
 	}
 
 	assert.Contains(t, got, "dataSourceId, queries ([{name, query}]), timeRange, refreshInterval and width as a metric block's")
-	assert.Contains(t, got, "and optionally title")
+	assert.Contains(t, got, "and optionally title. order sorts the lines by time, desc showing the newest first")
 }
 
 func Test_decodeLogAttrs(t *testing.T) {
@@ -41,13 +41,13 @@ func Test_decodeLogAttrs(t *testing.T) {
 		},
 		"A fully configured log block": {
 			Text: `{"title":"API errors","dataSourceId":"d1qbc8kv2vg000cnb6ag","queries":[{"name":"Query 1","query":"up"}],` +
-				`"timestampFormat":"detailed_nano","order":"oldest_first","width":"wide"}`,
+				`"timestampFormat":"detailed_nano","order":"asc","width":"wide"}`,
 			Result: document.Attributes{
 				document.AttrTitle:           "API errors",
 				document.AttrDataSourceID:    "d1qbc8kv2vg000cnb6ag",
 				document.AttrQueries:         []any{map[string]any{"name": "Query 1", "query": "up"}},
 				document.AttrTimestampFormat: "detailed_nano",
-				document.AttrOrder:           "oldest_first",
+				document.AttrOrder:           "asc",
 				document.AttrWidth:           "wide",
 			},
 		},

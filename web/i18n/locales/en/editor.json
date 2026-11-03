@@ -548,9 +548,8 @@
 		},
 		"config-modal-utils": {
 			"data-source-label": "Data Source",
-			"data-source-no-options": {
-				"main": "{icon}No data sources available. You can connect one in the {placeholder}.",
-				"placeholder": "settings"
+			"data-source-empty": {
+				"connect": "Connect Data Source"
 			},
 			"data-source-label-missing": "No data source selected",
 			"data-source-label-deleted": "Deleted data source",
@@ -848,7 +847,9 @@
 				"base-threshold-label": "Base",
 				"legend-format-label": "Legend",
 				"legend-format-placeholder": "{'{{'}some label{'}}'} {'{{'}another label{'}}'}",
-				"legend-format-empty-value-placeholder": "[empty]"
+				"legend-format-empty-value-placeholder": "[empty]",
+				"data-source-empty-title": "No metric data sources",
+				"data-source-empty-description": "Connect Prometheus or a SQL database in the settings to chart its data here."
 			},
 			"diff": {
 				"visualization": "Visualization",
@@ -918,13 +919,15 @@
 				},
 				"order-label": "Order",
 				"order-options": {
-					"newest_first": "Newest First",
-					"oldest_first": "Oldest First"
+					"desc": "Newest First",
+					"asc": "Oldest First"
 				},
 				"query-label": "Query",
 				"query-name-default-format": "Query {index}",
 				"add-query-button": "Add Query",
-				"delete-query-button": "Delete Query"
+				"delete-query-button": "Delete Query",
+				"data-source-empty-title": "No log data sources",
+				"data-source-empty-description": "Connect Loki in the settings to show its logs here."
 			},
 			"diff": {
 				"size": "Size"
@@ -935,16 +938,25 @@
 				"warning": "Warn",
 				"info": "Info",
 				"debug": "Debug",
+				"trace": "Trace"
+			},
+			"level-names": {
+				"critical": "Critical",
+				"error": "Error",
+				"warning": "Warning",
+				"info": "Info",
+				"debug": "Debug",
 				"trace": "Trace",
 				"unknown": "Unknown"
 			},
 			"view": {
-				"search-label": "Search lines",
-				"search-placeholder": "Search lines",
+				"search-label": "Search logs",
+				"search-placeholder": "Search logs...",
 				"clear-search": "Clear search",
 				"show-volume": "Show line volume",
 				"hide-volume": "Hide line volume",
 				"volume-label": "Line volume across the time range",
+				"volume-empty": "No logs in this interval",
 				"line-heading": "Line",
 				"copy-line": "Copy line",
 				"line-copied": "Copied",
@@ -952,26 +964,26 @@
 				"indexed-description": "Fast to filter on",
 				"unindexed-heading": "Unindexed fields",
 				"unindexed-description": "Filtering works but is slower",
-				"include-value": "Show only lines where {key} is this value",
-				"exclude-value": "Hide lines where {key} is this value",
+				"include-value": "Show only logs where {key} is this value",
+				"exclude-value": "Hide logs where {key} is this value",
 				"remove-filter": "Remove filter on {key}",
 				"clear-filters": "Clear filters"
 			},
 			"status": {
 				"data-source-not-selected": {
 					"title": "No Data Source Selected",
-					"description": "Choose a Loki data source to see log lines",
+					"description": "Choose a Loki data source to see logs",
 					"normal-action-button": "Edit Logs",
 					"readonly-action-button": "View Logs"
 				},
 				"no-query": {
 					"title": "No Query",
-					"description": "Add a LogQL query to see log lines",
+					"description": "Add a LogQL query to see logs",
 					"normal-action-button": "Edit Logs",
 					"readonly-action-button": "View Logs"
 				},
 				"no-lines": {
-					"title": "No Log Lines",
+					"title": "No Logs",
 					"description": "Nothing matched in this time range"
 				},
 				"query-error": {

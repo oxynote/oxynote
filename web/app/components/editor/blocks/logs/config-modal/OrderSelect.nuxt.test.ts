@@ -2,7 +2,6 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import type { VueWrapper } from "@vue/test-utils"
 import { beforeEach, describe, it } from "vitest"
 import OrderSelect from "./OrderSelect.vue"
-import { LogOrder } from "../utils"
 import { at, t } from "~/components/test-helpers"
 
 const NEWEST_FIRST = 0
@@ -18,12 +17,12 @@ describe("<OrderSelect>", { concurrent: false }, () => {
 
 	it("offers both orders for editing", async ({ expect }) => {
 		const wrapper = await mountOrderSelect({
-			modelValue: LogOrder.NewestFirst,
+			modelValue: LogOrder.Desc,
 		})
 
 		expect(buttons(wrapper).map((b) => b.text())).toEqual([
-			t("editor.logs.config.order-options.newest_first"),
-			t("editor.logs.config.order-options.oldest_first"),
+			t("editor.logs.config.order-options.desc"),
+			t("editor.logs.config.order-options.asc"),
 		])
 		expect(buttons(wrapper).map((b) => b.attributes("aria-disabled"))).toEqual([
 			"false",
@@ -32,8 +31,8 @@ describe("<OrderSelect>", { concurrent: false }, () => {
 	})
 
 	it.for([
-		{ input: LogOrder.NewestFirst, expected: ["true", "false"] },
-		{ input: LogOrder.OldestFirst, expected: ["false", "true"] },
+		{ input: LogOrder.Desc, expected: ["true", "false"] },
+		{ input: LogOrder.Asc, expected: ["false", "true"] },
 	])(
 		"presses the button of the $input order",
 		async ({ input, expected }, { expect }) => {
@@ -51,13 +50,13 @@ describe("<OrderSelect>", { concurrent: false }, () => {
 	it.for([
 		{
 			index: OLDEST_FIRST,
-			input: LogOrder.NewestFirst,
-			expected: LogOrder.OldestFirst,
+			input: LogOrder.Desc,
+			expected: LogOrder.Asc,
 		},
 		{
 			index: NEWEST_FIRST,
-			input: LogOrder.OldestFirst,
-			expected: LogOrder.NewestFirst,
+			input: LogOrder.Asc,
+			expected: LogOrder.Desc,
 		},
 	])(
 		"stores the $expected order when picked",
@@ -74,7 +73,7 @@ describe("<OrderSelect>", { concurrent: false }, () => {
 		useEditorMeta().setEditable(false)
 
 		const wrapper = await mountOrderSelect({
-			modelValue: LogOrder.NewestFirst,
+			modelValue: LogOrder.Desc,
 		})
 
 		expect(buttons(wrapper).map((b) => b.attributes("aria-disabled"))).toEqual([
@@ -91,7 +90,7 @@ describe("<OrderSelect>", { concurrent: false }, () => {
 	it("changes nothing in read mode", async ({ expect }) => {
 		useEditorMeta().setEditable(false)
 		const wrapper = await mountOrderSelect({
-			modelValue: LogOrder.NewestFirst,
+			modelValue: LogOrder.Desc,
 		})
 
 		await at(buttons(wrapper), OLDEST_FIRST).trigger("click")
@@ -102,7 +101,7 @@ describe("<OrderSelect>", { concurrent: false }, () => {
 	it("changes nothing while a reviewable diff is shown", async ({ expect }) => {
 		useEditorStore().setReviewableDiffActive(true)
 		const wrapper = await mountOrderSelect({
-			modelValue: LogOrder.NewestFirst,
+			modelValue: LogOrder.Desc,
 		})
 
 		await at(buttons(wrapper), OLDEST_FIRST).trigger("click")
@@ -114,9 +113,9 @@ describe("<OrderSelect>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		const wrapper = await mountOrderSelect({
-			modelValue: LogOrder.OldestFirst,
+			modelValue: LogOrder.Asc,
 			isModified: true,
-			oldOrder: LogOrder.NewestFirst,
+			oldOrder: LogOrder.Desc,
 		})
 
 		const oldest = at(buttons(wrapper), OLDEST_FIRST)
@@ -132,8 +131,8 @@ describe("<OrderSelect>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		const wrapper = await mountOrderSelect({
-			modelValue: LogOrder.OldestFirst,
-			oldOrder: LogOrder.NewestFirst,
+			modelValue: LogOrder.Asc,
+			oldOrder: LogOrder.Desc,
 		})
 
 		expect(

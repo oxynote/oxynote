@@ -9,11 +9,6 @@ export enum LogTimestampFormat {
 	DetailedNano = "detailed_nano",
 }
 
-export enum LogOrder {
-	NewestFirst = "newest_first",
-	OldestFirst = "oldest_first",
-}
-
 export interface LogQuery {
 	name: string
 	query: string
@@ -39,7 +34,7 @@ export function defaultLogConfig(): LogConfig {
 		timeRange: TimeRangePreset.Last5Minutes,
 		refreshInterval: RefreshInterval.M5,
 		timestampFormat: LogTimestampFormat.Standard,
-		order: LogOrder.NewestFirst,
+		order: LogOrder.Desc,
 	}
 }
 

@@ -21,23 +21,32 @@ const isEditingDisabled = computed(() => {
 			<div
 				:class="
 					cn(
-						'flex w-full min-w-0 cursor-pointer flex-col rounded-md px-0.75 py-1 transition-opacity duration-150 hover:opacity-60 active:opacity-90',
+						'flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md border px-1.5 py-1 transition-opacity duration-150 hover:opacity-60 active:opacity-90',
 						isEditingDisabled && 'pointer-events-none select-text',
 						props.diffStatus === DiffStatus.Added && 'bg-diff-field-added',
 						props.diffStatus === DiffStatus.Removed && 'bg-diff-field-removed',
 					)
 				"
 			>
-				<div class="truncate text-sm text-foreground">
-					{{
-						$t(`editor.logs.config.timestamp-format-options.${format}.title`)
-					}}
+				<div class="flex min-w-0 flex-1 flex-col">
+					<span class="truncate text-sm text-foreground">
+						{{
+							$t(`editor.logs.config.timestamp-format-options.${format}.title`)
+						}}
+					</span>
+					<span class="truncate text-2sm text-muted-foreground">
+						{{
+							$t(
+								`editor.logs.config.timestamp-format-options.${format}.example`,
+							)
+						}}
+					</span>
 				</div>
-				<div class="truncate font-mono text-2sm text-muted-foreground">
-					{{
-						$t(`editor.logs.config.timestamp-format-options.${format}.example`)
-					}}
-				</div>
+				<Icon
+					v-show="!isEditingDisabled"
+					name="lucide:chevron-down"
+					class="size-4 shrink-0"
+				/>
 			</div>
 		</ShadcnUiDropdownMenuTrigger>
 		<ShadcnUiDropdownMenuContent
@@ -55,7 +64,7 @@ const isEditingDisabled = computed(() => {
 				class="min-w-0"
 				@click="format = option"
 			>
-				<div class="flex min-w-0 flex-col">
+				<div class="flex min-w-0 flex-1 flex-col">
 					<div
 						class="min-w-0 truncate text-2sm whitespace-nowrap text-popover-foreground"
 					>
@@ -64,7 +73,7 @@ const isEditingDisabled = computed(() => {
 						}}
 					</div>
 					<div
-						class="min-w-0 truncate font-mono text-xs whitespace-nowrap text-muted-foreground"
+						class="min-w-0 truncate text-xs whitespace-nowrap text-muted-foreground"
 					>
 						{{
 							$t(

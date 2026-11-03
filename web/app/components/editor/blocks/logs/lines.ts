@@ -84,22 +84,28 @@ export function highlightParts(text: string, search: string): TextPart[] {
 	return parts
 }
 
-// mergeQueryLines interleaves the lines each query loaded, newest first.
-// A query with older pages left may still hold lines newer than another
-// query's oldest, so the merge stops at the newest point a query with
-// more to load has reached. A line two queries both matched shows once.
+// mergeQueryLines interleaves the lines each query loaded, in the order
+// they were read: newest first or oldest first. A query with pages left
+// may still hold lines that belong before another query's last one, so
+// the merge stops at the nearest point a query with more to load has
+// reached. A line two queries both matched shows once.
 export function mergeQueryLines(
 	queries: { lines: LogLine[]; hasMore: boolean }[],
+	order: LogOrder,
 ): LogLine[] {
+	// past compares two times by reading order. It is true when a comes
+	// after b.
+	const past = (a: bigint, b: bigint) =>
+		order === LogOrder.Asc ? a > b : a < b
 	let frontier: bigint | null = null
 
 	for (const query of queries) {
-		const oldest = query.lines.at(-1)
+		const last = query.lines.at(-1)
 
-		if (query.hasMore && oldest) {
-			const nanos = timeNanos(oldest.time)
+		if (query.hasMore && last) {
+			const nanos = timeNanos(last.time)
 
-			if (frontier === null || nanos > frontier) {
+			if (frontier === null || past(frontier, nanos)) {
 				frontier = nanos
 			}
 		}
@@ -112,7 +118,7 @@ export function mergeQueryLines(
 		for (const line of query.lines) {
 			const nanos = timeNanos(line.time)
 
-			if (seen.has(line.id) || (frontier !== null && nanos < frontier)) {
+			if (seen.has(line.id) || (frontier !== null && past(nanos, frontier))) {
 				continue
 			}
 
@@ -122,7 +128,9 @@ export function mergeQueryLines(
 	}
 
 	// a stable sort keeps the source's order for lines sharing a time
-	merged.sort((a, b) => (a.nanos === b.nanos ? 0 : a.nanos > b.nanos ? -1 : 1))
+	merged.sort((a, b) =>
+		a.nanos === b.nanos ? 0 : past(a.nanos, b.nanos) ? 1 : -1,
+	)
 
 	return merged.map((m) => m.line)
 }
