@@ -73,6 +73,8 @@ func (m *Manager) UpdateGroup(ctx context.Context, id xid.ID, inp variable.Group
 		return err
 	}
 
+	inp = inp.Trimmed()
+
 	g, err := m.db.FetchVariableGroup(ctx, id, organizationID)
 	if err != nil {
 		return err

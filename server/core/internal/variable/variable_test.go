@@ -93,6 +93,7 @@ func Test_NewGroup(t *testing.T) {
 	assert.Equal(t, "org", g.OrganizationID)
 	assert.Equal(t, "Environment", g.GroupName)
 	assert.Equal(t, "green", g.Color)
+	assert.Equal(t, "Prod", NewGroup(GroupCreateInput{GroupName: " Prod\t", Color: "green"}, "org", "user").GroupName)
 	assert.Equal(t, null.StringFrom("user"), g.CreatedBy)
 	assert.False(t, g.Builtin)
 }
@@ -131,6 +132,20 @@ func Test_GroupCreateInput_Validate(t *testing.T) {
 			Input: GroupCreateInput{Color: "green"},
 			Err:   ErrInvalidGroupName,
 		},
+		"Name of white space only": {
+			Input: GroupCreateInput{GroupName: " \t\n ", Color: "green"},
+			Err:   ErrInvalidGroupName,
+		},
+		"Name over the length limit": {
+			Input: GroupCreateInput{GroupName: strings.Repeat("a", _maxNameLength+1), Color: "green"},
+			Err:   ErrGroupNameTooLong,
+		},
+		"Name at the length limit": {
+			Input: GroupCreateInput{GroupName: strings.Repeat("é", _maxNameLength), Color: "green"},
+		},
+		"Name at the limit once trimmed": {
+			Input: GroupCreateInput{GroupName: " " + strings.Repeat("a", _maxNameLength) + " ", Color: "green"},
+		},
 		"Off-palette colour": {
 			Input: GroupCreateInput{GroupName: "Environment", Color: "#22c55e"},
 			Err:   ErrInvalidGroupColor,
@@ -163,6 +178,14 @@ func Test_GroupUpdateInput_Validate(t *testing.T) {
 			Input: GroupUpdateInput{GroupName: null.StringFrom("")},
 			Err:   ErrInvalidGroupName,
 		},
+		"Name of white space only": {
+			Input: GroupUpdateInput{GroupName: null.StringFrom("   ")},
+			Err:   ErrInvalidGroupName,
+		},
+		"Name over the length limit": {
+			Input: GroupUpdateInput{GroupName: null.StringFrom(strings.Repeat("é", _maxNameLength+1))},
+			Err:   ErrGroupNameTooLong,
+		},
 		"Off-palette colour": {
 			Input: GroupUpdateInput{Color: null.StringFrom("#22c55e")},
 			Err:   ErrInvalidGroupColor,
@@ -180,6 +203,32 @@ func Test_GroupUpdateInput_Validate(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, c.Err, c.Input.Validate())
+		})
+	}
+}
+
+func Test_GroupUpdateInput_Trimmed(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Input GroupUpdateInput
+		Exp   GroupUpdateInput
+	}{
+		"Name unset": {
+			Input: GroupUpdateInput{Color: null.StringFrom("green")},
+			Exp:   GroupUpdateInput{Color: null.StringFrom("green")},
+		},
+		"Name with outer white space": {
+			Input: GroupUpdateInput{GroupName: null.StringFrom(" Prod\n"), Color: null.StringFrom("green")},
+			Exp:   GroupUpdateInput{GroupName: null.StringFrom("Prod"), Color: null.StringFrom("green")},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Exp, c.Input.Trimmed())
 		})
 	}
 }
@@ -215,6 +264,7 @@ func Test_NewVariable(t *testing.T) {
 	assert.Equal(t, groupID, v.GroupID)
 	assert.Equal(t, "region", v.Key)
 	assert.Equal(t, "Region", v.Name)
+	assert.Equal(t, "Region", NewVariable(Input{Name: " Region\t"}, "org", "user").Name)
 	assert.Equal(t, null.StringFrom("Cloud region"), v.Description)
 	assert.Equal(t, TypeList, v.Type)
 	assert.Equal(t, null.StringFrom("user"), v.CreatedBy)
@@ -534,9 +584,34 @@ func Test_Input_Validate(t *testing.T) {
 			Input: with(func(vi *Input) { vi.Key = "Region" }),
 			Err:   ErrInvalidKey,
 		},
+		"Key over the length limit": {
+			Input: with(func(vi *Input) { vi.Key = strings.Repeat("a", _maxNameLength+1) }),
+			Err:   ErrKeyTooLong,
+		},
+		"Key at the length limit": {
+			Input: with(func(vi *Input) { vi.Key = strings.Repeat("a", _maxNameLength) }),
+		},
 		"Empty name": {
 			Input: with(func(vi *Input) { vi.Name = "" }),
 			Err:   ErrInvalidName,
+		},
+		"Name of white space only": {
+			Input: with(func(vi *Input) { vi.Name = " \t\n " }),
+			Err:   ErrInvalidName,
+		},
+		"Name over the length limit": {
+			Input: with(func(vi *Input) { vi.Name = strings.Repeat("a", _maxNameLength+1) }),
+			Err:   ErrNameTooLong,
+		},
+		"Name at the length limit": {
+			Input: with(func(vi *Input) { vi.Name = strings.Repeat("é", _maxNameLength) }),
+		},
+		"Description over the length limit": {
+			Input: with(func(vi *Input) { vi.Description = null.StringFrom(strings.Repeat("a", _maxDescriptionLength+1)) }),
+			Err:   ErrDescriptionTooLong,
+		},
+		"Description at the length limit": {
+			Input: with(func(vi *Input) { vi.Description = null.StringFrom(strings.Repeat("a", _maxDescriptionLength)) }),
 		},
 		"Unknown type": {
 			Input: with(func(vi *Input) { vi.Type = "date" }),
