@@ -24,7 +24,7 @@ name: oxynote-e2e-dev
 
 services:
   caddy:
-    image: caddy:2.11.6-alpine
+    image: caddy:2.11.7-alpine
     volumes:
       - ../docker/Caddyfile:/etc/caddy/Caddyfile
     ports:
