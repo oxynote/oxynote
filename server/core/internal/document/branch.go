@@ -2,11 +2,10 @@ package document
 
 import (
 	"net/http"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/rs/xid"
 )
 
@@ -43,19 +42,10 @@ var (
 	ErrBranchProtected = errutil.New(http.StatusForbidden, "document.branch_protected", "a protected branch cannot be changed")
 )
 
-// parseBranchName returns the name without the white space around it. It
-// fails when nothing is left or when what is left is longer than the limit.
-func parseBranchName(name string) (string, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return "", ErrInvalidBranchName
-	}
-
-	if utf8.RuneCountInString(name) > _maxBranchNameLength {
-		return "", ErrBranchNameTooLong
-	}
-
-	return name, nil
+// validateBranchName reports whether a trimmed branch name is neither
+// empty nor longer than the limit.
+func validateBranchName(name string) error {
+	return strutil.ValidateName(name, _maxBranchNameLength, ErrInvalidBranchName, ErrBranchNameTooLong)
 }
 
 // allowsBranchRename reports whether the branch may take the given name.

@@ -58,12 +58,11 @@ func (h *Handler) CreateDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := input.Validate(); err != nil {
+	ds, err := datasourceCore.NewDataSource(input, session.ActiveOrganizationID)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
-
-	ds := datasourceCore.NewDataSource(input, session.ActiveOrganizationID)
 
 	status, err := h.runners.Runner(*ds).TestConnection(r.Context())
 	if err != nil {
@@ -214,32 +213,33 @@ func (h *Handler) UpdateDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = ds.ApplyUpdate(input); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	status, err := h.runners.Runner(*ds).TestConnection(r.Context())
+	nds, err := ds.ApplyUpdate(input)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	ds.Status = status
-
-	if err := ds.Status.Error(); err != nil {
+	status, err := h.runners.Runner(nds).TestConnection(r.Context())
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := h.db.UpdateDataSource(r.Context(), ds); err != nil {
+	nds.Status = status
+
+	if err := nds.Status.Error(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	h.runners.Evict(ds.ID)
+	if err := h.db.UpdateDataSource(r.Context(), &nds); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
 
-	res, rerr := newDataSourceResponse(ds)
+	h.runners.Evict(nds.ID)
+
+	res, rerr := newDataSourceResponse(&nds)
 	if rerr != nil {
 		httpserver.RespondError(h.log, w, rerr)
 		return

@@ -16,6 +16,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/sliceutil"
+	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 	"github.com/shopspring/decimal"
@@ -238,16 +239,24 @@ type Group struct {
 	CreatedBy null.String `json:"createdBy" db:"fk_created_by"`
 }
 
-// NewGroup creates a fresh instance of Group from the given input.
-func NewGroup(inp GroupCreateInput, organizationID, userID string) Group {
+// NewGroup creates a fresh instance of Group from the given input. The
+// name is kept without the white space around it. It fails on an input
+// Validate refuses.
+func NewGroup(inp GroupCreateInput, organizationID, userID string) (Group, error) {
+	inp = inp.sanitize()
+
+	if err := inp.Validate(); err != nil {
+		return Group{}, err
+	}
+
 	return Group{
 		ID:             xid.New(),
 		OrganizationID: organizationID,
-		GroupName:      strings.TrimSpace(inp.GroupName),
+		GroupName:      inp.GroupName,
 		Color:          inp.Color,
 		CreatedAt:      timeutil.Now(),
 		CreatedBy:      null.StringFrom(userID),
-	}
+	}, nil
 }
 
 // AllowsChange reports whether the group can be renamed, recoloured,
@@ -260,6 +269,27 @@ func (g Group) AllowsChange() error {
 	return nil
 }
 
+// ApplyUpdate returns the group renamed and/or recoloured as the input
+// describes. A new name is kept without the white space around it. It
+// fails on an input Validate refuses. The receiver is left untouched.
+func (g Group) ApplyUpdate(inp GroupUpdateInput) (Group, error) {
+	inp = inp.sanitize()
+
+	if err := inp.Validate(); err != nil {
+		return Group{}, err
+	}
+
+	if inp.GroupName.Valid {
+		g.GroupName = inp.GroupName.String
+	}
+
+	if inp.Color.Valid {
+		g.Color = inp.Color.String
+	}
+
+	return g, nil
+}
+
 // GroupCreateInput is the input for creating a group.
 type GroupCreateInput struct {
 	// GroupName specifies the display name of the group.
@@ -270,32 +300,27 @@ type GroupCreateInput struct {
 	Color string `json:"color"`
 }
 
-// Validate reports whether the input can become a group.
+// Validate reports whether the input, once sanitized, can become a group.
 func (gci GroupCreateInput) Validate() error {
-	if err := validateGroupName(gci.GroupName); err != nil {
+	sanitized := gci.sanitize()
+
+	if err := validateGroupName(sanitized.GroupName); err != nil {
 		return err
 	}
 
-	if !tag.ValidColor(gci.Color) {
+	if !tag.ValidColor(sanitized.Color) {
 		return ErrInvalidGroupColor
 	}
 
 	return nil
 }
 
-// validateGroupName reports whether the name, once the white space around
-// it is trimmed, is neither empty nor longer than _maxNameLength.
-func validateGroupName(name string) error {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return ErrInvalidGroupName
-	}
+// sanitize returns the input with the white space around its name
+// removed.
+func (gci GroupCreateInput) sanitize() GroupCreateInput {
+	gci.GroupName = strings.TrimSpace(gci.GroupName)
 
-	if utf8.RuneCountInString(name) > _maxNameLength {
-		return ErrGroupNameTooLong
-	}
-
-	return nil
+	return gci
 }
 
 // GroupUpdateInput is the input for renaming or recolouring a group. A
@@ -308,29 +333,32 @@ type GroupUpdateInput struct {
 	Color null.String `json:"color"`
 }
 
-// Validate reports whether the input changes a group: at least one field
-// has to be set, and a set field is held to the same rules as on creation.
+// Validate reports whether the input, once sanitized, changes a group: at
+// least one field has to be set, and a set field is held to the same rules
+// as on creation.
 func (gui GroupUpdateInput) Validate() error {
-	if !gui.GroupName.Valid && !gui.Color.Valid {
+	sanitized := gui.sanitize()
+
+	if !sanitized.GroupName.Valid && !sanitized.Color.Valid {
 		return ErrEmptyGroupUpdate
 	}
 
-	if gui.GroupName.Valid {
-		if err := validateGroupName(gui.GroupName.String); err != nil {
+	if sanitized.GroupName.Valid {
+		if err := validateGroupName(sanitized.GroupName.String); err != nil {
 			return err
 		}
 	}
 
-	if gui.Color.Valid && !tag.ValidColor(gui.Color.String) {
+	if sanitized.Color.Valid && !tag.ValidColor(sanitized.Color.String) {
 		return ErrInvalidGroupColor
 	}
 
 	return nil
 }
 
-// Trimmed returns the input with the white space around the group name
+// sanitize returns the input with the white space around its name
 // removed.
-func (gui GroupUpdateInput) Trimmed() GroupUpdateInput {
+func (gui GroupUpdateInput) sanitize() GroupUpdateInput {
 	if gui.GroupName.Valid {
 		gui.GroupName = null.StringFrom(strings.TrimSpace(gui.GroupName.String))
 	}
@@ -396,10 +424,16 @@ type Variable struct {
 }
 
 // NewVariable creates a fresh instance of Variable from the given input,
-// with its options in order. The input is expected to be valid. Every
-// option gets a fresh id: an id named by the input could belong to
-// another variable.
-func NewVariable(inp Input, organizationID, userID string) Variable {
+// with its options in order. The name is kept without the white space
+// around it. It fails on an input Validate refuses. Every option gets a
+// fresh id: an id named by the input could belong to another variable.
+func NewVariable(inp Input, organizationID, userID string) (Variable, error) {
+	inp = inp.sanitize()
+
+	if err := inp.Validate(); err != nil {
+		return Variable{}, err
+	}
+
 	v := Variable{
 		ID:             xid.New(),
 		OrganizationID: organizationID,
@@ -413,7 +447,7 @@ func NewVariable(inp Input, organizationID, userID string) Variable {
 		inp.Options[i].ID = null.Value[xid.ID]{}
 	}
 
-	return v.apply(inp)
+	return v.apply(inp), nil
 }
 
 // AllowsChange reports whether anything but the default value of the
@@ -426,10 +460,18 @@ func (v Variable) AllowsChange() error {
 	return nil
 }
 
-// Apply returns the variable as the input describes it. An option keeps
-// its id when the input names it; naming an option the variable does not
-// have is refused. The receiver is left untouched.
-func (v Variable) Apply(inp Input) (Variable, error) {
+// ApplyUpdate returns the variable as the input describes it. The name is
+// kept without the white space around it. It fails on an input Validate
+// refuses. An option keeps its id when the input names it; naming an
+// option the variable does not have is refused. The receiver is left
+// untouched.
+func (v Variable) ApplyUpdate(inp Input) (Variable, error) {
+	inp = inp.sanitize()
+
+	if err := inp.Validate(); err != nil {
+		return Variable{}, err
+	}
+
 	for _, oi := range inp.Options {
 		if !oi.ID.Valid {
 			continue
@@ -448,7 +490,7 @@ func (v Variable) Apply(inp Input) (Variable, error) {
 func (v Variable) apply(inp Input) Variable {
 	v.GroupID = inp.GroupID
 	v.Key = inp.Key
-	v.Name = strings.TrimSpace(inp.Name)
+	v.Name = inp.Name
 	v.Description = inp.Description
 	v.Type = inp.Type
 	v.DefaultValue = inp.DefaultValue
@@ -502,10 +544,10 @@ func (v Variable) ValidateValue(value string) error {
 	return nil
 }
 
-// WithDefault returns the variable with the given default value. A list's
+// ApplyDefault returns the variable with the given default value. A list's
 // default is its first option, so the chosen one moves to the top. The
 // receiver is left untouched.
-func (v Variable) WithDefault(value string) (Variable, error) {
+func (v Variable) ApplyDefault(value string) (Variable, error) {
 	if err := v.ValidateValue(value); err != nil {
 		return Variable{}, err
 	}
@@ -555,66 +597,63 @@ type Input struct {
 	Options []OptionInput `json:"options"`
 }
 
-// Validate reports whether the input can become a variable. The key, name
-// and description are held to their length limits.
+// Validate reports whether the input, once sanitized, can become a
+// variable. The key, name and description are held to their length limits.
 func (vi Input) Validate() error {
-	if !_keyPattern.MatchString(vi.Key) {
+	sanitized := vi.sanitize()
+
+	if !_keyPattern.MatchString(sanitized.Key) {
 		return ErrInvalidKey
 	}
 
-	if utf8.RuneCountInString(vi.Key) > _maxNameLength {
+	if utf8.RuneCountInString(sanitized.Key) > _maxNameLength {
 		return ErrKeyTooLong
 	}
 
-	name := strings.TrimSpace(vi.Name)
-	if name == "" {
-		return ErrInvalidName
-	}
-
-	if utf8.RuneCountInString(name) > _maxNameLength {
-		return ErrNameTooLong
-	}
-
-	if vi.Description.Valid && utf8.RuneCountInString(vi.Description.String) > _maxDescriptionLength {
-		return ErrDescriptionTooLong
-	}
-
-	if err := vi.Type.Validate(); err != nil {
+	if err := strutil.ValidateName(sanitized.Name, _maxNameLength, ErrInvalidName, ErrNameTooLong); err != nil {
 		return err
 	}
 
-	if vi.Type != TypeList {
-		if len(vi.Options) > 0 {
+	if sanitized.Description.Valid && utf8.RuneCountInString(sanitized.Description.String) > _maxDescriptionLength {
+		return ErrDescriptionTooLong
+	}
+
+	if err := sanitized.Type.Validate(); err != nil {
+		return err
+	}
+
+	if sanitized.Type != TypeList {
+		if len(sanitized.Options) > 0 {
 			return ErrUnexpectedOptions
 		}
 
-		if vi.Type == TypeTimeRange && !vi.DefaultValue.Valid {
+		if sanitized.Type == TypeTimeRange && !sanitized.DefaultValue.Valid {
 			return ErrMissingDefault
 		}
 
-		if !vi.DefaultValue.Valid {
+		if !sanitized.DefaultValue.Valid {
 			return nil
 		}
 
-		return Variable{Type: vi.Type}.ValidateValue(vi.DefaultValue.String)
+		return Variable{Type: sanitized.Type}.ValidateValue(sanitized.DefaultValue.String)
 	}
 
-	if len(vi.Options) == 0 {
+	if len(sanitized.Options) == 0 {
 		return ErrMissingOptions
 	}
 
-	if len(vi.Options) > _maxOptions {
+	if len(sanitized.Options) > _maxOptions {
 		return ErrTooManyOptions
 	}
 
-	if vi.DefaultValue.Valid {
+	if sanitized.DefaultValue.Valid {
 		return ErrUnexpectedDefault
 	}
 
-	seenIDs := make(map[xid.ID]bool, len(vi.Options))
-	seenValues := make(map[string]bool, len(vi.Options))
+	seenIDs := make(map[xid.ID]bool, len(sanitized.Options))
+	seenValues := make(map[string]bool, len(sanitized.Options))
 
-	for _, oi := range vi.Options {
+	for _, oi := range sanitized.Options {
 		if oi.Value == "" {
 			return ErrInvalidOption
 		}
@@ -641,6 +680,14 @@ func (vi Input) Validate() error {
 	}
 
 	return nil
+}
+
+// sanitize returns the input with the white space around its name
+// removed.
+func (vi Input) sanitize() Input {
+	vi.Name = strings.TrimSpace(vi.Name)
+
+	return vi
 }
 
 // MoveInput is the input for moving a variable to another
@@ -808,4 +855,10 @@ func PlaceID(ids []xid.ID, id xid.ID, index int) ([]xid.ID, error) {
 	}
 
 	return slices.Insert(placed, index, id), nil
+}
+
+// validateGroupName reports whether a trimmed group name is neither empty
+// nor too long.
+func validateGroupName(name string) error {
+	return strutil.ValidateName(name, _maxNameLength, ErrInvalidGroupName, ErrGroupNameTooLong)
 }

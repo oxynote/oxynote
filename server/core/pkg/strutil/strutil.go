@@ -1,6 +1,9 @@
 package strutil
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // Ellipsize returns at most maxLen runes of s, appending a single
 // ellipsis rune when the input was longer. A non-positive maxLen
@@ -25,4 +28,19 @@ func Preview(s string, maxLen int) string {
 	s = strings.TrimSpace(s)
 
 	return Ellipsize(s, maxLen)
+}
+
+// ValidateName reports whether a trimmed name is usable: it fails with
+// emptyErr when the name is empty, and with longErr when it holds more
+// than maxLen runes.
+func ValidateName(name string, maxLen int, emptyErr, longErr error) error {
+	if name == "" {
+		return emptyErr
+	}
+
+	if utf8.RuneCountInString(name) > maxLen {
+		return longErr
+	}
+
+	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"maps"
 	"math/rand"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/guregu/null/v5"
@@ -162,8 +163,9 @@ func (d Document) MergeBranch(source Branch, mergedBy string) Document {
 // The name is kept without the white space around it, and a name that is
 // empty or too long fails.
 func (d Document) Fork(branchName, createdBy string) (Document, error) {
-	branchName, err := parseBranchName(branchName)
-	if err != nil {
+	branchName = strings.TrimSpace(branchName)
+
+	if err := validateBranchName(branchName); err != nil {
 		return Document{}, err
 	}
 
@@ -232,28 +234,25 @@ type BranchSummary struct {
 // status updated. It does not modify content or the history. A new name is
 // kept without the white space around it. It fails when the name is empty or
 // too long, or when the branch may not be renamed.
-func (d Document) ApplyBranchUpdate(name null.String, protected null.Bool, updatedBy string) (Document, error) {
-	if name.Valid {
-		bname, err := parseBranchName(name.String)
-		if err != nil {
-			return Document{}, err
-		}
+func (d Document) ApplyBranchUpdate(inp BranchUpdateInput, updatedBy string) (Document, error) {
+	inp = inp.sanitize()
 
-		name = null.StringFrom(bname)
+	if err := inp.Validate(); err != nil {
+		return Document{}, err
 	}
 
-	if err := d.allowsBranchRename(name); err != nil {
+	if err := d.allowsBranchRename(inp.Name); err != nil {
 		return Document{}, err
 	}
 
 	nd := d
 
-	if name.Valid {
-		nd.BranchName = name.String
+	if inp.Name.Valid {
+		nd.BranchName = inp.Name.String
 	}
 
-	if protected.Valid {
-		nd.Protected = protected.Bool
+	if inp.Protected.Valid {
+		nd.Protected = inp.Protected.Bool
 	}
 
 	nd.UpdatedAt = timeutil.Now()
@@ -367,6 +366,38 @@ func (ui UpdateInput) AddsMaintainers(stored []string) bool {
 	}
 
 	return false
+}
+
+// BranchUpdateInput is the input for renaming a branch or changing its
+// protection. A field left unset keeps its current value.
+type BranchUpdateInput struct {
+	// Name is the new name of the branch.
+	Name null.String `json:"name"`
+
+	// Protected is the new protection status of the branch.
+	Protected null.Bool `json:"protected"`
+}
+
+// Validate reports whether a set name, once trimmed, is neither empty nor
+// too long.
+func (bui BranchUpdateInput) Validate() error {
+	sanitized := bui.sanitize()
+
+	if sanitized.Name.Valid {
+		return validateBranchName(sanitized.Name.String)
+	}
+
+	return nil
+}
+
+// sanitize returns the input with the white space around its name
+// removed.
+func (bui BranchUpdateInput) sanitize() BranchUpdateInput {
+	if bui.Name.Valid {
+		bui.Name = null.StringFrom(strings.TrimSpace(bui.Name.String))
+	}
+
+	return bui
 }
 
 // NewWelcomeDocument creates the document a fresh organization starts

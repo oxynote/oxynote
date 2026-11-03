@@ -942,7 +942,21 @@ func (i *input) CreateTag(t tag.Tag) error {
 
 // UpdateTag renames and/or recolours the tag the id names.
 func (i *input) UpdateTag(tagID xid.ID, inp tag.UpdateInput) error {
-	if err := i.db.UpdateTag(i.ctx, i.orgID, tagID, inp); err != nil {
+	t, err := i.db.FetchTag(i.ctx, tagID, i.orgID)
+	if err != nil {
+		if errutil.IsNotFound(err) {
+			return fmt.Errorf("tag %s: %w", tagID, ErrUnknownTag)
+		}
+
+		return err
+	}
+
+	nt, err := t.ApplyUpdate(inp)
+	if err != nil {
+		return err
+	}
+
+	if err = i.db.UpdateTag(i.ctx, nt); err != nil {
 		if errutil.IsNotFound(err) {
 			return fmt.Errorf("tag %s: %w", tagID, ErrUnknownTag)
 		}
@@ -1295,6 +1309,9 @@ type TagDB interface {
 	// given user hides it. Used by list_tags and every tag lookup.
 	FetchTagTree(ctx context.Context, organizationID, userID string) (tag.Summaries, error)
 
+	// FetchTag should return one tag of the org. Used by update_tag.
+	FetchTag(ctx context.Context, id xid.ID, organizationID string) (*tag.Tag, error)
+
 	// FetchBranchTags should return the tags a document's branch carries
 	// in the tags' display order. Used by get_document.
 	FetchBranchTags(ctx context.Context, organizationID string, documentID, branchID xid.ID) ([]tag.Tag, error)
@@ -1303,9 +1320,9 @@ type TagDB interface {
 	// refusing a name the org already uses. Used by create_tag.
 	InsertTag(ctx context.Context, t tag.Tag) error
 
-	// UpdateTag should rename and/or recolour a tag within the org. Used
-	// by update_tag.
-	UpdateTag(ctx context.Context, organizationID string, id xid.ID, inp tag.UpdateInput) error
+	// UpdateTag should rewrite a tag's name and colour within its org.
+	// Used by update_tag.
+	UpdateTag(ctx context.Context, t tag.Tag) error
 
 	// DeleteTag should remove a tag and every assignment of it. Used by
 	// delete_tag.

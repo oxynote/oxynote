@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"strconv"
 	"testing"
 	"time"
@@ -69,6 +70,16 @@ func prepTags(t *testing.T, db *DB, count int, fn func(int, *tag.Tag)) []tag.Tag
 	}
 
 	return res
+}
+
+// prepNewTag builds a tag the way the handlers do, without storing it.
+func prepNewTag(t *testing.T, name, organizationID, userID string) tag.Tag {
+	t.Helper()
+
+	tg, err := tag.NewTag(tag.CreateInput{TagName: name, Color: "blue"}, organizationID, userID)
+	require.NoError(t, err)
+
+	return tg
 }
 
 func prepBranchTags(t *testing.T, db *DB, organizationID string, branchID xid.ID, tagIDs ...xid.ID) {
@@ -206,21 +217,13 @@ func Test_agent_InsertTag(t *testing.T) {
 		"Cancelled context": func(t *testing.T, db *DB) tcase {
 			return tcase{
 				CancelledContext: true,
-				Tag: tag.NewTag(
-					tag.CreateInput{TagName: "Release", Color: "blue"},
-					prepOrganizations(t, db, 1)[0],
-					prepUsers(t, db, 1)[0],
-				),
-				Err: assert.AnError,
+				Tag:              prepNewTag(t, "Release", prepOrganizations(t, db, 1)[0], prepUsers(t, db, 1)[0]),
+				Err:              assert.AnError,
 			}
 		},
 		"First tag starts at zero": func(t *testing.T, db *DB) tcase {
 			return tcase{
-				Tag: tag.NewTag(
-					tag.CreateInput{TagName: "Release", Color: "blue"},
-					prepOrganizations(t, db, 1)[0],
-					prepUsers(t, db, 1)[0],
-				),
+				Tag: prepNewTag(t, "Release", prepOrganizations(t, db, 1)[0], prepUsers(t, db, 1)[0]),
 			}
 		},
 		"Placed after the highest index": func(t *testing.T, db *DB) tcase {
@@ -229,11 +232,7 @@ func Test_agent_InsertTag(t *testing.T) {
 			})[0]
 
 			return tcase{
-				Tag: tag.NewTag(
-					tag.CreateInput{TagName: "Release", Color: "blue"},
-					existing.OrganizationID,
-					prepUsers(t, db, 1)[0],
-				),
+				Tag:       prepNewTag(t, "Release", existing.OrganizationID, prepUsers(t, db, 1)[0]),
 				SortIndex: 5,
 			}
 		},
@@ -241,11 +240,7 @@ func Test_agent_InsertTag(t *testing.T) {
 			existing := prepTags(t, db, 1, nil)[0]
 
 			return tcase{
-				Tag: tag.NewTag(
-					tag.CreateInput{TagName: existing.TagName, Color: "blue"},
-					existing.OrganizationID,
-					prepUsers(t, db, 1)[0],
-				),
+				Tag: prepNewTag(t, existing.TagName, existing.OrganizationID, prepUsers(t, db, 1)[0]),
 				Err: tag.ErrDuplicateTagName,
 			}
 		},
@@ -253,11 +248,7 @@ func Test_agent_InsertTag(t *testing.T) {
 			existing := prepTags(t, db, 1, nil)[0]
 
 			return tcase{
-				Tag: tag.NewTag(
-					tag.CreateInput{TagName: existing.TagName, Color: "blue"},
-					prepOrganizations(t, db, 1)[0],
-					prepUsers(t, db, 1)[0],
-				),
+				Tag: prepNewTag(t, existing.TagName, prepOrganizations(t, db, 1)[0], prepUsers(t, db, 1)[0]),
 			}
 		},
 	}
@@ -291,6 +282,82 @@ func Test_agent_InsertTag(t *testing.T) {
 			var index int
 			require.NoError(t, sqlx.Get(db.sql, &index, q, args...))
 			assert.Equal(t, c.SortIndex, index)
+		})
+	}
+}
+
+func Test_agent_FetchTag(t *testing.T) {
+	type tcase struct {
+		CancelledContext bool
+		ID               xid.ID
+		OrganizationID   string
+		Result           *tag.Tag
+		Err              error
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(t *testing.T, db *DB) tcase {
+			tg := prepTags(t, db, 1, nil)[0]
+
+			return tcase{
+				CancelledContext: true,
+				ID:               tg.ID,
+				OrganizationID:   tg.OrganizationID,
+				Err:              assert.AnError,
+			}
+		},
+		"Unknown tag": func(t *testing.T, db *DB) tcase {
+			tg := prepTags(t, db, 1, nil)[0]
+
+			return tcase{
+				ID:             xid.New(),
+				OrganizationID: tg.OrganizationID,
+				Err:            sql.ErrNoRows,
+			}
+		},
+		"Tag of another organization": func(t *testing.T, db *DB) tcase {
+			tg := prepTags(t, db, 1, nil)[0]
+
+			return tcase{
+				ID:             tg.ID,
+				OrganizationID: prepOrganizations(t, db, 1)[0],
+				Err:            sql.ErrNoRows,
+			}
+		},
+		"Successful fetch": func(t *testing.T, db *DB) tcase {
+			tags := prepTags(t, db, 2, nil)
+
+			return tcase{
+				ID:             tags[1].ID,
+				OrganizationID: tags[1].OrganizationID,
+				Result:         &tags[1],
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchTag(ctx, c.ID, c.OrganizationID)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, res)
+				return
+			}
+
+			testutil.AssertFilterEqual(t, c.Result, res, time.Time{})
 		})
 	}
 }
@@ -735,9 +802,8 @@ func Test_agent_UpdateTagTree(t *testing.T) {
 func Test_agent_UpdateTag(t *testing.T) {
 	type tcase struct {
 		CancelledContext bool
-		OrganizationID   string
 		Tag              tag.Tag
-		Input            tag.UpdateInput
+		Update           tag.Tag
 		Name             string
 		Color            string
 		Err              error
@@ -747,82 +813,59 @@ func Test_agent_UpdateTag(t *testing.T) {
 		"Cancelled context": func(t *testing.T, db *DB) tcase {
 			tg := prepTags(t, db, 1, nil)[0]
 
+			upd := tg
+			upd.TagName = "Release"
+
 			return tcase{
 				CancelledContext: true,
-				OrganizationID:   tg.OrganizationID,
 				Tag:              tg,
-				Input:            tag.UpdateInput{TagName: null.StringFrom("Release")},
+				Update:           upd,
 				Name:             tg.TagName,
 				Color:            tg.Color,
 				Err:              assert.AnError,
 			}
 		},
-		"Nothing to set": func(t *testing.T, db *DB) tcase {
-			tg := prepTags(t, db, 1, nil)[0]
-
-			return tcase{
-				OrganizationID: tg.OrganizationID,
-				Tag:            tg,
-				Name:           tg.TagName,
-				Color:          tg.Color,
-				Err:            tag.ErrEmptyTagUpdate,
-			}
-		},
 		"Tag of another organization": func(t *testing.T, db *DB) tcase {
 			tg := prepTags(t, db, 1, nil)[0]
 
+			upd := tg
+			upd.OrganizationID = prepOrganizations(t, db, 1)[0]
+			upd.TagName = "Release"
+
 			return tcase{
-				OrganizationID: prepOrganizations(t, db, 1)[0],
-				Tag:            tg,
-				Input:          tag.UpdateInput{TagName: null.StringFrom("Release")},
-				Name:           tg.TagName,
-				Color:          tg.Color,
-				Err:            errutil.ErrNotFound,
+				Tag:    tg,
+				Update: upd,
+				Name:   tg.TagName,
+				Color:  tg.Color,
+				Err:    errutil.ErrNotFound,
 			}
 		},
 		"Duplicate name in the organization": func(t *testing.T, db *DB) tcase {
 			tags := prepTags(t, db, 2, nil)
 
-			return tcase{
-				OrganizationID: tags[0].OrganizationID,
-				Tag:            tags[0],
-				Input:          tag.UpdateInput{TagName: null.StringFrom(tags[1].TagName)},
-				Name:           tags[0].TagName,
-				Color:          tags[0].Color,
-				Err:            tag.ErrDuplicateTagName,
-			}
-		},
-		"Renames only": func(t *testing.T, db *DB) tcase {
-			tg := prepTags(t, db, 1, nil)[0]
+			upd := tags[0]
+			upd.TagName = tags[1].TagName
 
 			return tcase{
-				OrganizationID: tg.OrganizationID,
-				Tag:            tg,
-				Input:          tag.UpdateInput{TagName: null.StringFrom("Release")},
-				Name:           "Release",
-				Color:          tg.Color,
-			}
-		},
-		"Recolours only": func(t *testing.T, db *DB) tcase {
-			tg := prepTags(t, db, 1, nil)[0]
-
-			return tcase{
-				OrganizationID: tg.OrganizationID,
-				Tag:            tg,
-				Input:          tag.UpdateInput{Color: null.StringFrom("blue")},
-				Name:           tg.TagName,
-				Color:          "blue",
+				Tag:    tags[0],
+				Update: upd,
+				Name:   tags[0].TagName,
+				Color:  tags[0].Color,
+				Err:    tag.ErrDuplicateTagName,
 			}
 		},
 		"Renames and recolours": func(t *testing.T, db *DB) tcase {
 			tg := prepTags(t, db, 1, nil)[0]
 
+			upd := tg
+			upd.TagName = "Release"
+			upd.Color = "blue"
+
 			return tcase{
-				OrganizationID: tg.OrganizationID,
-				Tag:            tg,
-				Input:          tag.UpdateInput{TagName: null.StringFrom("Release"), Color: null.StringFrom("blue")},
-				Name:           "Release",
-				Color:          "blue",
+				Tag:    tg,
+				Update: upd,
+				Name:   "Release",
+				Color:  "blue",
 			}
 		},
 	}
@@ -841,7 +884,7 @@ func Test_agent_UpdateTag(t *testing.T) {
 				cancel()
 			}
 
-			err := db.UpdateTag(ctx, c.OrganizationID, c.Tag.ID, c.Input)
+			err := db.UpdateTag(ctx, c.Update)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			q, args := db.builder.Select("tag_name", "color").

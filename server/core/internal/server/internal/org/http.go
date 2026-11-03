@@ -89,7 +89,14 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 	// nicety, and an organization without it is still fully initialized.
 	var metricsDataSourceID null.Value[xid.ID]
 
-	for _, ds := range datasource.NewDemoDataSources(id) {
+	demoDataSources, err := datasource.NewDemoDataSources(id)
+	if err != nil {
+		// NOCOV: the demo inputs are constants that pass Validate.
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	for _, ds := range demoDataSources {
 		if err = h.db.InsertDataSource(r.Context(), ds); err != nil {
 			h.log.Error(
 				"cannot insert demo data source",
@@ -134,7 +141,12 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 	var productionID xid.ID
 
 	for i, inp := range tag.SeedTags() {
-		t := tag.NewTag(inp, id, members[0])
+		t, terr := tag.NewTag(inp, id, members[0])
+		if terr != nil {
+			// NOCOV: the seed tags are constants that pass Validate.
+			httpserver.RespondError(h.log, w, terr)
+			return
+		}
 
 		if i == 0 {
 			productionID = t.ID
