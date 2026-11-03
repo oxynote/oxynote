@@ -48,17 +48,17 @@ func (h *Handler) UpdateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		Protected null.Bool   `json:"protected"`
 	}
 
-	if err := httpserver.DecodeJSON(r, &ui); err != nil {
+	err = httpserver.DecodeJSON(r, &ui)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := doc.AllowsBranchRename(ui.Name); err != nil {
+	ndoc, err := doc.ApplyBranchUpdate(ui.Name, ui.Protected, session.UserID)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
-
-	ndoc := doc.ApplyBranchUpdate(ui.Name, ui.Protected, session.UserID)
 
 	var tx Tx
 
@@ -450,11 +450,6 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if inp.Branch == "" {
-		httpserver.RespondError(h.log, w, httpserver.ErrInvalidForm)
-		return
-	}
-
 	sourceDoc, err := h.db.FetchDocumentByBranchID(r.Context(), inp.SourceBranchID, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -466,7 +461,11 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newDoc := sourceDoc.Fork(inp.Branch, session.UserID)
+	newDoc, err := sourceDoc.Fork(inp.Branch, session.UserID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
 
 	var tx Tx
 
