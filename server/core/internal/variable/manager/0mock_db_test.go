@@ -66,7 +66,7 @@ var _ DB = &DBMock{}
 //			UpdateVariableDefaultFunc: func(ctx context.Context, v variable.Variable) error {
 //				panic("mock out the UpdateVariableDefault method")
 //			},
-//			UpdateVariableGroupFunc: func(ctx context.Context, organizationID string, id xid.ID, inp variable.GroupUpdateInput) error {
+//			UpdateVariableGroupFunc: func(ctx context.Context, g variable.Group) error {
 //				panic("mock out the UpdateVariableGroup method")
 //			},
 //			UpdateVariableGroupOrderFunc: func(ctx context.Context, organizationID string, ids []xid.ID) error {
@@ -131,7 +131,7 @@ type DBMock struct {
 	UpdateVariableDefaultFunc func(ctx context.Context, v variable.Variable) error
 
 	// UpdateVariableGroupFunc mocks the UpdateVariableGroup method.
-	UpdateVariableGroupFunc func(ctx context.Context, organizationID string, id xid.ID, inp variable.GroupUpdateInput) error
+	UpdateVariableGroupFunc func(ctx context.Context, g variable.Group) error
 
 	// UpdateVariableGroupOrderFunc mocks the UpdateVariableGroupOrder method.
 	UpdateVariableGroupOrderFunc func(ctx context.Context, organizationID string, ids []xid.ID) error
@@ -271,12 +271,8 @@ type DBMock struct {
 		UpdateVariableGroup []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
-			// ID is the id argument value.
-			ID xid.ID
-			// Inp is the inp argument value.
-			Inp variable.GroupUpdateInput
+			// G is the g argument value.
+			G variable.Group
 		}
 		// UpdateVariableGroupOrder holds details about calls to the UpdateVariableGroupOrder method.
 		UpdateVariableGroupOrder []struct {
@@ -960,17 +956,13 @@ func (mock *DBMock) UpdateVariableDefaultCalls() []struct {
 }
 
 // UpdateVariableGroup calls UpdateVariableGroupFunc.
-func (mock *DBMock) UpdateVariableGroup(ctx context.Context, organizationID string, id xid.ID, inp variable.GroupUpdateInput) error {
+func (mock *DBMock) UpdateVariableGroup(ctx context.Context, g variable.Group) error {
 	callInfo := struct {
-		Ctx            context.Context
-		OrganizationID string
-		ID             xid.ID
-		Inp            variable.GroupUpdateInput
+		Ctx context.Context
+		G   variable.Group
 	}{
-		Ctx:            ctx,
-		OrganizationID: organizationID,
-		ID:             id,
-		Inp:            inp,
+		Ctx: ctx,
+		G:   g,
 	}
 	mock.lockUpdateVariableGroup.Lock()
 	mock.calls.UpdateVariableGroup = append(mock.calls.UpdateVariableGroup, callInfo)
@@ -981,7 +973,7 @@ func (mock *DBMock) UpdateVariableGroup(ctx context.Context, organizationID stri
 		)
 		return errOut
 	}
-	return mock.UpdateVariableGroupFunc(ctx, organizationID, id, inp)
+	return mock.UpdateVariableGroupFunc(ctx, g)
 }
 
 // UpdateVariableGroupCalls gets all the calls that were made to UpdateVariableGroup.
@@ -989,16 +981,12 @@ func (mock *DBMock) UpdateVariableGroup(ctx context.Context, organizationID stri
 //
 //	len(mockedDB.UpdateVariableGroupCalls())
 func (mock *DBMock) UpdateVariableGroupCalls() []struct {
-	Ctx            context.Context
-	OrganizationID string
-	ID             xid.ID
-	Inp            variable.GroupUpdateInput
+	Ctx context.Context
+	G   variable.Group
 } {
 	var calls []struct {
-		Ctx            context.Context
-		OrganizationID string
-		ID             xid.ID
-		Inp            variable.GroupUpdateInput
+		Ctx context.Context
+		G   variable.Group
 	}
 	mock.lockUpdateVariableGroup.RLock()
 	calls = mock.calls.UpdateVariableGroup

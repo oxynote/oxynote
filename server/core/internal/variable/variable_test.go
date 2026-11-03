@@ -3,6 +3,7 @@ package variable
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -86,16 +87,43 @@ func Test_Type_UnmarshalText(t *testing.T) {
 func Test_NewGroup(t *testing.T) {
 	t.Parallel()
 
-	g := NewGroup(GroupCreateInput{GroupName: "Environment", Color: "green"}, "org", "user")
+	cc := map[string]struct {
+		Input  GroupCreateInput
+		Result Group
+		Err    error
+	}{
+		"Invalid input": {
+			Input: GroupCreateInput{Color: "green"},
+			Err:   ErrInvalidGroupName,
+		},
+		"Successful creation": {
+			Input: GroupCreateInput{GroupName: " Environment\t", Color: "green"},
+			Result: Group{
+				OrganizationID: "org",
+				GroupName:      "Environment",
+				Color:          "green",
+				CreatedBy:      null.StringFrom("user"),
+			},
+		},
+	}
 
-	assert.NotZero(t, g.ID)
-	assert.NotZero(t, g.CreatedAt)
-	assert.Equal(t, "org", g.OrganizationID)
-	assert.Equal(t, "Environment", g.GroupName)
-	assert.Equal(t, "green", g.Color)
-	assert.Equal(t, "Prod", NewGroup(GroupCreateInput{GroupName: " Prod\t", Color: "green"}, "org", "user").GroupName)
-	assert.Equal(t, null.StringFrom("user"), g.CreatedBy)
-	assert.False(t, g.Builtin)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := NewGroup(c.Input, "org", "user")
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.NotZero(t, res.ID)
+			assert.NotZero(t, res.CreatedAt)
+			testutil.AssertFilterEqual(t, c.Result, res, xid.ID{}, time.Time{})
+		})
+	}
 }
 
 func Test_Group_AllowsChange(t *testing.T) {
@@ -121,6 +149,60 @@ func Test_Group_AllowsChange(t *testing.T) {
 	}
 }
 
+func Test_Group_ApplyUpdate(t *testing.T) {
+	t.Parallel()
+
+	g := Group{ID: xid.New(), OrganizationID: "org", GroupName: "Environment", Color: "green", SortIndex: 2}
+
+	updated := func(name, color string) Group {
+		ng := g
+		ng.GroupName = name
+		ng.Color = color
+
+		return ng
+	}
+
+	cc := map[string]struct {
+		Input  GroupUpdateInput
+		Result Group
+		Err    error
+	}{
+		"Invalid input": {
+			Input: GroupUpdateInput{},
+			Err:   ErrEmptyGroupUpdate,
+		},
+		"Name only": {
+			Input:  GroupUpdateInput{GroupName: null.StringFrom(" Deploys ")},
+			Result: updated("Deploys", "green"),
+		},
+		"Colour only": {
+			Input:  GroupUpdateInput{Color: null.StringFrom("blue")},
+			Result: updated("Environment", "blue"),
+		},
+		"Both fields": {
+			Input:  GroupUpdateInput{GroupName: null.StringFrom("Deploys"), Color: null.StringFrom("blue")},
+			Result: updated("Deploys", "blue"),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := g.ApplyUpdate(c.Input)
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+			assert.Equal(t, "Environment", g.GroupName)
+		})
+	}
+}
+
 func Test_GroupCreateInput_Validate(t *testing.T) {
 	t.Parallel()
 
@@ -140,15 +222,15 @@ func Test_GroupCreateInput_Validate(t *testing.T) {
 			Input: GroupCreateInput{GroupName: strings.Repeat("a", _maxNameLength+1), Color: "green"},
 			Err:   ErrGroupNameTooLong,
 		},
+		"Off-palette colour": {
+			Input: GroupCreateInput{GroupName: "Environment", Color: "#22c55e"},
+			Err:   ErrInvalidGroupColor,
+		},
 		"Name at the length limit": {
 			Input: GroupCreateInput{GroupName: strings.Repeat("é", _maxNameLength), Color: "green"},
 		},
 		"Name at the limit once trimmed": {
 			Input: GroupCreateInput{GroupName: " " + strings.Repeat("a", _maxNameLength) + " ", Color: "green"},
-		},
-		"Off-palette colour": {
-			Input: GroupCreateInput{GroupName: "Environment", Color: "#22c55e"},
-			Err:   ErrInvalidGroupColor,
 		},
 		"Valid input": {
 			Input: GroupCreateInput{GroupName: "Environment", Color: "green"},
@@ -159,7 +241,33 @@ func Test_GroupCreateInput_Validate(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, c.Err, c.Input.Validate())
+			testutil.AssertEqualError(t, c.Err, c.Input.Validate())
+		})
+	}
+}
+
+func Test_GroupCreateInput_sanitize(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Input  GroupCreateInput
+		Result GroupCreateInput
+	}{
+		"Name without outer white space": {
+			Input:  GroupCreateInput{GroupName: "Environment", Color: "green"},
+			Result: GroupCreateInput{GroupName: "Environment", Color: "green"},
+		},
+		"Name with outer white space": {
+			Input:  GroupCreateInput{GroupName: " Environment\n", Color: "green"},
+			Result: GroupCreateInput{GroupName: "Environment", Color: "green"},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Input.sanitize())
 		})
 	}
 }
@@ -191,7 +299,7 @@ func Test_GroupUpdateInput_Validate(t *testing.T) {
 			Err:   ErrInvalidGroupColor,
 		},
 		"Name only": {
-			Input: GroupUpdateInput{GroupName: null.StringFrom("Environment")},
+			Input: GroupUpdateInput{GroupName: null.StringFrom(" Environment ")},
 		},
 		"Colour only": {
 			Input: GroupUpdateInput{Color: null.StringFrom("green")},
@@ -202,25 +310,25 @@ func Test_GroupUpdateInput_Validate(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, c.Err, c.Input.Validate())
+			testutil.AssertEqualError(t, c.Err, c.Input.Validate())
 		})
 	}
 }
 
-func Test_GroupUpdateInput_Trimmed(t *testing.T) {
+func Test_GroupUpdateInput_sanitize(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Input GroupUpdateInput
-		Exp   GroupUpdateInput
+		Input  GroupUpdateInput
+		Result GroupUpdateInput
 	}{
 		"Name unset": {
-			Input: GroupUpdateInput{Color: null.StringFrom("green")},
-			Exp:   GroupUpdateInput{Color: null.StringFrom("green")},
+			Input:  GroupUpdateInput{Color: null.StringFrom("green")},
+			Result: GroupUpdateInput{Color: null.StringFrom("green")},
 		},
 		"Name with outer white space": {
-			Input: GroupUpdateInput{GroupName: null.StringFrom(" Prod\n"), Color: null.StringFrom("green")},
-			Exp:   GroupUpdateInput{GroupName: null.StringFrom("Prod"), Color: null.StringFrom("green")},
+			Input:  GroupUpdateInput{GroupName: null.StringFrom(" Prod\n"), Color: null.StringFrom("green")},
+			Result: GroupUpdateInput{GroupName: null.StringFrom("Prod"), Color: null.StringFrom("green")},
 		},
 	}
 
@@ -228,7 +336,7 @@ func Test_GroupUpdateInput_Trimmed(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, c.Exp, c.Input.Trimmed())
+			assert.Equal(t, c.Result, c.Input.sanitize())
 		})
 	}
 }
@@ -243,7 +351,7 @@ func Test_NewVariable(t *testing.T) {
 	inp := Input{
 		GroupID:     groupID,
 		Key:         "region",
-		Name:        "Region",
+		Name:        " Region\t",
 		Description: null.StringFrom("Cloud region"),
 		Type:        TypeList,
 		Options: []OptionInput{
@@ -252,32 +360,62 @@ func Test_NewVariable(t *testing.T) {
 		},
 	}
 
-	v := NewVariable(inp, "org", "user")
+	cc := map[string]struct {
+		Input Input
+		Check func(t *testing.T, v Variable)
+		Err   error
+	}{
+		"Invalid input": {
+			Input: Input{Key: "region", Type: TypeText},
+			Err:   ErrInvalidName,
+		},
+		"Successful creation": {
+			Input: inp,
+			Check: func(t *testing.T, v Variable) {
+				t.Helper()
 
-	// an id named by the input is replaced, and the input left untouched.
-	assert.NotEqual(t, foreign, v.Options[0].ID)
-	assert.Equal(t, null.ValueFrom(foreign), inp.Options[0].ID)
+				// an id named by the input is replaced, and the input left untouched.
+				assert.NotEqual(t, foreign, v.Options[0].ID)
+				assert.Equal(t, null.ValueFrom(foreign), inp.Options[0].ID)
 
-	assert.NotZero(t, v.ID)
-	assert.NotZero(t, v.CreatedAt)
-	assert.Equal(t, "org", v.OrganizationID)
-	assert.Equal(t, groupID, v.GroupID)
-	assert.Equal(t, "region", v.Key)
-	assert.Equal(t, "Region", v.Name)
-	assert.Equal(t, "Region", NewVariable(Input{Name: " Region\t"}, "org", "user").Name)
-	assert.Equal(t, null.StringFrom("Cloud region"), v.Description)
-	assert.Equal(t, TypeList, v.Type)
-	assert.Equal(t, null.StringFrom("user"), v.CreatedBy)
-	assert.False(t, v.Builtin)
+				assert.NotZero(t, v.ID)
+				assert.NotZero(t, v.CreatedAt)
+				assert.Equal(t, "org", v.OrganizationID)
+				assert.Equal(t, groupID, v.GroupID)
+				assert.Equal(t, "region", v.Key)
+				assert.Equal(t, "Region", v.Name)
+				assert.Equal(t, null.StringFrom("Cloud region"), v.Description)
+				assert.Equal(t, TypeList, v.Type)
+				assert.Equal(t, null.StringFrom("user"), v.CreatedBy)
+				assert.False(t, v.Builtin)
 
-	require.Len(t, v.Options, 2)
-	assert.NotZero(t, v.Options[0].ID)
-	assert.Equal(t, v.ID, v.Options[0].VariableID)
-	assert.Equal(t, "eu-west-1", v.Options[0].Value)
-	assert.Equal(t, 0, v.Options[0].SortIndex)
-	assert.Equal(t, "us-east-1", v.Options[1].Value)
-	assert.Equal(t, 1, v.Options[1].SortIndex)
-	assert.Equal(t, null.StringFrom(v.Options[0].ID.String()), v.DefaultValue)
+				require.Len(t, v.Options, 2)
+				assert.NotZero(t, v.Options[0].ID)
+				assert.Equal(t, v.ID, v.Options[0].VariableID)
+				assert.Equal(t, "eu-west-1", v.Options[0].Value)
+				assert.Equal(t, 0, v.Options[0].SortIndex)
+				assert.Equal(t, "us-east-1", v.Options[1].Value)
+				assert.Equal(t, 1, v.Options[1].SortIndex)
+				assert.Equal(t, null.StringFrom(v.Options[0].ID.String()), v.DefaultValue)
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := NewVariable(c.Input, "org", "user")
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			c.Check(t, res)
+		})
+	}
 }
 
 func Test_Variable_AllowsChange(t *testing.T) {
@@ -303,7 +441,7 @@ func Test_Variable_AllowsChange(t *testing.T) {
 	}
 }
 
-func Test_Variable_Apply(t *testing.T) {
+func Test_Variable_ApplyUpdate(t *testing.T) {
 	t.Parallel()
 
 	id := xid.New()
@@ -321,8 +459,17 @@ func Test_Variable_Apply(t *testing.T) {
 		Check func(t *testing.T, nv Variable)
 		Err   error
 	}{
+		"Invalid input": {
+			Input: Input{
+				Key:  "zone",
+				Type: TypeText,
+			},
+			Err: ErrInvalidName,
+		},
 		"Unknown option id": {
 			Input: Input{
+				Key:     "region",
+				Name:    "Region",
 				Type:    TypeList,
 				Options: []OptionInput{{ID: null.ValueFrom(xid.New()), Value: "a"}},
 			},
@@ -331,6 +478,7 @@ func Test_Variable_Apply(t *testing.T) {
 		"Kept and new options": {
 			Input: Input{
 				Key:  "zone",
+				Name: " Zone ",
 				Type: TypeList,
 				Options: []OptionInput{
 					{Value: "us-east-1"},
@@ -342,6 +490,7 @@ func Test_Variable_Apply(t *testing.T) {
 
 				assert.Equal(t, v.ID, nv.ID)
 				assert.Equal(t, "zone", nv.Key)
+				assert.Equal(t, "Zone", nv.Name)
 				require.Len(t, nv.Options, 2)
 				assert.NotEqual(t, kept.ID, nv.Options[0].ID)
 				assert.Equal(t, Option{ID: kept.ID, VariableID: v.ID, Value: "eu-west-2", SortIndex: 1}, nv.Options[1])
@@ -351,6 +500,7 @@ func Test_Variable_Apply(t *testing.T) {
 		"Type change drops options": {
 			Input: Input{
 				Key:          "region",
+				Name:         "Region",
 				Type:         TypeText,
 				DefaultValue: null.StringFrom("eu"),
 			},
@@ -368,7 +518,7 @@ func Test_Variable_Apply(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			nv, err := v.Apply(c.Input)
+			nv, err := v.ApplyUpdate(c.Input)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -485,7 +635,7 @@ func Test_Variable_ValidateValue(t *testing.T) {
 	}
 }
 
-func Test_Variable_WithDefault(t *testing.T) {
+func Test_Variable_ApplyDefault(t *testing.T) {
 	t.Parallel()
 
 	id := xid.New()
@@ -534,7 +684,7 @@ func Test_Variable_WithDefault(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := c.Variable.WithDefault(c.Value)
+			res, err := c.Variable.ApplyDefault(c.Value)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -717,13 +867,42 @@ func Test_Input_Validate(t *testing.T) {
 				vi.DefaultValue = null.StringFrom("last_7_days")
 			}),
 		},
+		"Name with outer white space": {
+			Input: with(func(vi *Input) { vi.Name = " Region\t" }),
+		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, c.Err, c.Input.Validate())
+			testutil.AssertEqualError(t, c.Err, c.Input.Validate())
+		})
+	}
+}
+
+func Test_Input_sanitize(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Input  Input
+		Result Input
+	}{
+		"Name without outer white space": {
+			Input:  Input{Key: "region", Name: "Region", Type: TypeText},
+			Result: Input{Key: "region", Name: "Region", Type: TypeText},
+		},
+		"Name with outer white space": {
+			Input:  Input{Key: "region", Name: " Region\t", Type: TypeText},
+			Result: Input{Key: "region", Name: "Region", Type: TypeText},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Input.sanitize())
 		})
 	}
 }

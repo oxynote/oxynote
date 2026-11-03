@@ -71,11 +71,6 @@ func (h *Handler) CreateDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err = ci.Validate(); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
 	branchDoc, err := h.db.FetchDocumentByBranchID(r.Context(), ci.BranchID, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -90,13 +85,17 @@ func (h *Handler) CreateDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	c := commentCore.NewComment(
+	c, err := commentCore.NewComment(
 		ci,
 		branchDoc.ID,
 		branchDoc.BranchID,
 		session.UserID,
 		session.ActiveOrganizationID,
 	)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
 
 	if err = h.db.InsertDocumentComment(r.Context(), c); err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -180,22 +179,21 @@ func (h *Handler) CreateDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 
 	var ri commentCore.ReplyInput
 
-	if err := httpserver.DecodeJSON(r, &ri); err != nil {
+	if err = httpserver.DecodeJSON(r, &ri); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := ri.Validate(); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	reply := commentCore.NewReply(
+	reply, err := commentCore.NewReply(
 		ri,
 		commentID,
 		session.UserID,
 		session.ActiveOrganizationID,
 	)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
 
 	if err := h.db.InsertDocumentCommentReply(r.Context(), reply); err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -354,17 +352,16 @@ func (h *Handler) UpdateDocumentComment(w http.ResponseWriter, r *http.Request) 
 
 	var ui commentCore.Input
 
-	if err := httpserver.DecodeJSON(r, &ui); err != nil {
+	if err = httpserver.DecodeJSON(r, &ui); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := ui.Validate(); err != nil {
+	nc, err := c.ApplyUpdate(ui)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
-
-	nc := c.ApplyUpdate(ui)
 
 	if err := h.db.UpdateDocumentComment(r.Context(), nc); err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -438,17 +435,16 @@ func (h *Handler) UpdateDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 
 	var ui commentCore.ReplyInput
 
-	if err := httpserver.DecodeJSON(r, &ui); err != nil {
+	if err = httpserver.DecodeJSON(r, &ui); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := ui.Validate(); err != nil {
+	nr, err := reply.ApplyUpdate(ui)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
-
-	nr := reply.ApplyUpdate(ui)
 
 	if err := h.db.UpdateDocumentCommentReply(r.Context(), nr); err != nil {
 		httpserver.RespondError(h.log, w, err)

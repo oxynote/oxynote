@@ -178,9 +178,14 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 			RespCode: http.StatusBadRequest,
 		},
 		"Empty comment content": {
-			DB:       &DBMock{},
-			Body:     `{"branchId":"` + _branchID.String() + `"}`,
-			RespCode: http.StatusBadRequest,
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return &documentCore.Document{ID: _documentID, BranchID: _branchID}, nil
+				},
+			},
+			Body:          `{"branchId":"` + _branchID.String() + `"}`,
+			RespCode:      http.StatusBadRequest,
+			BranchFetched: 1,
 		},
 		"Error returned by DB.FetchDocumentByBranchID": {
 			DB: &DBMock{

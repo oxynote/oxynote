@@ -148,12 +148,13 @@ both**; a swallowed error is logged with a comment saying why.
   package `ErrInvalidX`) plus `MarshalText`/`UnmarshalText` with trim +
   lowercase. JSON-in-SQL types implement `driver.Valuer`/`sql.Scanner`
   exactly like `internal/notification/notification.go`.
-- User-input domain types implement `ValidateWithContext(ctx) error` with
-  `jellydator/validation` (value receiver, one `ValidateStructWithContext`
-  call, fields in declaration order, embedded configs first). Options
-  structs use hand-rolled `validate()` with `errors.New`. Aggregate
-  mutations go through `Set*` methods returning `(changed bool, err
-  error)`, orchestrated by `ApplyInput(inp)`.
+- A domain type owns its input rules: `NewX(inp, …) (X, error)` and
+  `(x X) ApplyUpdate(inp) (X, error)` call `inp.Validate()`, which first
+  trims names through the unexported `sanitize()`, and store the sanitized
+  input, so callers never validate or trim and the database writes the
+  result whole. Names use `strutil.ValidateName`. Hooks mutate in place
+  (`setUp` does I/O). Options structs hand-roll `validate()` with
+  `errors.New`.
 
 ## Database — the agent pattern
 

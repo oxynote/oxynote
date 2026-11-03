@@ -838,62 +838,55 @@ func Test_agent_FetchVariableTree(t *testing.T) {
 
 func Test_agent_UpdateVariableGroup(t *testing.T) {
 	type tcase struct {
-		OrganizationID string
-		Group          variable.Group
-		Input          variable.GroupUpdateInput
-		Name           string
-		Color          string
-		Err            error
+		Group  variable.Group
+		Update variable.Group
+		Name   string
+		Color  string
+		Err    error
 	}
 
 	cc := map[string]func(*testing.T, *DB) tcase{
-		"Nothing to set": func(t *testing.T, db *DB) tcase {
-			g := prepVariableGroups(t, db, 1, nil)[0]
-
-			return tcase{
-				OrganizationID: g.OrganizationID,
-				Group:          g,
-				Name:           g.GroupName,
-				Color:          g.Color,
-				Err:            variable.ErrEmptyGroupUpdate,
-			}
-		},
 		"Group of another organization": func(t *testing.T, db *DB) tcase {
 			g := prepVariableGroups(t, db, 1, nil)[0]
 
+			upd := g
+			upd.OrganizationID = prepOrganizations(t, db, 1)[0]
+			upd.GroupName = "Deploys"
+
 			return tcase{
-				OrganizationID: prepOrganizations(t, db, 1)[0],
-				Group:          g,
-				Input:          variable.GroupUpdateInput{GroupName: null.StringFrom("Deploys")},
-				Name:           g.GroupName,
-				Color:          g.Color,
-				Err:            errutil.ErrNotFound,
+				Group:  g,
+				Update: upd,
+				Name:   g.GroupName,
+				Color:  g.Color,
+				Err:    errutil.ErrNotFound,
 			}
 		},
 		"Duplicate name in the organization": func(t *testing.T, db *DB) tcase {
 			groups := prepVariableGroups(t, db, 2, nil)
 
+			upd := groups[0]
+			upd.GroupName = groups[1].GroupName
+
 			return tcase{
-				OrganizationID: groups[0].OrganizationID,
-				Group:          groups[0],
-				Input:          variable.GroupUpdateInput{GroupName: null.StringFrom(groups[1].GroupName)},
-				Name:           groups[0].GroupName,
-				Color:          groups[0].Color,
-				Err:            variable.ErrDuplicateGroupName,
+				Group:  groups[0],
+				Update: upd,
+				Name:   groups[0].GroupName,
+				Color:  groups[0].Color,
+				Err:    variable.ErrDuplicateGroupName,
 			}
 		},
 		"Renames and recolours": func(t *testing.T, db *DB) tcase {
 			g := prepVariableGroups(t, db, 1, nil)[0]
 
+			upd := g
+			upd.GroupName = "Deploys"
+			upd.Color = "blue"
+
 			return tcase{
-				OrganizationID: g.OrganizationID,
-				Group:          g,
-				Input: variable.GroupUpdateInput{
-					GroupName: null.StringFrom("Deploys"),
-					Color:     null.StringFrom("blue"),
-				},
-				Name:  "Deploys",
-				Color: "blue",
+				Group:  g,
+				Update: upd,
+				Name:   "Deploys",
+				Color:  "blue",
 			}
 		},
 	}
@@ -905,7 +898,7 @@ func Test_agent_UpdateVariableGroup(t *testing.T) {
 			db := prepTempDB(t)
 			c := cfn(t, db)
 
-			err := db.UpdateVariableGroup(context.Background(), c.OrganizationID, c.Group.ID, c.Input)
+			err := db.UpdateVariableGroup(context.Background(), c.Update)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			stored, err := db.FetchVariableGroup(context.Background(), c.Group.ID, c.Group.OrganizationID)

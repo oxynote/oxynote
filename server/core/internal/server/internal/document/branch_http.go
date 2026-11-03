@@ -43,18 +43,14 @@ func (h *Handler) UpdateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var ui struct {
-		Name      null.String `json:"name"`
-		Protected null.Bool   `json:"protected"`
-	}
+	var ui documentCore.BranchUpdateInput
 
-	err = httpserver.DecodeJSON(r, &ui)
-	if err != nil {
+	if err = httpserver.DecodeJSON(r, &ui); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	ndoc, err := doc.ApplyBranchUpdate(ui.Name, ui.Protected, session.UserID)
+	ndoc, err := doc.ApplyBranchUpdate(ui, session.UserID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return

@@ -173,8 +173,13 @@ func writeText(sb *strings.Builder, node map[string]any) {
 	sb.WriteByte(' ')
 }
 
-// NewComment creates a new comment instance with the provided input.
-func NewComment(inp Input, documentID, branchID xid.ID, userID, organizationID string) Comment {
+// NewComment creates a new comment instance with the provided input. It
+// fails on an input Validate refuses.
+func NewComment(inp Input, documentID, branchID xid.ID, userID, organizationID string) (Comment, error) {
+	if err := inp.Validate(); err != nil {
+		return Comment{}, err
+	}
+
 	return Comment{
 		ID:                  xid.New(),
 		DocumentID:          documentID,
@@ -186,17 +191,22 @@ func NewComment(inp Input, documentID, branchID xid.ID, userID, organizationID s
 		Content:             inp.Content,
 		DiffDeletionContext: inp.DiffDeletionContext,
 		CreatedAt:           timeutil.Now(),
-	}
+	}, nil
 }
 
-// ApplyUpdate updates comment instance with the input data.
-func (c Comment) ApplyUpdate(inp Input) Comment {
+// ApplyUpdate returns the comment with the input's anchor and content. It
+// fails on an input Validate refuses.
+func (c Comment) ApplyUpdate(inp Input) (Comment, error) {
+	if err := inp.Validate(); err != nil {
+		return Comment{}, err
+	}
+
 	nc := c
 	nc.AnchorBlockID = inp.AnchorBlockID
 	nc.Content = inp.Content
 	nc.UpdatedAt = null.TimeFrom(timeutil.Now())
 
-	return nc
+	return nc, nil
 }
 
 // Resolve marks the comment as resolved.
@@ -275,8 +285,13 @@ func Recipients(userIDs []string, actor string) []string {
 	return out
 }
 
-// NewReply creates a new reply instance with the provided input.
-func NewReply(inp ReplyInput, commentID xid.ID, userID, organizationID string) Reply {
+// NewReply creates a new reply instance with the provided input. It fails
+// on an input Validate refuses.
+func NewReply(inp ReplyInput, commentID xid.ID, userID, organizationID string) (Reply, error) {
+	if err := inp.Validate(); err != nil {
+		return Reply{}, err
+	}
+
 	return Reply{
 		ID:             xid.New(),
 		CommentID:      commentID,
@@ -284,16 +299,21 @@ func NewReply(inp ReplyInput, commentID xid.ID, userID, organizationID string) R
 		UserID:         null.StringFrom(userID),
 		Content:        inp.Content,
 		CreatedAt:      timeutil.Now(),
-	}
+	}, nil
 }
 
-// ApplyUpdate updates reply instance with the input data.
-func (r Reply) ApplyUpdate(inp ReplyInput) Reply {
+// ApplyUpdate returns the reply with the input's content. It fails on an
+// input Validate refuses.
+func (r Reply) ApplyUpdate(inp ReplyInput) (Reply, error) {
+	if err := inp.Validate(); err != nil {
+		return Reply{}, err
+	}
+
 	nr := r
 	nr.Content = inp.Content
 	nr.UpdatedAt = null.TimeFrom(timeutil.Now())
 
-	return nr
+	return nr, nil
 }
 
 // Input is the input structure for a comment.

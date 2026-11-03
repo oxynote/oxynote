@@ -222,11 +222,7 @@ func Test_DetectError(t *testing.T) {
 
 			existing := prepTags(t, db, 1, nil)[0]
 
-			dup := tag.NewTag(
-				tag.CreateInput{TagName: existing.TagName, Color: "green"},
-				existing.OrganizationID,
-				prepUsers(t, db, 1)[0],
-			)
+			dup := prepNewTag(t, existing.TagName, existing.OrganizationID, prepUsers(t, db, 1)[0])
 
 			err := db.InsertTag(context.Background(), dup)
 			require.Error(t, err)

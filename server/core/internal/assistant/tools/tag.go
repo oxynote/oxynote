@@ -169,9 +169,12 @@ func (createTag) Execute(inp *input) (string, error) {
 		return "", err
 	}
 
-	t := tag.NewTag(in.input(), inp.orgID, inp.userID)
+	t, err := tag.NewTag(in.input(), inp.orgID, inp.userID)
+	if err != nil {
+		return "", err
+	}
 
-	if err := inp.CreateTag(t); err != nil {
+	if err = inp.CreateTag(t); err != nil {
 		return "", err
 	}
 

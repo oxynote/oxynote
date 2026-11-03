@@ -44,48 +44,110 @@ func Test_NewComment(t *testing.T) {
 	documentID, branchID := xid.New(), xid.New()
 	diffCtx := null.ValueFrom(json.RawMessage(`{"ctx": true}`))
 
-	c := NewComment(Input{
-		Content:             Content{"text": "hello"},
-		AnchorBlockID:       null.StringFrom("block-1"),
-		DiffDeletionContext: diffCtx,
-	}, documentID, branchID, "user-1", "org-1")
+	cc := map[string]struct {
+		Input Input
+		Check func(t *testing.T, c Comment)
+		Err   error
+	}{
+		"Invalid input": {
+			Input: Input{},
+			Err:   ErrMissingContent,
+		},
+		"Successful creation": {
+			Input: Input{
+				Content:             Content{"text": "hello"},
+				AnchorBlockID:       null.StringFrom("block-1"),
+				DiffDeletionContext: diffCtx,
+			},
+			Check: func(t *testing.T, c Comment) {
+				t.Helper()
 
-	assert.False(t, c.ID.IsZero())
-	assert.Equal(t, documentID, c.DocumentID)
-	assert.Equal(t, branchID, c.BranchID)
-	assert.Equal(t, "org-1", c.OrganizationID)
-	assert.Equal(t, null.StringFrom("block-1"), c.AnchorBlockID)
-	assert.Equal(t, null.StringFrom("user-1"), c.UserID)
-	assert.False(t, c.Resolved)
-	assert.Equal(t, Content{"text": "hello"}, c.Content)
-	assert.Equal(t, diffCtx, c.DiffDeletionContext)
-	assert.False(t, c.CreatedAt.IsZero())
+				assert.False(t, c.ID.IsZero())
+				assert.Equal(t, documentID, c.DocumentID)
+				assert.Equal(t, branchID, c.BranchID)
+				assert.Equal(t, "org-1", c.OrganizationID)
+				assert.Equal(t, null.StringFrom("block-1"), c.AnchorBlockID)
+				assert.Equal(t, null.StringFrom("user-1"), c.UserID)
+				assert.False(t, c.Resolved)
+				assert.Equal(t, Content{"text": "hello"}, c.Content)
+				assert.Equal(t, diffCtx, c.DiffDeletionContext)
+				assert.False(t, c.CreatedAt.IsZero())
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := NewComment(c.Input, documentID, branchID, "user-1", "org-1")
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			c.Check(t, res)
+		})
+	}
 }
 
 func Test_Comment_ApplyUpdate(t *testing.T) {
 	t.Parallel()
 
-	c := stubComment().Resolve("resolver")
+	stored := stubComment().Resolve("resolver")
 
-	nc := c.ApplyUpdate(Input{
-		Content:       Content{"text": "edited"},
-		AnchorBlockID: null.StringFrom("block-2"),
-	})
+	cc := map[string]struct {
+		Input Input
+		Check func(t *testing.T, nc Comment)
+		Err   error
+	}{
+		"Invalid input": {
+			Input: Input{},
+			Err:   ErrMissingContent,
+		},
+		"Successful update": {
+			Input: Input{
+				Content:       Content{"text": "edited"},
+				AnchorBlockID: null.StringFrom("block-2"),
+			},
+			Check: func(t *testing.T, nc Comment) {
+				t.Helper()
 
-	assert.Equal(t, Content{"text": "edited"}, nc.Content)
-	assert.Equal(t, null.StringFrom("block-2"), nc.AnchorBlockID)
-	assert.True(t, nc.UpdatedAt.Valid)
+				assert.Equal(t, Content{"text": "edited"}, nc.Content)
+				assert.Equal(t, null.StringFrom("block-2"), nc.AnchorBlockID)
+				assert.True(t, nc.UpdatedAt.Valid)
 
-	// everything else is preserved — including the resolver, the
-	// branch, and the diff-deletion context.
-	assert.Equal(t, c.ID, nc.ID)
-	assert.Equal(t, c.BranchID, nc.BranchID)
-	assert.Equal(t, c.UserID, nc.UserID)
-	assert.True(t, nc.Resolved)
-	assert.Equal(t, null.StringFrom("resolver"), nc.ResolvedBy)
-	assert.Equal(t, c.DiffDeletionContext, nc.DiffDeletionContext)
-	assert.Equal(t, c.CreatedAt, nc.CreatedAt)
-	assert.Equal(t, c.Replies, nc.Replies)
+				// everything else is preserved — including the resolver, the
+				// branch, and the diff-deletion context.
+				assert.Equal(t, stored.ID, nc.ID)
+				assert.Equal(t, stored.BranchID, nc.BranchID)
+				assert.Equal(t, stored.UserID, nc.UserID)
+				assert.True(t, nc.Resolved)
+				assert.Equal(t, null.StringFrom("resolver"), nc.ResolvedBy)
+				assert.Equal(t, stored.DiffDeletionContext, nc.DiffDeletionContext)
+				assert.Equal(t, stored.CreatedAt, nc.CreatedAt)
+				assert.Equal(t, stored.Replies, nc.Replies)
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := stored.ApplyUpdate(c.Input)
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			c.Check(t, res)
+		})
+	}
 }
 
 func Test_Comment_Resolve(t *testing.T) {
@@ -227,29 +289,91 @@ func Test_NewReply(t *testing.T) {
 
 	commentID := xid.New()
 
-	r := NewReply(ReplyInput{Content: Content{"text": "reply"}}, commentID, "user-1", "org-1")
+	cc := map[string]struct {
+		Input ReplyInput
+		Check func(t *testing.T, r Reply)
+		Err   error
+	}{
+		"Invalid input": {
+			Input: ReplyInput{},
+			Err:   ErrMissingContent,
+		},
+		"Successful creation": {
+			Input: ReplyInput{Content: Content{"text": "reply"}},
+			Check: func(t *testing.T, r Reply) {
+				t.Helper()
 
-	assert.False(t, r.ID.IsZero())
-	assert.Equal(t, commentID, r.CommentID)
-	assert.Equal(t, "org-1", r.OrganizationID)
-	assert.Equal(t, null.StringFrom("user-1"), r.UserID)
-	assert.Equal(t, Content{"text": "reply"}, r.Content)
-	assert.False(t, r.CreatedAt.IsZero())
+				assert.False(t, r.ID.IsZero())
+				assert.Equal(t, commentID, r.CommentID)
+				assert.Equal(t, "org-1", r.OrganizationID)
+				assert.Equal(t, null.StringFrom("user-1"), r.UserID)
+				assert.Equal(t, Content{"text": "reply"}, r.Content)
+				assert.False(t, r.CreatedAt.IsZero())
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := NewReply(c.Input, commentID, "user-1", "org-1")
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			c.Check(t, res)
+		})
+	}
 }
 
 func Test_Reply_ApplyUpdate(t *testing.T) {
 	t.Parallel()
 
-	r := NewReply(ReplyInput{Content: Content{"text": "reply"}}, xid.New(), "user-1", "org-1")
+	r := Reply{ID: xid.New(), CommentID: xid.New(), UserID: null.StringFrom("user-1"), Content: Content{"text": "reply"}}
 
-	nr := r.ApplyUpdate(ReplyInput{Content: Content{"text": "edited"}})
+	cc := map[string]struct {
+		Input ReplyInput
+		Check func(t *testing.T, nr Reply)
+		Err   error
+	}{
+		"Invalid input": {
+			Input: ReplyInput{},
+			Err:   ErrMissingContent,
+		},
+		"Successful update": {
+			Input: ReplyInput{Content: Content{"text": "edited"}},
+			Check: func(t *testing.T, nr Reply) {
+				t.Helper()
 
-	assert.Equal(t, r.ID, nr.ID)
-	assert.Equal(t, r.CommentID, nr.CommentID)
-	assert.Equal(t, r.UserID, nr.UserID)
-	assert.Equal(t, Content{"text": "edited"}, nr.Content)
-	assert.Equal(t, r.CreatedAt, nr.CreatedAt)
-	assert.True(t, nr.UpdatedAt.Valid)
+				assert.Equal(t, r.ID, nr.ID)
+				assert.Equal(t, r.CommentID, nr.CommentID)
+				assert.Equal(t, r.UserID, nr.UserID)
+				assert.Equal(t, Content{"text": "edited"}, nr.Content)
+				assert.Equal(t, r.CreatedAt, nr.CreatedAt)
+				assert.True(t, nr.UpdatedAt.Valid)
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := r.ApplyUpdate(c.Input)
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			c.Check(t, res)
+		})
+	}
 }
 
 func Test_Input_Validate(t *testing.T) {
