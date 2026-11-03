@@ -110,7 +110,7 @@ func (p *Prometheus) QueryRange(ctx context.Context, q string, tr TimeRange) (*P
 
 	ntr := tr.Normalize()
 
-	v, warns, err := client.QueryRange(ctx, ntr.ProcessPrometheusQuery(q), v1.Range{
+	v, warns, _, err := client.QueryRange(ctx, ntr.ProcessPrometheusQuery(q), v1.Range{
 		Start: ntr.From,
 		End:   ntr.To,
 		Step:  ntr.QueryStep(),
@@ -143,7 +143,7 @@ func (p *Prometheus) LabelNames(ctx context.Context, matchers []string, tr TimeR
 
 	ntr := tr.Normalize()
 
-	names, warns, err := client.LabelNames(
+	names, warns, _, err := client.LabelNames(
 		ctx,
 		matchers,
 		ntr.From,
@@ -178,7 +178,7 @@ func (p *Prometheus) LabelValues(ctx context.Context, label string, matchers []s
 
 	ntr := tr.Normalize()
 
-	values, warns, err := client.LabelValues(
+	values, warns, _, err := client.LabelValues(
 		ctx,
 		label,
 		matchers,
@@ -214,7 +214,7 @@ func (p *Prometheus) Series(ctx context.Context, matchers []string, tr TimeRange
 
 	ntr := tr.Normalize()
 
-	series, warns, err := client.Series(
+	series, warns, _, err := client.Series(
 		ctx,
 		matchers,
 		ntr.From,
