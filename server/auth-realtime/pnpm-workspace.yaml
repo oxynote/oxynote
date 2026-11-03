@@ -1,11 +1,10 @@
 allowBuilds:
         esbuild: true
 
-# @better-auth/core takes each of these as a peer, so a second copy of any
-# one forks it into structurally incompatible instances. Pin only versions
-# every consumer's range already accepts, and drop a pin once the duplicate
-# is gone.
+# @better-auth/core takes jose and kysely as peers, and src imports both
+# directly. When our copy and better-auth's differ, core is installed twice
+# as structurally incompatible instances. "$name" makes every consumer use
+# our own package.json range, so the pin moves whenever that range does.
 overrides:
-        "@opentelemetry/api": "1.9.1"
-        jose: "6.2.10"
-        kysely: "0.29.5"
+        jose: "$jose"
+        kysely: "$kysely"
