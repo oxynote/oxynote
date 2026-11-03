@@ -469,7 +469,7 @@ func Test_Manager_VerifyMiddleware(t *testing.T) {
 			Request: func(_ *testing.T) *http.Request {
 				r := httptest.NewRequest(http.MethodPost, "/slack/events", iotest.ErrReader(assert.AnError))
 				r.Header.Set("X-Slack-Request-Timestamp", strconv.FormatInt(time.Now().Unix(), 10))
-				r.Header.Set("X-Slack-Signature", "v0=deadbeef")
+				r.Header.Set("X-Slack-Signature", "v0="+hex.EncodeToString(make([]byte, sha256.Size)))
 
 				return r
 			},
