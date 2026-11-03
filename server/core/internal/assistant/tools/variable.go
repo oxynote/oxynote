@@ -261,9 +261,7 @@ func (a updateVariableGroupArgs) Validate() error {
 		return errors.New("give at least one of name or color")
 	}
 
-	// NOTE: the stored name is not known here, so the length limit is left to
-	// the manager, which exempts a name that is not being changed.
-	return a.input().Validate(variable.Group{GroupName: a.Name})
+	return a.input().Validate()
 }
 
 // input returns the arguments as the domain's update input, with only

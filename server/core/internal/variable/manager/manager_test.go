@@ -42,26 +42,6 @@ var (
 		Builtin:        true,
 	}
 
-	// _longGroup is a custom group saved with a name over the length limit.
-	_longGroup = variable.Group{
-		ID:             xid.New(),
-		OrganizationID: _org,
-		GroupName:      strings.Repeat("g", 70),
-		Color:          "blue",
-	}
-
-	// _longVariable is a custom text variable saved with a name over the
-	// length limit.
-	_longVariable = variable.Variable{
-		ID:             xid.New(),
-		OrganizationID: _org,
-		GroupID:        _group.ID,
-		Key:            "release",
-		Name:           strings.Repeat("v", 70),
-		Type:           variable.TypeText,
-		DefaultValue:   null.StringFrom("relay-2.14.0"),
-	}
-
 	// _textVariable is a custom text variable in _group.
 	_textVariable = variable.Variable{
 		ID:             xid.New(),
@@ -326,23 +306,18 @@ func Test_Manager_UpdateGroup(t *testing.T) {
 		Err     error
 	}{
 		"Invalid input": {
-			DB:      &DBMock{FetchVariableGroupFunc: stubFetchGroup(_group, nil)},
-			Fetches: 1,
-			Err:     variable.ErrEmptyGroupUpdate,
+			DB:  &DBMock{},
+			Err: variable.ErrEmptyGroupUpdate,
 		},
 		"Name of white space only": {
-			DB:      &DBMock{FetchVariableGroupFunc: stubFetchGroup(_group, nil)},
-			Inp:     variable.GroupUpdateInput{GroupName: null.StringFrom("  ")},
-			Fetches: 1,
-			Err:     variable.ErrInvalidGroupName,
+			DB:  &DBMock{},
+			Inp: variable.GroupUpdateInput{GroupName: null.StringFrom("  ")},
+			Err: variable.ErrInvalidGroupName,
 		},
-		"Colour change on a group whose stored name is over the limit": {
-			DB:      &DBMock{FetchVariableGroupFunc: stubFetchGroup(_longGroup, nil)},
-			Inp:     variable.GroupUpdateInput{GroupName: null.StringFrom(_longGroup.GroupName), Color: null.StringFrom("green")},
-			Fetches: 1,
-			Updates: 1,
-			Changes: 1,
-			Name:    _longGroup.GroupName,
+		"Name over the length limit": {
+			DB:  &DBMock{},
+			Inp: variable.GroupUpdateInput{GroupName: null.StringFrom(strings.Repeat("g", 65))},
+			Err: variable.ErrGroupNameTooLong,
 		},
 		"Error returned by DB.FetchVariableGroup": {
 			DB:      &DBMock{FetchVariableGroupFunc: stubFetchGroup(variable.Group{}, assert.AnError)},
@@ -693,21 +668,19 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 	cc := map[string]tcase{
 		"Invalid input": func() tcase {
 			return tcase{
-				DB:      &DBMock{FetchVariableFunc: stubFetchVariable(_textVariable, nil)},
-				Inp:     variable.Input{Key: "release"},
-				Fetches: 1,
-				Err:     variable.ErrInvalidName,
+				DB:  &DBMock{},
+				Inp: variable.Input{Key: "release"},
+				Err: variable.ErrInvalidName,
 			}
 		}(),
-		"Changed name over the length limit": func() tcase {
+		"Name over the length limit": func() tcase {
 			inp := textInp
-			inp.Name = strings.Repeat("v", 71)
+			inp.Name = strings.Repeat("v", 65)
 
 			return tcase{
-				DB:      &DBMock{FetchVariableFunc: stubFetchVariable(_longVariable, nil)},
-				Inp:     inp,
-				Fetches: 1,
-				Err:     variable.ErrNameTooLong,
+				DB:  &DBMock{},
+				Inp: inp,
+				Err: variable.ErrNameTooLong,
 			}
 		}(),
 		"Error returned by DB.FetchVariable": func() tcase {
@@ -916,26 +889,6 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 				Replaced:      true,
 				Commits:       1,
 				Changes:       1,
-			}
-		}(),
-		"Edit of a variable whose stored name is over the length limit": func() tcase {
-			tx := &TxMock{}
-
-			inp := textInp
-			inp.Name = _longVariable.Name
-
-			return tcase{
-				DB: &DBMock{
-					FetchVariableFunc: stubFetchVariable(_longVariable, nil),
-					BeginTxFunc:       testutil.StubBeginTx(tx, nil),
-				},
-				Tx:      tx,
-				Inp:     inp,
-				Fetches: 1,
-				Begins:  1,
-				Updated: true,
-				Commits: 1,
-				Changes: 1,
 			}
 		}(),
 		"Moved to another group": func() tcase {

@@ -69,16 +69,16 @@ func (m *Manager) CreateGroup(ctx context.Context, inp variable.GroupCreateInput
 // UpdateGroup renames and/or recolours a group other than the built-in
 // one.
 func (m *Manager) UpdateGroup(ctx context.Context, id xid.ID, inp variable.GroupUpdateInput, organizationID string) error {
-	g, err := m.db.FetchVariableGroup(ctx, id, organizationID)
-	if err != nil {
-		return err
-	}
-
-	if err = inp.Validate(*g); err != nil {
+	if err := inp.Validate(); err != nil {
 		return err
 	}
 
 	inp = inp.Trimmed()
+
+	g, err := m.db.FetchVariableGroup(ctx, id, organizationID)
+	if err != nil {
+		return err
+	}
 
 	if err = g.AllowsChange(); err != nil {
 		return err
@@ -194,12 +194,12 @@ func (m *Manager) CreateVariable(ctx context.Context, inp variable.Input, organi
 // built-in one. A type change clears every user's value; a removed option
 // clears the values that picked it.
 func (m *Manager) UpdateVariable(ctx context.Context, id xid.ID, inp variable.Input, organizationID string) error {
-	v, err := m.db.FetchVariable(ctx, id, organizationID)
-	if err != nil {
+	if err := inp.Validate(); err != nil {
 		return err
 	}
 
-	if err = inp.ValidateChange(*v); err != nil {
+	v, err := m.db.FetchVariable(ctx, id, organizationID)
+	if err != nil {
 		return err
 	}
 
