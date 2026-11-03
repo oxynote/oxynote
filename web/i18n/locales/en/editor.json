@@ -566,7 +566,11 @@
 				},
 				"query-error": {
 					"title": "Query Error",
-					"multi-query-description": "Query {index}: {error}"
+					"multi-query-description": "Query {index}: {error}",
+					"request-failed": "The metrics could not be loaded. Please try again later"
+				},
+				"loading": {
+					"title": "Loading Data"
 				},
 				"no-data-loaded": {
 					"title": "No Data",

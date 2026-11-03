@@ -4,6 +4,7 @@ import {
 	defaultMetricConfig,
 	MetricSimulationPreset,
 	refreshIntervalToMs,
+	requestErrorMessage,
 	resolveTimeRange,
 	VisualizationDataUnit,
 	VisualizationTimeUnit,
@@ -417,4 +418,36 @@ describe("refreshIntervalToMs", () => {
 			expect(refreshIntervalToMs(interval)).toBe(expected)
 		},
 	)
+})
+
+describe("requestErrorMessage", () => {
+	it.for([
+		{
+			name: "returns the message the server sent with the error",
+			input: { data: { code: "internal", message: "connection refused" } },
+			expected: "connection refused",
+		},
+		{
+			name: "returns null for an error the server sent no message with",
+			input: { data: { code: "internal" } },
+			expected: null,
+		},
+		{
+			name: "returns null for an empty message",
+			input: { data: { message: "" } },
+			expected: null,
+		},
+		{
+			name: "returns null for an error without a response body",
+			input: { data: "" },
+			expected: null,
+		},
+		{
+			name: "returns null for something that is not an error object",
+			input: "network down",
+			expected: null,
+		},
+	])("$name", ({ input, expected }, { expect }) => {
+		expect(requestErrorMessage(input)).toBe(expected)
+	})
 })
