@@ -2,6 +2,7 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import type { VueWrapper } from "@vue/test-utils"
 import { describe, it } from "vitest"
 import ChartTooltip from "./ChartTooltip.vue"
+import { tooltipParam } from "./test-helpers"
 import { VisualizationDataUnit } from "../utils"
 import { t } from "~/components/test-helpers"
 
@@ -112,16 +113,6 @@ function mountTooltip(props: Record<string, unknown>) {
 			...props,
 		},
 	})
-}
-
-// one row of an axis tooltip, as echarts hands it to the slot
-function tooltipParam(seriesName: string, value: number, seriesIndex = 0) {
-	return {
-		seriesName: seriesName,
-		seriesIndex: seriesIndex,
-		marker: "",
-		value: [new Date("2026-01-01T00:00:00Z"), value],
-	}
 }
 
 function manyTooltipParams(count: number) {

@@ -1,11 +1,16 @@
-import { enableAutoUnmount, type VueWrapper } from "@vue/test-utils"
+import { enableAutoUnmount } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import BarChart from "./BarChart.vue"
-import { chartOption, chartSeries, mountChart } from "./test-helpers"
+import {
+	chartOption,
+	chartSeries,
+	clickChart,
+	mountChart,
+	tooltipParam,
+} from "./test-helpers"
 import { stubChartColorContext } from "../test-helpers"
 import { VisualizationDataUnit } from "../utils"
 import type { MultipleBarChartData } from "."
-import { emitFrom } from "~/components/test-helpers"
 
 // what the stand-in chart hands the tooltip slot, and the actions the
 // component dispatches on it
@@ -255,18 +260,3 @@ describe("<BarChart>", { concurrent: false }, () => {
 		})
 	})
 })
-
-// one row of an axis tooltip, as echarts hands it to the slot
-function tooltipParam(seriesName: string, value: number, seriesIndex: number) {
-	return {
-		seriesName: seriesName,
-		seriesIndex: seriesIndex,
-		marker: "",
-		value: [new Date("2026-01-01T00:00:00Z"), value],
-	}
-}
-
-async function clickChart(wrapper: VueWrapper) {
-	emitFrom(wrapper, "VChart", "zr:click", { offsetX: 120, offsetY: 40 })
-	await nextTick()
-}

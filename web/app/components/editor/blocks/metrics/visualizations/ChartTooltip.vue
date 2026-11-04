@@ -43,7 +43,7 @@ const rows = computed<TooltipParam[]>(() => {
 		<div class="mt-1 mb-0.5 h-0.25 bg-border" />
 		<div class="flex max-h-44 flex-col overflow-y-auto px-2 pb-1">
 			<div v-for="row in rows" :key="row.seriesIndex" class="flex items-center">
-				<!-- eslint-disable-next-line vue/no-v-html -->
+				<!-- eslint-disable-next-line vue/no-v-html -- echarts builds the marker from the series colour, never from user text -->
 				<div v-html="row.marker" />
 				<div class="min-w-0 truncate text-2sm text-foreground/60">
 					{{ row.seriesName }}
