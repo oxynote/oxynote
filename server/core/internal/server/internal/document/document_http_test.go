@@ -1794,6 +1794,7 @@ func Test_Handler_CreateDocument(t *testing.T) {
 		NoSession                           bool
 		Body                                string
 		RespCode                            int
+		RespJSON                            string
 		Committed                           int
 		TreeCbs                             int
 		BeginTx                             int
@@ -1821,21 +1822,25 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			Tx:       &TxMock{},
 			Body:     `{"name":"","icon":"mingcute:rocket-fill"}`,
 			RespCode: http.StatusBadRequest,
+			RespJSON: `{"code":"document.invalid_name","message":"document name cannot be empty"}`,
 		},
 		"Name of only white space": {
 			Tx:       &TxMock{},
 			Body:     `{"name":"   ","icon":"mingcute:rocket-fill"}`,
 			RespCode: http.StatusBadRequest,
+			RespJSON: `{"code":"document.invalid_name","message":"document name cannot be empty"}`,
 		},
 		"Name over 200 characters": {
 			Tx:       &TxMock{},
 			Body:     `{"name":"` + strings.Repeat("a", 201) + `","icon":"mingcute:rocket-fill"}`,
 			RespCode: http.StatusBadRequest,
+			RespJSON: `{"code":"document.name_too_long","message":"document name cannot be longer than 200 characters"}`,
 		},
 		"Icon the picker does not offer": {
 			Tx:       &TxMock{},
 			Body:     `{"name":"New doc","icon":"not-an-icon"}`,
 			RespCode: http.StatusBadRequest,
+			RespJSON: `{"code":"document.invalid_icon","message":"icon \"not-an-icon\" is not available and no available icon has a similar name; try a plainer word, such as mingcute:document-2-fill"}`,
 		},
 		"Error returned by DB.BeginTx": {
 			Tx:       &TxMock{},
@@ -2015,6 +2020,11 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			hdl.CreateDocument(rec, newRequest(http.MethodPost, c.Body, c.NoSession, true, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+
+			if c.RespJSON != "" {
+				assert.JSONEq(t, c.RespJSON, rec.Body.String())
+			}
+
 			assert.Len(t, db.BeginTxCalls(), c.BeginTx)
 			assert.Len(t, c.Tx.CheckDocumentExistsCalls(), c.CheckDocumentExists)
 			assert.Len(t, c.Tx.InsertDocumentCalls(), c.InsertDocument)

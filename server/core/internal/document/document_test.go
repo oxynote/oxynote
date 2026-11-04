@@ -56,6 +56,10 @@ func Test_NewDocument(t *testing.T) {
 	assert.Equal(t, null.StringFrom("user-1"), doc.LastUpdatedBy)
 	assert.Equal(t, doc.CreatedAt, doc.UpdatedAt)
 
+	// the white space around the name is not stored.
+	padded := NewDocument(CreateInput{Name: "  Runbook \n"}, "org-1", "user-1")
+	assert.Equal(t, "Runbook", padded.DocumentName)
+
 	// the initial content is a single empty paragraph with a uid.
 	require.Len(t, doc.Content.Content, 1)
 	assert.Equal(t, BlockNodeParagraph, doc.Content.Content[0].Type)
@@ -500,14 +504,6 @@ func Test_Document_Duplicate(t *testing.T) {
 			assertUIDsRemapped(t, c.Document.Content, dup.Content, uids)
 		})
 	}
-}
-
-func Test_NewDocument_TrimsName(t *testing.T) {
-	t.Parallel()
-
-	doc := NewDocument(CreateInput{Name: "  Runbook \n"}, "org-1", "user-1")
-
-	assert.Equal(t, "Runbook", doc.DocumentName)
 }
 
 func Test_CreateInput_Validate(t *testing.T) {

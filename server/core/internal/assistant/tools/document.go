@@ -324,7 +324,7 @@ func (createDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 	// is the one write whose summary names no target.
 	return ActionSummary{
 		Tool:    NameCreateDocument,
-		Summary: fmt.Sprintf("Create document %q", in.Name),
+		Summary: fmt.Sprintf("Create document %q", strings.TrimSpace(in.Name)),
 	}, nil
 }
 
@@ -550,6 +550,8 @@ func (updateDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
+	in.Name = strings.TrimSpace(in.Name)
+
 	doc, err := inp.FetchDocument(in.DocumentID)
 	if err != nil {
 		return ActionSummary{}, fmt.Errorf("fetch document: %w", err)
@@ -572,12 +574,14 @@ func (updateDocument) Execute(inp *input) (string, error) {
 		return "", err
 	}
 
+	in.Name = strings.TrimSpace(in.Name)
+
 	doc, err := inp.FetchDocument(in.DocumentID)
 	if err != nil {
 		return "", fmt.Errorf("fetch document: %w", err)
 	}
 
-	if err := inp.RenameDocument(doc, strings.TrimSpace(in.Name), in.Icon); err != nil {
+	if err := inp.RenameDocument(doc, in.Name, in.Icon); err != nil {
 		return "", err
 	}
 

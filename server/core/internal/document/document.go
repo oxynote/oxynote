@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/icon"
@@ -348,16 +347,7 @@ func (ci CreateInput) Validate() error {
 // ValidateName reports whether the name, once the white space around it is
 // trimmed, is neither empty nor longer than _maxNameLength characters.
 func ValidateName(name string) error {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return ErrInvalidName
-	}
-
-	if utf8.RuneCountInString(name) > _maxNameLength {
-		return ErrNameTooLong
-	}
-
-	return nil
+	return strutil.ValidateName(strings.TrimSpace(name), _maxNameLength, ErrInvalidName, ErrNameTooLong)
 }
 
 // ImportInput is the input structure for importing a document.

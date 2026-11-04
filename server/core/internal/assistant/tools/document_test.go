@@ -463,6 +463,11 @@ func Test_createDocument_Summary(t *testing.T) {
 			Args:   `{"name":"Runbook"}`,
 			Result: ActionSummary{Tool: NameCreateDocument, Summary: `Create document "Runbook"`},
 		},
+		// the card names the document as it will be stored.
+		"Name with white space around it": {
+			Args:   `{"name":"  Runbook \n"}`,
+			Result: ActionSummary{Tool: NameCreateDocument, Summary: `Create document "Runbook"`},
+		},
 		"Name is required": {Args: `{}`, Err: assert.AnError},
 	}
 
@@ -1071,7 +1076,9 @@ func Test_updateDocument_Summary(t *testing.T) {
 		Result          string
 		Err             error
 	}{
-		"Rename":    {DB: stubDocumentDB(), Args: doc + `,"name":"Playbook"}`, DocumentFetches: 1, Result: `Rename Runbook to "Playbook"`},
+		"Rename": {DB: stubDocumentDB(), Args: doc + `,"name":"Playbook"}`, DocumentFetches: 1, Result: `Rename Runbook to "Playbook"`},
+		// the card names the document as it will be stored.
+		"Rename with white space around the name": {DB: stubDocumentDB(), Args: doc + `,"name":"  Playbook "}`, DocumentFetches: 1, Result: `Rename Runbook to "Playbook"`},
 		"Icon":      {DB: stubDocumentDB(), Args: doc + `,"icon":"mingcute:rocket-fill"}`, DocumentFetches: 1, Result: "Set the icon to mingcute:rocket-fill"},
 		"Root":      {DB: stubDocumentDB(), Args: doc + `,"parent_id":""}`, DocumentFetches: 1, Result: "Move it to the org root"},
 		"Parent":    {DB: stubDocumentDB(), Args: doc + `,"parent_id":"` + xid.New().String() + `"}`, DocumentFetches: 1, Result: "Move it under another document"},
@@ -1135,6 +1142,7 @@ func Test_updateDocument_Execute(t *testing.T) {
 		DocumentFetches int
 		BranchFetches   int
 		Ops             int
+		OpName          string
 		ParentChecks    int
 		CycleChecks     int
 		ParentUpdates   int
@@ -1176,6 +1184,18 @@ func Test_updateDocument_Execute(t *testing.T) {
 			DocumentFetches: 1,
 			BranchFetches:   1,
 			Ops:             1,
+			Notify:          1,
+			Result:          `{"document_id":"` + _testDocID.String() + `","name":"Playbook"}`,
+		},
+		// the stored name, the result and the card all use the trimmed name.
+		"Renamed with white space around the name": {
+			DB:              stubDocumentDB(),
+			Applier:         stubApplier(),
+			Args:            doc + `,"name":"  Playbook \n"}`,
+			DocumentFetches: 1,
+			BranchFetches:   1,
+			Ops:             1,
+			OpName:          "Playbook",
 			Notify:          1,
 			Result:          `{"document_id":"` + _testDocID.String() + `","name":"Playbook"}`,
 		},
@@ -1291,6 +1311,10 @@ func Test_updateDocument_Execute(t *testing.T) {
 			} else {
 				require.Len(t, c.Applier.ApplyCalls(), 1)
 				assert.Len(t, c.Applier.ApplyCalls()[0].Ops, c.Ops)
+
+				if c.OpName != "" {
+					assert.Equal(t, edit.SetName(c.OpName), c.Applier.ApplyCalls()[0].Ops[0])
+				}
 			}
 
 			if err != nil {
