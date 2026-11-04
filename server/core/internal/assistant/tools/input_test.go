@@ -531,7 +531,7 @@ func Test_input_CreateDocument(t *testing.T) {
 
 	stubDB := func(tx *TxMock, beginErr error) *DBMock {
 		return &DBMock{
-			BeginTxFunc: testutil.StubBeginTx(tx, beginErr),
+			BeginTxFunc: testutil.StubBeginTx[sqlutil.Tx](tx, beginErr),
 		}
 	}
 
@@ -664,7 +664,7 @@ func Test_input_DeleteDocument(t *testing.T) {
 			FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
 				return &document.Document{ID: docID, ParentID: parentID}, nil
 			},
-			BeginTxFunc: testutil.StubBeginTx(tx, beginErr),
+			BeginTxFunc: testutil.StubBeginTx[sqlutil.Tx](tx, beginErr),
 		}
 	}
 

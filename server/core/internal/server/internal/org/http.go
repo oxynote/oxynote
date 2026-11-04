@@ -112,9 +112,7 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	var tx Tx
-
-	err = h.db.BeginTx(r.Context(), &tx)
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -314,9 +312,7 @@ func (h *Handler) TeardownOrganization(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var tx Tx
-
-	err = h.db.BeginTx(r.Context(), &tx)
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return

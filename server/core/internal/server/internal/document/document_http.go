@@ -360,9 +360,7 @@ func (h *Handler) UpdateDocumentTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var tx Tx
-
-	err := h.db.BeginTx(r.Context(), &tx)
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -720,9 +718,7 @@ func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 
 	// the document's hooks, and those of its descendants, lose their
 	// document with it. The hook manager tears down what they hold.
-	var tx Tx
-
-	err = h.db.BeginTx(r.Context(), &tx)
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -911,33 +907,32 @@ func (h *Handler) insertDocumentTx(
 	newBlockIDs map[string]string,
 	session auth.Session,
 ) error {
-	var tx Tx
-
-	if err := h.db.BeginTx(ctx, &tx); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](ctx, h.db)
+	if err != nil {
 		return err
 	}
 
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
 	if doc.ParentID.Valid {
-		if err := tx.CheckDocumentExists(ctx, doc.ParentID.V, session.ActiveOrganizationID); err != nil {
+		if err = tx.CheckDocumentExists(ctx, doc.ParentID.V, session.ActiveOrganizationID); err != nil {
 			return err
 		}
 	}
 
-	if err := tx.InsertDocument(ctx, doc); err != nil {
+	if err = tx.InsertDocument(ctx, doc); err != nil {
 		return err
 	}
 
 	// the copies go in before the entry is recorded, so it lists them.
 	if sourceBranchID.Valid {
-		err := manager.CopyHooks(ctx, tx, sourceBranchID.V, doc.BranchID, doc.ID, session.ActiveOrganizationID, newBlockIDs)
+		err = manager.CopyHooks(ctx, tx, sourceBranchID.V, doc.BranchID, doc.ID, session.ActiveOrganizationID, newBlockIDs)
 		if err != nil {
 			return err
 		}
 	}
 
-	err := tx.RecordDocumentBranchHistoryEntry(
+	err = tx.RecordDocumentBranchHistoryEntry(
 		ctx,
 		doc.BranchID,
 		session.ActiveOrganizationID,

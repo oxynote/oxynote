@@ -18,6 +18,45 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
+func Test_BeginTx(t *testing.T) {
+	type tcase struct {
+		DB        stubDB
+		Tx        *stubTx
+		Rollbacks int
+		Result    fetchTx
+		Err       error
+	}
+
+	cc := map[string]tcase{
+		"Error returned by DB.BeginTx": {
+			DB:  stubDB{err: assert.AnError},
+			Tx:  &stubTx{},
+			Err: assert.AnError,
+		},
+		"Transaction does not implement the type": func() tcase {
+			tx := &stubTx{}
+
+			return tcase{DB: stubDB{tx: tx}, Tx: tx, Rollbacks: 1, Err: assert.AnError}
+		}(),
+		"Successful begin": func() tcase {
+			tx := &stubFetchTx{}
+
+			return tcase{DB: stubDB{tx: tx}, Tx: &tx.stubTx, Result: tx}
+		}(),
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			tx, err := BeginTx[fetchTx](context.Background(), c.DB)
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Result, tx)
+			assert.Equal(t, c.Rollbacks, c.Tx.rollbacks)
+		})
+	}
+}
+
 func Test_Select(t *testing.T) {
 	cc := map[string]struct {
 		FilterFn func(sq.SelectBuilder, string, string) (sq.SelectBuilder, error)
@@ -351,4 +390,40 @@ func Test_WrapTx(t *testing.T) {
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
+}
+
+type stubDB struct {
+	tx  Tx
+	err error
+}
+
+func (db stubDB) BeginTx(context.Context) (Tx, error) {
+	return db.tx, db.err
+}
+
+type stubTx struct {
+	rollbacks int
+}
+
+func (tx *stubTx) Commit() error {
+	return nil
+}
+
+func (tx *stubTx) Rollback() error {
+	tx.rollbacks++
+
+	return nil
+}
+
+type stubFetchTx struct {
+	stubTx
+}
+
+func (tx *stubFetchTx) Fetch() error {
+	return nil
+}
+
+type fetchTx interface {
+	Tx
+	Fetch() error
 }

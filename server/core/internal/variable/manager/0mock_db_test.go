@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/oxynote/oxynote/server/core/internal/variable"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
 )
 
@@ -21,7 +22,7 @@ var _ DB = &DBMock{}
 //
 //		// make and configure a mocked DB
 //		mockedDB := &DBMock{
-//			BeginTxFunc: func(ctx context.Context, dest any) error {
+//			BeginTxFunc: func(ctx context.Context) (sqlutil.Tx, error) {
 //				panic("mock out the BeginTx method")
 //			},
 //			CreateVariableFunc: func(ctx context.Context, v variable.Variable) error {
@@ -86,7 +87,7 @@ var _ DB = &DBMock{}
 //	}
 type DBMock struct {
 	// BeginTxFunc mocks the BeginTx method.
-	BeginTxFunc func(ctx context.Context, dest any) error
+	BeginTxFunc func(ctx context.Context) (sqlutil.Tx, error)
 
 	// CreateVariableFunc mocks the CreateVariable method.
 	CreateVariableFunc func(ctx context.Context, v variable.Variable) error
@@ -148,8 +149,6 @@ type DBMock struct {
 		BeginTx []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
-			// Dest is the dest argument value.
-			Dest any
 		}
 		// CreateVariable holds details about calls to the CreateVariable method.
 		CreateVariable []struct {
@@ -330,24 +329,23 @@ type DBMock struct {
 }
 
 // BeginTx calls BeginTxFunc.
-func (mock *DBMock) BeginTx(ctx context.Context, dest any) error {
+func (mock *DBMock) BeginTx(ctx context.Context) (sqlutil.Tx, error) {
 	callInfo := struct {
-		Ctx  context.Context
-		Dest any
+		Ctx context.Context
 	}{
-		Ctx:  ctx,
-		Dest: dest,
+		Ctx: ctx,
 	}
 	mock.lockBeginTx.Lock()
 	mock.calls.BeginTx = append(mock.calls.BeginTx, callInfo)
 	mock.lockBeginTx.Unlock()
 	if mock.BeginTxFunc == nil {
 		var (
+			txOut  sqlutil.Tx
 			errOut error
 		)
-		return errOut
+		return txOut, errOut
 	}
-	return mock.BeginTxFunc(ctx, dest)
+	return mock.BeginTxFunc(ctx)
 }
 
 // BeginTxCalls gets all the calls that were made to BeginTx.
@@ -355,12 +353,10 @@ func (mock *DBMock) BeginTx(ctx context.Context, dest any) error {
 //
 //	len(mockedDB.BeginTxCalls())
 func (mock *DBMock) BeginTxCalls() []struct {
-	Ctx  context.Context
-	Dest any
+	Ctx context.Context
 } {
 	var calls []struct {
-		Ctx  context.Context
-		Dest any
+		Ctx context.Context
 	}
 	mock.lockBeginTx.RLock()
 	calls = mock.calls.BeginTx

@@ -9,6 +9,7 @@ import (
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -752,7 +753,7 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_textVariable, nil),
-					BeginTxFunc:       testutil.StubBeginTx(nil, assert.AnError),
+					BeginTxFunc:       testutil.StubBeginTx[sqlutil.Tx](nil, assert.AnError),
 				},
 				Inp:     textInp,
 				Fetches: 1,
@@ -770,7 +771,7 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_textVariable, nil),
-					BeginTxFunc:       testutil.StubBeginTx(tx, nil),
+					BeginTxFunc:       testutil.StubBeginTx[sqlutil.Tx](tx, nil),
 				},
 				Tx:      tx,
 				Inp:     textInp,
@@ -790,7 +791,7 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_listVariable, nil),
-					BeginTxFunc:       testutil.StubBeginTx(tx, nil),
+					BeginTxFunc:       testutil.StubBeginTx[sqlutil.Tx](tx, nil),
 				},
 				Tx:            tx,
 				Inp:           textInp,
@@ -811,7 +812,7 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_listVariable, nil),
-					BeginTxFunc:       testutil.StubBeginTx(tx, nil),
+					BeginTxFunc:       testutil.StubBeginTx[sqlutil.Tx](tx, nil),
 				},
 				Tx:       tx,
 				Inp:      listInp,
@@ -832,7 +833,7 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_textVariable, nil),
-					BeginTxFunc:       testutil.StubBeginTx(tx, nil),
+					BeginTxFunc:       testutil.StubBeginTx[sqlutil.Tx](tx, nil),
 				},
 				Tx:      tx,
 				Inp:     textInp,
@@ -849,7 +850,7 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_textVariable, nil),
-					BeginTxFunc:       testutil.StubBeginTx(tx, nil),
+					BeginTxFunc:       testutil.StubBeginTx[sqlutil.Tx](tx, nil),
 				},
 				Tx:      tx,
 				Inp:     textInp,
@@ -866,7 +867,7 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_listVariable, nil),
-					BeginTxFunc:       testutil.StubBeginTx(tx, nil),
+					BeginTxFunc:       testutil.StubBeginTx[sqlutil.Tx](tx, nil),
 				},
 				Tx:       tx,
 				Inp:      listInp,
@@ -884,7 +885,7 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 			return tcase{
 				DB: &DBMock{
 					FetchVariableFunc: stubFetchVariable(_listVariable, nil),
-					BeginTxFunc:       testutil.StubBeginTx(tx, nil),
+					BeginTxFunc:       testutil.StubBeginTx[sqlutil.Tx](tx, nil),
 				},
 				Tx:            tx,
 				Inp:           textInp,
@@ -907,7 +908,7 @@ func Test_Manager_UpdateVariable(t *testing.T) {
 				DB: &DBMock{
 					FetchVariableFunc:      stubFetchVariable(_textVariable, nil),
 					FetchVariableGroupFunc: stubFetchGroup(otherGroup, nil),
-					BeginTxFunc:            testutil.StubBeginTx(tx, nil),
+					BeginTxFunc:            testutil.StubBeginTx[sqlutil.Tx](tx, nil),
 				},
 				Tx:           tx,
 				Inp:          inp,
