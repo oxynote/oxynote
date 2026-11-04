@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/guregu/null/v5"
@@ -400,6 +401,16 @@ func Test_createDocumentArgs_Validate(t *testing.T) {
 		"Name is required": {
 			Args:        createDocumentArgs{},
 			ErrContains: "name is required",
+			Err:         assert.AnError,
+		},
+		"Name of only white space": {
+			Args:        createDocumentArgs{Name: "   "},
+			ErrContains: "document name cannot be empty",
+			Err:         assert.AnError,
+		},
+		"Name over 200 characters": {
+			Args:        createDocumentArgs{Name: strings.Repeat("a", 201)},
+			ErrContains: "cannot be longer than 200",
 			Err:         assert.AnError,
 		},
 		"Icon the picker offers": {Args: createDocumentArgs{Name: "n", Icon: "mingcute:rocket-fill"}},
@@ -927,6 +938,16 @@ func Test_updateDocumentArgs_Validate(t *testing.T) {
 		"Document id is required": {
 			Args:        updateDocumentArgs{Name: "n"},
 			ErrContains: "document_id is required",
+			Err:         assert.AnError,
+		},
+		"Name of only white space": {
+			Args:        updateDocumentArgs{DocumentID: _testDocID, Name: "  "},
+			ErrContains: "document name cannot be empty",
+			Err:         assert.AnError,
+		},
+		"Name over 200 characters": {
+			Args:        updateDocumentArgs{DocumentID: _testDocID, Name: strings.Repeat("a", 201)},
+			ErrContains: "cannot be longer than 200",
 			Err:         assert.AnError,
 		},
 		// any one change is enough, and the root is a change.

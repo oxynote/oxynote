@@ -1784,8 +1784,8 @@ func Test_Handler_SearchDocumentsLegacy(t *testing.T) {
 }
 
 func Test_Handler_CreateDocument(t *testing.T) {
-	validBody := `{"name":"New doc","icon":"icon"}`
-	parentBody := `{"name":"New doc","icon":"icon","parentId":"` + xid.New().String() + `"}`
+	validBody := `{"name":"New doc","icon":"mingcute:rocket-fill"}`
+	parentBody := `{"name":"New doc","icon":"mingcute:rocket-fill","parentId":"` + xid.New().String() + `"}`
 
 	cc := map[string]struct {
 		Tx                                  *TxMock
@@ -1815,6 +1815,26 @@ func Test_Handler_CreateDocument(t *testing.T) {
 		"Invalid JSON body": {
 			Tx:       &TxMock{},
 			Body:     "{",
+			RespCode: http.StatusBadRequest,
+		},
+		"Empty name": {
+			Tx:       &TxMock{},
+			Body:     `{"name":"","icon":"mingcute:rocket-fill"}`,
+			RespCode: http.StatusBadRequest,
+		},
+		"Name of only white space": {
+			Tx:       &TxMock{},
+			Body:     `{"name":"   ","icon":"mingcute:rocket-fill"}`,
+			RespCode: http.StatusBadRequest,
+		},
+		"Name over 200 characters": {
+			Tx:       &TxMock{},
+			Body:     `{"name":"` + strings.Repeat("a", 201) + `","icon":"mingcute:rocket-fill"}`,
+			RespCode: http.StatusBadRequest,
+		},
+		"Icon the picker does not offer": {
+			Tx:       &TxMock{},
+			Body:     `{"name":"New doc","icon":"not-an-icon"}`,
 			RespCode: http.StatusBadRequest,
 		},
 		"Error returned by DB.BeginTx": {

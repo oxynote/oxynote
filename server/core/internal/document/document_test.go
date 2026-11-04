@@ -1,11 +1,13 @@
 package document
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
@@ -496,6 +498,71 @@ func Test_Document_Duplicate(t *testing.T) {
 
 			c.Check(t, c.Document, dup, files)
 			assertUIDsRemapped(t, c.Document.Content, dup.Content, uids)
+		})
+	}
+}
+
+func Test_NewDocument_TrimsName(t *testing.T) {
+	t.Parallel()
+
+	doc := NewDocument(CreateInput{Name: "  Runbook \n"}, "org-1", "user-1")
+
+	assert.Equal(t, "Runbook", doc.DocumentName)
+}
+
+func Test_CreateInput_Validate(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Input       CreateInput
+		Err         error
+		ErrContains string
+		InvalidIcon bool
+	}{
+		"Name only": {Input: CreateInput{Name: "Runbook"}},
+		"Name and icon the picker offers": {
+			Input: CreateInput{Name: "Runbook", Icon: "mingcute:rocket-fill"},
+		},
+		"Name of 200 characters": {
+			Input: CreateInput{Name: strings.Repeat("é", 200)},
+		},
+		"Empty name": {
+			Input: CreateInput{},
+			Err:   ErrInvalidName,
+		},
+		"Name of only white space": {
+			Input: CreateInput{Name: " \t\n "},
+			Err:   ErrInvalidName,
+		},
+		"Name over 200 characters": {
+			Input: CreateInput{Name: strings.Repeat("é", 201)},
+			Err:   ErrNameTooLong,
+		},
+		"White space does not count toward the limit": {
+			Input: CreateInput{Name: " " + strings.Repeat("a", 200) + " "},
+		},
+		"Icon the picker does not offer": {
+			Input:       CreateInput{Name: "Runbook", Icon: "lucide:rocket"},
+			InvalidIcon: true,
+			ErrContains: "mingcute:rocket-fill",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			err := c.Input.Validate()
+
+			if c.InvalidIcon {
+				require.Error(t, err)
+				assert.Equal(t, http.StatusBadRequest, errutil.StatusCode(err, false))
+				assert.Contains(t, err.Error(), c.ErrContains)
+
+				return
+			}
+
+			assert.Equal(t, c.Err, err)
 		})
 	}
 }

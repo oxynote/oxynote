@@ -8,11 +8,15 @@ import (
 	"fmt"
 	"maps"
 	"math/rand"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/icon"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
@@ -25,6 +29,21 @@ var (
 
 	//go:embed files/available_metrics.json
 	_availableMetrics []byte
+)
+
+// _maxNameLength is the most characters a document name holds, since the
+// whole tree is sent to every member of the organization and the name is
+// indexed for search.
+const _maxNameLength = 200
+
+var (
+	// ErrInvalidName is returned when a document is given a name that is
+	// empty or only white space.
+	ErrInvalidName = errutil.New(http.StatusBadRequest, "document.invalid_name", "document name cannot be empty")
+
+	// ErrNameTooLong is returned when a document name holds more than
+	// _maxNameLength characters.
+	ErrNameTooLong = errutil.New(http.StatusBadRequest, "document.name_too_long", "document name cannot be longer than 200 characters")
 )
 
 // DefaultBranch is the name of the default branch for a document.
@@ -93,7 +112,7 @@ func NewDocument(inp CreateInput, organizationID, createdBy string) Document {
 		OrganizationID: organizationID,
 		BranchID:       xid.New(),
 		BranchName:     DefaultBranch,
-		DocumentName:   inp.Name,
+		DocumentName:   strings.TrimSpace(inp.Name),
 		Icon:           inp.Icon,
 		Content:        NewDocumentContent(),
 		Protected:      false,
@@ -305,6 +324,40 @@ type CreateInput struct {
 
 	// ParentID is the identifier for the parent document, if any.
 	ParentID null.Value[xid.ID] `json:"parentId"`
+}
+
+// Validate reports whether the input can become a document. An icon is
+// optional, but one that is given must be an icon the picker offers.
+func (ci CreateInput) Validate() error {
+	if err := ValidateName(ci.Name); err != nil {
+		return err
+	}
+
+	if ci.Icon == "" {
+		return nil
+	}
+
+	if err := icon.Validate(ci.Icon); err != nil {
+		// NOTE: the message lists the closest available icons, so it is kept.
+		return errutil.New(http.StatusBadRequest, "document.invalid_icon", err.Error())
+	}
+
+	return nil
+}
+
+// ValidateName reports whether the name, once the white space around it is
+// trimmed, is neither empty nor longer than _maxNameLength characters.
+func ValidateName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ErrInvalidName
+	}
+
+	if utf8.RuneCountInString(name) > _maxNameLength {
+		return ErrNameTooLong
+	}
+
+	return nil
 }
 
 // ImportInput is the input structure for importing a document.

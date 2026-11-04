@@ -3,6 +3,7 @@ package tools
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/guregu/null/v5"
@@ -285,6 +286,10 @@ func (a createDocumentArgs) Validate() error {
 		return errRequired("name")
 	}
 
+	if err := document.ValidateName(a.Name); err != nil {
+		return err
+	}
+
 	if a.Icon != "" {
 		return icon.Validate(a.Icon)
 	}
@@ -455,6 +460,12 @@ func (a updateDocumentArgs) Validate() error {
 		return errors.New("give at least one of name, icon or parent_id")
 	}
 
+	if a.Name != "" {
+		if err := document.ValidateName(a.Name); err != nil {
+			return err
+		}
+	}
+
 	if a.Icon != "" {
 		if err := icon.Validate(a.Icon); err != nil {
 			return err
@@ -566,7 +577,7 @@ func (updateDocument) Execute(inp *input) (string, error) {
 		return "", fmt.Errorf("fetch document: %w", err)
 	}
 
-	if err := inp.RenameDocument(doc, in.Name, in.Icon); err != nil {
+	if err := inp.RenameDocument(doc, strings.TrimSpace(in.Name), in.Icon); err != nil {
 		return "", err
 	}
 
