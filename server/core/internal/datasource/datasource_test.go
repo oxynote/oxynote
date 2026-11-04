@@ -36,6 +36,66 @@ func undecryptableCredentials(t *testing.T) processor.Credentials {
 	return creds
 }
 
+func Test_Type_Validate(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Type Type
+		Err  error
+	}{
+		"Empty":             {Err: ErrInvalidType},
+		"Unknown":           {Type: "graphite", Err: ErrInvalidType},
+		"Padded upper case": {Type: " PROMETHEUS ", Err: ErrInvalidType},
+		"Prometheus":        {Type: TypePrometheus},
+		"PostgreSQL":        {Type: TypePostgreSQL},
+		"Supabase":          {Type: TypeSupabase},
+		"MariaDB":           {Type: TypeMariaDB},
+		"MySQL":             {Type: TypeMySQL},
+		"Loki":              {Type: TypeLoki},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Type.Validate())
+		})
+	}
+}
+
+func Test_Type_MarshalText(t *testing.T) {
+	t.Parallel()
+
+	text, err := TypePrometheus.MarshalText()
+	require.NoError(t, err)
+	assert.Equal(t, "prometheus", string(text))
+}
+
+func Test_Type_UnmarshalText(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Text string
+		Type Type
+	}{
+		"Known":                     {Text: "prometheus", Type: TypePrometheus},
+		"Padded upper case":         {Text: " PROMETHEUS ", Type: TypePrometheus},
+		"Unknown":                   {Text: "graphite", Type: "graphite"},
+		"Padded upper case unknown": {Text: " Graphite ", Type: "graphite"},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var ty Type
+
+			require.NoError(t, ty.UnmarshalText([]byte(c.Text)))
+			assert.Equal(t, c.Type, ty)
+		})
+	}
+}
+
 func Test_NewDataSource(t *testing.T) {
 	t.Parallel()
 
@@ -47,11 +107,11 @@ func Test_NewDataSource(t *testing.T) {
 		Err    error
 	}{
 		"Name of white space only": {
-			Input: CreateInput{Name: "   "},
+			Input: CreateInput{Type: TypePrometheus, Name: "   "},
 			Err:   ErrInvalidName,
 		},
 		"Invalid credentials": {
-			Input: CreateInput{Name: "test-source", Credentials: processor.NewCredentials([]byte(`[1]`))},
+			Input: CreateInput{Type: TypePrometheus, Name: "test-source", Credentials: processor.NewCredentials([]byte(`[1]`))},
 			Err:   ErrInvalidCredentials,
 		},
 		"Successful creation": {
@@ -134,33 +194,40 @@ func Test_CreateInput_Validate(t *testing.T) {
 		Input CreateInput
 		Err   error
 	}{
+		// the name and credentials are invalid too, so only a type checked
+		// first gives this error.
+		"Unknown type": {
+			Input: CreateInput{Type: "graphite", Credentials: processor.NewCredentials([]byte(`[1]`))},
+			Err:   ErrInvalidType,
+		},
 		"Empty name": {
-			Err: ErrInvalidName,
+			Input: CreateInput{Type: TypePrometheus},
+			Err:   ErrInvalidName,
 		},
 		"Name of white space only": {
-			Input: CreateInput{Name: " \t\n "},
+			Input: CreateInput{Type: TypePrometheus, Name: " \t\n "},
 			Err:   ErrInvalidName,
 		},
 		"Name over the length limit": {
-			Input: CreateInput{Name: strings.Repeat("é", _maxNameLength+1)},
+			Input: CreateInput{Type: TypePrometheus, Name: strings.Repeat("é", _maxNameLength+1)},
 			Err:   ErrNameTooLong,
 		},
 		"Credentials that are not an object": {
-			Input: CreateInput{Name: "Metrics", Credentials: processor.NewCredentials([]byte(`[1]`))},
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: processor.NewCredentials([]byte(`[1]`))},
 			Err:   ErrInvalidCredentials,
 		},
 		"Credentials holding a number": {
-			Input: CreateInput{Name: "Metrics", Credentials: processor.NewCredentials([]byte(`{"username":1}`))},
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: processor.NewCredentials([]byte(`{"username":1}`))},
 			Err:   ErrInvalidCredentials,
 		},
 		"No credentials": {
-			Input: CreateInput{Name: "Metrics"},
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics"},
 		},
 		"Name at the limit once trimmed": {
-			Input: CreateInput{Name: " " + strings.Repeat("é", _maxNameLength) + " "},
+			Input: CreateInput{Type: TypePrometheus, Name: " " + strings.Repeat("é", _maxNameLength) + " "},
 		},
 		"Valid credentials": {
-			Input: CreateInput{Name: "Metrics", Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`))},
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`))},
 		},
 	}
 

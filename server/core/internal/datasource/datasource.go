@@ -16,9 +16,6 @@ import (
 	"github.com/rs/xid"
 )
 
-// Type represents the type of the data source.
-type Type string
-
 const (
 	// TypePrometheus represents a Prometheus data source.
 	TypePrometheus Type = "prometheus"
@@ -39,6 +36,32 @@ const (
 	// TypeLoki represents a Loki data source.
 	TypeLoki Type = "loki"
 )
+
+// Type represents the type of the data source.
+type Type string
+
+// Validate reports whether the type is a known one.
+func (ty Type) Validate() error {
+	switch ty {
+	case TypePrometheus, TypePostgreSQL, TypeSupabase, TypeMariaDB, TypeMySQL, TypeLoki:
+		return nil
+	default:
+		return ErrInvalidType
+	}
+}
+
+// MarshalText returns the type as text.
+func (ty Type) MarshalText() ([]byte, error) {
+	return []byte(ty), nil
+}
+
+// UnmarshalText parses a type, trimmed and lowercased. An unknown type is
+// kept, so Validate reports it with ErrInvalidType and not as bad JSON.
+func (ty *Type) UnmarshalText(text []byte) error {
+	*ty = Type(strings.ToLower(strings.TrimSpace(string(text))))
+
+	return nil
+}
 
 // _maxNameLength is the most characters a data source name holds, the
 // same limit the web form sets.
@@ -67,6 +90,13 @@ var (
 		http.StatusBadRequest,
 		"data_source.name_too_long",
 		"data source name cannot be longer than 128 characters",
+	)
+
+	// ErrInvalidType is returned when a data source has an unknown type.
+	ErrInvalidType = errutil.New(
+		http.StatusBadRequest,
+		"data_source.invalid_type",
+		"invalid data source type",
 	)
 )
 
@@ -241,10 +271,15 @@ type CreateInput struct {
 	Credentials processor.Credentials `json:"credentials"`
 }
 
-// Validate checks that the name, once sanitized, is usable and that the
-// credentials can be read. A connection test does not always read them
-// first: the demo data source passes without them.
+// Validate checks that the type is a known one, that the name, once
+// sanitized, is usable and that the credentials can be read. A connection
+// test does not always read the credentials first: the demo data source
+// passes without them.
 func (ci CreateInput) Validate() error {
+	if err := ci.Type.Validate(); err != nil {
+		return err
+	}
+
 	sanitized := ci.sanitize()
 
 	if err := validateName(sanitized.Name); err != nil {
