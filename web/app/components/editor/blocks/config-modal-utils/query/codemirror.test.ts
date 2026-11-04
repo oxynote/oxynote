@@ -10,6 +10,7 @@ import type { EditorView } from "codemirror"
 import { TimeRangePreset } from "~/utils/time-range"
 import {
 	installAutoImportGlobals,
+	stubLogAPI,
 	stubPrometheusAPI,
 	stubSQLAPI,
 	variableTree,
@@ -39,6 +40,7 @@ installAutoImportGlobals()
 
 const prometheusAPIMock = vi.hoisted(() => vi.fn())
 const sqlAPIMock = vi.hoisted(() => vi.fn())
+const logAPIMock = vi.hoisted(() => vi.fn())
 const dataSourceAPIMock = vi.hoisted(() => vi.fn())
 
 vi.mock("~/composables/api/usePrometheusDataSourceAPI", () => ({
@@ -47,6 +49,10 @@ vi.mock("~/composables/api/usePrometheusDataSourceAPI", () => ({
 
 vi.mock("~/composables/api/useSQLDataSourceAPI", () => ({
 	default: sqlAPIMock,
+}))
+
+vi.mock("~/composables/api/useLogDataSourceAPI", () => ({
+	default: logAPIMock,
 }))
 
 vi.mock("~/composables/api/useDataSourceAPI", () => ({
@@ -69,12 +75,13 @@ interface StubOptions {
 function stubAPIs(options: StubOptions) {
 	const prom = stubPrometheusAPI(prometheusAPIMock, options.prometheusData)
 	const sql = stubSQLAPI(sqlAPIMock, options.sqlData)
+	const logs = stubLogAPI(logAPIMock)
 
 	dataSourceAPIMock.mockReturnValue({
 		fetchDataSources: { state: ref({ data: DATA_SOURCES }) },
 	})
 
-	return { prom, sql }
+	return { prom, sql, logs }
 }
 
 function makeEditor(
@@ -254,10 +261,26 @@ describe("useQueryEditorExtension", () => {
 		expect(labels).toContain("$env")
 	})
 
+	it("wires logql completions for a loki data source", async ({ expect }) => {
+		const { extensions } = makeEditor({ dataSourceId: "loki-1" })
+
+		expect(extensions.value).toBeDefined()
+
+		const labels = await completionLabels(
+			EditorState,
+			CompletionContext,
+			extensions.value as Extension,
+			'{app="api"} | ',
+			14,
+		)
+
+		expect(labels).toContain("json")
+		expect(labels).toContain("$env")
+	})
+
 	it.for([
 		{ name: "provides no extensions without a data source", id: null },
 		{ name: "provides no extensions for an unknown data source", id: "gone" },
-		{ name: "provides no extensions for a loki data source", id: "loki-1" },
 	])("$name", ({ id }, { expect }) => {
 		const { extensions } = makeEditor({ dataSourceId: id })
 

@@ -571,6 +571,24 @@
 					"rate-interval": "Safe interval for rate() and increase(), adjusts to scrape frequency"
 				},
 				"variable": "Current value: {value}. You can change it in the variables sidebar.",
+				"loki": {
+					"json": "Extracts the fields of a JSON line. Nested keys are joined with an underscore.",
+					"logfmt": "Extracts the key=value pairs of a logfmt line.",
+					"regexp": "Extracts the named groups of a regular expression as fields.",
+					"pattern": "Extracts fields by matching each line against a pattern of literal text and named captures.",
+					"unpack": "Unpacks a JSON line made by a pack stage, restoring the labels packed into it.",
+					"line-format": "Rewrites each line from a template that can use its labels and fields.",
+					"label-format": "Renames labels, or sets them from a template.",
+					"drop": "Removes the listed labels and fields.",
+					"keep": "Keeps only the listed labels and fields, and removes the rest.",
+					"decolorize": "Removes ANSI color codes from each line.",
+					"contains": "Keeps the lines that contain the text.",
+					"not-contains": "Drops the lines that contain the text.",
+					"matches": "Keeps the lines that match the regular expression.",
+					"not-matches": "Drops the lines that match the regular expression.",
+					"label": "Stream label. Loki indexes it, so a filter on it is fast.",
+					"field": "Field found in the log lines. Loki does not index it, so a filter on it reads every line of the selected streams."
+				},
 				"sql": {
 					"from": "Start of the selected time range in unix milliseconds",
 					"to": "End of the selected time range in unix milliseconds",

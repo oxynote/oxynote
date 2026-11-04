@@ -3,6 +3,7 @@ import { EditorState } from "@codemirror/state"
 import { usePromQLLegendExtension, usePromQLQueryExtension } from "./promql"
 import type { TimeRangePreset } from "~/utils/time-range"
 import { useSQLLegendExtension, useSQLQueryExtension } from "./sql"
+import { useLogQLQueryExtension } from "./logql"
 import type { VariableTreeResponse } from "~/utils"
 
 export const codemirrorTheme = EditorView.theme({
@@ -206,12 +207,21 @@ export function useQueryEditorExtension(
 		() => isDataSourceSQLBased(selectedDataSourceType.value),
 		variables,
 	)
+	const logqlExtension = useLogQLQueryExtension(
+		t,
+		dataSourceId,
+		timeRange,
+		() => selectedDataSourceType.value === DataSourceType.Loki,
+		variables,
+	)
 
 	return {
 		extensions: computed(() => {
 			switch (selectedDataSourceType.value) {
 				case DataSourceType.Prometheus:
 					return promqlExtension.extensions.value
+				case DataSourceType.Loki:
+					return logqlExtension.extensions.value
 				default:
 					if (isDataSourceSQLBased(selectedDataSourceType.value)) {
 						return sqlExtension.extensions.value

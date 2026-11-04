@@ -388,7 +388,7 @@ test context).
 ## PromQL grammar
 
 [@oxynote/lezer-promql](https://github.com/oxynote/lezer-promql) forks
-Prometheus's grammar to add Grafana-style placeholders (`$__interval`) and
+Prometheus's grammar to add duration placeholders (`$__interval`) and
 variable references (`$env`). It is a published package reaching the app
 through a pnpm override in [pnpm-workspace.yaml](pnpm-workspace.yaml) (so
 `@prometheus-io/codemirror-promql` resolves it too). A grammar change is a

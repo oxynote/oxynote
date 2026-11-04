@@ -108,6 +108,42 @@ export function stubSQLAPI(mock: Mock, data: SQLStubData = {}) {
 	return { api, captured }
 }
 
+export interface LogStubData {
+	fields?: LogFieldsResult | null
+	fieldValues?: LogFieldValuesResult | null
+}
+
+// same contract as stubPrometheusAPI, for the log data source API
+export function stubLogAPI(mock: Mock, data: LogStubData = {}) {
+	const api = {
+		fields: makeQueryStub(data.fields ?? { fields: [] }),
+		fieldValues: makeQueryStub(data.fieldValues ?? { values: [] }),
+	}
+
+	const captured: {
+		fieldsParams?: Ref<LogFieldsParams | null>
+		fieldValuesParams?: Ref<LogFieldValuesParams | null>
+	} = {}
+
+	mock.mockReturnValue({
+		useLogFields: (_id: unknown, params: Ref<LogFieldsParams | null>) => {
+			captured.fieldsParams = params
+
+			return api.fields
+		},
+		useLogFieldValues: (
+			_id: unknown,
+			params: Ref<LogFieldValuesParams | null>,
+		) => {
+			captured.fieldValuesParams = params
+
+			return api.fieldValues
+		},
+	})
+
+	return { api, captured }
+}
+
 // a group holding a list variable on its default and a text variable the
 // user has set
 export function variableTree(): VariableTreeResponse {

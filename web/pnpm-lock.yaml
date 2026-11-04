@@ -40,6 +40,9 @@ importers:
       '@nuxtjs/i18n':
         specifier: ^10.6.0
         version: 10.6.0(@nuxt/schema@4.6.2)(@pinia/colada@1.4.4(pinia@4.0.3(@vue/devtools-api@8.2.1)(typescript@6.0.3)(vue@3.5.44(typescript@6.0.3)))(vue@3.5.44(typescript@6.0.3)))(@vue/compiler-dom@3.5.44)(db0@0.3.4)(dotenv@17.4.2)(esbuild@0.28.2)(eslint@10.10.0(jiti@2.7.0))(giget@3.3.1)(ioredis@5.11.1)(jiti@2.7.0)(pinia@4.0.3(@vue/devtools-api@8.2.1)(typescript@6.0.3)(vue@3.5.44(typescript@6.0.3)))(rolldown@1.2.14)(rollup@4.62.5)(typescript@6.0.3)(vite@8.3.4(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0))(vue@3.5.44(typescript@6.0.3))(webpack@5.107.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.31))
+      '@oxynote/lezer-logql':
+        specifier: file:../../lezer-logql/dist
+        version: file:../../lezer-logql/dist(@lezer/lr@1.4.10)
       '@pinia/colada':
         specifier: ^1.4.4
         version: 1.4.4(pinia@4.0.3(@vue/devtools-api@8.2.1)(typescript@6.0.3)(vue@3.5.44(typescript@6.0.3)))(vue@3.5.44(typescript@6.0.3))
@@ -2525,6 +2528,12 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [win32]
+
+  '@oxynote/lezer-logql@file:../../lezer-logql/dist':
+    resolution: {directory: ../../lezer-logql/dist, type: directory}
+    engines: {node: '>=24', npm: '>=11.12.1'}
+    peerDependencies:
+      '@lezer/lr': ^1.4.0
 
   '@oxynote/lezer-promql@0.314.0-oxynote.2':
     resolution: {integrity: sha512-W2VhLRMhK6ktSTWd7gvkITNlvw55bvE8bfNMo/ft6MlHUYP9P9KxnPG16y0u3ZadA3+tOgs/SLVzxEMYbyj3hQ==}
@@ -12156,6 +12165,10 @@ snapshots:
 
   '@oxc-transform/binding-win32-x64-msvc@0.141.0':
     optional: true
+
+  '@oxynote/lezer-logql@file:../../lezer-logql/dist(@lezer/lr@1.4.10)':
+    dependencies:
+      '@lezer/lr': 1.4.10
 
   '@oxynote/lezer-promql@0.314.0-oxynote.2(@lezer/highlight@1.2.3)(@lezer/lr@1.4.10)':
     dependencies:
