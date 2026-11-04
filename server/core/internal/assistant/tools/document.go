@@ -13,6 +13,9 @@ import (
 	"github.com/rs/xid"
 )
 
+// _defaultDocumentIcon is the icon a document created without one gets.
+const _defaultDocumentIcon = "mingcute:document-2-fill"
+
 // listDocumentsArgs is what list_documents is called with.
 type listDocumentsArgs struct {
 	// ParentID narrows the listing to one parent's children. Null
@@ -263,9 +266,6 @@ type branchInfo struct {
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
-// _defaultDocumentIcon is the icon a document created without one gets.
-const _defaultDocumentIcon = "mingcute:document-2-fill"
-
 // createDocument creates a new document in the organisation.
 type createDocument struct{}
 
@@ -287,6 +287,12 @@ type createDocumentArgs struct {
 func (a createDocumentArgs) Validate() error {
 	if a.Name == "" {
 		return errRequired("name")
+	}
+
+	if a.Icon != "" {
+		if err := icon.Validate(a.Icon); err != nil {
+			return err
+		}
 	}
 
 	return a.input().Validate()
@@ -461,7 +467,7 @@ func (a updateDocumentArgs) Validate() error {
 	}
 
 	if a.Name != "" {
-		if err := document.ValidateName(a.Name); err != nil {
+		if err := document.ValidateName(strings.TrimSpace(a.Name)); err != nil {
 			return err
 		}
 	}

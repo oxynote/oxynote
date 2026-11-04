@@ -1840,7 +1840,7 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			Tx:       &TxMock{},
 			Body:     `{"name":"New doc","icon":"not-an-icon"}`,
 			RespCode: http.StatusBadRequest,
-			RespJSON: `{"code":"document.invalid_icon","message":"icon \"not-an-icon\" is not available and no available icon has a similar name; try a plainer word, such as mingcute:document-2-fill"}`,
+			RespJSON: `{"code":"document.invalid_icon","message":"document icon is not one the icon picker offers"}`,
 		},
 		"Error returned by DB.BeginTx": {
 			Tx:       &TxMock{},

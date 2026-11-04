@@ -1,13 +1,11 @@
 package document
 
 import (
-	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
@@ -37,48 +35,68 @@ func Test_NewDocument(t *testing.T) {
 
 	parentID := null.ValueFrom(xid.New())
 
-	doc, err := NewDocument(CreateInput{
-		Name:     "Runbook",
-		Icon:     "mingcute:rocket-fill",
-		ParentID: parentID,
-	}, "org-1", "user-1")
-	require.NoError(t, err)
-
-	assert.False(t, doc.ID.IsZero())
-	assert.False(t, doc.BranchID.IsZero())
-	assert.Equal(t, parentID, doc.ParentID)
-	assert.Equal(t, "org-1", doc.OrganizationID)
-	assert.Equal(t, DefaultBranch, doc.BranchName)
-	assert.Equal(t, "Runbook", doc.DocumentName)
-	assert.Equal(t, "mingcute:rocket-fill", doc.Icon)
-	assert.True(t, doc.Default)
-	assert.False(t, doc.Protected)
-	assert.Equal(t, null.StringFrom("user-1"), doc.CreatedBy)
-	assert.Equal(t, null.StringFrom("user-1"), doc.LastUpdatedBy)
-	assert.Equal(t, doc.CreatedAt, doc.UpdatedAt)
-
-	// the white space around the name is not stored.
-	padded, err := NewDocument(CreateInput{Name: "  Runbook \n"}, "org-1", "user-1")
-	require.NoError(t, err)
-	assert.Equal(t, "Runbook", padded.DocumentName)
-
-	// input Validate refuses creates no document.
-	for name, bad := range map[string]CreateInput{
-		"empty name":    {Name: "  "},
-		"name too long": {Name: strings.Repeat("a", 201)},
-		"unknown icon":  {Name: "Runbook", Icon: "lucide:rocket"},
-	} {
-		_, err = NewDocument(bad, "org-1", "user-1")
-		require.Error(t, err, name)
+	cc := map[string]struct {
+		Input        CreateInput
+		Err          error
+		ExpectedName string
+		ExpectedIcon string
+	}{
+		"Name, icon and parent": {
+			Input:        CreateInput{Name: "Runbook", Icon: "mingcute:rocket-fill", ParentID: parentID},
+			ExpectedName: "Runbook",
+			ExpectedIcon: "mingcute:rocket-fill",
+		},
+		"White space around the name is not stored": {
+			Input:        CreateInput{Name: "  Runbook \n"},
+			ExpectedName: "Runbook",
+		},
+		"Empty name": {
+			Input: CreateInput{Name: "  "},
+			Err:   ErrInvalidName,
+		},
+		"Name over the length limit": {
+			Input: CreateInput{Name: strings.Repeat("a", _maxNameLength+1)},
+			Err:   ErrNameTooLong,
+		},
+		"Icon the picker does not offer": {
+			Input: CreateInput{Name: "Runbook", Icon: "lucide:rocket"},
+			Err:   ErrInvalidIcon,
+		},
 	}
 
-	// the initial content is a single empty paragraph with a uid.
-	require.Len(t, doc.Content.Content, 1)
-	assert.Equal(t, BlockNodeParagraph, doc.Content.Content[0].Type)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	uid, ok := doc.Content.Content[0].UID()
-	assert.True(t, ok)
-	assert.Len(t, uid, 21)
+			doc, err := NewDocument(c.Input, "org-1", "user-1")
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if c.Err != nil {
+				return
+			}
+
+			assert.False(t, doc.ID.IsZero())
+			assert.False(t, doc.BranchID.IsZero())
+			assert.Equal(t, c.Input.ParentID, doc.ParentID)
+			assert.Equal(t, "org-1", doc.OrganizationID)
+			assert.Equal(t, DefaultBranch, doc.BranchName)
+			assert.Equal(t, c.ExpectedName, doc.DocumentName)
+			assert.Equal(t, c.ExpectedIcon, doc.Icon)
+			assert.True(t, doc.Default)
+			assert.False(t, doc.Protected)
+			assert.Equal(t, null.StringFrom("user-1"), doc.CreatedBy)
+			assert.Equal(t, null.StringFrom("user-1"), doc.LastUpdatedBy)
+			assert.Equal(t, doc.CreatedAt, doc.UpdatedAt)
+
+			// the initial content is a single empty paragraph with a uid.
+			require.Len(t, doc.Content.Content, 1)
+			assert.Equal(t, BlockNodeParagraph, doc.Content.Content[0].Type)
+
+			uid, ok := doc.Content.Content[0].UID()
+			assert.True(t, ok)
+			assert.Len(t, uid, 21)
+		})
+	}
 }
 
 func Test_Document_ApplyUpdate(t *testing.T) {
@@ -522,17 +540,15 @@ func Test_CreateInput_Validate(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Input       CreateInput
-		Err         error
-		ErrContains string
-		InvalidIcon bool
+		Input CreateInput
+		Err   error
 	}{
 		"Name only": {Input: CreateInput{Name: "Runbook"}},
 		"Name and icon the picker offers": {
 			Input: CreateInput{Name: "Runbook", Icon: "mingcute:rocket-fill"},
 		},
 		"Name of 200 characters": {
-			Input: CreateInput{Name: strings.Repeat("é", 200)},
+			Input: CreateInput{Name: strings.Repeat("é", _maxNameLength)},
 		},
 		"Empty name": {
 			Input: CreateInput{},
@@ -543,16 +559,15 @@ func Test_CreateInput_Validate(t *testing.T) {
 			Err:   ErrInvalidName,
 		},
 		"Name over 200 characters": {
-			Input: CreateInput{Name: strings.Repeat("é", 201)},
+			Input: CreateInput{Name: strings.Repeat("é", _maxNameLength+1)},
 			Err:   ErrNameTooLong,
 		},
 		"White space does not count toward the limit": {
-			Input: CreateInput{Name: " " + strings.Repeat("a", 200) + " "},
+			Input: CreateInput{Name: " " + strings.Repeat("a", _maxNameLength) + " "},
 		},
 		"Icon the picker does not offer": {
-			Input:       CreateInput{Name: "Runbook", Icon: "lucide:rocket"},
-			InvalidIcon: true,
-			ErrContains: "mingcute:rocket-fill",
+			Input: CreateInput{Name: "Runbook", Icon: "lucide:rocket"},
+			Err:   ErrInvalidIcon,
 		},
 	}
 
@@ -560,17 +575,7 @@ func Test_CreateInput_Validate(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			err := c.Input.Validate()
-
-			if c.InvalidIcon {
-				require.Error(t, err)
-				assert.Equal(t, http.StatusBadRequest, errutil.StatusCode(err, false))
-				assert.Contains(t, err.Error(), c.ErrContains)
-
-				return
-			}
-
-			assert.Equal(t, c.Err, err)
+			testutil.AssertEqualError(t, c.Err, c.Input.Validate())
 		})
 	}
 }

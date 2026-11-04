@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/assistant/icon"
+	"github.com/oxynote/oxynote/server/core/internal/document/icon"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/strutil"
@@ -39,6 +39,10 @@ var (
 	// ErrInvalidName is returned when a document is given a name that is
 	// empty or only white space.
 	ErrInvalidName = errutil.New(http.StatusBadRequest, "document.invalid_name", "document name cannot be empty")
+
+	// ErrInvalidIcon is returned when a document is given an icon the
+	// editor's picker does not offer.
+	ErrInvalidIcon = errutil.New(http.StatusBadRequest, "document.invalid_icon", "document icon is not one the icon picker offers")
 
 	// ErrNameTooLong is returned when a document name holds more than
 	// _maxNameLength characters.
@@ -347,9 +351,8 @@ func (ci CreateInput) Validate() error {
 		return nil
 	}
 
-	if err := icon.Validate(sanitized.Icon); err != nil {
-		// NOTE: the message lists the closest available icons, so it is kept.
-		return errutil.New(http.StatusBadRequest, "document.invalid_icon", err.Error())
+	if !icon.Find(sanitized.Icon) {
+		return ErrInvalidIcon
 	}
 
 	return nil
@@ -362,10 +365,10 @@ func (ci CreateInput) sanitize() CreateInput {
 	return ci
 }
 
-// ValidateName reports whether the name, once the white space around it is
-// trimmed, is neither empty nor longer than _maxNameLength characters.
+// ValidateName reports whether a trimmed document name is neither empty nor
+// longer than _maxNameLength characters.
 func ValidateName(name string) error {
-	return strutil.ValidateName(strings.TrimSpace(name), _maxNameLength, ErrInvalidName, ErrNameTooLong)
+	return strutil.ValidateName(name, _maxNameLength, ErrInvalidName, ErrNameTooLong)
 }
 
 // ImportInput is the input structure for importing a document.

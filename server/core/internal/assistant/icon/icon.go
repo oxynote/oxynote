@@ -4,13 +4,13 @@ package icon
 
 import (
 	"cmp"
-	_ "embed"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"slices"
 	"strings"
 	"unicode"
+
+	docicon "github.com/oxynote/oxynote/server/core/internal/document/icon"
 )
 
 const (
@@ -33,12 +33,6 @@ const (
 	_minPartialWord = 4
 )
 
-// _iconsJSON is the picker's icon list, in the picker's order.
-// scripts/check-icons.mjs keeps it equal to web/app/utils/icon.ts.
-//
-//go:embed icons.json
-var _iconsJSON []byte
-
 // _styleSuffix matches the style and variant suffixes an icon id ends
 // with, such as -fill, -24-filled or -2.
 var _styleSuffix = regexp.MustCompile(`(-(fill|line|filled|outline|solid|\d+))+$`)
@@ -46,10 +40,10 @@ var _styleSuffix = regexp.MustCompile(`(-(fill|line|filled|outline|solid|\d+))+$
 // entry is one icon the picker offers.
 type entry struct {
 	// ID specifies the Iconify id, such as mingcute:rocket-fill.
-	ID string `json:"id"`
+	ID string
 
 	// Name specifies the words the picker shows and searches.
-	Name string `json:"name"`
+	Name string
 }
 
 // words returns the lowercase words of the icon's name and id.
@@ -64,14 +58,15 @@ func Validate(id string) error {
 		return fmt.Errorf("icon is %d bytes, but an icon id is at most %d; use an id from the icon picker", len(id), _maxIDLength)
 	}
 
-	var entries []entry
-	if err := json.Unmarshal(_iconsJSON, &entries); err != nil {
-		// NOCOV: the embedded file is valid, or every Validate test fails.
-		return fmt.Errorf("parsing the embedded icon list: %w", err)
+	if docicon.Find(id) {
+		return nil
 	}
 
-	if slices.ContainsFunc(entries, func(e entry) bool { return e.ID == id }) {
-		return nil
+	list := docicon.List()
+	entries := make([]entry, 0, len(list))
+
+	for _, e := range list {
+		entries = append(entries, entry{ID: e.ID, Name: e.Name})
 	}
 
 	closest := suggest(entries, id)
