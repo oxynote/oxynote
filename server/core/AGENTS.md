@@ -160,9 +160,10 @@ both**; a swallowed error is logged with a comment saying why.
 
 `internal/db/db.go` is the implementation: an unexported `agent` embedded in
 both `DB` and `Tx`, so **every query method is defined on `*agent`** and
-available in both modes. `DB.BeginTx(ctx, dest any)` sets a `*Tx` into the
-pointer it is given; `sqlutil.WrapTx` runs a multi-statement write
-atomically from inside an agent method, reusing an ambient transaction.
+available in both modes. `sqlutil.BeginTx[T](ctx, db)` returns the `*Tx`
+of `DB.BeginTx` as the caller's own `T`; `sqlutil.WrapTx` runs a
+multi-statement write atomically from inside an agent method, reusing an
+ambient transaction.
 
 Each consumer package declares, at the bottom of its main file, `DBAgent`
 (the query methods), `DB` (`sqlutil.DB` + `DBAgent`) and `Tx` (`sqlutil.Tx`
@@ -170,7 +171,7 @@ Each consumer package declares, at the bottom of its main file, `DBAgent`
 children's `DB` by embedding, so one `*db.DB` satisfies the tree; leaf
 consumers that never transact declare a flat `DB`.
 
-The transaction idiom: `var tx Tx; err := m.db.BeginTx(ctx, &tx)`; `defer
+The transaction idiom: `tx, err := sqlutil.BeginTx[Tx](ctx, m.db)`; `defer
 tx.Rollback() //nolint:errcheck // error provides no meaningful info`;
 statements; `tx.Commit()`; **in-memory state is mutated only after a
 successful commit**.
@@ -284,11 +285,12 @@ for state/outputs, `was*Called(count)` for call counts and params**,
 zero-count checks included, run in the subtest epilogue. Exemplar:
 `internal/server/internal/notification/http_test.go`.
 
-**Transactions.** The DB mock injects the Tx mock through `dest` as the real
-`BeginTx` does, via a `stubDB(tx, beginErr)` closure, and the `*TxMock` is
-stored on the case for `was*` checks. Standard cases: BeginTx error, each
-statement's error, Commit error, success, each with exact commit/rollback
-counts. Exemplar: `internal/assistant/tools/document_test.go`.
+**Transactions.** The DB mock returns the Tx mock through
+`testutil.StubBeginTx[sqlutil.Tx]` in a `stubDB(tx, beginErr)` closure,
+and the `*TxMock` is stored on the case for `was*` checks. Standard cases:
+BeginTx error, each statement's error, Commit error, success, each with
+exact commit/rollback counts.
+Exemplar: `internal/assistant/tools/document_test.go`.
 
 **Database-layer tests** (`internal/db/db_test.go`): `TestMain` starts one
 gnomock Postgres per package run; `prepTempDB(t)` gives each subtest its own

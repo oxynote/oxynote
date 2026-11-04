@@ -459,9 +459,8 @@ func (i *input) CreateDocument(doc document.Document) error {
 		}
 	}
 
-	var tx Tx
-
-	if err := i.db.BeginTx(i.ctx, &tx); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](i.ctx, i.db)
+	if err != nil {
 		return fmt.Errorf("begin: %w", err)
 	}
 
@@ -526,9 +525,8 @@ func (i *input) DeleteDocument(id xid.ID) error {
 		parentID = doc.ParentID
 	}
 
-	var tx Tx
-
-	if err := i.db.BeginTx(i.ctx, &tx); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](i.ctx, i.db)
+	if err != nil {
 		return err
 	}
 

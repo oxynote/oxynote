@@ -216,9 +216,8 @@ func (m *Manager) UpdateVariable(ctx context.Context, id xid.ID, inp variable.In
 		}
 	}
 
-	var tx Tx
-
-	if err = m.db.BeginTx(ctx, &tx); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](ctx, m.db)
+	if err != nil {
 		return err
 	}
 

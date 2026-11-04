@@ -9,6 +9,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -493,7 +494,7 @@ func Test_createDocument_Execute(t *testing.T) {
 
 	stubDB := func(tx *TxMock, beginErr error) *DBMock {
 		return &DBMock{
-			BeginTxFunc: testutil.StubBeginTx(tx, beginErr),
+			BeginTxFunc: testutil.StubBeginTx[sqlutil.Tx](tx, beginErr),
 		}
 	}
 
@@ -799,7 +800,7 @@ func Test_deleteDocument_Execute(t *testing.T) {
 
 	stubDB := func(tx *TxMock, beginErr error) *DBMock {
 		db := stubDocumentDB()
-		db.BeginTxFunc = testutil.StubBeginTx(tx, beginErr)
+		db.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](tx, beginErr)
 
 		return db
 	}

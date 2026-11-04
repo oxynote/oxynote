@@ -579,9 +579,8 @@ func (h *Handler) DeleteDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var tx Tx
-
-	if err = h.db.BeginTx(r.Context(), &tx); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
