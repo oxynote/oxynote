@@ -102,7 +102,15 @@ type Document struct {
 }
 
 // NewDocument creates a new document instance with the provided organization ID.
-func NewDocument(inp CreateInput, organizationID, createdBy string) Document {
+// The name is kept without the white space around it. It fails on an input
+// Validate refuses.
+func NewDocument(inp CreateInput, organizationID, createdBy string) (Document, error) {
+	inp = inp.sanitize()
+
+	if err := inp.Validate(); err != nil {
+		return Document{}, err
+	}
+
 	now := timeutil.Now()
 
 	return Document{
@@ -111,7 +119,7 @@ func NewDocument(inp CreateInput, organizationID, createdBy string) Document {
 		OrganizationID: organizationID,
 		BranchID:       xid.New(),
 		BranchName:     DefaultBranch,
-		DocumentName:   strings.TrimSpace(inp.Name),
+		DocumentName:   inp.Name,
 		Icon:           inp.Icon,
 		Content:        NewDocumentContent(),
 		Protected:      false,
@@ -120,7 +128,7 @@ func NewDocument(inp CreateInput, organizationID, createdBy string) Document {
 		CreatedBy:      null.StringFrom(createdBy),
 		UpdatedAt:      now,
 		LastUpdatedBy:  null.StringFrom(createdBy),
-	}
+	}, nil
 }
 
 // ApplyUpdate updates document instance with the input data.
@@ -325,23 +333,33 @@ type CreateInput struct {
 	ParentID null.Value[xid.ID] `json:"parentId"`
 }
 
-// Validate reports whether the input can become a document. An icon is
-// optional, but one that is given must be an icon the picker offers.
+// Validate reports whether the input, once sanitized, can become a document.
+// An icon is optional, but one that is given must be an icon the picker
+// offers.
 func (ci CreateInput) Validate() error {
-	if err := ValidateName(ci.Name); err != nil {
+	sanitized := ci.sanitize()
+
+	if err := ValidateName(sanitized.Name); err != nil {
 		return err
 	}
 
-	if ci.Icon == "" {
+	if sanitized.Icon == "" {
 		return nil
 	}
 
-	if err := icon.Validate(ci.Icon); err != nil {
+	if err := icon.Validate(sanitized.Icon); err != nil {
 		// NOTE: the message lists the closest available icons, so it is kept.
 		return errutil.New(http.StatusBadRequest, "document.invalid_icon", err.Error())
 	}
 
 	return nil
+}
+
+// sanitize returns the input with the white space around the name trimmed.
+func (ci CreateInput) sanitize() CreateInput {
+	ci.Name = strings.TrimSpace(ci.Name)
+
+	return ci
 }
 
 // ValidateName reports whether the name, once the white space around it is
@@ -452,10 +470,14 @@ func NewWelcomeDocument(organizationID, createdBy string, dataSourceID null.Valu
 		return Document{}, err
 	}
 
-	doc := NewDocument(CreateInput{
+	doc, err := NewDocument(CreateInput{
 		Name: "Welcome to Oxynote!",
 		Icon: "mingcute:flag-4-fill",
 	}, organizationID, createdBy)
+	if err != nil {
+		return Document{}, err
+	}
+
 	doc.Content = content
 
 	return doc, nil

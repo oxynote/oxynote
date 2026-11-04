@@ -263,6 +263,9 @@ type branchInfo struct {
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
+// _defaultDocumentIcon is the icon a document created without one gets.
+const _defaultDocumentIcon = "mingcute:document-2-fill"
+
 // createDocument creates a new document in the organisation.
 type createDocument struct{}
 
@@ -286,15 +289,18 @@ func (a createDocumentArgs) Validate() error {
 		return errRequired("name")
 	}
 
-	if err := document.ValidateName(a.Name); err != nil {
-		return err
+	return a.input().Validate()
+}
+
+// input returns the arguments as the domain's create input, with the
+// default icon when none is given.
+func (a createDocumentArgs) input() document.CreateInput {
+	iconID := a.Icon
+	if iconID == "" {
+		iconID = _defaultDocumentIcon
 	}
 
-	if a.Icon != "" {
-		return icon.Validate(a.Icon)
-	}
-
-	return nil
+	return document.CreateInput{Name: a.Name, Icon: iconID, ParentID: a.ParentID}
 }
 
 // Info returns the tool's model-facing description.
@@ -336,18 +342,12 @@ func (createDocument) Execute(inp *input) (string, error) {
 		return "", err
 	}
 
-	iconID := in.Icon
-	if iconID == "" {
-		iconID = "mingcute:document-2-fill"
+	doc, err := document.NewDocument(in.input(), inp.orgID, inp.userID)
+	if err != nil {
+		return "", err
 	}
 
-	doc := document.NewDocument(document.CreateInput{
-		Name:     in.Name,
-		Icon:     iconID,
-		ParentID: in.ParentID,
-	}, inp.orgID, inp.userID)
-
-	if err := inp.CreateDocument(doc); err != nil {
+	if err = inp.CreateDocument(doc); err != nil {
 		return "", err
 	}
 

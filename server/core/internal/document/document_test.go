@@ -23,7 +23,7 @@ func stubDocument() Document {
 		BranchID:       xid.New(),
 		BranchName:     DefaultBranch,
 		DocumentName:   "Runbook",
-		Icon:           "📘",
+		Icon:           "mingcute:rocket-fill",
 		Content:        stubMarkedTree(),
 		RawContent:     []byte("raw"),
 		Default:        true,
@@ -37,11 +37,12 @@ func Test_NewDocument(t *testing.T) {
 
 	parentID := null.ValueFrom(xid.New())
 
-	doc := NewDocument(CreateInput{
+	doc, err := NewDocument(CreateInput{
 		Name:     "Runbook",
-		Icon:     "📘",
+		Icon:     "mingcute:rocket-fill",
 		ParentID: parentID,
 	}, "org-1", "user-1")
+	require.NoError(t, err)
 
 	assert.False(t, doc.ID.IsZero())
 	assert.False(t, doc.BranchID.IsZero())
@@ -49,7 +50,7 @@ func Test_NewDocument(t *testing.T) {
 	assert.Equal(t, "org-1", doc.OrganizationID)
 	assert.Equal(t, DefaultBranch, doc.BranchName)
 	assert.Equal(t, "Runbook", doc.DocumentName)
-	assert.Equal(t, "📘", doc.Icon)
+	assert.Equal(t, "mingcute:rocket-fill", doc.Icon)
 	assert.True(t, doc.Default)
 	assert.False(t, doc.Protected)
 	assert.Equal(t, null.StringFrom("user-1"), doc.CreatedBy)
@@ -57,8 +58,19 @@ func Test_NewDocument(t *testing.T) {
 	assert.Equal(t, doc.CreatedAt, doc.UpdatedAt)
 
 	// the white space around the name is not stored.
-	padded := NewDocument(CreateInput{Name: "  Runbook \n"}, "org-1", "user-1")
+	padded, err := NewDocument(CreateInput{Name: "  Runbook \n"}, "org-1", "user-1")
+	require.NoError(t, err)
 	assert.Equal(t, "Runbook", padded.DocumentName)
+
+	// input Validate refuses creates no document.
+	for name, bad := range map[string]CreateInput{
+		"empty name":    {Name: "  "},
+		"name too long": {Name: strings.Repeat("a", 201)},
+		"unknown icon":  {Name: "Runbook", Icon: "lucide:rocket"},
+	} {
+		_, err = NewDocument(bad, "org-1", "user-1")
+		require.Error(t, err, name)
+	}
 
 	// the initial content is a single empty paragraph with a uid.
 	require.Len(t, doc.Content.Content, 1)

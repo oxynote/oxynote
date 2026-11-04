@@ -436,6 +436,34 @@ func Test_createDocumentArgs_Validate(t *testing.T) {
 	}
 }
 
+func Test_createDocumentArgs_input(t *testing.T) {
+	t.Parallel()
+
+	parentID := null.ValueFrom(xid.New())
+
+	cc := map[string]struct {
+		Args   createDocumentArgs
+		Result document.CreateInput
+	}{
+		"Icon given": {
+			Args:   createDocumentArgs{Name: "n", Icon: "mingcute:rocket-fill", ParentID: parentID},
+			Result: document.CreateInput{Name: "n", Icon: "mingcute:rocket-fill", ParentID: parentID},
+		},
+		"Icon omitted falls back to the default": {
+			Args:   createDocumentArgs{Name: "n"},
+			Result: document.CreateInput{Name: "n", Icon: _defaultDocumentIcon},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Args.input())
+		})
+	}
+}
+
 func Test_createDocument_Info(t *testing.T) {
 	t.Parallel()
 
