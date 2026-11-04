@@ -39,18 +39,15 @@ updates:
       - dependency-name: "zod"
         versions: [">=4.0.0"]
     groups:
-      # better-auth does not follow semver — 1.x minor releases can be
-      # breaking, so its minor updates go into this breaking-changes group
-      # instead of the safe group. It must stay first so it wins the overlap
-      # with the catch-all groups below. Patch releases still fall through to
-      # the safe group.
-      better-auth-breaking:
+      # better-auth does not follow semver and its plugins pin its internals
+      # exactly, so all its packages move together, one PR per release. The
+      # group takes every update type: an update filtered out here gets a PR
+      # of its own instead of falling through to "safe". It stays first so
+      # it wins the overlap with the catch-all groups below.
+      better-auth:
         patterns:
           - "better-auth"
           - "@better-auth/*"
-        update-types:
-          - "major"
-          - "minor"
       breaking:
         patterns:
           - "*"
@@ -83,16 +80,11 @@ updates:
       - dependency-name: "@hono/node-server"
         versions: [">=2.0.0"]
     groups:
-      # same better-auth non-semver caveat as the web entry above: minor
-      # releases are treated as breaking, patch releases fall through to the
-      # safe group.
-      better-auth-breaking:
+      # same better-auth group as the web entry above.
+      better-auth:
         patterns:
           - "better-auth"
           - "@better-auth/*"
-        update-types:
-          - "major"
-          - "minor"
       breaking:
         patterns:
           - "*"

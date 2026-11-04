@@ -5,6 +5,7 @@ import GaugeChart from "./visualizations/GaugeChart.vue"
 import {
 	CONFIG_DEBOUNCE_MS,
 	refreshIntervalToMs,
+	requestErrorMessage,
 	resolveTimeRange,
 	type MetricConfig,
 	type MetricSimulationPreset,
@@ -216,6 +217,36 @@ const drawnSimulationPreset = computed(() => {
 	)
 })
 
+// an answer is on its way and no chart is drawn yet, which is not the same
+// as a query that returned nothing. A refresh or a new time range keeps a
+// drawn chart, as the previous answer stays as placeholder data.
+const awaitingAnswer = computed(() => {
+	if (
+		drawnSimulationPreset.value ||
+		fetchMetricData.asyncStatus.value !== "loading"
+	) {
+		return false
+	}
+
+	return (
+		fetchMetricData.state.value.data === undefined ||
+		(fetchMetricData.isPlaceholderData.value &&
+			data.value.status !== GenericQueryResultStatus.Ok)
+	)
+})
+
+// the loading state waits a moment, so a quick answer goes straight to its
+// chart or empty state without a flash
+const LOADING_STATE_DELAY_MS = 400
+const loadingDelayPassed = ref(false)
+const loadingDelay = useTimeoutFn(
+	() => {
+		loadingDelayPassed.value = true
+	},
+	LOADING_STATE_DELAY_MS,
+	{ immediate: false },
+)
+
 const processedQueries = computed(() => {
 	const res = fetchMetricData.state.value.data
 	const queries = debouncedConfig.value.queries
@@ -251,6 +282,20 @@ const data = computed<{
 			debouncedConfig.value.decimals || null,
 			orderedLegendLabel(),
 		)
+	}
+
+	// a request that failed outright has no results to look at, so it is
+	// shown as the query error it is rather than as an empty answer
+	if (fetchMetricData.state.value.status === "error") {
+		return {
+			status: GenericQueryResultStatus.QueryError,
+			queryErrorMessage:
+				requestErrorMessage(fetchMetricData.state.value.error) ??
+				t("editor.metrics.status.query-error.request-failed"),
+			queryIndex: 0,
+			multipleQueries: false,
+			data: null,
+		}
 	}
 
 	const results = fetchMetricData.state.value.data ?? []
@@ -352,6 +397,15 @@ watch(
 		}, 3000)
 	},
 )
+
+watchImmediate(awaitingAnswer, (awaiting) => {
+	loadingDelayPassed.value = false
+	if (awaiting) {
+		loadingDelay.start()
+	} else {
+		loadingDelay.stop()
+	}
+})
 
 watchImmediate(
 	() => !!drawnSimulationPreset.value,
@@ -468,7 +522,21 @@ function openModal() {
 </script>
 <template>
 	<div class="relative flex size-full min-w-0 items-center justify-center">
-		<template v-if="data.status === GenericQueryResultStatus.Ok && data.data">
+		<div v-if="awaitingAnswer" class="text-foreground">
+			<ShadcnUiEmpty v-if="loadingDelayPassed">
+				<ShadcnUiEmptyHeader>
+					<ShadcnUiEmptyMedia variant="icon" class="size-9">
+						<Icon name="svg-spinners:blocks-shuffle-3" class="size-6" />
+					</ShadcnUiEmptyMedia>
+					<ShadcnUiEmptyTitle>
+						{{ $t("editor.metrics.status.loading.title") }}
+					</ShadcnUiEmptyTitle>
+				</ShadcnUiEmptyHeader>
+			</ShadcnUiEmpty>
+		</div>
+		<template
+			v-else-if="data.status === GenericQueryResultStatus.Ok && data.data"
+		>
 			<LineChart
 				v-if="props.config.visualizationType === GenericQueryChartType.Line"
 				:series-data="data.data as MultipleLineChartData"

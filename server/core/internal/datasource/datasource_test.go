@@ -2,6 +2,7 @@ package datasource
 
 import (
 	"encoding/base64"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,32 +36,128 @@ func undecryptableCredentials(t *testing.T) processor.Credentials {
 	return creds
 }
 
+func Test_Type_Validate(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Type Type
+		Err  error
+	}{
+		"Empty":             {Err: ErrInvalidType},
+		"Unknown":           {Type: "graphite", Err: ErrInvalidType},
+		"Padded upper case": {Type: " PROMETHEUS ", Err: ErrInvalidType},
+		"Prometheus":        {Type: TypePrometheus},
+		"PostgreSQL":        {Type: TypePostgreSQL},
+		"Supabase":          {Type: TypeSupabase},
+		"MariaDB":           {Type: TypeMariaDB},
+		"MySQL":             {Type: TypeMySQL},
+		"Loki":              {Type: TypeLoki},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Type.Validate())
+		})
+	}
+}
+
+func Test_Type_MarshalText(t *testing.T) {
+	t.Parallel()
+
+	text, err := TypePrometheus.MarshalText()
+	require.NoError(t, err)
+	assert.Equal(t, "prometheus", string(text))
+}
+
+func Test_Type_UnmarshalText(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Text string
+		Type Type
+	}{
+		"Known":                     {Text: "prometheus", Type: TypePrometheus},
+		"Padded upper case":         {Text: " PROMETHEUS ", Type: TypePrometheus},
+		"Unknown":                   {Text: "graphite", Type: "graphite"},
+		"Padded upper case unknown": {Text: " Graphite ", Type: "graphite"},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var ty Type
+
+			require.NoError(t, ty.UnmarshalText([]byte(c.Text)))
+			assert.Equal(t, c.Type, ty)
+		})
+	}
+}
+
 func Test_NewDataSource(t *testing.T) {
 	t.Parallel()
 
-	ds := NewDataSource(CreateInput{
-		Type:        TypePrometheus,
-		Name:        "test-source",
-		URL:         "http://prometheus.test",
-		Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
-	}, "org-1")
+	creds := processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`))
 
-	require.NotNil(t, ds)
-	assert.False(t, ds.ID.IsNil())
-	assert.Equal(t, "org-1", ds.OrganizationID)
-	assert.Equal(t, "test-source", ds.Name)
-	assert.Equal(t, TypePrometheus, ds.Type)
-	assert.Equal(t, "http://prometheus.test", ds.URL)
-	assert.Equal(t, processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)), ds.Credentials)
-	assert.Equal(t, processor.ConnectionStatusSuccess, ds.Status)
-	assert.WithinDuration(t, timeutil.Now(), ds.CreatedAt, time.Second)
-	assert.False(t, ds.UpdatedAt.Valid)
+	cc := map[string]struct {
+		Input  CreateInput
+		Result *DataSource
+		Err    error
+	}{
+		"Name of white space only": {
+			Input: CreateInput{Type: TypePrometheus, Name: "   "},
+			Err:   ErrInvalidName,
+		},
+		"Invalid credentials": {
+			Input: CreateInput{Type: TypePrometheus, Name: "test-source", Credentials: processor.NewCredentials([]byte(`[1]`))},
+			Err:   ErrInvalidCredentials,
+		},
+		"Successful creation": {
+			Input: CreateInput{
+				Type:        TypePrometheus,
+				Name:        " test-source ",
+				URL:         "http://prometheus.test",
+				Credentials: creds,
+			},
+			Result: &DataSource{
+				OrganizationID: "org-1",
+				Name:           "test-source",
+				Type:           TypePrometheus,
+				URL:            "http://prometheus.test",
+				Credentials:    creds,
+				Status:         processor.ConnectionStatusSuccess,
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := NewDataSource(c.Input, "org-1")
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, res)
+				return
+			}
+
+			require.NotNil(t, res)
+			assert.False(t, res.ID.IsNil())
+			assert.WithinDuration(t, timeutil.Now(), res.CreatedAt, time.Second)
+			testutil.AssertFilterEqual(t, c.Result, res, xid.ID{}, time.Time{})
+		})
+	}
 }
 
 func Test_NewDemoDataSources(t *testing.T) {
 	t.Parallel()
 
-	dd := NewDemoDataSources("org-1")
+	dd, err := NewDemoDataSources("org-1")
+	require.NoError(t, err)
 	require.Len(t, dd, 1)
 
 	ds := dd[0]
@@ -91,21 +188,46 @@ func Test_DataSource_Info(t *testing.T) {
 }
 
 func Test_CreateInput_Validate(t *testing.T) {
+	t.Parallel()
+
 	cc := map[string]struct {
-		Credentials processor.Credentials
-		Err         error
+		Input CreateInput
+		Err   error
 	}{
+		// the name and credentials are invalid too, so only a type checked
+		// first gives this error.
+		"Unknown type": {
+			Input: CreateInput{Type: "graphite", Credentials: processor.NewCredentials([]byte(`[1]`))},
+			Err:   ErrInvalidType,
+		},
+		"Empty name": {
+			Input: CreateInput{Type: TypePrometheus},
+			Err:   ErrInvalidName,
+		},
+		"Name of white space only": {
+			Input: CreateInput{Type: TypePrometheus, Name: " \t\n "},
+			Err:   ErrInvalidName,
+		},
+		"Name over the length limit": {
+			Input: CreateInput{Type: TypePrometheus, Name: strings.Repeat("é", _maxNameLength+1)},
+			Err:   ErrNameTooLong,
+		},
 		"Credentials that are not an object": {
-			Credentials: processor.NewCredentials([]byte(`[1]`)),
-			Err:         ErrInvalidCredentials,
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: processor.NewCredentials([]byte(`[1]`))},
+			Err:   ErrInvalidCredentials,
 		},
 		"Credentials holding a number": {
-			Credentials: processor.NewCredentials([]byte(`{"username":1}`)),
-			Err:         ErrInvalidCredentials,
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: processor.NewCredentials([]byte(`{"username":1}`))},
+			Err:   ErrInvalidCredentials,
 		},
-		"No credentials": {},
+		"No credentials": {
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics"},
+		},
+		"Name at the limit once trimmed": {
+			Input: CreateInput{Type: TypePrometheus, Name: " " + strings.Repeat("é", _maxNameLength) + " "},
+		},
 		"Valid credentials": {
-			Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`))},
 		},
 	}
 
@@ -113,8 +235,33 @@ func Test_CreateInput_Validate(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			err := CreateInput{Credentials: c.Credentials}.Validate()
-			testutil.AssertEqualError(t, c.Err, err)
+			testutil.AssertEqualError(t, c.Err, c.Input.Validate())
+		})
+	}
+}
+
+func Test_CreateInput_sanitize(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Input  CreateInput
+		Result CreateInput
+	}{
+		"Name without outer white space": {
+			Input:  CreateInput{Type: TypePrometheus, Name: "Metrics"},
+			Result: CreateInput{Type: TypePrometheus, Name: "Metrics"},
+		},
+		"Name with outer white space": {
+			Input:  CreateInput{Type: TypePrometheus, Name: " \tMetrics\n "},
+			Result: CreateInput{Type: TypePrometheus, Name: "Metrics"},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Input.sanitize())
 		})
 	}
 }
@@ -128,7 +275,18 @@ func Test_DataSource_ApplyUpdate(t *testing.T) {
 		Creds      processor.Credentials
 		Err        error
 	}{
-		"Error returned by updateCredentials": {
+		"Name of white space only": {
+			DataSource: &DataSource{
+				Type: TypePrometheus,
+				Name: "old",
+				URL:  "http://old.test",
+			},
+			Inp: UpdateInput{
+				Name: null.StringFrom("   "),
+			},
+			Err: ErrInvalidName,
+		},
+		"Error returned by updatedCredentials": {
 			DataSource: &DataSource{
 				Type: Type("bogus"),
 				Name: "old",
@@ -155,7 +313,7 @@ func Test_DataSource_ApplyUpdate(t *testing.T) {
 				URL:  "http://old.test",
 			},
 			Inp: UpdateInput{
-				Name: null.StringFrom("new"),
+				Name: null.StringFrom(" new "),
 				URL:  null.StringFrom("http://new.test"),
 			},
 			Name: "new",
@@ -237,23 +395,25 @@ func Test_DataSource_ApplyUpdate(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			err := c.DataSource.ApplyUpdate(c.Inp)
+			res, err := c.DataSource.ApplyUpdate(c.Inp)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
 
-			assert.Equal(t, c.Name, c.DataSource.Name)
-			assert.Equal(t, c.URL, c.DataSource.URL)
-			assert.Equal(t, c.Creds, c.DataSource.Credentials)
-			require.True(t, c.DataSource.UpdatedAt.Valid)
-			assert.WithinDuration(t, timeutil.Now(), c.DataSource.UpdatedAt.Time, time.Second)
+			assert.Equal(t, c.Name, res.Name)
+			assert.Equal(t, c.URL, res.URL)
+			assert.Equal(t, c.Creds, res.Credentials)
+			require.True(t, res.UpdatedAt.Valid)
+			assert.WithinDuration(t, timeutil.Now(), res.UpdatedAt.Time, time.Second)
+			assert.Equal(t, "old", c.DataSource.Name)
+			assert.False(t, c.DataSource.UpdatedAt.Valid)
 		})
 	}
 }
 
-func Test_DataSource_updateCredentials(t *testing.T) {
+func Test_DataSource_updatedCredentials(t *testing.T) {
 	cc := map[string]struct {
 		DataSource *DataSource
 		Inp        null.Value[processor.CredentialsUpdateInput]
@@ -338,14 +498,100 @@ func Test_DataSource_updateCredentials(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			err := c.DataSource.updateCredentials(c.Inp)
+			res, err := c.DataSource.updatedCredentials(c.Inp)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
 
-			assert.Equal(t, c.Creds, c.DataSource.Credentials)
+			assert.Equal(t, c.Creds, res)
+		})
+	}
+}
+
+func Test_UpdateInput_Validate(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Input UpdateInput
+		Err   error
+	}{
+		"Name of white space only": {
+			Input: UpdateInput{Name: null.StringFrom("   ")},
+			Err:   ErrInvalidName,
+		},
+		"Name over the length limit": {
+			Input: UpdateInput{Name: null.StringFrom(strings.Repeat("a", _maxNameLength+1))},
+			Err:   ErrNameTooLong,
+		},
+		"Name unset": {
+			Input: UpdateInput{URL: null.StringFrom("http://new.test")},
+		},
+		"Name with outer white space": {
+			Input: UpdateInput{Name: null.StringFrom(" Metrics ")},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Input.Validate())
+		})
+	}
+}
+
+func Test_UpdateInput_sanitize(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Input  UpdateInput
+		Result UpdateInput
+	}{
+		"Name unset": {
+			Input:  UpdateInput{URL: null.StringFrom("http://new.test")},
+			Result: UpdateInput{URL: null.StringFrom("http://new.test")},
+		},
+		"Name with outer white space": {
+			Input:  UpdateInput{Name: null.StringFrom(" Metrics\t")},
+			Result: UpdateInput{Name: null.StringFrom("Metrics")},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Input.sanitize())
+		})
+	}
+}
+
+func Test_validateName(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Name string
+		Err  error
+	}{
+		"Empty name": {
+			Err: ErrInvalidName,
+		},
+		"Name over the length limit": {
+			Name: strings.Repeat("a", _maxNameLength+1),
+			Err:  ErrNameTooLong,
+		},
+		"Name at the length limit": {
+			Name: strings.Repeat("a", _maxNameLength),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, validateName(c.Name))
 		})
 	}
 }

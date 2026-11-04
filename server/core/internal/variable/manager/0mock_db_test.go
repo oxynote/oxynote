@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/oxynote/oxynote/server/core/internal/variable"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
 )
 
@@ -21,7 +22,7 @@ var _ DB = &DBMock{}
 //
 //		// make and configure a mocked DB
 //		mockedDB := &DBMock{
-//			BeginTxFunc: func(ctx context.Context, dest any) error {
+//			BeginTxFunc: func(ctx context.Context) (sqlutil.Tx, error) {
 //				panic("mock out the BeginTx method")
 //			},
 //			CreateVariableFunc: func(ctx context.Context, v variable.Variable) error {
@@ -66,7 +67,7 @@ var _ DB = &DBMock{}
 //			UpdateVariableDefaultFunc: func(ctx context.Context, v variable.Variable) error {
 //				panic("mock out the UpdateVariableDefault method")
 //			},
-//			UpdateVariableGroupFunc: func(ctx context.Context, organizationID string, id xid.ID, inp variable.GroupUpdateInput) error {
+//			UpdateVariableGroupFunc: func(ctx context.Context, g variable.Group) error {
 //				panic("mock out the UpdateVariableGroup method")
 //			},
 //			UpdateVariableGroupOrderFunc: func(ctx context.Context, organizationID string, ids []xid.ID) error {
@@ -86,7 +87,7 @@ var _ DB = &DBMock{}
 //	}
 type DBMock struct {
 	// BeginTxFunc mocks the BeginTx method.
-	BeginTxFunc func(ctx context.Context, dest any) error
+	BeginTxFunc func(ctx context.Context) (sqlutil.Tx, error)
 
 	// CreateVariableFunc mocks the CreateVariable method.
 	CreateVariableFunc func(ctx context.Context, v variable.Variable) error
@@ -131,7 +132,7 @@ type DBMock struct {
 	UpdateVariableDefaultFunc func(ctx context.Context, v variable.Variable) error
 
 	// UpdateVariableGroupFunc mocks the UpdateVariableGroup method.
-	UpdateVariableGroupFunc func(ctx context.Context, organizationID string, id xid.ID, inp variable.GroupUpdateInput) error
+	UpdateVariableGroupFunc func(ctx context.Context, g variable.Group) error
 
 	// UpdateVariableGroupOrderFunc mocks the UpdateVariableGroupOrder method.
 	UpdateVariableGroupOrderFunc func(ctx context.Context, organizationID string, ids []xid.ID) error
@@ -148,8 +149,6 @@ type DBMock struct {
 		BeginTx []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
-			// Dest is the dest argument value.
-			Dest any
 		}
 		// CreateVariable holds details about calls to the CreateVariable method.
 		CreateVariable []struct {
@@ -271,12 +270,8 @@ type DBMock struct {
 		UpdateVariableGroup []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
-			// ID is the id argument value.
-			ID xid.ID
-			// Inp is the inp argument value.
-			Inp variable.GroupUpdateInput
+			// G is the g argument value.
+			G variable.Group
 		}
 		// UpdateVariableGroupOrder holds details about calls to the UpdateVariableGroupOrder method.
 		UpdateVariableGroupOrder []struct {
@@ -334,24 +329,23 @@ type DBMock struct {
 }
 
 // BeginTx calls BeginTxFunc.
-func (mock *DBMock) BeginTx(ctx context.Context, dest any) error {
+func (mock *DBMock) BeginTx(ctx context.Context) (sqlutil.Tx, error) {
 	callInfo := struct {
-		Ctx  context.Context
-		Dest any
+		Ctx context.Context
 	}{
-		Ctx:  ctx,
-		Dest: dest,
+		Ctx: ctx,
 	}
 	mock.lockBeginTx.Lock()
 	mock.calls.BeginTx = append(mock.calls.BeginTx, callInfo)
 	mock.lockBeginTx.Unlock()
 	if mock.BeginTxFunc == nil {
 		var (
+			txOut  sqlutil.Tx
 			errOut error
 		)
-		return errOut
+		return txOut, errOut
 	}
-	return mock.BeginTxFunc(ctx, dest)
+	return mock.BeginTxFunc(ctx)
 }
 
 // BeginTxCalls gets all the calls that were made to BeginTx.
@@ -359,12 +353,10 @@ func (mock *DBMock) BeginTx(ctx context.Context, dest any) error {
 //
 //	len(mockedDB.BeginTxCalls())
 func (mock *DBMock) BeginTxCalls() []struct {
-	Ctx  context.Context
-	Dest any
+	Ctx context.Context
 } {
 	var calls []struct {
-		Ctx  context.Context
-		Dest any
+		Ctx context.Context
 	}
 	mock.lockBeginTx.RLock()
 	calls = mock.calls.BeginTx
@@ -960,17 +952,13 @@ func (mock *DBMock) UpdateVariableDefaultCalls() []struct {
 }
 
 // UpdateVariableGroup calls UpdateVariableGroupFunc.
-func (mock *DBMock) UpdateVariableGroup(ctx context.Context, organizationID string, id xid.ID, inp variable.GroupUpdateInput) error {
+func (mock *DBMock) UpdateVariableGroup(ctx context.Context, g variable.Group) error {
 	callInfo := struct {
-		Ctx            context.Context
-		OrganizationID string
-		ID             xid.ID
-		Inp            variable.GroupUpdateInput
+		Ctx context.Context
+		G   variable.Group
 	}{
-		Ctx:            ctx,
-		OrganizationID: organizationID,
-		ID:             id,
-		Inp:            inp,
+		Ctx: ctx,
+		G:   g,
 	}
 	mock.lockUpdateVariableGroup.Lock()
 	mock.calls.UpdateVariableGroup = append(mock.calls.UpdateVariableGroup, callInfo)
@@ -981,7 +969,7 @@ func (mock *DBMock) UpdateVariableGroup(ctx context.Context, organizationID stri
 		)
 		return errOut
 	}
-	return mock.UpdateVariableGroupFunc(ctx, organizationID, id, inp)
+	return mock.UpdateVariableGroupFunc(ctx, g)
 }
 
 // UpdateVariableGroupCalls gets all the calls that were made to UpdateVariableGroup.
@@ -989,16 +977,12 @@ func (mock *DBMock) UpdateVariableGroup(ctx context.Context, organizationID stri
 //
 //	len(mockedDB.UpdateVariableGroupCalls())
 func (mock *DBMock) UpdateVariableGroupCalls() []struct {
-	Ctx            context.Context
-	OrganizationID string
-	ID             xid.ID
-	Inp            variable.GroupUpdateInput
+	Ctx context.Context
+	G   variable.Group
 } {
 	var calls []struct {
-		Ctx            context.Context
-		OrganizationID string
-		ID             xid.ID
-		Inp            variable.GroupUpdateInput
+		Ctx context.Context
+		G   variable.Group
 	}
 	mock.lockUpdateVariableGroup.RLock()
 	calls = mock.calls.UpdateVariableGroup

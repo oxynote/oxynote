@@ -1,6 +1,6 @@
 import { beforeEach, describe, it, vi } from "vitest"
 import * as Sentry from "@sentry/node"
-import { bestEffort, reported } from "./reporting.js"
+import { bestEffort, reported, reportedAsMessage } from "./reporting.js"
 
 vi.mock("@sentry/node", () => ({
 	captureException: vi.fn(),
@@ -56,6 +56,48 @@ describe("reported", { concurrent: false }, () => {
 			}),
 		).rejects.toBe(failure)
 		expect(captureException).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("reportedAsMessage", { concurrent: false }, () => {
+	beforeEach(() => {
+		captureException.mockClear()
+	})
+
+	it("returns what the work resolved to", async ({ expect }) => {
+		expect(
+			await reportedAsMessage(() => Promise.resolve("value")),
+		).toBe("value")
+		expect(captureException).toHaveBeenCalledTimes(0)
+	})
+
+	// an axios error carries the request it failed on, headers included
+	it("reports the original and rethrows only its message", async ({
+		expect,
+	}) => {
+		const failure = Object.assign(
+			new Error("Request failed with status code 404"),
+			{ config: { headers: { cookie: "session=secret" } } },
+		)
+
+		await expect(
+			reportedAsMessage(() => Promise.reject(failure)),
+		).rejects.toStrictEqual(
+			new Error("Request failed with status code 404"),
+		)
+		expect(captureException).toHaveBeenCalledTimes(1)
+		expect(captureException).toHaveBeenCalledWith(failure)
+	})
+
+	it("rethrows a rejection that is not an Error as its text", async ({
+		expect,
+	}) => {
+		const run = vi.fn().mockRejectedValue("core gone")
+
+		await expect(reportedAsMessage(run)).rejects.toStrictEqual(
+			new Error("core gone"),
+		)
+		expect(captureException).toHaveBeenCalledWith("core gone")
 	})
 })
 

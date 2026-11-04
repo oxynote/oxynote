@@ -549,6 +549,29 @@ func Test_Handler_CreateDataSource(t *testing.T) {
 				},
 			),
 		},
+		"Unknown type": {
+			Body: `{"type":"graphite","name":"test-source","url":"http://source.test","credentials":{"username":"user"}}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"data_source.invalid_type","message":"invalid data source type"}`),
+				wasRunnersRunnerCalled(0),
+				wasExecutorTestConnectionCalled(0),
+				wasDBInsertDataSourceCalled(0),
+			),
+		},
+		"Successful creation with padded upper case type": {
+			Clients: &clientMocks{status: processor.ConnectionStatusSuccess, statusErr: nil},
+			Body:    `{"type":" Prometheus ","name":"test-source","url":"http://source.test","credentials":{"username":"user"}}`,
+			Checks: checks(
+				func(t *testing.T, db *DBMock, _ *runnerMock, _ *VariableManagerMock, rec *httptest.ResponseRecorder, _ *bytes.Buffer) {
+					t.Helper()
+
+					ff := db.InsertDataSourceCalls()
+					require.Len(t, ff, 1)
+					assert.Equal(t, datasourceCore.TypePrometheus, ff[0].Ds.Type)
+					assert.Equal(t, http.StatusCreated, rec.Code)
+				},
+			),
+		},
 	}
 
 	for cn, c := range cc {

@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"math/rand"
 	"net/http"
-	"reflect"
 	"strconv"
 	"time"
 
@@ -253,37 +252,22 @@ func DetectError(err error) error {
 	return err
 }
 
-// BeginTx begins a transaction and tries to apply its object to the one
-// given in dest parameter.
-func (db *DB) BeginTx(ctx context.Context, dest any) error {
-	value := reflect.ValueOf(dest)
-
-	if value.Kind() != reflect.Pointer || value.IsNil() {
-		panic("dest is not a pointer")
-	}
-
+// BeginTx begins a transaction. It returns a *Tx, which callers get as
+// their own transaction type through sqlutil.BeginTx.
+func (db *DB) BeginTx(ctx context.Context) (sqlutil.Tx, error) {
 	tx, err := db.sql.BeginTxx(ctx, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	defer func() {
-		if rerr := recover(); rerr != nil {
-			tx.Rollback() //nolint:gosec,errcheck // rollback errors provide no meaningful info
-			panic(rerr)
-		}
-	}()
-
-	value.Elem().Set(reflect.ValueOf(&Tx{
+	return &Tx{
 		agent: agent{
 			sql:     tx,
 			builder: db.builder,
 			opts:    db.opts,
 		},
 		sql: tx,
-	}))
-
-	return nil
+	}, nil
 }
 
 // Tx contains dependencies needed for direct communication

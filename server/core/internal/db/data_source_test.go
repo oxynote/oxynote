@@ -208,13 +208,15 @@ func Test_agent_UpdateDataSource(t *testing.T) {
 
 			// what the user re-enters becomes the whole pair: there was nothing
 			// readable left to merge onto.
-			require.NoError(t, broken.ApplyUpdate(datasource.UpdateInput{
+			updated, err := broken.ApplyUpdate(datasource.UpdateInput{
 				Credentials: null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user","password":"pass"}`)),
-			}))
-			broken.Status = processor.ConnectionStatusSuccess
+			})
+			require.NoError(t, err)
+
+			updated.Status = processor.ConnectionStatusSuccess
 
 			return tcase{
-				DataSource: broken,
+				DataSource: &updated,
 				Check: func(t *testing.T, db *DB) {
 					res, err := db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
 					require.NoError(t, err)

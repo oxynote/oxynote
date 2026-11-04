@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -505,7 +506,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 				queue = &SearchQueueMock{}
 			}
 
-			c.DB.BeginTxFunc = testutil.StubBeginTx(c.Tx, c.BeginErr)
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			hdl, cnt := newTestHandler(c.DB, &fakePublisher{})
 			hdl.searchQueue = queue
@@ -885,7 +886,7 @@ func Test_Handler_MergeBranches(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			c.DB.BeginTxFunc = testutil.StubBeginTx(c.Tx, c.BeginErr)
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			hdl, cnt := newTestHandler(c.DB, &fakePublisher{})
 
@@ -1035,6 +1036,7 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 		OmitDoc   bool
 		Body      string
 		RespCode  int
+		RespJSON  string
 		Committed int
 		// History is how many history entries the fork records.
 		History                      int
@@ -1103,10 +1105,40 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 			RespCode: http.StatusBadRequest,
 		},
 		"Empty branch name": {
-			DB:       &DBMock{},
-			Tx:       &TxMock{},
-			Body:     `{"branch":"","sourceBranchId":"` + _branchID.String() + `"}`,
-			RespCode: http.StatusBadRequest,
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx:                      &TxMock{},
+			Body:                    `{"branch":"","sourceBranchId":"` + _branchID.String() + `"}`,
+			RespCode:                http.StatusBadRequest,
+			RespJSON:                `{"code":"document.invalid_branch_name","message":"branch name cannot be empty"}`,
+			FetchDocumentByBranchID: 1,
+		},
+		"Blank branch name": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx:                      &TxMock{},
+			Body:                    `{"branch":"   ","sourceBranchId":"` + _branchID.String() + `"}`,
+			RespCode:                http.StatusBadRequest,
+			RespJSON:                `{"code":"document.invalid_branch_name","message":"branch name cannot be empty"}`,
+			FetchDocumentByBranchID: 1,
+		},
+		"Branch name over the length limit": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx:                      &TxMock{},
+			Body:                    `{"branch":"` + strings.Repeat("a", 101) + `","sourceBranchId":"` + _branchID.String() + `"}`,
+			RespCode:                http.StatusBadRequest,
+			RespJSON:                `{"code":"document.branch_name_too_long","message":"branch name cannot be longer than 100 characters"}`,
+			FetchDocumentByBranchID: 1,
 		},
 		"Error returned by DB.FetchDocumentByBranchID": {
 			DB: &DBMock{
@@ -1293,7 +1325,7 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 				queue = &SearchQueueMock{}
 			}
 
-			c.DB.BeginTxFunc = testutil.StubBeginTx(c.Tx, c.BeginErr)
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
 			hdl.searchQueue = queue
@@ -1306,6 +1338,11 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 			hdl.CreateDocumentBranch(rec, newRequest(http.MethodPost, c.Body, c.NoSession, c.OmitDoc, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+
+			if c.RespJSON != "" {
+				assert.JSONEq(t, c.RespJSON, rec.Body.String())
+			}
+
 			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
 			assert.Len(t, c.Tx.RecordDocumentBranchHistoryEntryCalls(), c.History)
 			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchID)
@@ -1537,7 +1574,7 @@ func Test_Handler_DeleteDocumentBranch(t *testing.T) {
 				queue = &SearchQueueMock{}
 			}
 
-			c.DB.BeginTxFunc = testutil.StubBeginTx(tx, nil)
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](tx, nil)
 
 			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
 			hdl.searchQueue = queue
@@ -1584,6 +1621,7 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 		Body                    string
 		WantName                string
 		RespCode                int
+		RespJSON                string
 		Updated                 int
 		Metadata                int
 		Jobs                    int
@@ -1635,6 +1673,39 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			},
 			Body:                    "{",
 			RespCode:                http.StatusBadRequest,
+			FetchDocumentByBranchID: 1,
+		},
+		"Empty branch name": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID), nil
+				},
+			},
+			Body:                    `{"name":""}`,
+			RespCode:                http.StatusBadRequest,
+			RespJSON:                `{"code":"document.invalid_branch_name","message":"branch name cannot be empty"}`,
+			FetchDocumentByBranchID: 1,
+		},
+		"Blank branch name": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID), nil
+				},
+			},
+			Body:                    `{"name":"   "}`,
+			RespCode:                http.StatusBadRequest,
+			RespJSON:                `{"code":"document.invalid_branch_name","message":"branch name cannot be empty"}`,
+			FetchDocumentByBranchID: 1,
+		},
+		"Branch name over the length limit": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID), nil
+				},
+			},
+			Body:                    `{"name":"` + strings.Repeat("a", 101) + `"}`,
+			RespCode:                http.StatusBadRequest,
+			RespJSON:                `{"code":"document.branch_name_too_long","message":"branch name cannot be longer than 100 characters"}`,
 			FetchDocumentByBranchID: 1,
 		},
 		"Error returned by Tx.UpdateDocumentBranchMetadata": {
@@ -1720,6 +1791,23 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			Committed:               1,
 			Rollback:                1,
 		},
+		"Name is stored without surrounding white space": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID), nil
+				},
+			},
+			Body:                    `{"name":"  Renamed ","protected":true}`,
+			WantName:                "Renamed",
+			RespCode:                http.StatusOK,
+			Updated:                 1,
+			Metadata:                1,
+			Jobs:                    1,
+			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
+			Committed:               1,
+			Rollback:                1,
+		},
 	}
 
 	for cn, c := range cc {
@@ -1736,7 +1824,7 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 				queue = &SearchQueueMock{}
 			}
 
-			c.DB.BeginTxFunc = testutil.StubBeginTx(tx, nil)
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](tx, nil)
 
 			hdl, cnt := newTestHandler(c.DB, &fakePublisher{})
 			hdl.searchQueue = queue
@@ -1746,6 +1834,11 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			hdl.UpdateDocumentBranch(rec, newRequest(http.MethodPut, c.Body, c.NoSession, c.OmitDoc, false))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+
+			if c.RespJSON != "" {
+				assert.JSONEq(t, c.RespJSON, rec.Body.String())
+			}
+
 			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchID)
 			assert.Len(t, c.DB.BeginTxCalls(), c.BeginTx)
 			assert.Len(t, tx.UpdateDocumentBranchMetadataCalls(), c.Updated)

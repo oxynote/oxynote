@@ -4,18 +4,17 @@ package datasource
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/demo"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
-
-// Type represents the type of the data source.
-type Type string
 
 const (
 	// TypePrometheus represents a Prometheus data source.
@@ -38,12 +37,67 @@ const (
 	TypeLoki Type = "loki"
 )
 
-// ErrInvalidCredentials is returned when the credentials of a data source
-// are not an object of strings.
-var ErrInvalidCredentials = errutil.New(
-	http.StatusBadRequest,
-	"data_source.invalid_credentials",
-	"credentials must be an object of strings",
+// Type represents the type of the data source.
+type Type string
+
+// Validate reports whether the type is a known one.
+func (ty Type) Validate() error {
+	switch ty {
+	case TypePrometheus, TypePostgreSQL, TypeSupabase, TypeMariaDB, TypeMySQL, TypeLoki:
+		return nil
+	default:
+		return ErrInvalidType
+	}
+}
+
+// MarshalText returns the type as text.
+func (ty Type) MarshalText() ([]byte, error) {
+	return []byte(ty), nil
+}
+
+// UnmarshalText parses a type, trimmed and lowercased. An unknown type is
+// kept, so Validate reports it with ErrInvalidType and not as bad JSON.
+func (ty *Type) UnmarshalText(text []byte) error {
+	*ty = Type(strings.ToLower(strings.TrimSpace(string(text))))
+
+	return nil
+}
+
+// _maxNameLength is the most characters a data source name holds, the
+// same limit the web form sets.
+const _maxNameLength = 128
+
+var (
+	// ErrInvalidCredentials is returned when the credentials of a data
+	// source are not an object of strings.
+	ErrInvalidCredentials = errutil.New(
+		http.StatusBadRequest,
+		"data_source.invalid_credentials",
+		"credentials must be an object of strings",
+	)
+
+	// ErrInvalidName is returned when a data source is given a name that
+	// is empty or only white space.
+	ErrInvalidName = errutil.New(
+		http.StatusBadRequest,
+		"data_source.invalid_name",
+		"data source name cannot be empty",
+	)
+
+	// ErrNameTooLong is returned when a data source name holds more than
+	// _maxNameLength characters.
+	ErrNameTooLong = errutil.New(
+		http.StatusBadRequest,
+		"data_source.name_too_long",
+		"data source name cannot be longer than 128 characters",
+	)
+
+	// ErrInvalidType is returned when a data source has an unknown type.
+	ErrInvalidType = errutil.New(
+		http.StatusBadRequest,
+		"data_source.invalid_type",
+		"invalid data source type",
+	)
 )
 
 // DataSource represents a generic data source.
@@ -76,8 +130,16 @@ type DataSource struct {
 	UpdatedAt null.Time `json:"updatedAt" db:"updated_at"`
 }
 
-// NewDataSource creates a new instance of DataSource.
-func NewDataSource(ci CreateInput, organizationID string) *DataSource {
+// NewDataSource creates a new instance of DataSource. The name is kept
+// without the white space around it. It fails on an input Validate
+// refuses.
+func NewDataSource(ci CreateInput, organizationID string) (*DataSource, error) {
+	ci = ci.sanitize()
+
+	if err := ci.Validate(); err != nil {
+		return nil, err
+	}
+
 	return &DataSource{
 		ID:             xid.New(),
 		OrganizationID: organizationID,
@@ -87,31 +149,45 @@ func NewDataSource(ci CreateInput, organizationID string) *DataSource {
 		Credentials:    ci.Credentials,
 		Status:         processor.ConnectionStatusSuccess,
 		CreatedAt:      timeutil.Now(),
-	}
+	}, nil
 }
 
 // NewDemoDataSources creates the demo data sources a fresh organization
 // starts with. They share one URL; each type picks what it answers as.
-func NewDemoDataSources(organizationID string) []*DataSource {
-	return []*DataSource{
-		NewDataSource(CreateInput{
+func NewDemoDataSources(organizationID string) ([]*DataSource, error) {
+	inputs := []CreateInput{
+		{
 			Type:        TypePrometheus,
 			Name:        "Demo Metrics",
 			URL:         demo.URL,
 			Credentials: processor.NewCredentials([]byte(`{}`)),
-		}, organizationID),
+		},
 		// TODO: uncomment once the web app can show loki data sources.
-		// NewDataSource(CreateInput{
+		// {
 		// 	Type:        TypeLoki,
 		// 	Name:        "Demo Logs",
 		// 	URL:         demo.URL,
 		// 	Credentials: processor.NewCredentials([]byte(`{}`)),
-		// }, organizationID),
+		// },
 	}
+
+	dss := make([]*DataSource, 0, len(inputs))
+
+	for _, ci := range inputs {
+		ds, err := NewDataSource(ci, organizationID)
+		if err != nil {
+			// NOCOV: the demo inputs are constants that pass Validate.
+			return nil, err
+		}
+
+		dss = append(dss, ds)
+	}
+
+	return dss, nil
 }
 
 // Info returns a subset of data source fields for external use.
-func (ds *DataSource) Info() Info {
+func (ds DataSource) Info() Info {
 	return Info{
 		ID:   ds.ID,
 		Name: ds.Name,
@@ -119,8 +195,16 @@ func (ds *DataSource) Info() Info {
 	}
 }
 
-// ApplyUpdate applies the given update input to the data source.
-func (ds *DataSource) ApplyUpdate(ui UpdateInput) error {
+// ApplyUpdate returns the data source with the input's changes. A new
+// name is kept without the white space around it. It fails on an input
+// Validate refuses. The receiver is left untouched.
+func (ds DataSource) ApplyUpdate(ui UpdateInput) (DataSource, error) {
+	ui = ui.sanitize()
+
+	if err := ui.Validate(); err != nil {
+		return DataSource{}, err
+	}
+
 	if ui.Name.Valid {
 		ds.Name = ui.Name.String
 	}
@@ -132,37 +216,32 @@ func (ds *DataSource) ApplyUpdate(ui UpdateInput) error {
 		ds.Credentials = processor.Credentials{}
 	}
 
-	err := ds.updateCredentials(ui.Credentials)
+	creds, err := ds.updatedCredentials(ui.Credentials)
 	if err != nil {
-		return err
+		return DataSource{}, err
 	}
 
+	ds.Credentials = creds
 	ds.UpdatedAt = null.TimeFrom(timeutil.Now())
 
-	return nil
+	return ds, nil
 }
 
-// updateCredentials updates the data source credentials.
-func (ds *DataSource) updateCredentials(inp null.Value[processor.CredentialsUpdateInput]) error {
+// updatedCredentials returns the data source credentials with the update
+// applied, or the current ones when the update carries none.
+func (ds DataSource) updatedCredentials(inp null.Value[processor.CredentialsUpdateInput]) (processor.Credentials, error) {
 	if !inp.Valid {
-		return nil
+		return ds.Credentials, nil
 	}
 
 	switch ds.Type {
 	case TypePrometheus, TypePostgreSQL, TypeSupabase, TypeMariaDB, TypeMySQL, TypeLoki:
 		// OK.
 	default:
-		return errors.New("invalid data source type")
+		return processor.Credentials{}, errors.New("invalid data source type")
 	}
 
-	creds, err := processor.UpdateBasicCredentials(ds.Credentials, inp.V)
-	if err != nil {
-		return err
-	}
-
-	ds.Credentials = creds
-
-	return nil
+	return processor.UpdateBasicCredentials(ds.Credentials, inp.V)
 }
 
 // Info is the subset of data source fields returned to the AI.
@@ -192,14 +271,34 @@ type CreateInput struct {
 	Credentials processor.Credentials `json:"credentials"`
 }
 
-// Validate checks that the credentials can be read. A connection test does
-// not always read them first: the demo data source passes without them.
+// Validate checks that the type is a known one, that the name, once
+// sanitized, is usable and that the credentials can be read. A connection
+// test does not always read the credentials first: the demo data source
+// passes without them.
 func (ci CreateInput) Validate() error {
-	if _, err := ci.Credentials.Configured(); err != nil {
+	if err := ci.Type.Validate(); err != nil {
+		return err
+	}
+
+	sanitized := ci.sanitize()
+
+	if err := validateName(sanitized.Name); err != nil {
+		return err
+	}
+
+	if _, err := sanitized.Credentials.Configured(); err != nil {
 		return ErrInvalidCredentials
 	}
 
 	return nil
+}
+
+// sanitize returns the input with the white space around its name
+// removed.
+func (ci CreateInput) sanitize() CreateInput {
+	ci.Name = strings.TrimSpace(ci.Name)
+
+	return ci
 }
 
 // UpdateInput represents the data required to update an existing freshness hook.
@@ -212,4 +311,31 @@ type UpdateInput struct {
 
 	// Credentials holds the authentication credentials for the data source.
 	Credentials null.Value[processor.CredentialsUpdateInput] `json:"credentials"`
+}
+
+// Validate checks that a set name, once sanitized, is usable.
+func (ui UpdateInput) Validate() error {
+	sanitized := ui.sanitize()
+
+	if sanitized.Name.Valid {
+		return validateName(sanitized.Name.String)
+	}
+
+	return nil
+}
+
+// sanitize returns the input with the white space around its name
+// removed.
+func (ui UpdateInput) sanitize() UpdateInput {
+	if ui.Name.Valid {
+		ui.Name = null.StringFrom(strings.TrimSpace(ui.Name.String))
+	}
+
+	return ui
+}
+
+// validateName reports whether a trimmed data source name is neither empty
+// nor too long.
+func validateName(name string) error {
+	return strutil.ValidateName(name, _maxNameLength, ErrInvalidName, ErrNameTooLong)
 }

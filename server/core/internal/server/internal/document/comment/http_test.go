@@ -15,6 +15,7 @@ import (
 	commentCore "github.com/oxynote/oxynote/server/core/internal/document/comment"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -178,9 +179,14 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 			RespCode: http.StatusBadRequest,
 		},
 		"Empty comment content": {
-			DB:       &DBMock{},
-			Body:     `{"branchId":"` + _branchID.String() + `"}`,
-			RespCode: http.StatusBadRequest,
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return &documentCore.Document{ID: _documentID, BranchID: _branchID}, nil
+				},
+			},
+			Body:          `{"branchId":"` + _branchID.String() + `"}`,
+			RespCode:      http.StatusBadRequest,
+			BranchFetched: 1,
 		},
 		"Error returned by DB.FetchDocumentByBranchID": {
 			DB: &DBMock{
@@ -1213,7 +1219,7 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 
 			cpt := &capturedChange{}
 			db := &DBMock{
-				BeginTxFunc: testutil.StubBeginTx(c.Tx, c.BeginErr),
+				BeginTxFunc: testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr),
 			}
 			hdl := newTestHandler(db, &fakePublisher{}, cpt)
 

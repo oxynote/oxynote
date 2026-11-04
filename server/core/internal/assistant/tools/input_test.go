@@ -238,6 +238,14 @@ func stubDocumentDB() *DBMock {
 				},
 			}, nil
 		},
+		// a tag fetch knows only the test tag.
+		FetchTagFunc: func(_ context.Context, id xid.ID, orgID string) (*tag.Tag, error) {
+			if id != _testTagID {
+				return nil, errutil.ErrNotFound
+			}
+
+			return &tag.Tag{ID: id, OrganizationID: orgID, TagName: _stubTagName, Color: _stubTagColor}, nil
+		},
 		FetchDocumentHookFunc: func(_ context.Context, id xid.ID, _ string) (*hook.Hook, error) {
 			if id != _testHookID {
 				return nil, errutil.ErrNotFound
@@ -523,7 +531,7 @@ func Test_input_CreateDocument(t *testing.T) {
 
 	stubDB := func(tx *TxMock, beginErr error) *DBMock {
 		return &DBMock{
-			BeginTxFunc: testutil.StubBeginTx(tx, beginErr),
+			BeginTxFunc: testutil.StubBeginTx[sqlutil.Tx](tx, beginErr),
 		}
 	}
 
@@ -656,7 +664,7 @@ func Test_input_DeleteDocument(t *testing.T) {
 			FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
 				return &document.Document{ID: docID, ParentID: parentID}, nil
 			},
-			BeginTxFunc: testutil.StubBeginTx(tx, beginErr),
+			BeginTxFunc: testutil.StubBeginTx[sqlutil.Tx](tx, beginErr),
 		}
 	}
 
@@ -1937,7 +1945,8 @@ func Test_input_FetchBranchTags(t *testing.T) {
 func Test_input_CreateTag(t *testing.T) {
 	t.Parallel()
 
-	tg := tag.NewTag(tag.CreateInput{TagName: "Release", Color: "blue"}, "org", "user")
+	tg, err := tag.NewTag(tag.CreateInput{TagName: "Release", Color: "blue"}, "org", "user")
+	require.NoError(t, err)
 
 	cc := map[string]struct {
 		DB       *DBMock
@@ -1981,49 +1990,94 @@ func Test_input_CreateTag(t *testing.T) {
 func Test_input_UpdateTag(t *testing.T) {
 	t.Parallel()
 
+	stored := tag.Tag{ID: _testTagID, OrganizationID: "org", TagName: "Production", Color: "blue"}
+
+	stubFetch := func(err error) func(context.Context, xid.ID, string) (*tag.Tag, error) {
+		return func(context.Context, xid.ID, string) (*tag.Tag, error) {
+			if err != nil {
+				return nil, err
+			}
+
+			t := stored
+
+			return &t, nil
+		}
+	}
+
 	cc := map[string]struct {
 		DB       *DBMock
+		Inp      tag.UpdateInput
+		Updates  int
 		Notifies int
 		Err      error
 	}{
-		"Error returned by db.UpdateTag": {
-			DB: &DBMock{
-				UpdateTagFunc: func(context.Context, string, xid.ID, tag.UpdateInput) error {
-					return assert.AnError
-				},
-			},
+		"Error returned by db.FetchTag": {
+			DB:  &DBMock{FetchTagFunc: stubFetch(assert.AnError)},
+			Inp: tag.UpdateInput{TagName: null.StringFrom("Release")},
 			Err: assert.AnError,
 		},
-		"Unknown tag": {
-			DB: &DBMock{
-				UpdateTagFunc: func(context.Context, string, xid.ID, tag.UpdateInput) error {
-					return errutil.ErrNotFound
-				},
-			},
+		"Unknown tag returned by db.FetchTag": {
+			DB:  &DBMock{FetchTagFunc: stubFetch(errutil.ErrNotFound)},
+			Inp: tag.UpdateInput{TagName: null.StringFrom("Release")},
 			Err: fmt.Errorf("tag %s: %w", _testTagID, ErrUnknownTag),
 		},
-		"Updated": {DB: &DBMock{}, Notifies: 1},
+		"Invalid input": {
+			DB:  &DBMock{FetchTagFunc: stubFetch(nil)},
+			Inp: tag.UpdateInput{TagName: null.StringFrom("  ")},
+			Err: tag.ErrInvalidTagName,
+		},
+		"Error returned by db.UpdateTag": {
+			DB: &DBMock{
+				FetchTagFunc:  stubFetch(nil),
+				UpdateTagFunc: func(context.Context, tag.Tag) error { return assert.AnError },
+			},
+			Inp:     tag.UpdateInput{TagName: null.StringFrom("Release")},
+			Updates: 1,
+			Err:     assert.AnError,
+		},
+		"Unknown tag returned by db.UpdateTag": {
+			DB: &DBMock{
+				FetchTagFunc:  stubFetch(nil),
+				UpdateTagFunc: func(context.Context, tag.Tag) error { return errutil.ErrNotFound },
+			},
+			Inp:     tag.UpdateInput{TagName: null.StringFrom("Release")},
+			Updates: 1,
+			Err:     fmt.Errorf("tag %s: %w", _testTagID, ErrUnknownTag),
+		},
+		"Updated": {
+			DB:       &DBMock{FetchTagFunc: stubFetch(nil)},
+			Inp:      tag.UpdateInput{TagName: null.StringFrom(" Release ")},
+			Updates:  1,
+			Notifies: 1,
+		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			inp := tag.UpdateInput{TagName: null.StringFrom("Release")}
 			tags := &TagNotifierMock{}
 			d := testDeps(c.DB, nil, nil)
 			d.tags = tags
 
-			err := d.newInput(context.Background(), NameUpdateTag, json.RawMessage(`{}`)).UpdateTag(_testTagID, inp)
+			err := d.newInput(context.Background(), NameUpdateTag, json.RawMessage(`{}`)).UpdateTag(_testTagID, c.Inp)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, tags.NotifyTreeChangeCalls(), c.Notifies)
 
-			ff := c.DB.UpdateTagCalls()
-			require.Len(t, ff, 1)
-			assert.Equal(t, "org", ff[0].OrganizationID)
-			assert.Equal(t, _testTagID, ff[0].ID)
-			assert.Equal(t, inp, ff[0].Inp)
+			fetches := c.DB.FetchTagCalls()
+			require.Len(t, fetches, 1)
+			assert.Equal(t, _testTagID, fetches[0].ID)
+			assert.Equal(t, "org", fetches[0].OrganizationID)
+
+			updates := c.DB.UpdateTagCalls()
+			require.Len(t, updates, c.Updates)
+
+			if c.Updates == 0 {
+				return
+			}
+
+			assert.Equal(t, tag.Tag{ID: _testTagID, OrganizationID: "org", TagName: "Release", Color: "blue"}, updates[0].T)
 		})
 	}
 }

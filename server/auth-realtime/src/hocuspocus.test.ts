@@ -352,8 +352,23 @@ describe("createDocumentHooks", () => {
 			)
 		})
 
-		it("propagates a rejected access check", async ({ expect }) => {
-			const failure = new Error("document not accessible")
+		// hocuspocus prints a hook's error in full, and the axios
+		// error core's client rejects with carries the caller's cookie
+		it("rejects with only the message of a failed access check", async ({
+			expect,
+		}) => {
+			const failure = Object.assign(
+				new Error(
+					"Request failed with status code 404",
+				),
+				{
+					config: {
+						headers: {
+							cookie: "session=secret",
+						},
+					},
+				},
+			)
 			const core = stubCore()
 			core.verifyDocumentAccess.mockRejectedValue(failure)
 			const hooks = hooksWith(core)
@@ -366,7 +381,11 @@ describe("createDocumentHooks", () => {
 					requestHeaders: {},
 					token: "",
 				}),
-			).rejects.toBe(failure)
+			).rejects.toStrictEqual(
+				new Error(
+					"Request failed with status code 404",
+				),
+			)
 		})
 	})
 
@@ -708,8 +727,15 @@ describe("createDocumentHooks", () => {
 			expect(ydoc).toBeInstanceOf(Y.Doc)
 		})
 
-		it("propagates a failed content fetch", async ({ expect }) => {
-			const failure = new Error("core unreachable")
+		it("rejects with only the message of a failed content fetch", async ({
+			expect,
+		}) => {
+			const failure = Object.assign(
+				new Error("core unreachable"),
+				{
+					config: { url: "http://core:8080" },
+				},
+			)
 			const core = stubCore()
 			core.fetchBranchContent.mockRejectedValue(failure)
 			const hooks = hooksWith(core)
@@ -718,7 +744,7 @@ describe("createDocumentHooks", () => {
 				hooks.onLoadDocument({
 					documentName: "doc1-branch1",
 				}),
-			).rejects.toBe(failure)
+			).rejects.toStrictEqual(new Error("core unreachable"))
 		})
 	})
 
@@ -1003,7 +1029,7 @@ describe("createDocumentHooks", () => {
 					documentName: "doc1-branch1",
 					document: seededDocument(),
 				}),
-			).rejects.toBe("core gone")
+			).rejects.toStrictEqual(new Error("core gone"))
 
 			expect(log.error.mock.calls).toEqual([
 				["persisting doc1-branch1 failed: core gone"],

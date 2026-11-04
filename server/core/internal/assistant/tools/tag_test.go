@@ -251,7 +251,7 @@ func Test_createTag_Execute(t *testing.T) {
 		},
 		"Created": {
 			DB:      &DBMock{},
-			Args:    `{"name":"Release","color":"blue"}`,
+			Args:    `{"name":"  Release  ","color":"blue"}`,
 			Notify:  1,
 			Inserts: 1,
 		},
@@ -457,34 +457,32 @@ func Test_updateTag_Execute(t *testing.T) {
 		"Nothing to change":   {DB: &DBMock{}, Args: `{"tag_id":"` + _testTagID.String() + `"}`, Err: assert.AnError},
 		"Unknown colour":      {DB: &DBMock{}, Args: `{"tag_id":"` + _testTagID.String() + `","color":"navy"}`, Err: assert.AnError},
 		"Unknown tag": {
-			DB: &DBMock{
-				UpdateTagFunc: func(context.Context, string, xid.ID, tag.UpdateInput) error {
-					return errutil.ErrNotFound
-				},
-			},
-			Args:    `{"tag_id":"` + _unknownTagID.String() + `","name":"Release"}`,
-			Renames: 1,
-			Err:     fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
+			DB:   stubTagDB(nil),
+			Args: `{"tag_id":"` + _unknownTagID.String() + `","name":"Release"}`,
+			Err:  fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
 		},
 		"Error returned by db.UpdateTag": {
-			DB: &DBMock{
-				UpdateTagFunc: func(context.Context, string, xid.ID, tag.UpdateInput) error {
+			DB: func() *DBMock {
+				db := stubTagDB(nil)
+				db.UpdateTagFunc = func(context.Context, tag.Tag) error {
 					return assert.AnError
-				},
-			},
+				}
+
+				return db
+			}(),
 			Args:    `{"tag_id":"` + _testTagID.String() + `","name":"Release"}`,
 			Renames: 1,
 			Err:     assert.AnError,
 		},
 		"Renamed": {
-			DB:      &DBMock{},
+			DB:      stubTagDB(nil),
 			Args:    `{"tag_id":"` + _testTagID.String() + `","name":"Release"}`,
 			Renames: 1,
 			Notify:  1,
 			Result:  `{"tag_id":"` + _testTagID.String() + `","name":"Release"}`,
 		},
 		"Renamed and recoloured": {
-			DB:      &DBMock{},
+			DB:      stubTagDB(nil),
 			Args:    `{"tag_id":"` + _testTagID.String() + `","name":"Release","color":"blue"}`,
 			Renames: 1,
 			Notify:  1,

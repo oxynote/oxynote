@@ -68,8 +68,8 @@ func Test_newGemini(t *testing.T) {
 			// the expected model is built through the same SDK calls
 			// with the configuration newGemini should assemble, then the
 			// two models are compared field by field. The client's
-			// envVarProvider func is ignored, since cmp never treats two
-			// non-nil funcs as equal.
+			// envVarProvider and interactions Security funcs are ignored,
+			// since cmp never treats two non-nil funcs as equal.
 			client, err := genai.NewClient(context.Background(), c.Client)
 			require.NoError(t, err)
 
@@ -81,7 +81,10 @@ func Test_newGemini(t *testing.T) {
 			cm, err := newGemini(context.Background(), c.Opts)
 			require.NoError(t, err)
 
-			testutil.AssertFilterEqual(t, exp, cm, (func() map[string]string)(nil))
+			testutil.AssertFilterEqual(t, exp, cm,
+				(func() map[string]string)(nil),
+				(func(context.Context) (any, error))(nil),
+			)
 		})
 	}
 }

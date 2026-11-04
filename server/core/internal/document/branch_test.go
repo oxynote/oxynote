@@ -1,6 +1,7 @@
 package document
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/guregu/null/v5"
@@ -8,7 +9,32 @@ import (
 	"github.com/rs/xid"
 )
 
-func Test_Document_AllowsBranchRename(t *testing.T) {
+func Test_validateBranchName(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Name string
+		Err  error
+	}{
+		"Empty name":                        {Err: ErrInvalidBranchName},
+		"Name of one character":             {Name: "a"},
+		"Name with inner white space":       {Name: "feature x"},
+		"Name at the length limit":          {Name: strings.Repeat("a", _maxBranchNameLength)},
+		"Name over the length limit":        {Name: strings.Repeat("a", _maxBranchNameLength+1), Err: ErrBranchNameTooLong},
+		"Name counted in characters":        {Name: strings.Repeat("é", _maxBranchNameLength)},
+		"Name over the limit in characters": {Name: strings.Repeat("é", _maxBranchNameLength+1), Err: ErrBranchNameTooLong},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, validateBranchName(c.Name))
+		})
+	}
+}
+
+func Test_Document_allowsBranchRename(t *testing.T) {
 	cc := map[string]struct {
 		Doc  Document
 		Name null.String
@@ -24,7 +50,7 @@ func Test_Document_AllowsBranchRename(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			testutil.AssertEqualError(t, c.Err, c.Doc.AllowsBranchRename(c.Name))
+			testutil.AssertEqualError(t, c.Err, c.Doc.allowsBranchRename(c.Name))
 		})
 	}
 }

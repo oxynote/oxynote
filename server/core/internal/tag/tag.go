@@ -4,19 +4,30 @@ package tag
 import (
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/sliceutil"
+	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
 
+// _maxTagNameLength is the most characters a tag name holds, since the
+// whole tag tree is sent to every member of the organization.
+const _maxTagNameLength = 64
+
 var (
-	// ErrInvalidTagName is returned when a tag is created without a name.
+	// ErrInvalidTagName is returned when a tag is given a name that is
+	// empty or only white space.
 	ErrInvalidTagName = errutil.New(http.StatusBadRequest, "tag.invalid_name", "tag name cannot be empty")
+
+	// ErrTagNameTooLong is returned when a tag name holds more than
+	// _maxTagNameLength characters.
+	ErrTagNameTooLong = errutil.New(http.StatusBadRequest, "tag.name_too_long", "tag name cannot be longer than 64 characters")
 
 	// ErrInvalidTagColor is returned when a tag carries a colour outside
 	// the palette.
@@ -56,6 +67,53 @@ type Tag struct {
 	CreatedBy null.String `json:"createdBy" db:"created_by"`
 }
 
+// NewTag creates a fresh instance of Tag from the given input. The name is
+// kept without the white space around it. It fails on an input Validate
+// refuses.
+func NewTag(inp CreateInput, organizationID, userID string) (Tag, error) {
+	inp = inp.sanitize()
+
+	if err := inp.Validate(); err != nil {
+		return Tag{}, err
+	}
+
+	return Tag{
+		ID:             xid.New(),
+		OrganizationID: organizationID,
+		TagName:        inp.TagName,
+		Color:          inp.Color,
+		CreatedAt:      timeutil.Now(),
+		CreatedBy:      null.StringFrom(userID),
+	}, nil
+}
+
+// Summary returns the tag on its own: the identity, name and colour,
+// without the per-user hidden flag or the documents carrying it.
+func (t Tag) Summary() Summary {
+	return Summary{ID: t.ID, TagName: t.TagName, Color: t.Color}
+}
+
+// ApplyUpdate returns the tag renamed and/or recoloured as the input
+// describes. A new name is kept without the white space around it. It
+// fails on an input Validate refuses. The receiver is left untouched.
+func (t Tag) ApplyUpdate(inp UpdateInput) (Tag, error) {
+	inp = inp.sanitize()
+
+	if err := inp.Validate(); err != nil {
+		return Tag{}, err
+	}
+
+	if inp.TagName.Valid {
+		t.TagName = inp.TagName.String
+	}
+
+	if inp.Color.Valid {
+		t.Color = inp.Color.String
+	}
+
+	return t, nil
+}
+
 // CreateInput is the input structure for creating a tag.
 type CreateInput struct {
 	// TagName is the display name of the tag.
@@ -65,35 +123,27 @@ type CreateInput struct {
 	Color string `json:"color"`
 }
 
-// Validate reports whether the input can become a tag.
+// Validate reports whether the input, once sanitized, can become a tag.
 func (ci CreateInput) Validate() error {
-	if ci.TagName == "" {
-		return ErrInvalidTagName
+	sanitized := ci.sanitize()
+
+	if err := validateTagName(sanitized.TagName); err != nil {
+		return err
 	}
 
-	if !ValidColor(ci.Color) {
+	if !ValidColor(sanitized.Color) {
 		return ErrInvalidTagColor
 	}
 
 	return nil
 }
 
-// NewTag creates a fresh instance of Tag from the given input.
-func NewTag(inp CreateInput, organizationID, userID string) Tag {
-	return Tag{
-		ID:             xid.New(),
-		OrganizationID: organizationID,
-		TagName:        inp.TagName,
-		Color:          inp.Color,
-		CreatedAt:      timeutil.Now(),
-		CreatedBy:      null.StringFrom(userID),
-	}
-}
+// sanitize returns the input with the white space around its name
+// removed.
+func (ci CreateInput) sanitize() CreateInput {
+	ci.TagName = strings.TrimSpace(ci.TagName)
 
-// Summary returns the tag on its own: the identity, name and colour,
-// without the per-user hidden flag or the documents carrying it.
-func (t Tag) Summary() Summary {
-	return Summary{ID: t.ID, TagName: t.TagName, Color: t.Color}
+	return ci
 }
 
 // UpdateInput is the input for renaming or recolouring a tag. A field left
@@ -106,22 +156,37 @@ type UpdateInput struct {
 	Color null.String `json:"color"`
 }
 
-// Validate reports whether the input changes a tag: at least one field has
-// to be set, and a set field is held to the same rules as on creation.
+// Validate reports whether the input, once sanitized, changes a tag: at
+// least one field has to be set, and a set field is held to the same rules
+// as on creation.
 func (ui UpdateInput) Validate() error {
-	if !ui.TagName.Valid && !ui.Color.Valid {
+	sanitized := ui.sanitize()
+
+	if !sanitized.TagName.Valid && !sanitized.Color.Valid {
 		return ErrEmptyTagUpdate
 	}
 
-	if ui.TagName.Valid && ui.TagName.String == "" {
-		return ErrInvalidTagName
+	if sanitized.TagName.Valid {
+		if err := validateTagName(sanitized.TagName.String); err != nil {
+			return err
+		}
 	}
 
-	if ui.Color.Valid && !ValidColor(ui.Color.String) {
+	if sanitized.Color.Valid && !ValidColor(sanitized.Color.String) {
 		return ErrInvalidTagColor
 	}
 
 	return nil
+}
+
+// sanitize returns the input with the white space around its name
+// removed.
+func (ui UpdateInput) sanitize() UpdateInput {
+	if ui.TagName.Valid {
+		ui.TagName = null.StringFrom(strings.TrimSpace(ui.TagName.String))
+	}
+
+	return ui
 }
 
 // VisibilityInput is the input for changing whether one user sees a tag.
@@ -191,4 +256,10 @@ type Summary struct {
 	// Documents are the documents carrying this tag, each with its own
 	// subtree. A document carrying several tags appears under each of them.
 	Documents document.Summaries `json:"documents,omitempty" db:"documents"`
+}
+
+// validateTagName reports whether a trimmed tag name is neither empty nor
+// too long.
+func validateTagName(name string) error {
+	return strutil.ValidateName(name, _maxTagNameLength, ErrInvalidTagName, ErrTagNameTooLong)
 }

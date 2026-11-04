@@ -5,10 +5,23 @@ import (
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/rs/xid"
 )
 
+// _maxBranchNameLength is the most characters a branch name holds, since
+// the search index stores the name on every entry of the branch.
+const _maxBranchNameLength = 100
+
 var (
+	// ErrInvalidBranchName is returned when a branch is given a name that
+	// is empty or only white space.
+	ErrInvalidBranchName = errutil.New(http.StatusBadRequest, "document.invalid_branch_name", "branch name cannot be empty")
+
+	// ErrBranchNameTooLong is returned when a branch name holds more than
+	// _maxBranchNameLength characters.
+	ErrBranchNameTooLong = errutil.New(http.StatusBadRequest, "document.branch_name_too_long", "branch name cannot be longer than 100 characters")
+
 	// ErrDefaultBranchRename is returned when a rename targets the default
 	// branch.
 	ErrDefaultBranchRename = errutil.New(http.StatusBadRequest, "document.default_branch_rename", "the default branch cannot be renamed")
@@ -29,11 +42,17 @@ var (
 	ErrBranchProtected = errutil.New(http.StatusForbidden, "document.branch_protected", "a protected branch cannot be changed")
 )
 
-// AllowsBranchRename reports whether the branch may take the given name.
+// validateBranchName reports whether a trimmed branch name is neither
+// empty nor longer than the limit.
+func validateBranchName(name string) error {
+	return strutil.ValidateName(name, _maxBranchNameLength, ErrInvalidBranchName, ErrBranchNameTooLong)
+}
+
+// allowsBranchRename reports whether the branch may take the given name.
 // The default branch is what the tree and content queries return, and its
 // name is what the user sees the document under; a rename would leave the
 // two out of step.
-func (d Document) AllowsBranchRename(name null.String) error {
+func (d Document) allowsBranchRename(name null.String) error {
 	if d.Default && name.Valid && name.String != d.BranchName {
 		return ErrDefaultBranchRename
 	}

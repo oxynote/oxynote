@@ -131,11 +131,16 @@ linters:
       min-occurrences: 5
       numbers: true
     forbidigo:
+      analyze-types: true
       forbid:
         # timeutil.Now is mockable; time.Now is not, which makes every
         # clock-dependent path untestable through it.
         - pattern: ^time\.Now$
           msg: use timeutil.Now instead
+        # a direct call returns a bare sqlutil.Tx without the package's
+        # queries.
+        - pattern: \.DB\.BeginTx$
+          msg: use sqlutil.BeginTx[Tx](ctx, db) instead
     gocritic:
       disabled-checks:
         - hugeParam
@@ -258,6 +263,10 @@ linters:
           - forbidigo
         path: _test.go
         text: time.Now
+      - linters:
+          - forbidigo
+        path: (pkg/sqlutil/|internal/db/db_test\.go)
+        text: BeginTx
       - linters:
           - gochecknoglobals
         text: ^_.+

@@ -9,6 +9,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
@@ -43,26 +44,21 @@ func (h *Handler) UpdateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var ui struct {
-		Name      null.String `json:"name"`
-		Protected null.Bool   `json:"protected"`
-	}
+	var ui documentCore.BranchUpdateInput
 
-	if err := httpserver.DecodeJSON(r, &ui); err != nil {
+	if err = httpserver.DecodeJSON(r, &ui); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := doc.AllowsBranchRename(ui.Name); err != nil {
+	ndoc, err := doc.ApplyBranchUpdate(ui, session.UserID)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	ndoc := doc.ApplyBranchUpdate(ui.Name, ui.Protected, session.UserID)
-
-	var tx Tx
-
-	if err := h.db.BeginTx(r.Context(), &tx); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -175,9 +171,7 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 		return
 	}
 
-	var tx Tx
-
-	err = h.db.BeginTx(r.Context(), &tx)
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -310,9 +304,8 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 
 	ndoc := toDoc.MergeBranch(fromDoc.Branch, session.UserID)
 
-	var tx Tx
-
-	if err = h.db.BeginTx(r.Context(), &tx); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -450,11 +443,6 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if inp.Branch == "" {
-		httpserver.RespondError(h.log, w, httpserver.ErrInvalidForm)
-		return
-	}
-
 	sourceDoc, err := h.db.FetchDocumentByBranchID(r.Context(), inp.SourceBranchID, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -466,11 +454,14 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newDoc := sourceDoc.Fork(inp.Branch, session.UserID)
+	newDoc, err := sourceDoc.Fork(inp.Branch, session.UserID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
 
-	var tx Tx
-
-	if err = h.db.BeginTx(r.Context(), &tx); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -581,9 +572,8 @@ func (h *Handler) DeleteDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var tx Tx
-
-	if err := h.db.BeginTx(r.Context(), &tx); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}

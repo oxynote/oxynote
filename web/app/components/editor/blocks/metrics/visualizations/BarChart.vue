@@ -29,8 +29,9 @@ import {
 	type LegendSelectChangedPayload,
 	type MultipleBarChartData,
 } from "."
-import { cn } from "#layers/ui/app/lib/utils"
 import type { VisualizationUnit } from "../utils"
+import ChartTooltip from "./ChartTooltip.vue"
+import { useTooltipPin } from "./tooltip-pin"
 
 // Register ECharts modules
 use([
@@ -73,6 +74,7 @@ const { width: containerWidth } = useElementSize(containerElem)
 const chartElem = useTemplateRef<InstanceType<typeof VChart>>("chart")
 const { color } = useAppearance()
 const { browserType } = useDetectHost()
+const tooltipPin = useTooltipPin(chartElem, containerElem)
 
 const themeVersion = ref(0)
 watch(
@@ -137,9 +139,7 @@ const option = computed<ECOption>(() => {
 			borderColor: st.lineChart.tooltipBorder,
 			borderWidth: 1,
 			padding: 0,
-			order: "seriesAsc",
-			appendTo: () => document.body,
-			className: cn("z-tooltip"),
+			...tooltipPin.tooltipOption.value,
 		},
 		legend: {
 			show: props.showLegend,
@@ -312,41 +312,15 @@ const legendHandler = computed(() => {
 			@legendselectchanged="
 				(p: unknown) => legendHandler(p as LegendSelectChangedPayload)
 			"
+			@zr:click="tooltipPin.togglePin"
 		>
 			<template #tooltip="params">
-				<div class="flex flex-col">
-					<div
-						v-if="Array.isArray(params) && params.length > 0"
-						class="px-2 pt-1 text-2sm text-foreground"
-					>
-						{{
-							$d((params[0] as any).value[0] as Date, "short-with-full-time")
-						}}
-					</div>
-					<div class="mt-1 mb-0.5 h-0.25 bg-border" />
-					<div class="flex flex-col px-2 pb-1">
-						<div
-							v-for="(param, i) in params"
-							:key="(param as any).seriesName || i"
-							class="flex items-center"
-						>
-							<!-- eslint-disable-next-line vue/no-v-html -->
-							<div v-html="(param as any).marker" />
-							<div class="text-2sm text-foreground/60">
-								{{ (param as any).seriesName }}
-							</div>
-							<div class="ml-1.5 text-2sm text-foreground">
-								{{
-									yAxisLabelFormatter(
-										props.unit,
-										(param as any).value[1],
-										props.decimals ?? null,
-									)
-								}}
-							</div>
-						</div>
-					</div>
-				</div>
+				<ChartTooltip
+					:params="params"
+					:unit="props.unit"
+					:decimals="props.decimals"
+					:pinned="tooltipPin.pinned.value"
+				/>
 			</template>
 		</VChart>
 	</div>

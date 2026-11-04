@@ -1,11 +1,13 @@
 package document
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -179,28 +181,60 @@ func Test_Document_Fork(t *testing.T) {
 	doc := stubDocument()
 	doc.Protected = true
 
-	forked := doc.Fork("feature-x", "user-2")
+	cc := map[string]struct {
+		Name  string
+		Check func(t *testing.T, forked Document)
+		Err   error
+	}{
+		"Name of white space only": {
+			Name: " \t ",
+			Err:  ErrInvalidBranchName,
+		},
+		"Successful fork": {
+			Name: " feature-x ",
+			Check: func(t *testing.T, forked Document) {
+				t.Helper()
 
-	// the document identity stays, the branch is a new one that is
-	// neither protected nor default whatever its source was.
-	assert.Equal(t, doc.ID, forked.ID)
-	assert.Equal(t, doc.OrganizationID, forked.OrganizationID)
-	assert.NotEqual(t, doc.BranchID, forked.BranchID)
-	assert.Equal(t, "feature-x", forked.BranchName)
-	assert.False(t, forked.Protected)
-	assert.False(t, forked.Default)
+				// the document identity stays, the branch is a new one that
+				// is neither protected nor default whatever its source was.
+				assert.Equal(t, doc.ID, forked.ID)
+				assert.Equal(t, doc.OrganizationID, forked.OrganizationID)
+				assert.NotEqual(t, doc.BranchID, forked.BranchID)
+				assert.Equal(t, "feature-x", forked.BranchName)
+				assert.False(t, forked.Protected)
+				assert.False(t, forked.Default)
 
-	// display data is carried over; the content loses its comment marks
-	// and the raw content is left for the first load to rebuild.
-	assert.Equal(t, doc.DocumentName, forked.DocumentName)
-	assert.Equal(t, doc.Icon, forked.Icon)
-	assert.NotEqual(t, doc.Content, forked.Content)
-	assert.Equal(t, doc.Content.StripCommentMarks(), forked.Content)
-	assert.Nil(t, forked.RawContent)
+				// display data is carried over; the content loses its
+				// comment marks and the raw content is left for the first
+				// load to rebuild.
+				assert.Equal(t, doc.DocumentName, forked.DocumentName)
+				assert.Equal(t, doc.Icon, forked.Icon)
+				assert.NotEqual(t, doc.Content, forked.Content)
+				assert.Equal(t, doc.Content.StripCommentMarks(), forked.Content)
+				assert.Nil(t, forked.RawContent)
 
-	assert.Equal(t, null.StringFrom("user-2"), forked.CreatedBy)
-	assert.Equal(t, null.StringFrom("user-2"), forked.LastUpdatedBy)
-	assert.Equal(t, forked.CreatedAt, forked.UpdatedAt)
+				assert.Equal(t, null.StringFrom("user-2"), forked.CreatedBy)
+				assert.Equal(t, null.StringFrom("user-2"), forked.LastUpdatedBy)
+				assert.Equal(t, forked.CreatedAt, forked.UpdatedAt)
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := doc.Fork(c.Name, "user-2")
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			c.Check(t, res)
+		})
+	}
 }
 
 func Test_Document_ApplyProtection(t *testing.T) {
@@ -221,14 +255,46 @@ func Test_Document_ApplyBranchUpdate(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
+		// Fork makes the branch a fork rather than the default branch.
+		Fork              bool
 		Name              null.String
 		Protected         null.Bool
+		Err               error
 		ExpectedName      string
 		ExpectedProtected bool
 	}{
+		"Empty name": {
+			Fork: true,
+			Name: null.StringFrom(""),
+			Err:  ErrInvalidBranchName,
+		},
+		"Name of white space only": {
+			Fork: true,
+			Name: null.StringFrom("   "),
+			Err:  ErrInvalidBranchName,
+		},
+		"Name over the length limit": {
+			Fork: true,
+			Name: null.StringFrom(strings.Repeat("a", _maxBranchNameLength+1)),
+			Err:  ErrBranchNameTooLong,
+		},
+		"Default branch renamed": {
+			Name: null.StringFrom("renamed"),
+			Err:  ErrDefaultBranchRename,
+		},
 		"Name only": {
+			Fork:         true,
 			Name:         null.StringFrom("renamed"),
 			ExpectedName: "renamed",
+		},
+		"Name padded with white space": {
+			Fork:         true,
+			Name:         null.StringFrom("  renamed\t"),
+			ExpectedName: "renamed",
+		},
+		"Default branch keeps its name": {
+			Name:         null.StringFrom(" " + DefaultBranch + " "),
+			ExpectedName: DefaultBranch,
 		},
 		"Protection only": {
 			Protected:         null.BoolFrom(true),
@@ -236,6 +302,7 @@ func Test_Document_ApplyBranchUpdate(t *testing.T) {
 			ExpectedProtected: true,
 		},
 		"Both": {
+			Fork:              true,
 			Name:              null.StringFrom("renamed"),
 			Protected:         null.BoolFrom(true),
 			ExpectedName:      "renamed",
@@ -251,8 +318,15 @@ func Test_Document_ApplyBranchUpdate(t *testing.T) {
 			t.Parallel()
 
 			doc := stubDocument()
+			doc.Default = !c.Fork
 
-			nd := doc.ApplyBranchUpdate(c.Name, c.Protected, "user-2")
+			nd, err := doc.ApplyBranchUpdate(BranchUpdateInput{Name: c.Name, Protected: c.Protected}, "user-2")
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
 
 			assert.Equal(t, c.ExpectedName, nd.BranchName)
 			assert.Equal(t, c.ExpectedProtected, nd.Protected)
@@ -457,6 +531,64 @@ func Test_UpdateInput_AddsMaintainers(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, c.Result, UpdateInput{Maintainers: c.Maintainers}.AddsMaintainers(c.Stored))
+		})
+	}
+}
+
+func Test_BranchUpdateInput_Validate(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Input BranchUpdateInput
+		Err   error
+	}{
+		"Name of white space only": {
+			Input: BranchUpdateInput{Name: null.StringFrom(" \t\n ")},
+			Err:   ErrInvalidBranchName,
+		},
+		"Name over the limit once trimmed": {
+			Input: BranchUpdateInput{Name: null.StringFrom(" " + strings.Repeat("a", _maxBranchNameLength+1) + " ")},
+			Err:   ErrBranchNameTooLong,
+		},
+		"Name at the limit once trimmed": {
+			Input: BranchUpdateInput{Name: null.StringFrom(" " + strings.Repeat("a", _maxBranchNameLength) + " ")},
+		},
+		"Protection only": {
+			Input: BranchUpdateInput{Protected: null.BoolFrom(true)},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Input.Validate())
+		})
+	}
+}
+
+func Test_BranchUpdateInput_sanitize(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Input  BranchUpdateInput
+		Result BranchUpdateInput
+	}{
+		"Name unset": {
+			Input:  BranchUpdateInput{Protected: null.BoolFrom(true)},
+			Result: BranchUpdateInput{Protected: null.BoolFrom(true)},
+		},
+		"Name with outer white space": {
+			Input:  BranchUpdateInput{Name: null.StringFrom(" \tfeature\n ")},
+			Result: BranchUpdateInput{Name: null.StringFrom("feature")},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Input.sanitize())
 		})
 	}
 }

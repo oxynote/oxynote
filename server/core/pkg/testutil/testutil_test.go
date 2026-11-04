@@ -428,11 +428,9 @@ func Test_StubBeginTx(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			var dest io.Reader
-
-			err := StubBeginTx(tx, c.Err)(context.Background(), &dest)
+			res, err := StubBeginTx[io.Reader](tx, c.Err)(context.Background())
 			AssertEqualError(t, c.Err, err)
-			assert.Equal(t, c.Result, dest)
+			assert.Equal(t, c.Result, res)
 		})
 	}
 }

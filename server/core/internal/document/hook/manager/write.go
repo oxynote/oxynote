@@ -11,6 +11,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
@@ -67,9 +68,8 @@ func (m *Manager) CreateHook(
 		}
 	}()
 
-	var tx Tx
-
-	if err = m.db.BeginTx(ctx, &tx); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](ctx, m.db)
+	if err != nil {
 		return nil, err
 	}
 
@@ -144,9 +144,8 @@ func (m *Manager) UpdateHook(
 		return nil, m.hookErr(err)
 	}
 
-	var tx Tx
-
-	if err = m.db.BeginTx(ctx, &tx); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](ctx, m.db)
+	if err != nil {
 		return nil, err
 	}
 
@@ -215,9 +214,8 @@ func (m *Manager) DeleteHook(ctx context.Context, id, documentID xid.ID, organiz
 		return m.hookErr(err)
 	}
 
-	var tx Tx
-
-	if err = m.db.BeginTx(ctx, &tx); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](ctx, m.db)
+	if err != nil {
 		return err
 	}
 

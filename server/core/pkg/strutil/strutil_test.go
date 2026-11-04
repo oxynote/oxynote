@@ -1,8 +1,11 @@
 package strutil
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -47,6 +50,30 @@ func Test_Preview(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, c.Result, Preview(c.Input, c.MaxLen))
+		})
+	}
+}
+
+func Test_ValidateName(t *testing.T) {
+	t.Parallel()
+
+	errEmpty := errors.New("empty")
+	errLong := errors.New("long")
+
+	cc := map[string]struct {
+		Name string
+		Err  error
+	}{
+		"Empty name":                 {Err: errEmpty},
+		"Name at the length limit":   {Name: strings.Repeat("é", 5)},
+		"Name over the length limit": {Name: strings.Repeat("é", 6), Err: errLong},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, ValidateName(c.Name, 5, errEmpty, errLong))
 		})
 	}
 }
