@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/wetsocks/wsserver"
 	"github.com/rs/xid"
@@ -18,6 +21,14 @@ type _contextKey int
 
 // _contextKeySession is the key used to store the user ID in the context.
 const _contextKeySession _contextKey = iota
+
+// _errRateLimited is returned when the Better Auth server rate limits the
+// session check, so the caller is told to retry instead of to sign in again.
+var _errRateLimited = errutil.New(http.StatusTooManyRequests, "request.rate_limited", "too many requests")
+
+// _headerForwardedFor is the header that carries the chain of client
+// addresses to the Better Auth server.
+const _headerForwardedFor = "X-Forwarded-For"
 
 // Options specifies options for auth.
 type Options struct {
@@ -41,7 +52,7 @@ func Middleware(log *slog.Logger, opt Options, client *http.Client) func(http.Ha
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 
-			session, err := getSession(ctx, client, opt.BetterAuthURL, r.Cookies())
+			session, err := getSession(ctx, client, opt.BetterAuthURL, r)
 			if err != nil {
 				httpserver.RespondError(log, w, err)
 				return
@@ -136,15 +147,38 @@ func HasActiveOrganization(userID, organizationID string) bool {
 	return userID != "" && organizationID != ""
 }
 
+// forwardedFor returns the X-Forwarded-For value for the session check: the
+// chain the request arrived with, followed by the address it came from.
+func forwardedFor(r *http.Request) string {
+	chain := r.Header.Values(_headerForwardedFor)
+
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+
+	if host != "" {
+		chain = append(chain, host)
+	}
+
+	return strings.Join(chain, ", ")
+}
+
 // getSession forwards the request to the Better Auth server to retrieve session information.
-func getSession(ctx context.Context, client *http.Client, url string, cookies []*http.Cookie) (Session, error) {
+// The client address goes along, so Better Auth rate limits each client on
+// its own instead of all of them in one shared bucket.
+func getSession(ctx context.Context, client *http.Client, url string, inc *http.Request) (Session, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return Session{}, err
 	}
 
-	for _, reqCookie := range cookies {
+	for _, reqCookie := range inc.Cookies() {
 		req.AddCookie(reqCookie)
+	}
+
+	if ff := forwardedFor(inc); ff != "" {
+		req.Header.Set(_headerForwardedFor, ff)
 	}
 
 	resp, err := client.Do(req)
@@ -152,6 +186,10 @@ func getSession(ctx context.Context, client *http.Client, url string, cookies []
 		return Session{}, err
 	}
 	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return Session{}, _errRateLimited
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return Session{}, httpserver.ErrNotAuthenticated

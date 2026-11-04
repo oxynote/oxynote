@@ -30,6 +30,8 @@ func Test_Middleware(t *testing.T) {
 		URL       string
 		Resp      httpmock.Responder
 		Cookies   []*http.Cookie
+		Header    http.Header
+		Remote    string
 		NextCode  int
 		AuthCalls int
 		RespCode  int
@@ -60,6 +62,13 @@ func Test_Middleware(t *testing.T) {
 			AuthCalls: 1,
 			RespCode:  http.StatusUnauthorized,
 			RespJSON:  `{"code":"account.not_authenticated","message":"not authenticated"}`,
+		},
+		"Rate limited by the auth service": {
+			URL:       "http://test.com/get-session",
+			Resp:      httpmock.NewStringResponder(http.StatusTooManyRequests, ""),
+			AuthCalls: 1,
+			RespCode:  http.StatusTooManyRequests,
+			RespJSON:  `{"code":"request.rate_limited","message":"too many requests"}`,
 		},
 		"Error returned by io.ReadAll": {
 			URL: "http://test.com/get-session",
@@ -140,6 +149,33 @@ func Test_Middleware(t *testing.T) {
 				},
 			}
 		}(),
+		"Client address is forwarded to the auth service": func() tcase {
+			var gotFor string
+
+			return tcase{
+				URL: "http://test.com/get-session",
+				Resp: func(r *http.Request) (*http.Response, error) {
+					gotFor = r.Header.Get("X-Forwarded-For")
+
+					return httpmock.NewStringResponse(
+						http.StatusOK,
+						`{"session":{"userId":"u1","activeOrganizationId":"org1"}}`,
+					), nil
+				},
+				Header:    http.Header{"X-Forwarded-For": {"203.0.113.7"}},
+				Remote:    "10.0.0.5:4321",
+				NextCode:  http.StatusNoContent,
+				AuthCalls: 1,
+				RespCode:  http.StatusNoContent,
+				Session: Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				},
+				After: func(t *testing.T) {
+					assert.Equal(t, "203.0.113.7, 10.0.0.5", gotFor)
+				},
+			}
+		}(),
 	}
 
 	for cn, c := range cc {
@@ -182,6 +218,14 @@ func Test_Middleware(t *testing.T) {
 
 			for _, ck := range c.Cookies {
 				req.AddCookie(ck)
+			}
+
+			for k, vv := range c.Header {
+				req.Header[k] = vv
+			}
+
+			if c.Remote != "" {
+				req.RemoteAddr = c.Remote
 			}
 
 			rec := httptest.NewRecorder()
