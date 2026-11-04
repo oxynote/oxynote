@@ -241,19 +241,19 @@ func Test_ParseTimeRange(t *testing.T) {
 	}{
 		"Missing required from parameter": {
 			Values: url.Values{},
-			Err:    errutil.New(http.StatusBadRequest, "from.invalid", "From parameter must be a valid RFC3339 timestamp."),
+			Err:    errutil.New(http.StatusBadRequest, "from.invalid", "from parameter must be a valid RFC3339 timestamp"),
 		},
 		"Invalid optional from parameter": {
 			FromOptional: true,
 			Values:       url.Values{"from": {"bogus"}},
-			Err:          errutil.New(http.StatusBadRequest, "from.invalid", "From parameter must be a valid RFC3339 timestamp."),
+			Err:          errutil.New(http.StatusBadRequest, "from.invalid", "from parameter must be a valid RFC3339 timestamp"),
 		},
 		"Invalid to parameter": {
 			Values: url.Values{
 				"from": {"2024-01-01T00:00:00Z"},
 				"to":   {"bogus"},
 			},
-			Err: errutil.New(http.StatusBadRequest, "to.invalid", "To parameter must be a valid RFC3339 timestamp."),
+			Err: errutil.New(http.StatusBadRequest, "to.invalid", "to parameter must be a valid RFC3339 timestamp"),
 		},
 		"Missing optional from defaults to zero": {
 			FromOptional: true,
@@ -278,6 +278,19 @@ func Test_ParseTimeRange(t *testing.T) {
 				From: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 				To:   time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
 			},
+		},
+		"From after to is rejected": {
+			Values: url.Values{
+				"from": {"2024-01-02T00:00:00Z"},
+				"to":   {"2024-01-01T00:00:00Z"},
+			},
+			Err: errutil.New(http.StatusBadRequest, "from.after_to", "from parameter must not be after the to parameter"),
+		},
+		"From in the future with default to is rejected": {
+			Values: url.Values{
+				"from": {"2099-01-01T00:00:00Z"},
+			},
+			Err: errutil.New(http.StatusBadRequest, "from.after_to", "from parameter must not be after the to parameter"),
 		},
 	}
 

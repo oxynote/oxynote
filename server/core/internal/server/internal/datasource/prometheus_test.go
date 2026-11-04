@@ -230,7 +230,7 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 			Target: "http://test.com/?matchers=up&from=bogus",
 			ID:     _testID.String(),
 			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"From parameter must be a valid RFC3339 timestamp."}`),
+				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"from parameter must be a valid RFC3339 timestamp"}`),
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
@@ -427,7 +427,7 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 			Target: "http://test.com/?matchers=up&from=bogus",
 			ID:     _testID.String(),
 			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"From parameter must be a valid RFC3339 timestamp."}`),
+				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"from parameter must be a valid RFC3339 timestamp"}`),
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
@@ -614,7 +614,7 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 			Target: "http://test.com/?matchers=up&from=bogus",
 			ID:     _testID.String(),
 			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"From parameter must be a valid RFC3339 timestamp."}`),
+				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"from parameter must be a valid RFC3339 timestamp"}`),
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
