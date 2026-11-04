@@ -6,7 +6,7 @@ import Document from "@tiptap/extension-document"
 import Heading from "@tiptap/extension-heading"
 import Paragraph from "@tiptap/extension-paragraph"
 import Text from "@tiptap/extension-text"
-import { yXmlFragmentToProseMirrorRootNode } from "y-prosemirror"
+import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap"
 import { DiffAttributes } from "~/components/editor/diff/diff-attributes"
 import { DiffDecorations } from "~/components/editor/diff/diff-decorations"
 import {
