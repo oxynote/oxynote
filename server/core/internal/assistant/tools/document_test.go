@@ -1310,7 +1310,7 @@ func Test_updateDocument_Execute(t *testing.T) {
 				assert.Empty(t, c.Applier.ApplyCalls())
 			} else {
 				require.Len(t, c.Applier.ApplyCalls(), 1)
-				assert.Len(t, c.Applier.ApplyCalls()[0].Ops, c.Ops)
+				require.Len(t, c.Applier.ApplyCalls()[0].Ops, c.Ops)
 
 				if c.OpName != "" {
 					assert.Equal(t, edit.SetName(c.OpName), c.Applier.ApplyCalls()[0].Ops[0])
