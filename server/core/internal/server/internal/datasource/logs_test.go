@@ -138,7 +138,7 @@ func commonLogsCases(field string) map[string]logsCase {
 			Target: "http://test.com/?q=x&from=yesterday",
 			Field:  field,
 			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"From parameter must be a valid RFC3339 timestamp."}`),
+				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"from parameter must be a valid RFC3339 timestamp"}`),
 				wasRunnersRunnerCalled(0),
 				wasExecutorLogsCalled(0),
 			),

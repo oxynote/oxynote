@@ -51,7 +51,7 @@ func ParseTimeRange(
 	from, err := time.Parse(time.RFC3339, v.Get(_fromKey))
 	if err != nil {
 		if !fromOptional || v.Get(_fromKey) != "" {
-			return nil, errutil.New(http.StatusBadRequest, "from.invalid", "From parameter must be a valid RFC3339 timestamp.")
+			return nil, errutil.New(http.StatusBadRequest, "from.invalid", "from parameter must be a valid RFC3339 timestamp")
 		}
 
 		from = time.Time{}
@@ -63,7 +63,7 @@ func ParseTimeRange(
 	if rawTo != "" {
 		to, err = time.Parse(time.RFC3339, rawTo)
 		if err != nil {
-			return nil, errutil.New(http.StatusBadRequest, "to.invalid", "To parameter must be a valid RFC3339 timestamp.")
+			return nil, errutil.New(http.StatusBadRequest, "to.invalid", "to parameter must be a valid RFC3339 timestamp")
 		}
 	}
 
@@ -71,7 +71,7 @@ func ParseTimeRange(
 		return nil, errutil.New(
 			http.StatusBadRequest,
 			"from.after_to",
-			"From parameter must not be after the to parameter.",
+			"from parameter must not be after the to parameter",
 		)
 	}
 

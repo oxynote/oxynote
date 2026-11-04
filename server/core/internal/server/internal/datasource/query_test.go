@@ -180,7 +180,7 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 			Target: "http://test.com/?q=up&chartType=line_chart&from=bogus",
 			ID:     _testID.String(),
 			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"From parameter must be a valid RFC3339 timestamp."}`),
+				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"from parameter must be a valid RFC3339 timestamp"}`),
 				wasExecutorQueryCalled(0, 0, 0),
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),

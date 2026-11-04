@@ -107,7 +107,7 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 			Target: "http://test.com/?q=up&from=bogus",
 			ID:     _testID.String(),
 			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"From parameter must be a valid RFC3339 timestamp."}`),
+				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"from parameter must be a valid RFC3339 timestamp"}`),
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
