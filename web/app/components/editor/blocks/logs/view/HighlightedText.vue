@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { highlightParts } from "../lines"
+import { highlightParts } from "../rows"
 
 const props = defineProps<{
 	text: string

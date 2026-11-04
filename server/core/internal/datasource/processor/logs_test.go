@@ -712,8 +712,9 @@ func Test_PageLogs(t *testing.T) {
 			Page:  LogsPage{Limit: 5},
 			Unit:  time.Nanosecond,
 			Result: &LogsResult{
-				Status: QueryStatusOK,
-				Lines:  small,
+				Status:         QueryStatusOK,
+				Lines:          small,
+				PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(4*time.Second+time.Nanosecond), time.Nanosecond)),
 			},
 		},
 		"Page drops the line past the limit": {
@@ -722,9 +723,10 @@ func Test_PageLogs(t *testing.T) {
 			Page:  LogsPage{Limit: 2},
 			Unit:  time.Nanosecond,
 			Result: &LogsResult{
-				Status: QueryStatusOK,
-				Lines:  small[:2],
-				Cursor: null.ValueFrom(newCursor(_logsBase.Add(2*time.Second+time.Nanosecond), time.Nanosecond)),
+				Status:         QueryStatusOK,
+				Lines:          small[:2],
+				PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(4*time.Second+time.Nanosecond), time.Nanosecond)),
+				NextCursor:     null.ValueFrom(newCursor(_logsBase.Add(2*time.Second+time.Nanosecond), time.Nanosecond)),
 			},
 		},
 		"Page drops the whole oldest timestamp group": {
@@ -733,9 +735,10 @@ func Test_PageLogs(t *testing.T) {
 			Page:  LogsPage{Limit: 4},
 			Unit:  time.Nanosecond,
 			Result: &LogsResult{
-				Status: QueryStatusOK,
-				Lines:  small[:3],
-				Cursor: null.ValueFrom(newCursor(_logsBase.Add(time.Second+time.Nanosecond), time.Nanosecond)),
+				Status:         QueryStatusOK,
+				Lines:          small[:3],
+				PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(4*time.Second+time.Nanosecond), time.Nanosecond)),
+				NextCursor:     null.ValueFrom(newCursor(_logsBase.Add(time.Second+time.Nanosecond), time.Nanosecond)),
 			},
 		},
 		"Page of one timestamp reads the whole group": {
@@ -747,9 +750,10 @@ func Test_PageLogs(t *testing.T) {
 			},
 			Unit: time.Nanosecond,
 			Result: &LogsResult{
-				Status: QueryStatusOK,
-				Lines:  small[3:],
-				Cursor: null.ValueFrom(newCursor(_logsBase.Add(time.Second), time.Nanosecond)),
+				Status:         QueryStatusOK,
+				Lines:          small[3:],
+				PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(time.Second+time.Nanosecond), time.Nanosecond)),
+				NextCursor:     null.ValueFrom(newCursor(_logsBase.Add(time.Second), time.Nanosecond)),
 			},
 		},
 		"Timestamp group after the window start sets the cursor": {
@@ -758,9 +762,10 @@ func Test_PageLogs(t *testing.T) {
 			Page:  LogsPage{Limit: 1},
 			Unit:  time.Nanosecond,
 			Result: &LogsResult{
-				Status: QueryStatusOK,
-				Lines:  []LogLine{at(2*time.Second, 1), at(2*time.Second, 0)},
-				Cursor: null.ValueFrom(newCursor(_logsBase.Add(2*time.Second), time.Nanosecond)),
+				Status:         QueryStatusOK,
+				Lines:          []LogLine{at(2*time.Second, 1), at(2*time.Second, 0)},
+				PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(2*time.Second+time.Nanosecond), time.Nanosecond)),
+				NextCursor:     null.ValueFrom(newCursor(_logsBase.Add(2*time.Second), time.Nanosecond)),
 			},
 		},
 		"Timestamp group reaching the cap is partial": func() tcase {
@@ -776,10 +781,11 @@ func Test_PageLogs(t *testing.T) {
 				Page:  LogsPage{Limit: 10},
 				Unit:  time.Nanosecond,
 				Result: &LogsResult{
-					Status:  QueryStatusOK,
-					Lines:   group[:_maxTimestampGroup],
-					Cursor:  null.ValueFrom(newCursor(_logsBase.Add(time.Minute), time.Nanosecond)),
-					Partial: true,
+					Status:         QueryStatusOK,
+					Lines:          group[:_maxTimestampGroup],
+					PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(time.Minute+time.Nanosecond), time.Nanosecond)),
+					NextCursor:     null.ValueFrom(newCursor(_logsBase.Add(time.Minute), time.Nanosecond)),
+					Partial:        true,
 				},
 			}
 		}(),
@@ -792,8 +798,19 @@ func Test_PageLogs(t *testing.T) {
 			},
 			Unit: time.Nanosecond,
 			Result: &LogsResult{
+				Status:         QueryStatusOK,
+				Lines:          small[2:],
+				PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(2*time.Second+time.Nanosecond), time.Nanosecond)),
+			},
+		},
+		"Newest group at the window end sets no previous cursor": {
+			Lines: small,
+			Range: TimeRange{From: _logsBase, To: _logsBase.Add(4*time.Second + time.Nanosecond)},
+			Page:  LogsPage{Limit: 5},
+			Unit:  time.Nanosecond,
+			Result: &LogsResult{
 				Status: QueryStatusOK,
-				Lines:  small[2:],
+				Lines:  small,
 			},
 		},
 		"Millisecond unit steps the cursor by a millisecond": {
@@ -802,9 +819,10 @@ func Test_PageLogs(t *testing.T) {
 			Page:  LogsPage{Limit: 2},
 			Unit:  time.Millisecond,
 			Result: &LogsResult{
-				Status: QueryStatusOK,
-				Lines:  small[:2],
-				Cursor: null.ValueFrom(newCursor(_logsBase.Add(2*time.Second+time.Millisecond), time.Millisecond)),
+				Status:         QueryStatusOK,
+				Lines:          small[:2],
+				PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(4*time.Second+time.Millisecond), time.Millisecond)),
+				NextCursor:     null.ValueFrom(newCursor(_logsBase.Add(2*time.Second+time.Millisecond), time.Millisecond)),
 			},
 		},
 		"Walk at limit 1 reads every line once": {
@@ -831,9 +849,10 @@ func Test_PageLogs(t *testing.T) {
 			Page:  LogsPage{Limit: 2, Order: LogsOrderDesc},
 			Unit:  time.Nanosecond,
 			Result: &LogsResult{
-				Status: QueryStatusOK,
-				Lines:  small[:2],
-				Cursor: null.ValueFrom(newCursor(_logsBase.Add(2*time.Second+time.Nanosecond), time.Nanosecond)),
+				Status:         QueryStatusOK,
+				Lines:          small[:2],
+				PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(4*time.Second+time.Nanosecond), time.Nanosecond)),
+				NextCursor:     null.ValueFrom(newCursor(_logsBase.Add(2*time.Second+time.Nanosecond), time.Nanosecond)),
 			},
 		},
 		"Error returned by the asc timestamp group fetch": {
@@ -850,8 +869,9 @@ func Test_PageLogs(t *testing.T) {
 			Page:  asc(5, 0, time.Nanosecond),
 			Unit:  time.Nanosecond,
 			Result: &LogsResult{
-				Status: QueryStatusOK,
-				Lines:  early,
+				Status:         QueryStatusOK,
+				Lines:          early,
+				PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(time.Second), time.Nanosecond)),
 			},
 		},
 		"Asc page drops the line past the limit": {
@@ -860,9 +880,10 @@ func Test_PageLogs(t *testing.T) {
 			Page:  asc(2, 0, time.Nanosecond),
 			Unit:  time.Nanosecond,
 			Result: &LogsResult{
-				Status: QueryStatusOK,
-				Lines:  early[:2],
-				Cursor: null.ValueFrom(newCursor(_logsBase.Add(3*time.Second), time.Nanosecond)),
+				Status:         QueryStatusOK,
+				Lines:          early[:2],
+				PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(time.Second), time.Nanosecond)),
+				NextCursor:     null.ValueFrom(newCursor(_logsBase.Add(3*time.Second), time.Nanosecond)),
 			},
 		},
 		"Asc page drops the whole newest timestamp group": {
@@ -871,9 +892,10 @@ func Test_PageLogs(t *testing.T) {
 			Page:  asc(4, 0, time.Nanosecond),
 			Unit:  time.Nanosecond,
 			Result: &LogsResult{
-				Status: QueryStatusOK,
-				Lines:  early[:3],
-				Cursor: null.ValueFrom(newCursor(_logsBase.Add(4*time.Second), time.Nanosecond)),
+				Status:         QueryStatusOK,
+				Lines:          early[:3],
+				PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(time.Second), time.Nanosecond)),
+				NextCursor:     null.ValueFrom(newCursor(_logsBase.Add(4*time.Second), time.Nanosecond)),
 			},
 		},
 		"Asc page of one timestamp reads the whole group": {
@@ -882,9 +904,10 @@ func Test_PageLogs(t *testing.T) {
 			Page:  asc(1, 4*time.Second, time.Nanosecond),
 			Unit:  time.Nanosecond,
 			Result: &LogsResult{
-				Status: QueryStatusOK,
-				Lines:  early[3:],
-				Cursor: null.ValueFrom(newCursor(_logsBase.Add(4*time.Second+time.Nanosecond), time.Nanosecond)),
+				Status:         QueryStatusOK,
+				Lines:          early[3:],
+				PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(4*time.Second), time.Nanosecond)),
+				NextCursor:     null.ValueFrom(newCursor(_logsBase.Add(4*time.Second+time.Nanosecond), time.Nanosecond)),
 			},
 		},
 		"Asc timestamp group before the window end sets the cursor": {
@@ -893,9 +916,10 @@ func Test_PageLogs(t *testing.T) {
 			Page:  asc(1, 0, time.Nanosecond),
 			Unit:  time.Nanosecond,
 			Result: &LogsResult{
-				Status: QueryStatusOK,
-				Lines:  []LogLine{at(time.Second, 0), at(time.Second, 1)},
-				Cursor: null.ValueFrom(newCursor(_logsBase.Add(time.Second+time.Nanosecond), time.Nanosecond)),
+				Status:         QueryStatusOK,
+				Lines:          []LogLine{at(time.Second, 0), at(time.Second, 1)},
+				PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(time.Second), time.Nanosecond)),
+				NextCursor:     null.ValueFrom(newCursor(_logsBase.Add(time.Second+time.Nanosecond), time.Nanosecond)),
 			},
 		},
 		"Asc timestamp group at the window end sets no cursor": {
@@ -904,8 +928,9 @@ func Test_PageLogs(t *testing.T) {
 			Page:  asc(1, 4*time.Second, time.Nanosecond),
 			Unit:  time.Nanosecond,
 			Result: &LogsResult{
-				Status: QueryStatusOK,
-				Lines:  early[3:],
+				Status:         QueryStatusOK,
+				Lines:          early[3:],
+				PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(4*time.Second), time.Nanosecond)),
 			},
 		},
 		"Asc timestamp group reaching the cap is partial": func() tcase {
@@ -921,10 +946,11 @@ func Test_PageLogs(t *testing.T) {
 				Page:  asc(10, 0, time.Nanosecond),
 				Unit:  time.Nanosecond,
 				Result: &LogsResult{
-					Status:  QueryStatusOK,
-					Lines:   group[:_maxTimestampGroup],
-					Cursor:  null.ValueFrom(newCursor(_logsBase.Add(time.Minute+time.Nanosecond), time.Nanosecond)),
-					Partial: true,
+					Status:         QueryStatusOK,
+					Lines:          group[:_maxTimestampGroup],
+					PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(time.Minute), time.Nanosecond)),
+					NextCursor:     null.ValueFrom(newCursor(_logsBase.Add(time.Minute+time.Nanosecond), time.Nanosecond)),
+					Partial:        true,
 				},
 			}
 		}(),
@@ -994,9 +1020,10 @@ func Test_PageLogs(t *testing.T) {
 			Page:  asc(1, 4*time.Second, time.Millisecond),
 			Unit:  time.Millisecond,
 			Result: &LogsResult{
-				Status: QueryStatusOK,
-				Lines:  early[3:],
-				Cursor: null.ValueFrom(newCursor(_logsBase.Add(4*time.Second+time.Millisecond), time.Millisecond)),
+				Status:         QueryStatusOK,
+				Lines:          early[3:],
+				PreviousCursor: null.ValueFrom(newCursor(_logsBase.Add(4*time.Second), time.Millisecond)),
+				NextCursor:     null.ValueFrom(newCursor(_logsBase.Add(4*time.Second+time.Millisecond), time.Millisecond)),
 			},
 		},
 		"Asc walk at limit 1 reads every line once": {
@@ -1197,8 +1224,8 @@ func stubLogsFetcher(lines []LogLine, errs []error) LogsFetcher {
 }
 
 // walkLogs pages through the window from the given first page and
-// returns every line read, in the order read.
-func walkLogs(t *testing.T, fetch LogsFetcher, tr TimeRange, page LogsPage, unit time.Duration) []LogLine {
+// returns every line read, in the order read, and the last page.
+func walkLogs(t *testing.T, fetch LogsFetcher, tr TimeRange, page LogsPage, unit time.Duration) ([]LogLine, *LogsResult) {
 	t.Helper()
 
 	var lines []LogLine
@@ -1209,17 +1236,58 @@ func walkLogs(t *testing.T, fetch LogsFetcher, tr TimeRange, page LogsPage, unit
 
 		lines = append(lines, res.Lines...)
 
-		if !res.Cursor.Valid {
-			return lines
+		if !res.NextCursor.Valid {
+			return lines, res
 		}
 
-		page.Cursor = res.Cursor
+		page.Cursor = res.NextCursor
 	}
 }
 
+// walkLogsBack pages back from last through the previous cursors, in the
+// order opposite to order, and returns last's own lines and every line
+// read after them, in that order.
+func walkLogsBack(
+	t *testing.T,
+	fetch LogsFetcher,
+	tr TimeRange,
+	order LogsOrder,
+	limit int,
+	last *LogsResult,
+	unit time.Duration,
+) []LogLine {
+	t.Helper()
+
+	own := slices.Clone(last.Lines)
+	slices.Reverse(own)
+
+	if !last.PreviousCursor.Valid {
+		return own
+	}
+
+	page := LogsPage{
+		Limit:  limit,
+		Order:  oppositeLogsOrder(order),
+		Cursor: last.PreviousCursor,
+	}
+	lines, _ := walkLogs(t, fetch, tr, page, unit)
+
+	return append(own, lines...)
+}
+
+// oppositeLogsOrder returns the order that reads the other way.
+func oppositeLogsOrder(order LogsOrder) LogsOrder {
+	if order == LogsOrderAsc {
+		return LogsOrderDesc
+	}
+
+	return LogsOrderAsc
+}
+
 // assertWalkReadsEachOnce pages through the window from the given first
-// page and checks that every one of total lines, told apart by their
-// "seq" field, is read exactly once and in the page's order.
+// page, then back from the last page through the previous cursors. Each
+// walk must read every one of total lines, told apart by their "seq"
+// field, exactly once and in the walk's order.
 func assertWalkReadsEachOnce(
 	t *testing.T,
 	fetch LogsFetcher,
@@ -1230,8 +1298,19 @@ func assertWalkReadsEachOnce(
 ) {
 	t.Helper()
 
-	lines := walkLogs(t, fetch, tr, page, unit)
+	lines, last := walkLogs(t, fetch, tr, page, unit)
 	assertLinesOrdered(t, page.Order, lines)
+	assertReadEachOnce(t, lines, total)
+
+	back := walkLogsBack(t, fetch, tr, page.Order, page.Limit, last, unit)
+	assertLinesOrdered(t, oppositeLogsOrder(page.Order), back)
+	assertReadEachOnce(t, back, total)
+}
+
+// assertReadEachOnce checks that lines hold every one of total lines,
+// told apart by their "seq" field, exactly once.
+func assertReadEachOnce(t *testing.T, lines []LogLine, total int) {
+	t.Helper()
 
 	seen := make(map[string]int, total)
 

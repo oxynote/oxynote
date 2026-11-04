@@ -2,7 +2,7 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import type { VueWrapper } from "@vue/test-utils"
 import { describe, it } from "vitest"
 import FieldTable from "./FieldTable.vue"
-import type { KeyValue } from "../lines"
+import type { KeyValue } from "../rows"
 import { findButtonByText, t } from "~/components/test-helpers"
 
 const ENTRIES: KeyValue[] = [

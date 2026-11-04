@@ -953,12 +953,14 @@
 				"search-label": "Search logs",
 				"search-placeholder": "Search logs...",
 				"clear-search": "Clear search",
-				"show-volume": "Show line volume",
-				"hide-volume": "Hide line volume",
-				"volume-label": "Line volume across the time range",
+				"show-volume": "Show log volume",
+				"hide-volume": "Hide log volume",
+				"labels-not-searched": "These labels aren't in the raw log line, so search can't match them.",
+				"fields-not-searched": "These fields aren't in the raw log line, so search can't match them.",
+				"volume-label": "Log volume across the time range",
 				"volume-empty": "No logs in this interval",
-				"line-heading": "Line",
-				"copy-line": "Copy line",
+				"line-heading": "Raw log line",
+				"copy-line": "Copy log",
 				"line-copied": "Copied",
 				"indexed-heading": "Indexed fields",
 				"indexed-description": "Fast to filter on",
@@ -984,7 +986,8 @@
 				},
 				"no-lines": {
 					"title": "No Logs",
-					"description": "Nothing matched in this time range"
+					"description": "Nothing matched in this time range",
+					"search-description": "Search looks only at the raw log line. To narrow by a label such as env, open a log and use its filter buttons."
 				},
 				"query-error": {
 					"title": "Query Error",

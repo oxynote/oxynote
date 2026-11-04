@@ -62,7 +62,7 @@ func stubLogClients(cs processor.ConnectionStatus, err error) *clientMocks {
 			Labels: map[string]string{"app": "up"},
 			Fields: map[string]string{"trace_id": "e1a3f33c25c5eecd"},
 		}},
-		Cursor: null.ValueFrom(_testLogsCursor),
+		NextCursor: null.ValueFrom(_testLogsCursor),
 	}
 
 	return &clientMocks{
@@ -287,7 +287,8 @@ func Test_Handler_FetchDataSourceLogs(t *testing.T) {
 						"labels": {"app": "up"},
 						"fields": {"trace_id": "e1a3f33c25c5eecd"}
 					}],
-					"cursor": "ns:1704110400000000000",
+					"nextCursor": "ns:1704110400000000000",
+					"previousCursor": null,
 					"partial": false
 				}`),
 				wasDBFetchDataSourceCalled(1),

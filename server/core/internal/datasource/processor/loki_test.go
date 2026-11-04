@@ -495,6 +495,7 @@ func Test_Loki_Logs(t *testing.T) {
 					{Time: time.Unix(0, 2000).UTC(), Level: LogLevelWarning, Line: "second", Labels: map[string]string{"service_name": "b"}, Fields: map[string]string{"level": "warn"}},
 					{Time: time.Unix(0, 1000).UTC(), Level: LogLevelError, Line: "first", Labels: map[string]string{"service_name": "a"}, Fields: map[string]string{"detected_level": "error"}},
 				},
+				PreviousCursor: null.ValueFrom(newCursor(time.Unix(0, 3001), time.Nanosecond)),
 			},
 		},
 		"Merged streams come back oldest first when asc": {
@@ -508,6 +509,7 @@ func Test_Loki_Logs(t *testing.T) {
 					{Time: time.Unix(0, 2000).UTC(), Level: LogLevelWarning, Line: "second", Labels: map[string]string{"service_name": "b"}, Fields: map[string]string{"level": "warn"}},
 					{Time: time.Unix(0, 3000).UTC(), Level: LogLevelUnknown, Line: "third", Labels: map[string]string{"service_name": "a"}, Fields: map[string]string{}},
 				},
+				PreviousCursor: null.ValueFrom(newCursor(time.Unix(0, 1000), time.Nanosecond)),
 			},
 		},
 		"Label filter": {
@@ -623,13 +625,17 @@ func Test_Loki_Logs(t *testing.T) {
 
 							return !cl.Time.Before(last)
 						}), res.Lines)
-						assert.True(t, res.Cursor.Valid)
+						assert.True(t, res.NextCursor.Valid)
 
 						return
 					}
 
 					page := LogsPage{Limit: c.WalkLimit, Order: c.Page.Order}
-					assertCorpusLines(t, c.Page.Order, want, walkLogs(t, l.fetchLines(c.Query), c.Range, page, time.Nanosecond))
+					lines, last := walkLogs(t, l.fetchLines(c.Query), c.Range, page, time.Nanosecond)
+					assertCorpusLines(t, c.Page.Order, want, lines)
+
+					back := walkLogsBack(t, l.fetchLines(c.Query), c.Range, c.Page.Order, c.WalkLimit, last, time.Nanosecond)
+					assertCorpusLines(t, oppositeLogsOrder(c.Page.Order), want, back)
 				})
 			}
 		})

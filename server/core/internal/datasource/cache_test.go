@@ -331,7 +331,7 @@ func Test_cachedLogs_Logs(t *testing.T) {
 					Fields: map[string]string{},
 				},
 			},
-			Cursor: null.ValueFrom(*cursor),
+			NextCursor: null.ValueFrom(*cursor),
 		},
 	}
 

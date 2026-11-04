@@ -26,7 +26,8 @@ const TIME_RANGE = {
 const NO_LINES = {
 	status: GenericQueryResultStatus.NoData,
 	lines: [],
-	cursor: null,
+	nextCursor: null,
+	previousCursor: null,
 	partial: false,
 }
 
@@ -61,7 +62,7 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 
 	afterEach(disposeMockEndpoints)
 
-	describe("useLogLines", () => {
+	describe("useLogs", () => {
 		it.for([
 			{
 				name: "returns null without a data source id",
@@ -81,36 +82,36 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 		])("$name", async ({ dataSourceId, queries }, { expect }) => {
 			const calls = mockEndpoint("GET", LINES_URL, () => NO_LINES)
 			const api = makeLogDataSourceAPI()
-			const lines = runInApp(() =>
-				api.useLogLines(dataSourceId, { queries, ...TIME_RANGE }, true),
+			const logs = runInApp(() =>
+				api.useLogs(dataSourceId, { queries, ...TIME_RANGE }, true),
 			)
 
-			const result = await lines.refresh()
+			const result = await logs.refresh()
 
 			expect(result.data?.pages).toEqual([null])
-			expect(lines.hasNextPage.value).toBe(false)
+			expect(logs.hasNextPage.value).toBe(false)
 			expect(calls).toHaveLength(0)
 		})
 
 		it("sends no request while fetching is disabled", async ({ expect }) => {
 			const calls = mockEndpoint("GET", LINES_URL, () => NO_LINES)
 			const api = makeLogDataSourceAPI()
-			const lines = runInApp(() =>
-				api.useLogLines("ds1", { queries: ["{env}"], ...TIME_RANGE }, false),
+			const logs = runInApp(() =>
+				api.useLogs("ds1", { queries: ["{env}"], ...TIME_RANGE }, false),
 			)
 
 			await flushPromises()
 
-			expect(lines.data.value).toBeUndefined()
+			expect(logs.data.value).toBeUndefined()
 			expect(calls).toHaveLength(0)
 		})
 
 		it("fetches the newest page with every parameter", async ({ expect }) => {
-			const page = makeLinesResult("l1", "ns:1")
+			const page = makeLogsResult("l1", "ns:1")
 			const calls = mockEndpoint("GET", LINES_URL, () => page)
 			const api = makeLogDataSourceAPI()
-			const lines = runInApp(() =>
-				api.useLogLines(
+			const logs = runInApp(() =>
+				api.useLogs(
 					"ds1",
 					{
 						queries: ['{env="$env"}'],
@@ -125,7 +126,7 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 				),
 			)
 
-			const result = await lines.refresh()
+			const result = await logs.refresh()
 
 			expect(result.data).toEqual({
 				pages: [
@@ -136,7 +137,7 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 				],
 				pageParams: [null],
 			})
-			expect(lines.hasNextPage.value).toBe(true)
+			expect(logs.hasNextPage.value).toBe(true)
 			expect(calls).toHaveLength(1)
 			// a Date becomes RFC 3339; a string passes through with its
 			// fractions
@@ -156,10 +157,10 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 			const params = { queries: ["{env}"], ...TIME_RANGE }
 
 			await runInApp(() =>
-				api.useLogLines("ds1", { ...params, order: LogOrder.Desc }, true),
+				api.useLogs("ds1", { ...params, order: LogOrder.Desc }, true),
 			).refresh()
 			await runInApp(() =>
-				api.useLogLines("ds1", { ...params, order: LogOrder.Asc }, true),
+				api.useLogs("ds1", { ...params, order: LogOrder.Asc }, true),
 			).refresh()
 
 			expect(calls.map((call) => call.query.order)).toEqual(["desc", "asc"])
@@ -168,29 +169,27 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 		it("fetches the newest page of every query into one page", async ({
 			expect,
 		}) => {
-			const apiLines = makeLinesResult("api-1", "api:1")
-			const dbLines = makeLinesResult("db-1", null)
+			const apiLogs = makeLogsResult("api-1", "api:1")
+			const dbLogs = makeLogsResult("db-1", null)
 			const calls = mockEndpoint("GET", LINES_URL, (call) =>
-				call.query.q === "{job=api}" ? apiLines : dbLines,
+				call.query.q === "{job=api}" ? apiLogs : dbLogs,
 			)
 			const api = makeLogDataSourceAPI()
-			const lines = runInApp(() =>
-				api.useLogLines(
+			const logs = runInApp(() =>
+				api.useLogs(
 					"ds1",
 					{ queries: ["{job=api}", "{job=db}"], ...TIME_RANGE },
 					true,
 				),
 			)
 
-			const result = await lines.refresh()
+			const result = await logs.refresh()
 
 			expect(result.data).toEqual({
-				pages: [
-					{ results: [apiLines, dbLines], window: { from: FROM, to: TO } },
-				],
+				pages: [{ results: [apiLogs, dbLogs], window: { from: FROM, to: TO } }],
 				pageParams: [null],
 			})
-			expect(lines.hasNextPage.value).toBe(true)
+			expect(logs.hasNextPage.value).toBe(true)
 			// the queries run in parallel, so their order of arrival is not
 			// part of the contract
 			expect(calls).toHaveLength(2)
@@ -209,15 +208,15 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 		it("reports no further page when nothing matches", async ({ expect }) => {
 			const calls = mockEndpoint("GET", LINES_URL, () => NO_LINES)
 			const api = makeLogDataSourceAPI()
-			const lines = runInApp(() =>
-				api.useLogLines(
+			const logs = runInApp(() =>
+				api.useLogs(
 					"ds1",
 					{ queries: ["{job=api}", "{job=db}"], ...TIME_RANGE },
 					true,
 				),
 			)
 
-			const result = await lines.refresh()
+			const result = await logs.refresh()
 
 			expect(result.data).toEqual({
 				pages: [
@@ -225,27 +224,27 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 				],
 				pageParams: [null],
 			})
-			expect(lines.hasNextPage.value).toBe(false)
+			expect(logs.hasNextPage.value).toBe(false)
 			expect(calls).toHaveLength(2)
 		})
 
 		it("loads older pages with the cursor of the previous one", async ({
 			expect,
 		}) => {
-			const first = makeLinesResult("l1", "ns:2")
-			const second = makeLinesResult("l2", null)
+			const first = makeLogsResult("l1", "ns:2")
+			const second = makeLogsResult("l2", null)
 			const calls = mockEndpoint("GET", LINES_URL, (call) =>
 				call.query.cursor ? second : first,
 			)
 			const api = makeLogDataSourceAPI()
-			const lines = runInApp(() =>
-				api.useLogLines("ds1", { queries: ["{env}"], ...TIME_RANGE }, true),
+			const logs = runInApp(() =>
+				api.useLogs("ds1", { queries: ["{env}"], ...TIME_RANGE }, true),
 			)
-			await lines.refresh()
+			await logs.refresh()
 
-			await lines.loadNextPage()
+			await logs.loadNextPage()
 
-			expect(lines.data.value).toEqual({
+			expect(logs.data.value).toEqual({
 				pages: [
 					{ results: [first], window: { from: FROM, to: TO } },
 					{ results: [second], window: { from: FROM, to: TO } },
@@ -255,7 +254,7 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 					{ cursors: ["ns:2"], window: { from: FROM, to: TO } },
 				],
 			})
-			expect(lines.hasNextPage.value).toBe(false)
+			expect(logs.hasNextPage.value).toBe(false)
 			expect(calls).toHaveLength(2)
 			expect(calls[1]?.query).toEqual({
 				q: "{env}",
@@ -268,9 +267,9 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 		it("asks only the queries with older lines for the next page", async ({
 			expect,
 		}) => {
-			const apiFirst = makeLinesResult("api-1", "api:1")
-			const apiSecond = makeLinesResult("api-2", "api:2")
-			const dbFirst = makeLinesResult("db-1", null)
+			const apiFirst = makeLogsResult("api-1", "api:1")
+			const apiSecond = makeLogsResult("api-2", "api:2")
+			const dbFirst = makeLogsResult("db-1", null)
 			const calls = mockEndpoint("GET", LINES_URL, (call) => {
 				if (call.query.q === "{job=db}") {
 					return dbFirst
@@ -279,18 +278,18 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 				return call.query.cursor ? apiSecond : apiFirst
 			})
 			const api = makeLogDataSourceAPI()
-			const lines = runInApp(() =>
-				api.useLogLines(
+			const logs = runInApp(() =>
+				api.useLogs(
 					"ds1",
 					{ queries: ["{job=api}", "{job=db}"], ...TIME_RANGE },
 					true,
 				),
 			)
-			await lines.refresh()
+			await logs.refresh()
 
-			await lines.loadNextPage()
+			await logs.loadNextPage()
 
-			expect(lines.data.value).toEqual({
+			expect(logs.data.value).toEqual({
 				pages: [
 					{ results: [apiFirst, dbFirst], window: { from: FROM, to: TO } },
 					{ results: [apiSecond, null], window: { from: FROM, to: TO } },
@@ -300,7 +299,7 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 					{ cursors: ["api:1", null], window: { from: FROM, to: TO } },
 				],
 			})
-			expect(lines.hasNextPage.value).toBe(true)
+			expect(logs.hasNextPage.value).toBe(true)
 			expect(calls).toHaveLength(3)
 			expect(calls[2]?.query).toEqual({
 				q: "{job=api}",
@@ -313,9 +312,9 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 		it("reports no further page once every query ran out of older lines", async ({
 			expect,
 		}) => {
-			const apiFirst = makeLinesResult("api-1", "api:1")
-			const apiSecond = makeLinesResult("api-2", null)
-			const dbFirst = makeLinesResult("db-1", null)
+			const apiFirst = makeLogsResult("api-1", "api:1")
+			const apiSecond = makeLogsResult("api-2", null)
+			const dbFirst = makeLogsResult("db-1", null)
 			const calls = mockEndpoint("GET", LINES_URL, (call) => {
 				if (call.query.q === "{job=db}") {
 					return dbFirst
@@ -324,46 +323,46 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 				return call.query.cursor ? apiSecond : apiFirst
 			})
 			const api = makeLogDataSourceAPI()
-			const lines = runInApp(() =>
-				api.useLogLines(
+			const logs = runInApp(() =>
+				api.useLogs(
 					"ds1",
 					{ queries: ["{job=api}", "{job=db}"], ...TIME_RANGE },
 					true,
 				),
 			)
-			await lines.refresh()
+			await logs.refresh()
 
-			await lines.loadNextPage()
+			await logs.loadNextPage()
 
-			expect(lines.data.value?.pages[1]).toEqual({
+			expect(logs.data.value?.pages[1]).toEqual({
 				results: [apiSecond, null],
 				window: { from: FROM, to: TO },
 			})
-			expect(lines.hasNextPage.value).toBe(false)
+			expect(logs.hasNextPage.value).toBe(false)
 			expect(calls).toHaveLength(3)
 		})
 
 		it("reads older pages from the first page's window after the window moves", async ({
 			expect,
 		}) => {
-			const first = makeLinesResult("l1", "ns:2")
-			const second = makeLinesResult("l2", null)
+			const first = makeLogsResult("l1", "ns:2")
+			const second = makeLogsResult("l2", null)
 			const calls = mockEndpoint("GET", LINES_URL, (call) =>
 				call.query.cursor ? second : first,
 			)
-			const params = ref<LogLinesParams>({ queries: ["{env}"], ...TIME_RANGE })
+			const params = ref<LogsParams>({ queries: ["{env}"], ...TIME_RANGE })
 			const api = makeLogDataSourceAPI()
-			const lines = runInApp(() => api.useLogLines("ds1", params, true))
-			await lines.refresh()
+			const logs = runInApp(() => api.useLogs("ds1", params, true))
+			await logs.refresh()
 			params.value = {
 				...params.value,
 				from: "2026-01-01T00:05:00.000Z",
 				to: "2026-01-02T00:05:00.000Z",
 			}
 
-			await lines.loadNextPage()
+			await logs.loadNextPage()
 
-			expect(lines.data.value?.pages[1]).toEqual({
+			expect(logs.data.value?.pages[1]).toEqual({
 				results: [second],
 				window: { from: FROM, to: TO },
 			})
@@ -379,25 +378,25 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 		it("reloads every page from the new window on a refresh", async ({
 			expect,
 		}) => {
-			const first = makeLinesResult("l1", "ns:2")
-			const second = makeLinesResult("l2", null)
+			const first = makeLogsResult("l1", "ns:2")
+			const second = makeLogsResult("l2", null)
 			const calls = mockEndpoint("GET", LINES_URL, (call) =>
 				call.query.cursor ? second : first,
 			)
-			const params = ref<LogLinesParams>({ queries: ["{env}"], ...TIME_RANGE })
+			const params = ref<LogsParams>({ queries: ["{env}"], ...TIME_RANGE })
 			const api = makeLogDataSourceAPI()
-			const lines = runInApp(() => api.useLogLines("ds1", params, true))
-			await lines.refresh()
-			await lines.loadNextPage()
+			const logs = runInApp(() => api.useLogs("ds1", params, true))
+			await logs.refresh()
+			await logs.loadNextPage()
 			const moved = {
 				from: "2026-01-01T00:05:00.000Z",
 				to: "2026-01-02T00:05:00.000Z",
 			}
 			params.value = { ...params.value, ...moved }
 
-			await lines.refetch()
+			await logs.refetch()
 
-			expect(lines.data.value).toEqual({
+			expect(logs.data.value).toEqual({
 				pages: [
 					{ results: [first], window: moved },
 					{ results: [second], window: moved },
@@ -409,19 +408,370 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 			expect(calls[3]?.query).toEqual({ q: "{env}", ...moved, cursor: "ns:2" })
 		})
 
+		it("reads only the first page from the new window on a reload", async ({
+			expect,
+		}) => {
+			const first = makeLogsResult("l1", "ns:2")
+			const second = makeLogsResult("l2", null)
+			const calls = mockEndpoint("GET", LINES_URL, (call) =>
+				call.query.cursor ? second : first,
+			)
+			const params = ref<LogsParams>({ queries: ["{env}"], ...TIME_RANGE })
+			const api = makeLogDataSourceAPI()
+			const logs = runInApp(() => api.useLogs("ds1", params, true))
+			await logs.refresh()
+			await logs.loadNextPage()
+			const moved = {
+				from: "2026-01-01T00:05:00.000Z",
+				to: "2026-01-02T00:05:00.000Z",
+			}
+			params.value = { ...params.value, ...moved }
+
+			await logs.reload()
+
+			expect(logs.data.value).toEqual({
+				pages: [{ results: [first], window: moved }],
+				pageParams: [null],
+			})
+			expect(logs.hasNextPage.value).toBe(true)
+			expect(calls).toHaveLength(3)
+			expect(calls[2]?.query).toEqual({ q: "{env}", ...moved })
+		})
+
+		it("puts the lines that arrived since before the first page and moves the window, newest first", async ({
+			expect,
+		}) => {
+			const first = makeLogsResult("l1", "ns:2")
+			const second = makeLogsResult("l2", null)
+			const added = makeLogsResult("n1", null)
+			const calls = mockEndpoint("GET", LINES_URL, (call) => {
+				if (call.query.from === TO) {
+					return added
+				}
+
+				return call.query.cursor ? second : first
+			})
+			const params = ref<LogsParams>({ queries: ["{env}"], ...TIME_RANGE })
+			const api = makeLogDataSourceAPI()
+			const logs = runInApp(() => api.useLogs("ds1", params, true))
+			await logs.refresh()
+			await logs.loadNextPage()
+			const later = "2026-01-02T00:05:00.000Z"
+			params.value = {
+				...params.value,
+				from: "2026-01-01T00:05:00.000Z",
+				to: later,
+			}
+
+			await logs.loadNewer()
+
+			const moved = { from: "2026-01-01T00:05:00.000Z", to: later }
+			expect(logs.data.value).toEqual({
+				pages: [
+					{
+						results: [{ ...first, lines: [...added.lines, ...first.lines] }],
+						window: moved,
+					},
+					{ results: [second], window: moved },
+				],
+				pageParams: [null, { cursors: ["ns:2"], window: moved }],
+			})
+			expect(calls).toHaveLength(3)
+			expect(calls[2]?.query).toEqual({ q: "{env}", from: TO, to: later })
+		})
+
+		it("reloads from the first page when more lines arrived than a few pages hold", async ({
+			expect,
+		}) => {
+			const first = makeLogsResult("l1", "ns:2")
+			let newer = 0
+			const calls = mockEndpoint("GET", LINES_URL, (call) => {
+				if (call.query.from !== TO) {
+					return first
+				}
+
+				newer++
+
+				return makeLogsResult(`n${String(newer)}`, "ns:9")
+			})
+			const params = ref<LogsParams>({ queries: ["{env}"], ...TIME_RANGE })
+			const api = makeLogDataSourceAPI()
+			const logs = runInApp(() => api.useLogs("ds1", params, true))
+			await logs.refresh()
+			await logs.loadNextPage()
+			params.value = {
+				...params.value,
+				from: "2026-01-01T00:05:00.000Z",
+				to: "2026-01-02T00:05:00.000Z",
+			}
+
+			await logs.loadNewer()
+
+			expect(logs.data.value?.pages).toHaveLength(1)
+			expect(calls.filter((call) => call.query.from === TO)).toHaveLength(5)
+		})
+
+		it.for([
+			{ name: "newest first", input: LogOrder.Desc },
+			{ name: "oldest first", input: LogOrder.Asc },
+		])(
+			"drops the lines that fell out of the moved window, $name",
+			async ({ input: order }, { expect }) => {
+				const first = makeLogsResult("l1", null)
+				first.lines = [
+					makeLog("old", "2026-01-01T00:01:00Z"),
+					makeLog("kept", "2026-01-01T12:00:00Z"),
+				]
+				mockEndpoint("GET", LINES_URL, (call) =>
+					call.query.from === TO ? NO_LINES : first,
+				)
+				const params = ref<LogsParams>({
+					queries: ["{env}"],
+					...TIME_RANGE,
+					order: order,
+				})
+				const api = makeLogDataSourceAPI()
+				const logs = runInApp(() => api.useLogs("ds1", params, true))
+				await logs.refresh()
+				params.value = {
+					...params.value,
+					from: "2026-01-01T00:05:00.000Z",
+					to: "2026-01-02T00:05:00.000Z",
+				}
+
+				await logs.loadNewer()
+
+				expect(
+					logs.data.value?.pages[0]?.results[0]?.lines.map((l) => l.id),
+				).toEqual(["kept"])
+			},
+		)
+
+		it("loads the lines a trim dropped from the top back, read the other way", async ({
+			expect,
+		}) => {
+			const first = makeLogsResult("l1", "ns:2")
+			const second = makeLogsResult("l2", null, "pv:2")
+			const back = {
+				...makeLogsResult("b1", "up:1", "dn:1"),
+				lines: [
+					makeLog("b1", "2026-01-01T12:00:01Z"),
+					makeLog("b2", "2026-01-01T12:00:02Z"),
+				],
+			}
+			const calls = mockEndpoint("GET", LINES_URL, (call) => {
+				if (call.query.cursor === "pv:2") {
+					return back
+				}
+
+				return call.query.cursor ? second : first
+			})
+			const api = makeLogDataSourceAPI()
+			const logs = runInApp(() =>
+				api.useLogs("ds1", { queries: ["{env}"], ...TIME_RANGE }, true),
+			)
+			await logs.refresh()
+			await logs.loadNextPage()
+			logs.trimStart(1)
+
+			await logs.loadPreviousPage()
+
+			expect(logs.data.value).toEqual({
+				pages: [
+					{
+						results: [
+							{
+								...back,
+								lines: [...back.lines].reverse(),
+								nextCursor: "dn:1",
+								previousCursor: "up:1",
+							},
+						],
+						window: { from: FROM, to: TO },
+					},
+					{ results: [second], window: { from: FROM, to: TO } },
+				],
+				pageParams: [
+					{ cursors: ["pv:2"], window: { from: FROM, to: TO }, previous: true },
+					{ cursors: ["ns:2"], window: { from: FROM, to: TO } },
+				],
+			})
+			expect(logs.hasPreviousPage.value).toBe(true)
+			expect(calls[2]?.query).toEqual({
+				q: "{env}",
+				from: FROM,
+				to: TO,
+				cursor: "pv:2",
+				order: "asc",
+			})
+		})
+
+		it("trims the result whose last line sits highest first, keeping one result per query", async ({
+			expect,
+		}) => {
+			const pagesOf = {
+				"{job=a}": [
+					{
+						...makeLogsResult("a", "a:1"),
+						lines: [
+							makeLog("a1", "2026-01-01T12:00:09Z"),
+							makeLog("a2", "2026-01-01T12:00:08Z"),
+						],
+					},
+					{
+						...makeLogsResult("a", null, "a:prev"),
+						lines: [makeLog("a3", "2026-01-01T12:00:01Z")],
+					},
+				],
+				"{job=b}": [
+					{
+						...makeLogsResult("b", "b:1"),
+						lines: [
+							makeLog("b1", "2026-01-01T12:00:07Z"),
+							makeLog("b2", "2026-01-01T12:00:02Z"),
+						],
+					},
+					{
+						...makeLogsResult("b", null, "b:prev"),
+						lines: [makeLog("b3", "2026-01-01T12:00:00Z")],
+					},
+				],
+			}
+			mockEndpoint("GET", LINES_URL, (call) => {
+				const results = pagesOf[call.query.q as keyof typeof pagesOf]
+
+				return call.query.cursor ? results[1] : results[0]
+			})
+			const api = makeLogDataSourceAPI()
+			const logs = runInApp(() =>
+				api.useLogs(
+					"ds1",
+					{ queries: ["{job=a}", "{job=b}"], ...TIME_RANGE },
+					true,
+				),
+			)
+			await logs.refresh()
+			await logs.loadNextPage()
+
+			logs.trimStart(4)
+
+			expect(logs.data.value?.pages.map((page) => page?.results)).toEqual([
+				[null, pagesOf["{job=b}"][0]],
+				[pagesOf["{job=a}"][1], pagesOf["{job=b}"][1]],
+			])
+			expect(logs.hasPreviousPage.value).toBe(true)
+
+			logs.trimStart(1)
+
+			expect(logs.data.value?.pages.map((page) => page?.results)).toEqual([
+				[pagesOf["{job=a}"][1], pagesOf["{job=b}"][1]],
+			])
+		})
+
+		it("trims whole results from the end, keeping the first", async ({
+			expect,
+		}) => {
+			const first = makeLogsResult("l1", "ns:2")
+			const second = makeLogsResult("l2", "ns:3")
+			mockEndpoint("GET", LINES_URL, (call) =>
+				call.query.cursor ? second : first,
+			)
+			const api = makeLogDataSourceAPI()
+			const logs = runInApp(() =>
+				api.useLogs("ds1", { queries: ["{env}"], ...TIME_RANGE }, true),
+			)
+			await logs.refresh()
+			await logs.loadNextPage()
+
+			logs.trimEnd(1)
+
+			expect(logs.data.value).toEqual({
+				pages: [{ results: [first], window: { from: FROM, to: TO } }],
+				pageParams: [null],
+			})
+			expect(logs.hasNextPage.value).toBe(true)
+		})
+
+		it("adds the lines that arrived since after a query read to its end, oldest first", async ({
+			expect,
+		}) => {
+			const first = makeLogsResult("l1", null)
+			const added = makeLogsResult("n1", "ns:7")
+			const calls = mockEndpoint("GET", LINES_URL, (call) =>
+				call.query.from === TO ? added : first,
+			)
+			const params = ref<LogsParams>({
+				queries: ["{env}"],
+				...TIME_RANGE,
+				order: LogOrder.Asc,
+			})
+			const api = makeLogDataSourceAPI()
+			const logs = runInApp(() => api.useLogs("ds1", params, true))
+			await logs.refresh()
+			const later = "2026-01-02T00:05:00.000Z"
+			params.value = { ...params.value, to: later }
+
+			await logs.loadNewer()
+
+			expect(logs.data.value?.pages).toEqual([
+				{
+					results: [
+						{
+							...first,
+							lines: [...first.lines, ...added.lines],
+							nextCursor: "ns:7",
+						},
+					],
+					window: { from: FROM, to: later },
+				},
+			])
+			expect(logs.hasNextPage.value).toBe(true)
+			expect(calls).toHaveLength(2)
+			expect(calls[1]?.query).toEqual({
+				q: "{env}",
+				from: TO,
+				to: later,
+				order: "asc",
+			})
+		})
+
+		it("only widens the window of an oldest-first query with pages left", async ({
+			expect,
+		}) => {
+			const first = makeLogsResult("l1", "ns:2")
+			const calls = mockEndpoint("GET", LINES_URL, () => first)
+			const params = ref<LogsParams>({
+				queries: ["{env}"],
+				...TIME_RANGE,
+				order: LogOrder.Asc,
+			})
+			const api = makeLogDataSourceAPI()
+			const logs = runInApp(() => api.useLogs("ds1", params, true))
+			await logs.refresh()
+			const later = "2026-01-02T00:05:00.000Z"
+			params.value = { ...params.value, to: later }
+
+			await logs.loadNewer()
+
+			expect(logs.data.value?.pages).toEqual([
+				{ results: [first], window: { from: FROM, to: later } },
+			])
+			expect(calls).toHaveLength(1)
+		})
+
 		it("keeps the previous lines while a changed query loads", async ({
 			expect,
 			onTestFinished,
 		}) => {
-			const first = makeLinesResult("l1", null)
+			const first = makeLogsResult("l1", null)
 			const held = holdResponse()
 			const calls = mockEndpoint("GET", LINES_URL, (call) =>
 				call.query.q === "{env}" ? first : held.respond(),
 			)
-			const params = ref<LogLinesParams>({ queries: ["{env}"], ...TIME_RANGE })
+			const params = ref<LogsParams>({ queries: ["{env}"], ...TIME_RANGE })
 			const api = makeLogDataSourceAPI()
-			const lines = runInApp(() => api.useLogLines("ds1", params, true))
-			await lines.refresh()
+			const logs = runInApp(() => api.useLogs("ds1", params, true))
+			await logs.refresh()
 			onTestFinished(() => {
 				held.release(NO_LINES)
 			})
@@ -429,11 +779,11 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 			params.value = { ...params.value, queries: ['{env} |= "timeout"'] }
 			await held.reached
 
-			expect(lines.data.value).toEqual({
+			expect(logs.data.value).toEqual({
 				pages: [{ results: [first], window: { from: FROM, to: TO } }],
 				pageParams: [null],
 			})
-			expect(lines.isPlaceholderData.value).toBe(true)
+			expect(logs.isPlaceholderData.value).toBe(true)
 			expect(calls).toHaveLength(2)
 			expect(calls[1]?.query).toEqual({
 				q: '{env} |= "timeout"',
@@ -444,17 +794,17 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 
 		it("asks again for other variable values", async ({ expect }) => {
 			const calls = mockEndpoint("GET", LINES_URL, () => NO_LINES)
-			const params = ref<LogLinesParams>({
+			const params = ref<LogsParams>({
 				queries: ['{env="$env"}'],
 				...TIME_RANGE,
 				variableValues: { env: "prod" },
 			})
 			const api = makeLogDataSourceAPI()
-			const lines = runInApp(() => api.useLogLines("ds1", params, true))
-			await lines.refresh()
+			const logs = runInApp(() => api.useLogs("ds1", params, true))
+			await logs.refresh()
 
 			params.value = { ...params.value, variableValues: { env: "dev" } }
-			await lines.refresh()
+			await logs.refresh()
 
 			expect(calls).toHaveLength(2)
 			expect(calls[1]?.query).toEqual({
@@ -472,11 +822,11 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 				return { code: "cursor.invalid", message: "bad cursor" }
 			})
 			const api = makeLogDataSourceAPI()
-			const lines = runInApp(() =>
-				api.useLogLines("ds1", { queries: ["{env}"], ...TIME_RANGE }, true),
+			const logs = runInApp(() =>
+				api.useLogs("ds1", { queries: ["{env}"], ...TIME_RANGE }, true),
 			)
 
-			const result = await lines.refresh()
+			const result = await logs.refresh()
 
 			expect(result.error).toMatchObject({
 				statusCode: 400,
@@ -892,7 +1242,11 @@ function makeLogDataSourceAPI() {
 	return runInApp(() => useLogDataSourceAPI())
 }
 
-function makeLinesResult(id: string, cursor: string | null): LogLinesResult {
+function makeLogsResult(
+	id: string,
+	nextCursor: string | null,
+	previousCursor: string | null = null,
+): LogsResult {
 	return {
 		status: GenericQueryResultStatus.Ok,
 		lines: [
@@ -905,8 +1259,20 @@ function makeLinesResult(id: string, cursor: string | null): LogLinesResult {
 				fields: { outcome: "successful" },
 			},
 		],
-		cursor,
+		nextCursor,
+		previousCursor,
 		partial: false,
+	}
+}
+
+function makeLog(id: string, time: string): Log {
+	return {
+		id,
+		time,
+		level: LogLevel.Info,
+		line: "deploy finished",
+		labels: { env: "production" },
+		fields: { outcome: "successful" },
 	}
 }
 

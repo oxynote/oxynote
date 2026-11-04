@@ -26,6 +26,11 @@ import {
 	METRIC_TIME_RANGE_REFERENCE,
 } from "~/utils/variable"
 
+// happy-dom lays nothing out, so the real scroller would show no row
+vi.mock("vue-virtual-scroller", async () =>
+	(await import("../test-helpers")).virtualScrollerStub(),
+)
+
 const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("branch")
 const BLOCK_UID = "log-block"

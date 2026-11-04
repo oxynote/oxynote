@@ -1,25 +1,25 @@
 <script lang="ts" setup>
 import FieldTable from "./FieldTable.vue"
 import type { LogFilter } from "../logql"
-import { sortedEntries, type KeyValue } from "../lines"
+import { sortedEntries, type KeyValue } from "../rows"
 
 // how long the copy button shows that it copied
 const COPIED_MS = 700
 
 const props = defineProps<{
-	line: LogLine
+	log: Log
 }>()
 const emit = defineEmits<{
 	(e: "filter", filter: LogFilter): void
 }>()
 
 const copied = ref(false)
-const labels = computed<KeyValue[]>(() => sortedEntries(props.line.labels))
-const fields = computed<KeyValue[]>(() => sortedEntries(props.line.fields))
+const labels = computed<KeyValue[]>(() => sortedEntries(props.log.labels))
+const fields = computed<KeyValue[]>(() => sortedEntries(props.log.fields))
 
 async function copyLine() {
 	try {
-		await navigator.clipboard.writeText(props.line.line)
+		await navigator.clipboard.writeText(props.log.line)
 	} catch {
 		// the browser refused the clipboard, so there is no copy to show
 		return
@@ -40,9 +40,9 @@ async function copyLine() {
 				{{ $t("editor.logs.view.line-heading") }}
 			</h4>
 			<div
-				class="relative rounded-md border bg-card py-2 pr-9 pl-3 font-mono text-xs leading-5 break-all whitespace-pre-wrap text-foreground"
+				class="relative rounded-md border bg-card py-2 pr-9 pl-3 text-xs leading-5 break-all whitespace-pre-wrap text-foreground"
 			>
-				<span>{{ props.line.line }}</span>
+				<span>{{ props.log.line }}</span>
 				<ShadcnUiButton
 					variant="ghost-plain"
 					size="icon-sm"

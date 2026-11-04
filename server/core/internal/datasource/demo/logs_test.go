@@ -49,11 +49,11 @@ func readAllLogs(t *testing.T, q string, tr processor.TimeRange, order processor
 
 		lines = append(lines, res.Lines...)
 
-		if !res.Cursor.Valid {
+		if !res.NextCursor.Valid {
 			return lines
 		}
 
-		page.Cursor = res.Cursor
+		page.Cursor = res.NextCursor
 	}
 }
 

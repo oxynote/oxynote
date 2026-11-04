@@ -120,7 +120,7 @@ describe("<VolumeStrip>", { concurrent: false }, () => {
 
 		const wrapper = await mountStrip([bucket(0), bucket(1, { info: 2 })])
 
-		expect(wrapper.get(".pt-1").text()).toBe(
+		expect(wrapper.get(".px-2.pt-1").text()).toBe(
 			useNuxtApp().$i18n.d(WINDOW.from, "short-with-full-time"),
 		)
 		expect(wrapper.text()).toContain(t("editor.logs.view.volume-empty"))
@@ -143,7 +143,7 @@ describe("<VolumeStrip>", { concurrent: false }, () => {
 		const lines = wrapper
 			.findAll(".flex-col > .flex-col > .flex")
 			.map((row) => row.text())
-		expect(wrapper.get(".pt-1").text()).toBe(
+		expect(wrapper.get(".px-2.pt-1").text()).toBe(
 			useNuxtApp().$i18n.d(
 				new Date(WINDOW.from.getTime() + 60_000),
 				"short-with-full-time",

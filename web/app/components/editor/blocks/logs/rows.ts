@@ -6,9 +6,12 @@ const MESSAGE_KEYS = ["msg", "message", "log"]
 
 export type KeyValue = [key: string, value: string]
 
-export interface LineSummary {
+// fieldsInLine is true when the fields are written in the line itself.
+// Only the line is searched, so only such fields can match a search.
+export interface LogSummary {
 	message: string
 	fields: KeyValue[]
+	fieldsInLine: boolean
 	labels: KeyValue[]
 }
 
@@ -17,18 +20,19 @@ export interface TextPart {
 	match: boolean
 }
 
-// summarizeLine splits a line into what its row shows: the message, the
-// line's own fields and the stream labels. A JSON line gives its message
+// summarizeLog splits a log into what its row shows: the message, the
+// log's own fields and the stream labels. A JSON line gives its message
 // and fields key by key. Any other line is its own message, and its fields
 // are the ones the source parsed from it.
-export function summarizeLine(line: LogLine): LineSummary {
-	const labels = sortedEntries(line.labels)
-	const json = parseJSONObject(line.line)
+export function summarizeLog(log: Log): LogSummary {
+	const labels = sortedEntries(log.labels)
+	const json = parseJSONObject(log.line)
 
 	if (!json) {
 		return {
-			message: line.line,
-			fields: sortedEntries(line.fields).filter(([k]) => !LEVEL_KEYS.has(k)),
+			message: log.line,
+			fields: sortedEntries(log.fields).filter(([k]) => !LEVEL_KEYS.has(k)),
+			fieldsInLine: false,
 			labels: labels,
 		}
 	}
@@ -44,6 +48,7 @@ export function summarizeLine(line: LogLine): LineSummary {
 	return {
 		message: messageKey ? String(json[messageKey]) : "",
 		fields: fields,
+		fieldsInLine: true,
 		labels: labels,
 	}
 }
@@ -84,23 +89,27 @@ export function highlightParts(text: string, search: string): TextPart[] {
 	return parts
 }
 
-// mergeQueryLines interleaves the lines each query loaded, in the order
-// they were read: newest first or oldest first. A query with pages left
-// may still hold lines that belong before another query's last one, so
-// the merge stops at the nearest point a query with more to load has
-// reached. A line two queries both matched shows once.
-export function mergeQueryLines(
-	queries: { lines: LogLine[]; hasMore: boolean }[],
+// mergeQueryLogs interleaves the logs each query loaded, in the order
+// they were read: newest first or oldest first. A query with logs left
+// past its loaded ones may still hold logs that belong before another
+// query's last one, so the merge stops at the nearest point such a query
+// has reached. A query with logs left before its loaded ones bounds the
+// top of the merge the same way. A log two queries both matched shows
+// once.
+export function mergeQueryLogs(
+	queries: { logs: Log[]; hasMore: boolean; hasPrevious?: boolean }[],
 	order: LogOrder,
-): LogLine[] {
+): Log[] {
 	// past compares two times by reading order. It is true when a comes
 	// after b.
 	const past = (a: bigint, b: bigint) =>
 		order === LogOrder.Asc ? a > b : a < b
 	let frontier: bigint | null = null
+	let top: bigint | null = null
 
 	for (const query of queries) {
-		const last = query.lines.at(-1)
+		const last = query.logs.at(-1)
+		const first = query.logs[0]
 
 		if (query.hasMore && last) {
 			const nanos = timeNanos(last.time)
@@ -109,30 +118,42 @@ export function mergeQueryLines(
 				frontier = nanos
 			}
 		}
-	}
 
-	const seen = new Set<string>()
-	const merged: { line: LogLine; nanos: bigint }[] = []
+		if (query.hasPrevious && first) {
+			const nanos = timeNanos(first.time)
 
-	for (const query of queries) {
-		for (const line of query.lines) {
-			const nanos = timeNanos(line.time)
-
-			if (seen.has(line.id) || (frontier !== null && past(nanos, frontier))) {
-				continue
+			if (top === null || past(nanos, top)) {
+				top = nanos
 			}
-
-			seen.add(line.id)
-			merged.push({ line: line, nanos: nanos })
 		}
 	}
 
-	// a stable sort keeps the source's order for lines sharing a time
+	const seen = new Set<string>()
+	const merged: { log: Log; nanos: bigint }[] = []
+
+	for (const query of queries) {
+		for (const log of query.logs) {
+			const nanos = timeNanos(log.time)
+
+			if (
+				seen.has(log.id) ||
+				(frontier !== null && past(nanos, frontier)) ||
+				(top !== null && past(top, nanos))
+			) {
+				continue
+			}
+
+			seen.add(log.id)
+			merged.push({ log: log, nanos: nanos })
+		}
+	}
+
+	// a stable sort keeps the source's order for logs sharing a time
 	merged.sort((a, b) =>
 		a.nanos === b.nanos ? 0 : past(a.nanos, b.nanos) ? 1 : -1,
 	)
 
-	return merged.map((m) => m.line)
+	return merged.map((m) => m.log)
 }
 
 // timeNanos reads an RFC 3339 time as nanoseconds since the epoch. A Date

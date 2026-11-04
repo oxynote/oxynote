@@ -8,7 +8,7 @@ import {
 	makeNode,
 	mountNodeView,
 } from "../../test-helpers/node-view"
-import { logLine, logLinesResult, settleLogRequests } from "./test-helpers"
+import { makeLog, logsResult, settleLogRequests } from "./test-helpers"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 import {
 	clearQueryCache,
@@ -20,6 +20,11 @@ import {
 import { VARIABLE_QUERY_KEYS } from "~/composables/api/useVariableAPI"
 import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
 import { findButtonByText, t } from "~/components/test-helpers"
+
+// happy-dom lays nothing out, so the real scroller would show no row
+vi.mock("vue-virtual-scroller", async () =>
+	(await import("./test-helpers")).virtualScrollerStub(),
+)
 
 const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("branch")
@@ -297,7 +302,7 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		mockEndpoint("GET", `/api/data-sources/${DATA_SOURCE_ID}/logs`, () =>
-			logLinesResult([logLine("deploy finished", "11:57:00Z")]),
+			logsResult([makeLog("deploy finished", "11:57:00Z")]),
 		)
 
 		const wrapper = await mountBlock({ attrs: queryingAttrs() })
@@ -310,7 +315,9 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 			t("editor.logs.config.modal-trigger-button-normal"),
 		)
 		expect(
-			wrapper.findAll("button[aria-expanded] .font-mono").map((m) => m.text()),
+			wrapper
+				.findAll("button[aria-expanded] .flex-1.truncate")
+				.map((m) => m.text()),
 		).toEqual(["deploy finished · env=prod"])
 	})
 

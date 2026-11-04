@@ -404,9 +404,14 @@ type LogsResult struct {
 	// Lines specifies the page's lines, in the page's order.
 	Lines []LogLine `json:"lines"`
 
-	// Cursor specifies where the next page starts. It is null when the
+	// NextCursor specifies where the next page starts. It is null when the
 	// window holds nothing past the page.
-	Cursor null.Value[Cursor] `json:"cursor"`
+	NextCursor null.Value[Cursor] `json:"nextCursor"`
+
+	// PreviousCursor specifies where the page before this one starts,
+	// read in the other order. It is null when the window holds nothing
+	// before the page.
+	PreviousCursor null.Value[Cursor] `json:"previousCursor"`
 
 	// Partial indicates that lines may be missing from the page, because
 	// the source or a cap cut them.
@@ -523,6 +528,9 @@ func (lv LogVolume) Result() *QueryResult {
 // share one timestamp reads that timestamp alone, up to
 // _maxTimestampGroup lines. unit is the precision of the source's
 // timestamps, which is the step a cursor takes past a timestamp.
+//
+// The previous cursor reads back from the page's first timestamp group,
+// in the other order, so a reader can drop a page and load it again.
 func PageLogs(
 	ctx context.Context,
 	fetch LogsFetcher,
@@ -566,6 +574,10 @@ func PageLogs(
 		Lines:  lines,
 	}
 
+	if len(lines) > 0 {
+		res.PreviousCursor = previousLogsCursor(lines[0].Time, asc, tr, unit)
+	}
+
 	if len(lines) <= page.Limit {
 		return res.withLineIDs(), nil
 	}
@@ -598,10 +610,31 @@ func PageLogs(
 	}
 
 	if (asc && next.Before(tr.To)) || (!asc && next.After(tr.From)) {
-		res.Cursor = null.ValueFrom(newCursor(next, unit))
+		res.NextCursor = null.ValueFrom(newCursor(next, unit))
 	}
 
 	return res.withLineIDs(), nil
+}
+
+// previousLogsCursor returns the cursor of the page before the one whose
+// first line is at first, read in the other order. That page skips the
+// group at first, which the page holds whole: an asc cursor is an
+// inclusive start, so it moves one unit past the group, and a desc cursor
+// is an exclusive end, so it stays at the group.
+func previousLogsCursor(first time.Time, asc bool, tr TimeRange, unit time.Duration) null.Value[Cursor] {
+	if asc {
+		if first.After(tr.From) {
+			return null.ValueFrom(newCursor(first, unit))
+		}
+
+		return null.Value[Cursor]{}
+	}
+
+	if next := first.Add(unit); next.Before(tr.To) {
+		return null.ValueFrom(newCursor(next, unit))
+	}
+
+	return null.Value[Cursor]{}
 }
 
 // withLineIDs sets every line's ID and the status, and returns the

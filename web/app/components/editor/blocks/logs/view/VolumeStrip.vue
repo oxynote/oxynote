@@ -167,7 +167,7 @@ function tooltipTime(params: unknown): string {
 	<div
 		role="img"
 		:aria-label="$t('editor.logs.view.volume-label')"
-		class="flex shrink-0 flex-col gap-1.5 px-2.5 pt-1.5 pb-2.5"
+		class="flex shrink-0 flex-col gap-1.5 px-2.5 pt-1"
 	>
 		<div class="h-9">
 			<VChart class="size-full" :option="option" autoresize>

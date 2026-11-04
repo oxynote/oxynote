@@ -38,7 +38,11 @@ the file a year from now with no idea what was asked? The same test applies
 to the prose in these AGENTS.md files.
 
 Keep comments as simple and short as possible, so one read is enough:
-short sentences, plain words, no nested clauses or dashes. Good:
+short sentences, plain words, no nested clauses or dashes. Write for a
+reader whose first language may not be English, who is new to the
+project or to programming: one idea per sentence, no long chains of
+clauses joined by commas. Link the sentences with plain words (so, but, then,
+instead), so the text reads as an explanation and not a list. Good:
 
 ```ts
 // the simulation ends once the metric has data, but the cache may

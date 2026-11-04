@@ -3,7 +3,8 @@ import { cn } from "#layers/ui/app/lib/utils"
 import HighlightedText from "./HighlightedText.vue"
 import LevelPill from "./LevelPill.vue"
 import RowDetails from "./RowDetails.vue"
-import { displayValue, summarizeLine } from "../lines"
+import UnsearchedPart from "./UnsearchedPart.vue"
+import { displayValue, summarizeLog } from "../rows"
 import type { LogFilter } from "../logql"
 import { formatLogTime } from "../timestamp"
 import type { LogTimestampFormat } from "../utils"
@@ -14,7 +15,7 @@ const PAIR_SEPARATOR = " "
 const KEY_VALUE_SEPARATOR = "="
 
 const props = defineProps<{
-	line: LogLine
+	log: Log
 	timestampFormat: LogTimestampFormat
 	search: string
 }>()
@@ -26,11 +27,22 @@ const expanded = defineModel<boolean>("expanded", { required: true })
 const { d } = useI18n({ useScope: "global" })
 
 const time = computed(() =>
-	formatLogTime(props.line.time, props.timestampFormat, d),
+	formatLogTime(props.log.time, props.timestampFormat, d),
 )
-const summary = computed(() => summarizeLine(props.line))
+const summary = computed(() => summarizeLog(props.log))
+const searching = computed(() => props.search.trim().length > 0)
+// the search runs on the line only, so only the message and the fields
+// written in the line can match it. While a search is on, the other parts
+// fade and a tooltip says why.
 const groups = computed(() =>
-	[summary.value.fields, summary.value.labels].filter((g) => g.length),
+	[
+		{
+			kind: "fields" as const,
+			pairs: summary.value.fields,
+			searched: summary.value.fieldsInLine,
+		},
+		{ kind: "labels" as const, pairs: summary.value.labels, searched: false },
+	].filter((g) => g.pairs.length),
 )
 </script>
 <template>
@@ -50,8 +62,8 @@ const groups = computed(() =>
 				</template>
 				<span class="text-muted-foreground">{{ time.time }}</span>
 			</span>
-			<LevelPill :level="props.line.level" />
-			<span class="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
+			<LevelPill :level="props.log.level" />
+			<span class="min-w-0 flex-1 truncate text-xs text-foreground">
 				<HighlightedText :text="summary.message" :search="props.search" />
 				<template v-for="(group, groupIndex) in groups" :key="groupIndex">
 					<span
@@ -60,25 +72,37 @@ const groups = computed(() =>
 					>
 						{{ PART_SEPARATOR }}
 					</span>
-					<template v-for="([key, value], index) in group" :key="key">
-						<template v-if="index > 0">{{ PAIR_SEPARATOR }}</template>
-						<span class="text-muted-foreground">{{ key }}</span>
-						<span class="text-muted-foreground/70">
-							{{ KEY_VALUE_SEPARATOR }}
-						</span>
-						<HighlightedText
-							:text="displayValue(value)"
-							:search="props.search"
-						/>
-					</template>
+					<component
+						:is="searching && !group.searched ? UnsearchedPart : 'span'"
+						v-bind="searching && !group.searched ? { kind: group.kind } : {}"
+					>
+						<template v-for="([key, value], index) in group.pairs" :key="key">
+							<template v-if="index > 0">{{ PAIR_SEPARATOR }}</template>
+							<span class="text-muted-foreground">
+								<HighlightedText
+									:text="key"
+									:search="group.searched ? props.search : ''"
+								/>
+							</span>
+							<span class="text-muted-foreground/70">
+								{{ KEY_VALUE_SEPARATOR }}
+							</span>
+							<HighlightedText
+								:text="displayValue(value)"
+								:search="group.searched ? props.search : ''"
+							/>
+						</template>
+					</component>
 				</template>
 			</span>
+			<!-- the chevron takes no room while it is hidden, so the summary uses
+			the full width until the row is hovered or open -->
 			<Icon
 				name="mingcute:right-line"
 				:class="
 					cn(
-						'size-3.5 shrink-0 text-muted-foreground/70 opacity-0 transition-[opacity,transform] duration-150 group-hover:opacity-100',
-						expanded && 'rotate-90 opacity-100',
+						'-ml-3 h-3.5 w-0 shrink-0 text-muted-foreground/70 opacity-0 transition-transform duration-150 group-hover:ml-0 group-hover:w-3.5 group-hover:opacity-100',
+						expanded && 'ml-0 w-3.5 rotate-90 opacity-100',
 					)
 				"
 			/>
@@ -87,7 +111,7 @@ const groups = computed(() =>
 			class="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down"
 		>
 			<RowDetails
-				:line="props.line"
+				:log="props.log"
 				@filter="(filter) => emit('filter', filter)"
 			/>
 		</ShadcnUiCollapsibleContent>

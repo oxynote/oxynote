@@ -1,11 +1,12 @@
 <script lang="ts" setup>
+import type { DynamicScrollerExposed } from "vue-virtual-scroller"
 import { cn } from "#layers/ui/app/lib/utils"
 import FilterChips from "./FilterChips.vue"
 import Row from "./Row.vue"
 import SearchControl from "./SearchControl.vue"
 import VolumeStrip from "./VolumeStrip.vue"
 import { useBlockVariables } from "../../variables"
-import { mergeQueryLines } from "../lines"
+import { mergeQueryLogs } from "../rows"
 import { withViewFilters, type LogFilter } from "../logql"
 import type { LogConfig } from "../utils"
 import { volumeBuckets } from "../volume"
@@ -15,12 +16,30 @@ import {
 	resolveTimeRange,
 } from "~/utils/time-range"
 
+// the scroller reads window when it is imported, so it loads only in the
+// browser
+const DynamicScroller = defineAsyncComponent(() =>
+	import("vue-virtual-scroller").then((m) => m.DynamicScroller),
+)
+const DynamicScrollerItem = defineAsyncComponent(() =>
+	import("vue-virtual-scroller").then((m) => m.DynamicScrollerItem),
+)
+
 // how long typing in a query or the search waits before the view reads
 // again
 const QUERY_DEBOUNCE_MS = 500
 const SEARCH_DEBOUNCE_MS = 300
-// how close to the end of the rows the next page starts loading
-const LOAD_MORE_DISTANCE_PX = 64
+// how close to either end of the loaded rows the reader must get before the
+// next page loads. The same distance also counts as being at the live end.
+const LOAD_MORE_ROWS = 20
+// the most logs the list keeps. When the reader scrolls one way, logs are
+// dropped from the other end. They load again when the reader scrolls back.
+const MAX_LOADED_LOGS = 5000
+// how many logs one request reads for each query
+const PAGE_LOGS = 100
+// the height of a closed row. The scroller uses it for every row until it
+// has measured the row.
+const ROW_HEIGHT_PX = 32
 
 const props = defineProps<{
 	config: LogConfig
@@ -37,17 +56,27 @@ const { t } = useI18n({ useScope: "global" })
 const editorStore = useEditorStore()
 const { isEditable } = useEditorMeta()
 const blockVariables = useBlockVariables()
-const { useLogLines, useLogVolume } = useLogDataSourceAPI()
+const { useLogs, useLogVolume } = useLogDataSourceAPI()
 
-const rows = useTemplateRef<HTMLElement>("rows")
+const scroller = useTemplateRef<
+	ComponentPublicInstance & DynamicScrollerExposed<Log>
+>("scroller")
 const searchInput = ref("")
 const search = refDebounced(searchInput, SEARCH_DEBOUNCE_MS)
 const filters = ref<LogFilter[]>([])
 const expandedIds = ref(new Set<string>())
 const volumeVisible = ref(false)
+// the first and last rows the scroller shows. They tell when the next page
+// should load.
+const firstVisibleRow = ref(0)
+const lastVisibleRow = ref(-1)
+const loadingPrevious = ref(false)
+// set when a refresh had to wait, either for the reader or for a page
+const missedRefresh = ref(false)
 // under the modal's time controls the header's icons sit as close as the
 // controls' own items do
 const compact = computed(() => !!props.headerRightPadding)
+const oldestFirst = computed(() => props.config.order === LogOrder.Asc)
 const isEditingDisabled = computed(
 	() => !isEditable.value || editorStore.reviewableDiffActive,
 )
@@ -61,12 +90,12 @@ const refreshIntervalMs = computed(() =>
 			RefreshInterval.M5,
 	),
 )
-const fetchLines = useLogLines(
+const fetchLogs = useLogs(
 	() => props.config.dataSourceId,
 	() => {
 		const params = viewParams()
 
-		return params && { ...params, order: props.config.order }
+		return params && { ...params, order: props.config.order, limit: PAGE_LOGS }
 	},
 	true,
 )
@@ -76,17 +105,22 @@ const fetchVolume = useLogVolume(
 	volumeVisible,
 )
 const volumeWindow = ref<{ from: Date; to: Date } | null>(null)
-const lines = computed(() => {
-	const pages = (fetchLines.data.value?.pages ?? []).filter(
+const logs = computed(() => {
+	const pages = (fetchLogs.data.value?.pages ?? []).filter(
 		(page) => page !== null,
 	)
 	const lastPage = pages.at(-1)
 
-	return mergeQueryLines(
-		(lastPage?.results ?? []).map((result, index) => ({
-			lines: pages.flatMap((page) => page.results[index]?.lines ?? []),
-			hasMore: !!result?.cursor,
-		})),
+	return mergeQueryLogs(
+		(lastPage?.results ?? []).map((_, index) => {
+			const results = pages.flatMap((page) => page.results[index] ?? [])
+
+			return {
+				logs: results.flatMap((result) => result.lines),
+				hasMore: !!results.at(-1)?.nextCursor,
+				hasPrevious: !!results[0]?.previousCursor,
+			}
+		}),
 		props.config.order,
 	)
 })
@@ -104,24 +138,46 @@ const state = computed(() => {
 		return "no-query"
 	}
 
-	// an older page that fails keeps the lines already shown. A changed
-	// query that fails replaces the lines it was standing in for.
+	// an older page that fails keeps the logs already shown. A changed
+	// query that fails replaces the logs it was standing in for.
 	if (
-		fetchLines.error.value &&
-		(!fetchLines.data.value || fetchLines.isPlaceholderData.value)
+		fetchLogs.error.value &&
+		(!fetchLogs.data.value || fetchLogs.isPlaceholderData.value)
 	) {
 		return "query-error"
 	}
 
-	if (!fetchLines.data.value) {
+	if (!fetchLogs.data.value) {
 		return "loading"
 	}
 
-	return lines.value.length ? "lines" : "no-lines"
+	return logs.value.length ? "lines" : "no-lines"
 })
+// the search, the volume and the header's border serve a list of logs.
+// They also stay while a search or filter is on. That way a reader whose
+// search emptied the list can still change it. They stay too while the
+// list is about to change: the search waits a moment after typing, and a
+// changed query shows the old logs until its own arrive.
+const hasControls = computed(
+	() =>
+		state.value === "lines" ||
+		searchInput.value.trim().length > 0 ||
+		search.value.trim().length > 0 ||
+		filters.value.length > 0 ||
+		fetchLogs.isPlaceholderData.value,
+)
+// the live end is where new logs join the list. Newest first, that is the top.
+// Oldest first, it is the bottom.
+const atLiveEnd = computed(() =>
+	oldestFirst.value
+		? lastVisibleRow.value >= logs.value.length - 1 - LOAD_MORE_ROWS &&
+			!fetchLogs.hasNextPage.value
+		: firstVisibleRow.value <= LOAD_MORE_ROWS &&
+			!fetchLogs.hasPreviousPage.value,
+)
 const queryErrorMessage = computed(() => {
 	const data = (
-		fetchLines.error.value as { data?: { message?: unknown } } | null
+		fetchLogs.error.value as { data?: { message?: unknown } } | null
 	)?.data
 
 	return typeof data?.message === "string"
@@ -143,10 +199,6 @@ const headerStyle = computed(() =>
 		: undefined,
 )
 
-const { arrivedState } = useScroll(rows, {
-	offset: { bottom: LOAD_MORE_DISTANCE_PX },
-})
-
 useIntervalFn(() => void refreshData(), refreshIntervalMs, {
 	immediate: true,
 	immediateCallback: false,
@@ -156,24 +208,39 @@ onMounted(() => {
 	void refreshData()
 })
 
-// the next page loads once the rows are scrolled to their end. Rows too
-// few to scroll sit at that end already, so pages load until they fill the
-// view. A failed load stops it, or the next page would be asked for again
-// at once, and without end.
+// a page loads once the scroller shows a row near either end of the loaded
+// rows. When there are too few rows to fill the view, all of them are shown. So
+// pages keep loading until the view is full, and then they stop.
+//
+// A failed load stops the paging too. Otherwise the same page would be asked
+// for again right away, without end.
 watch(
 	[
-		() => arrivedState.bottom,
-		() => lines.value.length,
-		() => fetchLines.isLoading.value,
+		firstVisibleRow,
+		lastVisibleRow,
+		() => logs.value.length,
+		() => fetchLogs.isLoading.value,
 	],
-	([arrived, , loading]) => {
-		if (
-			arrived &&
-			!loading &&
-			fetchLines.hasNextPage.value &&
-			fetchLines.status.value !== "error"
-		) {
-			void fetchLines.loadNextPage()
+	([first, last, count, loading]) => {
+		if (loading || fetchLogs.status.value === "error") {
+			return
+		}
+
+		if (last >= count - LOAD_MORE_ROWS && fetchLogs.hasNextPage.value) {
+			void loadNextPage()
+		} else if (first <= LOAD_MORE_ROWS && fetchLogs.hasPreviousPage.value) {
+			void loadPreviousPage()
+		}
+	},
+)
+
+// a refresh that had to wait runs as soon as the reader is back at the live end
+// and no page is loading
+watch(
+	() => atLiveEnd.value && !fetchLogs.isLoading.value,
+	(ready) => {
+		if (ready && missedRefresh.value) {
+			void refreshLogs()
 		}
 	},
 )
@@ -183,8 +250,10 @@ watch(
 watch(
 	() => props.config.order,
 	() => {
-		if (rows.value) {
-			rows.value.scrollTop = 0
+		const element = scroller.value?.$el as HTMLElement | undefined
+
+		if (element) {
+			element.scrollTop = 0
 		}
 	},
 )
@@ -238,6 +307,88 @@ function setExpanded(id: string, expanded: boolean) {
 	expandedIds.value = next
 }
 
+async function loadNextPage() {
+	await fetchLogs.loadNextPage()
+	await keepPlace(() => {
+		fetchLogs.trimStart(MAX_LOADED_LOGS)
+	})
+}
+
+async function loadPreviousPage() {
+	loadingPrevious.value = true
+
+	// the spinner above the rows is removed in the same change that adds the
+	// rows. Otherwise its height would move the rows afterwards.
+	await keepPlace(async () => {
+		try {
+			await fetchLogs.loadPreviousPage()
+		} finally {
+			loadingPrevious.value = false
+		}
+	})
+
+	await keepPlace(() => {
+		fetchLogs.trimEnd(MAX_LOADED_LOGS)
+	})
+}
+
+// a refresh adds logs only at the live end, where the reader can see them.
+// Anywhere else it waits until the reader comes back. It also waits while a
+// page is loading. Otherwise the refresh would be skipped.
+async function refreshLogs() {
+	if (!atLiveEnd.value || fetchLogs.isLoading.value) {
+		missedRefresh.value = true
+
+		return
+	}
+
+	missedRefresh.value = false
+
+	const element = scroller.value?.$el as HTMLElement | undefined
+
+	// at the very top of a newest-first list, the reader follows the new logs.
+	// Anywhere else, the reader keeps the row they are reading.
+	if (!oldestFirst.value && element?.scrollTop === 0) {
+		await fetchLogs.loadNewer()
+		await nextTick()
+		element.scrollTop = 0
+	} else {
+		await keepPlace(() => fetchLogs.loadNewer())
+	}
+
+	await keepPlace(() => {
+		if (oldestFirst.value) {
+			fetchLogs.trimStart(MAX_LOADED_LOGS)
+		} else {
+			fetchLogs.trimEnd(MAX_LOADED_LOGS)
+		}
+	})
+}
+
+// keepPlace runs a change to the rows. Then it scrolls the first row the reader
+// saw back to where it was before. The scroller does this by itself only when
+// rows are added above. When rows are dropped above, the view would jump up.
+async function keepPlace(change: () => unknown) {
+	const index = firstVisibleRow.value
+	const anchor = logs.value[index]
+	const list = scroller.value
+	const element = list?.$el as HTMLElement | undefined
+	// how far the anchor row sits below the top of the view
+	const offset =
+		list && element ? list.getItemOffset(index) - element.scrollTop : 0
+
+	await change()
+	await nextTick()
+
+	const moved = anchor
+		? logs.value.findIndex((log) => log.id === anchor.id)
+		: -1
+
+	if (moved >= 0 && list && element) {
+		element.scrollTop = list.getItemOffset(moved) - offset
+	}
+}
+
 async function refreshData() {
 	if (
 		!editorStore.activeDocumentId ||
@@ -261,86 +412,95 @@ async function refreshData() {
 	)
 
 	// the first read starts by itself once the query can run
-	if (!fetchLines.data.value) {
+	if (!fetchLogs.data.value) {
 		return
 	}
 
 	await Promise.all([
-		fetchLines.refetch(),
+		refreshLogs(),
 		volumeVisible.value ? fetchVolume.refetch() : null,
 	])
 }
 </script>
 <template>
 	<div class="@container flex size-full min-w-0 flex-col">
-		<!-- when compact, the icon buttons overlap their neighbours by part of
-		their blank edge -->
-		<div
-			:class="
-				cn(
-					'flex h-8 shrink-0 items-center pt-1 pr-1.5 pl-2.5',
-					!compact && 'gap-1',
-				)
-			"
-			:style="headerStyle"
-		>
-			<div class="min-w-0 flex-1 truncate text-2base text-foreground">
-				{{ props.config.title }}
-			</div>
-			<SearchControl v-model="searchInput" :compact="compact" />
-			<ShadcnUiButton
-				variant="ghost-plain"
-				size="icon-sm"
-				:class="cn('size-6', compact && '-mx-0.5')"
-				:aria-pressed="volumeVisible"
-				@click="volumeVisible = !volumeVisible"
+		<div :class="cn('shrink-0', hasControls && 'border-b pb-1')">
+			<!-- when compact, the icon buttons overlap their neighbours by part of
+			their blank edge -->
+			<div
+				:class="
+					cn(
+						'flex h-8 shrink-0 items-center pt-1 pr-1.5 pl-2.5',
+						!compact && 'gap-1',
+					)
+				"
+				:style="headerStyle"
 			>
-				<Icon
-					:name="
-						volumeVisible
-							? 'mingcute:layout-top-close-line'
-							: 'mingcute:layout-top-open-line'
-					"
+				<div class="min-w-0 flex-1 truncate text-2base text-foreground">
+					{{ props.config.title }}
+				</div>
+				<SearchControl
+					v-if="hasControls"
+					v-model="searchInput"
+					:compact="compact"
 				/>
-				<span class="sr-only">
-					{{
-						volumeVisible
-							? $t("editor.logs.view.hide-volume")
-							: $t("editor.logs.view.show-volume")
-					}}
-				</span>
-			</ShadcnUiButton>
-			<slot name="actions" />
+				<ShadcnUiButton
+					v-if="hasControls"
+					variant="ghost-plain"
+					size="icon-sm"
+					:class="cn('size-6', compact && '-mx-0.5')"
+					:aria-pressed="volumeVisible"
+					@click="volumeVisible = !volumeVisible"
+				>
+					<Icon
+						:name="
+							volumeVisible
+								? 'mingcute:layout-top-close-line'
+								: 'mingcute:layout-top-open-line'
+						"
+					/>
+					<span class="sr-only">
+						{{
+							volumeVisible
+								? $t("editor.logs.view.hide-volume")
+								: $t("editor.logs.view.show-volume")
+						}}
+					</span>
+				</ShadcnUiButton>
+				<slot name="actions" />
+			</div>
+			<FilterChips v-if="filters.length" v-model="filters" class="pt-1" />
+			<VolumeStrip
+				v-if="hasControls && volumeVisible && volumeWindow"
+				:buckets="buckets"
+				:window="volumeWindow"
+			/>
 		</div>
-		<FilterChips v-if="filters.length" v-model="filters" class="pt-1" />
-		<VolumeStrip
-			v-if="volumeVisible && volumeWindow"
-			:buckets="buckets"
-			:window="volumeWindow"
-		/>
-		<div ref="rows" class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-			<template v-if="state === 'lines'">
-				<Row
-					v-for="line in lines"
-					:key="line.id"
-					:line="line"
-					:timestamp-format="props.config.timestampFormat"
-					:search="search"
-					:expanded="expandedIds.has(line.id)"
-					:class="
-						cn(
-							'shrink-0 border-b last:border-b-0',
-							expandedIds.has(line.id)
-								? 'border-border'
-								: 'border-muted-highlight',
-						)
-					"
-					@update:expanded="(expanded) => setExpanded(line.id, expanded)"
-					@filter="addFilter"
-				/>
+		<DynamicScroller
+			v-if="state === 'lines'"
+			ref="scroller"
+			:items="logs"
+			:min-item-size="ROW_HEIGHT_PX"
+			key-field="id"
+			emit-update
+			shift
+			class="min-h-0 flex-1"
+			@update="
+				(
+					_start: number,
+					_end: number,
+					visibleStart: number,
+					visibleEnd: number,
+				) => {
+					firstVisibleRow = visibleStart
+					lastVisibleRow = visibleEnd
+				}
+			"
+		>
+			<template #before>
 				<div
-					v-if="fetchLines.isLoading.value && fetchLines.hasNextPage.value"
-					class="flex shrink-0 items-center justify-center py-2 text-muted-foreground"
+					v-if="loadingPrevious"
+					class="flex items-center justify-center py-2 text-muted-foreground"
 				>
 					<Icon
 						name="svg-spinners:blocks-shuffle-3"
@@ -348,8 +508,49 @@ async function refreshData() {
 					/>
 				</div>
 			</template>
+			<template #default="{ item, index, active }">
+				<DynamicScrollerItem :item="item" :active="active" :data-index="index">
+					<!-- the scroller reuses a row's view for another log while the
+					reader scrolls. The key gives each log its own row. So an open row
+					does not close and open again with an animation. -->
+					<Row
+						:key="item.id"
+						:log="item"
+						:timestamp-format="props.config.timestampFormat"
+						:search="search"
+						:expanded="expandedIds.has(item.id)"
+						:class="
+							cn(
+								index < logs.length - 1 && 'border-b',
+								expandedIds.has(item.id)
+									? 'border-border'
+									: 'border-muted-highlight',
+							)
+						"
+						@update:expanded="(expanded) => setExpanded(item.id, expanded)"
+						@filter="addFilter"
+					/>
+				</DynamicScrollerItem>
+			</template>
+			<template #after>
+				<div
+					v-if="
+						fetchLogs.isLoading.value &&
+						fetchLogs.hasNextPage.value &&
+						!loadingPrevious
+					"
+					class="flex items-center justify-center py-2 text-muted-foreground"
+				>
+					<Icon
+						name="svg-spinners:blocks-shuffle-3"
+						class="size-5 opacity-50"
+					/>
+				</div>
+			</template>
+		</DynamicScroller>
+		<div v-else class="flex min-h-0 flex-1 flex-col">
 			<div
-				v-else-if="state === 'loading'"
+				v-if="state === 'loading'"
 				class="flex size-full items-center justify-center text-muted-foreground"
 			>
 				<Icon name="svg-spinners:blocks-shuffle-3" class="size-5 opacity-50" />
@@ -370,7 +571,9 @@ async function refreshData() {
 							{{
 								state === "query-error"
 									? queryErrorMessage
-									: $t(`editor.logs.status.${state}.description`)
+									: state === "no-lines" && search.trim()
+										? $t("editor.logs.status.no-lines.search-description")
+										: $t(`editor.logs.status.${state}.description`)
 							}}
 						</ShadcnUiEmptyDescription>
 					</ShadcnUiEmptyHeader>

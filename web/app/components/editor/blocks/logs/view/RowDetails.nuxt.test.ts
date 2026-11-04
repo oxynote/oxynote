@@ -12,7 +12,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 	})
 
 	it("shows the raw line under its heading", async ({ expect }) => {
-		const wrapper = await mountDetails(makeLine())
+		const wrapper = await mountDetails(makeLog())
 
 		expect(sectionHeadings(wrapper)).toEqual([
 			t("editor.logs.view.line-heading"),
@@ -27,7 +27,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 	it("lists the labels as indexed and the fields as unindexed, by key", async ({
 		expect,
 	}) => {
-		const wrapper = await mountDetails(makeLine())
+		const wrapper = await mountDetails(makeLog())
 
 		expect(tableRows(wrapper)).toEqual([
 			[
@@ -57,7 +57,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 			expected: ["line-heading", "indexed-heading"],
 		},
 	])("$name", async ({ input, expected }, { expect }) => {
-		const wrapper = await mountDetails(makeLine(input))
+		const wrapper = await mountDetails(makeLog(input))
 
 		expect(sectionHeadings(wrapper)).toEqual(
 			expected.map((key) => t(`editor.logs.view.${key}`)),
@@ -76,7 +76,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 	])(
 		"passes on a filter from the $table table",
 		async ({ key, value, indexed }, { expect }) => {
-			const wrapper = await mountDetails(makeLine())
+			const wrapper = await mountDetails(makeLog())
 
 			await findButtonByText(
 				wrapper,
@@ -93,7 +93,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 		const writeText = vi
 			.spyOn(navigator.clipboard, "writeText")
 			.mockResolvedValue(undefined)
-		const wrapper = await mountDetails(makeLine())
+		const wrapper = await mountDetails(makeLog())
 
 		await findButtonByText(wrapper, t("editor.logs.view.copy-line")).trigger(
 			"click",
@@ -107,7 +107,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 
 	it("goes back to the copy label 700ms after copying", async ({ expect }) => {
 		vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined)
-		const wrapper = await mountDetails(makeLine())
+		const wrapper = await mountDetails(makeLog())
 		vi.useFakeTimers()
 		await findButtonByText(wrapper, t("editor.logs.view.copy-line")).trigger(
 			"click",
@@ -127,7 +127,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 			.mockRejectedValue(new Error("denied"))
 		const errorHandler = vi.fn()
 		const wrapper = await mountSuspended(RowDetails, {
-			props: { line: makeLine() },
+			props: { log: makeLog() },
 			global: { config: { errorHandler } },
 		})
 
@@ -142,7 +142,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 	})
 })
 
-function makeLine(overrides: Partial<LogLine> = {}): LogLine {
+function makeLog(overrides: Partial<Log> = {}): Log {
 	return {
 		id: "l1",
 		time: "2026-01-01T12:00:00Z",
@@ -154,8 +154,8 @@ function makeLine(overrides: Partial<LogLine> = {}): LogLine {
 	}
 }
 
-function mountDetails(line: LogLine) {
-	return mountSuspended(RowDetails, { props: { line } })
+function mountDetails(log: Log) {
+	return mountSuspended(RowDetails, { props: { log } })
 }
 
 function sectionHeadings(wrapper: VueWrapper): string[] {

@@ -71,7 +71,7 @@ function clear() {
 				type="text"
 				:aria-label="$t('editor.logs.view.search-label')"
 				:placeholder="$t('editor.logs.view.search-placeholder')"
-				class="min-w-0 flex-1 bg-transparent px-1.5 font-mono text-xs text-foreground caret-primary outline-none select-text placeholder:text-muted-foreground"
+				class="min-w-0 flex-1 bg-transparent px-1.5 text-xs text-foreground caret-primary outline-none select-text placeholder:text-muted-foreground"
 				@keydown.esc.prevent.stop="handleEscape"
 				@keydown.enter.prevent
 				@blur="handleBlur"

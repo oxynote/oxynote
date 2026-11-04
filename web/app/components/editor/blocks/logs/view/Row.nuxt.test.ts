@@ -3,7 +3,11 @@ import { flushPromises, type VueWrapper } from "@vue/test-utils"
 import { describe, it } from "vitest"
 import Row from "./Row.vue"
 import { LogTimestampFormat } from "../utils"
-import { findButtonByText, t } from "~/components/test-helpers"
+import {
+	findButtonByText,
+	mountUnderTooltipProvider,
+	t,
+} from "~/components/test-helpers"
 
 // built from local fields, so the standard format reads the same clock in
 // any time zone
@@ -26,7 +30,7 @@ describe("<Row>", () => {
 		},
 	])("$name", async ({ input, expected }, { expect }) => {
 		const wrapper = await mountRow({
-			line: makeLine({ time: input.time }),
+			log: makeLog({ time: input.time }),
 			timestampFormat: input.format,
 		})
 
@@ -41,7 +45,7 @@ describe("<Row>", () => {
 
 	it("shows the line's level", async ({ expect }) => {
 		const wrapper = await mountRow({
-			line: makeLine({ level: LogLevel.Error }),
+			log: makeLog({ level: LogLevel.Error }),
 		})
 
 		expect(wrapper.get("button .rounded-full").text()).toBe(
@@ -51,7 +55,7 @@ describe("<Row>", () => {
 
 	it.for<{
 		name: string
-		input: Pick<LogLine, "line" | "labels">
+		input: Pick<Log, "line" | "labels">
 		expected: string
 	}>([
 		{
@@ -73,25 +77,78 @@ describe("<Row>", () => {
 			expected: "deploy finished",
 		},
 	])("$name", async ({ input, expected }, { expect }) => {
-		const wrapper = await mountRow({ line: makeLine(input) })
+		const wrapper = await mountRow({ log: makeLog(input) })
 
 		expect(summary(wrapper).text()).toBe(expected)
 	})
 
-	it("marks the search in the message and the values", async ({ expect }) => {
-		const wrapper = await mountRow({
-			line: makeLine({
+	it.for<{
+		name: string
+		input: Pick<Log, "line" | "labels" | "fields">
+		expected: string[]
+	}>([
+		{
+			name: "marks the search in the message and the fields of a JSON line",
+			input: {
 				line: '{"msg":"Ada signed in","user":"ada"}',
 				labels: {},
-			}),
-			search: "ada",
+				fields: {},
+			},
+			expected: ["Ada", "ada"],
+		},
+		{
+			name: "leaves the labels unmarked, since the search reads only the line",
+			input: {
+				line: '{"msg":"Ada signed in"}',
+				labels: { user: "ada" },
+				fields: {},
+			},
+			expected: ["Ada"],
+		},
+		{
+			name: "leaves the parsed fields of a plain line unmarked",
+			input: {
+				line: "Ada signed in",
+				labels: {},
+				fields: { user: "ada" },
+			},
+			expected: ["Ada"],
+		},
+	])("$name", async ({ input, expected }, { expect }) => {
+		const wrapper = await mountUnderTooltipProvider(Row, {
+			props: rowProps({ log: makeLog(input), search: "ada" }),
 		})
 
 		expect(
 			summary(wrapper)
 				.findAll("mark")
 				.map((m) => m.text()),
-		).toEqual(["Ada", "ada"])
+		).toEqual(expected)
+	})
+
+	it.for([
+		{
+			name: "fades the labels while a search is on",
+			input: "ada",
+			expected: ["env=prod"],
+		},
+		{ name: "fades nothing without a search", input: "", expected: [] },
+	])("$name", async ({ input, expected }, { expect }) => {
+		const wrapper = await mountUnderTooltipProvider(Row, {
+			props: rowProps({
+				log: makeLog({
+					line: '{"msg":"Ada signed in"}',
+					labels: { env: "prod" },
+				}),
+				search: input,
+			}),
+		})
+
+		expect(
+			summary(wrapper)
+				.findAll(".opacity-40")
+				.map((part) => part.text()),
+		).toEqual(expected)
 	})
 
 	it("shows a collapsed row without its details", async ({ expect }) => {
@@ -154,7 +211,7 @@ describe("<Row>", () => {
 	})
 })
 
-function makeLine(overrides: Partial<LogLine> = {}): LogLine {
+function makeLog(overrides: Partial<Log> = {}): Log {
 	return {
 		id: "l1",
 		time: "2026-01-02T03:04:05Z",
@@ -166,25 +223,27 @@ function makeLine(overrides: Partial<LogLine> = {}): LogLine {
 	}
 }
 
-function mountRow(
+function mountRow(props: Parameters<typeof rowProps>[0] = {}) {
+	return mountSuspended(Row, { props: rowProps(props) })
+}
+
+function rowProps(
 	props: {
-		line?: LogLine
+		log?: Log
 		timestampFormat?: LogTimestampFormat
 		search?: string
 		expanded?: boolean
 	} = {},
 ) {
-	return mountSuspended(Row, {
-		props: {
-			line: makeLine(),
-			timestampFormat: LogTimestampFormat.Detailed,
-			search: "",
-			expanded: false,
-			...props,
-		},
-	})
+	return {
+		log: makeLog(),
+		timestampFormat: LogTimestampFormat.Detailed,
+		search: "",
+		expanded: false,
+		...props,
+	}
 }
 
 function summary(wrapper: VueWrapper) {
-	return wrapper.get("button .font-mono")
+	return wrapper.get("button .flex-1.truncate")
 }

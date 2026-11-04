@@ -24,7 +24,7 @@ export interface LogQueriesParams extends GenericQueryTimeRange {
 	queries: string[]
 }
 
-export interface LogLinesParams extends LogQueriesParams {
+export interface LogsParams extends LogQueriesParams {
 	limit?: number
 	order?: LogOrder
 }
@@ -37,7 +37,7 @@ export interface LogFieldValuesParams extends LogFieldsParams {
 	field: string
 }
 
-export interface LogLine {
+export interface Log {
 	id: string
 	time: string // RFC 3339 with nanoseconds, which a Date would drop
 	level: LogLevel
@@ -46,18 +46,22 @@ export interface LogLine {
 	fields: Record<string, string>
 }
 
-export interface LogLinesResult {
+// both cursors are opaque. nextCursor reads on past the result's last line,
+// and previousCursor reads back from its first line in the other order.
+// Either is null when the window holds nothing more that way.
+export interface LogsResult {
 	status: GenericQueryResultStatus.Ok | GenericQueryResultStatus.NoData
-	lines: LogLine[]
-	cursor: string | null // opaque; null when nothing older is left
+	lines: Log[]
+	nextCursor: string | null
+	previousCursor: string | null
 	partial: boolean
 }
 
 // a page of every query's lines with the window it was read from, as
-// from and to query parameters. Every older page reads the same window. A
-// query's result is null on a page after it ran out of older lines.
-export interface LogLinesPage {
-	results: (LogLinesResult | null)[]
+// from and to query parameters. Every page reads the same window. A
+// query's result is null on a page that did not read it.
+export interface LogsPage {
+	results: (LogsResult | null)[]
 	window: Record<string, string>
 }
 

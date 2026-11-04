@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { KeyValue } from "../lines"
+import type { KeyValue } from "../rows"
 import type { LogFilter } from "../logql"
 
 const props = defineProps<{
@@ -29,12 +29,12 @@ function filter(key: string, value: string, exclude: boolean) {
 			class="flex h-7.5 items-center"
 		>
 			<div
-				class="flex h-full w-31 shrink-0 items-center border-r border-muted-highlight px-2.5 font-mono text-xs text-muted-foreground @xl:w-44"
+				class="flex h-full w-31 shrink-0 items-center border-r border-muted-highlight px-2.5 text-xs text-muted-foreground @xl:w-44"
 			>
 				<span class="truncate">{{ key }}</span>
 			</div>
 			<div
-				class="min-w-0 flex-1 truncate px-2.5 font-mono text-xs text-foreground tabular-nums"
+				class="min-w-0 flex-1 truncate px-2.5 text-xs text-foreground tabular-nums"
 			>
 				{{ value }}
 			</div>

@@ -2,21 +2,21 @@ import { describe, it } from "vitest"
 import {
 	displayValue,
 	highlightParts,
-	mergeQueryLines,
+	mergeQueryLogs,
 	sortedEntries,
-	summarizeLine,
+	summarizeLog,
 	timeNanos,
 	type KeyValue,
-	type LineSummary,
-} from "./lines"
+	type LogSummary,
+} from "./rows"
 
 const NOON_MILLIS = BigInt(Date.UTC(2026, 0, 1, 12, 0, 0))
 
-describe("summarizeLine", () => {
+describe("summarizeLog", () => {
 	it.for<{
 		name: string
-		input: Pick<LogLine, "line" | "labels" | "fields">
-		expected: LineSummary
+		input: Pick<Log, "line" | "labels" | "fields">
+		expected: LogSummary
 	}>([
 		{
 			name: "keeps a plain line as its message with the parsed fields by key",
@@ -31,6 +31,7 @@ describe("summarizeLine", () => {
 					["method", "GET"],
 					["status", "200"],
 				],
+				fieldsInLine: false,
 				labels: [
 					["env", "prod"],
 					["job", "api"],
@@ -50,6 +51,7 @@ describe("summarizeLine", () => {
 					["status", "200"],
 					["method", "GET"],
 				],
+				fieldsInLine: true,
 				labels: [["job", "api"]],
 			},
 		},
@@ -69,6 +71,7 @@ describe("summarizeLine", () => {
 					["user", '{"id":1}'],
 					["tags", '["a"]'],
 				],
+				fieldsInLine: true,
 				labels: [],
 			},
 		},
@@ -85,6 +88,7 @@ describe("summarizeLine", () => {
 					["log", "c"],
 					["message", "b"],
 				],
+				fieldsInLine: true,
 				labels: [],
 			},
 		},
@@ -98,26 +102,42 @@ describe("summarizeLine", () => {
 			expected: {
 				message: "started",
 				fields: [["msg", "5"]],
+				fieldsInLine: true,
 				labels: [],
 			},
 		},
 		{
 			name: "leaves the message empty for a JSON line without one",
 			input: { line: '  {"status":"200"}', labels: {}, fields: {} },
-			expected: { message: "", fields: [["status", "200"]], labels: [] },
+			expected: {
+				message: "",
+				fields: [["status", "200"]],
+				fieldsInLine: true,
+				labels: [],
+			},
 		},
 		{
 			name: "keeps a line that only starts like JSON as plain text",
 			input: { line: "{not json", labels: {}, fields: { a: "1" } },
-			expected: { message: "{not json", fields: [["a", "1"]], labels: [] },
+			expected: {
+				message: "{not json",
+				fields: [["a", "1"]],
+				fieldsInLine: false,
+				labels: [],
+			},
 		},
 		{
 			name: "keeps a JSON array line as plain text",
 			input: { line: '["a"]', labels: {}, fields: {} },
-			expected: { message: '["a"]', fields: [], labels: [] },
+			expected: {
+				message: '["a"]',
+				fields: [],
+				fieldsInLine: false,
+				labels: [],
+			},
 		},
 	])("$name", ({ input, expected }, { expect }) => {
-		expect(summarizeLine(makeLine({ id: "l1", ...input }))).toEqual(expected)
+		expect(summarizeLog(makeLog({ id: "l1", ...input }))).toEqual(expected)
 	})
 })
 
@@ -175,7 +195,7 @@ describe("highlightParts", () => {
 	})
 })
 
-describe("mergeQueryLines", () => {
+describe("mergeQueryLogs", () => {
 	it.for([
 		{
 			name: "returns nothing without queries",
@@ -186,7 +206,7 @@ describe("mergeQueryLines", () => {
 			name: "orders one query's lines newest first",
 			input: () => [
 				{
-					lines: [line("a", "12:00:00.1Z"), line("b", "12:00:00.3Z")],
+					logs: [line("a", "12:00:00.1Z"), line("b", "12:00:00.3Z")],
 					hasMore: false,
 				},
 			],
@@ -196,13 +216,13 @@ describe("mergeQueryLines", () => {
 			name: "interleaves queries by their nanosecond times",
 			input: () => [
 				{
-					lines: [
+					logs: [
 						line("a3", "12:00:00.000000003Z"),
 						line("a1", "12:00:00.000000001Z"),
 					],
 					hasMore: false,
 				},
-				{ lines: [line("b2", "12:00:00.000000002Z")], hasMore: false },
+				{ logs: [line("b2", "12:00:00.000000002Z")], hasMore: false },
 			],
 			expected: ["a3", "b2", "a1"],
 		},
@@ -210,10 +230,10 @@ describe("mergeQueryLines", () => {
 			name: "shows a line two queries matched once",
 			input: () => [
 				{
-					lines: [line("a", "12:00:02Z"), line("s", "12:00:01Z")],
+					logs: [line("a", "12:00:02Z"), line("s", "12:00:01Z")],
 					hasMore: false,
 				},
-				{ lines: [line("s", "12:00:01Z")], hasMore: false },
+				{ logs: [line("s", "12:00:01Z")], hasMore: false },
 			],
 			expected: ["a", "s"],
 		},
@@ -221,11 +241,11 @@ describe("mergeQueryLines", () => {
 			name: "hides lines older than where a query with more to load stopped",
 			input: () => [
 				{
-					lines: [line("a1", "12:00:05Z"), line("a2", "12:00:01Z")],
+					logs: [line("a1", "12:00:05Z"), line("a2", "12:00:01Z")],
 					hasMore: false,
 				},
 				{
-					lines: [line("b1", "12:00:04Z"), line("b2", "12:00:03Z")],
+					logs: [line("b1", "12:00:04Z"), line("b2", "12:00:03Z")],
 					hasMore: true,
 				},
 			],
@@ -235,24 +255,55 @@ describe("mergeQueryLines", () => {
 			name: "stops at the newest point among queries with more to load",
 			input: () => [
 				{
-					lines: [line("a1", "12:00:05Z"), line("a2", "12:00:02Z")],
+					logs: [line("a1", "12:00:05Z"), line("a2", "12:00:02Z")],
 					hasMore: true,
 				},
 				{
-					lines: [line("b1", "12:00:04Z"), line("b2", "12:00:01Z")],
+					logs: [line("b1", "12:00:04Z"), line("b2", "12:00:01Z")],
 					hasMore: true,
 				},
 			],
 			expected: ["a1", "b1", "a2"],
 		},
 		{
+			name: "hides lines newer than where a query with lines before its loaded ones starts",
+			input: () => [
+				{
+					logs: [line("a1", "12:00:05Z"), line("a2", "12:00:01Z")],
+					hasMore: false,
+				},
+				{
+					logs: [line("b1", "12:00:04Z"), line("b2", "12:00:02Z")],
+					hasMore: false,
+					hasPrevious: true,
+				},
+			],
+			expected: ["b1", "b2", "a2"],
+		},
+		{
+			name: "starts at the oldest point among queries with lines before their loaded ones",
+			input: () => [
+				{
+					logs: [line("a1", "12:00:05Z"), line("a2", "12:00:02Z")],
+					hasMore: false,
+					hasPrevious: true,
+				},
+				{
+					logs: [line("b1", "12:00:04Z"), line("b2", "12:00:01Z")],
+					hasMore: false,
+					hasPrevious: true,
+				},
+			],
+			expected: ["b1", "a2", "b2"],
+		},
+		{
 			name: "ignores a query with more to load but no lines",
 			input: () => [
 				{
-					lines: [line("a", "12:00:02Z"), line("b", "12:00:01Z")],
+					logs: [line("a", "12:00:02Z"), line("b", "12:00:01Z")],
 					hasMore: false,
 				},
-				{ lines: [], hasMore: true },
+				{ logs: [], hasMore: true },
 			],
 			expected: ["a", "b"],
 		},
@@ -260,15 +311,15 @@ describe("mergeQueryLines", () => {
 			name: "keeps the source order of lines sharing a time",
 			input: () => [
 				{
-					lines: [line("a", "12:00:01Z"), line("b", "12:00:01Z")],
+					logs: [line("a", "12:00:01Z"), line("b", "12:00:01Z")],
 					hasMore: false,
 				},
-				{ lines: [line("c", "12:00:01Z")], hasMore: false },
+				{ logs: [line("c", "12:00:01Z")], hasMore: false },
 			],
 			expected: ["a", "b", "c"],
 		},
 	])("$name", ({ input, expected }, { expect }) => {
-		expect(mergeQueryLines(input(), LogOrder.Desc).map((l) => l.id)).toEqual(
+		expect(mergeQueryLogs(input(), LogOrder.Desc).map((l) => l.id)).toEqual(
 			expected,
 		)
 	})
@@ -278,7 +329,7 @@ describe("mergeQueryLines", () => {
 			name: "orders one oldest-first query's lines oldest first",
 			input: () => [
 				{
-					lines: [line("b", "12:00:00.3Z"), line("a", "12:00:00.1Z")],
+					logs: [line("b", "12:00:00.3Z"), line("a", "12:00:00.1Z")],
 					hasMore: false,
 				},
 			],
@@ -288,32 +339,47 @@ describe("mergeQueryLines", () => {
 			name: "hides lines newer than where an oldest-first query with more to load stopped",
 			input: () => [
 				{
-					lines: [line("a1", "12:00:01Z"), line("a2", "12:00:05Z")],
+					logs: [line("a1", "12:00:01Z"), line("a2", "12:00:05Z")],
 					hasMore: false,
 				},
 				{
-					lines: [line("b1", "12:00:02Z"), line("b2", "12:00:03Z")],
+					logs: [line("b1", "12:00:02Z"), line("b2", "12:00:03Z")],
 					hasMore: true,
 				},
 			],
 			expected: ["a1", "b1", "b2"],
 		},
 		{
+			name: "hides lines older than where an oldest-first query with lines before its loaded ones starts",
+			input: () => [
+				{
+					logs: [line("a1", "12:00:01Z"), line("a2", "12:00:05Z")],
+					hasMore: false,
+				},
+				{
+					logs: [line("b1", "12:00:02Z"), line("b2", "12:00:03Z")],
+					hasMore: false,
+					hasPrevious: true,
+				},
+			],
+			expected: ["b1", "b2", "a2"],
+		},
+		{
 			name: "stops at the oldest point among oldest-first queries with more to load",
 			input: () => [
 				{
-					lines: [line("a1", "12:00:01Z"), line("a2", "12:00:04Z")],
+					logs: [line("a1", "12:00:01Z"), line("a2", "12:00:04Z")],
 					hasMore: true,
 				},
 				{
-					lines: [line("b1", "12:00:02Z"), line("b2", "12:00:05Z")],
+					logs: [line("b1", "12:00:02Z"), line("b2", "12:00:05Z")],
 					hasMore: true,
 				},
 			],
 			expected: ["a1", "b1", "a2"],
 		},
 	])("$name", ({ input, expected }, { expect }) => {
-		expect(mergeQueryLines(input(), LogOrder.Asc).map((l) => l.id)).toEqual(
+		expect(mergeQueryLogs(input(), LogOrder.Asc).map((l) => l.id)).toEqual(
 			expected,
 		)
 	})
@@ -365,7 +431,7 @@ describe("sortedEntries", () => {
 	})
 })
 
-function makeLine(overrides: Partial<LogLine> & { id: string }): LogLine {
+function makeLog(overrides: Partial<Log> & { id: string }): Log {
 	return {
 		time: "2026-01-01T12:00:00Z",
 		level: LogLevel.Info,
@@ -376,6 +442,6 @@ function makeLine(overrides: Partial<LogLine> & { id: string }): LogLine {
 	}
 }
 
-function line(id: string, clock: string): LogLine {
-	return makeLine({ id, time: `2026-01-01T${clock}` })
+function line(id: string, clock: string): Log {
+	return makeLog({ id, time: `2026-01-01T${clock}` })
 }
