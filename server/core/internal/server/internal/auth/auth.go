@@ -26,8 +26,8 @@ const _contextKeySession _contextKey = iota
 // session check, so the caller is told to retry instead of to sign in again.
 var _errRateLimited = errutil.New(http.StatusTooManyRequests, "request.rate_limited", "too many requests")
 
-// _headerForwardedFor is the header that carries the chain of client
-// addresses to the Better Auth server.
+// _headerForwardedFor is the header that carries the client address to the
+// Better Auth server.
 const _headerForwardedFor = "X-Forwarded-For"
 
 // Options specifies options for auth.
@@ -147,21 +147,26 @@ func HasActiveOrganization(userID, organizationID string) bool {
 	return userID != "" && organizationID != ""
 }
 
-// forwardedFor returns the X-Forwarded-For value for the session check: the
-// chain the request arrived with, followed by the address it came from.
-func forwardedFor(r *http.Request) string {
-	chain := r.Header.Values(_headerForwardedFor)
+// clientAddress returns the one client address sent to the Better Auth
+// server. Better Auth only trusts a single-value X-Forwarded-For unless it
+// is configured with trustedProxies, so a chain would land every client in
+// one shared bucket again. The last X-Forwarded-For entry is the address the
+// proxy in front of core saw (Caddy replaces the header with its direct
+// peer); without the header, the request came straight from the client.
+func clientAddress(r *http.Request) string {
+	if chain := r.Header.Values(_headerForwardedFor); len(chain) > 0 {
+		hops := strings.Split(chain[len(chain)-1], ",")
+		if last := strings.TrimSpace(hops[len(hops)-1]); last != "" {
+			return last
+		}
+	}
 
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		host = r.RemoteAddr
+		return r.RemoteAddr
 	}
 
-	if host != "" {
-		chain = append(chain, host)
-	}
-
-	return strings.Join(chain, ", ")
+	return host
 }
 
 // getSession forwards the request to the Better Auth server to retrieve session information.
@@ -177,8 +182,8 @@ func getSession(ctx context.Context, client *http.Client, url string, inc *http.
 		req.AddCookie(reqCookie)
 	}
 
-	if ff := forwardedFor(inc); ff != "" {
-		req.Header.Set(_headerForwardedFor, ff)
+	if addr := clientAddress(inc); addr != "" {
+		req.Header.Set(_headerForwardedFor, addr)
 	}
 
 	resp, err := client.Do(req)

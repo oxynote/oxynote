@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -149,7 +150,7 @@ func Test_Middleware(t *testing.T) {
 				},
 			}
 		}(),
-		"Client address is forwarded to the auth service": func() tcase {
+		"Address seen by the proxy is forwarded to the auth service": func() tcase {
 			var gotFor string
 
 			return tcase{
@@ -162,7 +163,7 @@ func Test_Middleware(t *testing.T) {
 						`{"session":{"userId":"u1","activeOrganizationId":"org1"}}`,
 					), nil
 				},
-				Header:    http.Header{"X-Forwarded-For": {"203.0.113.7"}},
+				Header:    http.Header{"X-Forwarded-For": {"198.51.100.9, 203.0.113.7"}},
 				Remote:    "10.0.0.5:4321",
 				NextCode:  http.StatusNoContent,
 				AuthCalls: 1,
@@ -172,7 +173,33 @@ func Test_Middleware(t *testing.T) {
 					ActiveOrganizationID: "org1",
 				},
 				After: func(t *testing.T) {
-					assert.Equal(t, "203.0.113.7, 10.0.0.5", gotFor)
+					assert.Equal(t, "203.0.113.7", gotFor)
+				},
+			}
+		}(),
+		"Peer address is forwarded when no proxy header is set": func() tcase {
+			var gotFor string
+
+			return tcase{
+				URL: "http://test.com/get-session",
+				Resp: func(r *http.Request) (*http.Response, error) {
+					gotFor = r.Header.Get("X-Forwarded-For")
+
+					return httpmock.NewStringResponse(
+						http.StatusOK,
+						`{"session":{"userId":"u1","activeOrganizationId":"org1"}}`,
+					), nil
+				},
+				Remote:    "10.0.0.5:4321",
+				NextCode:  http.StatusNoContent,
+				AuthCalls: 1,
+				RespCode:  http.StatusNoContent,
+				Session: Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				},
+				After: func(t *testing.T) {
+					assert.Equal(t, "10.0.0.5", gotFor)
 				},
 			}
 		}(),
@@ -220,9 +247,7 @@ func Test_Middleware(t *testing.T) {
 				req.AddCookie(ck)
 			}
 
-			for k, vv := range c.Header {
-				req.Header[k] = vv
-			}
+			maps.Copy(req.Header, c.Header)
 
 			if c.Remote != "" {
 				req.RemoteAddr = c.Remote
