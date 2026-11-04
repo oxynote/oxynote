@@ -50,12 +50,15 @@ const groups = computed(() =>
 		<ShadcnUiCollapsibleTrigger
 			:class="
 				cn(
-					'group flex h-8 w-full cursor-pointer items-center gap-3 px-2.5 text-left hover:bg-muted',
+					'group flex h-8 w-full cursor-pointer items-center gap-2 px-2.5 text-left hover:bg-muted',
 					expanded && 'bg-muted',
 				)
 			"
 		>
-			<span v-if="time" class="shrink-0 text-xs whitespace-nowrap tabular-nums">
+			<span
+				v-if="time"
+				class="shrink-0 text-2sm whitespace-nowrap tabular-nums"
+			>
 				<span class="text-muted-foreground/70">{{ time.date }}</span>
 				<template v-if="time.date">
 					{{ PAIR_SEPARATOR }}
@@ -63,7 +66,7 @@ const groups = computed(() =>
 				<span class="text-muted-foreground">{{ time.time }}</span>
 			</span>
 			<LevelPill :level="props.log.level" />
-			<span class="min-w-0 flex-1 truncate text-xs text-foreground">
+			<span class="min-w-0 flex-1 truncate text-2sm text-foreground">
 				<HighlightedText :text="summary.message" :search="props.search" />
 				<template v-for="(group, groupIndex) in groups" :key="groupIndex">
 					<span
@@ -101,7 +104,7 @@ const groups = computed(() =>
 				name="mingcute:right-line"
 				:class="
 					cn(
-						'-ml-3 h-3.5 w-0 shrink-0 text-muted-foreground/70 opacity-0 transition-transform duration-150 group-hover:ml-0 group-hover:w-3.5 group-hover:opacity-100',
+						'-ml-2 h-3.5 w-0 shrink-0 text-muted-foreground/70 opacity-0 transition-transform duration-150 group-hover:ml-0 group-hover:w-3.5 group-hover:opacity-100',
 						expanded && 'ml-0 w-3.5 rotate-90 opacity-100',
 					)
 				"

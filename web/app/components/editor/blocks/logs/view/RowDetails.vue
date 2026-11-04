@@ -40,7 +40,7 @@ async function copyLine() {
 				{{ $t("editor.logs.view.line-heading") }}
 			</h4>
 			<div
-				class="relative rounded-md border bg-card py-2 pr-9 pl-3 text-xs leading-5 break-all whitespace-pre-wrap text-foreground"
+				class="relative rounded-md border bg-card py-2 pr-9 pl-3 text-2sm leading-5 break-all whitespace-pre-wrap text-foreground"
 			>
 				<span>{{ props.log.line }}</span>
 				<ShadcnUiButton

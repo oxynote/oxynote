@@ -71,6 +71,20 @@ const timeOptionsElem = useTemplateRef<HTMLDivElement>("time-options")
 const { width: timeOptionsWidth } = useElementSize(timeOptionsElem, undefined, {
 	box: "border-box",
 })
+
+// the size observer reports only after the first paint, and the data
+// view's buttons would jump left then. Measuring once the element is in
+// the page sets the width before anything is drawn.
+watch(
+	timeOptionsElem,
+	(element) => {
+		// a width of 0 means the element is not laid out yet
+		if (element?.offsetWidth) {
+			timeOptionsWidth.value = element.offsetWidth
+		}
+	},
+	{ flush: "post" },
+)
 const isDiffModified = computed(() => diffStatus.value === DiffStatus.Modified)
 const isTimeRangeModified = computed(() => {
 	return (
@@ -178,6 +192,7 @@ function openSettings() {
 								:config="config"
 								:uid="editorStore.activeLogBlockConfig!"
 								hide-empty-action-button
+								compact
 								:header-right-padding="timeOptionsWidth"
 							/>
 						</div>

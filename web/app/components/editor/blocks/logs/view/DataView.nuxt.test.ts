@@ -109,7 +109,7 @@ describe("<DataView>", { concurrent: false }, () => {
 				logsResult([makeLog("a1", "11:57:00Z")]),
 			)
 			const wrapper = await mountView(logConfig(), {
-				props: { headerRightPadding: 80 },
+				props: { headerRightPadding: 80, compact: true },
 			})
 			await settleLogRequests()
 

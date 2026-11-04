@@ -75,7 +75,7 @@ watch(
 				<!-- eslint-disable vue/no-v-html -->
 				<div
 					v-if="props.document.titleHtml"
-					class="min-w-0 flex-1 truncate text-2sm font-semibold text-foreground [&_mark]:rounded-xs [&_mark]:bg-comment-highlight/40 [&_mark]:text-inherit"
+					class="min-w-0 flex-1 truncate text-2sm font-semibold text-foreground [&_mark]:rounded-xs [&_mark]:bg-search-highlight [&_mark]:text-inherit"
 					v-html="sanitizeSearchResult(props.document.titleHtml)"
 				/>
 				<!-- eslint-enable vue/no-v-html -->

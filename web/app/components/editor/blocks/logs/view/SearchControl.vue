@@ -71,21 +71,22 @@ function clear() {
 				type="text"
 				:aria-label="$t('editor.logs.view.search-label')"
 				:placeholder="$t('editor.logs.view.search-placeholder')"
-				class="min-w-0 flex-1 bg-transparent px-1.5 text-xs text-foreground caret-primary outline-none select-text placeholder:text-muted-foreground"
+				class="min-w-0 flex-1 bg-transparent px-1.5 text-2sm text-foreground caret-primary outline-none select-text placeholder:text-muted-foreground"
 				@keydown.esc.prevent.stop="handleEscape"
 				@keydown.enter.prevent
 				@blur="handleBlur"
 			/>
-			<button
+			<ShadcnUiButton
 				v-if="search"
-				type="button"
-				class="mr-1 flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+				variant="ghost"
+				size="custom"
+				class="mr-1 size-4 rounded-sm text-muted-foreground"
 				@mousedown.prevent
 				@click="clear"
 			>
 				<Icon name="mingcute:close-line" class="size-3" />
 				<span class="sr-only">{{ $t("editor.logs.view.clear-search") }}</span>
-			</button>
+			</ShadcnUiButton>
 		</template>
 	</div>
 </template>

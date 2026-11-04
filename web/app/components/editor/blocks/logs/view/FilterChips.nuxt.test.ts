@@ -12,7 +12,7 @@ describe("<FilterChips>", () => {
 
 		expect(
 			wrapper
-				.findAll(".rounded-md")
+				.findAll(".rounded-md.border")
 				.map((chip) =>
 					chip.findAll(".shrink-0, .truncate").map((p) => p.text()),
 				),

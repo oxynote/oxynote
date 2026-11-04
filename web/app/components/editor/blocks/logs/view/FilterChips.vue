@@ -22,23 +22,25 @@ function remove(filter: LogFilter) {
 				{{ filter.exclude ? EXCLUDE_MARK : INCLUDE_MARK }}
 			</span>
 			<span class="truncate">{{ filter.value }}</span>
-			<button
-				type="button"
-				class="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+			<ShadcnUiButton
+				variant="ghost"
+				size="custom"
+				class="size-4 rounded-sm text-muted-foreground"
 				@click="remove(filter)"
 			>
 				<Icon name="mingcute:close-line" class="size-3" />
 				<span class="sr-only">
 					{{ $t("editor.logs.view.remove-filter", { key: filter.key }) }}
 				</span>
-			</button>
+			</ShadcnUiButton>
 		</span>
-		<button
-			type="button"
-			class="cursor-pointer text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+		<ShadcnUiButton
+			variant="ghost-plain"
+			size="custom"
+			class="text-xs font-normal text-muted-foreground underline underline-offset-2"
 			@click="filters = []"
 		>
 			{{ $t("editor.logs.view.clear-filters") }}
-		</button>
+		</ShadcnUiButton>
 	</div>
 </template>

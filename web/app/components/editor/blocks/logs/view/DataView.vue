@@ -47,6 +47,7 @@ const props = defineProps<{
 	disableRefresh?: boolean
 	hideEmptyActionButton?: boolean
 	headerRightPadding?: number
+	compact?: boolean
 }>()
 const emit = defineEmits<{
 	(e: "configure"): void
@@ -73,9 +74,6 @@ const lastVisibleRow = ref(-1)
 const loadingPrevious = ref(false)
 // set when a refresh had to wait, either for the reader or for a page
 const missedRefresh = ref(false)
-// under the modal's time controls the header's icons sit as close as the
-// controls' own items do
-const compact = computed(() => !!props.headerRightPadding)
 const oldestFirst = computed(() => props.config.order === LogOrder.Asc)
 const isEditingDisabled = computed(
 	() => !isEditable.value || editorStore.reviewableDiffActive,
@@ -431,7 +429,7 @@ async function refreshData() {
 				:class="
 					cn(
 						'flex h-8 shrink-0 items-center pt-1 pr-1.5 pl-2.5',
-						!compact && 'gap-1',
+						!props.compact && 'gap-1',
 					)
 				"
 				:style="headerStyle"
@@ -442,13 +440,13 @@ async function refreshData() {
 				<SearchControl
 					v-if="hasControls"
 					v-model="searchInput"
-					:compact="compact"
+					:compact="props.compact"
 				/>
 				<ShadcnUiButton
 					v-if="hasControls"
 					variant="ghost-plain"
 					size="icon-sm"
-					:class="cn('size-6', compact && '-mx-0.5')"
+					:class="cn('size-6', props.compact && '-mx-0.5')"
 					:aria-pressed="volumeVisible"
 					@click="volumeVisible = !volumeVisible"
 				>

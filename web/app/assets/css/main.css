@@ -16,6 +16,7 @@
 	--hook-status-needs-attention: oklch(0.65 0.13 76);
 	--hook-status-needs-attention-foreground: oklch(0.42 0.085 72);
 	--comment-highlight: oklch(0.8633 0.1764 89.91);
+	--search-highlight: oklch(0.8633 0.1764 89.91 / 40%);
 
 	--http-method-get: oklch(0.5002 0.1962 259.56);
 	--http-method-post: oklch(0.4784 0.1512 140.01);
@@ -233,6 +234,7 @@
 		--hook-status-needs-attention-foreground
 	);
 	--color-comment-highlight: var(--comment-highlight);
+	--color-search-highlight: var(--search-highlight);
 
 	--color-http-method-get: var(--http-method-get);
 	--color-http-method-post: var(--http-method-post);
