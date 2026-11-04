@@ -1291,7 +1291,7 @@ func Test_Handler_UpdateDocumentTree(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			db := &DBMock{BeginTxFunc: testutil.StubBeginTx(c.Tx, c.BeginErr)}
+			db := &DBMock{BeginTxFunc: testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)}
 			hdl, cnt := newTestHandler(db, &fakePublisher{})
 
 			rec := httptest.NewRecorder()
@@ -1986,7 +1986,7 @@ func Test_Handler_CreateDocument(t *testing.T) {
 				queue = &SearchQueueMock{}
 			}
 
-			db := &DBMock{BeginTxFunc: testutil.StubBeginTx(c.Tx, c.BeginErr)}
+			db := &DBMock{BeginTxFunc: testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)}
 			hdl, cnt := newTestHandler(db, &fakePublisher{})
 			hdl.searchQueue = queue
 
@@ -2168,7 +2168,7 @@ func Test_Handler_DeleteDocument(t *testing.T) {
 				queue = &SearchQueueMock{}
 			}
 
-			c.DB.BeginTxFunc = testutil.StubBeginTx(c.Tx, c.BeginErr)
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			hdl, cnt := newTestHandler(c.DB, &fakePublisher{})
 			hdl.searchQueue = queue
@@ -2509,7 +2509,7 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 				storer = &StorerMock{}
 			}
 
-			c.DB.BeginTxFunc = testutil.StubBeginTx(c.Tx, c.BeginErr)
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			hdl, cnt := newTestHandler(c.DB, &fakePublisher{})
 			hdl.storer = storer

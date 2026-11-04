@@ -203,16 +203,17 @@ func MetricValue(t *testing.T, rg prometheus.Gatherer, name string, labels map[s
 }
 
 // StubBeginTx creates a BeginTx stub that fails with err or, without one,
-// sets tx into the pointer it is given, as the real BeginTx does.
-func StubBeginTx(tx any, err error) func(context.Context, any) error {
-	return func(_ context.Context, dest any) error {
+// returns tx. T is the transaction type BeginTx returns (sqlutil.Tx),
+// which this package cannot import.
+func StubBeginTx[T any](tx T, err error) func(context.Context) (T, error) {
+	return func(context.Context) (T, error) {
 		if err != nil {
-			return err
+			var zero T
+
+			return zero, err
 		}
 
-		reflect.ValueOf(dest).Elem().Set(reflect.ValueOf(tx))
-
-		return nil
+		return tx, nil
 	}
 }
 

@@ -613,7 +613,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			db.FetchOrganizationMembersFunc = func(context.Context, string) ([]string, error) {
 				return c.Members, c.MembersErr
 			}
-			db.BeginTxFunc = testutil.StubBeginTx(c.Tx, c.BeginErr)
+			db.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			queue := c.Queue
 			if queue == nil {
@@ -1464,7 +1464,7 @@ func Test_Handler_TeardownOrganization(t *testing.T) {
 				queue = &SearchQueueMock{}
 			}
 
-			c.DB.BeginTxFunc = testutil.StubBeginTx(c.Tx, c.BeginErr)
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			hdl := Handler{
 				log:         slog.New(slog.DiscardHandler),

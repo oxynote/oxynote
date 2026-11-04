@@ -4,6 +4,7 @@ package sqlutil
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 
 	sq "github.com/Masterminds/squirrel"
@@ -14,26 +15,9 @@ import (
 // DB is an interface that should be implemented by all
 // database managers.
 type DB interface {
-	// BeginTx should begin a transaction and set the active Tx
-	// object to the dest parameter.
-	// Example:
-	//    type CustomTx interface {
-	//        Tx // embed core transaction interface
-	//        FetchUser() User
-	//    }
-	//
-	//    var tx CustomTx
-	//    db.BeginTx(context.Background(), &tx)
-	//
-	// NOTE #1: when go1.18 with the new type parameter feature is
-	// released, the signature of this method, as well as all of its
-	// implementations will need to be rewritten.
-	// NOTE #2: since the only way to set a transaction object to the
-	// destination parameter is by using reflection, this may not
-	// be safe at compile-time, so destination interfaces need to be
-	// thoroughly checked. However, this will not be a problem when
-	// type parameters are introduced.
-	BeginTx(ctx context.Context, dest any) error
+	// BeginTx should begin a transaction. Callers use the package-level
+	// BeginTx to get it as their own transaction type.
+	BeginTx(ctx context.Context) (Tx, error)
 }
 
 // Tx is an interface that should be implemented by all
@@ -44,6 +28,34 @@ type Tx interface {
 
 	// Rollback should rollback the active transaction.
 	Rollback() error
+}
+
+// BeginTx begins a transaction on db and returns it as T, the caller's
+// own transaction interface. It rolls the transaction back and fails when
+// the transaction does not implement T.
+// Example:
+//
+//	type CustomTx interface {
+//	    sqlutil.Tx
+//	    FetchUser() User
+//	}
+//
+//	tx, err := sqlutil.BeginTx[CustomTx](ctx, db)
+func BeginTx[T Tx](ctx context.Context, db DB) (T, error) {
+	var zero T
+
+	tx, err := db.BeginTx(ctx)
+	if err != nil {
+		return zero, err
+	}
+
+	t, ok := tx.(T)
+	if !ok {
+		tx.Rollback() //nolint:errcheck,gosec // error provides no meaningful info
+		return zero, fmt.Errorf("%T does not implement %s", tx, reflect.TypeFor[T]())
+	}
+
+	return t, nil
 }
 
 // Select validates the provided query and uses it to start a SELECT SQL

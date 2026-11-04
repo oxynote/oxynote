@@ -506,7 +506,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 				queue = &SearchQueueMock{}
 			}
 
-			c.DB.BeginTxFunc = testutil.StubBeginTx(c.Tx, c.BeginErr)
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			hdl, cnt := newTestHandler(c.DB, &fakePublisher{})
 			hdl.searchQueue = queue
@@ -886,7 +886,7 @@ func Test_Handler_MergeBranches(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			c.DB.BeginTxFunc = testutil.StubBeginTx(c.Tx, c.BeginErr)
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			hdl, cnt := newTestHandler(c.DB, &fakePublisher{})
 
@@ -1325,7 +1325,7 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 				queue = &SearchQueueMock{}
 			}
 
-			c.DB.BeginTxFunc = testutil.StubBeginTx(c.Tx, c.BeginErr)
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
 			hdl.searchQueue = queue
@@ -1574,7 +1574,7 @@ func Test_Handler_DeleteDocumentBranch(t *testing.T) {
 				queue = &SearchQueueMock{}
 			}
 
-			c.DB.BeginTxFunc = testutil.StubBeginTx(tx, nil)
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](tx, nil)
 
 			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
 			hdl.searchQueue = queue
@@ -1824,7 +1824,7 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 				queue = &SearchQueueMock{}
 			}
 
-			c.DB.BeginTxFunc = testutil.StubBeginTx(tx, nil)
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](tx, nil)
 
 			hdl, cnt := newTestHandler(c.DB, &fakePublisher{})
 			hdl.searchQueue = queue
