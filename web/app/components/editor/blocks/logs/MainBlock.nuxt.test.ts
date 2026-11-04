@@ -102,7 +102,7 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 				queries: [{ name: "Query 1", query: '{app="api"}' }],
 				timeRange: TimeRangePreset.Last1Hour,
 				refreshInterval: RefreshInterval.M1,
-				timestampFormat: LogTimestampFormat.Detailed,
+				timestampFormat: LogTimestampFormat.Numeric,
 				order: LogOrder.Asc,
 			},
 		})
@@ -113,7 +113,7 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 			queries: [{ name: "Query 1", query: '{app="api"}' }],
 			timeRange: TimeRangePreset.Last1Hour,
 			refreshInterval: RefreshInterval.M1,
-			timestampFormat: LogTimestampFormat.Detailed,
+			timestampFormat: LogTimestampFormat.Numeric,
 			order: LogOrder.Asc,
 		})
 		expect(storedDiffInfo()).toBeUndefined()
@@ -161,7 +161,7 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 				queries: null,
 				timeRange: null,
 				refreshInterval: null,
-				timestampFormat: LogTimestampFormat.Standard,
+				timestampFormat: LogTimestampFormat.ReadableTime,
 				order: LogOrder.Asc,
 			},
 		})
@@ -229,7 +229,7 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 		},
 		{
 			field: "timestamp format",
-			edit: { timestampFormat: LogTimestampFormat.DetailedMilli },
+			edit: { timestampFormat: LogTimestampFormat.NumericMilli },
 		},
 		{ field: "order", edit: { order: LogOrder.Asc } },
 	])("stores an edited $field on the node", async ({ edit }, { expect }) => {
@@ -316,7 +316,7 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 		)
 		expect(
 			wrapper
-				.findAll("button[aria-expanded] .flex-1.truncate")
+				.findAll("button[aria-expanded] .flex-1.overflow-x-auto")
 				.map((m) => m.text()),
 		).toEqual(["deploy finished · env=prod"])
 	})

@@ -80,7 +80,7 @@ describe("<LogDiffDetails>", { concurrent: false }, () => {
 				title: "Errors",
 				timeRange: TimeRangePreset.Last15Minutes,
 				refreshInterval: RefreshInterval.M1,
-				timestampFormat: LogTimestampFormat.Standard,
+				timestampFormat: LogTimestampFormat.Readable,
 				order: LogOrder.Desc,
 				width: GridItemWidth.Standard,
 			},
@@ -88,7 +88,7 @@ describe("<LogDiffDetails>", { concurrent: false }, () => {
 				title: "API errors",
 				timeRange: TimeRangePreset.Last5Minutes,
 				refreshInterval: RefreshInterval.M5,
-				timestampFormat: LogTimestampFormat.DetailedNano,
+				timestampFormat: LogTimestampFormat.NumericNano,
 				order: LogOrder.Asc,
 				width: GridItemWidth.Wide,
 			},
@@ -108,8 +108,8 @@ describe("<LogDiffDetails>", { concurrent: false }, () => {
 			],
 			[
 				t("editor.logs.config.timestamp-format-label"),
-				t("editor.logs.config.timestamp-format-options.standard.title"),
-				t("editor.logs.config.timestamp-format-options.detailed_nano.title"),
+				t("editor.logs.config.timestamp-format-options.readable.title"),
+				t("editor.logs.config.timestamp-format-options.numeric_nano.title"),
 			],
 			[
 				t("editor.logs.config.order-label"),

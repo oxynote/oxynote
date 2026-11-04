@@ -37,7 +37,7 @@ describe("<TimestampFormatSelect>", { concurrent: false }, () => {
 
 	it("offers every format with an example", async ({ expect }) => {
 		const wrapper = await mountFormatSelect({
-			modelValue: LogTimestampFormat.Standard,
+			modelValue: LogTimestampFormat.Readable,
 		})
 
 		await openMenu(wrapper)
@@ -51,9 +51,31 @@ describe("<TimestampFormatSelect>", { concurrent: false }, () => {
 		})
 	})
 
+	it("separates the groups of readable and numeric formats, with and without the date", async ({
+		expect,
+	}) => {
+		const wrapper = await mountFormatSelect({
+			modelValue: LogTimestampFormat.Readable,
+		})
+
+		await openMenu(wrapper)
+
+		// each separator sits right before the first format of its group
+		expect(
+			[...document.querySelectorAll("[role='separator']")].map((line) =>
+				line.nextElementSibling?.textContent.trim(),
+			),
+		).toEqual([
+			expect.stringContaining(titleOf(LogTimestampFormat.Readable)),
+			expect.stringContaining(titleOf(LogTimestampFormat.ReadableTime)),
+			expect.stringContaining(titleOf(LogTimestampFormat.Numeric)),
+			expect.stringContaining(titleOf(LogTimestampFormat.NumericTime)),
+		])
+	})
+
 	it("checks the chosen format in the menu", async ({ expect }) => {
 		const wrapper = await mountFormatSelect({
-			modelValue: LogTimestampFormat.DetailedMilli,
+			modelValue: LogTimestampFormat.NumericMilli,
 		})
 
 		await openMenu(wrapper)
@@ -64,22 +86,22 @@ describe("<TimestampFormatSelect>", { concurrent: false }, () => {
 			),
 		).toEqual(
 			Object.values(LogTimestampFormat).map(
-				(format) => format === LogTimestampFormat.DetailedMilli,
+				(format) => format === LogTimestampFormat.NumericMilli,
 			),
 		)
 	})
 
 	it("stores the format the reader picked", async ({ expect }) => {
 		const wrapper = await mountFormatSelect({
-			modelValue: LogTimestampFormat.Standard,
+			modelValue: LogTimestampFormat.Readable,
 		})
 		await openMenu(wrapper)
 
-		menuItem(titleOf(LogTimestampFormat.DetailedNano)).click()
+		menuItem(titleOf(LogTimestampFormat.NumericNano)).click()
 		await nextTick()
 
 		expect(wrapper.emitted("update:modelValue")).toEqual([
-			[LogTimestampFormat.DetailedNano],
+			[LogTimestampFormat.NumericNano],
 		])
 	})
 
@@ -87,7 +109,7 @@ describe("<TimestampFormatSelect>", { concurrent: false }, () => {
 		useEditorMeta().setEditable(false)
 
 		const wrapper = await mountFormatSelect({
-			modelValue: LogTimestampFormat.Standard,
+			modelValue: LogTimestampFormat.Readable,
 		})
 
 		expect(trigger(wrapper).attributes("disabled")).toBeDefined()
@@ -98,7 +120,7 @@ describe("<TimestampFormatSelect>", { concurrent: false }, () => {
 		useEditorStore().setReviewableDiffActive(true)
 
 		const wrapper = await mountFormatSelect({
-			modelValue: LogTimestampFormat.Standard,
+			modelValue: LogTimestampFormat.Readable,
 		})
 
 		expect(trigger(wrapper).attributes("disabled")).toBeDefined()
@@ -123,7 +145,7 @@ describe("<TimestampFormatSelect>", { concurrent: false }, () => {
 		},
 	])("$name", async ({ input, expected }, { expect }) => {
 		const wrapper = await mountFormatSelect({
-			modelValue: LogTimestampFormat.Standard,
+			modelValue: LogTimestampFormat.Readable,
 			diffStatus: input,
 		})
 

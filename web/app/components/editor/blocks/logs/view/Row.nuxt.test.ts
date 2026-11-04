@@ -9,22 +9,27 @@ import {
 	t,
 } from "~/components/test-helpers"
 
-// built from local fields, so the standard format reads the same clock in
-// any time zone
+// built from local fields, so every format reads the same clock in any
+// time zone
 const LOCAL_TIME = new Date(2026, 0, 2, 3, 4, 5).toISOString()
 
 describe("<Row>", () => {
 	it.for([
 		{
-			name: "shows the date and time of the standard format apart",
-			input: { time: LOCAL_TIME, format: LogTimestampFormat.Standard },
-			expected: "Jan 2, 2026 03:04:05",
+			name: "shows the date and time of the readable format apart",
+			input: { time: LOCAL_TIME, format: LogTimestampFormat.Readable },
+			expected: "Jan 2, 2026 03:04:05 AM",
 		},
 		{
-			name: "shows the date and time of a detailed format apart",
+			name: "shows only the time of a readable time-only format",
+			input: { time: LOCAL_TIME, format: LogTimestampFormat.ReadableTime },
+			expected: "03:04:05 AM",
+		},
+		{
+			name: "shows the date and time of a numeric format apart",
 			input: {
 				time: LOCAL_TIME.replace(".000Z", ".123456789Z"),
-				format: LogTimestampFormat.DetailedNano,
+				format: LogTimestampFormat.NumericNano,
 			},
 			expected: "2026-01-02 03:04:05.123456789",
 		},
@@ -34,7 +39,10 @@ describe("<Row>", () => {
 			timestampFormat: input.format,
 		})
 
-		expect(wrapper.get("button .tabular-nums").text()).toBe(expected)
+		// newer ICU versions put a narrow no-break space before AM and PM
+		expect(
+			wrapper.get("button .tabular-nums").text().replace(/\s/gu, " "),
+		).toBe(expected)
 	})
 
 	it("shows no time when the format hides it", async ({ expect }) => {
@@ -237,7 +245,7 @@ function rowProps(
 ) {
 	return {
 		log: makeLog(),
-		timestampFormat: LogTimestampFormat.Detailed,
+		timestampFormat: LogTimestampFormat.Numeric,
 		search: "",
 		expanded: false,
 		...props,
@@ -245,5 +253,5 @@ function rowProps(
 }
 
 function summary(wrapper: VueWrapper) {
-	return wrapper.get("button .flex-1.truncate")
+	return wrapper.get("button .flex-1.overflow-x-auto")
 }

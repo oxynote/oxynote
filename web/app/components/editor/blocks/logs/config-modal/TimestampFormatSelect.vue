@@ -3,6 +3,15 @@ import { cn } from "#layers/ui/app/lib/utils"
 import { LogTimestampFormat } from "../utils"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 
+// the first option of each group of formats, which a line separates from
+// the group before
+const GROUP_STARTS = new Set([
+	LogTimestampFormat.Readable,
+	LogTimestampFormat.ReadableTime,
+	LogTimestampFormat.Numeric,
+	LogTimestampFormat.NumericTime,
+])
+
 const format = defineModel<LogTimestampFormat>({ required: true })
 const props = defineProps<{
 	diffStatus?: DiffStatus | null
@@ -56,33 +65,39 @@ const isEditingDisabled = computed(() => {
 			align="start"
 			loop
 		>
-			<ShadcnUiDropdownMenuItem
+			<template
 				v-for="option in Object.values(LogTimestampFormat)"
 				:key="option"
-				:value="option"
-				:active="option === format"
-				class="min-w-0"
-				@click="format = option"
 			>
-				<div class="flex min-w-0 flex-1 flex-col">
-					<div
-						class="min-w-0 truncate text-2sm whitespace-nowrap text-popover-foreground"
-					>
-						{{
-							$t(`editor.logs.config.timestamp-format-options.${option}.title`)
-						}}
+				<ShadcnUiDropdownMenuSeparator v-if="GROUP_STARTS.has(option)" />
+				<ShadcnUiDropdownMenuItem
+					:value="option"
+					:active="option === format"
+					class="min-w-0"
+					@click="format = option"
+				>
+					<div class="flex min-w-0 flex-1 flex-col">
+						<div
+							class="min-w-0 truncate text-2sm whitespace-nowrap text-popover-foreground"
+						>
+							{{
+								$t(
+									`editor.logs.config.timestamp-format-options.${option}.title`,
+								)
+							}}
+						</div>
+						<div
+							class="min-w-0 truncate text-xs whitespace-nowrap text-muted-foreground"
+						>
+							{{
+								$t(
+									`editor.logs.config.timestamp-format-options.${option}.example`,
+								)
+							}}
+						</div>
 					</div>
-					<div
-						class="min-w-0 truncate text-xs whitespace-nowrap text-muted-foreground"
-					>
-						{{
-							$t(
-								`editor.logs.config.timestamp-format-options.${option}.example`,
-							)
-						}}
-					</div>
-				</div>
-			</ShadcnUiDropdownMenuItem>
+				</ShadcnUiDropdownMenuItem>
+			</template>
 		</ShadcnUiDropdownMenuContent>
 	</ShadcnUiDropdownMenu>
 </template>

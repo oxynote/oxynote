@@ -532,7 +532,7 @@ describe("<LogConfigBaseModal>", { concurrent: false }, () => {
 function configWith(overrides: Partial<LogConfig> = {}): LogConfig {
 	return {
 		...defaultLogConfig(),
-		timestampFormat: LogTimestampFormat.Detailed,
+		timestampFormat: LogTimestampFormat.Numeric,
 		order: LogOrder.Asc,
 		...overrides,
 	}

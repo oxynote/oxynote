@@ -30,11 +30,18 @@ export default defineI18nConfig(() => {
 					minute: "2-digit",
 					hourCycle: "h23",
 				},
-				"time-with-seconds": {
+				// a log line's time, the fraction written as milliseconds. A log
+				// row swaps it for the exact digits.
+				"log-time": {
 					hour: "2-digit",
 					minute: "2-digit",
 					second: "2-digit",
-					hourCycle: "h23",
+				},
+				"log-time-fraction": {
+					hour: "2-digit",
+					minute: "2-digit",
+					second: "2-digit",
+					fractionalSecondDigits: 3,
 				},
 				"short-with-full-time": {
 					year: "numeric",

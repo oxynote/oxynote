@@ -142,7 +142,7 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 	it("shows the timestamp format the config carries", async ({ expect }) => {
 		const wrapper = await mountSidebar({
 			modelValue: configWith({
-				timestampFormat: LogTimestampFormat.DetailedMilli,
+				timestampFormat: LogTimestampFormat.NumericMilli,
 			}),
 		})
 
@@ -150,7 +150,7 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 
 		expect(selects).toHaveLength(1)
 		expect(at(selects, 0).props("modelValue")).toBe(
-			LogTimestampFormat.DetailedMilli,
+			LogTimestampFormat.NumericMilli,
 		)
 		expect(at(selects, 0).props("diffStatus")).toBeNull()
 	})
@@ -163,11 +163,11 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 			wrapper,
 			TimestampFormatSelect,
 			"update:modelValue",
-			LogTimestampFormat.DetailedNano,
+			LogTimestampFormat.NumericNano,
 		)
 		await nextTick()
 
-		expect(config.timestampFormat).toBe(LogTimestampFormat.DetailedNano)
+		expect(config.timestampFormat).toBe(LogTimestampFormat.NumericNano)
 	})
 
 	it("shows the order the config carries", async ({ expect }) => {
@@ -247,11 +247,11 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 		}) => {
 			const wrapper = await mountSidebar({
 				modelValue: configWith({
-					timestampFormat: LogTimestampFormat.Detailed,
+					timestampFormat: LogTimestampFormat.Numeric,
 				}),
 				diffStatus: DiffStatus.Modified,
 				oldConfig: configWith({
-					timestampFormat: LogTimestampFormat.Standard,
+					timestampFormat: LogTimestampFormat.Readable,
 				}),
 			})
 
@@ -259,11 +259,11 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 
 			expect(selects).toHaveLength(2)
 			expect(at(selects, 0).props("modelValue")).toBe(
-				LogTimestampFormat.Detailed,
+				LogTimestampFormat.Numeric,
 			)
 			expect(at(selects, 0).props("diffStatus")).toBe(DiffStatus.Added)
 			expect(at(selects, 1).props("modelValue")).toBe(
-				LogTimestampFormat.Standard,
+				LogTimestampFormat.Readable,
 			)
 			expect(at(selects, 1).props("diffStatus")).toBe(DiffStatus.Removed)
 		})
@@ -327,7 +327,7 @@ function changedConfig(): LogConfig {
 	return configWith({
 		title: "Before",
 		dataSourceId: OLD_DATA_SOURCE_ID,
-		timestampFormat: LogTimestampFormat.DetailedNano,
+		timestampFormat: LogTimestampFormat.NumericNano,
 		order: LogOrder.Asc,
 	})
 }

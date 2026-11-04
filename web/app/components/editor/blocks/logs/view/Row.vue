@@ -66,7 +66,11 @@ const groups = computed(() =>
 				<span class="text-muted-foreground">{{ time.time }}</span>
 			</span>
 			<LevelPill :level="props.log.level" />
-			<span class="min-w-0 flex-1 truncate text-2sm text-foreground">
+			<!-- the summary scrolls sideways on its own, and the text is cut off
+			at its edges -->
+			<span
+				class="min-w-0 flex-1 [scrollbar-width:none] overflow-x-auto overflow-y-hidden overscroll-x-none text-2sm whitespace-nowrap text-foreground"
+			>
 				<HighlightedText :text="summary.message" :search="props.search" />
 				<template v-for="(group, groupIndex) in groups" :key="groupIndex">
 					<span

@@ -66,7 +66,7 @@ describe("LogBlock", () => {
 				queries: [{ name: "Query 1", query: "" }],
 				timeRange: TimeRangePreset.Last5Minutes,
 				refreshInterval: RefreshInterval.M5,
-				timestampFormat: LogTimestampFormat.Standard,
+				timestampFormat: LogTimestampFormat.ReadableTime,
 				order: LogOrder.Desc,
 				width: GridItemWidth.Standard,
 			})

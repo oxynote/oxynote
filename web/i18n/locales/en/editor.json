@@ -900,21 +900,53 @@
 						"title": "None",
 						"example": "No timestamp"
 					},
-					"standard": {
-						"title": "Standard",
-						"example": "Oct 23, 2026 12:33:22"
+					"readable": {
+						"title": "Readable",
+						"example": "Oct 23, 2026 12:33:22 PM"
 					},
-					"detailed": {
-						"title": "Detailed",
+					"readable_milli": {
+						"title": "Readable with Milliseconds",
+						"example": "Oct 23, 2026 12:33:22.123 PM"
+					},
+					"readable_nano": {
+						"title": "Readable with Nanoseconds",
+						"example": "Oct 23, 2026 12:33:22.123456789 PM"
+					},
+					"readable_time": {
+						"title": "Readable Time",
+						"example": "12:33:22 PM"
+					},
+					"readable_time_milli": {
+						"title": "Readable Time with Milliseconds",
+						"example": "12:33:22.123 PM"
+					},
+					"readable_time_nano": {
+						"title": "Readable Time with Nanoseconds",
+						"example": "12:33:22.123456789 PM"
+					},
+					"numeric": {
+						"title": "Numeric",
 						"example": "2026-10-23 12:33:22"
 					},
-					"detailed_milli": {
-						"title": "Detailed with Milliseconds",
+					"numeric_milli": {
+						"title": "Numeric with Milliseconds",
 						"example": "2026-10-23 12:33:22.123"
 					},
-					"detailed_nano": {
-						"title": "Detailed with Nanoseconds",
+					"numeric_nano": {
+						"title": "Numeric with Nanoseconds",
 						"example": "2026-10-23 12:33:22.123456789"
+					},
+					"numeric_time": {
+						"title": "Numeric Time",
+						"example": "12:33:22"
+					},
+					"numeric_time_milli": {
+						"title": "Numeric Time with Milliseconds",
+						"example": "12:33:22.123"
+					},
+					"numeric_time_nano": {
+						"title": "Numeric Time with Nanoseconds",
+						"example": "12:33:22.123456789"
 					}
 				},
 				"order-label": "Order",

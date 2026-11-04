@@ -411,7 +411,7 @@ describe("<DataView>", { concurrent: false }, () => {
 			)
 
 			const wrapper = await mountView(
-				logConfig({ timestampFormat: LogTimestampFormat.DetailedNano }),
+				logConfig({ timestampFormat: LogTimestampFormat.NumericNano }),
 			)
 			await settleLogRequests()
 
@@ -1187,7 +1187,7 @@ function rowButtons(wrapper: VueWrapper) {
 // each row's message, which is the line itself for these plain lines
 function rowMessages(wrapper: VueWrapper): string[] {
 	return rowButtons(wrapper).map(
-		(b) => b.get(".flex-1.truncate").text().split(" · ")[0] ?? "",
+		(b) => b.get(".flex-1.overflow-x-auto").text().split(" · ")[0] ?? "",
 	)
 }
 

@@ -455,7 +455,7 @@
       ],
       "timeRange": "last_1_hour",
       "refreshInterval": "1m",
-      "timestampFormat": "detailed_milli",
+      "timestampFormat": "numeric_milli",
       "order": "desc",
       "width": "standard"
      }

@@ -11,7 +11,7 @@ import {
 } from "~/utils/variable"
 
 describe("defaultLogConfig", () => {
-	it("returns a config with one empty query, the last 5 minutes refreshed every 5 minutes, standard timestamps and the newest entries first", ({
+	it("returns a config with one empty query, the last 5 minutes refreshed every 5 minutes, readable times and the newest entries first", ({
 		expect,
 	}) => {
 		expect(defaultLogConfig()).toEqual({
@@ -20,7 +20,7 @@ describe("defaultLogConfig", () => {
 			queries: [{ name: "Query 1", query: "" }],
 			timeRange: TimeRangePreset.Last5Minutes,
 			refreshInterval: RefreshInterval.M5,
-			timestampFormat: LogTimestampFormat.Standard,
+			timestampFormat: LogTimestampFormat.ReadableTime,
 			order: LogOrder.Desc,
 		})
 	})
@@ -42,7 +42,7 @@ describe("buildLogConfigFromNodeAttrs", () => {
 			queries: [{ name: "Query 1", query: '{app="api"}' }],
 			timeRange: METRIC_TIME_RANGE_REFERENCE,
 			refreshInterval: METRIC_REFRESH_INTERVAL_REFERENCE,
-			timestampFormat: LogTimestampFormat.DetailedNano,
+			timestampFormat: LogTimestampFormat.NumericNano,
 			order: LogOrder.Asc,
 			width: "wide",
 		})
@@ -53,7 +53,7 @@ describe("buildLogConfigFromNodeAttrs", () => {
 			queries: [{ name: "Query 1", query: '{app="api"}' }],
 			timeRange: METRIC_TIME_RANGE_REFERENCE,
 			refreshInterval: METRIC_REFRESH_INTERVAL_REFERENCE,
-			timestampFormat: LogTimestampFormat.DetailedNano,
+			timestampFormat: LogTimestampFormat.NumericNano,
 			order: LogOrder.Asc,
 		})
 	})
@@ -82,8 +82,16 @@ describe("buildLogConfigFromNodeAttrs", () => {
 			queries: null,
 			timeRange: null,
 			refreshInterval: null,
-			timestampFormat: LogTimestampFormat.Standard,
+			timestampFormat: LogTimestampFormat.ReadableTime,
 			order: LogOrder.Desc,
 		})
+	})
+
+	it("reads a timestamp format the block no longer offers as the default", ({
+		expect,
+	}) => {
+		const config = buildLogConfigFromNodeAttrs({ timestampFormat: "standard" })
+
+		expect(config.timestampFormat).toBe(LogTimestampFormat.ReadableTime)
 	})
 })
