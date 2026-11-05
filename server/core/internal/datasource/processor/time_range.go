@@ -107,7 +107,13 @@ func (tr TimeRange) AlignTo(d time.Duration) TimeRange {
 	}
 
 	if !to.IsZero() {
-		to = time.Unix(((to.Unix() + seconds - 1) / seconds * seconds), 0).UTC()
+		// Unix drops the fraction of a second, which would round To down.
+		sec := to.Unix()
+		if to.Nanosecond() > 0 {
+			sec++
+		}
+
+		to = time.Unix(((sec + seconds - 1) / seconds * seconds), 0).UTC()
 	}
 
 	return TimeRange{

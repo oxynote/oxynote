@@ -336,6 +336,16 @@ func Test_TimeRange_AlignTo(t *testing.T) {
 				To:   time.Date(2024, 1, 31, 12, 0, 15, 0, time.UTC),
 			},
 		},
+		"A fraction of a second rounds To up to the next grid line": {
+			TimeRange: TimeRange{
+				From: time.Date(2024, 1, 1, 12, 0, 15, 500000000, time.UTC),
+				To:   time.Date(2024, 1, 1, 13, 0, 30, 1, time.UTC),
+			},
+			Result: TimeRange{
+				From: time.Date(2024, 1, 1, 12, 0, 15, 0, time.UTC),
+				To:   time.Date(2024, 1, 1, 13, 0, 45, 0, time.UTC),
+			},
+		},
 		"Bounds already on the grid stay": {
 			TimeRange: TimeRange{
 				From: time.Date(2024, 1, 1, 12, 0, 15, 0, time.UTC),

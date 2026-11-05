@@ -2,7 +2,9 @@ import { describe, it } from "vitest"
 import {
 	displayValue,
 	highlightParts,
+	mergeBounds,
 	mergeQueryLogs,
+	pastIn,
 	sortedEntries,
 	summarizeLog,
 	timeNanos,
@@ -382,6 +384,109 @@ describe("mergeQueryLogs", () => {
 		expect(mergeQueryLogs(input(), LogOrder.Asc).map((l) => l.id)).toEqual(
 			expected,
 		)
+	})
+})
+
+describe("mergeBounds", () => {
+	it.for([
+		{
+			name: "has no bounds when no query has lines left",
+			order: LogOrder.Desc,
+			input: () => [{ logs: [line("a", "12:00:01Z")], hasMore: false }],
+			expected: { frontier: null, top: null },
+		},
+		{
+			name: "stops at the newest last line of the queries with more, newest first",
+			order: LogOrder.Desc,
+			input: () => [
+				{
+					logs: [line("a2", "12:00:04Z"), line("a1", "12:00:01Z")],
+					hasMore: true,
+				},
+				{
+					logs: [line("b2", "12:00:05Z"), line("b1", "12:00:02Z")],
+					hasMore: true,
+				},
+				{ logs: [line("c1", "12:00:03Z")], hasMore: false },
+			],
+			expected: {
+				frontier: NOON_MILLIS * 1_000_000n + 2_000_000_000n,
+				top: null,
+			},
+		},
+		{
+			name: "stops at the oldest last line of the queries with more, oldest first",
+			order: LogOrder.Asc,
+			input: () => [
+				{
+					logs: [line("a1", "12:00:01Z"), line("a2", "12:00:04Z")],
+					hasMore: true,
+				},
+				{
+					logs: [line("b1", "12:00:02Z"), line("b2", "12:00:05Z")],
+					hasMore: true,
+				},
+			],
+			expected: {
+				frontier: NOON_MILLIS * 1_000_000n + 4_000_000_000n,
+				top: null,
+			},
+		},
+		{
+			name: "starts at the oldest first line of the queries with lines before, newest first",
+			order: LogOrder.Desc,
+			input: () => [
+				{
+					logs: [line("a2", "12:00:04Z")],
+					hasMore: false,
+					hasPrevious: true,
+				},
+				{
+					logs: [line("b2", "12:00:05Z")],
+					hasMore: false,
+					hasPrevious: true,
+				},
+			],
+			expected: {
+				frontier: null,
+				top: NOON_MILLIS * 1_000_000n + 4_000_000_000n,
+			},
+		},
+	])("$name", ({ order, input, expected }, { expect }) => {
+		expect(mergeBounds(input(), order)).toEqual(expected)
+	})
+})
+
+describe("pastIn", () => {
+	it.for([
+		{
+			name: "newest first, an older time is past",
+			order: LogOrder.Desc,
+			input: [1n, 2n],
+			expected: true,
+		},
+		{
+			name: "newest first, a newer time is not past",
+			order: LogOrder.Desc,
+			input: [2n, 1n],
+			expected: false,
+		},
+		{
+			name: "oldest first, a newer time is past",
+			order: LogOrder.Asc,
+			input: [2n, 1n],
+			expected: true,
+		},
+		{
+			name: "oldest first, an equal time is not past",
+			order: LogOrder.Asc,
+			input: [1n, 1n],
+			expected: false,
+		},
+	])("$name", ({ order, input, expected }, { expect }) => {
+		const [a = 0n, b = 0n] = input
+
+		expect(pastIn(order)(a, b)).toBe(expected)
 	})
 })
 

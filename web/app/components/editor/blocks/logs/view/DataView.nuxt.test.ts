@@ -1,5 +1,5 @@
 import { format } from "date-fns"
-import { mountSuspended } from "@nuxt/test-utils/runtime"
+import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime"
 import { enableAutoUnmount, type VueWrapper } from "@vue/test-utils"
 import { setResponseStatus } from "h3"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -35,6 +35,14 @@ const VOLUME_URL = `/api/data-sources/${DATA_SOURCE_ID}/logs/volume`
 const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("branch")
 const UID = "log-block-1"
+
+// happy-dom lays nothing out, so whether a block is near the viewport is
+// set by each test. It starts near.
+const visibility = vi.hoisted(() => ({
+	near: null as Ref<boolean> | null,
+}))
+
+mockNuxtImport("useElementVisibility", () => () => visibility.near ?? ref(true))
 const NOW = new Date("2026-01-01T12:00:00.000Z")
 const WINDOW = { from: "2026-01-01T11:55:00.000Z", to: NOW.toISOString() }
 
@@ -74,6 +82,7 @@ describe("<DataView>", { concurrent: false }, () => {
 		editorStore.updateActiveDocumentId(DOCUMENT_ID)
 		editorStore.updateActiveBranchId(BRANCH_ID)
 		editorStore.setReviewableDiffActive(false)
+		visibility.near = ref(true)
 		// the window is read from the clock. Only Date and the refresh
 		// interval are faked, so the app's own setup still runs.
 		vi.useFakeTimers({
@@ -862,8 +871,8 @@ describe("<DataView>", { concurrent: false }, () => {
 			expect(calls).toHaveLength(2)
 			expect(calls[1]?.query).toEqual({
 				q: '{job="api"}',
-				limit: "100",
-				from: WINDOW.to,
+				limit: "500",
+				from: "2026-01-01T11:55:05.000Z",
 				to: "2026-01-01T12:00:05.000Z",
 				order: "desc",
 			})
@@ -874,8 +883,11 @@ describe("<DataView>", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const calls = mockEndpoint("GET", LINES_URL, (call) => {
-				if (call.query.from === WINDOW.to) {
-					return logsResult([makeLog("a4", "12:00:03Z")])
+				if (call.query.limit === "500") {
+					return logsResult(
+						[makeLog("a4", "12:00:03Z"), makeLog("a3", "11:59:00Z")],
+						"r1",
+					)
 				}
 
 				return call.query.cursor
@@ -899,8 +911,8 @@ describe("<DataView>", { concurrent: false }, () => {
 			expect(calls).toHaveLength(3)
 			expect(calls[2]?.query).toEqual({
 				q: '{job="api"}',
-				limit: "100",
-				from: WINDOW.to,
+				limit: "500",
+				from: "2026-01-01T11:55:05.000Z",
 				to: "2026-01-01T12:00:05.000Z",
 				order: "desc",
 			})
@@ -912,8 +924,8 @@ describe("<DataView>", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const calls = mockEndpoint("GET", LINES_URL, (call) =>
-				call.query.from === WINDOW.to
-					? logsResult([makeLog("new", "12:00:03Z")])
+				call.query.limit === "500"
+					? logsResult([makeLog("new", "12:00:03Z"), ...logsBefore(NOW, 60)])
 					: logsResult(logsBefore(NOW, 60)),
 			)
 			const wrapper = await mountView(
@@ -930,7 +942,7 @@ describe("<DataView>", { concurrent: false }, () => {
 			await showRowsUpTo(wrapper, 20, 0)
 
 			expect(calls).toHaveLength(2)
-			expect(calls[1]?.query.from).toBe(WINDOW.to)
+			expect(calls[1]?.query.limit).toBe("500")
 			expect(rowMessages(wrapper)[0]).toBe("new")
 		})
 
@@ -941,8 +953,11 @@ describe("<DataView>", { concurrent: false }, () => {
 			"adds the new lines and $name",
 			async ({ input, expected }, { expect }) => {
 				mockEndpoint("GET", LINES_URL, (call) =>
-					call.query.from === WINDOW.to
-						? logsResult([makeLog("new", "12:00:03Z")])
+					call.query.limit === "500"
+						? logsResult([
+								makeLog("new", "12:00:03Z"),
+								makeLog("a2", "11:58:00Z"),
+							])
 						: logsResult([makeLog("a2", "11:58:00Z")]),
 				)
 				const wrapper = await mountView(
@@ -969,8 +984,11 @@ describe("<DataView>", { concurrent: false }, () => {
 				release = resolve
 			})
 			const calls = mockEndpoint("GET", LINES_URL, async (call) => {
-				if (call.query.from === WINDOW.to) {
-					return logsResult([makeLog("new", "12:00:03Z")])
+				if (call.query.limit === "500") {
+					return logsResult(
+						[makeLog("new", "12:00:03Z"), makeLog("a2", "11:58:00Z")],
+						"r1",
+					)
 				}
 
 				if (call.query.cursor) {
@@ -990,20 +1008,77 @@ describe("<DataView>", { concurrent: false }, () => {
 			await vi.advanceTimersByTimeAsync(5_000)
 			await settleLogRequests()
 
-			expect(calls.filter((c) => c.query.from === WINDOW.to)).toHaveLength(0)
+			expect(calls.filter((c) => c.query.limit === "500")).toHaveLength(0)
 
 			release()
 			await settleLogRequests()
 
-			expect(calls.filter((c) => c.query.from === WINDOW.to)).toHaveLength(1)
+			expect(calls.filter((c) => c.query.limit === "500")).toHaveLength(1)
 			expect(rowMessages(wrapper)).toEqual(["new", "a2", "a1"])
+		})
+
+		it("stops refreshing while the block is more than a screen away", async ({
+			expect,
+		}) => {
+			const calls = mockEndpoint("GET", LINES_URL, () => logsResult([]))
+			await mountView(logConfig({ refreshInterval: RefreshInterval.S5 }))
+			await settleLogRequests()
+
+			setNear(false)
+			await vi.advanceTimersByTimeAsync(15_000)
+			await settleLogRequests()
+
+			expect(calls).toHaveLength(1)
+		})
+
+		it("refreshes as soon as the block comes near again once a refresh is due, then again on the timer's next tick", async ({
+			expect,
+		}) => {
+			const calls = mockEndpoint("GET", LINES_URL, () => logsResult([]))
+			await mountView(logConfig({ refreshInterval: RefreshInterval.S5 }))
+			await settleLogRequests()
+			setNear(false)
+			await vi.advanceTimersByTimeAsync(12_000)
+
+			setNear(true)
+			await settleLogRequests()
+
+			expect(calls).toHaveLength(2)
+			expect(calls[1]?.query.limit).toBe("500")
+
+			await vi.advanceTimersByTimeAsync(3_000)
+			await settleLogRequests()
+
+			expect(calls).toHaveLength(3)
+			expect(calls[2]?.query.limit).toBe("500")
+		})
+
+		it("waits for the timer's next refresh when the block comes near before one is due", async ({
+			expect,
+		}) => {
+			const calls = mockEndpoint("GET", LINES_URL, () => logsResult([]))
+			await mountView(logConfig({ refreshInterval: RefreshInterval.S5 }))
+			await settleLogRequests()
+			setNear(false)
+			await vi.advanceTimersByTimeAsync(2_000)
+
+			setNear(true)
+			await settleLogRequests()
+
+			expect(calls).toHaveLength(1)
+
+			await vi.advanceTimersByTimeAsync(3_000)
+			await settleLogRequests()
+
+			expect(calls).toHaveLength(2)
+			expect(calls[1]?.query.limit).toBe("500")
 		})
 
 		it("keeps the reader's row in place when lines leave the top, oldest first", async ({
 			expect,
 		}) => {
 			mockEndpoint("GET", LINES_URL, (call) =>
-				call.query.from === WINDOW.to
+				call.query.limit === "500"
 					? logsResult([])
 					: logsResult(
 							logsBefore(new Date("2026-01-01T11:55:07.600Z"), 30).reverse(),
@@ -1114,6 +1189,12 @@ describe("<DataView>", { concurrent: false }, () => {
 		})
 	})
 })
+
+function setNear(near: boolean) {
+	if (visibility.near) {
+		visibility.near.value = near
+	}
+}
 
 function logConfig(overrides: Partial<LogConfig> = {}): LogConfig {
 	return {

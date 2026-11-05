@@ -15,6 +15,13 @@ export interface LogSummary {
 	labels: KeyValue[]
 }
 
+// the logs one query loaded, and whether it has logs left on either side
+export interface QueryLogs {
+	logs: Log[]
+	hasMore: boolean
+	hasPrevious?: boolean
+}
+
 export interface TextPart {
 	text: string
 	match: boolean
@@ -96,38 +103,9 @@ export function highlightParts(text: string, search: string): TextPart[] {
 // has reached. A query with logs left before its loaded ones bounds the
 // top of the merge the same way. A log two queries both matched shows
 // once.
-export function mergeQueryLogs(
-	queries: { logs: Log[]; hasMore: boolean; hasPrevious?: boolean }[],
-	order: LogOrder,
-): Log[] {
-	// past compares two times by reading order. It is true when a comes
-	// after b.
-	const past = (a: bigint, b: bigint) =>
-		order === LogOrder.Asc ? a > b : a < b
-	let frontier: bigint | null = null
-	let top: bigint | null = null
-
-	for (const query of queries) {
-		const last = query.logs.at(-1)
-		const first = query.logs[0]
-
-		if (query.hasMore && last) {
-			const nanos = timeNanos(last.time)
-
-			if (frontier === null || past(frontier, nanos)) {
-				frontier = nanos
-			}
-		}
-
-		if (query.hasPrevious && first) {
-			const nanos = timeNanos(first.time)
-
-			if (top === null || past(nanos, top)) {
-				top = nanos
-			}
-		}
-	}
-
+export function mergeQueryLogs(queries: QueryLogs[], order: LogOrder): Log[] {
+	const past = pastIn(order)
+	const { frontier, top } = mergeBounds(queries, order)
 	const seen = new Set<string>()
 	const merged: { log: Log; nanos: bigint }[] = []
 
@@ -154,6 +132,48 @@ export function mergeQueryLogs(
 	)
 
 	return merged.map((m) => m.log)
+}
+
+// mergeBounds finds where the merge of the queries' logs stops. The
+// frontier is the nearest point a query with logs left past its loaded
+// ones has reached. The top is the same point for logs left before the
+// loaded ones. Either is null when no query bounds that side.
+export function mergeBounds(
+	queries: QueryLogs[],
+	order: LogOrder,
+): { frontier: bigint | null; top: bigint | null } {
+	const past = pastIn(order)
+	let frontier: bigint | null = null
+	let top: bigint | null = null
+
+	for (const query of queries) {
+		const last = query.logs.at(-1)
+		const first = query.logs[0]
+
+		if (query.hasMore && last) {
+			const nanos = timeNanos(last.time)
+
+			if (frontier === null || past(frontier, nanos)) {
+				frontier = nanos
+			}
+		}
+
+		if (query.hasPrevious && first) {
+			const nanos = timeNanos(first.time)
+
+			if (top === null || past(nanos, top)) {
+				top = nanos
+			}
+		}
+	}
+
+	return { frontier: frontier, top: top }
+}
+
+// pastIn compares two times by reading order. It is true when a comes
+// after b.
+export function pastIn(order: LogOrder) {
+	return (a: bigint, b: bigint) => (order === LogOrder.Asc ? a > b : a < b)
 }
 
 // timeNanos reads an RFC 3339 time as nanoseconds since the epoch. A Date

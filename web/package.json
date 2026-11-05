@@ -50,7 +50,7 @@
 		"@internationalized/date": "^3.12.4",
 		"@nuxt/icon": "^2.5.1",
 		"@nuxtjs/i18n": "^10.6.0",
-		"@oxynote/lezer-logql": "file:../../lezer-logql/dist",
+		"@oxynote/lezer-logql": "^0.4.2-oxynote.1",
 		"@pinia/colada": "^1.4.4",
 		"@pinia/colada-nuxt": "^1.1.0",
 		"@pinia/colada-plugin-auto-refetch": "^0.2.0",

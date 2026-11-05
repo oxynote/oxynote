@@ -37,9 +37,13 @@ const LOAD_MORE_ROWS = 20
 const MAX_LOADED_LOGS = 5000
 // how many logs one request reads for each query
 const PAGE_LOGS = 100
-// the height of a closed row. The scroller uses it for every row until it
-// has measured the row.
-const ROW_HEIGHT_PX = 32
+// the height of a closed row, which is h-8 and its bottom border. The
+// scroller uses it for every row until it has measured the row. So a
+// wrong value moves the rows once they are measured.
+const ROW_HEIGHT_PX = 33
+// how far past the viewport a block still counts as near, in screens.
+// A block further away does not refresh.
+const NEAR_VIEWPORT_MARGIN = "100% 0%"
 
 const props = defineProps<{
 	config: LogConfig
@@ -59,6 +63,7 @@ const { isEditable } = useEditorMeta()
 const blockVariables = useBlockVariables()
 const { useLogs, useLogVolume } = useLogDataSourceAPI()
 
+const root = useTemplateRef<HTMLDivElement>("root")
 const scroller = useTemplateRef<
 	ComponentPublicInstance & DynamicScrollerExposed<Log>
 >("scroller")
@@ -74,6 +79,8 @@ const lastVisibleRow = ref(-1)
 const loadingPrevious = ref(false)
 // set when a refresh had to wait, either for the reader or for a page
 const missedRefresh = ref(false)
+// set when a refresh came due while the block was away from the viewport
+const refreshWhenNear = ref(false)
 const oldestFirst = computed(() => props.config.order === LogOrder.Asc)
 const isEditingDisabled = computed(
 	() => !isEditable.value || editorStore.reviewableDiffActive,
@@ -197,6 +204,15 @@ const headerStyle = computed(() =>
 		: undefined,
 )
 
+// a block more than a screen away from the viewport keeps to its timer,
+// but it skips the reads. Once it comes within a screen, it reads the
+// refresh it skipped. So its rows are current before the reader scrolls
+// to it. Until the first check, a block counts as near.
+const near = useElementVisibility(root, {
+	rootMargin: NEAR_VIEWPORT_MARGIN,
+	initialValue: true,
+})
+
 useIntervalFn(() => void refreshData(), refreshIntervalMs, {
 	immediate: true,
 	immediateCallback: false,
@@ -204,6 +220,12 @@ useIntervalFn(() => void refreshData(), refreshIntervalMs, {
 
 onMounted(() => {
 	void refreshData()
+})
+
+watch(near, (isNear) => {
+	if (isNear && refreshWhenNear.value) {
+		void readNewData()
+	}
 })
 
 // a page loads once the scroller shows a row near either end of the loaded
@@ -409,6 +431,19 @@ async function refreshData() {
 		refreshIntervalMs.value,
 	)
 
+	if (!near.value) {
+		refreshWhenNear.value = true
+
+		return
+	}
+
+	await readNewData()
+}
+
+// readNewData reads the newest logs and the volume
+async function readNewData() {
+	refreshWhenNear.value = false
+
 	// the first read starts by itself once the query can run
 	if (!fetchLogs.data.value) {
 		return
@@ -421,7 +456,7 @@ async function refreshData() {
 }
 </script>
 <template>
-	<div class="@container flex size-full min-w-0 flex-col">
+	<div ref="root" class="@container flex size-full min-w-0 flex-col">
 		<div :class="cn('shrink-0', hasControls && 'border-b pb-1')">
 			<!-- when compact, the icon buttons overlap their neighbours by part of
 			their blank edge -->

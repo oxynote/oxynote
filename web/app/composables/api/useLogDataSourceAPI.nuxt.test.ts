@@ -309,6 +309,45 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 			})
 		})
 
+		it("asks only the queries that have not loaded a page past the merged lines", async ({
+			expect,
+		}) => {
+			const pages: Record<string, LogsResult> = {
+				dense: {
+					...makeLogsResult("a1", "ns:a"),
+					lines: [
+						makeLog("a1", "2026-01-01T12:00:00Z"),
+						makeLog("a2", "2026-01-01T11:59:00Z"),
+					],
+				},
+				sparse: {
+					...makeLogsResult("b1", "ns:b"),
+					lines: [
+						makeLog("b1", "2026-01-01T10:00:00Z"),
+						makeLog("b2", "2026-01-01T09:00:00Z"),
+					],
+				},
+			}
+			const calls = mockEndpoint("GET", LINES_URL, (call) =>
+				call.query.cursor ? NO_LINES : pages[String(call.query.q)],
+			)
+			const api = makeLogDataSourceAPI()
+			const logs = runInApp(() =>
+				api.useLogs(
+					"ds1",
+					{ queries: ["dense", "sparse"], ...TIME_RANGE, limit: 2 },
+					true,
+				),
+			)
+			await logs.refresh()
+
+			await logs.loadNextPage()
+
+			expect(
+				calls.filter((call) => call.query.cursor).map((call) => call.query.q),
+			).toEqual(["dense"])
+		})
+
 		it("reports no further page once every query ran out of older lines", async ({
 			expect,
 		}) => {
@@ -438,14 +477,33 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 			expect(calls[2]?.query).toEqual({ q: "{env}", ...moved })
 		})
 
-		it("puts the lines that arrived since before the first page and moves the window, newest first", async ({
+		it("puts the newest lines, late ones too, on a page above the loaded ones and moves the window, newest first", async ({
 			expect,
 		}) => {
-			const first = makeLogsResult("l1", "ns:2")
-			const second = makeLogsResult("l2", null)
-			const added = makeLogsResult("n1", null)
+			const first = {
+				...makeLogsResult("l2", "ns:2"),
+				lines: [
+					makeLog("l2", "2026-01-01T23:59:50Z"),
+					makeLog("l1", "2026-01-01T23:59:00Z"),
+				],
+			}
+			const second = {
+				...makeLogsResult("l0", null),
+				lines: [makeLog("l0", "2026-01-01T12:00:00Z")],
+			}
+			// the read goes back past the end of the last one, and finds a line
+			// that reached the source late
+			const added = {
+				...makeLogsResult("n1", "ns:9"),
+				lines: [
+					makeLog("n1", "2026-01-02T00:04:00Z"),
+					makeLog("l2", "2026-01-01T23:59:50Z"),
+					makeLog("late", "2026-01-01T23:59:40Z"),
+					makeLog("l1", "2026-01-01T23:59:00Z"),
+				],
+			}
 			const calls = mockEndpoint("GET", LINES_URL, (call) => {
-				if (call.query.from === TO) {
+				if (call.query.limit === "500") {
 					return added
 				}
 
@@ -468,47 +526,117 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 			const moved = { from: "2026-01-01T00:05:00.000Z", to: later }
 			expect(logs.data.value).toEqual({
 				pages: [
-					{
-						results: [{ ...first, lines: [...added.lines, ...first.lines] }],
-						window: moved,
-					},
-					{ results: [second], window: moved },
+					{ results: [added], window: moved },
+					{ results: [{ ...second, previousCursor: "ns:9" }], window: moved },
 				],
 				pageParams: [null, { cursors: ["ns:2"], window: moved }],
 			})
 			expect(calls).toHaveLength(3)
-			expect(calls[2]?.query).toEqual({ q: "{env}", from: TO, to: later })
+			expect(calls[2]?.query).toEqual({
+				q: "{env}",
+				...moved,
+				limit: "500",
+				order: "desc",
+			})
 		})
 
-		it("reloads from the first page when more lines arrived than a few pages hold", async ({
+		it("replaces the list with the newest lines when more arrived than one read holds", async ({
 			expect,
 		}) => {
 			const first = makeLogsResult("l1", "ns:2")
-			let newer = 0
-			const calls = mockEndpoint("GET", LINES_URL, (call) => {
-				if (call.query.from !== TO) {
-					return first
-				}
-
-				newer++
-
-				return makeLogsResult(`n${String(newer)}`, "ns:9")
-			})
+			const burst = {
+				...makeLogsResult("n1", "ns:9"),
+				lines: [makeLog("n1", "2026-01-02T00:04:00Z")],
+			}
+			const calls = mockEndpoint("GET", LINES_URL, (call) =>
+				call.query.limit === "500" ? burst : first,
+			)
 			const params = ref<LogsParams>({ queries: ["{env}"], ...TIME_RANGE })
 			const api = makeLogDataSourceAPI()
 			const logs = runInApp(() => api.useLogs("ds1", params, true))
 			await logs.refresh()
 			await logs.loadNextPage()
-			params.value = {
-				...params.value,
+			const moved = {
 				from: "2026-01-01T00:05:00.000Z",
 				to: "2026-01-02T00:05:00.000Z",
 			}
+			params.value = { ...params.value, ...moved }
 
 			await logs.loadNewer()
 
-			expect(logs.data.value?.pages).toHaveLength(1)
-			expect(calls.filter((call) => call.query.from === TO)).toHaveLength(5)
+			expect(logs.data.value).toEqual({
+				pages: [{ results: [burst], window: moved }],
+				pageParams: [null],
+			})
+			expect(calls.filter((call) => call.query.limit === "500")).toHaveLength(1)
+		})
+
+		it("lets a trim drop the pages under a refreshed one and reads them back after it", async ({
+			expect,
+		}) => {
+			const first = {
+				...makeLogsResult("l1", null),
+				lines: [makeLog("l1", "2026-01-01T23:59:00Z")],
+			}
+			const added = {
+				...makeLogsResult("n2", "ns:9"),
+				lines: [
+					makeLog("n2", "2026-01-02T00:04:00Z"),
+					makeLog("n1", "2026-01-01T23:59:20Z"),
+				],
+			}
+			const calls = mockEndpoint("GET", LINES_URL, (call) =>
+				call.query.limit === "500" ? added : first,
+			)
+			const params = ref<LogsParams>({ queries: ["{env}"], ...TIME_RANGE })
+			const api = makeLogDataSourceAPI()
+			const logs = runInApp(() => api.useLogs("ds1", params, true))
+			await logs.refresh()
+			params.value = { ...params.value, to: "2026-01-02T00:05:00.000Z" }
+			await logs.loadNewer()
+
+			logs.trimEnd(1)
+
+			expect(logs.data.value?.pages.map((page) => page?.results)).toEqual([
+				[added],
+			])
+			expect(logs.hasNextPage.value).toBe(true)
+
+			await logs.loadNextPage()
+
+			expect(calls.at(-1)?.query.cursor).toBe("ns:9")
+		})
+
+		it("drops a refresh whose query changed while it was waiting", async ({
+			expect,
+		}) => {
+			const held = holdResponse()
+			mockEndpoint("GET", LINES_URL, (call) =>
+				call.query.limit === "500"
+					? held.respond()
+					: makeLogsResult(`${String(call.query.q)}-line`, null),
+			)
+			const params = ref<LogsParams>({ queries: ["old"], ...TIME_RANGE })
+			const api = makeLogDataSourceAPI()
+			const logs = runInApp(() => api.useLogs("ds1", params, true))
+			await logs.refresh()
+			params.value = { ...params.value, to: "2026-01-02T00:05:00.000Z" }
+			const refreshing = logs.loadNewer()
+			await held.reached
+
+			params.value = { ...params.value, queries: ["new"] }
+			await flushPromises()
+			await logs.refresh()
+			held.release(makeLogsResult("old-newer", null))
+			await refreshing
+
+			expect(
+				logs.data.value?.pages.flatMap((page) =>
+					(page?.results ?? []).flatMap(
+						(result) => result?.lines.map((line) => line.id) ?? [],
+					),
+				),
+			).toEqual(["new-line"])
 		})
 
 		it.for([
@@ -692,13 +820,25 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 			expect(logs.hasNextPage.value).toBe(true)
 		})
 
-		it("adds the lines that arrived since after a query read to its end, oldest first", async ({
+		it("puts the newest lines on a page after the loaded ones, oldest first", async ({
 			expect,
 		}) => {
-			const first = makeLogsResult("l1", null)
-			const added = makeLogsResult("n1", "ns:7")
+			const first = {
+				...makeLogsResult("l1", null),
+				lines: [
+					makeLog("l0", "2026-01-01T12:00:00Z"),
+					makeLog("l1", "2026-01-01T23:59:50Z"),
+				],
+			}
+			const added = {
+				...makeLogsResult("n1", "ns:7", "ns:back"),
+				lines: [
+					makeLog("l1", "2026-01-01T23:59:50Z"),
+					makeLog("n1", "2026-01-02T00:04:00Z"),
+				],
+			}
 			const calls = mockEndpoint("GET", LINES_URL, (call) =>
-				call.query.from === TO ? added : first,
+				call.query.limit === "500" ? added : first,
 			)
 			const params = ref<LogsParams>({
 				queries: ["{env}"],
@@ -713,26 +853,66 @@ describe("useLogDataSourceAPI", { concurrent: false }, () => {
 
 			await logs.loadNewer()
 
+			const moved = { from: FROM, to: later }
 			expect(logs.data.value?.pages).toEqual([
 				{
 					results: [
 						{
 							...first,
-							lines: [...first.lines, ...added.lines],
-							nextCursor: "ns:7",
+							lines: [makeLog("l0", "2026-01-01T12:00:00Z")],
+							nextCursor: "ns:back",
 						},
 					],
-					window: { from: FROM, to: later },
+					window: moved,
 				},
+				{ results: [added], window: moved },
 			])
 			expect(logs.hasNextPage.value).toBe(true)
 			expect(calls).toHaveLength(2)
 			expect(calls[1]?.query).toEqual({
 				q: "{env}",
-				from: TO,
+				from: "2026-01-01T23:59:30.000Z",
 				to: later,
+				limit: "500",
 				order: "asc",
 			})
+		})
+
+		it("joins the newest lines to the last result when their read has no cursor back, oldest first", async ({
+			expect,
+		}) => {
+			const first = {
+				...makeLogsResult("l1", null),
+				lines: [makeLog("l1", "2026-01-01T23:59:00Z")],
+			}
+			const added = {
+				...makeLogsResult("n1", "ns:7"),
+				lines: [makeLog("n1", "2026-01-02T00:04:00Z")],
+			}
+			mockEndpoint("GET", LINES_URL, (call) =>
+				call.query.limit === "500" ? added : first,
+			)
+			const params = ref<LogsParams>({
+				queries: ["{env}"],
+				...TIME_RANGE,
+				order: LogOrder.Asc,
+			})
+			const api = makeLogDataSourceAPI()
+			const logs = runInApp(() => api.useLogs("ds1", params, true))
+			await logs.refresh()
+			params.value = { ...params.value, to: "2026-01-02T00:05:00.000Z" }
+
+			await logs.loadNewer()
+
+			expect(logs.data.value?.pages.map((page) => page?.results)).toEqual([
+				[
+					{
+						...first,
+						lines: [...first.lines, ...added.lines],
+						nextCursor: "ns:7",
+					},
+				],
+			])
 		})
 
 		it("only widens the window of an oldest-first query with pages left", async ({
