@@ -156,13 +156,16 @@ function openModal() {
 			<DataView
 				:config="config"
 				:uid="props.node.attrs.uid"
+				:hide-search="editorStore.reviewableDiffActive"
 				class="overflow-hidden rounded-md"
 				@configure="openModal"
 			>
-				<template #actions>
+				<template #marker>
 					<DiffChangeMarker :node="props.node" class="mx-0.5">
 						<LogDiffDetails :node="props.node" />
 					</DiffChangeMarker>
+				</template>
+				<template #actions>
 					<ShadcnUiButton
 						variant="ghost-plain"
 						size="icon-sm"

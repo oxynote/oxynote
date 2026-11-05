@@ -125,6 +125,16 @@ describe("<BarChart>", { concurrent: false }, () => {
 		expect(option.title.text).toBe("Requests")
 	})
 
+	it("moves the title and the plot down by the offset it was given", async ({
+		expect,
+	}) => {
+		const moved = await mountBar({ title: "Requests", titleOffsetTop: 6.5 })
+		const kept = await mountBar({ title: "Requests" })
+
+		expect(chartOption(moved).title.top).toBe(chartOption(kept).title.top + 6.5)
+		expect(chartOption(moved).grid.top).toBe(chartOption(kept).grid.top + 6.5)
+	})
+
 	it("leaves room above the plot for a title", async ({ expect }) => {
 		const withTitle = await mountBar({ title: "Requests" })
 		const withoutTitle = await mountBar()

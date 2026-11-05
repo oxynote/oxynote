@@ -9,6 +9,8 @@ import { TimeRangePreset } from "~/utils/time-range"
 interface QueryEntry {
 	query: LogQuery
 	diffStatus: DiffStatus | null
+	// the query's old version, shown under it, when its text changed
+	oldQuery: LogQuery | null
 	key: string
 }
 
@@ -36,9 +38,9 @@ const areQueriesModified = computed(
 		jsonStableStringify(props.oldConfig.queries) !==
 			jsonStableStringify(config.value.queries),
 )
-// a changed query shows as its new version followed by its old one. A
-// diff is read-only, so an entry's index is its query's index wherever an
-// edit uses it.
+// a changed query shows as one entry, its new version above its old one.
+// A query only one side has shows as added or removed. So an entry's index
+// is its query's index wherever an edit uses it.
 const entries = computed<QueryEntry[]>(() => {
 	const newQueries = config.value.queries ?? []
 
@@ -46,36 +48,44 @@ const entries = computed<QueryEntry[]>(() => {
 		return newQueries.map((query, i) => ({
 			query: query,
 			diffStatus: null,
+			oldQuery: null,
 			key: `query-${i}`,
 		}))
 	}
 
 	const oldQueries = props.oldConfig?.queries ?? []
-	const res: QueryEntry[] = []
 
-	for (let i = 0; i < Math.max(newQueries.length, oldQueries.length); i++) {
+	return Array.from(
+		{ length: Math.max(newQueries.length, oldQueries.length) },
+		(_, i) => i,
+	).flatMap((i): QueryEntry[] => {
 		const newQuery = newQueries[i]
 		const oldQuery = oldQueries[i]
-		const changed = newQuery?.query !== oldQuery?.query
 
-		if (newQuery) {
-			res.push({
+		if (!newQuery) {
+			return oldQuery
+				? [
+						{
+							query: oldQuery,
+							diffStatus: DiffStatus.Removed,
+							oldQuery: null,
+							key: `old-${i}`,
+						},
+					]
+				: []
+		}
+
+		const changed = newQuery.query !== oldQuery?.query
+
+		return [
+			{
 				query: newQuery,
 				diffStatus: changed ? DiffStatus.Added : null,
+				oldQuery: changed && oldQuery ? oldQuery : null,
 				key: `new-${i}`,
-			})
-		}
-
-		if (oldQuery && changed) {
-			res.push({
-				query: oldQuery,
-				diffStatus: DiffStatus.Removed,
-				key: `old-${i}`,
-			})
-		}
-	}
-
-	return res
+			},
+		]
+	})
 })
 const showsQueryNames = computed(() => entries.value.length > 1)
 
@@ -157,6 +167,13 @@ function deleteQuery(index: number) {
 						:time-range="COMPLETION_TIME_RANGE"
 						:diff-status="entry.diffStatus"
 						@update:model-value="(v: string) => updateQuery(index, v)"
+					/>
+					<QueryEditor
+						v-if="entry.oldQuery"
+						:model-value="entry.oldQuery.query"
+						:data-source-id="config.dataSourceId"
+						:time-range="COMPLETION_TIME_RANGE"
+						:diff-status="DiffStatus.Removed"
 					/>
 				</ConfigField>
 			</div>

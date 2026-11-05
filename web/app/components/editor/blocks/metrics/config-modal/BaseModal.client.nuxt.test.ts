@@ -296,6 +296,39 @@ describe("<MetricConfigBaseModal>", { concurrent: false }, () => {
 		expect(dialogText()).toContain(t("general.time-range-options.last_1_hour"))
 	})
 
+	it.for([
+		{
+			name: "moves the chart's title down while it shows an old time range",
+			input: TimeRangePreset.Last1Hour,
+			expected: 6.5,
+		},
+		{
+			name: "keeps the chart's title in place while the time range is unchanged",
+			input: TimeRangePreset.Last24Hours,
+			expected: 0,
+		},
+	])("$name", async ({ input, expected }, { expect }) => {
+		activateBlock({
+			config: {
+				...defaultMetricConfig(),
+				timeRange: TimeRangePreset.Last24Hours,
+			},
+			diffStatus: DiffStatus.Modified,
+			oldConfig: { ...defaultMetricConfig(), timeRange: input },
+		})
+
+		const wrapper = await mountModal()
+
+		expect(
+			wrapper.findComponent(VisualizationContainer).props("titleOffsetTop"),
+		).toBe(expected)
+		expect(
+			teleportedButton(t("general.time-range-options.last_24_hours"))
+				.closest(".absolute")
+				?.classList.contains("md:h-11"),
+		).toBe(expected > 0)
+	})
+
 	it("shows the refresh interval a diff replaced beside the new one", async ({
 		expect,
 	}) => {

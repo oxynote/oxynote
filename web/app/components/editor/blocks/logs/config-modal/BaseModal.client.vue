@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import { cn } from "#layers/ui/app/lib/utils"
 import type { LogConfig } from "../utils"
 import BottomConfig from "./BottomConfig.vue"
 import ConfigSidebar from "./ConfigSidebar.vue"
@@ -12,6 +13,7 @@ const emit = defineEmits<{
 }>()
 
 const editorStore = useEditorStore()
+const isMinWidth768px = useMediaQuery("(min-width: 768px)")
 const isMinWidth1024px = useMediaQuery("(min-width: 1024px)")
 const { isEditable } = useEditorMeta()
 
@@ -101,6 +103,25 @@ const isRefreshIntervalModified = computed(() => {
 	)
 })
 
+// the time controls sit side by side on a wide screen and stack on a
+// narrow one. A changed control also shows its old value under its new
+// one. The view's header grows to hold the rows, and the controls stay
+// centred on it.
+const timesModified = computed(
+	() => isTimeRangeModified.value || isRefreshIntervalModified.value,
+)
+const timeRowsClasses = computed(() => {
+	const rows = (isMinWidth768px.value ? 1 : 2) * (timesModified.value ? 2 : 1)
+
+	if (rows === 4) {
+		return { header: "h-22", options: "h-21" }
+	}
+
+	return rows === 2
+		? { header: "h-12", options: "h-11" }
+		: { header: undefined, options: undefined }
+})
+
 function updateOpenStatus(open: boolean) {
 	if (!open) {
 		editorStore.activateLogBlockConfig(null)
@@ -169,7 +190,12 @@ function openSettings() {
 						<div class="relative h-82.5 min-w-0 shrink-0 border-b">
 							<div
 								ref="time-options"
-								class="absolute top-1.5 right-1.5 z-1 flex flex-col items-end gap-0.5 pr-1 pl-2 md:top-1 md:h-7 md:flex-row md:items-center md:gap-2 md:bg-muted-50-real"
+								:class="
+									cn(
+										'absolute top-1 right-1.5 z-1 flex h-7 flex-col items-end justify-center gap-0.5 pr-1 pl-2 md:flex-row md:items-center md:gap-2 md:bg-muted-50-real',
+										timeRowsClasses.options,
+									)
+								"
 							>
 								<TimeRangeSelect
 									v-model="config.timeRange"
@@ -193,6 +219,8 @@ function openSettings() {
 								:uid="editorStore.activeLogBlockConfig!"
 								hide-empty-action-button
 								compact
+								:hide-search="editorStore.reviewableDiffActive"
+								:header-class="timeRowsClasses.header"
 								:header-right-padding="timeOptionsWidth"
 							/>
 						</div>

@@ -326,6 +326,69 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 		).toEqual(["deploy finished · env=prod"])
 	})
 
+	it.for([
+		{
+			name: "leaves out the search while a diff is shown",
+			input: true,
+			expected: false,
+		},
+		{ name: "shows the search outside a diff", input: false, expected: true },
+	])("$name", async ({ input, expected }, { expect }) => {
+		mockEndpoint("GET", `/api/data-sources/${DATA_SOURCE_ID}/logs`, () =>
+			logsResult([makeLog("deploy finished", "11:57:00Z")]),
+		)
+		useEditorStore().setReviewableDiffActive(input)
+
+		const wrapper = await mountBlock({ attrs: queryingAttrs() })
+		await settleLogRequests()
+
+		expect(
+			wrapper
+				.findAll("button")
+				.some((b) => b.text().includes(t("editor.logs.view.search-label"))),
+		).toBe(expected)
+	})
+
+	it("puts the change marker before the volume toggle and the settings after it", async ({
+		expect,
+	}) => {
+		mockEndpoint("GET", `/api/data-sources/${DATA_SOURCE_ID}/logs`, () =>
+			logsResult([makeLog("deploy finished", "11:57:00Z")]),
+		)
+		useEditorStore().setReviewableDiffActive(true)
+
+		const wrapper = await mountBlock({
+			attrs: {
+				...queryingAttrs(),
+				diffStatus: DiffStatus.Modified,
+				oldNode: { attrs: { ...queryingAttrs(), uid: UID, title: "Before" } },
+			},
+		})
+		await settleLogRequests()
+
+		const header = wrapper.get(".text-2base").element.parentElement
+		const marker = t("editor.diff-change-marker.label", {
+			removed: 1,
+			added: 1,
+		})
+		const settings = t("editor.logs.config.modal-trigger-button-readonly")
+		expect(
+			[...(header?.children ?? [])]
+				.map((el) => {
+					if (el.textContent.includes(marker)) {
+						return "marker"
+					}
+
+					if (el.hasAttribute("aria-pressed")) {
+						return "volume"
+					}
+
+					return el.textContent.includes(settings) ? "settings" : null
+				})
+				.filter(Boolean),
+		).toEqual(["marker", "volume", "settings"])
+	})
+
 	it("opens the config modal from the view's empty state", async ({
 		expect,
 	}) => {

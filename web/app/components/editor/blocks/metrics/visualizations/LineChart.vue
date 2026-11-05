@@ -57,6 +57,7 @@ type ECOption = ComposeOption<
 const props = defineProps<{
 	title?: string
 	titleRightPadding?: number
+	titleOffsetTop?: number
 	seriesData: MultipleLineChartData
 	unit: {
 		type?: VisualizationUnit | null
@@ -114,7 +115,7 @@ const option = computed<ECOption>(() => {
 		title: {
 			show: !!props.title,
 			text: props.title,
-			top: 11,
+			top: 11 + (props.titleOffsetTop ?? 0),
 			left: 10,
 			padding: 0,
 			textStyle: {
@@ -187,7 +188,7 @@ const option = computed<ECOption>(() => {
 			left: 10,
 			right: 12,
 			bottom: props.showLegend ? 30 : 10,
-			top: props.title ? 40 : 10,
+			top: (props.title ? 40 : 10) + (props.titleOffsetTop ?? 0),
 			outerBoundsMode: "same",
 			outerBoundsContain: "axisLabel",
 		},

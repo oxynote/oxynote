@@ -33,6 +33,7 @@ const props = defineProps<{
 	config: MetricConfig
 	uid: string
 	titleRightPadding?: number
+	titleOffsetTop?: number
 	hideEmptyActionButton?: boolean
 	simplifiedEmpty?: boolean
 	disableRefresh?: boolean
@@ -546,6 +547,7 @@ function openModal() {
 				show-legend
 				:thresholds="processedThresholds"
 				:title-right-padding="props.titleRightPadding"
+				:title-offset-top="props.titleOffsetTop"
 				:unit="debouncedConfig.unit"
 				:decimals="debouncedConfig.decimals ?? null"
 				:axis-bounds="debouncedConfig.axisBounds"
@@ -558,6 +560,7 @@ function openModal() {
 				show-legend
 				:thresholds="processedThresholds"
 				:title-right-padding="props.titleRightPadding"
+				:title-offset-top="props.titleOffsetTop"
 				:unit="debouncedConfig.unit"
 				:decimals="debouncedConfig.decimals ?? null"
 				:axis-bounds="debouncedConfig.axisBounds"
@@ -572,6 +575,7 @@ function openModal() {
 				:base-threshold-color="baseThresholdColor"
 				:thresholds="processedThresholds"
 				:title-right-padding="props.titleRightPadding"
+				:title-offset-top="props.titleOffsetTop"
 				:unit="debouncedConfig.unit"
 				:decimals="debouncedConfig.decimals ?? null"
 				:axis-bounds="debouncedConfig.axisBounds"

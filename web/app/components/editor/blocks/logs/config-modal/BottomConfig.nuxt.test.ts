@@ -209,7 +209,7 @@ describe("<BottomConfig>", { concurrent: false }, () => {
 	})
 
 	describe("in a diff", () => {
-		it("shows the query a diff replaced after the new one", async ({
+		it("shows the query a diff replaced under the new one, as one query", async ({
 			expect,
 		}) => {
 			const wrapper = await mountBottom({
@@ -222,8 +222,8 @@ describe("<BottomConfig>", { concurrent: false }, () => {
 				{ query: "after", diffStatus: DiffStatus.Added },
 				{ query: "before", diffStatus: DiffStatus.Removed },
 			])
-			// both sides of the one query count, so each is named
-			expect(wrapper.text()).toContain("Errors")
+			// the two sides are one query, and a single query is not named
+			expect(wrapper.text()).not.toContain("Errors")
 		})
 
 		it("marks a query the diff added", async ({ expect }) => {

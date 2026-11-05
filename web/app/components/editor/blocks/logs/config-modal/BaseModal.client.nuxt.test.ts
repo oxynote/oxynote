@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import BaseModal from "./BaseModal.client.vue"
 import BottomConfig from "./BottomConfig.vue"
 import ConfigSidebar from "./ConfigSidebar.vue"
+import DataView from "../view/DataView.vue"
 import { defaultLogConfig, LogTimestampFormat, type LogConfig } from "../utils"
 import {
 	clearQueryCache,
@@ -366,6 +367,66 @@ describe("<LogConfigBaseModal>", { concurrent: false }, () => {
 				t("general.refresh-interval-options-short.30s"),
 			).classList.contains("pointer-events-none"),
 		).toBe(expected)
+	})
+
+	it.for([
+		{
+			name: "one row on a wide screen with no changed time",
+			input: { wide: true, changed: false },
+			expected: { header: undefined, options: "h-7" },
+		},
+		{
+			name: "two rows on a wide screen with a changed time",
+			input: { wide: true, changed: true },
+			expected: { header: "h-12", options: "h-11" },
+		},
+		{
+			name: "two rows on a narrow screen with no changed time",
+			input: { wide: false, changed: false },
+			expected: { header: "h-12", options: "h-11" },
+		},
+		{
+			name: "four rows on a narrow screen with a changed time",
+			input: { wide: false, changed: true },
+			expected: { header: "h-22", options: "h-21" },
+		},
+	])(
+		"sizes the preview's header for $name",
+		async ({ input, expected }, { expect }) => {
+			stubViewportMatches(input.wide)
+			activateBlock({
+				config: configWith({ timeRange: TimeRangePreset.Last24Hours }),
+				diffStatus: DiffStatus.Modified,
+				oldConfig: configWith({
+					timeRange: input.changed
+						? TimeRangePreset.Last1Hour
+						: TimeRangePreset.Last24Hours,
+				}),
+			})
+
+			const wrapper = await mountModal()
+
+			expect(wrapper.findComponent(DataView).props("headerClass")).toBe(
+				expected.header,
+			)
+			expect(
+				teleportedButton(t("general.time-range-options.last_24_hours"))
+					.closest(".absolute")
+					?.classList.contains(expected.options),
+			).toBe(true)
+		},
+	)
+
+	it.for([
+		{ name: "hides the preview's search while a diff is shown", input: true },
+		{ name: "keeps the preview's search outside a diff", input: false },
+	])("$name", async ({ input }, { expect }) => {
+		useEditorStore().setReviewableDiffActive(input)
+		activateBlock()
+
+		const wrapper = await mountModal()
+
+		expect(wrapper.findComponent(DataView).props("hideSearch")).toBe(input)
 	})
 
 	it("shows the old value only of the setting a modified diff changed", async ({

@@ -59,6 +59,8 @@ const props = defineProps<{
 	uid: string
 	disableRefresh?: boolean
 	hideEmptyActionButton?: boolean
+	hideSearch?: boolean
+	headerClass?: string
 	headerRightPadding?: number
 	compact?: boolean
 }>()
@@ -471,6 +473,7 @@ async function readNewData() {
 				:class="
 					cn(
 						'flex h-8 shrink-0 items-center pt-1 pr-1.5 pl-2.5',
+						props.headerClass,
 						!props.compact && 'gap-1',
 					)
 				"
@@ -480,10 +483,11 @@ async function readNewData() {
 					{{ props.config.title }}
 				</div>
 				<SearchControl
-					v-if="hasControls"
+					v-if="hasControls && !props.hideSearch"
 					v-model="searchInput"
 					:compact="props.compact"
 				/>
+				<slot name="marker" />
 				<ShadcnUiButton
 					v-if="hasControls"
 					variant="ghost-plain"

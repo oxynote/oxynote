@@ -31,7 +31,7 @@ export interface ChartSeries {
 
 // the slice of the echarts option the suites assert on
 export interface ChartOption {
-	title: { show: boolean; text?: string }
+	title: { show: boolean; text?: string; top: number }
 	legend: { show?: boolean; data?: string[] }
 	tooltip: {
 		confine?: boolean

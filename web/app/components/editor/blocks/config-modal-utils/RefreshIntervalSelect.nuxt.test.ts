@@ -97,6 +97,22 @@ describe("<RefreshIntervalSelect>", { concurrent: false }, () => {
 		},
 	)
 
+	it("keeps a disabled trigger fully opaque in both themes", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSelect({
+			modelValue: RefreshInterval.S30,
+			disabled: true,
+		})
+
+		expect(at(buttons(wrapper), 0).classes()).toEqual(
+			expect.arrayContaining([
+				"disabled:opacity-100",
+				"dark:disabled:opacity-100",
+			]),
+		)
+	})
+
 	it("opens no list from the keyboard while disabled", async ({ expect }) => {
 		const wrapper = await mountSelect({
 			modelValue: RefreshInterval.S30,

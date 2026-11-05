@@ -27,7 +27,7 @@ function label(value: RefreshIntervalSetting | null) {
 }
 </script>
 <template>
-	<div class="flex flex-col items-end gap-0.5 md:gap-1">
+	<div class="flex flex-col items-end gap-0.5">
 		<ShadcnUiSelect v-model="model" :disabled="props.disabled">
 			<ShadcnUiSelectTrigger
 				disable-default-styles
@@ -41,7 +41,7 @@ function label(value: RefreshIntervalSetting | null) {
 						cn(
 							'gap-1 bg-muted-50-real text-2sm text-foreground md:bg-none',
 							props.disabled &&
-								'pointer-events-none select-text disabled:opacity-100',
+								'pointer-events-none select-text disabled:opacity-100 dark:disabled:opacity-100',
 							isModified && 'bg-diff-field-added px-0.5',
 						)
 					"

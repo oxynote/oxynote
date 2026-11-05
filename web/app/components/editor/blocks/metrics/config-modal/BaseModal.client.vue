@@ -8,6 +8,10 @@ import BottomConfig from "./BottomConfig.vue"
 import ConfigSidebar from "./ConfigSidebar.vue"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 
+// how far the chart's title moves down while the overlay holds two rows,
+// in pixels. Its centre moves from 19.5 to 26 pixels, the overlay's centre.
+const TITLE_OFFSET_TOP = 6.5
+
 const emit = defineEmits<{
 	(e: "open-settings"): void
 }>()
@@ -82,6 +86,12 @@ const isRefreshIntervalModified = computed(() => {
 		oldConfig.value.refreshInterval !== config.value?.refreshInterval
 	)
 })
+// a changed time range or refresh interval shows its old value under the
+// new one. The two need a taller header, so the overlay grows, and the
+// chart's title moves down to stay centred on it.
+const timesModified = computed(
+	() => isTimeRangeModified.value || isRefreshIntervalModified.value,
+)
 const chartTopOptionElem = useTemplateRef<HTMLDivElement>("chart-top-options")
 const { width: chartTopOptionWidth } = useElementSize(chartTopOptionElem)
 const simulationVisible = ref(false)
@@ -159,6 +169,7 @@ function openSettings() {
 								:class="
 									cn(
 										'absolute top-1.5 right-1.5 z-1 flex flex-col items-end gap-0.5 pr-1 pl-2 md:top-1 md:h-7 md:flex-row md:items-center md:gap-2 md:bg-muted-50-real',
+										timesModified && 'md:h-11',
 									)
 								"
 							>
@@ -193,6 +204,7 @@ function openSettings() {
 							<VisualizationContainer
 								:config="config"
 								:title-right-padding="chartTopOptionWidth"
+								:title-offset-top="timesModified ? TITLE_OFFSET_TOP : 0"
 								hide-empty-action-button
 								simplified-empty
 								:uid="editorStore.activeMetricBlockConfig!"

@@ -146,6 +146,56 @@ describe("<DataView>", { concurrent: false }, () => {
 				wrapper.get("button[aria-pressed]").classes().includes("-mx-0.5"),
 			).toBe(false)
 		})
+
+		it("puts the host's marker before the volume toggle and its actions after it, without the search when asked", async ({
+			expect,
+		}) => {
+			mockEndpoint("GET", LINES_URL, () =>
+				logsResult([makeLog("a1", "11:57:00Z")]),
+			)
+			const wrapper = await mountView(logConfig(), {
+				props: { hideSearch: true },
+				slots: {
+					marker: () => h("span", { class: "host-marker" }),
+					actions: () => h("button", { class: "host-action" }),
+				},
+			})
+			await settleLogRequests()
+
+			const header = wrapper.get(".text-2base").element.parentElement
+			const order = [...(header?.children ?? [])].map((el) =>
+				el.classList.contains("host-marker")
+					? "marker"
+					: el.hasAttribute("aria-pressed")
+						? "volume"
+						: el.classList.contains("host-action")
+							? "actions"
+							: null,
+			)
+			expect(order.filter(Boolean)).toEqual(["marker", "volume", "actions"])
+			expect(
+				wrapper
+					.findAll("button")
+					.some((b) => b.text().includes(t("editor.logs.view.search-label"))),
+			).toBe(false)
+		})
+
+		it.for([
+			{ name: "the height it is given", input: "h-12", expected: "h-12" },
+			{ name: "its usual height otherwise", input: undefined, expected: "h-8" },
+		])("draws its header at $name", async ({ input, expected }, { expect }) => {
+			mockEndpoint("GET", LINES_URL, () =>
+				logsResult([makeLog("a1", "11:57:00Z")]),
+			)
+			const wrapper = await mountView(logConfig(), {
+				props: { headerClass: input },
+			})
+			await settleLogRequests()
+
+			const header = wrapper.get(".text-2base").element.parentElement
+			expect(header?.classList.contains(expected)).toBe(true)
+			expect(header?.classList.contains("h-8")).toBe(expected === "h-8")
+		})
 	})
 
 	describe("states", () => {
