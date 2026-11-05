@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -147,25 +146,6 @@ func HasActiveOrganization(userID, organizationID string) bool {
 	return userID != "" && organizationID != ""
 }
 
-// clientAddress returns the one client address sent to the Better Auth
-// server. Better Auth only trusts a single-value X-Forwarded-For unless it
-// is configured with trustedProxies, so a chain would land every client in
-// one shared bucket again. The address comes from chi's client IP
-// middleware (the last valid X-Forwarded-For entry); without the header,
-// the request came straight from the client, so its peer address is used.
-func clientAddress(r *http.Request) string {
-	if ip := middleware.GetClientIP(r.Context()); ip != "" {
-		return ip
-	}
-
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-
-	return host
-}
-
 // getSession forwards the request to the Better Auth server to retrieve session information.
 // The client address goes along, so Better Auth rate limits each client on
 // its own instead of all of them in one shared bucket.
@@ -179,8 +159,11 @@ func getSession(ctx context.Context, client *http.Client, url string, inc *http.
 		req.AddCookie(reqCookie)
 	}
 
-	if addr := clientAddress(inc); addr != "" {
-		req.Header.Set(_headerForwardedFor, addr)
+	// Better Auth only trusts a single-value X-Forwarded-For unless it is
+	// configured with trustedProxies, so only the one address chi's client IP
+	// middleware picked (the last entry, set by Caddy) is sent.
+	if ip := middleware.GetClientIP(inc.Context()); ip != "" {
+		req.Header.Set(_headerForwardedFor, ip)
 	}
 
 	resp, err := client.Do(req)

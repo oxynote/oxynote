@@ -7,7 +7,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 	// Cloudflare's workerd runtime because the H3 request context is lost
 	// by the time the callback fires.
 	const ssrHeaders = import.meta.server
-		? useRequestHeaders(["cookie", "accept-language"])
+		? useRequestHeaders(["cookie", "accept-language", "x-forwarded-for"])
 		: undefined
 
 	const coreAPI = $fetch.create({

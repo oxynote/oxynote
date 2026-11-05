@@ -178,7 +178,7 @@ func Test_Middleware(t *testing.T) {
 				},
 			}
 		}(),
-		"Peer address is forwarded when the proxy header is not an address": func() tcase {
+		"No address is forwarded when the proxy header is not an address": func() tcase {
 			var gotFor string
 
 			return tcase{
@@ -201,11 +201,11 @@ func Test_Middleware(t *testing.T) {
 					ActiveOrganizationID: "org1",
 				},
 				After: func(t *testing.T) {
-					assert.Equal(t, "10.0.0.5", gotFor)
+					assert.Empty(t, gotFor)
 				},
 			}
 		}(),
-		"Peer address is forwarded when no proxy header is set": func() tcase {
+		"No address is forwarded when no proxy header is set": func() tcase {
 			var gotFor string
 
 			return tcase{
@@ -227,7 +227,7 @@ func Test_Middleware(t *testing.T) {
 					ActiveOrganizationID: "org1",
 				},
 				After: func(t *testing.T) {
-					assert.Equal(t, "10.0.0.5", gotFor)
+					assert.Empty(t, gotFor)
 				},
 			}
 		}(),
