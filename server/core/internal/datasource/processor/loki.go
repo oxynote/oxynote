@@ -186,7 +186,7 @@ func (l *Loki) LogsVolume(ctx context.Context, q string, tr TimeRange) (*QueryRe
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	step := tr.QueryStep()
+	step := tr.VolumeStep()
 	stepSeconds := int64(step.Seconds())
 	first := tr.From.Unix() / stepSeconds * stepSeconds
 	last := (tr.To.Unix() - 1) / stepSeconds * stepSeconds
@@ -231,7 +231,7 @@ func (l *Loki) LogsVolume(ctx context.Context, q string, tr TimeRange) (*QueryRe
 		}
 	}
 
-	return counts.Result(), nil
+	return counts.Result(first, last, stepSeconds), nil
 }
 
 // LogFields lists the field names the lines carry in the window: the

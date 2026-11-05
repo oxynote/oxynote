@@ -1,27 +1,19 @@
 import { describe, it } from "vitest"
-import { VOLUME_BUCKETS, volumeBuckets } from "./volume"
+import { volumeBuckets } from "./volume"
 
 const FROM_SECONDS = Date.UTC(2026, 0, 1, 12, 0, 0) / 1000
 
-// four minutes, one bucket per minute when split into four
-const WINDOW = {
-	from: new Date(FROM_SECONDS * 1000),
-	to: new Date((FROM_SECONDS + 240) * 1000),
-}
-
 describe("volumeBuckets", () => {
-	it("splits the window into the default number of empty buckets", ({
-		expect,
-	}) => {
-		const buckets = volumeBuckets([], WINDOW)
-
-		expect(buckets).toHaveLength(VOLUME_BUCKETS)
-		expect(buckets[0]).toEqual(bucket(0))
-		expect(buckets[1]).toEqual(bucket(5))
-		expect(buckets.at(-1)).toEqual(bucket(235))
-	})
-
 	it.for([
+		{
+			name: "makes no bucket from missing results or an answer without buckets",
+			input: () => [
+				null,
+				undefined,
+				{ status: GenericQueryResultStatus.NoData } as GenericQueryResult,
+			],
+			expected: [],
+		},
 		{
 			name: "counts each level apart and an unrecognised one as unknown",
 			input: () => [
@@ -46,40 +38,41 @@ describe("volumeBuckets", () => {
 					trace: 32,
 					unknown: 192,
 				}),
-				bucket(60),
-				bucket(120),
-				bucket(180),
 			],
 		},
 		{
-			name: "puts each point in the bucket its time falls in",
+			name: "makes one bucket for each time counted at, in time order, empty ones too",
 			input: () => [
 				result([
 					series("info", [
-						[59, 1],
-						[60, 2],
-						[239, 4],
+						[120, 4],
+						[0, 1],
+						[60, 0],
 					]),
+					series("error", [[180, 2]]),
 				]),
 			],
 			expected: [
 				bucket(0, { info: 1 }),
-				bucket(60, { info: 2 }),
-				bucket(120),
-				bucket(180, { info: 4 }),
+				bucket(60),
+				bucket(120, { info: 4 }),
+				bucket(180, { error: 2 }),
 			],
 		},
 		{
-			name: "ignores points outside the window",
+			name: "makes an empty bucket for each bucket of an answer without lines",
 			input: () => [
-				result([
-					series("error", [
-						[-1, 1],
-						[240, 2],
-					]),
-				]),
+				{
+					status: GenericQueryResultStatus.NoData,
+					data: [
+						series(undefined, [
+							[0, 0],
+							[60, 0],
+						]),
+					],
+				},
 			],
-			expected: [bucket(0), bucket(60), bucket(120), bucket(180)],
+			expected: [bucket(0), bucket(60)],
 		},
 		{
 			name: "adds up the counts of every query and skips missing results",
@@ -90,25 +83,10 @@ describe("volumeBuckets", () => {
 				{ status: GenericQueryResultStatus.NoData } as GenericQueryResult,
 				result([series("info", [[0, 2]])]),
 			],
-			expected: [bucket(0, { info: 3 }), bucket(60), bucket(120), bucket(180)],
+			expected: [bucket(0, { info: 3 })],
 		},
 	])("$name", ({ input, expected }, { expect }) => {
-		expect(volumeBuckets(input(), WINDOW, 4)).toEqual(expected)
-	})
-
-	it("counts into the first bucket when the window has no length", ({
-		expect,
-	}) => {
-		const buckets = volumeBuckets(
-			[result([series("info", [[0, 1]])])],
-			{ from: WINDOW.from, to: WINDOW.from },
-			2,
-		)
-
-		expect(buckets).toEqual([
-			bucket(0, { info: 1 }),
-			{ ...bucket(0), start: WINDOW.from.getTime() + 0.5 },
-		])
+		expect(volumeBuckets(input())).toEqual(expected)
 	})
 })
 
@@ -116,7 +94,7 @@ function result(data: GenericQueryResult["data"]): GenericQueryResult {
 	return { status: GenericQueryResultStatus.Ok, data }
 }
 
-// a series of points given in seconds from the window's start
+// a series of points given in seconds from FROM_SECONDS
 function series(
 	level: string | undefined,
 	points: [number, number][],

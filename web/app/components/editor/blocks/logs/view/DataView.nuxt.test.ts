@@ -709,12 +709,18 @@ describe("<DataView>", { concurrent: false }, () => {
 			mockEndpoint("GET", LINES_URL, () =>
 				logsResult([makeLog("a1", "11:57:00Z")]),
 			)
+			// core sends every bucket of the window, empty ones as zero
+			const start = Date.parse(WINDOW.from) / 1000
 			const volumeCalls = mockEndpoint("GET", VOLUME_URL, () => ({
 				status: GenericQueryResultStatus.Ok,
 				data: [
 					{
 						labels: { level: "error" },
-						metrics: [[Date.parse(WINDOW.from) / 1000, 3]],
+						metrics: [
+							[start, 3],
+							[start + 15, 0],
+							[start + 30, 1],
+						],
 					},
 				],
 			}))
@@ -734,9 +740,39 @@ describe("<DataView>", { concurrent: false }, () => {
 				"mingcute:layout-top-close-line",
 			)
 			expect(volumeSeries(wrapper)).toEqual([
-				{ id: "error", data: [3, ...Array<number>(47).fill(0)] },
-				{ id: "empty", data: [null, ...Array<number>(47).fill(0)] },
+				{ id: "error", data: [3, 0, 1] },
+				{ id: "empty", data: [null, 0, null] },
 			])
+		})
+
+		it("marks every interval of a window without lines as empty", async ({
+			expect,
+		}) => {
+			mockEndpoint("GET", LINES_URL, () =>
+				logsResult([makeLog("a1", "11:57:00Z")]),
+			)
+			// core answers no data, with every bucket of the window as zero
+			const start = Date.parse(WINDOW.from) / 1000
+			mockEndpoint("GET", VOLUME_URL, () => ({
+				status: GenericQueryResultStatus.NoData,
+				data: [
+					{
+						labels: {},
+						metrics: [
+							[start, 0],
+							[start + 15, 0],
+							[start + 30, 0],
+						],
+					},
+				],
+			}))
+			const wrapper = await mountView(logConfig())
+			await settleLogRequests()
+
+			await volumeToggle(wrapper).trigger("click")
+			await settleLogRequests()
+
+			expect(volumeSeries(wrapper)).toEqual([{ id: "empty", data: [0, 0, 0] }])
 		})
 	})
 

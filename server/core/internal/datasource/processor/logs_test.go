@@ -571,22 +571,50 @@ func Test_LogVolume_Add(t *testing.T) {
 func Test_LogVolume_Result(t *testing.T) {
 	cc := map[string]struct {
 		Volume LogVolume
+		First  int64
+		Last   int64
+		Step   int64
 		Result *QueryResult
 	}{
 		"No counts": {
 			Volume: LogVolume{},
-			Result: &QueryResult{Status: QueryStatusNoData},
+			First:  0,
+			Last:   180,
+			Step:   60,
+			Result: &QueryResult{
+				Status: QueryStatusNoData,
+				Data: []QueryResultSeries{
+					{Labels: map[string]string{}, Metrics: [][2]any{{int64(0), float64(0)}, {int64(60), float64(0)}, {int64(120), float64(0)}, {int64(180), float64(0)}}},
+				},
+			},
 		},
-		"Levels and buckets in order": {
+		"Levels in order with every bucket and zero where no line fell": {
 			Volume: LogVolume{
 				LogLevelWarning: {120: 1, 60: 4},
 				LogLevelError:   {60: 2},
 			},
+			First: 0,
+			Last:  180,
+			Step:  60,
 			Result: &QueryResult{
 				Status: QueryStatusOK,
 				Data: []QueryResultSeries{
-					{Labels: map[string]string{"level": "error"}, Metrics: [][2]any{{int64(60), float64(2)}}},
-					{Labels: map[string]string{"level": "warning"}, Metrics: [][2]any{{int64(60), float64(4)}, {int64(120), float64(1)}}},
+					{Labels: map[string]string{"level": "error"}, Metrics: [][2]any{{int64(0), float64(0)}, {int64(60), float64(2)}, {int64(120), float64(0)}, {int64(180), float64(0)}}},
+					{Labels: map[string]string{"level": "warning"}, Metrics: [][2]any{{int64(0), float64(0)}, {int64(60), float64(4)}, {int64(120), float64(1)}, {int64(180), float64(0)}}},
+				},
+			},
+		},
+		"Range shorter than a step": {
+			Volume: LogVolume{
+				LogLevelInfo: {60: 1},
+			},
+			First: 60,
+			Last:  0,
+			Step:  60,
+			Result: &QueryResult{
+				Status: QueryStatusOK,
+				Data: []QueryResultSeries{
+					{Labels: map[string]string{"level": "info"}, Metrics: [][2]any{}},
 				},
 			},
 		},
@@ -596,7 +624,46 @@ func Test_LogVolume_Result(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, c.Result, c.Volume.Result())
+			assert.Equal(t, c.Result, c.Volume.Result(c.First, c.Last, c.Step))
+		})
+	}
+}
+
+func Test_volumePoints(t *testing.T) {
+	cc := map[string]struct {
+		Counts map[int64]float64
+		First  int64
+		Last   int64
+		Step   int64
+		Result [][2]any
+	}{
+		"Every bucket with its count or zero": {
+			Counts: map[int64]float64{60: 2},
+			First:  0,
+			Last:   120,
+			Step:   60,
+			Result: [][2]any{{int64(0), float64(0)}, {int64(60), float64(2)}, {int64(120), float64(0)}},
+		},
+		"No counts": {
+			First:  0,
+			Last:   60,
+			Step:   60,
+			Result: [][2]any{{int64(0), float64(0)}, {int64(60), float64(0)}},
+		},
+		"Range shorter than a step": {
+			Counts: map[int64]float64{60: 1},
+			First:  60,
+			Last:   0,
+			Step:   60,
+			Result: [][2]any{},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, volumePoints(c.Counts, c.First, c.Last, c.Step))
 		})
 	}
 }

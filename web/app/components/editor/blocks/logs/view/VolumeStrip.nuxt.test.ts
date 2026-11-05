@@ -184,6 +184,23 @@ describe("<VolumeStrip>", { concurrent: false }, () => {
 			wrapper.findAll(".justify-between > span").map((s) => s.text()),
 		).toEqual(expected)
 	})
+
+	it("spans the axis from the start of the first bar to the end of the last", async ({
+		expect,
+	}) => {
+		// the source's buckets are an hour apart and start before the window
+		const wrapper = await mountStrip([
+			bucket(-60),
+			bucket(0),
+			bucket(60),
+			bucket(120),
+			bucket(180),
+		])
+
+		expect(
+			wrapper.findAll(".justify-between > span").map((s) => s.text()),
+		).toEqual(["23:00", "00:40", "02:20", "04:00"])
+	})
 })
 
 function mountStrip(

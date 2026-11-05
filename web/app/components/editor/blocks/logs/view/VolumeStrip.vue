@@ -113,9 +113,26 @@ const option = computed<ECOption>(() => {
 		],
 	}
 })
+// the axis spans the bars, from the start of the first bucket to the end
+// of the last. The buckets are a step apart, so a bucket ends where the
+// next one starts. With fewer than two buckets there is no step, so the
+// axis spans the window instead.
+const axisSpan = computed(() => {
+	const [first, second] = props.buckets
+	const last = props.buckets.at(-1)
+
+	if (!first || !second || !last) {
+		return {
+			from: props.window.from.getTime(),
+			to: props.window.to.getTime(),
+		}
+	}
+
+	return { from: first.start, to: last.start + second.start - first.start }
+})
 const axisLabels = computed(() => {
-	const from = props.window.from.getTime()
-	const span = props.window.to.getTime() - from
+	const { from, to } = axisSpan.value
+	const span = to - from
 	const format = span > DAY_AXIS_MS ? "month-day-short" : "hour-minute"
 
 	return Array.from({ length: AXIS_LABELS }, (_, i) =>

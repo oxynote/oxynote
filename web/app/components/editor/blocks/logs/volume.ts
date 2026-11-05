@@ -1,27 +1,18 @@
-// how many bars the volume strip draws across the block's time range
-export const VOLUME_BUCKETS = 48
-
 export interface VolumeBucket {
 	start: number // unix milliseconds
 	counts: Record<LogLevel, number>
 }
 
-// volumeBuckets spreads the line counts of every query over equal buckets
-// across the window. The source counts on its own step, so each of its
-// buckets lands in the bar its start falls in. A line without a known
-// level counts as unknown.
+// volumeBuckets adds up the line counts of every query, one bucket for each
+// time the source counted at. The source sends every bucket of the window,
+// empty ones as zero. So the buckets are a step apart, and each bar the
+// strip draws covers the same time. A line without a known level counts as
+// unknown.
 export function volumeBuckets(
 	results: (GenericQueryResult | null | undefined)[],
-	window: { from: Date; to: Date },
-	count: number = VOLUME_BUCKETS,
 ): VolumeBucket[] {
-	const from = window.from.getTime()
-	const span = Math.max(window.to.getTime() - from, 1)
 	const levels = new Set<string>(Object.values(LogLevel))
-	const buckets: VolumeBucket[] = Array.from({ length: count }, (_, i) => ({
-		start: from + (span * i) / count,
-		counts: emptyCounts(),
-	}))
+	const buckets = new Map<number, VolumeBucket>()
 
 	for (const result of results) {
 		for (const series of result?.data ?? []) {
@@ -29,17 +20,19 @@ export function volumeBuckets(
 			const level = levels.has(label) ? (label as LogLevel) : LogLevel.Unknown
 
 			for (const [seconds, value] of series.metrics) {
-				const index = Math.floor(((seconds * 1000 - from) / span) * count)
-				const bucket = buckets[index]
-
-				if (bucket) {
-					bucket.counts[level] += value
+				const start = seconds * 1000
+				const bucket = buckets.get(start) ?? {
+					start: start,
+					counts: emptyCounts(),
 				}
+
+				bucket.counts[level] += value
+				buckets.set(start, bucket)
 			}
 		}
 	}
 
-	return buckets
+	return [...buckets.values()].sort((a, b) => a.start - b.start)
 }
 
 function emptyCounts(): Record<LogLevel, number> {

@@ -58,11 +58,13 @@ func (c *Client) LogsVolume(ctx context.Context, q string, tr processor.TimeRang
 	// the step follows the window asked for, so a chart's buckets do not
 	// change size when part of the window is past the retention. The
 	// window then grows to whole buckets before the retention cuts it.
-	step := tr.QueryStep()
+	step := tr.VolumeStep()
 	stepSeconds := int64(step.Seconds())
+	first := tr.From.Unix() / stepSeconds * stepSeconds
+	last := tr.To.Add(-time.Nanosecond).Unix() / stepSeconds * stepSeconds
 	tr = retained(processor.TimeRange{
-		From: time.Unix(tr.From.Unix()/stepSeconds*stepSeconds, 0).UTC(),
-		To:   time.Unix(tr.To.Add(-time.Nanosecond).Unix()/stepSeconds*stepSeconds+stepSeconds, 0).UTC(),
+		From: time.Unix(first, 0).UTC(),
+		To:   time.Unix(last+stepSeconds, 0).UTC(),
 	})
 	end := minTime(tr.To, timeutil.Now().Add(time.Nanosecond))
 	countTicks := len(lq.filters) == 0 && step%_tick == 0
@@ -94,7 +96,7 @@ func (c *Client) LogsVolume(ctx context.Context, q string, tr processor.TimeRang
 		}
 	}
 
-	return counts.Result(), nil
+	return counts.Result(first, last, stepSeconds), nil
 }
 
 // LogFields lists the field names the demo's lines carry: its two stream

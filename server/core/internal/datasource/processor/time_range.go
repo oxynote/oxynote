@@ -32,7 +32,42 @@ const (
 	// _timeColumn is the canonical name of the time column produced by
 	// the $__time-family macros and expected in SQL chart results.
 	_timeColumn = "time"
+
+	// _maxVolumeBuckets is the most buckets a log volume splits its range
+	// into.
+	_maxVolumeBuckets = 100
 )
+
+// _volumeSteps are the steps a log volume counts on, shortest first. Each
+// is at most 3.5 times the one before it. So the shortest step that leaves
+// at most _maxVolumeBuckets buckets still leaves at least 20, for any range
+// of 20 seconds or more.
+var _volumeSteps = []time.Duration{
+	time.Second,
+	2 * time.Second,
+	5 * time.Second,
+	10 * time.Second,
+	15 * time.Second,
+	30 * time.Second,
+	time.Minute,
+	2 * time.Minute,
+	5 * time.Minute,
+	10 * time.Minute,
+	15 * time.Minute,
+	30 * time.Minute,
+	time.Hour,
+	2 * time.Hour,
+	6 * time.Hour,
+	12 * time.Hour,
+	24 * time.Hour,
+	2 * 24 * time.Hour,
+	7 * 24 * time.Hour,
+	14 * 24 * time.Hour,
+	30 * 24 * time.Hour,
+	90 * 24 * time.Hour,
+	180 * 24 * time.Hour,
+	365 * 24 * time.Hour,
+}
 
 // TimeRange represents a time range with a start and end time.
 type TimeRange struct {
@@ -86,6 +121,24 @@ func ParseTimeRange(
 // extra clamp is needed here.
 func (tr TimeRange) QueryStep() time.Duration {
 	return tr.calculateInterval()
+}
+
+// VolumeStep returns the step a log volume of the range counts on: the
+// shortest of _volumeSteps that leaves at most _maxVolumeBuckets buckets,
+// or the longest one. A range that does not start on a step boundary
+// touches one bucket more than it fills, so the step fits the range into
+// one bucket fewer. A range shorter than 20 seconds gets one bucket per
+// second, which is fewer than 20.
+func (tr TimeRange) VolumeStep() time.Duration {
+	span := tr.To.Sub(tr.From)
+
+	for _, step := range _volumeSteps {
+		if step*(_maxVolumeBuckets-1) >= span {
+			return step
+		}
+	}
+
+	return _volumeSteps[len(_volumeSteps)-1]
 }
 
 // Normalize adjusts the From and To times to align with the specified step duration.

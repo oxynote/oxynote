@@ -265,13 +265,24 @@ func Test_Client_LogsVolume(t *testing.T) {
 		readEach = `{env="production"} |= ""`
 	)
 
+	// emptyWindow checks an answer without lines: no data, and one series
+	// without a level that lists the window's buckets as zero.
+	emptyWindow := func(t *testing.T, res *processor.QueryResult) {
+		require.Equal(t, processor.QueryStatusNoData, res.Status)
+		require.Len(t, res.Data, 1)
+		assert.Empty(t, res.Data[0].Labels)
+		assert.NotEmpty(t, res.Data[0].Metrics)
+		assert.False(t, slices.ContainsFunc(res.Data[0].Metrics, func(p [2]any) bool {
+			return p[1] != float64(0)
+		}))
+	}
+
 	cc := map[string]struct {
 		Query     string
 		Range     processor.TimeRange
 		Cancelled bool
 		Compare   string
 		Check     func(t *testing.T, res *processor.QueryResult)
-		Result    *processor.QueryResult
 		Err       error
 	}{
 		"Edge buckets are whole": {
@@ -302,6 +313,21 @@ func Test_Client_LogsVolume(t *testing.T) {
 				assert.Equal(t, want, got)
 			},
 		},
+		"Every bucket of the window, empty ones as zero": {
+			Query: `{service_name="pizza-bot"}`,
+			Range: processor.TimeRange{From: _logDay.From, To: _logDay.From.Add(20 * time.Minute)},
+			Check: func(t *testing.T, res *processor.QueryResult) {
+				// twenty minutes step 15 seconds: 80 buckets, empty ones
+				// included
+				require.NotEmpty(t, res.Data)
+
+				for _, series := range res.Data {
+					require.Len(t, series.Metrics, 80)
+					assert.Equal(t, _logDay.From.Unix(), series.Metrics[0][0])
+					assert.Equal(t, _logDay.From.Add(20*time.Minute-15*time.Second).Unix(), series.Metrics[79][0])
+				}
+			},
+		},
 		"Query the demo does not answer": {
 			Query: `rate({env="production"}[1m])`,
 			Range: _logDay,
@@ -314,14 +340,14 @@ func Test_Client_LogsVolume(t *testing.T) {
 			Err:       context.Canceled,
 		},
 		"Window past the retention": {
-			Query:  allLines,
-			Range:  _logExpired,
-			Result: &processor.QueryResult{Status: processor.QueryStatusNoData},
+			Query: allLines,
+			Range: _logExpired,
+			Check: emptyWindow,
 		},
 		"Window before the demo starts": {
-			Query:  allLines,
-			Range:  processor.TimeRange{From: _epoch.AddDate(0, 0, -1), To: _epoch.Add(-time.Hour)},
-			Result: &processor.QueryResult{Status: processor.QueryStatusNoData},
+			Query: allLines,
+			Range: processor.TimeRange{From: _epoch.AddDate(0, 0, -1), To: _epoch.Add(-time.Hour)},
+			Check: emptyWindow,
 		},
 		"Whole ticks count as the lines do over a day": {
 			Query:   allLines,
@@ -355,12 +381,6 @@ func Test_Client_LogsVolume(t *testing.T) {
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
-				return
-			}
-
-			if c.Result != nil {
-				assert.Equal(t, c.Result, res)
-
 				return
 			}
 

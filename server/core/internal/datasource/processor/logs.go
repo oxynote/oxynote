@@ -491,24 +491,31 @@ func (lv LogVolume) Add(lvl LogLevel, t int64, n float64) {
 }
 
 // Result returns the counts as one series per level, labelled with the
-// level, levels and buckets in order. No count at all is no data.
-func (lv LogVolume) Result() *QueryResult {
+// level, levels in order. Each series holds every bucket from first to
+// last, step seconds apart, and zero where no line fell. So a reader
+// gets the step from the buckets and never has to guess it.
+//
+// No count at all is no data. Its one series has no level and holds
+// every bucket as zero, so a reader can still draw the empty window.
+func (lv LogVolume) Result(first, last, step int64) *QueryResult {
 	if len(lv) == 0 {
-		return &QueryResult{Status: QueryStatusNoData}
+		return &QueryResult{
+			Status: QueryStatusNoData,
+			Data: []QueryResultSeries{
+				{
+					Labels:  map[string]string{},
+					Metrics: volumePoints(nil, first, last, step),
+				},
+			},
+		}
 	}
 
 	series := make([]QueryResultSeries, 0, len(lv))
 
 	for _, lvl := range slices.Sorted(maps.Keys(lv)) {
-		points := make([][2]any, 0, len(lv[lvl]))
-
-		for _, t := range slices.Sorted(maps.Keys(lv[lvl])) {
-			points = append(points, [2]any{t, lv[lvl][t]})
-		}
-
 		series = append(series, QueryResultSeries{
 			Labels:  map[string]string{_logLevelLabel: string(lvl)},
-			Metrics: points,
+			Metrics: volumePoints(lv[lvl], first, last, step),
 		})
 	}
 
@@ -516,6 +523,18 @@ func (lv LogVolume) Result() *QueryResult {
 		Status: QueryStatusOK,
 		Data:   series,
 	}
+}
+
+// volumePoints lists every bucket from first to last, step seconds apart,
+// with its count from counts, or zero where counts holds none.
+func volumePoints(counts map[int64]float64, first, last, step int64) [][2]any {
+	points := make([][2]any, 0, max((last-first)/step+1, 0))
+
+	for t := first; t <= last; t += step {
+		points = append(points, [2]any{t, counts[t]})
+	}
+
+	return points
 }
 
 // PageLogs reads one page of the window's lines through fetch, in the

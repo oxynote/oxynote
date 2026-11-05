@@ -727,6 +727,21 @@ func Test_Loki_fetchLines(t *testing.T) {
 }
 
 func Test_Loki_LogsVolume(t *testing.T) {
+	// a range from 60 to 80 seconds counts in one-second buckets
+	window := TimeRange{From: time.Unix(60, 0), To: time.Unix(80, 0)}
+
+	// seconds lists the buckets of window, with the given counts and zero
+	// elsewhere.
+	seconds := func(counts map[int64]float64) [][2]any {
+		points := make([][2]any, 0, 20)
+
+		for sec := int64(60); sec < 80; sec++ {
+			points = append(points, [2]any{sec, counts[sec]})
+		}
+
+		return points
+	}
+
 	cc := map[string]struct {
 		Handler http.Handler
 		Range   TimeRange
@@ -745,20 +760,25 @@ func Test_Loki_LogsVolume(t *testing.T) {
 		},
 		"No lines": {
 			Handler: testutil.JSONHandler(_lokiQueryRangePath, http.StatusOK, `{"data":{"resultType":"matrix","result":[]}}`),
-			Range:   _logsWindow,
-			Result:  &QueryResult{Status: QueryStatusNoData},
+			Range:   window,
+			Result: &QueryResult{
+				Status: QueryStatusNoData,
+				Data: []QueryResultSeries{
+					{Labels: map[string]string{}, Metrics: seconds(nil)},
+				},
+			},
 		},
 		"Points become bucket starts and levels merge": {
 			Handler: testutil.JSONHandler(_lokiQueryRangePath, http.StatusOK, `{"data":{"resultType":"matrix","result":[`+
-				`{"metric":{"detected_level":"warn"},"values":[[75,"2"]]},`+
-				`{"metric":{"level":"WARNING"},"values":[[75,"3"],[90,"1"]]},`+
-				`{"metric":{},"values":[[90,"4"]]}]}}`),
-			Range: TimeRange{From: time.Unix(60, 0), To: time.Unix(90, 0)},
+				`{"metric":{"detected_level":"warn"},"values":[[66,"2"]]},`+
+				`{"metric":{"level":"WARNING"},"values":[[66,"3"],[71,"1"]]},`+
+				`{"metric":{},"values":[[71,"4"]]}]}}`),
+			Range: window,
 			Result: &QueryResult{
 				Status: QueryStatusOK,
 				Data: []QueryResultSeries{
-					{Labels: map[string]string{"level": "unknown"}, Metrics: [][2]any{{int64(75), float64(4)}}},
-					{Labels: map[string]string{"level": "warning"}, Metrics: [][2]any{{int64(60), float64(5)}, {int64(75), float64(1)}}},
+					{Labels: map[string]string{"level": "unknown"}, Metrics: seconds(map[int64]float64{70: 4})},
+					{Labels: map[string]string{"level": "warning"}, Metrics: seconds(map[int64]float64{65: 5, 70: 1})},
 				},
 			},
 		},

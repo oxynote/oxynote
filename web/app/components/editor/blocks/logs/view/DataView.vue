@@ -144,11 +144,7 @@ const logs = computed(() => {
 		props.config.order,
 	)
 })
-const buckets = computed(() =>
-	volumeWindow.value
-		? volumeBuckets(fetchVolume.data.value ?? [], volumeWindow.value)
-		: [],
-)
+const buckets = computed(() => volumeBuckets(fetchVolume.data.value ?? []))
 const state = computed(() => {
 	if (!props.config.dataSourceId) {
 		return "data-source-not-selected"
@@ -284,7 +280,8 @@ watch(
 	},
 )
 
-// the strip bins the counts across the window they were read from
+// the window the counts were read from. The strip's axis spans it while
+// the strip has fewer than two bars.
 watchImmediate(
 	() => fetchVolume.data.value,
 	() => {
