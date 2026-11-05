@@ -121,6 +121,12 @@ func (h *Handler) FetchDocumentBranchesUnsafe(w http.ResponseWriter, r *http.Req
 // FetchDocumentBranchByIDUnsafe handles the retrieval of a document branch by its ID
 // without organization ownership checks. Intended for internal system use only.
 func (h *Handler) FetchDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.Request) {
+	id, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	branchID, err := httpserver.ExtractNamedID(r, "branchId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -130,6 +136,11 @@ func (h *Handler) FetchDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.R
 	doc, err := h.db.FetchDocumentUnsafeByBranchID(r.Context(), branchID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if doc.ID != id {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
 		return
 	}
 
@@ -144,6 +155,12 @@ func (h *Handler) FetchDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.R
 // UpdateDocumentBranchByIDUnsafe handles the update of a document branch content by branch ID
 // without organization ownership checks. Intended for internal system use only.
 func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.Request) {
+	id, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	branchID, err := httpserver.ExtractNamedID(r, "branchId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -153,6 +170,11 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 	doc, err := h.db.FetchDocumentUnsafeByBranchID(r.Context(), branchID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if doc.ID != id {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
 		return
 	}
 

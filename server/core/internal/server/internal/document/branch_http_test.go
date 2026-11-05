@@ -90,14 +90,32 @@ func Test_Handler_FetchDocumentBranchesUnsafe(t *testing.T) {
 func Test_Handler_FetchDocumentBranchByIDUnsafe(t *testing.T) {
 	cc := map[string]struct {
 		DB                            *DBMock
+		OmitDoc                       bool
 		OmitBranch                    bool
 		RespCode                      int
 		FetchDocumentUnsafeByBranchID int
 	}{
+		"Missing document ID parameter": {
+			DB:       &DBMock{},
+			OmitDoc:  true,
+			RespCode: http.StatusNotFound,
+		},
 		"Missing branch ID parameter": {
 			DB:         &DBMock{},
 			OmitBranch: true,
 			RespCode:   http.StatusNotFound,
+		},
+		"Branch belongs to another document": {
+			DB: &DBMock{
+				FetchDocumentUnsafeByBranchIDFunc: func(context.Context, xid.ID) (*documentCore.Document, error) {
+					doc := storedDoc()
+					doc.ID = xid.New()
+
+					return doc, nil
+				},
+			},
+			RespCode:                      http.StatusNotFound,
+			FetchDocumentUnsafeByBranchID: 1,
 		},
 		"Error returned by DB.FetchDocumentUnsafeByBranchID": {
 			DB: &DBMock{
@@ -127,7 +145,7 @@ func Test_Handler_FetchDocumentBranchByIDUnsafe(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 
-			hdl.FetchDocumentBranchByIDUnsafe(rec, newRequest(http.MethodGet, "", true, true, c.OmitBranch))
+			hdl.FetchDocumentBranchByIDUnsafe(rec, newRequest(http.MethodGet, "", true, c.OmitDoc, c.OmitBranch))
 
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentUnsafeByBranchIDCalls(), c.FetchDocumentUnsafeByBranchID)
@@ -147,6 +165,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 		Tx          *TxMock
 		Queue       *SearchQueueMock
 		BeginErr    error
+		OmitDoc     bool
 		OmitBranch  bool
 		Body        string
 		RespCode    int
@@ -254,12 +273,33 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			FetchDocumentMaintainers:      1,
 			Rollback:                      1,
 		},
+		"Missing document ID parameter": {
+			DB:       &DBMock{},
+			Tx:       &TxMock{},
+			OmitDoc:  true,
+			Body:     validBody,
+			RespCode: http.StatusNotFound,
+		},
 		"Missing branch ID parameter": {
 			DB:         &DBMock{},
 			Tx:         &TxMock{},
 			OmitBranch: true,
 			Body:       validBody,
 			RespCode:   http.StatusNotFound,
+		},
+		"Branch belongs to another document": {
+			DB: &DBMock{
+				FetchDocumentUnsafeByBranchIDFunc: func(context.Context, xid.ID) (*documentCore.Document, error) {
+					doc := storedDoc()
+					doc.ID = xid.New()
+
+					return doc, nil
+				},
+			},
+			Tx:                            &TxMock{},
+			Body:                          validBody,
+			RespCode:                      http.StatusNotFound,
+			FetchDocumentUnsafeByBranchID: 1,
 		},
 		"Error returned by DB.FetchDocumentUnsafeByBranchID": {
 			DB: &DBMock{
@@ -513,7 +553,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 
-			hdl.UpdateDocumentBranchByIDUnsafe(rec, newRequest(http.MethodPut, c.Body, true, true, c.OmitBranch))
+			hdl.UpdateDocumentBranchByIDUnsafe(rec, newRequest(http.MethodPut, c.Body, true, c.OmitDoc, c.OmitBranch))
 
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentUnsafeByBranchIDCalls(), c.FetchDocumentUnsafeByBranchID)
