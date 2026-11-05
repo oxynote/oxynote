@@ -1112,7 +1112,8 @@ describe("<DataView>", { concurrent: false }, () => {
 				order: "desc",
 			})
 			expect(rowMessages(wrapper)).toEqual(["a4", "a3", "a2", "a1"])
-			expect(rows(wrapper).props("shift")).toBe(true)
+			// the view keeps the reader's row itself, so the scroller must not
+			expect(rows(wrapper).props("shift")).toBe(false)
 		})
 
 		it("waits with the new lines while the reader is away from the top, and reads them on return", async ({

@@ -108,7 +108,12 @@ test.describe("log blocks", () => {
 		await jumpTo(list, reads, "start")
 		const topAgain = await readDown(list, reads, screens(5))
 
-		expect(topAgain).toEqual(top)
+		// core rounds the window's end up to the next 15 seconds, and the demo
+		// writes a log once the clock reaches its time. So logs can arrive at
+		// the top between the two reads, and the comparison leaves them out.
+		const again = topAgain.filter((key) => key <= (top[0] ?? ""))
+		expect(again.length).toBeGreaterThan(20)
+		expect(again).toEqual(top.slice(0, again.length))
 		// a read back up the list goes in the other order, so the top rows
 		// were dropped and read again
 		expect(
@@ -163,6 +168,13 @@ test.describe("log blocks", () => {
 		await expect(page.getByText("Block 1", { exact: true })).toBeVisible({
 			timeout: 30_000,
 		})
+		// a block reads once it learns it is near, a moment after it shows.
+		// The first block always is, so its read marks the start.
+		await expect
+			.poll(() => readBlocks().includes("1"), {
+				message: "the first block never read its logs",
+			})
+			.toBe(true)
 		await logReadsSettled(reads)
 		const first = readBlocks()
 

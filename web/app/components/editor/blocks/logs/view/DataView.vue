@@ -391,8 +391,8 @@ async function refreshLogs() {
 }
 
 // keepPlace runs a change to the rows. Then it scrolls the first row the reader
-// saw back to where it was before. The scroller does this by itself only when
-// rows are added above. When rows are dropped above, the view would jump up.
+// saw back to where it was before. So rows added or dropped above do not move
+// the view.
 async function keepPlace(change: () => unknown) {
 	const index = firstVisibleRow.value
 	const anchor = logs.value[index]
@@ -520,6 +520,10 @@ async function readNewData() {
 				:window="volumeWindow"
 			/>
 		</div>
+		<!-- keepPlace holds the reader's row when rows change above. The
+		scroller's own shift option would hold a row as well. Its hold lasts a
+		moment after each change, and on a slow machine it pulls the view back
+		while the reader scrolls on. -->
 		<DynamicScroller
 			v-if="state === 'lines'"
 			ref="scroller"
@@ -527,7 +531,6 @@ async function readNewData() {
 			:min-item-size="ROW_HEIGHT_PX"
 			key-field="id"
 			emit-update
-			shift
 			class="min-h-0 flex-1"
 			@update="
 				(
