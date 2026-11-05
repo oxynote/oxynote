@@ -18,24 +18,6 @@ import (
 //go:embed icons.json
 var _iconsJSON []byte
 
-// Entry is one icon the picker offers.
-type Entry struct {
-	// ID specifies the Iconify id, such as mingcute:rocket-fill.
-	ID string `json:"id"`
-
-	// Name specifies the words the picker shows and searches.
-	Name string `json:"name"`
-}
-
-// _styleSuffix matches the style and variant suffixes an icon id ends
-// with, such as -fill, -24-filled or -2.
-var _styleSuffix = regexp.MustCompile(`(-(fill|line|filled|outline|solid|\d+))+$`)
-
-// Words returns the lowercase words of the icon's name and id.
-func (e Entry) Words() []string {
-	return slices.Concat(words(e.Name), extractWords(e.ID))
-}
-
 // _entries is the parsed icon list. The file is embedded, so a parse
 // failure is a bug caught by every test of this package.
 var _entries = func() []Entry {
@@ -46,6 +28,24 @@ var _entries = func() []Entry {
 
 	return entries
 }()
+
+// _styleSuffix matches the style and variant suffixes an icon id ends
+// with, such as -fill, -24-filled or -2.
+var _styleSuffix = regexp.MustCompile(`(-(fill|line|filled|outline|solid|\d+))+$`)
+
+// Entry is one icon the picker offers.
+type Entry struct {
+	// ID specifies the Iconify id, such as mingcute:rocket-fill.
+	ID string `json:"id"`
+
+	// Name specifies the words the picker shows and searches.
+	Name string `json:"name"`
+}
+
+// Words returns the lowercase words of the icon's name and id.
+func (e Entry) Words() []string {
+	return slices.Concat(words(e.Name), extractWords(e.ID))
+}
 
 // List returns the icons the picker offers, in the picker's order. The
 // caller must not modify the result.
