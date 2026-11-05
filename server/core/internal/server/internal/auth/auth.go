@@ -8,8 +8,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"strings"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/wetsocks/wsserver"
@@ -150,15 +150,12 @@ func HasActiveOrganization(userID, organizationID string) bool {
 // clientAddress returns the one client address sent to the Better Auth
 // server. Better Auth only trusts a single-value X-Forwarded-For unless it
 // is configured with trustedProxies, so a chain would land every client in
-// one shared bucket again. The last X-Forwarded-For entry is the address the
-// proxy in front of core saw (Caddy replaces the header with its direct
-// peer); without the header, the request came straight from the client.
+// one shared bucket again. The address comes from chi's client IP
+// middleware (the last valid X-Forwarded-For entry); without the header,
+// the request came straight from the client, so its peer address is used.
 func clientAddress(r *http.Request) string {
-	if chain := r.Header.Values(_headerForwardedFor); len(chain) > 0 {
-		hops := strings.Split(chain[len(chain)-1], ",")
-		if last := strings.TrimSpace(hops[len(hops)-1]); last != "" {
-			return last
-		}
+	if ip := middleware.GetClientIP(r.Context()); ip != "" {
+		return ip
 	}
 
 	host, _, err := net.SplitHostPort(r.RemoteAddr)

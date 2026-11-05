@@ -10,6 +10,7 @@ import (
 	"testing"
 	"testing/iotest"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jarcoal/httpmock"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -177,6 +178,33 @@ func Test_Middleware(t *testing.T) {
 				},
 			}
 		}(),
+		"Peer address is forwarded when the proxy header is not an address": func() tcase {
+			var gotFor string
+
+			return tcase{
+				URL: "http://test.com/get-session",
+				Resp: func(r *http.Request) (*http.Response, error) {
+					gotFor = r.Header.Get("X-Forwarded-For")
+
+					return httpmock.NewStringResponse(
+						http.StatusOK,
+						`{"session":{"userId":"u1","activeOrganizationId":"org1"}}`,
+					), nil
+				},
+				Header:    http.Header{"X-Forwarded-For": {"198.51.100.9, not-an-ip"}},
+				Remote:    "10.0.0.5:4321",
+				NextCode:  http.StatusNoContent,
+				AuthCalls: 1,
+				RespCode:  http.StatusNoContent,
+				Session: Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				},
+				After: func(t *testing.T) {
+					assert.Equal(t, "10.0.0.5", gotFor)
+				},
+			}
+		}(),
 		"Peer address is forwarded when no proxy header is set": func() tcase {
 			var gotFor string
 
@@ -235,11 +263,13 @@ func Test_Middleware(t *testing.T) {
 				w.WriteHeader(c.NextCode)
 			})
 
-			hdl := Middleware(
+			// Wrapped like httpRouter does, so the client address comes
+			// from chi's client IP middleware.
+			hdl := middleware.ClientIPFromXFFTrustedProxies(1)(Middleware(
 				slog.New(slog.DiscardHandler),
 				Options{BetterAuthURL: c.URL},
 				client,
-			)(next)
+			)(next))
 
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
 
