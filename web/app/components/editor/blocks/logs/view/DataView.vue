@@ -31,18 +31,27 @@ const QUERY_DEBOUNCE_MS = 500
 const SEARCH_DEBOUNCE_MS = 300
 // how close to either end of the loaded rows the reader must get before the
 // next page loads. The same distance also counts as being at the live end.
+// It assumes a page arrives before the reader scrolls past this many rows.
+// If it arrives later, the reader waits at the end for a moment.
 const LOAD_MORE_ROWS = 20
 // the most logs the list keeps. When the reader scrolls one way, logs are
 // dropped from the other end. They load again when the reader scrolls back.
+// A demo line takes about 400 bytes once parsed, so a full list holds
+// about 2 MiB. Longer lines cost more in proportion. A block holds this
+// many only once the reader has scrolled deep into it.
 const MAX_LOADED_LOGS = 5000
-// how many logs one request reads for each query
+// how many logs one request reads for each query. A block shows about ten
+// rows, so a page fills it many times over. A demo line is about 300 bytes
+// of JSON, and responses are not compressed, so a page is about 30 KB.
 const PAGE_LOGS = 100
 // the height of a closed row, which is h-8 and its bottom border. The
 // scroller uses it for every row until it has measured the row. So a
 // wrong value moves the rows once they are measured.
 const ROW_HEIGHT_PX = 33
 // how far past the viewport a block still counts as near, in screens.
-// A block further away does not refresh.
+// A block further away does not read. It assumes a read lands before the
+// reader scrolls one screen. After a faster scroll, the block shows its
+// spinner for a moment.
 const NEAR_VIEWPORT_MARGIN = "100% 0%"
 
 const props = defineProps<{
@@ -67,6 +76,12 @@ const root = useTemplateRef<HTMLDivElement>("root")
 const scroller = useTemplateRef<
 	ComponentPublicInstance & DynamicScrollerExposed<Log>
 >("scroller")
+// a block more than a screen away from the viewport reads nothing. It
+// reads its first logs, or the logs of a changed query, once it comes
+// within a screen. Its refresh timer keeps running, but it skips the
+// reads. Once the block comes near, it reads the refresh it skipped. So
+// a page with many blocks reads only the blocks near the reader.
+const near = useElementVisibility(root, { rootMargin: NEAR_VIEWPORT_MARGIN })
 const searchInput = ref("")
 const search = refDebounced(searchInput, SEARCH_DEBOUNCE_MS)
 const filters = ref<LogFilter[]>([])
@@ -102,12 +117,12 @@ const fetchLogs = useLogs(
 
 		return params && { ...params, order: props.config.order, limit: PAGE_LOGS }
 	},
-	true,
+	near,
 )
 const fetchVolume = useLogVolume(
 	() => props.config.dataSourceId,
 	viewParams,
-	volumeVisible,
+	() => volumeVisible.value && near.value,
 )
 const volumeWindow = ref<{ from: Date; to: Date } | null>(null)
 const logs = computed(() => {
@@ -203,15 +218,6 @@ const headerStyle = computed(() =>
 			}
 		: undefined,
 )
-
-// a block more than a screen away from the viewport keeps to its timer,
-// but it skips the reads. Once it comes within a screen, it reads the
-// refresh it skipped. So its rows are current before the reader scrolls
-// to it. Until the first check, a block counts as near.
-const near = useElementVisibility(root, {
-	rootMargin: NEAR_VIEWPORT_MARGIN,
-	initialValue: true,
-})
 
 useIntervalFn(() => void refreshData(), refreshIntervalMs, {
 	immediate: true,
@@ -444,8 +450,12 @@ async function refreshData() {
 async function readNewData() {
 	refreshWhenNear.value = false
 
-	// the first read starts by itself once the query can run
-	if (!fetchLogs.data.value) {
+	// a refresh waits for the query's first read. That read is still to
+	// come when the block has no rows yet, or when the query changed and
+	// the block still shows the old query's rows. The first read starts by
+	// itself and brings the newest logs, so a refresh now would read them
+	// twice.
+	if (!fetchLogs.data.value || fetchLogs.isPlaceholderData.value) {
 		return
 	}
 

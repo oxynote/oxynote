@@ -25,7 +25,7 @@ export interface LogQueriesParams extends GenericQueryTimeRange {
 }
 
 export interface LogsParams extends LogQueriesParams {
-	limit?: number
+	limit: number
 	order?: LogOrder
 }
 

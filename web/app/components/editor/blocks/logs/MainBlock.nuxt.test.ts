@@ -1,3 +1,4 @@
+import { mockNuxtImport } from "@nuxt/test-utils/runtime"
 import { enableAutoUnmount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import MainBlock from "./MainBlock.vue"
@@ -25,6 +26,10 @@ import { findButtonByText, t } from "~/components/test-helpers"
 vi.mock("vue-virtual-scroller", async () =>
 	(await import("./test-helpers")).virtualScrollerStub(),
 )
+
+// happy-dom has no intersection observer either, so the block would never
+// count as near the viewport, and it reads only when near
+mockNuxtImport("useElementVisibility", () => () => ref(true))
 
 const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("branch")

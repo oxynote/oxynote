@@ -63,19 +63,20 @@ const LOG_QUERY_KEYS = {
 		] as const,
 }
 
-// a refresh reads each query in one request, with a limit of this many
-// pages. More logs may have arrived than that request can hold. Newest
-// first, the read then replaces the list, so no gap is left below it.
-// Oldest first, the rest load as the next page when the reader scrolls
-// down.
+// a newest-first refresh reads each query from the top of the window down
+// to where the last read ended, at most this many pages. If more logs
+// arrived than that, the read replaces the list, so no gap is left below
+// it. With pages of 100, that happens above 500 logs in the refresh
+// interval plus REFRESH_LOOKBACK_MS. At a 5 second interval, that is
+// about 14 logs a second. The second read asks for all the pages after
+// the first at once, so they must stay within core's cap of 1000 logs a
+// request.
 const REFRESH_PAGES = 5
 
-// how far before the end of the last read a refresh starts reading. Logs
-// that reach the source this late are still caught.
+// how far before the end of the last read a refresh starts reading. It
+// assumes a log reaches the source at most this late. A log that arrives
+// later is missed until that part of the list is read again.
 const REFRESH_LOOKBACK_MS = 30_000
-
-// the page size core uses when a request names none
-const DEFAULT_LOGS_LIMIT = 100
 
 // what a page after the first one needs to load. Each query has a cursor
 // that says where its page starts. A query without a cursor is skipped. A
@@ -244,8 +245,9 @@ export default function () {
 		//
 		// The time range moves forward with each refresh. So logs that are
 		// now older than its start are dropped from the other end of the
-		// list. Newest first, a burst of more new logs than one read holds
-		// replaces the list with the newest logs.
+		// list. Newest first, a burst of more new logs than REFRESH_PAGES
+		// pages hold replaces the list with the newest logs. Oldest first,
+		// the read holds one page, and the rest load as the next pages.
 		async function loadNewer() {
 			const dataSourceId = toValue(dataSourceIdRef)
 			const params = toValue(paramsRef)
@@ -253,6 +255,8 @@ export default function () {
 			const lastTo = data?.pages[0]?.window.to
 			const window = params ? formatQueryTimeRange(params) : undefined
 
+			// rows a changed query shows until its own arrive belong to the
+			// query before it, so they are left alone
 			if (
 				!dataSourceId ||
 				!params ||
@@ -260,7 +264,8 @@ export default function () {
 				!lastTo ||
 				!window?.from ||
 				!window.to ||
-				query.isLoading.value
+				query.isLoading.value ||
+				query.isPlaceholderData.value
 			) {
 				return
 			}
@@ -271,10 +276,7 @@ export default function () {
 				Date.parse(lastTo) - REFRESH_LOOKBACK_MS,
 				Date.parse(window.from),
 			)
-			const readParams = {
-				...params,
-				limit: (params.limit ?? DEFAULT_LOGS_LIMIT) * REFRESH_PAGES,
-			}
+			const sinceNanos = BigInt(since) * 1_000_000n
 			const sinceWindow = { from: new Date(since).toISOString(), to: window.to }
 			const newer = await Promise.all(
 				params.queries.map(async (q, index) => {
@@ -282,14 +284,7 @@ export default function () {
 					// next cursor then points into the window, which is what the
 					// pages below it need.
 					if (!asc) {
-						return await readLogs(
-							dataSourceId,
-							readParams,
-							q,
-							window,
-							null,
-							LogOrder.Desc,
-						)
+						return await readNewest(dataSourceId, params, q, window, sinceNanos)
 					}
 
 					if (queryResults(data.pages, index).at(-1)?.nextCursor) {
@@ -298,7 +293,7 @@ export default function () {
 
 					return await readLogs(
 						dataSourceId,
-						readParams,
+						params,
 						q,
 						sinceWindow,
 						null,
@@ -315,18 +310,8 @@ export default function () {
 			}
 
 			const moved = { ...data.pages[0]?.window, ...window }
-			const sinceNanos = BigInt(since) * 1_000_000n
 			const burst =
-				!asc &&
-				newer.some((read) => {
-					const oldest = read?.lines.at(-1)
-
-					return (
-						!!read?.nextCursor &&
-						!!oldest &&
-						timeNanos(oldest.time) > sinceNanos
-					)
-				})
+				!asc && newer.some((read) => read && !reachesBack(read, sinceNanos))
 
 			if (burst) {
 				setPages(
@@ -405,7 +390,9 @@ export default function () {
 			const data = query.data.value
 			const params = toValue(paramsRef)
 
-			if (!data || !params) {
+			// rows a changed query shows until its own arrive belong to the
+			// query before it, so they are left alone
+			if (!data || !params || query.isPlaceholderData.value) {
 				return
 			}
 
@@ -518,8 +505,13 @@ export default function () {
 		params: LogsParams | null | undefined,
 	): LogsPageParam | null {
 		const last = pages.at(-1)
-		const order = params?.order ?? LogOrder.Desc
-		const limit = params?.limit ?? DEFAULT_LOGS_LIMIT
+
+		// a query without params cannot run, so it has no page to load
+		if (!params) {
+			return null
+		}
+
+		const order = params.order ?? LogOrder.Desc
 		const queries = loadedQueries(pages)
 		const past = pastIn(order)
 		const { frontier } = mergeBounds(queries, order)
@@ -531,7 +523,7 @@ export default function () {
 					: query.logs.filter((log) => past(timeNanos(log.time), frontier))
 							.length
 
-			return ahead < limit ? cursor : null
+			return ahead < params.limit ? cursor : null
 		})
 
 		return last && cursors.some(Boolean)
@@ -546,8 +538,12 @@ export default function () {
 		params: LogsParams | null | undefined,
 	): LogsPageParam | null {
 		const first = pages[0]
-		const order = params?.order ?? LogOrder.Desc
-		const limit = params?.limit ?? DEFAULT_LOGS_LIMIT
+
+		if (!params) {
+			return null
+		}
+
+		const order = params.order ?? LogOrder.Desc
 		const queries = loadedQueries(pages)
 		const past = pastIn(order)
 		const { top } = mergeBounds(queries, order)
@@ -558,12 +554,61 @@ export default function () {
 					? 0
 					: query.logs.filter((log) => past(top, timeNanos(log.time))).length
 
-			return ahead < limit ? cursor : null
+			return ahead < params.limit ? cursor : null
 		})
 
 		return first && cursors.some(Boolean)
 			? { cursors: cursors, window: first.window, previous: true }
 			: null
+	}
+
+	// readNewest reads a query newest first from the top of the window. If
+	// the first page does not reach back to since, one more request reads
+	// the rest, up to REFRESH_PAGES pages in all. So a quiet query needs one
+	// request, and a busy one two. The two reads join into one, with the
+	// cursors of its two ends.
+	//
+	// It assumes most refreshes find their new logs in the first page. That
+	// holds while fewer logs than a page arrive in the refresh interval plus
+	// REFRESH_LOOKBACK_MS. When more arrive, every refresh of that query
+	// sends the second request too.
+	async function readNewest(
+		dataSourceId: string,
+		params: LogsParams,
+		q: string,
+		window: Record<string, string>,
+		since: bigint,
+	): Promise<LogsResult> {
+		const first = await readLogs(
+			dataSourceId,
+			params,
+			q,
+			window,
+			null,
+			LogOrder.Desc,
+		)
+
+		if (reachesBack(first, since)) {
+			return first
+		}
+
+		const rest = await readLogs(
+			dataSourceId,
+			{ ...params, limit: params.limit * (REFRESH_PAGES - 1) },
+			q,
+			window,
+			first.nextCursor,
+			LogOrder.Desc,
+		)
+		const lines = [...first.lines, ...rest.lines]
+
+		return {
+			status: resultStatus(lines),
+			lines: lines,
+			nextCursor: rest.nextCursor,
+			previousCursor: first.previousCursor,
+			partial: first.partial || rest.partial,
+		}
 	}
 
 	async function readLogs(
@@ -578,11 +623,8 @@ export default function () {
 			q: q,
 			...window,
 			...formatQueryVariableValues(params.variableValues),
+			limit: String(params.limit),
 		})
-
-		if (params.limit !== undefined) {
-			queryParams.set("limit", String(params.limit))
-		}
 
 		if (order !== undefined) {
 			queryParams.set("order", order)
@@ -791,6 +833,14 @@ function edgeResult(
 	}
 
 	return [null, null]
+}
+
+// reachesBack reports whether a newest-first read holds every log down to
+// since. Either it ran out of logs, or its oldest log is at since or older.
+function reachesBack(read: LogsResult, since: bigint): boolean {
+	const oldest = read.lines.at(-1)
+
+	return !read.nextCursor || (!!oldest && timeNanos(oldest.time) <= since)
 }
 
 // stitchNewestFirst fits a newest-first read from the top of the window
