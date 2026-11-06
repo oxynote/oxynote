@@ -493,7 +493,7 @@ func Test_Loki_Logs(t *testing.T) {
 				Lines: []LogLine{
 					{Time: time.Unix(0, 3000).UTC(), Level: LogLevelUnknown, Line: "third", Labels: map[string]string{"service_name": "a"}, Fields: map[string]string{}},
 					{Time: time.Unix(0, 2000).UTC(), Level: LogLevelWarning, Line: "second", Labels: map[string]string{"service_name": "b"}, Fields: map[string]string{"level": "warn"}},
-					{Time: time.Unix(0, 1000).UTC(), Level: LogLevelError, Line: "first", Labels: map[string]string{"service_name": "a"}, Fields: map[string]string{"detected_level": "error"}},
+					{Time: time.Unix(0, 1000).UTC(), Level: LogLevelError, Line: "first", Labels: map[string]string{"service_name": "a"}, Fields: map[string]string{}, Parsed: map[string]string{"detected_level": "error"}},
 				},
 				PreviousCursor: null.ValueFrom(newCursor(time.Unix(0, 3001), time.Nanosecond)),
 			},
@@ -505,7 +505,7 @@ func Test_Loki_Logs(t *testing.T) {
 			Result: &LogsResult{
 				Status: QueryStatusOK,
 				Lines: []LogLine{
-					{Time: time.Unix(0, 1000).UTC(), Level: LogLevelError, Line: "first", Labels: map[string]string{"service_name": "a"}, Fields: map[string]string{"detected_level": "error"}},
+					{Time: time.Unix(0, 1000).UTC(), Level: LogLevelError, Line: "first", Labels: map[string]string{"service_name": "a"}, Fields: map[string]string{}, Parsed: map[string]string{"detected_level": "error"}},
 					{Time: time.Unix(0, 2000).UTC(), Level: LogLevelWarning, Line: "second", Labels: map[string]string{"service_name": "b"}, Fields: map[string]string{"level": "warn"}},
 					{Time: time.Unix(0, 3000).UTC(), Level: LogLevelUnknown, Line: "third", Labels: map[string]string{"service_name": "a"}, Fields: map[string]string{}},
 				},
@@ -1352,15 +1352,16 @@ func Test_lokiEntry_UnmarshalJSON(t *testing.T) {
 		},
 		"Time and line only": {
 			JSON:   `["1793019494670388731", "a"]`,
-			Result: lokiEntry{ns: 1793019494670388731, line: "a", fields: map[string]string{}},
+			Result: lokiEntry{ns: 1793019494670388731, line: "a", metadata: map[string]string{}},
 		},
-		"Parsed keys win over structured metadata": {
+		"Structured metadata and parsed keys apart": {
 			JSON: `["1", "a", {"structuredMetadata":{"k":"meta","m":"1"},"parsed":{"k":"parsed","p":"2"}}]`,
-			Result: lokiEntry{ns: 1, line: "a", fields: map[string]string{
-				"k": "parsed",
-				"m": "1",
-				"p": "2",
-			}},
+			Result: lokiEntry{
+				ns:       1,
+				line:     "a",
+				metadata: map[string]string{"k": "meta", "m": "1"},
+				parsed:   map[string]string{"k": "parsed", "p": "2"},
+			},
 		},
 	}
 
@@ -1389,7 +1390,7 @@ func Test_lokiEntry_logLine(t *testing.T) {
 		Result LogLine
 	}{
 		"Detected level in metadata wins": {
-			Entry:  lokiEntry{ns: 5, line: "a", fields: map[string]string{"detected_level": "error", "level": "info"}},
+			Entry:  lokiEntry{ns: 5, line: "a", metadata: map[string]string{"detected_level": "error", "level": "info"}},
 			Stream: map[string]string{"level": "debug"},
 			Result: LogLine{
 				Time:   time.Unix(0, 5).UTC(),
@@ -1399,8 +1400,25 @@ func Test_lokiEntry_logLine(t *testing.T) {
 				Fields: map[string]string{"detected_level": "error", "level": "info"},
 			},
 		},
+		"Parsed level wins over metadata": {
+			Entry: lokiEntry{
+				ns:       5,
+				line:     "level=warn",
+				metadata: map[string]string{"level": "info"},
+				parsed:   map[string]string{"level": "warn"},
+			},
+			Stream: nil,
+			Result: LogLine{
+				Time:   time.Unix(0, 5).UTC(),
+				Level:  LogLevelWarning,
+				Line:   "level=warn",
+				Labels: map[string]string{},
+				Fields: map[string]string{"level": "info"},
+				Parsed: map[string]string{"level": "warn"},
+			},
+		},
 		"Level from the stream labels": {
-			Entry:  lokiEntry{ns: 5, line: "a", fields: map[string]string{}},
+			Entry:  lokiEntry{ns: 5, line: "a", metadata: map[string]string{}},
 			Stream: map[string]string{"level": "WARN"},
 			Result: LogLine{
 				Time:   time.Unix(0, 5).UTC(),
@@ -1411,7 +1429,7 @@ func Test_lokiEntry_logLine(t *testing.T) {
 			},
 		},
 		"No level at all": {
-			Entry:  lokiEntry{ns: 5, line: "a", fields: map[string]string{}},
+			Entry:  lokiEntry{ns: 5, line: "a", metadata: map[string]string{}},
 			Stream: nil,
 			Result: LogLine{
 				Time:   time.Unix(0, 5).UTC(),

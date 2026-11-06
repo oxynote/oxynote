@@ -30,7 +30,8 @@ export interface TextPart {
 // summarizeLog splits a log into what its row shows: the message, the
 // log's own fields and the stream labels. A JSON line gives its message
 // and fields key by key. Any other line is its own message, and its fields
-// are the ones the source parsed from it.
+// are what the line carries besides its text. The keys a parser took from
+// the line stay out, because the message already shows them.
 export function summarizeLog(log: Log): LogSummary {
 	const labels = sortedEntries(log.labels)
 	const json = parseJSONObject(log.line)
