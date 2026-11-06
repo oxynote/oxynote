@@ -59,7 +59,7 @@ func sqlRunner(
 	rows := [][]any{{1700000000.0, 42.0}}
 
 	pg := &datasourceMock.PostgreSQL{
-		QueryFunc: func(context.Context, string, processor.TimeRange) (*processor.PostgreSQLQueryResult, error) {
+		QueryFunc: func(context.Context, string, processor.TimeRange, map[string]string) (*processor.PostgreSQLQueryResult, error) {
 			return &processor.PostgreSQLQueryResult{
 				Columns: []string{"time", "value"},
 				Rows:    rows,
@@ -68,7 +68,7 @@ func sqlRunner(
 	}
 
 	my := &datasourceMock.MySQL{
-		QueryFunc: func(context.Context, string, processor.TimeRange) (*processor.MySQLQueryResult, error) {
+		QueryFunc: func(context.Context, string, processor.TimeRange, map[string]string) (*processor.MySQLQueryResult, error) {
 			return &processor.MySQLQueryResult{
 				Columns: []string{"time", "value"},
 				Rows:    rows,

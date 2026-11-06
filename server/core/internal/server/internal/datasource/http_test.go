@@ -1154,6 +1154,78 @@ func Test_Handler_DeleteDataSource(t *testing.T) {
 	}
 }
 
+func Test_Handler_values(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Variables *VariableManagerMock
+		Target    string
+		Texts     []string
+		Result    map[string]string
+		Err       error
+		Checks    []check
+	}{
+		"No reference skips the tree": {
+			Texts:  []string{"up", "$__from"},
+			Result: map[string]string{},
+			Checks: checks(wasVariableManagerFetchTreeCalled(0)),
+		},
+		"Error returned by VariableManager.FetchTree": {
+			Variables: stubVariables(assert.AnError),
+			Texts:     []string{"$metric"},
+			Err:       assert.AnError,
+			Checks:    checks(wasVariableManagerFetchTreeCalled(1)),
+		},
+		"Stored values": {
+			Variables: stubVariables(nil),
+			Texts:     []string{"sum($metric)"},
+			Result:    map[string]string{"metric": "up"},
+			Checks:    checks(wasVariableManagerFetchTreeCalled(1)),
+		},
+		"Overridden value": {
+			Variables: stubVariables(nil),
+			Target:    "http://test.com/?var-metric=down&var-other=x",
+			Texts:     []string{"sum($metric)"},
+			Result:    map[string]string{"metric": "down"},
+			Checks:    checks(wasVariableManagerFetchTreeCalled(1)),
+		},
+		"Override that is too long": {
+			Variables: stubVariables(nil),
+			Target:    "http://test.com/?var-metric=" + strings.Repeat("x", 129),
+			Texts:     []string{"sum($metric)"},
+			Err:       variable.ErrValueTooLong,
+			Checks:    checks(wasVariableManagerFetchTreeCalled(1)),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl, db, exec, vars, logs := prepHandler(nil, nil, c.Variables)
+
+			target := c.Target
+			if target == "" {
+				target = "http://test.com/"
+			}
+
+			res, err := hdl.values(httptest.NewRequest(http.MethodGet, target, http.NoBody), _testSession, c.Texts...)
+
+			for _, ch := range c.Checks {
+				ch(t, db, exec, vars, httptest.NewRecorder(), logs)
+			}
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
+}
+
 func Test_Handler_substitute(t *testing.T) {
 	t.Parallel()
 

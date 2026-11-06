@@ -659,8 +659,10 @@ type SQL interface {
 	// Metadata retrieves all tables and their columns from the data source.
 	Metadata(ctx context.Context) (*processor.SQLMetadataResult, error)
 
-	// QueryLabels executes a SQL query with LIMIT 1 and returns string column names with example values.
-	QueryLabels(ctx context.Context, q string, tr processor.TimeRange) (map[string]string, error)
+	// QueryLabels executes a SQL query with LIMIT 1, with its macros and
+	// the variables in vars expanded, and returns string column names with
+	// example values.
+	QueryLabels(ctx context.Context, q string, tr processor.TimeRange, vars map[string]string) (map[string]string, error)
 }
 
 // PostgreSQL represents a PostgreSQL data source processor.
@@ -669,8 +671,9 @@ type SQL interface {
 type PostgreSQL interface {
 	SQL
 
-	// Query executes a SQL query against the data source.
-	Query(ctx context.Context, q string, tr processor.TimeRange) (*processor.PostgreSQLQueryResult, error)
+	// Query executes a SQL query against the data source, with its macros
+	// and the variables in vars expanded.
+	Query(ctx context.Context, q string, tr processor.TimeRange, vars map[string]string) (*processor.PostgreSQLQueryResult, error)
 }
 
 // MySQL represents a MySQL data source processor.
@@ -679,8 +682,9 @@ type PostgreSQL interface {
 type MySQL interface {
 	SQL
 
-	// Query executes a SQL query against the data source.
-	Query(ctx context.Context, q string, tr processor.TimeRange) (*processor.MySQLQueryResult, error)
+	// Query executes a SQL query against the data source, with its macros
+	// and the variables in vars expanded.
+	Query(ctx context.Context, q string, tr processor.TimeRange, vars map[string]string) (*processor.MySQLQueryResult, error)
 }
 
 // Logs represents a log data source processor.

@@ -991,7 +991,7 @@ func Test_Entry_Resolved(t *testing.T) {
 	}
 }
 
-func Test_Tree_Substitute(t *testing.T) {
+func Test_Tree_Values(t *testing.T) {
 	t.Parallel()
 
 	env := Option{ID: xid.New(), Value: "prod"}
@@ -1003,14 +1003,64 @@ func Test_Tree_Substitute(t *testing.T) {
 		}},
 		{Variables: []Entry{
 			{Key: "step", Type: TypeText, DefaultValue: null.StringFrom("5m"), Value: null.StringFrom("1m")},
-			{Key: "name", Type: TypeText, Value: null.StringFrom("o'brien")},
 		}},
 	}
 
 	cc := map[string]struct {
 		Overrides map[string]string
-		Texts     []string
-		Result    []string
+		Result    map[string]string
+		Err       error
+	}{
+		"Resolved values": {
+			Result: map[string]string{"metric_range": "last_24_hours", "env": "prod", "step": "1m"},
+		},
+		"Overridden values": {
+			Overrides: map[string]string{"step": "30s", "env": "dev", "other": "x"},
+			Result:    map[string]string{"metric_range": "last_24_hours", "env": "dev", "step": "30s"},
+		},
+		"Longest override": {
+			Overrides: map[string]string{"step": strings.Repeat("ž", 128)},
+			Result:    map[string]string{"metric_range": "last_24_hours", "env": "prod", "step": strings.Repeat("ž", 128)},
+		},
+		"Override that is too long": {
+			Overrides: map[string]string{"step": strings.Repeat("x", 129)},
+			Err:       ErrValueTooLong,
+		},
+		"Long override for no variable": {
+			Overrides: map[string]string{"other": strings.Repeat("x", 129)},
+			Result:    map[string]string{"metric_range": "last_24_hours", "env": "prod", "step": "1m"},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := tree.Values(c.Overrides)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
+}
+
+func Test_Substitute(t *testing.T) {
+	t.Parallel()
+
+	values := map[string]string{
+		"metric_range": "last_24_hours",
+		"env":          "prod",
+		"step":         "1m",
+		"name":         "o'brien",
+	}
+
+	cc := map[string]struct {
+		Texts  []string
+		Result []string
 	}{
 		"No texts": {
 			Result: []string{},
@@ -1022,18 +1072,6 @@ func Test_Tree_Substitute(t *testing.T) {
 		"No reference": {
 			Texts:  []string{"SELECT 1"},
 			Result: []string{"SELECT 1"},
-		},
-		"Own value": {
-			Texts:  []string{"rate(x[$step])"},
-			Result: []string{"rate(x[1m])"},
-		},
-		"Default value": {
-			Texts:  []string{"SELECT '$metric_range'"},
-			Result: []string{"SELECT 'last_24_hours'"},
-		},
-		"List option text": {
-			Texts:  []string{`up{env="$env"}`},
-			Result: []string{`up{env="prod"}`},
 		},
 		"Raw value": {
 			Texts:  []string{"WHERE name = '$name'"},
@@ -1063,23 +1101,13 @@ func Test_Tree_Substitute(t *testing.T) {
 			Texts:  []string{"${env} [[env]] ${env:sqlstring} $"},
 			Result: []string{"${env} [[env]] ${env:sqlstring} $"},
 		},
-		"Overridden value": {
-			Overrides: map[string]string{"step": "30s", "env": "dev"},
-			Texts:     []string{"$step $env $metric_range"},
-			Result:    []string{"30s dev last_24_hours"},
-		},
-		"Override for no variable": {
-			Overrides: map[string]string{"other": "x"},
-			Texts:     []string{"$other"},
-			Result:    []string{"$other"},
-		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, c.Result, tree.Substitute(c.Overrides, c.Texts...))
+			assert.Equal(t, c.Result, Substitute(values, c.Texts...))
 		})
 	}
 }

@@ -42,6 +42,26 @@ function postgreSQLCompletions(t: (key: string) => string): Completion[] {
 			type: "variable",
 			info: t("editor.config-modal-utils.query-info.sql.interval"),
 		},
+		{
+			label: "$__interval_ms",
+			type: "variable",
+			info: t("editor.config-modal-utils.query-info.sql.interval-ms"),
+		},
+		{
+			label: "$__range",
+			type: "variable",
+			info: t("editor.config-modal-utils.query-info.sql.range"),
+		},
+		{
+			label: "$__range_s",
+			type: "variable",
+			info: t("editor.config-modal-utils.query-info.sql.range-s"),
+		},
+		{
+			label: "$__range_ms",
+			type: "variable",
+			info: t("editor.config-modal-utils.query-info.sql.range-ms"),
+		},
 		// macros
 		snippetCompletion("$__time(${1:dateColumn})", {
 			label: "$__time(dateColumn)",
@@ -165,6 +185,26 @@ function mySQLCompletions(t: (key: string) => string): Completion[] {
 			label: "$__interval",
 			type: "variable",
 			info: t("editor.config-modal-utils.query-info.sql.interval"),
+		},
+		{
+			label: "$__interval_ms",
+			type: "variable",
+			info: t("editor.config-modal-utils.query-info.sql.interval-ms"),
+		},
+		{
+			label: "$__range",
+			type: "variable",
+			info: t("editor.config-modal-utils.query-info.sql.range"),
+		},
+		{
+			label: "$__range_s",
+			type: "variable",
+			info: t("editor.config-modal-utils.query-info.sql.range-s"),
+		},
+		{
+			label: "$__range_ms",
+			type: "variable",
+			info: t("editor.config-modal-utils.query-info.sql.range-ms"),
 		},
 		// macros
 		snippetCompletion("$__time(${1:dateColumn})", {

@@ -211,6 +211,8 @@ func (c *Checker) checkMetricActive(
 	queries := extractQueries(block)
 	timeRange := block.Attrs.Get(document.AttrTimeRange).String()
 
+	var values map[string]string
+
 	// the probe acts for no user, so every variable takes its default.
 	if variable.HasReference(queries...) || variable.HasReference(timeRange) {
 		vars, verr := c.db.FetchVariableTree(ctx, organizationID, "")
@@ -220,8 +222,15 @@ func (c *Checker) checkMetricActive(
 			return false
 		}
 
-		queries = vars.Substitute(nil, queries...)
-		timeRange = vars.Substitute(nil, timeRange)[0]
+		values, verr = vars.Values(nil)
+		if verr != nil {
+			// NOCOV: only an override can be too long, and the probe has none.
+			c.log.DebugContext(ctx, "cannot resolve the variables the block references", "error", verr)
+
+			return false
+		}
+
+		timeRange = variable.Substitute(values, timeRange)[0]
 	}
 
 	now := timeutil.Now()
@@ -231,7 +240,7 @@ func (c *Checker) checkMetricActive(
 	// result a source can answer with, scalar, vector and matrix alike,
 	// and only asks whether anything came back, not how it would be drawn.
 	for _, q := range queries {
-		res, qerr := datasourceCore.Query(ctx, c.runners.Runner(*ds), q, tr, processor.ChartTypeGauge)
+		res, qerr := datasourceCore.Query(ctx, c.runners.Runner(*ds), q, values, tr, processor.ChartTypeGauge)
 		if qerr != nil {
 			c.log.DebugContext(ctx, "the block's query did not answer", "error", qerr)
 

@@ -47,7 +47,9 @@ export interface GenericQueryResult {
 	status: GenericQueryResultStatus
 	data: {
 		labels: Record<string, string> // label name: label value
-		metrics: [number, number][] // unix seconds (int) and value (int/float)
+		// unix seconds (int) and value (int/float). A SQL fill leaves a
+		// bucket without a row null.
+		metrics: [number, number | null][]
 	}[]
 	queryErrorMessage?: string // only set when status is QueryError (local-only)
 }

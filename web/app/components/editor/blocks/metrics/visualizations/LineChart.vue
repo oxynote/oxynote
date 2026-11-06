@@ -253,7 +253,13 @@ const option = computed<ECOption>(() => {
 			name: s.name,
 			type: "line" as const,
 			animation: !props.disableAnimation,
-			data: s.data,
+			// echarts pairs old and new points by name, or by index when they
+			// have none. Naming each by its time keeps a refresh that slides
+			// the window from morphing points through their neighbours' values.
+			data: s.data.map(([time, value]) => ({
+				name: String(time.getTime()),
+				value: [time, value],
+			})),
 			smooth: false,
 			symbol: "none",
 			emphasis: {

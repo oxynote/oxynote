@@ -232,10 +232,14 @@ func (p *PostgreSQL) Metadata(ctx context.Context) (*SQLMetadataResult, error) {
 	}, nil
 }
 
-// QueryLabels executes a SQL query with LIMIT 1 against the PostgreSQL data source
-// and returns the string (label) columns with their example values.
-func (p *PostgreSQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (map[string]string, error) {
-	q = tr.ProcessPostgreSQLQuery(q)
+// QueryLabels executes a SQL query with LIMIT 1 against the PostgreSQL data source,
+// with its macros and the variables in vars expanded, and returns the string (label) columns with their example values.
+func (p *PostgreSQL) QueryLabels(ctx context.Context, q string, tr TimeRange, vars map[string]string) (map[string]string, error) {
+	q, _, err := expandSQL(q, _postgreSQLDialect, tr, vars)
+	if err != nil {
+		return nil, err
+	}
+
 	q = sqlSetLimit(q, 1)
 
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
@@ -295,9 +299,13 @@ func sqlSetLimit(q string, n int) string {
 	return fmt.Sprintf("SELECT * FROM (\n%s\n) AS oxynote_limited LIMIT %d", strings.TrimRight(q, "; \t\r\n"), n)
 }
 
-// Query executes a SQL query against the PostgreSQL data source.
-func (p *PostgreSQL) Query(ctx context.Context, q string, tr TimeRange) (*PostgreSQLQueryResult, error) {
-	q = tr.ProcessPostgreSQLQuery(q)
+// Query executes a SQL query against the PostgreSQL data source, with its
+// macros and the variables in vars expanded.
+func (p *PostgreSQL) Query(ctx context.Context, q string, tr TimeRange, vars map[string]string) (*PostgreSQLQueryResult, error) {
+	q, fill, err := expandSQL(q, _postgreSQLDialect, tr, vars)
+	if err != nil {
+		return nil, err
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
@@ -350,6 +358,7 @@ func (p *PostgreSQL) Query(ctx context.Context, q string, tr TimeRange) (*Postgr
 	return &PostgreSQLQueryResult{
 		Columns: columns,
 		Rows:    resultRows,
+		Fill:    fill,
 	}, nil
 }
 
@@ -475,6 +484,10 @@ type PostgreSQLQueryResult struct {
 
 	// Rows contains the result rows, each as a slice of values.
 	Rows [][]any `json:"rows"`
+
+	// Fill specifies the fill mode of the query's group macro, or nil when
+	// it has none. It is encoded so a cached result still fills.
+	Fill *sqlFill `json:"fill,omitempty"`
 }
 
 // HasData reports whether the result holds any row.
@@ -489,12 +502,13 @@ func (pqr *PostgreSQLQueryResult) sql() sqlQueryResult {
 	return sqlQueryResult{
 		Columns: pqr.Columns,
 		Rows:    pqr.Rows,
+		Fill:    pqr.Fill,
 	}
 }
 
 // Transform transforms a PostgreSQLQueryResult into a unified QueryResult
 // based on the requested chart type.
-func (pqr *PostgreSQLQueryResult) Transform(ct ChartType) *QueryResult {
+func (pqr *PostgreSQLQueryResult) Transform(ct ChartType) (*QueryResult, error) {
 	return pqr.sql().transform(ct, pgParseTimestamp, pgParseNumericValue)
 }
 

@@ -23,6 +23,16 @@ describe("<ChartTooltip>", () => {
 		])
 	})
 
+	it("leaves out a series with a null point at the hovered time", async ({
+		expect,
+	}) => {
+		const wrapper = await mountTooltip({
+			params: [tooltipParam("api-gap", null, 0), tooltipParam("api", 2, 1)],
+		})
+
+		expect(tooltipRowTexts(wrapper)).toEqual(["api2"])
+	})
+
 	it("formats each value in the configured unit", async ({ expect }) => {
 		const wrapper = await mountTooltip({
 			params: [tooltipParam("api", 1024)],

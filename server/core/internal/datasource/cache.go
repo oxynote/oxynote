@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -60,11 +62,11 @@ type cachedPostgreSQL struct {
 }
 
 // Query executes the query unless the same one was answered a moment ago.
-func (cp cachedPostgreSQL) Query(ctx context.Context, q string, tr processor.TimeRange) (*processor.PostgreSQLQueryResult, error) {
+func (cp cachedPostgreSQL) Query(ctx context.Context, q string, tr processor.TimeRange, vars map[string]string) (*processor.PostgreSQLQueryResult, error) {
 	gtr := tr.AlignTo(_cacheGrid)
 
-	return cachedQuery(ctx, cp.m, cacheKey(cp.ds, "postgresql_query", gtr, q), func(ctx context.Context) (*processor.PostgreSQLQueryResult, error) {
-		return cp.PostgreSQL.Query(ctx, q, gtr)
+	return cachedQuery(ctx, cp.m, cacheKey(cp.ds, "postgresql_query", gtr, append([]string{q}, variableArgs(q, vars)...)...), func(ctx context.Context) (*processor.PostgreSQLQueryResult, error) {
+		return cp.PostgreSQL.Query(ctx, q, gtr, vars)
 	})
 }
 
@@ -77,11 +79,11 @@ type cachedMySQL struct {
 }
 
 // Query executes the query unless the same one was answered a moment ago.
-func (cm cachedMySQL) Query(ctx context.Context, q string, tr processor.TimeRange) (*processor.MySQLQueryResult, error) {
+func (cm cachedMySQL) Query(ctx context.Context, q string, tr processor.TimeRange, vars map[string]string) (*processor.MySQLQueryResult, error) {
 	gtr := tr.AlignTo(_cacheGrid)
 
-	return cachedQuery(ctx, cm.m, cacheKey(cm.ds, "mysql_query", gtr, q), func(ctx context.Context) (*processor.MySQLQueryResult, error) {
-		return cm.MySQL.Query(ctx, q, gtr)
+	return cachedQuery(ctx, cm.m, cacheKey(cm.ds, "mysql_query", gtr, append([]string{q}, variableArgs(q, vars)...)...), func(ctx context.Context) (*processor.MySQLQueryResult, error) {
+		return cm.MySQL.Query(ctx, q, gtr, vars)
 	})
 }
 
@@ -257,6 +259,21 @@ func cacheKey(ds DataSource, method string, tr processor.TimeRange, args ...stri
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 
 	return _cacheKeyPrefix + hex.EncodeToString(sum[:])
+}
+
+// variableArgs returns the variables q may reference as cache key
+// arguments, one key=value pair each in key order. A key never holds "=",
+// so no two sets share pairs.
+func variableArgs(q string, vars map[string]string) []string {
+	args := make([]string, 0, len(vars))
+
+	for _, k := range slices.Sorted(maps.Keys(vars)) {
+		if strings.Contains(q, "$"+k) {
+			args = append(args, k+"="+vars[k])
+		}
+	}
+
+	return args
 }
 
 // cacheable is an answer the query cache can keep.

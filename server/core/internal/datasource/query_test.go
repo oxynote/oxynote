@@ -96,7 +96,7 @@ type stubPostgreSQL struct {
 	calls *stubCalls
 }
 
-func (s stubPostgreSQL) Query(context.Context, string, processor.TimeRange) (*processor.PostgreSQLQueryResult, error) {
+func (s stubPostgreSQL) Query(context.Context, string, processor.TimeRange, map[string]string) (*processor.PostgreSQLQueryResult, error) {
 	s.calls.PostgreSQLQuery++
 
 	return s.res, s.err
@@ -110,7 +110,7 @@ type stubMySQL struct {
 	calls *stubCalls
 }
 
-func (s stubMySQL) Query(context.Context, string, processor.TimeRange) (*processor.MySQLQueryResult, error) {
+func (s stubMySQL) Query(context.Context, string, processor.TimeRange, map[string]string) (*processor.MySQLQueryResult, error) {
 	s.calls.MySQLQuery++
 
 	return s.res, s.err
@@ -120,6 +120,13 @@ func Test_Query(t *testing.T) {
 	rows := &processor.PostgreSQLQueryResult{
 		Columns: []string{"time", "value"},
 		Rows:    [][]any{{1700000000.0, 10.0}},
+	}
+
+	sqlResult := &processor.QueryResult{
+		Status: processor.QueryStatusOK,
+		Data: []processor.QueryResultSeries{
+			{Labels: map[string]string{}, Metrics: [][2]any{{int64(1700000000), 10.0}}},
+		},
 	}
 
 	cc := map[string]struct {
@@ -198,17 +205,17 @@ func Test_Query(t *testing.T) {
 		},
 		"PostgreSQL result transformed": {
 			Runner: stubRunner{typ: TypePostgreSQL, postgreSQL: rows},
-			Result: (&processor.PostgreSQLQueryResult{Columns: rows.Columns, Rows: rows.Rows}).Transform(processor.ChartTypeLine),
+			Result: sqlResult,
 			Calls:  stubCalls{Type: 1, PostgreSQL: 1, PostgreSQLQuery: 1},
 		},
 		"Supabase result transformed": {
 			Runner: stubRunner{typ: TypeSupabase, postgreSQL: rows},
-			Result: (&processor.PostgreSQLQueryResult{Columns: rows.Columns, Rows: rows.Rows}).Transform(processor.ChartTypeLine),
+			Result: sqlResult,
 			Calls:  stubCalls{Type: 1, PostgreSQL: 1, PostgreSQLQuery: 1},
 		},
 		"MySQL result transformed": {
 			Runner: stubRunner{typ: TypeMySQL, mySQL: &processor.MySQLQueryResult{Columns: rows.Columns, Rows: rows.Rows}},
-			Result: (&processor.MySQLQueryResult{Columns: rows.Columns, Rows: rows.Rows}).Transform(processor.ChartTypeLine),
+			Result: sqlResult,
 			Calls:  stubCalls{Type: 1, MySQL: 1, MySQLQuery: 1},
 		},
 	}
@@ -222,7 +229,7 @@ func Test_Query(t *testing.T) {
 			r := c.Runner
 			r.calls = &stubCalls{}
 
-			res, err := Query(context.Background(), r, "up", tr, processor.ChartTypeLine)
+			res, err := Query(context.Background(), r, "up", map[string]string{"env": "prod"}, tr, processor.ChartTypeLine)
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Equal(t, c.Calls, *r.calls)
 

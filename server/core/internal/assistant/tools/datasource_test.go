@@ -957,15 +957,31 @@ func Test_queryDataSource_Execute(t *testing.T) {
 		{float64(1), float64(2)},
 	}
 
+	// a fill only comes from a query, so the over-filled results are
+	// decoded.
+	const overfilled = `{"columns": ["time", "value"], "rows": [[1, 2]], "fill": {"interval": 1, "from": 0, "to": 300000}}`
+
+	var (
+		overfilledPG processor.PostgreSQLQueryResult
+		overfilledMy processor.MySQLQueryResult
+	)
+
+	require.NoError(t, json.Unmarshal([]byte(overfilled), &overfilledPG))
+	require.NoError(t, json.Unmarshal([]byte(overfilled), &overfilledMy))
+
 	pg := func() *datasourceMock.PostgreSQL {
 		return &datasourceMock.PostgreSQL{
-			QueryFunc: func(_ context.Context, q string, _ processor.TimeRange) (*processor.PostgreSQLQueryResult, error) {
+			QueryFunc: func(_ context.Context, q string, _ processor.TimeRange, vars map[string]string) (*processor.PostgreSQLQueryResult, error) {
+				q = variable.Substitute(vars, q)[0]
+
 				switch {
 				case q == "boom", strings.Contains(q, "$"):
 					return nil, assert.AnError
 				case q == "empty":
 					// an absent result is what the executor reports here.
 					return nil, nil
+				case q == "overfilled":
+					return &overfilledPG, nil
 				default:
 					return &processor.PostgreSQLQueryResult{Columns: []string{"time", "value"}, Rows: rows}, nil
 				}
@@ -975,13 +991,17 @@ func Test_queryDataSource_Execute(t *testing.T) {
 
 	my := func() *datasourceMock.MySQL {
 		return &datasourceMock.MySQL{
-			QueryFunc: func(_ context.Context, q string, _ processor.TimeRange) (*processor.MySQLQueryResult, error) {
+			QueryFunc: func(_ context.Context, q string, _ processor.TimeRange, vars map[string]string) (*processor.MySQLQueryResult, error) {
+				q = variable.Substitute(vars, q)[0]
+
 				switch {
 				case q == "boom", strings.Contains(q, "$"):
 					return nil, assert.AnError
 				case q == "empty":
 					// an absent result is what the executor reports here.
 					return nil, nil
+				case q == "overfilled":
+					return &overfilledMy, nil
 				default:
 					return &processor.MySQLQueryResult{Columns: []string{"time", "value"}, Rows: rows}, nil
 				}
@@ -990,7 +1010,7 @@ func Test_queryDataSource_Execute(t *testing.T) {
 	}
 
 	// a $ left in a query fails it, so these pass only when every
-	// reference was substituted from stubVariableTree. Both dialect
+	// reference resolves from stubVariableTree. Both dialect
 	// clients are handed out, so the tool's own dispatch decides which
 	// one is reached.
 	cc := map[string]dataSourceCase{
@@ -1184,6 +1204,22 @@ func Test_queryDataSource_Execute(t *testing.T) {
 			Args:       `{"data_source_id":"` + id + `","query":"boom"}`,
 			Err:        assert.AnError,
 			Calls:      dataSourceCalls{FetchDataSource: 1, Runner: 1, Type: 1, Prometheus: 1, QueryRange: 1},
+		},
+		"Error returned by PostgreSQLQueryResult.Transform": {
+			Type:       datasource.TypePostgreSQL,
+			PostgreSQL: pg(),
+			MySQL:      my(),
+			Args:       `{"data_source_id":"` + id + `","query":"overfilled","chart_type":"line_chart"}`,
+			Err:        assert.AnError,
+			Calls:      dataSourceCalls{FetchDataSource: 1, Runner: 1, Type: 1, PostgreSQL: 1, PostgreSQLQuery: 1},
+		},
+		"Error returned by MySQLQueryResult.Transform": {
+			Type:       datasource.TypeMySQL,
+			PostgreSQL: pg(),
+			MySQL:      my(),
+			Args:       `{"data_source_id":"` + id + `","query":"overfilled","chart_type":"line_chart"}`,
+			Err:        assert.AnError,
+			Calls:      dataSourceCalls{FetchDataSource: 1, Runner: 1, Type: 1, MySQL: 1, MySQLQuery: 1},
 		},
 		"Error returned by PostgreSQL.Query": {
 			Type:       datasource.TypePostgreSQL,

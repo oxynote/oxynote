@@ -2971,6 +2971,52 @@ func Test_input_FetchVariableTree(t *testing.T) {
 	assert.Equal(t, "user", ff[0].UserID)
 }
 
+func Test_input_VariableValues(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Man    *VariableManagerMock
+		Texts  []string
+		Calls  int
+		Result map[string]string
+		Err    error
+	}{
+		"No reference skips the tree": {
+			Man:    stubVariableManager(),
+			Texts:  []string{"up", "$__from"},
+			Result: map[string]string{},
+		},
+		"Error returned by VariableManager.FetchTree": {
+			Man:   failingTreeManager(),
+			Texts: []string{"$region"},
+			Calls: 1,
+			Err:   assert.AnError,
+		},
+		"Successful values": {
+			Man:    stubVariableManager(),
+			Texts:  []string{"up", "$region"},
+			Calls:  1,
+			Result: map[string]string{"metric_range": "last_7_days", "region": "eu-west-1"},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := variableDeps(c.Man).newInput(context.Background(), NameQueryDataSource, json.RawMessage(`{}`)).VariableValues(c.Texts...)
+			assert.Len(t, c.Man.FetchTreeCalls(), c.Calls)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
+}
+
 func Test_input_SubstituteVariables(t *testing.T) {
 	t.Parallel()
 

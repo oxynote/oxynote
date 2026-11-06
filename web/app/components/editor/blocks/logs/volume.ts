@@ -26,7 +26,8 @@ export function volumeBuckets(
 					counts: emptyCounts(),
 				}
 
-				bucket.counts[level] += value
+				// a null count, which only a SQL fill makes, is no lines
+				bucket.counts[level] += value ?? 0
 				buckets.set(start, bucket)
 			}
 		}

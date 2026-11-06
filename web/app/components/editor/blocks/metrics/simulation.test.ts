@@ -171,8 +171,9 @@ describe("generateSimulatedResult", () => {
 		)
 		const metrics = at(res.data, 0).metrics
 
+		// a simulated point is never null, and NaN fails the comparison
 		expect(at(metrics, metrics.length - 1)[1]).toBeGreaterThan(
-			at(metrics, 0)[1],
+			at(metrics, 0)[1] ?? Number.NaN,
 		)
 	})
 

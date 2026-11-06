@@ -120,8 +120,8 @@ func (l *Loki) Close() error {
 
 // TestConnection tests the connection to the Loki data source.
 //
-// A version that does not parse is accepted: Grafana Cloud reports its
-// own build names rather than release numbers.
+// A version that does not parse is accepted: hosted Loki services report
+// their own build names rather than release numbers.
 func (l *Loki) TestConnection(ctx context.Context) (ConnectionStatus, error) {
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
@@ -400,8 +400,8 @@ func (l *Loki) get(ctx context.Context, path string, params url.Values, header h
 		return _errLokiEndpointNotFound
 	}
 
-	// Loki answers an error in plain text; proxies such as Grafana Cloud
-	// wrap it as JSON. Either is cut to _maxErrorMessageSize.
+	// Loki answers an error in plain text, but the proxies of hosted Loki
+	// services wrap it as JSON. Either is cut to _maxErrorMessageSize.
 	if status != http.StatusOK {
 		var wrapped struct {
 			// Message specifies the error, as proxies write it.
@@ -597,8 +597,7 @@ func (le *lokiEntry) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	// parsed keys win over structured metadata of the same name, as in
-	// Grafana.
+	// parsed keys win over structured metadata of the same name.
 	fields := make(map[string]string, len(meta.StructuredMetadata)+len(meta.Parsed))
 	maps.Copy(fields, meta.StructuredMetadata)
 	maps.Copy(fields, meta.Parsed)

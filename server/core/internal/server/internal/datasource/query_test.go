@@ -10,6 +10,7 @@ import (
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
 	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/internal/variable"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 )
@@ -43,7 +44,7 @@ func stubMySQLQueryClients(cs processor.ConnectionStatus, result *processor.MySQ
 	return &clientMocks{
 		err: cs.Error(),
 		mySQL: &datasourceMock.MySQL{
-			QueryFunc: func(_ context.Context, _ string, _ processor.TimeRange) (*processor.MySQLQueryResult, error) {
+			QueryFunc: func(_ context.Context, _ string, _ processor.TimeRange, _ map[string]string) (*processor.MySQLQueryResult, error) {
 				return result, err
 			},
 		},
@@ -56,7 +57,7 @@ func stubPostgreSQLQueryClients(cs processor.ConnectionStatus, result *processor
 	return &clientMocks{
 		err: cs.Error(),
 		postgreSQL: &datasourceMock.PostgreSQL{
-			QueryFunc: func(_ context.Context, _ string, _ processor.TimeRange) (*processor.PostgreSQLQueryResult, error) {
+			QueryFunc: func(_ context.Context, _ string, _ processor.TimeRange, _ map[string]string) (*processor.PostgreSQLQueryResult, error) {
 				return result, err
 			},
 		},
@@ -75,11 +76,11 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 			}
 
 			for _, f := range exec.mySQL.QueryCalls() {
-				assert.Equal(t, "up", f.Q)
+				assert.Equal(t, "up", variable.Substitute(f.Vars, f.Q)[0])
 			}
 
 			for _, f := range exec.postgreSQL.QueryCalls() {
-				assert.Equal(t, "up", f.Q)
+				assert.Equal(t, "up", variable.Substitute(f.Vars, f.Q)[0])
 			}
 		}
 	}

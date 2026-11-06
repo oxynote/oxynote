@@ -7,7 +7,7 @@ interface TooltipParam {
 	seriesName: string
 	seriesIndex: number
 	marker: string
-	value: [Date, number]
+	value: [Date, number | null]
 }
 
 const props = defineProps<{
@@ -24,15 +24,18 @@ const props = defineProps<{
 // about as many rows as the tooltip shows before its list scrolls
 const PIN_HINT_MIN_SERIES = 11
 
-// the highest values first, so the rows that matter most are on top
-const rows = computed<TooltipParam[]>(() => {
+// the highest values first, so the rows that matter most are on top. A
+// series with a null point at this time has no value to show.
+const rows = computed<(TooltipParam & { value: [Date, number] })[]>(() => {
 	if (!Array.isArray(props.params)) {
 		return []
 	}
 
-	return [...(props.params as TooltipParam[])].sort(
-		(a, b) => b.value[1] - a.value[1],
-	)
+	return (props.params as TooltipParam[])
+		.filter(
+			(p): p is TooltipParam & { value: [Date, number] } => p.value[1] !== null,
+		)
+		.sort((a, b) => b.value[1] - a.value[1])
 })
 </script>
 <template>

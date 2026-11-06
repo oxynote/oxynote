@@ -804,25 +804,34 @@ func NewTree(groups []Group, entries []Entry) Tree {
 	return tree
 }
 
-// Substitute returns the texts with every $key replaced by the resolved
-// value of the variable with that key, or by its value in overrides when
-// it has one there. The value goes in raw. A reference to no variable,
-// such as $1 or the $__from macro, stays as written, and so does an
-// override for no variable.
-func (t Tree) Substitute(overrides map[string]string, texts ...string) []string {
+// Values returns the value of every variable: its value in overrides
+// when it has one there, else the resolved one. An override for no
+// variable is left out.
+func (t Tree) Values(overrides map[string]string) (map[string]string, error) {
 	values := make(map[string]string)
 
 	for _, g := range t {
 		for _, e := range g.Variables {
 			value, ok := overrides[e.Key]
-			if !ok {
+
+			switch {
+			case !ok:
 				value = e.Resolved()
+			case utf8.RuneCountInString(value) > _maxValueLength:
+				return nil, ErrValueTooLong
 			}
 
 			values[e.Key] = value
 		}
 	}
 
+	return values, nil
+}
+
+// Substitute returns the texts with every $key replaced by its value in
+// values. The value goes in raw. A reference to no value, such as $1 or
+// the $__from macro, stays as written.
+func Substitute(values map[string]string, texts ...string) []string {
 	out := make([]string, len(texts))
 
 	for i, text := range texts {

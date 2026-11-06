@@ -12,7 +12,7 @@ const MAX_AUTO_DECIMALS_AFTER_LAST_ZERO = 3
 
 export interface BarChartData {
 	name: string // shown in legend (can be label)
-	data: [Date, number][]
+	data: [Date, number | null][]
 }
 
 export type MultipleBarChartData = BarChartData[]
@@ -25,7 +25,7 @@ export interface BarChartThreshold {
 
 export interface LineChartData {
 	name: string // shown in legend (can be label)
-	data: [Date, number][]
+	data: [Date, number | null][]
 }
 
 export type MultipleLineChartData = LineChartData[]
@@ -143,9 +143,13 @@ function extractVisualizationData(
 					continue
 				}
 
-				const points: [Date, number][] = []
+				// a null point stays null, so the line breaks at the gap
+				const points: [Date, number | null][] = []
 				for (const [timeUnix, val] of series.metrics) {
-					points.push([new Date(timeUnix * 1000), cleanNum(val)])
+					points.push([
+						new Date(timeUnix * 1000),
+						val === null ? null : cleanNum(val),
+					])
 				}
 
 				res.push({
@@ -169,7 +173,11 @@ function extractVisualizationData(
 
 			for (const series of input.data) {
 				const lastMetric = series.metrics[series.metrics.length - 1]
-				if (!series.metrics.length || lastMetric?.length !== 2) {
+				if (
+					!series.metrics.length ||
+					lastMetric?.length !== 2 ||
+					lastMetric[1] === null
+				) {
 					continue
 				}
 
@@ -581,7 +589,9 @@ export function calculateYAxisBounds(
 
 	for (const series of data) {
 		for (const [, value] of series.data) {
-			allValues.push(value)
+			if (value !== null) {
+				allValues.push(value)
+			}
 		}
 	}
 
