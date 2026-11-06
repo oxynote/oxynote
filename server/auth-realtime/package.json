@@ -25,8 +25,8 @@
 		"qa-fix": "pnpm run lint && pnpm run test"
 	},
 	"dependencies": {
-		"@better-auth/electron": "^1.7.2",
-		"@better-auth/mcp": "^1.7.2",
+		"@better-auth/electron": "^1.7.15",
+		"@better-auth/mcp": "^1.7.15",
 		"@hocuspocus/extension-logger": "^4.8.0",
 		"@hocuspocus/server": "^4.8.0",
 		"@hocuspocus/transformer": "^4.8.0",
@@ -50,7 +50,7 @@
 		"@tiptap/extension-underline": "^3.32.2",
 		"@tiptap/extension-unique-id": "^3.32.2",
 		"axios": "^1.21.0",
-		"better-auth": "^1.7.3",
+		"better-auth": "^1.7.15",
 		"hono": "^4.13.14",
 		"jose": "^6.2.14",
 		"kysely": "^0.29.7",
