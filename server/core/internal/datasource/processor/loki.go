@@ -398,6 +398,10 @@ func (l *Loki) get(ctx context.Context, path string, params url.Values, header h
 		return _errLokiRedirected
 	case status == http.StatusNotFound:
 		return _errLokiEndpointNotFound
+	case status == http.StatusTooManyRequests:
+		return _errRateLimited
+	case status >= http.StatusInternalServerError:
+		return ConnectionStatusUnreachable.Error()
 	}
 
 	// Loki answers an error in plain text; proxies such as Grafana Cloud

@@ -683,7 +683,7 @@ func Test_cachedQuery(t *testing.T) {
 
 				for i := range c.Callers {
 					supv.Go(func(context.Context) {
-						results[i], errs[i] = cachedQuery(ctx, m, "key", call)
+						results[i], errs[i] = cachedQuery(ctx, m, xid.New(), "key", call)
 					})
 				}
 

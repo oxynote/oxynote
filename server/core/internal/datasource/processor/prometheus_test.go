@@ -234,6 +234,26 @@ func Test_Prometheus_QueryRange(t *testing.T) {
 			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusBadRequest, `{"status":"error","errorType":"bad_data","error":"parse error"}`),
 			Err:     NewInvalidQueryError("parse error"),
 		},
+		"Query that failed to execute": {
+			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusUnprocessableEntity, `{"status":"error","errorType":"execution","error":"many-to-many matching"}`),
+			Err:     NewInvalidQueryError("many-to-many matching"),
+		},
+		"Unauthorized data source": {
+			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusUnauthorized, `<html>unauthorized</html>`),
+			Err:     ConnectionStatusUnauthorized.Error(),
+		},
+		"Forbidden data source": {
+			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusForbidden, `{"status":"error","error":"forbidden"}`),
+			Err:     ConnectionStatusUnauthorized.Error(),
+		},
+		"Rate limited data source": {
+			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusTooManyRequests, `too many requests`),
+			Err:     _errRateLimited,
+		},
+		"Data source that is down": {
+			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusServiceUnavailable, `<html>upstream down</html>`),
+			Err:     ConnectionStatusUnreachable.Error(),
+		},
 		"Successful query": {
 			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusOK, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"up"},"values":[[1700000000,"1"]]}]}}`),
 			Result: &PrometheusQueryResult{

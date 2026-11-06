@@ -7,6 +7,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/prometheus/common/model"
 	"github.com/rs/xid"
@@ -572,7 +573,7 @@ func (queryDataSource) Execute(inp *input) (string, error) {
 
 		res, err := prom.QueryRange(inp.Context(), q, tr)
 		if err != nil {
-			return "", fmt.Errorf("%w; check the query against get_data_source_metadata", err)
+			return "", queryError(err)
 		}
 
 		switch {
@@ -591,7 +592,7 @@ func (queryDataSource) Execute(inp *input) (string, error) {
 
 		res, err := pg.Query(inp.Context(), q, tr)
 		if err != nil {
-			return "", fmt.Errorf("%w; check the query against get_data_source_metadata", err)
+			return "", queryError(err)
 		}
 
 		switch {
@@ -610,7 +611,7 @@ func (queryDataSource) Execute(inp *input) (string, error) {
 
 		res, err := my.Query(inp.Context(), q, tr)
 		if err != nil {
-			return "", fmt.Errorf("%w; check the query against get_data_source_metadata", err)
+			return "", queryError(err)
 		}
 
 		switch {
@@ -622,6 +623,17 @@ func (queryDataSource) Execute(inp *input) (string, error) {
 			return result(newChartPreview(res.Transform(in.ChartType)))
 		}
 	}
+}
+
+// queryError returns a failed query's error with a hint to check the query
+// when the data source rejected it. Any other failure, such as an outage or
+// a rate limit, is returned as it is: a different query does not fix it.
+func queryError(err error) error {
+	if errutil.InternalCode(err) != "query.error" {
+		return err
+	}
+
+	return fmt.Errorf("%w; check the query against get_data_source_metadata", err)
 }
 
 // rawSeries is a raw Prometheus answer, cut down to _maxRawSeries series

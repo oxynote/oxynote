@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"strconv"
 	"strings"
@@ -944,11 +945,16 @@ func Test_queryDataSource_Execute(t *testing.T) {
 	prom := func(res *processor.PrometheusQueryResult) *datasourceMock.Prometheus {
 		return &datasourceMock.Prometheus{
 			QueryRangeFunc: func(_ context.Context, q string, _ processor.TimeRange) (*processor.PrometheusQueryResult, error) {
-				if q == "boom" || strings.Contains(q, "$") {
+				switch {
+				case q == "boom", strings.Contains(q, "$"):
 					return nil, assert.AnError
+				case q == "rejected":
+					return nil, processor.NewInvalidQueryError("parse error")
+				case q == "down":
+					return nil, processor.ConnectionStatusUnreachable.Error()
+				default:
+					return res, nil
 				}
-
-				return res, nil
 			},
 		}
 	}
@@ -1185,6 +1191,20 @@ func Test_queryDataSource_Execute(t *testing.T) {
 			Err:        assert.AnError,
 			Calls:      dataSourceCalls{FetchDataSource: 1, Runner: 1, Type: 1, Prometheus: 1, QueryRange: 1},
 		},
+		"A Prometheus query the data source rejected": {
+			Type:       datasource.TypePrometheus,
+			Prometheus: prom(nil),
+			Args:       `{"data_source_id":"` + id + `","query":"rejected"}`,
+			Err:        fmt.Errorf("%w; check the query against get_data_source_metadata", processor.NewInvalidQueryError("parse error")),
+			Calls:      dataSourceCalls{FetchDataSource: 1, Runner: 1, Type: 1, Prometheus: 1, QueryRange: 1},
+		},
+		"A Prometheus query the data source could not serve": {
+			Type:       datasource.TypePrometheus,
+			Prometheus: prom(nil),
+			Args:       `{"data_source_id":"` + id + `","query":"down"}`,
+			Err:        processor.ConnectionStatusUnreachable.Error(),
+			Calls:      dataSourceCalls{FetchDataSource: 1, Runner: 1, Type: 1, Prometheus: 1, QueryRange: 1},
+		},
 		"Error returned by PostgreSQL.Query": {
 			Type:       datasource.TypePostgreSQL,
 			PostgreSQL: pg(),
@@ -1212,6 +1232,36 @@ func Test_queryDataSource_Execute(t *testing.T) {
 			t.Parallel()
 
 			runDataSourceCase(t, queryDataSource{}, NameQueryDataSource, c)
+		})
+	}
+}
+
+func Test_queryError(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Err    error
+		Result error
+	}{
+		"Query the data source rejected": {
+			Err:    processor.NewInvalidQueryError("parse error"),
+			Result: fmt.Errorf("%w; check the query against get_data_source_metadata", processor.NewInvalidQueryError("parse error")),
+		},
+		"Data source that is down": {
+			Err:    processor.ConnectionStatusUnreachable.Error(),
+			Result: processor.ConnectionStatusUnreachable.Error(),
+		},
+		"Error without a code": {
+			Err:    assert.AnError,
+			Result: assert.AnError,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, queryError(c.Err))
 		})
 	}
 }
