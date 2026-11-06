@@ -139,7 +139,7 @@ var _otelSeverityLevels = []LogLevel{
 	LogLevelCritical,
 }
 
-// LogLevel is a line's severity, normalized to the names Grafana uses so
+// LogLevel is a line's severity, normalized to the common level names so
 // that colours match what users know.
 type LogLevel string
 

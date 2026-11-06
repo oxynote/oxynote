@@ -165,7 +165,7 @@ func (sqr sqlQueryResult) metrics(points []sqlPoint, ct ChartType) [][2]any {
 	}
 
 	// a gauge shows the present, so only the last value survives. A null
-	// one is skipped, as Grafana's gauge does.
+	// one is skipped, because it has no value to show.
 	n := len(out)
 	for n > 0 && out[n-1][1] == nil {
 		n--

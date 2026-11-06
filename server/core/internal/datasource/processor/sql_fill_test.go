@@ -2,8 +2,10 @@ package processor
 
 import (
 	"testing"
+	"time"
 
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -11,31 +13,44 @@ func Test_newSQLFill(t *testing.T) {
 	cc := map[string]struct {
 		Mode     string
 		Interval int64
+		EndsLate bool
 		Result   *sqlFill
 		Err      error
 	}{
-		"NULL":                        {Mode: "NULL", Interval: 300, Result: &sqlFill{Interval: 300, From: 1705312800, To: 1705316400}},
-		"Lowercase null":              {Mode: "null", Interval: 300, Result: &sqlFill{Interval: 300, From: 1705312800, To: 1705316400}},
-		"Previous":                    {Mode: "previous", Interval: 300, Result: &sqlFill{Previous: true, Interval: 300, From: 1705312800, To: 1705316400}},
-		"Uppercase previous":          {Mode: "PREVIOUS", Interval: 300, Result: &sqlFill{Previous: true, Interval: 300, From: 1705312800, To: 1705316400}},
-		"Number":                      {Mode: "1.5", Interval: 300, Result: &sqlFill{Value: new(1.5), Interval: 300, From: 1705312800, To: 1705316400}},
-		"Negative number":             {Mode: "-2", Interval: 300, Result: &sqlFill{Value: new(-2.0), Interval: 300, From: 1705312800, To: 1705316400}},
-		"First bucket starts earlier": {Mode: "NULL", Interval: 7, Result: &sqlFill{Interval: 7, From: 1705312798, To: 1705316400}},
-		"Word is an error":            {Mode: "zero", Interval: 300, Err: NewInvalidQueryError("fill zero must be NULL, previous or a number")},
-		"Quoted number is an error":   {Mode: "'0'", Interval: 300, Err: NewInvalidQueryError("fill '0' must be NULL, previous or a number")},
-		"Infinity is an error":        {Mode: "Inf", Interval: 300, Err: NewInvalidQueryError("fill Inf must be NULL, previous or a number")},
-		"Not a number is an error":    {Mode: "NaN", Interval: 300, Err: NewInvalidQueryError("fill NaN must be NULL, previous or a number")},
+		"NULL":                                {Mode: "NULL", Interval: 300, Result: &sqlFill{Interval: 300, From: 1705312800, To: 1705316400}},
+		"Lowercase null":                      {Mode: "null", Interval: 300, Result: &sqlFill{Interval: 300, From: 1705312800, To: 1705316400}},
+		"Previous":                            {Mode: "previous", Interval: 300, Result: &sqlFill{Previous: true, Interval: 300, From: 1705312800, To: 1705316400}},
+		"Uppercase previous":                  {Mode: "PREVIOUS", Interval: 300, Result: &sqlFill{Previous: true, Interval: 300, From: 1705312800, To: 1705316400}},
+		"Number":                              {Mode: "1.5", Interval: 300, Result: &sqlFill{Value: new(1.5), Interval: 300, From: 1705312800, To: 1705316400}},
+		"Negative number":                     {Mode: "-2", Interval: 300, Result: &sqlFill{Value: new(-2.0), Interval: 300, From: 1705312800, To: 1705316400}},
+		"First bucket starts earlier":         {Mode: "NULL", Interval: 7, Result: &sqlFill{Interval: 7, From: 1705312798, To: 1705316400}},
+		"Range ending after now stops at now": {Mode: "NULL", Interval: 300, EndsLate: true, Result: &sqlFill{Interval: 300, From: 1705312800}},
+		"Word is an error":                    {Mode: "zero", Interval: 300, Err: NewInvalidQueryError("fill zero must be NULL, previous or a number")},
+		"Quoted number is an error":           {Mode: "'0'", Interval: 300, Err: NewInvalidQueryError("fill '0' must be NULL, previous or a number")},
+		"Infinity is an error":                {Mode: "Inf", Interval: 300, Err: NewInvalidQueryError("fill Inf must be NULL, previous or a number")},
+		"Not a number is an error":            {Mode: "NaN", Interval: 300, Err: NewInvalidQueryError("fill NaN must be NULL, previous or a number")},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := newSQLFill(c.Mode, c.Interval, _testTimeRange)
+			tr := _testTimeRange
+			if c.EndsLate {
+				tr.To = timeutil.Now().Add(time.Hour)
+			}
+
+			res, err := newSQLFill(c.Mode, c.Interval, tr)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
+			}
+
+			if c.EndsLate {
+				assert.InDelta(t, timeutil.Now().Unix(), res.To, 5)
+
+				c.Result.To = res.To
 			}
 
 			assert.Equal(t, c.Result, res)

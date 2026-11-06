@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
 // _maxFilledPoints is the most points the series of a filled result hold
@@ -14,7 +16,7 @@ const _maxFilledPoints = 250_000
 
 // sqlFill is the fill mode of a group macro, such as the 0 of
 // $__timeGroup(ts, '5m', 0). It gives every series a point on each bucket
-// of the range, as Grafana does.
+// of the range.
 type sqlFill struct {
 	// Previous indicates that an empty bucket repeats the series' last
 	// value before it.
@@ -38,10 +40,17 @@ type sqlFill struct {
 // newSQLFill returns the fill that mode, the last argument of a group
 // macro, asks for over tr in buckets of interval seconds.
 func newSQLFill(mode string, interval int64, tr TimeRange) (*sqlFill, error) {
+	// the range a query runs on can end up to a cache step past now, and a
+	// bucket that has not started yet would be drawn as the fill value.
+	to := tr.To
+	if now := timeutil.Now(); now.Before(to) {
+		to = now
+	}
+
 	f := sqlFill{
 		Interval: interval,
 		From:     tr.From.Unix() / interval * interval,
-		To:       tr.To.Unix(),
+		To:       to.Unix(),
 	}
 
 	switch {

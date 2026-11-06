@@ -101,7 +101,12 @@ describe("<BarChart>", { concurrent: false }, () => {
 			"web-2",
 		])
 		expect(chartSeries(option).type).toBe("bar")
-		expect(chartSeries(option).data).toEqual(SERIES[0]?.data)
+		expect(chartSeries(option).data).toEqual(
+			SERIES[0]?.data.map(([time, value]) => ({
+				name: String(time.getTime()),
+				value: [time, value],
+			})),
+		)
 	})
 
 	it("draws nothing for an empty result", async ({ expect }) => {
