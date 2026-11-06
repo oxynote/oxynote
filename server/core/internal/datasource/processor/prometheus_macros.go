@@ -1,7 +1,8 @@
 package processor
 
 import (
-	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -10,35 +11,55 @@ import (
 // span enough data points for accurate calculations.
 const _rateIntervalFactor = 4
 
-// ProcessPrometheusQuery processes the query string to replace Prometheus-specific
-// macros, then applies generic macro expansion via ProcessQuery.
+// _prometheusMacroPattern matches a global macro, $__name or ${__...}, as a
+// whole, so $__interval_ms is never $__interval followed by _ms.
+var _prometheusMacroPattern = regexp.MustCompile(`\$__\w+|\$\{__[^}]*\}`)
+
+// ProcessPrometheusQuery returns q with its global macros replaced by their
+// values over tr. A name no macro has stays as written, for Prometheus to
+// report.
 //
-// Prometheus-specific macros:
+//	$__rate_interval    → 4x the step interval, at least 1m, for rate() (e.g., "1h")
+//	$__rate_interval_ms → the same in milliseconds
 //
-//	$__rate_interval → 4x interval or 1m minimum, for rate()/increase() (e.g., "1h")
-//	$__range         → total time range duration in whole seconds (e.g., "86400s")
-//
-// Generic macros (via ProcessQuery):
-//
-//	$__from     → unix milliseconds of the start time
-//	$__to       → unix milliseconds of the end time
-//	$__interval → calculated step interval (e.g., "15m")
+// The rest are the global macros globalMacro and bracedMacro describe.
 func (tr TimeRange) ProcessPrometheusQuery(q string) string {
-	// Resolve generic macros first ($__interval, $__from, $__to).
-	q = tr.ProcessQuery(q)
+	return _prometheusMacroPattern.ReplaceAllStringFunc(q, func(r string) string {
+		var (
+			v  string
+			ok bool
+		)
 
-	interval := tr.calculateInterval()
-	rateInterval := tr.calculateRateInterval(interval)
-	rangeDuration := tr.To.Sub(tr.From)
+		if inner, braced := strings.CutPrefix(r, _bracedMacroPrefix); braced {
+			inner = strings.TrimSuffix(inner, "}")
 
-	q = strings.ReplaceAll(q, "$__rate_interval", formatInterval(rateInterval))
+			v, ok = tr.prometheusMacro(inner)
+			if !ok {
+				v, ok = tr.bracedMacro(inner)
+			}
+		} else {
+			v, ok = tr.prometheusMacro(r[len(_macroPrefix):])
+		}
 
-	// $__range is rendered as exact seconds: formatInterval truncates to one
-	// integer unit, and max_over_time(x[$__range]) over "1h" instead of the
-	// requested 90 minutes silently covers less than the window.
-	q = strings.ReplaceAll(q, "$__range", fmt.Sprintf("%ds", int64(rangeDuration.Seconds())))
+		if !ok {
+			return r
+		}
 
-	return q
+		return v
+	})
+}
+
+// prometheusMacro returns the value over tr of the macro named name: a rate
+// interval or a global macro.
+func (tr TimeRange) prometheusMacro(name string) (string, bool) {
+	switch name {
+	case "rate_interval":
+		return formatInterval(tr.calculateRateInterval(tr.calculateInterval())), true
+	case "rate_interval_ms":
+		return strconv.FormatInt(tr.calculateRateInterval(tr.calculateInterval()).Milliseconds(), 10), true
+	default:
+		return tr.globalMacro(name)
+	}
 }
 
 // calculateRateInterval calculates the rate interval for use with rate() and similar
