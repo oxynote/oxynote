@@ -111,6 +111,9 @@ func (s *Server) httpRouter() chi.Router {
 
 	r.Use(httpserver.Timeout(_requestTimeout))
 	r.Use(httpserver.Recoverer(s.log))
+	// The last X-Forwarded-For entry is the client address seen by the proxy
+	// in front of core (Caddy replaces the header with its direct peer).
+	r.Use(middleware.ClientIPFromXFFTrustedProxies(1))
 	r.MethodNotAllowed(httpserver.MethodNotAllowed(s.log))
 	r.NotFound(httpserver.NotFound(s.log))
 	r.Use(wrapMetrics(s.fc))

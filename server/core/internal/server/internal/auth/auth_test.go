@@ -4,11 +4,13 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"testing/iotest"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jarcoal/httpmock"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -30,6 +32,8 @@ func Test_Middleware(t *testing.T) {
 		URL       string
 		Resp      httpmock.Responder
 		Cookies   []*http.Cookie
+		Header    http.Header
+		Remote    string
 		NextCode  int
 		AuthCalls int
 		RespCode  int
@@ -60,6 +64,13 @@ func Test_Middleware(t *testing.T) {
 			AuthCalls: 1,
 			RespCode:  http.StatusUnauthorized,
 			RespJSON:  `{"code":"account.not_authenticated","message":"not authenticated"}`,
+		},
+		"Rate limited by the auth service": {
+			URL:       "http://test.com/get-session",
+			Resp:      httpmock.NewStringResponder(http.StatusTooManyRequests, ""),
+			AuthCalls: 1,
+			RespCode:  http.StatusTooManyRequests,
+			RespJSON:  `{"code":"request.rate_limited","message":"too many requests"}`,
 		},
 		"Error returned by io.ReadAll": {
 			URL: "http://test.com/get-session",
@@ -140,6 +151,86 @@ func Test_Middleware(t *testing.T) {
 				},
 			}
 		}(),
+		"Address seen by the proxy is forwarded to the auth service": func() tcase {
+			var gotFor string
+
+			return tcase{
+				URL: "http://test.com/get-session",
+				Resp: func(r *http.Request) (*http.Response, error) {
+					gotFor = r.Header.Get("X-Forwarded-For")
+
+					return httpmock.NewStringResponse(
+						http.StatusOK,
+						`{"session":{"userId":"u1","activeOrganizationId":"org1"}}`,
+					), nil
+				},
+				Header:    http.Header{"X-Forwarded-For": {"198.51.100.9, 203.0.113.7"}},
+				Remote:    "10.0.0.5:4321",
+				NextCode:  http.StatusNoContent,
+				AuthCalls: 1,
+				RespCode:  http.StatusNoContent,
+				Session: Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				},
+				After: func(t *testing.T) {
+					assert.Equal(t, "203.0.113.7", gotFor)
+				},
+			}
+		}(),
+		"No address is forwarded when the proxy header is not an address": func() tcase {
+			var gotFor string
+
+			return tcase{
+				URL: "http://test.com/get-session",
+				Resp: func(r *http.Request) (*http.Response, error) {
+					gotFor = r.Header.Get("X-Forwarded-For")
+
+					return httpmock.NewStringResponse(
+						http.StatusOK,
+						`{"session":{"userId":"u1","activeOrganizationId":"org1"}}`,
+					), nil
+				},
+				Header:    http.Header{"X-Forwarded-For": {"198.51.100.9, not-an-ip"}},
+				Remote:    "10.0.0.5:4321",
+				NextCode:  http.StatusNoContent,
+				AuthCalls: 1,
+				RespCode:  http.StatusNoContent,
+				Session: Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				},
+				After: func(t *testing.T) {
+					assert.Empty(t, gotFor)
+				},
+			}
+		}(),
+		"No address is forwarded when no proxy header is set": func() tcase {
+			var gotFor string
+
+			return tcase{
+				URL: "http://test.com/get-session",
+				Resp: func(r *http.Request) (*http.Response, error) {
+					gotFor = r.Header.Get("X-Forwarded-For")
+
+					return httpmock.NewStringResponse(
+						http.StatusOK,
+						`{"session":{"userId":"u1","activeOrganizationId":"org1"}}`,
+					), nil
+				},
+				Remote:    "10.0.0.5:4321",
+				NextCode:  http.StatusNoContent,
+				AuthCalls: 1,
+				RespCode:  http.StatusNoContent,
+				Session: Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				},
+				After: func(t *testing.T) {
+					assert.Empty(t, gotFor)
+				},
+			}
+		}(),
 	}
 
 	for cn, c := range cc {
@@ -172,16 +263,24 @@ func Test_Middleware(t *testing.T) {
 				w.WriteHeader(c.NextCode)
 			})
 
-			hdl := Middleware(
+			// Wrapped like httpRouter does, so the client address comes
+			// from chi's client IP middleware.
+			hdl := middleware.ClientIPFromXFFTrustedProxies(1)(Middleware(
 				slog.New(slog.DiscardHandler),
 				Options{BetterAuthURL: c.URL},
 				client,
-			)(next)
+			)(next))
 
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
 
 			for _, ck := range c.Cookies {
 				req.AddCookie(ck)
+			}
+
+			maps.Copy(req.Header, c.Header)
+
+			if c.Remote != "" {
+				req.RemoteAddr = c.Remote
 			}
 
 			rec := httptest.NewRecorder()
