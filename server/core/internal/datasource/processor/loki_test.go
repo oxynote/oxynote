@@ -753,6 +753,31 @@ func Test_Loki_LogsVolume(t *testing.T) {
 			Range:   _logsWindow,
 			Err:     NewInvalidQueryError("bad"),
 		},
+		"Query that failed to execute": {
+			Handler: testutil.JSONHandler(_lokiQueryRangePath, http.StatusUnprocessableEntity, `too many series`),
+			Range:   _logsWindow,
+			Err:     NewInvalidQueryError("too many series"),
+		},
+		"Unauthorized data source": {
+			Handler: testutil.JSONHandler(_lokiQueryRangePath, http.StatusUnauthorized, `no org id`),
+			Range:   _logsWindow,
+			Err:     ConnectionStatusUnauthorized.Error(),
+		},
+		"Forbidden data source": {
+			Handler: testutil.JSONHandler(_lokiQueryRangePath, http.StatusForbidden, `{}`),
+			Range:   _logsWindow,
+			Err:     ConnectionStatusUnauthorized.Error(),
+		},
+		"Rate limited data source": {
+			Handler: testutil.JSONHandler(_lokiQueryRangePath, http.StatusTooManyRequests, `{"message":"too many requests"}`),
+			Range:   _logsWindow,
+			Err:     _errRateLimited,
+		},
+		"Data source that is down": {
+			Handler: testutil.JSONHandler(_lokiQueryRangePath, http.StatusServiceUnavailable, `<html>upstream down</html>`),
+			Range:   _logsWindow,
+			Err:     ConnectionStatusUnreachable.Error(),
+		},
 		"Result that does not decode": {
 			Handler: testutil.JSONHandler(_lokiQueryRangePath, http.StatusOK, `{"data":{"resultType":"matrix","result":{}}}`),
 			Range:   _logsWindow,
@@ -1111,13 +1136,21 @@ func Test_Loki_get(t *testing.T) {
 			}),
 			Err: _errLokiRedirected,
 		},
-		"Rejected request in plain text": {
+		"Rate limited": {
+			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusTooManyRequests, `{"message":"too many requests"}`),
+			Err:     _errRateLimited,
+		},
+		"Server error": {
 			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusGatewayTimeout, "request timed out\n"),
-			Err:     NewInvalidQueryError("request timed out"),
+			Err:     ConnectionStatusUnreachable.Error(),
+		},
+		"Rejected request in plain text": {
+			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusBadRequest, "parse error\n"),
+			Err:     NewInvalidQueryError("parse error"),
 		},
 		"Rejected request wrapped by a proxy": {
-			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusTooManyRequests, `{"message":"too many requests"}`),
-			Err:     NewInvalidQueryError("too many requests"),
+			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusBadRequest, `{"message":"parse error"}`),
+			Err:     NewInvalidQueryError("parse error"),
 		},
 		"Rejected request in the Prometheus shape": {
 			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusBadRequest, `{"status":"error","error":"bad step"}`),

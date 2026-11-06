@@ -253,3 +253,30 @@ func Test_StatusCode(t *testing.T) {
 		})
 	}
 }
+
+func Test_InternalCode(t *testing.T) {
+	cc := map[string]struct {
+		Err    error
+		Result string
+	}{
+		"Undefined error": {
+			Err: errors.New("error"),
+		},
+		"Status error": {
+			Err:    New(400, "hello", "error"),
+			Result: "hello",
+		},
+		"Wrapped status error": {
+			Err:    fmt.Errorf("wrapped: %w", New(400, "hello", "error")),
+			Result: "hello",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, InternalCode(c.Err))
+		})
+	}
+}

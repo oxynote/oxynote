@@ -116,11 +116,26 @@ func (p *Prometheus) QueryRange(ctx context.Context, q string, tr TimeRange) (*P
 		Step:  ntr.QueryStep(),
 	}, v1.WithLimit(_queryLimit))
 	if err != nil {
-		if perr, ok := errors.AsType[*v1.Error](err); ok {
-			return nil, NewInvalidQueryError(perr.Msg)
+		perr, ok := errors.AsType[*v1.Error](err)
+		if !ok {
+			return nil, fmt.Errorf("error performing query: %w", err)
 		}
 
-		return nil, fmt.Errorf("error performing query: %w", err)
+		// the client keeps no status code. For a status Prometheus did
+		// not describe itself, it builds the message from the code, so
+		// that message tells an outage, a refused login or a rate limit
+		// from an error about the query.
+		switch {
+		case perr.Type == v1.ErrServer:
+			return nil, ConnectionStatusUnreachable.Error()
+		case perr.Type == v1.ErrClient &&
+			(perr.Msg == "client error: 401" || perr.Msg == "client error: 403"):
+			return nil, ConnectionStatusUnauthorized.Error()
+		case perr.Type == v1.ErrClient && perr.Msg == "client error: 429":
+			return nil, _errRateLimited
+		}
+
+		return nil, NewInvalidQueryError(perr.Msg)
 	}
 
 	return &PrometheusQueryResult{
