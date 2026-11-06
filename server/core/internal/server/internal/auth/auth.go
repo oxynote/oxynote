@@ -51,7 +51,7 @@ func Middleware(log *slog.Logger, opt Options, client *http.Client) func(http.Ha
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 
-			session, err := getSession(ctx, client, opt.BetterAuthURL, r)
+			session, err := getSession(ctx, client, opt.BetterAuthURL, r.Cookies())
 			if err != nil {
 				httpserver.RespondError(log, w, err)
 				return
@@ -147,15 +147,15 @@ func HasActiveOrganization(userID, organizationID string) bool {
 }
 
 // getSession forwards the request to the Better Auth server to retrieve session information.
-// The client address goes along, so Better Auth rate limits each client on
-// its own instead of all of them in one shared bucket.
-func getSession(ctx context.Context, client *http.Client, url string, inc *http.Request) (Session, error) {
+// The client address from the context goes along, so Better Auth rate limits
+// each client on its own instead of all of them in one shared bucket.
+func getSession(ctx context.Context, client *http.Client, url string, cookies []*http.Cookie) (Session, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return Session{}, err
 	}
 
-	for _, reqCookie := range inc.Cookies() {
+	for _, reqCookie := range cookies {
 		req.AddCookie(reqCookie)
 	}
 
