@@ -240,6 +240,38 @@ func (m *Manager) renew(r *runner) {
 	m.release(r)
 }
 
+// forgetTest drops the passing connection test r remembers, when err says
+// a query it ran found the data source down or was refused its login. The
+// next call tests the connection again and records what it finds, instead
+// of waiting out _statusTTL. A test that failed is kept, as it already says
+// so. A runner the manager let go is left as it is: its client may still
+// answer queries while it closes, but what those find says nothing about
+// the runner that took its place.
+func (m *Manager) forgetTest(ctx context.Context, r *runner, err error) {
+	switch errutil.InternalCode(err) {
+	case "data_source.unauthorized", "data_source.unreachable":
+	default:
+		return
+	}
+
+	unlock, lerr := m.tests.Lock(ctx, r.ds.ID)
+	if lerr != nil {
+		// NOCOV: queries run on a context no caller can cancel.
+		return
+	}
+	defer unlock()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.runners[r.ds.ID] != r || r.tested.Error() != nil {
+		return
+	}
+
+	r.testedAt = time.Time{}
+	r.tested = ""
+}
+
 // keeps reports whether r is the runner the manager keeps for its data
 // source.
 func (m *Manager) keeps(r *runner) bool {
@@ -400,64 +432,67 @@ func (r *runner) TestConnection(ctx context.Context) (processor.ConnectionStatus
 // Prometheus returns the data source's Prometheus client, whose range
 // queries are answered out of the query cache.
 func (r *runner) Prometheus(ctx context.Context) (Prometheus, error) {
-	client, err := connect[Prometheus](ctx, r, TypePrometheus)
+	client, r, err := connect[Prometheus](ctx, r, TypePrometheus)
 	if err != nil {
 		return nil, err
 	}
 
-	return cachedPrometheus{Prometheus: client, m: r.m, ds: r.ds}, nil
+	return cachedPrometheus{Prometheus: client, r: r}, nil
 }
 
 // PostgreSQL returns the data source's PostgreSQL client, whose queries are
 // answered out of the query cache.
 func (r *runner) PostgreSQL(ctx context.Context) (PostgreSQL, error) {
-	client, err := connect[PostgreSQL](ctx, r, TypePostgreSQL, TypeSupabase)
+	client, r, err := connect[PostgreSQL](ctx, r, TypePostgreSQL, TypeSupabase)
 	if err != nil {
 		return nil, err
 	}
 
-	return cachedPostgreSQL{PostgreSQL: client, m: r.m, ds: r.ds}, nil
+	return cachedPostgreSQL{PostgreSQL: client, r: r}, nil
 }
 
 // MySQL returns the data source's MySQL client, whose queries are answered
 // out of the query cache.
 func (r *runner) MySQL(ctx context.Context) (MySQL, error) {
-	client, err := connect[MySQL](ctx, r, TypeMariaDB, TypeMySQL)
+	client, r, err := connect[MySQL](ctx, r, TypeMariaDB, TypeMySQL)
 	if err != nil {
 		return nil, err
 	}
 
-	return cachedMySQL{MySQL: client, m: r.m, ds: r.ds}, nil
+	return cachedMySQL{MySQL: client, r: r}, nil
 }
 
 // SQL returns the data source's dialect-agnostic SQL client.
 func (r *runner) SQL(ctx context.Context) (SQL, error) {
-	return connect[SQL](ctx, r, TypePostgreSQL, TypeSupabase, TypeMariaDB, TypeMySQL)
+	client, _, err := connect[SQL](ctx, r, TypePostgreSQL, TypeSupabase, TypeMariaDB, TypeMySQL)
+
+	return client, err
 }
 
 // Logs returns the data source's log client, whose reads are answered out
 // of the query cache.
 func (r *runner) Logs(ctx context.Context) (Logs, error) {
-	client, err := connect[Logs](ctx, r, TypeLoki)
+	client, r, err := connect[Logs](ctx, r, TypeLoki)
 	if err != nil {
 		return nil, err
 	}
 
-	return cachedLogs{client: client, m: r.m, ds: r.ds}, nil
+	return cachedLogs{client: client, r: r}, nil
 }
 
 // connect resolves the client of the wanted type, testing the connection
-// unless a test passed a moment ago.
+// unless a test passed a moment ago, and returns the runner the manager
+// keeps for the data source, which is the one the client belongs to.
 //
 // A data source that cannot serve the client asked for is an error
 // rather than a status the caller has to inspect: there is nothing to
 // return but the reason, and folding the two together is what keeps a
 // caller from reading an empty result as an empty data source.
-func connect[C any](ctx context.Context, r *runner, allowed ...Type) (C, error) {
+func connect[C any](ctx context.Context, r *runner, allowed ...Type) (C, *runner, error) {
 	var zero C
 
 	if !slices.Contains(allowed, r.ds.Type) {
-		return zero, errutil.New(
+		return zero, nil, errutil.New(
 			http.StatusBadRequest,
 			"data_source.type_not_supported",
 			"Data source %q is a %s data source, which does not serve this operation.",
@@ -471,27 +506,27 @@ func connect[C any](ctx context.Context, r *runner, allowed ...Type) (C, error) 
 	if !r.ds.Credentials.IsValid() {
 		r.recordStatus(ctx, processor.ConnectionStatusInvalidEncryptionKey)
 
-		return zero, processor.ConnectionStatusInvalidEncryptionKey.Error()
+		return zero, nil, processor.ConnectionStatusInvalidEncryptionKey.Error()
 	}
 
 	if r.clientErr != nil {
-		return zero, r.clientErr
+		return zero, nil, r.clientErr
 	}
 
 	r = r.m.adopt(r)
 
 	if err := r.ensureTested(ctx); err != nil {
-		return zero, err
+		return zero, nil, err
 	}
 
 	client, ok := r.client.(C)
 	if !ok {
 		// NOCOV: the type check above admits only the processors that
 		// satisfy C, so this cannot be reached.
-		return zero, errutil.ErrNotFound
+		return zero, nil, errutil.ErrNotFound
 	}
 
-	return client, nil
+	return client, r, nil
 }
 
 // ensureTested tests the connection unless it passed a test within

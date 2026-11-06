@@ -36,6 +36,14 @@ var _errClosed = errors.New("the data source processor is closed")
 // source connects without TLS.
 var _errInvalidCACertificate = errors.New("the ca certificate cannot be used")
 
+// _errRateLimited is returned when the data source limits the requests it
+// answers and refused this one.
+var _errRateLimited = errutil.New(
+	http.StatusTooManyRequests,
+	"data_source.rate_limited",
+	"The data source is rate limiting requests. Try again shortly.",
+)
+
 // ConnectionStatus represents the status of a connection test.
 type ConnectionStatus string
 

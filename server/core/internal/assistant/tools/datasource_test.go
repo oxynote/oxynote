@@ -1182,11 +1182,16 @@ func Test_queryDataSource_Exec(t *testing.T) {
 	prom := func(res *processor.PrometheusQueryResult) *datasourceMock.Prometheus {
 		return &datasourceMock.Prometheus{
 			QueryRangeFunc: func(_ context.Context, q string, _ processor.TimeRange) (*processor.PrometheusQueryResult, error) {
-				if q == "boom" || strings.Contains(q, "$") {
+				switch {
+				case q == "boom", strings.Contains(q, "$"):
 					return nil, assert.AnError
+				case q == "rejected":
+					return nil, processor.NewInvalidQueryError("parse error")
+				case q == "down":
+					return nil, processor.ConnectionStatusUnreachable.Error()
+				default:
+					return res, nil
 				}
-
-				return res, nil
 			},
 		}
 	}
@@ -1440,6 +1445,20 @@ func Test_queryDataSource_Exec(t *testing.T) {
 			Err:        assert.AnError,
 			Calls:      dataSourceCalls{Runner: 1, Values: 1, Type: 1, MySQL: 1, MySQLQuery: 1},
 		},
+		"A Prometheus query the data source rejected": {
+			Type:       datasource.TypePrometheus,
+			Tool:       query("rejected", ""),
+			Prometheus: prom(nil),
+			Err:        fmt.Errorf("%w; check the query against get_data_source_metadata", processor.NewInvalidQueryError("parse error")),
+			Calls:      dataSourceCalls{Runner: 1, Values: 1, Type: 1, Prometheus: 1, QueryRange: 1},
+		},
+		"A Prometheus query the data source could not serve": {
+			Type:       datasource.TypePrometheus,
+			Tool:       query("down", ""),
+			Prometheus: prom(nil),
+			Err:        processor.ConnectionStatusUnreachable.Error(),
+			Calls:      dataSourceCalls{Runner: 1, Values: 1, Type: 1, Prometheus: 1, QueryRange: 1},
+		},
 		"Error returned by PostgreSQL.Query": {
 			Type:       datasource.TypePostgreSQL,
 			Tool:       query("boom", ""),
@@ -1478,6 +1497,8 @@ func Test_queryLogs(t *testing.T) {
 			switch q {
 			case "boom":
 				return nil, assert.AnError
+			case "down":
+				return nil, processor.ConnectionStatusUnreachable.Error()
 			case "empty":
 				return &processor.LogsResult{Status: processor.QueryStatusNoData}, nil
 			default:
@@ -1517,6 +1538,10 @@ func Test_queryLogs(t *testing.T) {
 			Query: "boom",
 			Err:   fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since metric queries such as rate() are not supported", assert.AnError),
 		},
+		"Logs.Logs that could not serve the query": {
+			Query: "down",
+			Err:   processor.ConnectionStatusUnreachable.Error(),
+		},
 	}
 
 	for cn, c := range cc {
@@ -1541,6 +1566,36 @@ func Test_queryLogs(t *testing.T) {
 			}
 
 			assert.Equal(t, c.Result, got)
+		})
+	}
+}
+
+func Test_queryError(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Err    error
+		Result error
+	}{
+		"Query the data source rejected": {
+			Err:    processor.NewInvalidQueryError("parse error"),
+			Result: fmt.Errorf("%w; check the query against get_data_source_metadata", processor.NewInvalidQueryError("parse error")),
+		},
+		"Data source that is down": {
+			Err:    processor.ConnectionStatusUnreachable.Error(),
+			Result: processor.ConnectionStatusUnreachable.Error(),
+		},
+		"Error without a code": {
+			Err:    assert.AnError,
+			Result: assert.AnError,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, queryError(c.Err))
 		})
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/jellydator/xync"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/demo"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/memkit"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/oxynote/oxynote/server/core/pkg/redkit"
@@ -607,6 +608,102 @@ func Test_Manager_renew(t *testing.T) {
 	}
 }
 
+func Test_Manager_forgetTest(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Err  error
+		Kept bool
+
+		// Found is what the runner's last test found.
+		Found processor.ConnectionStatus
+
+		// Replaced puts another runner of the same data source, with a
+		// passing test, in the runner's place.
+		Replaced bool
+
+		Forgotten bool
+	}{
+		"An error about the query": {
+			Err:   processor.NewInvalidQueryError("parse error"),
+			Kept:  true,
+			Found: processor.ConnectionStatusSuccess,
+		},
+		"A rate limit": {
+			Err:   errutil.New(http.StatusTooManyRequests, "data_source.rate_limited", "slow down"),
+			Kept:  true,
+			Found: processor.ConnectionStatusSuccess,
+		},
+		"A data source that is down": {
+			Err:       processor.ConnectionStatusUnreachable.Error(),
+			Kept:      true,
+			Found:     processor.ConnectionStatusSuccess,
+			Forgotten: true,
+		},
+		"A refused login": {
+			Err:       processor.ConnectionStatusUnauthorized.Error(),
+			Kept:      true,
+			Found:     processor.ConnectionStatusSuccess,
+			Forgotten: true,
+		},
+		"A test that failed is kept": {
+			Err:   processor.ConnectionStatusUnreachable.Error(),
+			Kept:  true,
+			Found: processor.ConnectionStatusUnreachable,
+		},
+		"A runner the manager let go": {
+			Err:   processor.ConnectionStatusUnreachable.Error(),
+			Found: processor.ConnectionStatusSuccess,
+		},
+		// the client of a runner that was let go answers the queries still
+		// on it while it closes.
+		"A runner another one replaced": {
+			Err:      processor.ConnectionStatusUnreachable.Error(),
+			Found:    processor.ConnectionStatusSuccess,
+			Replaced: true,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			m := prepManager(t, nil)
+			r := prepStubRunner(m, &stubClient{}, timeutil.Now())
+			r.testedAt = timeutil.Now()
+			r.tested = c.Found
+
+			if !c.Kept {
+				delete(m.runners, r.ds.ID)
+			}
+
+			nr := &runner{
+				m:        m,
+				ds:       r.ds,
+				testedAt: timeutil.Now(),
+				tested:   processor.ConnectionStatusSuccess,
+			}
+
+			if c.Replaced {
+				m.runners[r.ds.ID] = nr
+			}
+
+			m.forgetTest(context.Background(), r, c.Err)
+
+			assert.False(t, nr.testedAt.IsZero())
+			assert.Equal(t, c.Forgotten, r.testedAt.IsZero())
+
+			if c.Forgotten {
+				assert.Empty(t, r.tested)
+
+				return
+			}
+
+			assert.Equal(t, c.Found, r.tested)
+		})
+	}
+}
+
 func Test_Manager_keeps(t *testing.T) {
 	t.Parallel()
 
@@ -985,7 +1082,11 @@ func Test_runner_Prometheus(t *testing.T) {
 		Written int
 		Tests   int32
 		Conns   int32
-		Err     error
+
+		// QueryErr is what a query through the client answers.
+		QueryErr error
+
+		Err error
 	}{
 		// every read, and the next call's, shares one connection.
 		"A Prometheus data source hands out its client": {
@@ -1010,6 +1111,23 @@ func Test_runner_Prometheus(t *testing.T) {
 			Tests:   1,
 			Conns:   1,
 			Err:     assert.AnError,
+		},
+		// the test passed a moment ago, but the query found the data
+		// source down, so the next call tests it again.
+		"A query the data source could not serve": {
+			Type: TypePrometheus,
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/v1/query_range" {
+					http.Error(w, "upstream down", http.StatusServiceUnavailable)
+
+					return
+				}
+
+				prometheusAPIHandler().ServeHTTP(w, r)
+			}),
+			Tests:    1,
+			Conns:    1,
+			QueryErr: processor.ConnectionStatusUnreachable.Error(),
 		},
 	}
 
@@ -1050,7 +1168,17 @@ func Test_runner_Prometheus(t *testing.T) {
 			// the client the accessor hands back is the live one: every
 			// read it offers reaches the data source.
 			res, qerr := client.QueryRange(context.Background(), "up", _testTimeRange)
-			require.NoError(t, qerr)
+			testutil.AssertEqualError(t, c.QueryErr, qerr)
+
+			if qerr != nil {
+				_, aerr := r.m.Runner(r.ds).Prometheus(context.Background())
+				require.NoError(t, aerr)
+				assert.Equal(t, c.Tests+1, hits.Load())
+				assert.Equal(t, c.Conns, conns.Load())
+
+				return
+			}
+
 			assert.NotNil(t, res)
 
 			meta, merr := client.Metadata(context.Background())
@@ -1439,13 +1567,13 @@ func Test_connect(t *testing.T) {
 				rival, ok := r.m.Runner(r.ds).(*runner)
 				require.True(t, ok)
 
-				_, rerr := connect[Prometheus](context.Background(), rival, c.Allowed...)
+				_, _, rerr := connect[Prometheus](context.Background(), rival, c.Allowed...)
 				require.NoError(t, rerr)
 
 				kept = rival
 			}
 
-			client, err := connect[Prometheus](context.Background(), r, c.Allowed...)
+			client, got, err := connect[Prometheus](context.Background(), r, c.Allowed...)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			ff := store.UpdateDataSourceStatusCalls()
@@ -1462,6 +1590,7 @@ func Test_connect(t *testing.T) {
 			}
 
 			assert.NotNil(t, client)
+			assert.Same(t, kept, got)
 			assert.Same(t, kept, r.m.runners[r.ds.ID])
 		})
 	}
