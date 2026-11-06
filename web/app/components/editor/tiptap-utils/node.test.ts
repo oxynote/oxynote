@@ -1,17 +1,17 @@
 import type { JSONContent } from "@tiptap/core"
 import { Editor } from "@tiptap/core"
-import Document from "@tiptap/extension-document"
+import { ContentDocument } from "../blocks/document"
 import Paragraph from "@tiptap/extension-paragraph"
 import Text from "@tiptap/extension-text"
 import type { Node } from "@tiptap/pm/model"
 import { describe, it } from "vitest"
 import { deleteNode } from "./node"
 import { childCountShape } from "./test-helpers"
-import { MetricBlockStub, MetricGridStub, paragraph } from "../test-helpers"
+import { MetricBlockStub, BlockGridStub, paragraph } from "../test-helpers"
 
-function metricGrid(blockCount: number): JSONContent {
+function blockGrid(blockCount: number): JSONContent {
 	return {
-		type: "metricGrid",
+		type: "blockGrid",
 		content: Array.from({ length: blockCount }, () => ({
 			type: "metricBlock",
 		})),
@@ -23,7 +23,13 @@ function metricGrid(blockCount: number): JSONContent {
 // editor state
 function makeEditor(content: JSONContent[]): Editor {
 	return new Editor({
-		extensions: [Document, Paragraph, Text, MetricGridStub, MetricBlockStub],
+		extensions: [
+			ContentDocument,
+			Paragraph,
+			Text,
+			BlockGridStub,
+			MetricBlockStub,
+		],
 		content: { type: "doc", content },
 	})
 }
@@ -66,7 +72,7 @@ describe("deleteNode", () => {
 	})
 
 	it("removes a metric grid emptied by the deletion", ({ expect }) => {
-		const editor = makeEditor([paragraph("one"), metricGrid(1)])
+		const editor = makeEditor([paragraph("one"), blockGrid(1)])
 		const blockPos = posOfBlock(editor.state.doc, 1) + 1
 
 		const result = deleteNode(editor, blockPos)
@@ -78,7 +84,7 @@ describe("deleteNode", () => {
 	it("keeps a metric grid that still has blocks after the deletion", ({
 		expect,
 	}) => {
-		const editor = makeEditor([paragraph("one"), metricGrid(2)])
+		const editor = makeEditor([paragraph("one"), blockGrid(2)])
 		const blockPos = posOfBlock(editor.state.doc, 1) + 1
 
 		const result = deleteNode(editor, blockPos)
@@ -86,7 +92,7 @@ describe("deleteNode", () => {
 		expect(result).toBe(true)
 		expect(childCountShape(editor.state.doc)).toEqual([
 			"paragraph:1",
-			"metricGrid:1",
+			"blockGrid:1",
 		])
 	})
 
@@ -95,7 +101,7 @@ describe("deleteNode", () => {
 	}) => {
 		const editor = makeEditor([
 			paragraph("one"),
-			metricGrid(0),
+			blockGrid(0),
 			paragraph("two"),
 		])
 

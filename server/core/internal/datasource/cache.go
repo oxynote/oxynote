@@ -119,7 +119,7 @@ func (cl cachedLogs) Logs(
 	}
 
 	gtr := tr.AlignTo(_cacheGrid)
-	key := cacheKey(cl.ds, "logs", gtr, q, strconv.Itoa(page.Limit), string(cursor))
+	key := cacheKey(cl.ds, "logs", gtr, q, strconv.Itoa(page.Limit), string(cursor), string(page.Order))
 
 	return cachedQuery(ctx, cl.m, key, func(ctx context.Context) (*processor.LogsResult, error) {
 		return cl.client.Logs(ctx, q, gtr, page)

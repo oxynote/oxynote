@@ -38,7 +38,11 @@ the file a year from now with no idea what was asked? The same test applies
 to the prose in these AGENTS.md files.
 
 Keep comments as simple and short as possible, so one read is enough:
-short sentences, plain words, no nested clauses or dashes. Good:
+short sentences, plain words, no nested clauses or dashes. Write for a
+reader whose first language may not be English, who is new to the
+project or to programming: one idea per sentence, no long chains of
+clauses joined by commas. Link the sentences with plain words (so, but, then,
+instead), so the text reads as an explanation and not a list. Good:
 
 ```ts
 // the simulation ends once the metric has data, but the cache may
@@ -145,6 +149,12 @@ Component commands are in the nested files.
   (`server/auth-realtime/src/ydocument.ts`). Read the document-storage
   section of [server/AGENTS.md](server/AGENTS.md) before touching branch
   content.
+- **Editor schema version**: y-prosemirror deletes every node its schema
+  does not know, and the delete syncs to everyone. Adding or renaming a node
+  type raises `EDITOR_SCHEMA_VERSION` in both
+  `web/app/components/editor/schema-extensions.ts` and
+  `server/auth-realtime/src/schema/index.ts`; auth-realtime opens an older
+  client read-only.
 - **System writes**: a protected branch accepts only core's own persists,
   marked through `edit.Client.Apply`'s `system` argument and recognised by
   `onStoreDocument` only while every change came from core. Protection is

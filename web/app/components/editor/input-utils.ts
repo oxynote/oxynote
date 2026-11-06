@@ -9,7 +9,7 @@ import {
 } from "./blocks/split-documentation"
 import { setUpCodeBlockNode } from "./blocks/code-block"
 import { Selection, TextSelection, type Transaction } from "@tiptap/pm/state"
-import { setUpMetricBlock } from "./blocks/metrics"
+import { setUpGridItem } from "./blocks/grid"
 import { CODE_BLOCK_NAME, METRIC_BLOCK_NAME } from "./blocks/node-names"
 import type { Node as PMNode } from "@tiptap/pm/model"
 
@@ -67,7 +67,7 @@ export const InputRules = Extension.create({
 					find: /(^|\n)%%$/,
 					handler: ({ state, range }) => {
 						const { tr } = state
-						setUpMetricBlock(state, tr, range.from)
+						setUpGridItem(state, tr, range.from, METRIC_BLOCK_NAME)
 					},
 				}),
 				[],

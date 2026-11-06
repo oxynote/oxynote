@@ -370,10 +370,13 @@ test context).
 - **One assignment per statement** (`no-multi-assign`): no chaining, no
   assignment inside an expression such as `const group = (groups[key] ??=
   …)`. `??=` as its own statement is fine.
-- `<script setup>` order: imports; compiler macros (`defineProps`,
-  `defineEmits`, `defineModel`, `defineExpose`, …); store and composable
-  initializations; `ref`/`computed` and plain variables; lifecycle hooks;
-  watchers; functions.
+- `<script setup>` order: imports; constants and plain variables that read
+  nothing reactive (no props, emits, refs, stores or composables);
+  compiler macros (`defineProps`, `defineEmits`, `defineModel`,
+  `defineExpose`, …); store and composable initializations;
+  `ref`/`computed` and the variables built from them; lifecycle hooks;
+  watchers; functions. Break the order only where context clearly calls
+  for it.
 - Plain `.ts` modules follow the same shape: imports, then constants and
   module-level variables, then functions. No declarations between
   functions.
@@ -382,15 +385,17 @@ test context).
 - Lengths are rem or screen proportions (`dvh`, `dvw`, `%`), never `px`,
   including in arbitrary values: `max-h-[min(90dvh,60rem)]`.
 
-## PromQL grammar
+## Query grammars
 
-[@oxynote/lezer-promql](https://github.com/oxynote/lezer-promql) forks
-Prometheus's grammar to add Grafana-style placeholders (`$__interval`) and
-variable references (`$env`). It is a published package reaching the app
-through a pnpm override in [pnpm-workspace.yaml](pnpm-workspace.yaml) (so
-`@prometheus-io/codemirror-promql` resolves it too). A grammar change is a
-release from its own repo, then a bump in the override and in
-`minimumReleaseAgeExclude`.
+[@oxynote/lezer-promql](https://github.com/oxynote/lezer-promql) and
+[@oxynote/lezer-logql](https://github.com/oxynote/lezer-logql) fork the
+PromQL and LogQL grammars to add duration placeholders (`$__interval`) and
+variable references (`$env`). Both are published packages. The PromQL fork
+reaches the app through a pnpm override in
+[pnpm-workspace.yaml](pnpm-workspace.yaml), so
+`@prometheus-io/codemirror-promql` resolves it too. The LogQL fork is a
+plain dependency. A grammar change is a release from its own repo, then a
+bump in the override or `package.json`, and in `minimumReleaseAgeExclude`.
 
 ## Electron packaging
 

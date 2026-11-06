@@ -25,6 +25,24 @@ export default defineI18nConfig(() => {
 					hour: "numeric",
 					minute: "numeric",
 				},
+				"hour-minute": {
+					hour: "2-digit",
+					minute: "2-digit",
+					hourCycle: "h23",
+				},
+				// a log line's time, the fraction written as milliseconds. A log
+				// row swaps it for the exact digits.
+				"log-time": {
+					hour: "2-digit",
+					minute: "2-digit",
+					second: "2-digit",
+				},
+				"log-time-fraction": {
+					hour: "2-digit",
+					minute: "2-digit",
+					second: "2-digit",
+					fractionalSecondDigits: 3,
+				},
 				"short-with-full-time": {
 					year: "numeric",
 					month: "short",

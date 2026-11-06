@@ -87,6 +87,13 @@ describe("<GaugeChart>", { concurrent: false }, () => {
 		expect(chartOption(wrapper).title.show).toBe(false)
 	})
 
+	it("moves the title down by the offset it was given", async ({ expect }) => {
+		const moved = await mountGauge({ title: "CPU", titleOffsetTop: 6.5 })
+		const kept = await mountGauge({ title: "CPU" })
+
+		expect(chartOption(moved).title.top).toBe(chartOption(kept).title.top + 6.5)
+	})
+
 	it("shows the title it was given", async ({ expect }) => {
 		const wrapper = await mountGauge({ title: "CPU" })
 

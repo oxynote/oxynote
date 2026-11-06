@@ -3,7 +3,8 @@ import {
 	FILE_BLOCK_NAME,
 	IMAGE_BLOCK_NAME,
 	MERMAID_BLOCK_NAME,
-	METRIC_GRID_NAME,
+	BLOCK_GRID_NAME,
+	LEGACY_METRIC_GRID_NAME,
 	TITLED_CODE_BLOCK_NAME,
 	SPLIT_DOCUMENTATION_NAME,
 	SPLIT_DOCUMENTATION_LEFT_SIDE_NAME,
@@ -59,7 +60,9 @@ export const DEFAULT_MERGE_OPTIONS: MergeOptions = {
 		TaskItem.name,
 	],
 	transparentTypes: [
-		METRIC_GRID_NAME,
+		BLOCK_GRID_NAME,
+		// legacy: documents may still hold metricGrid
+		LEGACY_METRIC_GRID_NAME,
 		BulletList.name,
 		OrderedList.name,
 		TaskList.name,

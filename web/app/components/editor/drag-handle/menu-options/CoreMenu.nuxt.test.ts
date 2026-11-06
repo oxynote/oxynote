@@ -239,7 +239,7 @@ describe("<CoreMenu>", { concurrent: false }, () => {
 		await mountCoreMenu(editor, block(METRIC_BLOCK_NAME))
 
 		expect(menuLabels()).toContain(
-			t("editor.drag-handle.options.metric-block.width"),
+			t("editor.drag-handle.options.grid-item.width"),
 		)
 		expect(menuLabels()).toContain(
 			t("editor.drag-handle.options.default.add-above-block"),

@@ -336,6 +336,16 @@ func Test_TimeRange_AlignTo(t *testing.T) {
 				To:   time.Date(2024, 1, 31, 12, 0, 15, 0, time.UTC),
 			},
 		},
+		"A fraction of a second rounds To up to the next grid line": {
+			TimeRange: TimeRange{
+				From: time.Date(2024, 1, 1, 12, 0, 15, 500000000, time.UTC),
+				To:   time.Date(2024, 1, 1, 13, 0, 30, 1, time.UTC),
+			},
+			Result: TimeRange{
+				From: time.Date(2024, 1, 1, 12, 0, 15, 0, time.UTC),
+				To:   time.Date(2024, 1, 1, 13, 0, 45, 0, time.UTC),
+			},
+		},
 		"Bounds already on the grid stay": {
 			TimeRange: TimeRange{
 				From: time.Date(2024, 1, 1, 12, 0, 15, 0, time.UTC),
@@ -404,6 +414,74 @@ func Test_TimeRange_QueryStep(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, c.Result, c.TimeRange.QueryStep())
+		})
+	}
+}
+
+func Test_TimeRange_VolumeStep(t *testing.T) {
+	base := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	day := 24 * time.Hour
+
+	// buckets counts the buckets a volume of the range touches, as the
+	// sources count them.
+	buckets := func(tr TimeRange) int64 {
+		step := int64(tr.VolumeStep().Seconds())
+		first := tr.From.Unix() / step * step
+		last := (tr.To.Unix() - 1) / step * step
+
+		return (last-first)/step + 1
+	}
+
+	cc := map[string]struct {
+		TimeRange TimeRange
+		Result    time.Duration
+		Check     func(t *testing.T)
+	}{
+		"Range of a few seconds steps one second": {
+			TimeRange: TimeRange{From: base, To: base.Add(15 * time.Second)},
+			Result:    time.Second,
+		},
+		"Five minutes step five seconds": {
+			TimeRange: TimeRange{From: base, To: base.Add(5 * time.Minute)},
+			Result:    5 * time.Second,
+		},
+		"One hour steps one minute": {
+			TimeRange: TimeRange{From: base, To: base.Add(time.Hour)},
+			Result:    time.Minute,
+		},
+		"Five years step thirty days": {
+			TimeRange: TimeRange{From: base, To: base.Add(5 * 365 * day)},
+			Result:    30 * day,
+		},
+		"Range of over 99 years steps a year": {
+			TimeRange: TimeRange{From: base, To: base.Add(200 * 365 * day)},
+			Result:    365 * day,
+		},
+		"Every range from 20 seconds to five years touches 20 to 100 buckets": {
+			Check: func(t *testing.T) {
+				for span := 20 * time.Second; span <= 5*365*day; span = (span * 21 / 20).Truncate(time.Second) {
+					for _, offset := range []time.Duration{0, time.Second, 7 * time.Second, 13 * time.Minute, 5 * time.Hour} {
+						tr := TimeRange{From: base.Add(offset), To: base.Add(offset + span)}
+
+						assert.GreaterOrEqual(t, buckets(tr), int64(20), "%s from %s", span, tr.From)
+						assert.LessOrEqual(t, buckets(tr), int64(100), "%s from %s", span, tr.From)
+					}
+				}
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			if c.Check != nil {
+				c.Check(t)
+
+				return
+			}
+
+			assert.Equal(t, c.Result, c.TimeRange.VolumeStep())
 		})
 	}
 }

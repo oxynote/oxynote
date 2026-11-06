@@ -169,14 +169,20 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			ff := db.InsertDataSourceCalls()
 			require.Len(t, ff, count)
 
-			if count == 0 {
-				return
+			demos := []struct {
+				Name string
+				Type datasource.Type
+			}{
+				{Name: "Demo Metrics", Type: datasource.TypePrometheus},
+				{Name: "Demo Logs", Type: datasource.TypeLoki},
 			}
 
-			assert.Equal(t, "Demo Metrics", ff[0].Ds.Name)
-			assert.Equal(t, datasource.TypePrometheus, ff[0].Ds.Type)
-			assert.Equal(t, demo.URL, ff[0].Ds.URL)
-			assert.Equal(t, "org2", ff[0].Ds.OrganizationID)
+			for i, f := range ff {
+				assert.Equal(t, demos[i].Name, f.Ds.Name)
+				assert.Equal(t, demos[i].Type, f.Ds.Type)
+				assert.Equal(t, demo.URL, f.Ds.URL)
+				assert.Equal(t, "org2", f.Ds.OrganizationID)
+			}
 		}
 	}
 
@@ -303,7 +309,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasFetchMembersCalled(1),
-				wasInsertDataSourceCalled(1),
+				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(0),
 				wasUpsertMaintainersCalled(0),
@@ -368,7 +374,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 					assert.Equal(t, http.StatusCreated, rec.Code)
 				},
 				wasFetchMembersCalled(1),
-				wasInsertDataSourceCalled(1),
+				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
 				wasUpsertMaintainersCalled(1),
@@ -402,7 +408,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasFetchMembersCalled(1),
-				wasInsertDataSourceCalled(1),
+				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
 				wasUpsertMaintainersCalled(0),
@@ -425,7 +431,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasFetchMembersCalled(1),
-				wasInsertDataSourceCalled(1),
+				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
 				wasUpsertMaintainersCalled(1),
@@ -448,7 +454,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasFetchMembersCalled(1),
-				wasInsertDataSourceCalled(1),
+				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
 				wasUpsertMaintainersCalled(1),
@@ -471,7 +477,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasFetchMembersCalled(1),
-				wasInsertDataSourceCalled(1),
+				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
 				wasUpsertMaintainersCalled(1),
@@ -494,7 +500,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasFetchMembersCalled(1),
-				wasInsertDataSourceCalled(1),
+				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
 				wasUpsertMaintainersCalled(1),
@@ -517,7 +523,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasFetchMembersCalled(1),
-				wasInsertDataSourceCalled(1),
+				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
 				wasUpsertMaintainersCalled(1),
@@ -541,7 +547,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasFetchMembersCalled(1),
-				wasInsertDataSourceCalled(1),
+				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
 				wasUpsertMaintainersCalled(1),
@@ -564,7 +570,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasFetchMembersCalled(1),
-				wasInsertDataSourceCalled(1),
+				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
 				wasUpsertMaintainersCalled(1),
@@ -586,7 +592,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 					assert.Contains(t, rec.Body.String(), "Welcome to Oxynote!")
 				},
 				wasFetchMembersCalled(1),
-				wasInsertDataSourceCalled(1),
+				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
 				wasUpsertMaintainersCalled(1),

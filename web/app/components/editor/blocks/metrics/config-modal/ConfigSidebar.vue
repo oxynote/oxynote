@@ -1,13 +1,21 @@
 <script lang="ts" setup>
 import { cn } from "#layers/ui/app/lib/utils"
-import ConfigField from "../ConfigField.vue"
+import ConfigField from "../../config-modal-utils/ConfigField.vue"
 import { VISUALIZATION_MAX_DECIMALS, type MetricConfig } from "../utils"
 import ThresholdInput from "./ThresholdInput.vue"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 import VisualizationTypeSelect from "./VisualizationTypeSelect.vue"
-import DataSourceSelect from "./DataSourceSelect.vue"
+import DataSourceSelect from "../../config-modal-utils/DataSourceSelect.vue"
 import UnitSelectWithCustom from "./UnitSelectWithCustom.vue"
 import SimulationPresetSelect from "./SimulationPresetSelect.vue"
+
+const dataSourceTypes = [
+	DataSourceType.Prometheus,
+	DataSourceType.PostgreSQL,
+	DataSourceType.Supabase,
+	DataSourceType.MySQL,
+	DataSourceType.MariaDB,
+]
 
 const config = defineModel<MetricConfig>({ required: true })
 const props = defineProps<{
@@ -291,12 +299,22 @@ function removeThreshold(index: number) {
 			<div class="flex flex-col gap-1 px-1">
 				<DataSourceSelect
 					v-model="config"
+					:types="dataSourceTypes"
+					:empty-title="$t('editor.metrics.config.data-source-empty-title')"
+					:empty-description="
+						$t('editor.metrics.config.data-source-empty-description')
+					"
 					:diff-mode="!!props.diffStatus"
 					:diff-status="isDataSourceIdModified ? DiffStatus.Added : null"
 					@open-settings="emit('open-settings')"
 				/>
 				<DataSourceSelect
 					v-if="isDataSourceIdModified"
+					:types="dataSourceTypes"
+					:empty-title="$t('editor.metrics.config.data-source-empty-title')"
+					:empty-description="
+						$t('editor.metrics.config.data-source-empty-description')
+					"
 					:diff-mode="!!props.diffStatus"
 					:old-config="props.oldConfig"
 					:diff-status="isDataSourceIdModified ? DiffStatus.Removed : null"

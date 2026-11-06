@@ -3,9 +3,9 @@ import { nodeViewProps, NodeViewWrapper } from "@tiptap/vue-3"
 import type { JSONContent } from "@tiptap/core"
 import VisualizationContainer from "./VisualizationContainer.vue"
 import { cn } from "#layers/ui/app/lib/utils"
+import { GridItemWidth } from "../grid/utils"
 import {
 	type MetricConfig,
-	MetricBlockWidth,
 	NODE_ATTR_UPDATE_REFRESH_DISABLE_MS,
 	buildConfigFromNodeAttrs,
 } from "./utils"
@@ -27,9 +27,8 @@ const { editingUsersRef } = useCollaborationAwareness(() => props.editor)
 
 const sizeClass = computed(() => {
 	const size =
-		(props.node.attrs.width as MetricBlockWidth | null) ??
-		MetricBlockWidth.Standard
-	return `metric-block-${size}`
+		(props.node.attrs.width as GridItemWidth | null) ?? GridItemWidth.Standard
+	return `grid-item-${size}`
 })
 const isEditingDisabled = computed(() => {
 	return !isEditable.value || editorStore.reviewableDiffActive
@@ -379,7 +378,7 @@ function disableVisualizationRefreshTemporarily() {
 				{{ lastOtherEditingUser.name }}
 			</div>
 			<div
-				class="absolute top-1 right-1.5 z-1 flex items-center rounded-md bg-background has-[>:not(button)]:pl-0.5"
+				class="absolute top-1.5 right-1.5 z-1 flex items-center rounded-md bg-background has-[>:not(button)]:pl-0.5"
 			>
 				<DiffChangeMarker :node="props.node" class="mr-1">
 					<MetricDiffDetails :node="props.node" />

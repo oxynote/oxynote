@@ -120,7 +120,7 @@ describe("computeMergedDocument", () => {
 		},
 	])("marks $name", ({ original, modified, expected }) => {
 		const grid = (attrs: Record<string, unknown>): JSONContent => ({
-			type: "metricGrid",
+			type: "blockGrid",
 			attrs: { uid: "g1" },
 			content: [{ type: "metricBlock", attrs: { uid: "m1", ...attrs } }],
 		})

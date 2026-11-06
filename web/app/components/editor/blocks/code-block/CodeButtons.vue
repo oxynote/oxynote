@@ -14,6 +14,8 @@ import type { Transaction } from "@tiptap/pm/state"
 // stops changing
 const STORE_DELAY_MS = 500
 
+let storeTimeout: ReturnType<typeof setTimeout> | undefined
+
 const props = defineProps({
 	...nodeViewProps,
 })
@@ -45,8 +47,6 @@ const currentLang = computed({
 		}
 	},
 })
-
-let storeTimeout: ReturnType<typeof setTimeout> | undefined
 
 onBeforeMount(() => {
 	updateDetectedLanguage()
@@ -163,11 +163,7 @@ async function copyCodeBlock() {
 			class="w-fit"
 			@click="copyCodeBlock"
 		>
-			<Icon
-				name="lucide:copy"
-				class="transition-colors duration-300"
-				:class="{ 'text-chart-2': isCopied }"
-			/>
+			<Icon :name="isCopied ? 'lucide:check' : 'lucide:copy'" />
 		</ShadcnUiButton>
 	</div>
 </template>

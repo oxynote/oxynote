@@ -85,7 +85,7 @@ const dataSourceName = computed(
 		<div
 			:class="
 				cn(
-					'line-clamp-5 min-w-0 flex-1 break-words text-foreground/80 [&_mark]:rounded-xs [&_mark]:bg-comment-highlight/40 [&_mark]:text-inherit',
+					'line-clamp-5 min-w-0 flex-1 break-words text-foreground/80 [&_mark]:rounded-xs [&_mark]:bg-search-highlight [&_mark]:text-inherit',
 					props.hit.type === CODE_BLOCK_NAME
 						? 'font-mono text-xs [&_mark]:font-mono'
 						: 'text-2sm',

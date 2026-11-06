@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -22,20 +23,20 @@ const _defaultCalloutIcon = "lucide:text"
 const _maxBlocks = 500
 
 // _containers are the elements that only hold blocks, each with the
-// node it writes and the one element it holds, if it holds only one.
+// node it writes and the elements it holds, if it holds only some.
 var _containers = map[string]struct {
 	// Type is the node the element writes.
 	Type document.BlockNodeType
 
-	// Child is the one element it holds; empty when it holds any block.
-	Child string
+	// Children are the elements it holds; empty when it holds any block.
+	Children []string
 }{
-	_elemBlockquote: {document.BlockNodeBlockquote, ""},
-	_elemCallout:    {document.BlockNodeCalloutBlock, ""},
-	_elemBullets:    {document.BlockNodeBulletList, _elemEntry},
-	_elemOrdered:    {document.BlockNodeOrderedList, _elemEntry},
-	_elemTasks:      {document.BlockNodeTaskList, _elemTask},
-	_elemMetrics:    {document.BlockNodeMetricGrid, _elemMetric},
+	_elemBlockquote: {document.BlockNodeBlockquote, nil},
+	_elemCallout:    {document.BlockNodeCalloutBlock, nil},
+	_elemBullets:    {document.BlockNodeBulletList, []string{_elemEntry}},
+	_elemOrdered:    {document.BlockNodeOrderedList, []string{_elemEntry}},
+	_elemTasks:      {document.BlockNodeTaskList, []string{_elemTask}},
+	_elemGrid:       {document.BlockNodeBlockGrid, []string{_elemMetrics, _elemLogs}},
 }
 
 // _atoms are the elements that hold nothing but attributes: the node
@@ -152,7 +153,7 @@ func (b *builder) replaced(n node) (document.Block, error) {
 // is the block it replaces, or the zero block.
 func (b *builder) build(n node, stored document.Block) (document.Block, error) {
 	if c, ok := _containers[n.name]; ok {
-		return b.buildContainer(n, c.Type, c.Child, stored)
+		return b.buildContainer(n, c.Type, c.Children, stored)
 	}
 
 	if a, ok := _atoms[n.name]; ok {
@@ -170,8 +171,10 @@ func (b *builder) build(n node, stored document.Block) (document.Block, error) {
 		return newBlock(document.BlockNodeMermaidBlock, stored, textNodes([]run{{text: n.text}}, stored.Content)), nil
 	case _elemRule:
 		return newBlock(document.BlockNodeHorizontalRule, stored, nil), nil
-	case _elemMetric:
-		return buildMetric(n, stored)
+	case _elemMetrics:
+		return buildMetrics(n, stored)
+	case _elemLogs:
+		return buildLog(n, stored)
 	case _elemSplitDoc:
 		return b.buildSplitDoc(n, stored)
 	case _elemParams:
@@ -220,13 +223,15 @@ func buildText(n node, stored document.Block) (document.Block, error) {
 	return blk, nil
 }
 
-// buildContainer builds an element holding blocks. child, when set, is
-// the one element name the container holds.
-func (b *builder) buildContainer(n node, typ document.BlockNodeType, child string, stored document.Block) (document.Block, error) {
-	if child != "" {
+// buildContainer builds an element holding blocks. children, when set,
+// are the element names the container holds.
+func (b *builder) buildContainer(n node, typ document.BlockNodeType, children []string, stored document.Block) (document.Block, error) {
+	if len(children) > 0 {
 		for _, c := range n.children {
-			if c.name != "" && c.name != child {
-				return document.Block{}, fmt.Errorf("line %d: <%s> holds only <%s>, not <%s>", c.line, n.name, child, c.name)
+			// an <unsupported> child is a block this package cannot render.
+			// Its id keeps the stored block as it is.
+			if c.name != "" && !slices.Contains(children, c.name) && c.name != _elemUnsupported {
+				return document.Block{}, fmt.Errorf("line %d: <%s> holds only <%s>, not <%s>", c.line, n.name, strings.Join(children, "> or <"), c.name)
 			}
 		}
 	}
@@ -430,21 +435,40 @@ func buildParam(n node, stored document.Block) (document.Block, error) {
 	}), nil
 }
 
-// buildMetric builds a metric block from its JSON attributes.
-func buildMetric(n node, stored document.Block) (document.Block, error) {
+// buildMetrics builds a metric block from its JSON attributes.
+func buildMetrics(n node, stored document.Block) (document.Block, error) {
 	attrs, err := decodeMetricAttrs(n.text, stored)
 	if err != nil {
 		return document.Block{}, fmt.Errorf("line %d: %w", n.line, err)
 	}
 
-	for k := range _hiddenMetricAttrs {
+	for k := range _hiddenAttrs {
 		delete(attrs, k)
 	}
 
 	setSimulation(attrs, stored)
-	setMetricWindow(attrs, stored)
+	setWindow(attrs, stored, document.BlockNodeMetricBlock)
 
 	blk := newBlock(document.BlockNodeMetricBlock, stored, nil)
+	maps.Copy(blk.Attrs, attrs)
+
+	return blk, nil
+}
+
+// buildLog builds a log block from its JSON attributes.
+func buildLog(n node, stored document.Block) (document.Block, error) {
+	attrs, err := decodeLogAttrs(n.text)
+	if err != nil {
+		return document.Block{}, fmt.Errorf("line %d: %w", n.line, err)
+	}
+
+	for k := range _hiddenAttrs {
+		delete(attrs, k)
+	}
+
+	setWindow(attrs, stored, document.BlockNodeLogBlock)
+
+	blk := newBlock(document.BlockNodeLogBlock, stored, nil)
 	maps.Copy(blk.Attrs, attrs)
 
 	return blk, nil

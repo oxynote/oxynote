@@ -1,5 +1,5 @@
 import { Editor, type JSONContent } from "@tiptap/core"
-import Document from "@tiptap/extension-document"
+import { ContentDocument } from "../blocks/document"
 import { BulletList, ListItem } from "@tiptap/extension-list"
 import Paragraph from "@tiptap/extension-paragraph"
 import Text from "@tiptap/extension-text"
@@ -10,7 +10,7 @@ import { DragHandlePlugin } from "./handle-plugin"
 import { startTouchDrag } from "./touch-drag"
 import {
 	METRIC_BLOCK_NAME,
-	METRIC_GRID_NAME,
+	BLOCK_GRID_NAME,
 	SPLIT_DOCUMENTATION_LEFT_SIDE_NAME,
 	SPLIT_DOCUMENTATION_NAME,
 	SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
@@ -23,7 +23,7 @@ import {
 } from "./test-helpers"
 import {
 	MetricBlockStub,
-	MetricGridStub,
+	BlockGridStub,
 	paragraph,
 	touchPointer,
 } from "~/components/editor/test-helpers"
@@ -36,9 +36,9 @@ const INDENT = 32
 // that starts left of it
 const LIST_ITEM = { textLeft: 20, editorLeft: 10 }
 // metric blocks too wide to share a row, the way a phone stacks them
-const MetricGrid = MetricGridStub.extend({
+const BlockGrid = BlockGridStub.extend({
 	renderHTML() {
-		return ["div", { "data-type": "metric-grid" }, 0]
+		return ["div", { "data-type": "block-grid" }, 0]
 	},
 })
 const MetricBlock = MetricBlockStub.extend({
@@ -468,7 +468,7 @@ describe("startTouchDrag", { concurrent: false }, () => {
 		])("$name", async ({ input, expected }, { expect }) => {
 			const editor = mountEditor([
 				{
-					type: METRIC_GRID_NAME,
+					type: BLOCK_GRID_NAME,
 					content: ["a", "b"].map((title) => ({
 						type: METRIC_BLOCK_NAME,
 						attrs: { title },
@@ -593,7 +593,7 @@ function mountEditor(
 	style.textContent = `
 		.ProseMirror ul { margin: 0; padding-left: ${INDENT}px; }
 		.ProseMirror li > p { margin: 0; }
-		[data-type="metric-grid"] { display: flex; flex-wrap: wrap; gap: 12px; }
+		[data-type="block-grid"] { display: flex; flex-wrap: wrap; gap: 12px; }
 		[data-type="metric-block"] { width: 300px; height: 120px; }
 	`
 	document.head.append(style)
@@ -605,12 +605,12 @@ function mountEditor(
 	const editor = new Editor({
 		element: container,
 		extensions: [
-			Document,
+			ContentDocument,
 			Paragraph,
 			Text,
 			BulletList,
 			ListItem,
-			MetricGrid,
+			BlockGrid,
 			MetricBlock,
 			SplitDocumentationStub,
 			SplitDocumentationLeftSideStub,

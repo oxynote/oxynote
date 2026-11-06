@@ -19,8 +19,8 @@ const _fieldValueLines = 1000
 // so it is also what bounds the cost of one query.
 const _logsRetention = 7 * 24 * time.Hour
 
-// Logs reads one page of the lines a log query matches in the window,
-// newest first.
+// Logs reads one page of the lines a log query matches in the window, in
+// the page's order.
 func (c *Client) Logs(
 	ctx context.Context,
 	q string,
@@ -58,11 +58,13 @@ func (c *Client) LogsVolume(ctx context.Context, q string, tr processor.TimeRang
 	// the step follows the window asked for, so a chart's buckets do not
 	// change size when part of the window is past the retention. The
 	// window then grows to whole buckets before the retention cuts it.
-	step := tr.QueryStep()
+	step := tr.VolumeStep()
 	stepSeconds := int64(step.Seconds())
+	first := tr.From.Unix() / stepSeconds * stepSeconds
+	last := tr.To.Add(-time.Nanosecond).Unix() / stepSeconds * stepSeconds
 	tr = retained(processor.TimeRange{
-		From: time.Unix(tr.From.Unix()/stepSeconds*stepSeconds, 0).UTC(),
-		To:   time.Unix(tr.To.Add(-time.Nanosecond).Unix()/stepSeconds*stepSeconds+stepSeconds, 0).UTC(),
+		From: time.Unix(first, 0).UTC(),
+		To:   time.Unix(last+stepSeconds, 0).UTC(),
 	})
 	end := minTime(tr.To, timeutil.Now().Add(time.Nanosecond))
 	countTicks := len(lq.filters) == 0 && step%_tick == 0
@@ -94,7 +96,7 @@ func (c *Client) LogsVolume(ctx context.Context, q string, tr processor.TimeRang
 		}
 	}
 
-	return counts.Result(), nil
+	return counts.Result(first, last, stepSeconds), nil
 }
 
 // LogFields lists the field names the demo's lines carry: its two stream
@@ -178,7 +180,7 @@ func (c *Client) LogFieldValues(
 	}
 
 	if len(values) == 0 {
-		lines, err := c.fetchLines(lq)(ctx, tr.From, tr.To, _fieldValueLines)
+		lines, err := c.fetchLines(lq)(ctx, tr.From, tr.To, _fieldValueLines, processor.LogsOrderDesc)
 		if err != nil {
 			return nil, err
 		}
@@ -194,17 +196,28 @@ func (c *Client) LogFieldValues(
 }
 
 // fetchLines returns the fetcher that reads the lines lq matches, walking
-// the ticks back from the window's end until it has enough. Nothing past
-// now is ever read.
+// the ticks back from the window's end when desc, or on from its start
+// when asc, until it has enough. Nothing past now is ever read.
 func (c *Client) fetchLines(lq logQuery) processor.LogsFetcher {
 	sources := c.logSourcesFor(lq)
 
-	return func(ctx context.Context, from, end time.Time, limit int) ([]processor.LogLine, error) {
+	return func(
+		ctx context.Context,
+		from, end time.Time,
+		limit int,
+		order processor.LogsOrder,
+	) ([]processor.LogLine, error) {
 		end = minTime(end, timeutil.Now().Add(time.Nanosecond))
+		first, last := max(tickAt(from), 0), tickAt(end.Add(-time.Nanosecond))
+		tick, step := last, int64(-1)
+
+		if order == processor.LogsOrderAsc {
+			tick, step = first, 1
+		}
 
 		var lines []processor.LogLine
 
-		for tick := tickAt(end.Add(-time.Nanosecond)); tick >= max(tickAt(from), 0) && len(lines) < limit; tick-- {
+		for ; tick >= first && tick <= last && len(lines) < limit; tick += step {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
@@ -219,9 +232,7 @@ func (c *Client) fetchLines(lq logQuery) processor.LogsFetcher {
 				}
 			}
 
-			slices.SortStableFunc(tickLines, func(a, b processor.LogLine) int {
-				return b.Time.Compare(a.Time)
-			})
+			order.SortLines(tickLines)
 
 			lines = append(lines, tickLines...)
 		}

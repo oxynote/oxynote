@@ -41,6 +41,7 @@ const props = defineProps<{
 	thresholds?: GaugeChartThreshold[]
 	axisBounds?: { min?: number | null; max?: number | null }
 	titleRightPadding?: number
+	titleOffsetTop?: number
 	disableAnimation?: boolean
 }>()
 
@@ -301,7 +302,7 @@ const option = computed<ECOption>(() => {
 		title: {
 			show: !!props.title,
 			text: props.title,
-			top: 10,
+			top: 11 + (props.titleOffsetTop ?? 0),
 			left: 10,
 			padding: 0,
 			textStyle: {

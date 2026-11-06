@@ -17,7 +17,7 @@ const spies = vi.hoisted(() => ({
 	setUpCalloutBlockNode: vi.fn(),
 	setUpSplitDocumentationNode: vi.fn(),
 	setUpCodeBlockNode: vi.fn(),
-	setUpMetricBlock: vi.fn(),
+	setUpGridItem: vi.fn(),
 }))
 
 vi.mock("./blocks/callout", async (importOriginal) => ({
@@ -35,9 +35,9 @@ vi.mock("./blocks/code-block", async (importOriginal) => ({
 	setUpCodeBlockNode: spies.setUpCodeBlockNode,
 }))
 
-vi.mock("./blocks/metrics", async (importOriginal) => ({
-	...(await importOriginal<typeof import("./blocks/metrics")>()),
-	setUpMetricBlock: spies.setUpMetricBlock,
+vi.mock("./blocks/grid", async (importOriginal) => ({
+	...(await importOriginal<typeof import("./blocks/grid")>()),
+	setUpGridItem: spies.setUpGridItem,
 }))
 
 const schema = new Schema({
@@ -200,11 +200,17 @@ describe("InputRules", { concurrent: false }, () => {
 			name: "split documentation",
 			index: 1,
 			spy: spies.setUpSplitDocumentationNode,
+			extraArgs: [],
 		},
-		{ name: "metric", index: 3, spy: spies.setUpMetricBlock },
+		{
+			name: "metric",
+			index: 3,
+			spy: spies.setUpGridItem,
+			extraArgs: [METRIC_BLOCK_NAME],
+		},
 	])(
 		"runs the $name rule only at the document root",
-		({ index, spy }, { expect }) => {
+		({ index, spy, extraArgs }, { expect }) => {
 			const props = runRule(index, stateAt(topLevelDoc, 2))
 
 			expect(spy).toHaveBeenCalledTimes(1)
@@ -212,6 +218,7 @@ describe("InputRules", { concurrent: false }, () => {
 				props.state,
 				expect.anything(),
 				props.range.from,
+				...extraArgs,
 			)
 
 			spy.mockClear()

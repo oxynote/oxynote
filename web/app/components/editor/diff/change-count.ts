@@ -13,6 +13,7 @@ import {
 	CODE_BLOCK_NAME,
 	FILE_BLOCK_NAME,
 	IMAGE_BLOCK_NAME,
+	LOG_BLOCK_NAME,
 	METRIC_BLOCK_NAME,
 } from "~/components/editor/blocks/node-names"
 
@@ -63,6 +64,9 @@ const ATTRIBUTE_GROUPS: Record<string, Record<string, string>> = {
 const ITEM_FIELDS: Record<string, Record<string, string[]>> = {
 	[METRIC_BLOCK_NAME]: {
 		queries: ["query", "legendFormat"],
+	},
+	[LOG_BLOCK_NAME]: {
+		queries: ["query"],
 	},
 }
 

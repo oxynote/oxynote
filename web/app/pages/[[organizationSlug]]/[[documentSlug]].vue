@@ -139,7 +139,7 @@ const allSectionsLoaded = computed(() =>
 
 const createLoading = ref(false)
 const settingModalOpen = ref<
-	boolean | "org-members" | "github" | "metric-data-sources"
+	boolean | "org-members" | "github" | "data-sources"
 >(false)
 const searchModalOpen = ref(false)
 const shortcutsModalOpen = ref(false)
@@ -836,7 +836,10 @@ function clearLinkedBlock() {
 			<SearchModal v-model="searchModalOpen" />
 			<ShortcutModal v-model="shortcutsModalOpen" />
 			<EditorBlocksMetricsConfigModalBaseModal
-				@open-settings="() => (settingModalOpen = 'metric-data-sources')"
+				@open-settings="() => (settingModalOpen = 'data-sources')"
+			/>
+			<EditorBlocksLogsConfigModalBaseModal
+				@open-settings="() => (settingModalOpen = 'data-sources')"
 			/>
 			<DocumentDeletionModal
 				v-if="activeDocMetadata && allSectionsLoaded"

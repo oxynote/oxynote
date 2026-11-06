@@ -31,9 +31,10 @@
 <img id="img1" src="https://x.test/i.png" alt="An &quot;image&quot;" width="320"/>
 <figma id="fig1" src="https://figma.com/x" width="800"/>
 <file id="file1" src="/api/documents/d/files/f" name="a.pdf" contentType="application/pdf" size="1234"/>
-<metrics id="g1">
-  <metric id="mb1">{"dataSourceId":"ds1","queries":[{"legendFormat":"","name":"Q","query":"up"}],"refreshInterval":"1m","simulationPreset":"cpu_usage","timeRange":"last_1_hour","visualizationType":"line_chart","width":"standard"}</metric>
-</metrics>
+<grid id="g1">
+  <metrics id="mb1">{"dataSourceId":"ds1","queries":[{"legendFormat":"","name":"Q","query":"up"}],"refreshInterval":"1m","simulationPreset":"cpu_usage","timeRange":"last_1_hour","visualizationType":"line_chart","width":"standard"}</metrics>
+  <logs id="lb1">{"dataSourceId":"ds1","order":"desc","queries":[{"name":"Q","query":"{app=\"api\"} |= \"error\""}],"refreshInterval":"1m","timeRange":"last_1_hour","timestampFormat":"numeric_milli","title":"Errors","width":"standard"}</logs>
+</grid>
 <split_doc id="sd1" inversed="true">
   <left>
     <h1 id="sh">POST /login</h1>

@@ -1,15 +1,15 @@
 import type { Content, Extensions } from "@tiptap/core"
 import { Editor, getSchema } from "@tiptap/core"
-import Document from "@tiptap/extension-document"
+import { ContentDocument } from "./blocks/document"
 import Text from "@tiptap/extension-text"
 import { describe, it, vi } from "vitest"
-import { METRIC_BLOCK_NAME, METRIC_GRID_NAME } from "./blocks/node-names"
+import { METRIC_BLOCK_NAME, BLOCK_GRID_NAME } from "./blocks/node-names"
 import { COMMENT_MARK_NAME } from "./mark-names"
 import { contentExtensionsWithIDs, editorProseClass } from "./schema-extensions"
 import {
 	markType,
 	MetricBlockStub,
-	MetricGridStub,
+	BlockGridStub,
 	nodeType,
 	parseAttributes,
 } from "./test-helpers"
@@ -23,8 +23,8 @@ function makeExtensions(): Extensions {
 function withMetricStubs(extensions: Extensions): Extensions {
 	return extensions.map((extension) => {
 		switch (extension.name) {
-			case METRIC_GRID_NAME:
-				return MetricGridStub
+			case BLOCK_GRID_NAME:
+				return BlockGridStub
 			case METRIC_BLOCK_NAME:
 				return MetricBlockStub
 			default:
@@ -33,7 +33,11 @@ function withMetricStubs(extensions: Extensions): Extensions {
 	})
 }
 
-const schema = getSchema([Document, Text, ...withMetricStubs(makeExtensions())])
+const schema = getSchema([
+	ContentDocument,
+	Text,
+	...withMetricStubs(makeExtensions()),
+])
 
 function extensionByName(name: string) {
 	const extension = makeExtensions().find(
@@ -137,6 +141,10 @@ describe("contentExtensionsWithIDs", () => {
 			"taskList",
 			"taskItem",
 			"calloutBlock",
+			"blockGrid",
+			"metricGrid",
+			"metricBlock",
+			"logBlock",
 			"imageBlock",
 			"fileBlock",
 			"mermaidBlock",
@@ -264,7 +272,11 @@ describe("contentExtensionsWithIDs", () => {
 	describe("the horizontal rule input rule", () => {
 		function makeEditor(content: Content) {
 			return new Editor({
-				extensions: [Document, Text, ...withMetricStubs(makeExtensions())],
+				extensions: [
+					ContentDocument,
+					Text,
+					...withMetricStubs(makeExtensions()),
+				],
 				content,
 			})
 		}

@@ -35,7 +35,7 @@ const DATA_SOURCE: DataSource = {
 	updatedAt: null,
 }
 
-type SettingsTarget = "org-members" | "github" | "metric-data-sources"
+type SettingsTarget = "org-members" | "github" | "data-sources"
 
 function mountModal(open: boolean | SettingsTarget = true) {
 	return mountSuspended(BaseModal, { props: { modelValue: open } })
@@ -157,7 +157,7 @@ describe("<BaseModal>", { concurrent: false }, () => {
 	it.for([
 		{ target: "org-members", anchor: "settings-org" },
 		{ target: "github", anchor: "settings-apps" },
-		{ target: "metric-data-sources", anchor: "settings-data-sources" },
+		{ target: "data-sources", anchor: "settings-data-sources" },
 	] as { target: SettingsTarget; anchor: string }[])(
 		"scrolls to $anchor when opened at $target",
 		async ({ target, anchor }, { expect }) => {

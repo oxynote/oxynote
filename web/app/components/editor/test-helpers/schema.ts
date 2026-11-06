@@ -1,6 +1,12 @@
 import { Node as TiptapNode } from "@tiptap/core"
 import type { Attrs, MarkType, NodeType, Schema } from "@tiptap/pm/model"
-import { METRIC_BLOCK_NAME, METRIC_GRID_NAME } from "../blocks/node-names"
+import {
+	BLOCK_GRID_NAME,
+	GRID_ITEM_GROUP,
+	ROOT_ONLY_BLOCK_GROUP,
+	LEGACY_METRIC_GRID_NAME,
+	METRIC_BLOCK_NAME,
+} from "../blocks/node-names"
 
 // the suites build minimal schemas whose node names come from the real
 // block extensions. Computed keys widen the schema's node map to a
@@ -50,16 +56,20 @@ export function parseAttributes(
 // provide. The stand-ins carry the names, groups, and nesting rules the
 // surrounding schema needs; a suite that also renders them extends
 // these with a renderHTML of its own.
-export const MetricGridStub = TiptapNode.create({
-	name: METRIC_GRID_NAME,
-	group: "block",
-	content: `${METRIC_BLOCK_NAME}*`,
+export const BlockGridStub = TiptapNode.create({
+	name: BLOCK_GRID_NAME,
+	group: ROOT_ONLY_BLOCK_GROUP,
+	content: `${GRID_ITEM_GROUP}*`,
 	isolating: true,
+})
+
+export const LegacyMetricGridStub = BlockGridStub.extend({
+	name: LEGACY_METRIC_GRID_NAME,
 })
 
 export const MetricBlockStub = TiptapNode.create({
 	name: METRIC_BLOCK_NAME,
-	group: METRIC_BLOCK_NAME,
+	group: GRID_ITEM_GROUP,
 	atom: true,
 	isolating: true,
 })

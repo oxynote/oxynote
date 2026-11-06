@@ -158,15 +158,25 @@ func Test_NewDemoDataSources(t *testing.T) {
 
 	dd, err := NewDemoDataSources("org-1")
 	require.NoError(t, err)
-	require.Len(t, dd, 1)
+	require.Len(t, dd, 2)
 
-	ds := dd[0]
-	assert.False(t, ds.ID.IsNil())
-	assert.Equal(t, "org-1", ds.OrganizationID)
-	assert.Equal(t, "Demo Metrics", ds.Name)
-	assert.Equal(t, TypePrometheus, ds.Type)
-	assert.Equal(t, demo.URL, ds.URL)
-	assert.Equal(t, processor.NewCredentials([]byte(`{}`)), ds.Credentials)
+	for i, exp := range []struct {
+		Name string
+		Type Type
+	}{
+		{Name: "Demo Metrics", Type: TypePrometheus},
+		{Name: "Demo Logs", Type: TypeLoki},
+	} {
+		ds := dd[i]
+		assert.False(t, ds.ID.IsNil())
+		assert.Equal(t, "org-1", ds.OrganizationID)
+		assert.Equal(t, exp.Name, ds.Name)
+		assert.Equal(t, exp.Type, ds.Type)
+		assert.Equal(t, demo.URL, ds.URL)
+		assert.Equal(t, processor.NewCredentials([]byte(`{}`)), ds.Credentials)
+	}
+
+	assert.NotEqual(t, dd[0].ID, dd[1].ID)
 }
 
 func Test_DataSource_Info(t *testing.T) {

@@ -3,6 +3,7 @@ package demo
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -33,14 +34,14 @@ var (
 	}
 )
 
-// readAllLogs pages through the window a thousand lines at a time and
-// returns every line read.
-func readAllLogs(t *testing.T, q string, tr processor.TimeRange) []processor.LogLine {
+// readAllLogs pages through the window in the given order a thousand
+// lines at a time and returns every line read.
+func readAllLogs(t *testing.T, q string, tr processor.TimeRange, order processor.LogsOrder) []processor.LogLine {
 	t.Helper()
 
 	var lines []processor.LogLine
 
-	page := processor.LogsPage{Limit: 1000}
+	page := processor.LogsPage{Limit: 1000, Order: order}
 
 	for {
 		res, err := _client.Logs(context.Background(), q, tr, page)
@@ -48,11 +49,11 @@ func readAllLogs(t *testing.T, q string, tr processor.TimeRange) []processor.Log
 
 		lines = append(lines, res.Lines...)
 
-		if !res.Cursor.Valid {
+		if !res.NextCursor.Valid {
 			return lines
 		}
 
-		page.Cursor = res.Cursor
+		page.Cursor = res.NextCursor
 	}
 }
 
@@ -125,8 +126,8 @@ func Test_Client_Logs(t *testing.T) {
 					return out
 				}
 
-				a := inShared(readAllLogs(t, `{env="production"}`, hour))
-				b := inShared(readAllLogs(t, `{env="production"}`, later))
+				a := inShared(readAllLogs(t, `{env="production"}`, hour, processor.LogsOrderDesc))
+				b := inShared(readAllLogs(t, `{env="production"}`, later, processor.LogsOrderDesc))
 
 				require.NotEmpty(t, a)
 				assert.Equal(t, a, b)
@@ -144,13 +145,40 @@ func Test_Client_Logs(t *testing.T) {
 
 				ids := map[string]bool{}
 
-				for _, l := range readAllLogs(t, `{env="production"}`, _logDay) {
+				for _, l := range readAllLogs(t, `{env="production"}`, _logDay, processor.LogsOrderDesc) {
 					assert.False(t, ids[l.ID], "line %s read twice", l.ID)
 
 					ids[l.ID] = true
 				}
 
 				assert.Len(t, ids, total)
+			},
+		},
+		"A day read asc holds the same lines oldest first": {
+			Check: func(t *testing.T) {
+				desc := readAllLogs(t, `{env="production"}`, _logDay, processor.LogsOrderDesc)
+				asc := readAllLogs(t, `{env="production"}`, _logDay, processor.LogsOrderAsc)
+
+				require.NotEmpty(t, asc)
+				require.Len(t, asc, len(desc))
+
+				assert.True(t, slices.IsSortedFunc(asc, func(a, b processor.LogLine) int {
+					return a.Time.Compare(b.Time)
+				}), "lines are not oldest first")
+
+				// an ID's first sixteen characters hash the line; the rest
+				// counts repeats within one page.
+				count := func(lines []processor.LogLine) map[string]int {
+					out := map[string]int{}
+
+					for _, l := range lines {
+						out[l.ID[:16]]++
+					}
+
+					return out
+				}
+
+				assert.Equal(t, count(desc), count(asc))
 			},
 		},
 		"A page stops at the newest lines it needs": {
@@ -168,21 +196,40 @@ func Test_Client_Logs(t *testing.T) {
 				assert.True(t, oldest.After(window.To.Add(-15*time.Minute)), "page reached back to %s", oldest)
 			},
 		},
+		"An asc page stops at the oldest lines it needs": {
+			Check: func(t *testing.T) {
+				from := timeutil.Now().Add(-3 * 24 * time.Hour)
+				window := processor.TimeRange{From: from, To: from.Add(time.Hour)}
+				page := processor.LogsPage{Limit: 100, Order: processor.LogsOrderAsc}
+
+				res, err := _client.Logs(context.Background(), `{env="production"}`, window, page)
+				require.NoError(t, err)
+				require.Len(t, res.Lines, 100)
+
+				newest := res.Lines[len(res.Lines)-1].Time
+				assert.True(t, newest.Before(window.From.Add(15*time.Minute)), "page reached on to %s", newest)
+			},
+		},
 		"Nothing past now": {
 			Check: func(t *testing.T) {
 				now := timeutil.Now()
-				lines := readAllLogs(t, `{env="production"}`, processor.TimeRange{From: now.Add(-10 * time.Minute), To: now.Add(time.Hour)})
+				window := processor.TimeRange{From: now.Add(-10 * time.Minute), To: now.Add(time.Hour)}
 
-				require.NotEmpty(t, lines)
+				for _, order := range []processor.LogsOrder{processor.LogsOrderDesc, processor.LogsOrderAsc} {
+					lines := readAllLogs(t, `{env="production"}`, window, order)
 
-				for _, l := range lines {
-					assert.False(t, l.Time.After(timeutil.Now()), "line at %s is in the future", l.Time)
+					require.NotEmpty(t, lines)
+
+					newest := slices.MaxFunc(lines, func(a, b processor.LogLine) int {
+						return a.Time.Compare(b.Time)
+					})
+					assert.False(t, newest.Time.After(timeutil.Now()), "line at %s is in the future", newest.Time)
 				}
 			},
 		},
 		"Filters keep only the matching lines": {
 			Check: func(t *testing.T) {
-				lines := readAllLogs(t, `{service_name="deploy-bot"} |= "rolled back" | detected_level="error"`, _logDay)
+				lines := readAllLogs(t, `{service_name="deploy-bot"} |= "rolled back" | detected_level="error"`, _logDay, processor.LogsOrderDesc)
 
 				require.NotEmpty(t, lines)
 
@@ -218,13 +265,24 @@ func Test_Client_LogsVolume(t *testing.T) {
 		readEach = `{env="production"} |= ""`
 	)
 
+	// emptyWindow checks an answer without lines: no data, and one series
+	// without a level that lists the window's buckets as zero.
+	emptyWindow := func(t *testing.T, res *processor.QueryResult) {
+		require.Equal(t, processor.QueryStatusNoData, res.Status)
+		require.Len(t, res.Data, 1)
+		assert.Empty(t, res.Data[0].Labels)
+		assert.NotEmpty(t, res.Data[0].Metrics)
+		assert.False(t, slices.ContainsFunc(res.Data[0].Metrics, func(p [2]any) bool {
+			return p[1] != float64(0)
+		}))
+	}
+
 	cc := map[string]struct {
 		Query     string
 		Range     processor.TimeRange
 		Cancelled bool
 		Compare   string
 		Check     func(t *testing.T, res *processor.QueryResult)
-		Result    *processor.QueryResult
 		Err       error
 	}{
 		"Edge buckets are whole": {
@@ -255,6 +313,21 @@ func Test_Client_LogsVolume(t *testing.T) {
 				assert.Equal(t, want, got)
 			},
 		},
+		"Every bucket of the window, empty ones as zero": {
+			Query: `{service_name="pizza-bot"}`,
+			Range: processor.TimeRange{From: _logDay.From, To: _logDay.From.Add(20 * time.Minute)},
+			Check: func(t *testing.T, res *processor.QueryResult) {
+				// twenty minutes step 15 seconds: 80 buckets, empty ones
+				// included
+				require.NotEmpty(t, res.Data)
+
+				for _, series := range res.Data {
+					require.Len(t, series.Metrics, 80)
+					assert.Equal(t, _logDay.From.Unix(), series.Metrics[0][0])
+					assert.Equal(t, _logDay.From.Add(20*time.Minute-15*time.Second).Unix(), series.Metrics[79][0])
+				}
+			},
+		},
 		"Query the demo does not answer": {
 			Query: `rate({env="production"}[1m])`,
 			Range: _logDay,
@@ -267,14 +340,14 @@ func Test_Client_LogsVolume(t *testing.T) {
 			Err:       context.Canceled,
 		},
 		"Window past the retention": {
-			Query:  allLines,
-			Range:  _logExpired,
-			Result: &processor.QueryResult{Status: processor.QueryStatusNoData},
+			Query: allLines,
+			Range: _logExpired,
+			Check: emptyWindow,
 		},
 		"Window before the demo starts": {
-			Query:  allLines,
-			Range:  processor.TimeRange{From: _epoch.AddDate(0, 0, -1), To: _epoch.Add(-time.Hour)},
-			Result: &processor.QueryResult{Status: processor.QueryStatusNoData},
+			Query: allLines,
+			Range: processor.TimeRange{From: _epoch.AddDate(0, 0, -1), To: _epoch.Add(-time.Hour)},
+			Check: emptyWindow,
 		},
 		"Whole ticks count as the lines do over a day": {
 			Query:   allLines,
@@ -308,12 +381,6 @@ func Test_Client_LogsVolume(t *testing.T) {
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
-				return
-			}
-
-			if c.Result != nil {
-				assert.Equal(t, c.Result, res)
-
 				return
 			}
 
@@ -500,6 +567,7 @@ func Test_Client_fetchLines(t *testing.T) {
 		Query   string
 		Context func() context.Context
 		Limit   int
+		Order   processor.LogsOrder
 		Err     error
 	}{
 		"Cancelled context": {
@@ -516,6 +584,12 @@ func Test_Client_fetchLines(t *testing.T) {
 		"Newest lines up to the limit": {
 			Query: `{env="production"}`,
 			Limit: 50,
+			Order: processor.LogsOrderDesc,
+		},
+		"Oldest lines up to the limit": {
+			Query: `{env="production"}`,
+			Limit: 50,
+			Order: processor.LogsOrderAsc,
 		},
 		"Selector that picks no source": {
 			Query: `{service_name="billing"}`,
@@ -537,7 +611,7 @@ func Test_Client_fetchLines(t *testing.T) {
 
 			hour := processor.TimeRange{From: _logDay.From, To: _logDay.From.Add(time.Hour)}
 
-			lines, err := _client.fetchLines(lq)(ctx, hour.From, hour.To, c.Limit)
+			lines, err := _client.fetchLines(lq)(ctx, hour.From, hour.To, c.Limit, c.Order)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -552,12 +626,20 @@ func Test_Client_fetchLines(t *testing.T) {
 
 			require.Len(t, lines, c.Limit)
 
-			for i, l := range lines {
+			sorted := slices.Clone(lines)
+			c.Order.SortLines(sorted)
+			assert.Equal(t, sorted, lines)
+
+			// about twenty lines a minute, so fifty lines fit in the
+			// quarter hour the walk starts from.
+			for _, l := range lines {
 				assert.False(t, l.Time.Before(hour.From))
 				assert.True(t, l.Time.Before(hour.To))
 
-				if i > 0 {
-					assert.False(t, l.Time.After(lines[i-1].Time), "line %d out of order", i)
+				if c.Order == processor.LogsOrderAsc {
+					assert.True(t, l.Time.Before(hour.From.Add(15*time.Minute)), "line at %s", l.Time)
+				} else {
+					assert.True(t, l.Time.After(hour.To.Add(-15*time.Minute)), "line at %s", l.Time)
 				}
 			}
 		})

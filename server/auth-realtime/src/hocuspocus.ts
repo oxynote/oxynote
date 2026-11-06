@@ -8,6 +8,7 @@ import type { Logger as ServiceLogger } from "./logging.js"
 import type { CoreClient } from "./core.js"
 import { toAxiosHeaders, toHeaders } from "./headers.js"
 import { bestEffort, reportedAsMessage } from "./reporting.js"
+import { EDITOR_SCHEMA_VERSION } from "./schema/index.js"
 import {
 	isSystemContext,
 	replaceYdocContent,
@@ -159,6 +160,15 @@ async function branchIsProtected(
 	return branch?.protected ?? false
 }
 
+// knowsEditorSchema reports whether the client connected with an editor
+// schema at least as new as this server's. y-prosemirror deletes every
+// node its schema does not know, and that delete syncs to everyone.
+function knowsEditorSchema(requestParameters: URLSearchParams): boolean {
+	const version = Number(requestParameters.get("schemaVersion"))
+
+	return Number.isInteger(version) && version >= EDITOR_SCHEMA_VERSION
+}
+
 // the placeholder a branch gets when core has content for it that is not a
 // prosemirror document — a branch that has never been written to.
 function defaultDocumentContent() {
@@ -238,12 +248,14 @@ export function createDocumentHooks({ auth, core, log }: DocumentHookDeps) {
 			documentName,
 			request,
 			requestHeaders,
+			requestParameters,
 			token,
 		}: {
 			connectionConfig: { readOnly: boolean }
 			documentName: string
 			request: any
 			requestHeaders: any
+			requestParameters: URLSearchParams
 			token: string
 		}) {
 			const { documentId, branchIdentifier } =
@@ -266,14 +278,15 @@ export function createDocumentHooks({ auth, core, log }: DocumentHookDeps) {
 				}),
 			)
 
-			connectionConfig.readOnly = await reportedAsMessage(
-				() =>
+			connectionConfig.readOnly =
+				!knowsEditorSchema(requestParameters) ||
+				(await reportedAsMessage(() =>
 					branchIsProtected(
 						core,
 						documentId,
 						branchIdentifier,
 					),
-			)
+				))
 
 			return { session }
 		},

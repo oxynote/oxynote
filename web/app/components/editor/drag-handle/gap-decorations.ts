@@ -13,7 +13,7 @@ import {
 	NODE_TO_WRAPPER_TYPE,
 	type GapZoneConfig,
 } from "./config"
-import { METRIC_BLOCK_NAME } from "../blocks/node-names"
+import { GRID_ITEM_NAMES } from "../blocks/grid/utils"
 
 declare module "@tiptap/core" {
 	interface Commands<ReturnType> {
@@ -45,7 +45,7 @@ interface GapInfo {
 	leftInset?: number
 	/** Right inset - positive shrinks from right, negative extends */
 	rightInset?: number
-	/** Whether this is a vertical gap (for horizontal layouts like MetricGrid) */
+	/** Whether this is a vertical gap (for horizontal layouts like a block grid) */
 	verticalGap?: boolean
 	/** Width of vertical gap zone */
 	width?: string
@@ -108,7 +108,7 @@ export function clearRepositionCooldown() {
 
 /**
  * Measure a vertical gap zone element without writing to DOM.
- * Uses X-axis positioning for horizontal layouts like MetricGrid.
+ * Uses X-axis positioning for horizontal layouts like a block grid.
  * For multi-row grids, calculates the correct Y coordinate.
  * When siblings wrap to different rows, calculates a secondary gap position
  * at the end of the previous row.
@@ -481,7 +481,7 @@ function canDropAtGap(
 		}
 	}
 
-	// If node needs a wrapper (e.g., MetricBlock -> MetricGrid), check if wrapper can be inserted
+	// If node needs a wrapper (e.g., grid item -> block grid), check if wrapper can be inserted
 	const wrapperTypeName = NODE_TO_WRAPPER_TYPE.get(draggedNode.type.name)
 	if (wrapperTypeName) {
 		const wrapperType = draggedNode.type.schema.nodes[wrapperTypeName]
@@ -822,7 +822,7 @@ function collectAllGaps(doc: Node): GapInfo[] {
 			// For non-lists (like SplitDocumentation sides), use 0
 			const indentLevel = indentByPos.get(pos) ?? 0
 			// contentStart is pos + 1 (after the node's opening tag)
-			// Pass the parent node type for context-aware gap config (e.g., MetricGrid)
+			// Pass the parent node type for context-aware gap config (e.g., block grid)
 			// Use node's uid attribute if available, otherwise fall back to position-based key
 			const nodeId = node.attrs.uid as string | undefined
 			collectGapsForContainer(
@@ -901,7 +901,7 @@ function createGapWidget(gap: GapInfo, docSize: number): Decoration | null {
 			}
 
 			if (verticalGap) {
-				// Vertical gap for horizontal layouts (e.g., MetricGrid)
+				// Vertical gap for horizontal layouts (e.g., block grid)
 				Object.assign(el.style, {
 					position: "absolute",
 					top: "0",
@@ -1158,7 +1158,7 @@ export function enableGapZones(
 	}
 
 	// Find the source wrapper position if dragging a node that has a wrapper type
-	// (e.g., MetricBlock inside MetricGrid)
+	// (e.g., grid item inside block grid)
 	let sourceWrapperStart: number | null = null
 	let sourceWrapperEnd: number | null = null
 	const wrapperTypeName = NODE_TO_WRAPPER_TYPE.get(draggedNode.type.name)
@@ -1192,9 +1192,9 @@ export function enableGapZones(
 
 		const isVerticalGap = el.getAttribute("data-gap-orientation") === "vertical"
 
-		// For MetricBlock dragging: skip gap zones at the exact source position
+		// For grid item dragging: skip gap zones at the exact source position
 		// (immediately before or after the dragged block)
-		if (draggedNode.type.name === METRIC_BLOCK_NAME) {
+		if (GRID_ITEM_NAMES.has(draggedNode.type.name)) {
 			if (gapPos === draggedNodePos || gapPos === draggedNodeEndPos) {
 				htmlEl.style.pointerEvents = "none"
 				htmlEl.style.backgroundColor = "transparent"
@@ -1202,7 +1202,7 @@ export function enableGapZones(
 			}
 		}
 
-		// Skip gap zones adjacent to the source wrapper (before or after the entire MetricGrid)
+		// Skip gap zones adjacent to the source wrapper (before or after the entire block grid)
 		// but only for the external wrapper gap zones (not for internal gaps)
 		if (
 			sourceWrapperStart !== null &&

@@ -162,13 +162,12 @@ func NewDemoDataSources(organizationID string) ([]*DataSource, error) {
 			URL:         demo.URL,
 			Credentials: processor.NewCredentials([]byte(`{}`)),
 		},
-		// TODO: uncomment once the web app can show loki data sources.
-		// {
-		// 	Type:        TypeLoki,
-		// 	Name:        "Demo Logs",
-		// 	URL:         demo.URL,
-		// 	Credentials: processor.NewCredentials([]byte(`{}`)),
-		// },
+		{
+			Type:        TypeLoki,
+			Name:        "Demo Logs",
+			URL:         demo.URL,
+			Credentials: processor.NewCredentials([]byte(`{}`)),
+		},
 	}
 
 	dss := make([]*DataSource, 0, len(inputs))

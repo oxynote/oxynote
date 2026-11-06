@@ -13,7 +13,7 @@ import {
 } from "./gap-decorations"
 import {
 	METRIC_BLOCK_NAME,
-	METRIC_GRID_NAME,
+	BLOCK_GRID_NAME,
 	SPLIT_DOCUMENTATION_LEFT_SIDE_NAME,
 	SPLIT_DOCUMENTATION_NAME,
 	SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
@@ -35,7 +35,7 @@ style.textContent = `
 	.ProseMirror ul { margin: 10px 0; padding-left: 20px; }
 	.ProseMirror li { margin: 6px 0; }
 	.ProseMirror ul ul li:nth-of-type(2) { margin-left: 30px; }
-	.metric-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+	.block-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 	.metric-block { width: 250px; height: 60px; }
 `
 document.head.appendChild(style)
@@ -79,11 +79,11 @@ const schema = new Schema({
 			attrs: { uid: { default: null } },
 			toDOM: () => ["pre", 0],
 		},
-		[METRIC_GRID_NAME]: {
+		[BLOCK_GRID_NAME]: {
 			group: "block",
 			content: `${METRIC_BLOCK_NAME}*`,
 			attrs: { uid: { default: null } },
-			toDOM: () => ["div", { class: "metric-grid" }, 0],
+			toDOM: () => ["div", { class: "block-grid" }, 0],
 		},
 		[METRIC_BLOCK_NAME]: {
 			content: "inline*",
@@ -192,8 +192,8 @@ const orderedList = (uid: string | null, ...items: PMNode[]) =>
 const listItem = (uid: string | null, ...content: PMNode[]) =>
 	block("listItem", { uid }, ...content)
 
-const metricGrid = (uid: string | null, ...blocks: PMNode[]) =>
-	block(METRIC_GRID_NAME, { uid }, ...blocks)
+const blockGrid = (uid: string | null, ...blocks: PMNode[]) =>
+	block(BLOCK_GRID_NAME, { uid }, ...blocks)
 
 const metricBlock = (uid: string | null, height: number | null = null) =>
 	block(METRIC_BLOCK_NAME, { uid, height }, "ab")
@@ -411,7 +411,7 @@ describe("gap decorations", { concurrent: false }, () => {
 
 		it("renders metric grid gaps as vertical zones", ({ expect }) => {
 			const { host } = mountEditor(
-				docOf(metricGrid("mg", metricBlock("m1"), metricBlock("m2"))),
+				docOf(blockGrid("mg", metricBlock("m1"), metricBlock("m2"))),
 			)
 
 			const vertical = gapEl(host, "mg:before:m2")
@@ -582,7 +582,7 @@ describe("gap decorations", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const { host } = mountEditor(
-				docOf(metricGrid("mg", metricBlock("m1"), metricBlock("m2", 90))),
+				docOf(blockGrid("mg", metricBlock("m1"), metricBlock("m2", 90))),
 			)
 			await nextFrame()
 
@@ -605,7 +605,7 @@ describe("gap decorations", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const { host } = mountEditor(
-				docOf(metricGrid("mg", metricBlock("m1"), metricBlock("m2", 90))),
+				docOf(blockGrid("mg", metricBlock("m1"), metricBlock("m2", 90))),
 			)
 			await nextFrame()
 
@@ -631,7 +631,7 @@ describe("gap decorations", { concurrent: false }, () => {
 		}) => {
 			const { host } = mountEditor(
 				docOf(
-					metricGrid(
+					blockGrid(
 						"mg",
 						metricBlock("m1"),
 						metricBlock("m2"),
@@ -670,7 +670,7 @@ describe("gap decorations", { concurrent: false }, () => {
 		}) => {
 			const { host } = mountEditor(
 				docOf(
-					metricGrid(
+					blockGrid(
 						"mg",
 						metricBlock("m1"),
 						metricBlock("m2"),
@@ -765,7 +765,7 @@ describe("gap decorations", { concurrent: false }, () => {
 		}) => {
 			const { host } = mountEditor(
 				docOf(
-					metricGrid(
+					blockGrid(
 						"mg",
 						metricBlock("m1"),
 						metricBlock("m2"),
@@ -1000,7 +1000,7 @@ describe("gap decorations", { concurrent: false }, () => {
 		}) => {
 			const { view, host } = mountEditor(
 				docOf(
-					metricGrid(
+					blockGrid(
 						"mg",
 						metricBlock("m1"),
 						metricBlock("m2"),
@@ -1066,7 +1066,7 @@ describe("gap decorations", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const { host, editor } = mountEditor(
-				docOf(para("p1"), metricGrid("mg", metricBlock("m1"))),
+				docOf(para("p1"), blockGrid("mg", metricBlock("m1"))),
 			)
 
 			enableGapZones(editor, editor.state.doc.child(0), 0)
@@ -1149,7 +1149,7 @@ describe("gap decorations", { concurrent: false }, () => {
 			const { host, editor } = mountEditor(
 				docOf(
 					para("p0"),
-					metricGrid("mg", metricBlock("m1"), metricBlock("m2")),
+					blockGrid("mg", metricBlock("m1"), metricBlock("m2")),
 					para("p1"),
 				),
 			)

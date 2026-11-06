@@ -13,7 +13,7 @@ var _knownTags = map[string]bool{
 	_elemBlockquote: true, _elemBullets: true, _elemOrdered: true, _elemEntry: true,
 	_elemTasks: true, _elemTask: true, _elemCallout: true, _elemCode: true,
 	_elemMermaid: true, _elemRule: true, _elemImage: true, _elemFigma: true,
-	_elemFile: true, _elemMetrics: true, _elemMetric: true, _elemSplitDoc: true,
+	_elemFile: true, _elemGrid: true, _elemMetrics: true, _elemLogs: true, _elemSplitDoc: true,
 	_elemLeft: true, _elemRight: true, _elemParams: true, _elemParam: true,
 	_elemUnsupported: true,
 	_tagBold:         true, _tagItalic: true, _tagUnderline: true, _tagStrike: true,
@@ -21,11 +21,14 @@ var _knownTags = map[string]bool{
 }
 
 // _tagAliases maps the HTML spellings models often write to the tag
-// they mean.
+// they mean, and former element names to the current ones. A model may
+// still hold markup read under a former name.
 var _tagAliases = map[string]string{
 	"strong": _tagBold,
 	"em":     _tagItalic,
 	"del":    _tagStrike,
+	// legacy: markup read before <metric> became <metrics>.
+	"metric": _elemMetrics,
 }
 
 // _entityDecoder decodes the character references text and attribute

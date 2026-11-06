@@ -9,8 +9,8 @@ import {
 	FILE_BLOCK_NAME,
 	IMAGE_BLOCK_NAME,
 	MERMAID_BLOCK_NAME,
-	METRIC_BLOCK_NAME,
 } from "../blocks/node-names"
+import { GRID_ITEM_NAMES } from "../blocks/grid/utils"
 import {
 	HOOK_BAR_STATUS_CLASS,
 	hookGroupStatus,
@@ -109,7 +109,7 @@ function buildDecorations(
 
 		// for atom nodes and code blocks, widget must be placed at pos
 		// (not pos + 1) so it renders outside the node view wrapper.
-		// for metric blocks, place the widget outside the parent metric grid
+		// for grid items, place the widget outside the parent grid
 		// entirely to avoid interfering with the grid's CSS layout and gap zones.
 		const placeOutside =
 			node.isAtom || NODE_VIEW_BLOCK_NAMES.has(node.type.name)
@@ -117,8 +117,8 @@ function buildDecorations(
 		let widgetPos: number
 		let targetNodePos: number // the node whose DOM rect we align to
 
-		if (node.type.name === METRIC_BLOCK_NAME) {
-			// place before the parent metric grid
+		if (GRID_ITEM_NAMES.has(node.type.name)) {
+			// place before the parent grid
 			const $pos = doc.resolve(pos)
 			widgetPos = $pos.before($pos.depth)
 			targetNodePos = pos

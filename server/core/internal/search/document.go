@@ -149,10 +149,10 @@ func (s Scope) entries(b document.Block, res map[string]Block) {
 		s.entries(cb, res)
 	}
 
-	// a metric, file or image block has no text children; what describes
-	// it sits in its attributes.
+	// a metric, log, file or image block has no text children; what
+	// describes it sits in its attributes.
 	switch b.Type { //nolint:exhaustive // the other types index their text children
-	case document.BlockNodeMetricBlock:
+	case document.BlockNodeMetricBlock, document.BlockNodeLogBlock:
 		if title, ok := b.Attrs[document.AttrTitle].(string); ok {
 			text.WriteString(title)
 		}

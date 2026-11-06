@@ -120,8 +120,8 @@ var _unknownDataSourceID = xid.New().String()
 // metricContent is a metric grid holding one metric that names the
 // given data source, as a JSON string the content argument takes.
 func metricContent(dataSourceID string) string {
-	return `"<metrics><metric>{\"dataSourceId\":\"` + dataSourceID +
-		`\",\"visualizationType\":\"line_chart\",\"queries\":[{\"name\":\"Q\",\"query\":\"up\",\"legendFormat\":\"\"}]}</metric></metrics>"`
+	return `"<grid><metrics>{\"dataSourceId\":\"` + dataSourceID +
+		`\",\"visualizationType\":\"line_chart\",\"queries\":[{\"name\":\"Q\",\"query\":\"up\",\"legendFormat\":\"\"}]}</metrics></grid>"`
 }
 
 // stubDataSource makes db resolve exactly one data source.
@@ -429,7 +429,7 @@ func Test_insertBlocks_Execute(t *testing.T) {
 		"Data source the organisation owns": {
 			DB:                           stubDataSource(stubContentDB(nil)),
 			Args:                         `{` + targetArgs(_stubMainBranchID) + `,"position":"end","content":` + metricContent(_testDataSourceID.String()) + `}`,
-			Contains:                     []string{`<metrics id=`},
+			Contains:                     []string{`<grid id=`},
 			Ops:                          []string{`"kind":"append"`},
 			FetchDataSourceCalls:         1,
 			FetchDocumentByBranchIDCalls: 1,
@@ -680,7 +680,7 @@ func Test_replaceBlocks_Execute(t *testing.T) {
 		// switch the simulation back on.
 		"Metric keeps its simulation flag": {
 			DB:                           stubSimulationDB(),
-			Args:                         `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"` + _stubMetricUID + `","content":"<metric id=\"m\">{\"simulationPreset\":\"cpu_usage\",\"width\":\"wide\"}</metric>"}`,
+			Args:                         `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"` + _stubMetricUID + `","content":"<metrics id=\"m\">{\"simulationPreset\":\"cpu_usage\",\"width\":\"wide\"}</metrics>"}`,
 			Ops:                          []string{`"simulationActive":false`},
 			FetchDocumentByBranchIDCalls: 1,
 			ApplyCalls:                   1,

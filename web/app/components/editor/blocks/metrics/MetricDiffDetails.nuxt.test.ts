@@ -115,12 +115,12 @@ describe("<MetricDiffDetails>", { concurrent: false }, () => {
 
 		expect(rows(wrapper)).toEqual([
 			[
-				t("editor.metrics.config.time-range-label"),
+				t("editor.config-modal-utils.time-range-label"),
 				t("general.time-range-options.last_15_minutes"),
 				t("general.time-range-options.last_5_minutes"),
 			],
 			[
-				t("editor.metrics.config.refresh-interval-label"),
+				t("editor.config-modal-utils.refresh-interval-label"),
 				t("general.refresh-interval-options.1m"),
 				t("general.refresh-interval-options.5m"),
 			],
@@ -142,13 +142,13 @@ describe("<MetricDiffDetails>", { concurrent: false }, () => {
 
 		expect(rows(wrapper)).toEqual([
 			[
-				t("editor.metrics.config.time-range-label"),
-				t("editor.metrics.config.variable-time-range"),
+				t("editor.config-modal-utils.time-range-label"),
+				t("editor.config-modal-utils.variable-time-range"),
 				t("general.time-range-options.last_5_minutes"),
 			],
 			[
-				t("editor.metrics.config.refresh-interval-label"),
-				t("editor.metrics.config.variable-refresh-interval"),
+				t("editor.config-modal-utils.refresh-interval-label"),
+				t("editor.config-modal-utils.variable-refresh-interval"),
 				t("general.refresh-interval-options.5m"),
 			],
 		])
@@ -167,8 +167,8 @@ describe("<MetricDiffDetails>", { concurrent: false }, () => {
 
 		expect(rows(wrapper)).toEqual([
 			[
-				t("editor.metrics.config.data-source-label"),
-				t("editor.metrics.config.data-source-label-deleted"),
+				t("editor.config-modal-utils.data-source-label"),
+				t("editor.config-modal-utils.data-source-label-deleted"),
 				"Demo",
 			],
 		])

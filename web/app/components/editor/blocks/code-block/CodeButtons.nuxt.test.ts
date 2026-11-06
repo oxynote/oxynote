@@ -55,9 +55,14 @@ function selectedLanguage(wrapper: VueWrapper): string {
 	return wrapper.get("[data-slot='select-value']").text()
 }
 
-// the copy icon turns green for a moment once the code is on the clipboard
-function copyIconMarked(wrapper: VueWrapper): boolean {
-	return copyButton(wrapper).get(".iconify").classes().includes("text-chart-2")
+// the copy icon turns into a checkmark for a moment once the code is on
+// the clipboard. @nuxt/icon renders the icon's name as an i-<name> class.
+function copyIconName(wrapper: VueWrapper): string | undefined {
+	return copyButton(wrapper)
+		.get(".iconify")
+		.classes()
+		.find((c) => c.startsWith("i-"))
+		?.slice("i-".length)
 }
 
 // the editable flag is a shared cookie state, and the clipboard spy and
@@ -295,7 +300,7 @@ describe("<CodeButtons>", { concurrent: false }, () => {
 
 		expect(writeText).toHaveBeenCalledTimes(1)
 		expect(writeText).toHaveBeenCalledWith(GO_SNIPPET)
-		expect(copyIconMarked(wrapper)).toBe(true)
+		expect(copyIconName(wrapper)).toBe("lucide:check")
 	})
 
 	it("copies an empty string for a block with no code", async ({ expect }) => {
@@ -319,7 +324,7 @@ describe("<CodeButtons>", { concurrent: false }, () => {
 		await flushPromises()
 		await vi.advanceTimersByTimeAsync(COPIED_RESET_MS)
 
-		expect(copyIconMarked(wrapper)).toBe(false)
+		expect(copyIconName(wrapper)).toBe("lucide:copy")
 	})
 
 	it("marks nothing as copied when the clipboard rejects", async ({
@@ -339,7 +344,7 @@ describe("<CodeButtons>", { concurrent: false }, () => {
 		await flushPromises()
 
 		expect(writeText).toHaveBeenCalledTimes(1)
-		expect(copyIconMarked(wrapper)).toBe(false)
+		expect(copyIconName(wrapper)).toBe("lucide:copy")
 		expect(errors).toEqual([failure])
 	})
 

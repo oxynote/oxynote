@@ -66,6 +66,7 @@ const props = defineProps<{
 	thresholds?: BarChartThreshold[]
 	axisBounds?: { min?: number | null; max?: number | null }
 	titleRightPadding?: number
+	titleOffsetTop?: number
 	disableAnimation?: boolean
 }>()
 
@@ -114,7 +115,7 @@ const option = computed<ECOption>(() => {
 		title: {
 			show: !!props.title,
 			text: props.title,
-			top: 10,
+			top: 11 + (props.titleOffsetTop ?? 0),
 			left: 10,
 			padding: 0,
 			textStyle: {
@@ -179,7 +180,7 @@ const option = computed<ECOption>(() => {
 			left: 10,
 			right: 12,
 			bottom: props.showLegend ? 30 : 10,
-			top: props.title ? 40 : 10,
+			top: (props.title ? 40 : 10) + (props.titleOffsetTop ?? 0),
 			outerBoundsMode: "same",
 			outerBoundsContain: "axisLabel",
 		},

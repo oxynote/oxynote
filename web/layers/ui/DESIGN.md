@@ -114,9 +114,17 @@ shared meaning gets its own neutrally named token.
 | | `hook-status-triggered` (+ `-foreground`) | navy / navy | `#87b0ed` / `#c2d9fc` |
 | | `hook-status-needs-attention` (+ `-foreground`) | `#bc8218` / `#69440a` | `#f1bf5b` / `#fadea4` |
 | Comments | `comment-highlight` | `#ffcb00` | same |
+| Search | `search-highlight` (matched text) | `#ffcb00` 40% | same |
 | Drag and drop | `drag-target` | `#c7e1f8` | `#3699e2` 36% |
 | API docs | `http-method-get/post/put/patch/delete/…` | get `#045ad0`, post `#217005`, delete `#b13600`, rest muted | get `#2b9df6`, post `#3eae20`, delete `#f27400` |
 | | `url-path-param` | `#8caf8c` | `#6e8a6e` |
+| Log levels | `log-level-critical` | `#9810fa` | `#c27aff` |
+| | `log-level-error` | `#e7000b` | `#ff6467` |
+| | `log-level-warning` | `#bd9f00` | `#fdc700` |
+| | `log-level-info` | `#0071c2` | `#51a2ff` |
+| | `log-level-debug` | `#009966` | `#00d492` |
+| | `log-level-trace` | `#62748e` | `#90a1b9` |
+| | `log-volume-empty` (dash for an interval without lines) | `#a1a1a1` | `#525252` |
 
 Recurring pattern for a tinted feature surface: the feature colour at
 5–15% as the fill, 20–30% as the border, and the matching `-foreground`
@@ -309,7 +317,7 @@ fades in its actions menu. Group labels are 12px medium at 70%.
 
 **List and result rows** (search, notifications). `rounded-md`, selected
 `accent/50`, pressed `accent`; hover styling only on devices that hover.
-Matched text is a `comment-highlight/40` mark.
+Matched text is a `search-highlight` mark.
 
 **Toasts.** `rounded-lg border bg-popover px-3 py-2.5 shadow-md`, at least
 23.75rem wide: 16px filled status icon, 13px medium title, 13px muted

@@ -24,8 +24,8 @@ import {
 	DRAG_HANDLE_IGNORE_SELF_CLASS,
 	NODE_TO_WRAPPER_TYPE,
 } from "./config"
-import { deleteEmptyMetricGrids, MetricGrid } from "../blocks/metrics"
-import { METRIC_BLOCK_NAME } from "../blocks/node-names"
+import { deleteEmptyBlockGrids } from "../blocks/grid"
+import { BLOCK_GRID_NAMES, GRID_ITEM_NAMES } from "../blocks/grid/utils"
 
 // extra drag metadata that handleDragData in handle-plugin.ts stores on
 // view.dragging alongside ProseMirror's own slice/move fields. The extra
@@ -38,8 +38,8 @@ export interface DragHandleDragging {
 	sourceWrapperBounds?: { start: number; end: number } | null
 }
 
-// a metric block as the grid lays it out
-interface MetricGridBlock {
+// a grid item as the grid lays it out
+interface GridLayoutBlock {
 	pos: number
 	node: Node
 	dom: HTMLElement
@@ -104,22 +104,22 @@ function normalizeListBoundaryPosition(
 }
 
 /**
- * Check if we're dragging a MetricBlock based on the current slice.
+ * Check if we're dragging a grid item based on the current slice.
  */
-function isDraggingMetricBlock(view: EditorView): boolean {
+function isDraggingGridItem(view: EditorView): boolean {
 	const slice = getCurrentSlice(view)
 	if (!slice || slice.content.childCount === 0) {
 		return false
 	}
 	const firstChild = slice.content.firstChild
-	return firstChild?.type.name === METRIC_BLOCK_NAME
+	return !!firstChild && GRID_ITEM_NAMES.has(firstChild.type.name)
 }
 
 /**
- * Find the MetricGrid element at the given coordinates.
- * Returns null if cursor is not within any MetricGrid bounds.
+ * Find the block grid element at the given coordinates.
+ * Returns null if cursor is not within any block grid bounds.
  */
-function findMetricGridAtCoords(
+function findBlockGridAtCoords(
 	view: EditorView,
 	clientX: number,
 	clientY: number,
@@ -128,18 +128,18 @@ function findMetricGridAtCoords(
 	const { doc } = view.state
 	const includeMargins = options?.includeMargins ?? false
 
-	// Find all MetricGrid nodes in the document
-	const metricGrids: { pos: number; node: Node }[] = []
+	// Find all block grid nodes in the document
+	const blockGrids: { pos: number; node: Node }[] = []
 	doc.descendants((node: Node, pos: number) => {
-		if (node.type.name === MetricGrid.name) {
-			metricGrids.push({ pos, node })
-			return false // Don't descend into MetricGrid
+		if (BLOCK_GRID_NAMES.has(node.type.name)) {
+			blockGrids.push({ pos, node })
+			return false // Don't descend into block grid
 		}
 		return true
 	})
 
-	// Check each MetricGrid's DOM bounds
-	for (const { pos } of metricGrids) {
+	// Check each grid's DOM bounds
+	for (const { pos } of blockGrids) {
 		const gridDOM = view.nodeDOM(pos)
 		if (!gridDOM || !(gridDOM instanceof HTMLElement)) {
 			continue
@@ -158,7 +158,7 @@ function findMetricGridAtCoords(
 		}
 
 		// When includeMargins is true, also match if cursor is within Y bounds
-		// but outside X bounds (in the side margins). This allows MetricBlock
+		// but outside X bounds (in the side margins). This allows grid item
 		// drag to show cursor at row edges when hovering in margins.
 		if (includeMargins && clientY >= rect.top && clientY <= rect.bottom) {
 			return { gridElement: gridDOM, gridPos: pos, inMargin: true }
@@ -169,8 +169,8 @@ function findMetricGridAtCoords(
 }
 
 /**
- * Find drop position within a MetricGrid using X-axis midpoint logic.
- * MetricGrid uses a horizontal layout, so we compare clientX against each MetricBlock's center.
+ * Find drop position within a block grid using X-axis midpoint logic.
+ * A block grid uses a horizontal layout, so we compare clientX against each grid item's center.
  * For multi-row grids, first filters to the row containing clientY.
  *
  * Returns the document position where the drop should occur, or null if invalid.
@@ -178,10 +178,10 @@ function findMetricGridAtCoords(
  * @param view - The editor view
  * @param clientX - Mouse X coordinate
  * @param clientY - Mouse Y coordinate (used to determine which row)
- * @param gridPos - Document position of the MetricGrid
- * @param gridElement - The DOM element of the MetricGrid
+ * @param gridPos - Document position of the block grid
+ * @param gridElement - The DOM element of the block grid
  */
-function findMetricGridDropPosition(
+function findBlockGridDropPosition(
 	view: EditorView,
 	clientX: number,
 	clientY: number,
@@ -191,11 +191,11 @@ function findMetricGridDropPosition(
 	const { doc } = view.state
 	const gridNode = doc.nodeAt(gridPos)
 
-	if (gridNode?.type.name !== MetricGrid.name) {
+	if (!gridNode || !BLOCK_GRID_NAMES.has(gridNode.type.name)) {
 		return null
 	}
 
-	const rows = metricGridRows(view, gridNode, gridPos)
+	const rows = blockGridRows(view, gridNode, gridPos)
 	const allBlocks = rows.flat()
 
 	if (allBlocks.length === 0) {
@@ -204,7 +204,7 @@ function findMetricGridDropPosition(
 	}
 
 	// Find which row the cursor is in based on clientY
-	let targetRow: MetricGridBlock[] | null = null
+	let targetRow: GridLayoutBlock[] | null = null
 
 	for (const row of rows) {
 		if (row.length === 0) continue
@@ -256,7 +256,7 @@ function findMetricGridDropPosition(
 
 	// a stacked grid, as on a phone, lays its blocks out top to bottom, so
 	// the cursor's height picks before or after
-	if (isStackedMetricGrid(rows)) {
+	if (isStackedBlockGrid(rows)) {
 		const midpointY = firstBlock.rect.top + firstBlock.rect.height / 2
 		return clientY < midpointY
 			? firstBlock.pos
@@ -303,15 +303,15 @@ function findMetricGridDropPosition(
 	return lastBlock.pos + lastBlock.node.nodeSize
 }
 
-// metricGridRows groups a grid's blocks into the rows they are laid out
+// blockGridRows groups a grid's blocks into the rows they are laid out
 // in. Blocks share a row when their vertical centers are close.
-function metricGridRows(
+function blockGridRows(
 	view: EditorView,
 	gridNode: Node,
 	gridPos: number,
-): MetricGridBlock[][] {
+): GridLayoutBlock[][] {
 	const ROW_TOLERANCE = 10
-	const rows: MetricGridBlock[][] = []
+	const rows: GridLayoutBlock[][] = []
 
 	gridNode.forEach((child: Node, childOffset: number) => {
 		const childPos = gridPos + 1 + childOffset // +1 for grid's opening tag
@@ -348,7 +348,7 @@ function metricGridRows(
 }
 
 // a grid too narrow for two blocks side by side stacks them one per row
-function isStackedMetricGrid(rows: MetricGridBlock[][]): boolean {
+function isStackedBlockGrid(rows: GridLayoutBlock[][]): boolean {
 	return rows.length > 1 && rows.every((row) => row.length === 1)
 }
 
@@ -362,23 +362,23 @@ function findDropPosition(
 	// Check if we're dragging a list item (for normalizing list boundaries)
 	const isDraggingListItem = lastParentListType !== null
 
-	// Special handling for MetricBlock: if dragging a MetricBlock and cursor is
-	// within a MetricGrid (or in its side margins), use MetricGrid-specific drop logic.
+	// Special handling for grid item: if dragging a grid item and cursor is
+	// within a block grid (or in its side margins), use grid-specific drop logic.
 	// includeMargins allows showing cursor at row edges when hovering in editor margins.
-	if (isDraggingMetricBlock(view)) {
-		const metricGridInfo = findMetricGridAtCoords(view, clientX, clientY, {
+	if (isDraggingGridItem(view)) {
+		const blockGridInfo = findBlockGridAtCoords(view, clientX, clientY, {
 			includeMargins: true,
 		})
 
-		if (metricGridInfo) {
-			const { gridElement, gridPos } = metricGridInfo
+		if (blockGridInfo) {
+			const { gridElement, gridPos } = blockGridInfo
 
 			// Check if this is the source grid (the grid we're dragging from)
 			// We still allow dropping within the same grid, just not at the exact source position
 			const sourceWrapperBounds = getSourceWrapperBounds(view)
 
 			// Get drop position within the grid
-			const dropPos = findMetricGridDropPosition(
+			const dropPos = findBlockGridDropPosition(
 				view,
 				clientX,
 				clientY,
@@ -730,7 +730,7 @@ function wrapListItemsIfNeeded(
 }
 
 /**
- * Wraps nodes in their required wrapper (e.g., MetricBlock -> MetricGrid)
+ * Wraps nodes in their required wrapper (e.g., grid item -> block grid)
  * if the target position cannot directly accept them.
  */
 function wrapNodesIfNeeded(
@@ -823,7 +823,7 @@ function canInsertAtWithWrapping(
 			return parent.canReplace(index, index, wrappedListContent)
 		}
 
-		// Check if node wrapping would work (e.g., MetricBlock -> MetricGrid)
+		// Check if node wrapping would work (e.g., grid item -> block grid)
 		const wrappedNodeContent = wrapNodesIfNeeded(
 			state.doc,
 			state.schema,
@@ -936,7 +936,7 @@ function executeDrop(
 	}
 
 	tr = tr.replaceWith(pos, pos, nodesToInsert)
-	tr = deleteEmptyMetricGrids(tr, state.schema)
+	tr = deleteEmptyBlockGrids(tr)
 
 	const insertedSize = contentToInsert.size
 	if (insertedSize > 0) {
@@ -986,7 +986,7 @@ function updateDragCursor(
 		return false
 	}
 
-	// Don't allow dropping adjacent to the source wrapper (e.g., MetricGrid)
+	// Don't allow dropping adjacent to the source wrapper (e.g., block grid)
 	if (
 		sourceWrapperBounds &&
 		(insertPos === sourceWrapperBounds.start ||
@@ -1022,14 +1022,14 @@ function showCursorAt(view: EditorView, pos: number, clientY?: number) {
 	const $pos = view.state.doc.resolve(pos)
 	const isAfterLastChild = $pos.index($pos.depth) === $pos.parent.childCount
 
-	// a position between side-by-side metric blocks takes a vertical cursor.
+	// a position between side-by-side grid items takes a vertical cursor.
 	// A stacked grid drops above or below its blocks, like any other block.
 	const betweenSideBySideBlocks =
-		$pos.parent.type.name === MetricGrid.name &&
-		!isStackedMetricGrid(metricGridRows(view, $pos.parent, $pos.before()))
+		BLOCK_GRID_NAMES.has($pos.parent.type.name) &&
+		!isStackedBlockGrid(blockGridRows(view, $pos.parent, $pos.before()))
 
 	if (betweenSideBySideBlocks) {
-		// Render vertical cursor for MetricGrid
+		// Render vertical cursor for block grid
 		showVerticalCursorAt(view, pos, $pos, editorRect, clientY)
 		return
 	}
@@ -1143,8 +1143,8 @@ function showCursorAt(view: EditorView, pos: number, clientY?: number) {
 }
 
 /**
- * Show a vertical cursor for MetricGrid drop positions.
- * The cursor is positioned between MetricBlock children using X-axis positioning.
+ * Show a vertical cursor for block grid drop positions.
+ * The cursor is positioned between grid item children using X-axis positioning.
  * For multi-row grids, positions at the correct Y coordinate.
  * Height is determined by:
  * - Before first child: height of first child
@@ -1489,7 +1489,7 @@ export const Drag = Extension.create<DragOptions>({
 							return true
 						}
 
-						// Don't allow dropping adjacent to the source wrapper (e.g., MetricGrid)
+						// Don't allow dropping adjacent to the source wrapper (e.g., block grid)
 						if (
 							sourceWrapperBounds &&
 							(insertPos === sourceWrapperBounds.start ||
@@ -1537,7 +1537,7 @@ export const Drag = Extension.create<DragOptions>({
 					//
 					// ProseMirror's handleDOMEvents.dragover only receives events that bubble
 					// through its DOM tree. When dragging over NodeViews with contenteditable="false"
-					// (like MetricBlock), the browser handles drag events differently and they don't
+					// (like a grid item), the browser handles drag events differently and they don't
 					// reliably propagate to ProseMirror's handlers.
 					//
 					// The ProseMirror handler (above) is responsible for:
@@ -1545,7 +1545,7 @@ export const Drag = Extension.create<DragOptions>({
 					// - Showing the cursor on first valid position (when events reach it)
 					//
 					// The global handler is responsible for:
-					// - Initializing AND updating cursor when events miss ProseMirror (e.g., over MetricBlocks)
+					// - Initializing AND updating cursor when events miss ProseMirror (e.g., over grid items)
 					// - Always tracking lastMouse position for accurate drop placement
 					// - Calling preventDefault() on dragover to allow drops
 					//

@@ -28,13 +28,14 @@ const _testLogsWindow = "from=2024-01-01T00:00:00Z&to=2024-01-02T00:00:00Z"
 
 var (
 	// _testLogsTarget is a logs request carrying a query, a window, a
-	// limit and a cursor.
+	// limit, a cursor and an order.
 	_testLogsTarget = "http://test.com/?" + url.Values{
 		"q":      {_testLogsQuery},
 		"from":   {"2024-01-01T00:00:00Z"},
 		"to":     {"2024-01-02T00:00:00Z"},
 		"limit":  {"2"},
 		"cursor": {"ns:1704110400000000000"},
+		"order":  {"asc"},
 	}.Encode()
 
 	// _testLogsCursor is the cursor _testLogsTarget carries.
@@ -61,7 +62,7 @@ func stubLogClients(cs processor.ConnectionStatus, err error) *clientMocks {
 			Labels: map[string]string{"app": "up"},
 			Fields: map[string]string{"trace_id": "e1a3f33c25c5eecd"},
 		}},
-		Cursor: null.ValueFrom(_testLogsCursor),
+		NextCursor: null.ValueFrom(_testLogsCursor),
 	}
 
 	return &clientMocks{
@@ -219,7 +220,11 @@ func Test_Handler_FetchDataSourceLogs(t *testing.T) {
 
 			assert.Equal(t, `{app="up"}`, ff[0].Q)
 			assert.Equal(t, _testParsedTimeRange, ff[0].Tr)
-			assert.Equal(t, processor.LogsPage{Limit: 2, Cursor: null.ValueFrom(_testLogsCursor)}, ff[0].Page)
+			assert.Equal(t, processor.LogsPage{
+				Limit:  2,
+				Cursor: null.ValueFrom(_testLogsCursor),
+				Order:  processor.LogsOrderAsc,
+			}, ff[0].Page)
 		}
 	}
 
@@ -245,6 +250,14 @@ func Test_Handler_FetchDataSourceLogs(t *testing.T) {
 			Target: "http://test.com/?q=x&cursor=later&" + _testLogsWindow,
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"cursor.invalid","message":"cursor must come from a previous logs response"}`),
+				wasRunnersRunnerCalled(0),
+			),
+		},
+		"Invalid order": {
+			DB:     stubDB(stubDataSource(datasourceCore.TypeLoki), nil),
+			Target: "http://test.com/?q=x&order=sideways&" + _testLogsWindow,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"order.invalid","message":"order must be asc or desc"}`),
 				wasRunnersRunnerCalled(0),
 			),
 		},
@@ -274,7 +287,8 @@ func Test_Handler_FetchDataSourceLogs(t *testing.T) {
 						"labels": {"app": "up"},
 						"fields": {"trace_id": "e1a3f33c25c5eecd"}
 					}],
-					"cursor": "ns:1704110400000000000",
+					"nextCursor": "ns:1704110400000000000",
+					"previousCursor": null,
 					"partial": false
 				}`),
 				wasDBFetchDataSourceCalled(1),
