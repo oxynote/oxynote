@@ -32,7 +32,7 @@ const sections = computed(() => {
 		},
 		{
 			key: DataSourceType.Loki,
-			icon: "devicon:grafana",
+			icon: "custom-icons:loki",
 			items:
 				fetchDataSources.state.value.data?.filter(
 					(ds) =>
