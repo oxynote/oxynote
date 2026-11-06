@@ -162,7 +162,7 @@ func getSession(ctx context.Context, client *http.Client, url string, inc *http.
 	// Better Auth only trusts a single-value X-Forwarded-For unless it is
 	// configured with trustedProxies, so only the one address chi's client IP
 	// middleware picked (the last entry, set by Caddy) is sent.
-	if ip := middleware.GetClientIP(inc.Context()); ip != "" {
+	if ip := middleware.GetClientIP(ctx); ip != "" {
 		req.Header.Set(_headerForwardedFor, ip)
 	}
 
