@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/guregu/null/v5"
@@ -403,6 +404,16 @@ func Test_createDocumentArgs_Validate(t *testing.T) {
 			ErrContains: "name is required",
 			Err:         assert.AnError,
 		},
+		"Name of only white space": {
+			Args:        createDocumentArgs{Name: "   "},
+			ErrContains: "document name cannot be empty",
+			Err:         assert.AnError,
+		},
+		"Name over 200 characters": {
+			Args:        createDocumentArgs{Name: strings.Repeat("a", 201)},
+			ErrContains: "cannot be longer than 200",
+			Err:         assert.AnError,
+		},
 		"Icon the picker offers": {Args: createDocumentArgs{Name: "n", Icon: "mingcute:rocket-fill"}},
 		// an icon the picker does not offer is refused, naming close ones.
 		"Icon the picker does not offer": {
@@ -422,6 +433,34 @@ func Test_createDocumentArgs_Validate(t *testing.T) {
 			if err != nil {
 				assert.Contains(t, err.Error(), c.ErrContains)
 			}
+		})
+	}
+}
+
+func Test_createDocumentArgs_input(t *testing.T) {
+	t.Parallel()
+
+	parentID := null.ValueFrom(xid.New())
+
+	cc := map[string]struct {
+		Args   createDocumentArgs
+		Result document.CreateInput
+	}{
+		"Icon given": {
+			Args:   createDocumentArgs{Name: "n", Icon: "mingcute:rocket-fill", ParentID: parentID},
+			Result: document.CreateInput{Name: "n", Icon: "mingcute:rocket-fill", ParentID: parentID},
+		},
+		"Icon omitted falls back to the default": {
+			Args:   createDocumentArgs{Name: "n"},
+			Result: document.CreateInput{Name: "n", Icon: _defaultDocumentIcon},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Args.input())
 		})
 	}
 }
@@ -451,6 +490,11 @@ func Test_createDocument_Summary(t *testing.T) {
 		// a document that does not exist yet has no id to name.
 		"Document to create has no id": {
 			Args:   `{"name":"Runbook"}`,
+			Result: ActionSummary{Tool: NameCreateDocument, Summary: `Create document "Runbook"`},
+		},
+		// the card names the document as it will be stored.
+		"Name with white space around it": {
+			Args:   `{"name":"  Runbook \n"}`,
 			Result: ActionSummary{Tool: NameCreateDocument, Summary: `Create document "Runbook"`},
 		},
 		"Name is required": {Args: `{}`, Err: assert.AnError},
@@ -930,6 +974,16 @@ func Test_updateDocumentArgs_Validate(t *testing.T) {
 			ErrContains: "document_id is required",
 			Err:         assert.AnError,
 		},
+		"Name of only white space": {
+			Args:        updateDocumentArgs{DocumentID: _testDocID, Name: "  "},
+			ErrContains: "document name cannot be empty",
+			Err:         assert.AnError,
+		},
+		"Name over 200 characters": {
+			Args:        updateDocumentArgs{DocumentID: _testDocID, Name: strings.Repeat("a", 201)},
+			ErrContains: "cannot be longer than 200",
+			Err:         assert.AnError,
+		},
 		// any one change is enough, and the root is a change.
 		"Icon alone is a change": {Args: updateDocumentArgs{DocumentID: _testDocID, Icon: "mingcute:rocket-fill"}},
 		"Root alone is a change": {Args: updateDocumentArgs{DocumentID: _testDocID, ParentID: &root}},
@@ -1051,7 +1105,9 @@ func Test_updateDocument_Summary(t *testing.T) {
 		Result          string
 		Err             error
 	}{
-		"Rename":    {DB: stubDocumentDB(), Args: doc + `,"name":"Playbook"}`, DocumentFetches: 1, Result: `Rename Runbook to "Playbook"`},
+		"Rename": {DB: stubDocumentDB(), Args: doc + `,"name":"Playbook"}`, DocumentFetches: 1, Result: `Rename Runbook to "Playbook"`},
+		// the card names the document as it will be stored.
+		"Rename with white space around the name": {DB: stubDocumentDB(), Args: doc + `,"name":"  Playbook "}`, DocumentFetches: 1, Result: `Rename Runbook to "Playbook"`},
 		"Icon":      {DB: stubDocumentDB(), Args: doc + `,"icon":"mingcute:rocket-fill"}`, DocumentFetches: 1, Result: "Set the icon to mingcute:rocket-fill"},
 		"Root":      {DB: stubDocumentDB(), Args: doc + `,"parent_id":""}`, DocumentFetches: 1, Result: "Move it to the org root"},
 		"Parent":    {DB: stubDocumentDB(), Args: doc + `,"parent_id":"` + xid.New().String() + `"}`, DocumentFetches: 1, Result: "Move it under another document"},
@@ -1115,6 +1171,7 @@ func Test_updateDocument_Execute(t *testing.T) {
 		DocumentFetches int
 		BranchFetches   int
 		Ops             int
+		OpName          string
 		ParentChecks    int
 		CycleChecks     int
 		ParentUpdates   int
@@ -1156,6 +1213,18 @@ func Test_updateDocument_Execute(t *testing.T) {
 			DocumentFetches: 1,
 			BranchFetches:   1,
 			Ops:             1,
+			Notify:          1,
+			Result:          `{"document_id":"` + _testDocID.String() + `","name":"Playbook"}`,
+		},
+		// the stored name, the result and the card all use the trimmed name.
+		"Renamed with white space around the name": {
+			DB:              stubDocumentDB(),
+			Applier:         stubApplier(),
+			Args:            doc + `,"name":"  Playbook \n"}`,
+			DocumentFetches: 1,
+			BranchFetches:   1,
+			Ops:             1,
+			OpName:          "Playbook",
 			Notify:          1,
 			Result:          `{"document_id":"` + _testDocID.String() + `","name":"Playbook"}`,
 		},
@@ -1270,7 +1339,11 @@ func Test_updateDocument_Execute(t *testing.T) {
 				assert.Empty(t, c.Applier.ApplyCalls())
 			} else {
 				require.Len(t, c.Applier.ApplyCalls(), 1)
-				assert.Len(t, c.Applier.ApplyCalls()[0].Ops, c.Ops)
+				require.Len(t, c.Applier.ApplyCalls()[0].Ops, c.Ops)
+
+				if c.OpName != "" {
+					assert.Equal(t, edit.SetName(c.OpName), c.Applier.ApplyCalls()[0].Ops[0])
+				}
 			}
 
 			if err != nil {

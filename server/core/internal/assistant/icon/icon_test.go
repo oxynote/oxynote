@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	docicon "github.com/oxynote/oxynote/server/core/internal/document/icon"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/goleak"
@@ -13,14 +14,6 @@ import (
 
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
-}
-
-func Test_entry_words(t *testing.T) {
-	t.Parallel()
-
-	e := entry{ID: "simple-icons:amazonwebservices", Name: "aws"}
-
-	assert.Equal(t, []string{"aws", "amazonwebservices"}, e.words())
 }
 
 func Test_Validate(t *testing.T) {
@@ -58,7 +51,7 @@ func Test_Validate(t *testing.T) {
 func Test_suggest(t *testing.T) {
 	t.Parallel()
 
-	entries := []entry{
+	entries := []docicon.Entry{
 		{ID: "mingcute:book-fill", Name: "book"},
 		{ID: "mingcute:folder-open-fill", Name: "folder open"},
 		{ID: "mingcute:book-open-fill", Name: "book open"},
@@ -67,7 +60,7 @@ func Test_suggest(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		Entries []entry
+		Entries []docicon.Entry
 		ID      string
 		Result  []string
 	}{
@@ -87,7 +80,7 @@ func Test_suggest(t *testing.T) {
 			Result:  []string{},
 		},
 		"Result stops at the cap": {
-			Entries: slices.Repeat([]entry{{ID: "x:book", Name: "book"}}, _maxSuggestions+2),
+			Entries: slices.Repeat([]docicon.Entry{{ID: "x:book", Name: "book"}}, _maxSuggestions+2),
 			ID:      "book",
 			Result:  slices.Repeat([]string{"x:book"}, _maxSuggestions),
 		},
@@ -124,33 +117,4 @@ func Test_wordScore(t *testing.T) {
 			assert.Equal(t, c.Result, wordScore(c.A, c.B))
 		})
 	}
-}
-
-func Test_extractWords(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		ID     string
-		Result []string
-	}{
-		"Collection and fill":     {ID: "mingcute:shield-check-fill", Result: []string{"shield", "check"}},
-		"Fluent size and style":   {ID: "fluent:cloud-sync-24-filled", Result: []string{"cloud", "sync"}},
-		"Variant number":          {ID: "mingcute:rocket-2-fill", Result: []string{"rocket"}},
-		"No collection":           {ID: "Rocket", Result: []string{"rocket"}},
-		"Underscores and outline": {ID: "x:file_code-outline", Result: []string{"file", "code"}},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, c.Result, extractWords(c.ID))
-		})
-	}
-}
-
-func Test_words(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, []string{"let", "s", "encrypt", "node", "js"}, words("Let's encrypt node.js"))
 }

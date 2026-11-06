@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"maps"
 	"math/rand"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/document/icon"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
@@ -25,6 +28,25 @@ var (
 
 	//go:embed files/available_metrics.json
 	_availableMetrics []byte
+)
+
+// _maxNameLength is the most characters a document name holds, since the
+// whole tree is sent to every member of the organization and the name is
+// indexed for search.
+const _maxNameLength = 200
+
+var (
+	// ErrInvalidName is returned when a document is given a name that is
+	// empty or only white space.
+	ErrInvalidName = errutil.New(http.StatusBadRequest, "document.invalid_name", "document name cannot be empty")
+
+	// ErrInvalidIcon is returned when a document is given an icon the
+	// editor's picker does not offer.
+	ErrInvalidIcon = errutil.New(http.StatusBadRequest, "document.invalid_icon", "document icon is not one the icon picker offers")
+
+	// ErrNameTooLong is returned when a document name holds more than
+	// _maxNameLength characters.
+	ErrNameTooLong = errutil.New(http.StatusBadRequest, "document.name_too_long", "document name cannot be longer than 200 characters")
 )
 
 // DefaultBranch is the name of the default branch for a document.
@@ -84,7 +106,15 @@ type Document struct {
 }
 
 // NewDocument creates a new document instance with the provided organization ID.
-func NewDocument(inp CreateInput, organizationID, createdBy string) Document {
+// The name is kept without the white space around it. It fails on an input
+// Validate refuses.
+func NewDocument(inp CreateInput, organizationID, createdBy string) (Document, error) {
+	inp = inp.sanitize()
+
+	if err := inp.Validate(); err != nil {
+		return Document{}, err
+	}
+
 	now := timeutil.Now()
 
 	return Document{
@@ -102,7 +132,7 @@ func NewDocument(inp CreateInput, organizationID, createdBy string) Document {
 		CreatedBy:      null.StringFrom(createdBy),
 		UpdatedAt:      now,
 		LastUpdatedBy:  null.StringFrom(createdBy),
-	}
+	}, nil
 }
 
 // ApplyUpdate updates document instance with the input data.
@@ -307,6 +337,40 @@ type CreateInput struct {
 	ParentID null.Value[xid.ID] `json:"parentId"`
 }
 
+// Validate reports whether the input, once sanitized, can become a document.
+// An icon is optional, but one that is given must be an icon the picker
+// offers.
+func (ci CreateInput) Validate() error {
+	sanitized := ci.sanitize()
+
+	if err := ValidateName(sanitized.Name); err != nil {
+		return err
+	}
+
+	if sanitized.Icon == "" {
+		return nil
+	}
+
+	if !icon.Find(sanitized.Icon) {
+		return ErrInvalidIcon
+	}
+
+	return nil
+}
+
+// sanitize returns the input with the white space around the name trimmed.
+func (ci CreateInput) sanitize() CreateInput {
+	ci.Name = strings.TrimSpace(ci.Name)
+
+	return ci
+}
+
+// ValidateName reports whether a trimmed document name is neither empty nor
+// longer than _maxNameLength characters.
+func ValidateName(name string) error {
+	return strutil.ValidateName(name, _maxNameLength, ErrInvalidName, ErrNameTooLong)
+}
+
 // ImportInput is the input structure for importing a document.
 type ImportInput struct {
 	// Name is the name of the document.
@@ -409,10 +473,14 @@ func NewWelcomeDocument(organizationID, createdBy string, dataSourceID null.Valu
 		return Document{}, err
 	}
 
-	doc := NewDocument(CreateInput{
+	doc, err := NewDocument(CreateInput{
 		Name: "Welcome to Oxynote!",
 		Icon: "mingcute:flag-4-fill",
 	}, organizationID, createdBy)
+	if err != nil {
+		return Document{}, err
+	}
+
 	doc.Content = content
 
 	return doc, nil

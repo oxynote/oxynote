@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs"
 import { selectableIcons } from "../web/app/utils/icon.ts"
 
-const corePath = "server/core/internal/assistant/icon/icons.json"
+const corePath = "server/core/internal/document/icon/icons.json"
 const core = JSON.parse(
 	readFileSync(new URL(`../${corePath}`, import.meta.url), "utf8"),
 )

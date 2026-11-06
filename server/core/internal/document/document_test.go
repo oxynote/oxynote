@@ -21,7 +21,7 @@ func stubDocument() Document {
 		BranchID:       xid.New(),
 		BranchName:     DefaultBranch,
 		DocumentName:   "Runbook",
-		Icon:           "📘",
+		Icon:           "mingcute:rocket-fill",
 		Content:        stubMarkedTree(),
 		RawContent:     []byte("raw"),
 		Default:        true,
@@ -35,32 +35,68 @@ func Test_NewDocument(t *testing.T) {
 
 	parentID := null.ValueFrom(xid.New())
 
-	doc := NewDocument(CreateInput{
-		Name:     "Runbook",
-		Icon:     "📘",
-		ParentID: parentID,
-	}, "org-1", "user-1")
+	cc := map[string]struct {
+		Input        CreateInput
+		Err          error
+		ExpectedName string
+		ExpectedIcon string
+	}{
+		"Name, icon and parent": {
+			Input:        CreateInput{Name: "Runbook", Icon: "mingcute:rocket-fill", ParentID: parentID},
+			ExpectedName: "Runbook",
+			ExpectedIcon: "mingcute:rocket-fill",
+		},
+		"White space around the name is not stored": {
+			Input:        CreateInput{Name: "  Runbook \n"},
+			ExpectedName: "Runbook",
+		},
+		"Empty name": {
+			Input: CreateInput{Name: "  "},
+			Err:   ErrInvalidName,
+		},
+		"Name over the length limit": {
+			Input: CreateInput{Name: strings.Repeat("a", _maxNameLength+1)},
+			Err:   ErrNameTooLong,
+		},
+		"Icon the picker does not offer": {
+			Input: CreateInput{Name: "Runbook", Icon: "lucide:rocket"},
+			Err:   ErrInvalidIcon,
+		},
+	}
 
-	assert.False(t, doc.ID.IsZero())
-	assert.False(t, doc.BranchID.IsZero())
-	assert.Equal(t, parentID, doc.ParentID)
-	assert.Equal(t, "org-1", doc.OrganizationID)
-	assert.Equal(t, DefaultBranch, doc.BranchName)
-	assert.Equal(t, "Runbook", doc.DocumentName)
-	assert.Equal(t, "📘", doc.Icon)
-	assert.True(t, doc.Default)
-	assert.False(t, doc.Protected)
-	assert.Equal(t, null.StringFrom("user-1"), doc.CreatedBy)
-	assert.Equal(t, null.StringFrom("user-1"), doc.LastUpdatedBy)
-	assert.Equal(t, doc.CreatedAt, doc.UpdatedAt)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// the initial content is a single empty paragraph with a uid.
-	require.Len(t, doc.Content.Content, 1)
-	assert.Equal(t, BlockNodeParagraph, doc.Content.Content[0].Type)
+			doc, err := NewDocument(c.Input, "org-1", "user-1")
+			testutil.AssertEqualError(t, c.Err, err)
 
-	uid, ok := doc.Content.Content[0].UID()
-	assert.True(t, ok)
-	assert.Len(t, uid, 21)
+			if c.Err != nil {
+				return
+			}
+
+			assert.False(t, doc.ID.IsZero())
+			assert.False(t, doc.BranchID.IsZero())
+			assert.Equal(t, c.Input.ParentID, doc.ParentID)
+			assert.Equal(t, "org-1", doc.OrganizationID)
+			assert.Equal(t, DefaultBranch, doc.BranchName)
+			assert.Equal(t, c.ExpectedName, doc.DocumentName)
+			assert.Equal(t, c.ExpectedIcon, doc.Icon)
+			assert.True(t, doc.Default)
+			assert.False(t, doc.Protected)
+			assert.Equal(t, null.StringFrom("user-1"), doc.CreatedBy)
+			assert.Equal(t, null.StringFrom("user-1"), doc.LastUpdatedBy)
+			assert.Equal(t, doc.CreatedAt, doc.UpdatedAt)
+
+			// the initial content is a single empty paragraph with a uid.
+			require.Len(t, doc.Content.Content, 1)
+			assert.Equal(t, BlockNodeParagraph, doc.Content.Content[0].Type)
+
+			uid, ok := doc.Content.Content[0].UID()
+			assert.True(t, ok)
+			assert.Len(t, uid, 21)
+		})
+	}
 }
 
 func Test_Document_ApplyUpdate(t *testing.T) {
@@ -496,6 +532,50 @@ func Test_Document_Duplicate(t *testing.T) {
 
 			c.Check(t, c.Document, dup, files)
 			assertUIDsRemapped(t, c.Document.Content, dup.Content, uids)
+		})
+	}
+}
+
+func Test_CreateInput_Validate(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Input CreateInput
+		Err   error
+	}{
+		"Name only": {Input: CreateInput{Name: "Runbook"}},
+		"Name and icon the picker offers": {
+			Input: CreateInput{Name: "Runbook", Icon: "mingcute:rocket-fill"},
+		},
+		"Name of 200 characters": {
+			Input: CreateInput{Name: strings.Repeat("é", _maxNameLength)},
+		},
+		"Empty name": {
+			Input: CreateInput{},
+			Err:   ErrInvalidName,
+		},
+		"Name of only white space": {
+			Input: CreateInput{Name: " \t\n "},
+			Err:   ErrInvalidName,
+		},
+		"Name over 200 characters": {
+			Input: CreateInput{Name: strings.Repeat("é", _maxNameLength+1)},
+			Err:   ErrNameTooLong,
+		},
+		"White space does not count toward the limit": {
+			Input: CreateInput{Name: " " + strings.Repeat("a", _maxNameLength) + " "},
+		},
+		"Icon the picker does not offer": {
+			Input: CreateInput{Name: "Runbook", Icon: "lucide:rocket"},
+			Err:   ErrInvalidIcon,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Input.Validate())
 		})
 	}
 }

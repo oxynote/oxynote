@@ -4,13 +4,11 @@ package icon
 
 import (
 	"cmp"
-	_ "embed"
-	"encoding/json"
 	"fmt"
-	"regexp"
 	"slices"
 	"strings"
-	"unicode"
+
+	docicon "github.com/oxynote/oxynote/server/core/internal/document/icon"
 )
 
 const (
@@ -33,30 +31,6 @@ const (
 	_minPartialWord = 4
 )
 
-// _iconsJSON is the picker's icon list, in the picker's order.
-// scripts/check-icons.mjs keeps it equal to web/app/utils/icon.ts.
-//
-//go:embed icons.json
-var _iconsJSON []byte
-
-// _styleSuffix matches the style and variant suffixes an icon id ends
-// with, such as -fill, -24-filled or -2.
-var _styleSuffix = regexp.MustCompile(`(-(fill|line|filled|outline|solid|\d+))+$`)
-
-// entry is one icon the picker offers.
-type entry struct {
-	// ID specifies the Iconify id, such as mingcute:rocket-fill.
-	ID string `json:"id"`
-
-	// Name specifies the words the picker shows and searches.
-	Name string `json:"name"`
-}
-
-// words returns the lowercase words of the icon's name and id.
-func (e entry) words() []string {
-	return slices.Concat(words(e.Name), extractWords(e.ID))
-}
-
 // Validate returns nil when id is an icon the picker offers, or an
 // error naming the offered icons whose names are closest to it.
 func Validate(id string) error {
@@ -64,17 +38,11 @@ func Validate(id string) error {
 		return fmt.Errorf("icon is %d bytes, but an icon id is at most %d; use an id from the icon picker", len(id), _maxIDLength)
 	}
 
-	var entries []entry
-	if err := json.Unmarshal(_iconsJSON, &entries); err != nil {
-		// NOCOV: the embedded file is valid, or every Validate test fails.
-		return fmt.Errorf("parsing the embedded icon list: %w", err)
-	}
-
-	if slices.ContainsFunc(entries, func(e entry) bool { return e.ID == id }) {
+	if docicon.Find(id) {
 		return nil
 	}
 
-	closest := suggest(entries, id)
+	closest := suggest(docicon.List(), id)
 	if len(closest) == 0 {
 		return fmt.Errorf("icon %q is not available and no available icon has a similar name; try a plainer word, such as mingcute:document-2-fill", id)
 	}
@@ -84,8 +52,8 @@ func Validate(id string) error {
 
 // suggest returns the ids of the icons whose words best match the words
 // of id, best first, ties in list order.
-func suggest(entries []entry, id string) []string {
-	query := extractWords(id)
+func suggest(entries []docicon.Entry, id string) []string {
+	query := docicon.Entry{ID: id}.Words()
 
 	type scored struct {
 		id    string
@@ -95,7 +63,7 @@ func suggest(entries []entry, id string) []string {
 	var hits []scored
 
 	for _, e := range entries {
-		iconWords := e.words()
+		iconWords := e.Words()
 		total := 0
 
 		for _, q := range query {
@@ -135,21 +103,4 @@ func wordScore(a, b string) int {
 	default:
 		return 0
 	}
-}
-
-// extractWords returns the lowercase words of an icon id without its
-// collection and style suffix.
-func extractWords(id string) []string {
-	if _, rest, ok := strings.Cut(id, ":"); ok {
-		id = rest
-	}
-
-	return words(_styleSuffix.ReplaceAllString(strings.ToLower(id), ""))
-}
-
-// words splits s into lowercase words of letters and digits.
-func words(s string) []string {
-	return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	})
 }

@@ -612,7 +612,11 @@ func (h *Handler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	doc := documentCore.NewDocument(di, session.ActiveOrganizationID, session.UserID)
+	doc, err := documentCore.NewDocument(di, session.ActiveOrganizationID, session.UserID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
 
 	if err := h.insertDocumentTx(r.Context(), doc, null.Value[xid.ID]{}, nil, session); err != nil {
 		httpserver.RespondError(h.log, w, err)
