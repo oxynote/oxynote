@@ -50,8 +50,11 @@ function matcher(filter: LogFilter): string {
 	return `${filter.key}${filter.exclude ? "!=" : "="}${quote(filter.value)}`
 }
 
+// quote writes a double-quoted LogQL string. Loki reads it the way Go's
+// strconv.Unquote does, which refuses a raw newline or other control
+// character. JSON escapes those, and every JSON escape is one Go accepts.
 function quote(value: string): string {
-	return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+	return JSON.stringify(value)
 }
 
 // streamSelector finds the braces of the query's stream selector, the

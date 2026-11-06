@@ -59,12 +59,13 @@ describe("<BottomConfig>", { concurrent: false }, () => {
 		expect(deleteButtons(wrapper)).toHaveLength(2)
 	})
 
-	it("hands each query editor its query and the data source", async ({
+	it("hands each query editor its query, the data source and the block's time range", async ({
 		expect,
 	}) => {
 		const wrapper = await mountBottom({
 			modelValue: configWith({
 				queries: [query("Errors", "level:error"), query("Slow", "slow")],
+				timeRange: TimeRangePreset.Last24Hours,
 			}),
 		})
 
@@ -74,13 +75,13 @@ describe("<BottomConfig>", { concurrent: false }, () => {
 		expect(at(editors, 0).props()).toEqual({
 			modelValue: "level:error",
 			dataSourceId: DATA_SOURCE_ID,
-			timeRange: TimeRangePreset.Last1Hour,
+			timeRange: TimeRangePreset.Last24Hours,
 			diffStatus: null,
 		})
 		expect(at(editors, 1).props()).toEqual({
 			modelValue: "slow",
 			dataSourceId: DATA_SOURCE_ID,
-			timeRange: TimeRangePreset.Last1Hour,
+			timeRange: TimeRangePreset.Last24Hours,
 			diffStatus: null,
 		})
 	})

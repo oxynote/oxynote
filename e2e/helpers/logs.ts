@@ -3,6 +3,7 @@ import {
 	type APIRequestContext,
 	type Locator,
 	type Page,
+	type Request,
 } from "@playwright/test"
 import { coreURL, documentId } from "./api"
 import { createDocument, documentPersisted } from "./editor"
@@ -99,34 +100,29 @@ export function logList(page: Page): Locator {
 }
 
 // trackLogReads records the log reads the page sends from now on, and how
-// many of them are still waiting for an answer
+// many of them are still waiting for an answer. Only the reads it saw
+// start count. A read sent before it began, which a navigation then aborts,
+// would otherwise bring the count below zero.
 export function trackLogReads(page: Page): LogReads {
 	const urls: URL[] = []
-	let pending = 0
+	const pending = new Set<Request>()
 	const isLogRead = (url: string) =>
 		/\/api\/data-sources\/[^/]+\/logs\?/.test(url)
 
 	page.on("request", (r) => {
 		if (isLogRead(r.url())) {
 			urls.push(new URL(r.url()))
-			pending++
+			pending.add(r)
 		}
 	})
-
-	const settle = (url: string) => {
-		if (isLogRead(url)) {
-			pending--
-		}
-	}
-
 	page.on("requestfinished", (r) => {
-		settle(r.url())
+		pending.delete(r)
 	})
 	page.on("requestfailed", (r) => {
-		settle(r.url())
+		pending.delete(r)
 	})
 
-	return { urls: urls, pending: () => pending }
+	return { urls: urls, pending: () => pending.size }
 }
 
 // logRowKeys reads the rows the list shows, from the top of the list

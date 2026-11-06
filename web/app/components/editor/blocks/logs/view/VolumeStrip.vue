@@ -206,7 +206,7 @@ function tooltipTime(params: unknown): string {
 								:key="row.seriesId"
 								class="flex items-center"
 							>
-								<!-- eslint-disable-next-line vue/no-v-html -->
+								<!-- eslint-disable-next-line vue/no-v-html -- echarts builds the marker from the series colour, which holds no user data -->
 								<div v-html="row.marker" />
 								<div class="text-2sm text-foreground/60">
 									{{ row.seriesName }}

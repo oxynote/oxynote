@@ -4,7 +4,7 @@ import type { LogConfig, LogQuery } from "../utils"
 import ConfigField from "../../config-modal-utils/ConfigField.vue"
 import QueryEditor from "../../config-modal-utils/query/QueryEditor.vue"
 import { DiffStatus } from "~/components/editor/diff/position-map"
-import { TimeRangePreset } from "~/utils/time-range"
+import { useBlockVariables } from "../../variables"
 
 interface QueryEntry {
 	query: LogQuery
@@ -14,10 +14,6 @@ interface QueryEntry {
 	key: string
 }
 
-// TODO: use the block's own time range once log blocks have one. Until
-// then the query editor looks up its completions over the last hour.
-const COMPLETION_TIME_RANGE = TimeRangePreset.Last1Hour
-
 const config = defineModel<LogConfig>({ required: true })
 const props = defineProps<{
 	diffStatus?: DiffStatus | null
@@ -26,10 +22,15 @@ const props = defineProps<{
 
 const { t } = useI18n({ useScope: "global" })
 const { isEditable } = useEditorMeta()
+const blockVariables = useBlockVariables()
 const editorStore = useEditorStore()
 
 const isEditingDisabled = computed(
 	() => !isEditable.value || editorStore.reviewableDiffActive,
+)
+// the query editor looks up its completions over the block's own time range
+const timeRange = computed(() =>
+	blockVariables.timeRange(config.value.timeRange),
 )
 const areQueriesModified = computed(
 	() =>
@@ -164,7 +165,7 @@ function deleteQuery(index: number) {
 					<QueryEditor
 						:model-value="entry.query.query"
 						:data-source-id="config.dataSourceId"
-						:time-range="COMPLETION_TIME_RANGE"
+						:time-range="timeRange"
 						:diff-status="entry.diffStatus"
 						@update:model-value="(v: string) => updateQuery(index, v)"
 					/>
@@ -172,7 +173,7 @@ function deleteQuery(index: number) {
 						v-if="entry.oldQuery"
 						:model-value="entry.oldQuery.query"
 						:data-source-id="config.dataSourceId"
-						:time-range="COMPLETION_TIME_RANGE"
+						:time-range="timeRange"
 						:diff-status="DiffStatus.Removed"
 					/>
 				</ConfigField>

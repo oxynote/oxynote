@@ -114,6 +114,15 @@ describe("withViewFilters", () => {
 			expected: '{path="C:\\\\a \\"b\\""} | msg="say \\"hi\\""',
 		},
 		{
+			name: "escapes a newline and a tab in a filter value and the search",
+			input: {
+				query: "{}",
+				filters: [filter("msg", "a\nb\tc")],
+				search: "x\ny",
+			},
+			expected: '{} | msg="a\\nb\\tc" |~ "(?i)x\\ny"',
+		},
+		{
 			name: "appends a trimmed search as a case-insensitive line filter",
 			input: { query: '{job="api"}', filters: [], search: "  timeout " },
 			expected: '{job="api"} |~ "(?i)timeout"',
