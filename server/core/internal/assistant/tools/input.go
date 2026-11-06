@@ -766,11 +766,12 @@ func (i *input) FetchVariableTree() (variable.Tree, error) {
 	return i.variableMan.FetchTree(i.ctx, i.orgID, i.userID)
 }
 
-// SubstituteVariables returns the texts with the user's variables
-// substituted. The tree is fetched only when a text references one.
-func (i *input) SubstituteVariables(texts ...string) ([]string, error) {
+// VariableValues returns the value of each of the user's variables. It
+// is empty when no text references a variable, so the tree is fetched
+// only when one does.
+func (i *input) VariableValues(texts ...string) (map[string]string, error) {
 	if !variable.HasReference(texts...) {
-		return texts, nil
+		return map[string]string{}, nil
 	}
 
 	vars, err := i.FetchVariableTree()
@@ -778,7 +779,18 @@ func (i *input) SubstituteVariables(texts ...string) ([]string, error) {
 		return nil, err
 	}
 
-	return vars.Substitute(nil, texts...), nil
+	return vars.Values(nil)
+}
+
+// SubstituteVariables returns the texts with the user's variables
+// substituted as text.
+func (i *input) SubstituteVariables(texts ...string) ([]string, error) {
+	values, err := i.VariableValues(texts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return variable.Substitute(values, texts...), nil
 }
 
 // FetchVariableGroup returns the variable group the id names, with its

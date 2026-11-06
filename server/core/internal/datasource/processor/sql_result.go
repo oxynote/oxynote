@@ -21,6 +21,10 @@ type sqlQueryResult struct {
 	// driver reported them. It is empty for dialects that do not, which
 	// falls the classification back to the values' own shape.
 	ColumnTypes []string
+
+	// Fill specifies the fill mode of the query's group macro, or nil when
+	// it has none.
+	Fill *sqlFill
 }
 
 // transform turns the result set into a unified QueryResult based on the
@@ -34,31 +38,35 @@ type sqlQueryResult struct {
 // Each numeric column generates its own set of series. When there are multiple
 // numeric columns, the column name is added as the "__name__" label to
 // distinguish them.
+//
+// With a fill mode every series gets a point on each bucket of the range.
 func (sqr sqlQueryResult) transform( //nolint:gocognit // this method is complex, however, it's well-structured
 	ct ChartType,
 	parseTimestamp func(any) (int64, bool),
 	parseNumeric func(any) (float64, bool),
-) *QueryResult {
+) (*QueryResult, error) {
 	if ct == "" {
-		return &QueryResult{Status: QueryStatusTypeNotSelected}
+		return &QueryResult{Status: QueryStatusTypeNotSelected}, nil
 	}
 
 	if len(sqr.Columns) == 0 || len(sqr.Rows) == 0 {
-		return &QueryResult{Status: QueryStatusNoData}
+		return &QueryResult{Status: QueryStatusNoData}, nil
 	}
 
 	timeIdx, valueIdxs, labelIdxs := sqr.identifyColumns(parseNumeric)
 	if timeIdx < 0 || len(valueIdxs) == 0 {
-		return &QueryResult{Status: QueryStatusChartAndDataMismatch}
+		return &QueryResult{Status: QueryStatusChartAndDataMismatch}, nil
 	}
 
 	multipleValues := len(valueIdxs) > 1
 
 	// group rows by (value column, label combination) into series,
 	// preserving insertion order.
-	seriesMap := make(map[string]*QueryResultSeries)
-
-	var seriesOrder []string
+	var (
+		seriesMap   = make(map[string]*QueryResultSeries)
+		points      = make(map[string][]sqlPoint)
+		seriesOrder []string
+	)
 
 	for _, row := range sqr.Rows {
 		if len(row) <= timeIdx {
@@ -113,31 +121,57 @@ func (sqr sqlQueryResult) transform( //nolint:gocognit // this method is complex
 				seriesOrder = append(seriesOrder, key)
 			}
 
-			seriesMap[key].Metrics = append(seriesMap[key].Metrics, [2]any{ts, val})
+			points[key] = append(points[key], sqlPoint{time: ts, value: val})
 		}
 	}
 
 	if len(seriesMap) == 0 {
-		return &QueryResult{Status: QueryStatusNoData}
+		return &QueryResult{Status: QueryStatusNoData}, nil
+	}
+
+	if sqr.Fill != nil && int64(len(seriesOrder))*sqr.Fill.buckets() > _maxFilledPoints {
+		return nil, NewInvalidQueryError(fmt.Sprintf("the fill gives more than %d points; use a longer interval", _maxFilledPoints))
 	}
 
 	series := make([]QueryResultSeries, 0, len(seriesOrder))
 
 	for _, key := range seriesOrder {
 		s := seriesMap[key]
-
-		// a gauge shows the present, so only the last value survives.
-		if ct == ChartTypeGauge && len(s.Metrics) > 0 {
-			s.Metrics = s.Metrics[len(s.Metrics)-1:]
-		}
-
+		s.Metrics = sqr.metrics(points[key], ct)
 		series = append(series, *s)
 	}
 
 	return &QueryResult{
 		Status: QueryStatusOK,
 		Data:   series,
+	}, nil
+}
+
+// metrics returns the points of one series as chart type ct draws them,
+// on the fill's buckets when there is a fill.
+func (sqr sqlQueryResult) metrics(points []sqlPoint, ct ChartType) [][2]any {
+	var out [][2]any
+
+	if sqr.Fill != nil {
+		out = sqr.Fill.apply(points)
+	} else {
+		for _, p := range points {
+			out = append(out, [2]any{p.time, p.value})
+		}
 	}
+
+	if ct != ChartTypeGauge {
+		return out
+	}
+
+	// a gauge shows the present, so only the last value survives. A null
+	// one is skipped, as Grafana's gauge does.
+	n := len(out)
+	for n > 0 && out[n-1][1] == nil {
+		n--
+	}
+
+	return out[max(n-1, 0):n]
 }
 
 // identifyColumns detects which columns are time, value (numeric), and

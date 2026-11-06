@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ func Test_MySQLQueryResult_Transform(t *testing.T) {
 		Result    MySQLQueryResult
 		ChartType ChartType
 		Expected  QueryResult
+		Err       error
 	}{
 		"Empty chart type returns type-not-selected": {
 			Result: MySQLQueryResult{
@@ -310,6 +312,39 @@ func Test_MySQLQueryResult_Transform(t *testing.T) {
 				},
 			},
 		},
+		"Fill gives the series a point on every bucket": {
+			Result: MySQLQueryResult{
+				Columns: []string{"time", "value"},
+				Rows: [][]any{
+					{int64(1700000000), float64(10)},
+					{int64(1700000120), float64(30)},
+				},
+				Fill: &sqlFill{Value: new(0.0), Interval: 60, From: 1700000000, To: 1700000120},
+			},
+			ChartType: ChartTypeLine,
+			Expected: QueryResult{
+				Status: QueryStatusOK,
+				Data: []QueryResultSeries{
+					{
+						Labels: map[string]string{},
+						Metrics: [][2]any{
+							{int64(1700000000), float64(10)},
+							{int64(1700000060), float64(0)},
+							{int64(1700000120), float64(30)},
+						},
+					},
+				},
+			},
+		},
+		"Fill of more than the most points is an error": {
+			Result: MySQLQueryResult{
+				Columns: []string{"time", "value"},
+				Rows:    [][]any{{int64(1700000000), float64(10)}},
+				Fill:    &sqlFill{Interval: 1, From: 1700000000, To: 1700000000 + _maxFilledPoints},
+			},
+			ChartType: ChartTypeLine,
+			Err:       NewInvalidQueryError("the fill gives more than 250000 points; use a longer interval"),
+		},
 		"All invalid timestamps returns no-data": {
 			Result: MySQLQueryResult{
 				Columns: []string{"time", "value"},
@@ -327,7 +362,13 @@ func Test_MySQLQueryResult_Transform(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			result := c.Result.Transform(c.ChartType)
+			result, err := c.Result.Transform(c.ChartType)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
 			require.Equal(t, c.Expected.Status, result.Status)
 			assert.Equal(t, c.Expected.Data, result.Data)
 		})
@@ -387,7 +428,7 @@ func Test_MySQL_Close(t *testing.T) {
 			})
 
 			if c.Used {
-				_, err := m.Query(context.Background(), "SELECT 1", _testTimeRange)
+				_, err := m.Query(context.Background(), "SELECT 1", _testTimeRange, nil)
 				require.NoError(t, err)
 			}
 
@@ -591,7 +632,7 @@ func Test_MySQL_QueryLabels(t *testing.T) {
 
 			t.Cleanup(func() { assert.NoError(t, m.Close()) })
 
-			labels, err := m.QueryLabels(context.Background(), c.Query, _testTimeRange)
+			labels, err := m.QueryLabels(context.Background(), c.Query, _testTimeRange, nil)
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Len(t, inp.URLCalls(), 1)
 			assert.Len(t, inp.CredentialsCalls(), c.CredentialsCalls)
@@ -616,7 +657,7 @@ func Test_MySQL_Query(t *testing.T) {
 	connectionID := func(t *testing.T, m *MySQL) any {
 		t.Helper()
 
-		res, err := m.Query(context.Background(), "SELECT CONNECTION_ID()", _testTimeRange)
+		res, err := m.Query(context.Background(), "SELECT CONNECTION_ID()", _testTimeRange, nil)
 		require.NoError(t, err)
 		require.Len(t, res.Rows, 1)
 
@@ -627,12 +668,31 @@ func Test_MySQL_Query(t *testing.T) {
 		URL string
 
 		Query            string
+		Vars             map[string]string
 		Result           *MySQLQueryResult
 		ErrStatus        int
 		Err              error
 		CredentialsCalls int
 		Check            func(t *testing.T, m *MySQL)
 	}{
+		// every macro, quoting and variable shape the expander produces has
+		// to be SQL MariaDB accepts.
+		"Macro corpus runs": {
+			URL:              rootURL,
+			Query:            "SELECT 1 AS one",
+			Result:           &MySQLQueryResult{Columns: []string{"one"}, ColumnTypes: []string{"INT"}, Rows: [][]any{{float64(1)}}},
+			CredentialsCalls: 1,
+			Check:            checkMySQLMacroCorpus,
+		},
+		// a value must come back exactly, whatever it holds, read as a
+		// string or as a column name.
+		"Variable values read back exactly": {
+			URL:              rootURL,
+			Query:            "SELECT 1 AS one",
+			Result:           &MySQLQueryResult{Columns: []string{"one"}, ColumnTypes: []string{"INT"}, Rows: [][]any{{float64(1)}}},
+			CredentialsCalls: 1,
+			Check:            checkMySQLValuesReadBack,
+		},
 		"Error returned by connect": {
 			URL:   "://",
 			Query: "SELECT 1",
@@ -649,6 +709,17 @@ func Test_MySQL_Query(t *testing.T) {
 			Query:            "SELECT bogus FROM",
 			ErrStatus:        http.StatusBadRequest,
 			Err:              assert.AnError,
+			CredentialsCalls: 1,
+		},
+		"Fill mode comes back with the result": {
+			URL:   fmt.Sprintf("mysql://%s:%s@%s/%s", _mysqlRootUser, _mysqlRootPass, _mysqlAddr, _testDB),
+			Query: "SELECT $__timeGroupAlias(FROM_UNIXTIME(1705312920), '5m', previous), 1 AS value",
+			Result: &MySQLQueryResult{
+				Columns:     []string{"time", "value"},
+				ColumnTypes: []string{"BIGINT", "INT"},
+				Rows:        [][]any{{float64(1705312800), float64(1)}},
+				Fill:        &sqlFill{Previous: true, Interval: 300, From: 1705312800, To: 1705316400},
+			},
 			CredentialsCalls: 1,
 		},
 		// a DECIMAL arrives as bytes exactly like a VARCHAR does, so only
@@ -732,7 +803,7 @@ func Test_MySQL_Query(t *testing.T) {
 				}
 			}
 
-			result, err := m.Query(context.Background(), c.Query, _testTimeRange)
+			result, err := m.Query(context.Background(), c.Query, _testTimeRange, c.Vars)
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Len(t, inp.URLCalls(), 1)
 			assert.Len(t, inp.CredentialsCalls(), c.CredentialsCalls)
@@ -1209,5 +1280,66 @@ func Test_mysqlQueryError(t *testing.T) {
 
 			testutil.AssertEqualError(t, c.Err, mysqlQueryError(c.Inp))
 		})
+	}
+}
+
+// _mysqlMacroCorpus is every macro, quoting and variable shape the
+// expander writes for MySQL, over the macro_corpus table.
+var _mysqlMacroCorpus = []string{
+	"SELECT $__time(ts), value FROM macro_corpus",
+	"SELECT * FROM macro_corpus WHERE $__timeFilter(ts) AND $__timeFilter(`createdAt`)",
+	"SELECT * FROM macro_corpus WHERE ts >= $__timeFrom() AND ts <= $__timeTo()",
+	"SELECT $__timeGroupAlias(`createdAt`, '1h'), avg(value) FROM macro_corpus GROUP BY 1",
+	"SELECT $__timeGroup(ts, $step), $__timeGroup(ts, '$step') FROM macro_corpus",
+	"SELECT * FROM macro_corpus WHERE $__unixEpochFilter(epoch) AND $__unixEpochNanoFilter(epoch_ns)",
+	"SELECT $__unixEpochGroupAlias(epoch + 0, '1m') FROM macro_corpus",
+	"SELECT * FROM macro_corpus WHERE $__timeFilter(CASE WHEN host = ')' THEN ts END)",
+	"SELECT * FROM macro_corpus WHERE $__timeFilter(ts) # $__timeFilter(oops",
+	"SELECT * FROM macro_corpus WHERE $__timeFilter(ts) -- $__timeFilter(oops",
+	`SELECT * FROM macro_corpus WHERE host = '$name' OR host = "$name"`,
+	"SELECT `$env` FROM (SELECT 1 AS `prod`) AS t",
+	`SELECT 'it\'s', '$__timeFilter(ts)', 1--$__unixEpochFrom()`,
+	"SELECT $__from AS f, $__to AS t, '$__interval' AS i, $__interval_ms, $__range_s, /*! $__range_ms + */ 1",
+	"SELECT * FROM macro_corpus WHERE value > $limit LIMIT $limit",
+}
+
+// checkMySQLMacroCorpus runs every query of the macro corpus, which
+// must all be SQL the database accepts. The table is temporary, so it
+// lives on the one connection the case leaves free and nowhere else.
+func checkMySQLMacroCorpus(t *testing.T, m *MySQL) {
+	t.Helper()
+
+	for _, q := range []string{
+		"CREATE TEMPORARY TABLE macro_corpus (ts DATETIME, createdAt DATETIME, epoch BIGINT, epoch_ns BIGINT, host VARCHAR(64), value DOUBLE)",
+		"INSERT INTO macro_corpus VALUES ('2024-01-15 10:30:00', '2024-01-15 10:30:00', 1705314600, 1705314600000000000, 'web-1', 1.5)",
+	} {
+		_, err := m.Query(context.Background(), q, _testTimeRange, nil)
+		require.NoError(t, err)
+	}
+
+	for _, q := range _mysqlMacroCorpus {
+		_, err := m.Query(context.Background(), q, _testTimeRange, _macroCorpusVars)
+		assert.NoError(t, err, q)
+	}
+}
+
+// checkMySQLValuesReadBack reads every nasty value back, as a string
+// and as a column name, and requires it unchanged.
+func checkMySQLValuesReadBack(t *testing.T, m *MySQL) {
+	t.Helper()
+
+	for _, v := range _macroNastyValues {
+		for _, q := range []string{"SELECT '$v' AS v", `SELECT "$v" AS v`, "SELECT 1 AS `$v`"} {
+			res, err := m.Query(context.Background(), q, _testTimeRange, map[string]string{"v": v})
+			if !assert.NoError(t, err, "%s with %q", q, v) {
+				continue
+			}
+
+			if strings.Contains(q, " AS v") {
+				assert.Equal(t, v, res.Rows[0][0], "%s with %q", q, v)
+			} else {
+				assert.Equal(t, v, res.Columns[0], "%s with %q", q, v)
+			}
+		}
 	}
 }

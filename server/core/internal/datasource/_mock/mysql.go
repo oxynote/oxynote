@@ -24,10 +24,10 @@ var _ datasource.MySQL = &MySQL{}
 //			MetadataFunc: func(ctx context.Context) (*processor.SQLMetadataResult, error) {
 //				panic("mock out the Metadata method")
 //			},
-//			QueryFunc: func(ctx context.Context, q string, tr processor.TimeRange) (*processor.MySQLQueryResult, error) {
+//			QueryFunc: func(ctx context.Context, q string, tr processor.TimeRange, vars map[string]string) (*processor.MySQLQueryResult, error) {
 //				panic("mock out the Query method")
 //			},
-//			QueryLabelsFunc: func(ctx context.Context, q string, tr processor.TimeRange) (map[string]string, error) {
+//			QueryLabelsFunc: func(ctx context.Context, q string, tr processor.TimeRange, vars map[string]string) (map[string]string, error) {
 //				panic("mock out the QueryLabels method")
 //			},
 //			TestConnectionFunc: func(ctx context.Context) (processor.ConnectionStatus, error) {
@@ -44,10 +44,10 @@ type MySQL struct {
 	MetadataFunc func(ctx context.Context) (*processor.SQLMetadataResult, error)
 
 	// QueryFunc mocks the Query method.
-	QueryFunc func(ctx context.Context, q string, tr processor.TimeRange) (*processor.MySQLQueryResult, error)
+	QueryFunc func(ctx context.Context, q string, tr processor.TimeRange, vars map[string]string) (*processor.MySQLQueryResult, error)
 
 	// QueryLabelsFunc mocks the QueryLabels method.
-	QueryLabelsFunc func(ctx context.Context, q string, tr processor.TimeRange) (map[string]string, error)
+	QueryLabelsFunc func(ctx context.Context, q string, tr processor.TimeRange, vars map[string]string) (map[string]string, error)
 
 	// TestConnectionFunc mocks the TestConnection method.
 	TestConnectionFunc func(ctx context.Context) (processor.ConnectionStatus, error)
@@ -67,6 +67,8 @@ type MySQL struct {
 			Q string
 			// Tr is the tr argument value.
 			Tr processor.TimeRange
+			// Vars is the vars argument value.
+			Vars map[string]string
 		}
 		// QueryLabels holds details about calls to the QueryLabels method.
 		QueryLabels []struct {
@@ -76,6 +78,8 @@ type MySQL struct {
 			Q string
 			// Tr is the tr argument value.
 			Tr processor.TimeRange
+			// Vars is the vars argument value.
+			Vars map[string]string
 		}
 		// TestConnection holds details about calls to the TestConnection method.
 		TestConnection []struct {
@@ -126,15 +130,17 @@ func (mock *MySQL) MetadataCalls() []struct {
 }
 
 // Query calls QueryFunc.
-func (mock *MySQL) Query(ctx context.Context, q string, tr processor.TimeRange) (*processor.MySQLQueryResult, error) {
+func (mock *MySQL) Query(ctx context.Context, q string, tr processor.TimeRange, vars map[string]string) (*processor.MySQLQueryResult, error) {
 	callInfo := struct {
-		Ctx context.Context
-		Q   string
-		Tr  processor.TimeRange
+		Ctx  context.Context
+		Q    string
+		Tr   processor.TimeRange
+		Vars map[string]string
 	}{
-		Ctx: ctx,
-		Q:   q,
-		Tr:  tr,
+		Ctx:  ctx,
+		Q:    q,
+		Tr:   tr,
+		Vars: vars,
 	}
 	mock.lockQuery.Lock()
 	mock.calls.Query = append(mock.calls.Query, callInfo)
@@ -146,7 +152,7 @@ func (mock *MySQL) Query(ctx context.Context, q string, tr processor.TimeRange) 
 		)
 		return mySQLQueryResultOut, errOut
 	}
-	return mock.QueryFunc(ctx, q, tr)
+	return mock.QueryFunc(ctx, q, tr, vars)
 }
 
 // QueryCalls gets all the calls that were made to Query.
@@ -154,14 +160,16 @@ func (mock *MySQL) Query(ctx context.Context, q string, tr processor.TimeRange) 
 //
 //	len(mockedMySQL.QueryCalls())
 func (mock *MySQL) QueryCalls() []struct {
-	Ctx context.Context
-	Q   string
-	Tr  processor.TimeRange
+	Ctx  context.Context
+	Q    string
+	Tr   processor.TimeRange
+	Vars map[string]string
 } {
 	var calls []struct {
-		Ctx context.Context
-		Q   string
-		Tr  processor.TimeRange
+		Ctx  context.Context
+		Q    string
+		Tr   processor.TimeRange
+		Vars map[string]string
 	}
 	mock.lockQuery.RLock()
 	calls = mock.calls.Query
@@ -170,15 +178,17 @@ func (mock *MySQL) QueryCalls() []struct {
 }
 
 // QueryLabels calls QueryLabelsFunc.
-func (mock *MySQL) QueryLabels(ctx context.Context, q string, tr processor.TimeRange) (map[string]string, error) {
+func (mock *MySQL) QueryLabels(ctx context.Context, q string, tr processor.TimeRange, vars map[string]string) (map[string]string, error) {
 	callInfo := struct {
-		Ctx context.Context
-		Q   string
-		Tr  processor.TimeRange
+		Ctx  context.Context
+		Q    string
+		Tr   processor.TimeRange
+		Vars map[string]string
 	}{
-		Ctx: ctx,
-		Q:   q,
-		Tr:  tr,
+		Ctx:  ctx,
+		Q:    q,
+		Tr:   tr,
+		Vars: vars,
 	}
 	mock.lockQueryLabels.Lock()
 	mock.calls.QueryLabels = append(mock.calls.QueryLabels, callInfo)
@@ -190,7 +200,7 @@ func (mock *MySQL) QueryLabels(ctx context.Context, q string, tr processor.TimeR
 		)
 		return stringToStringOut, errOut
 	}
-	return mock.QueryLabelsFunc(ctx, q, tr)
+	return mock.QueryLabelsFunc(ctx, q, tr, vars)
 }
 
 // QueryLabelsCalls gets all the calls that were made to QueryLabels.
@@ -198,14 +208,16 @@ func (mock *MySQL) QueryLabels(ctx context.Context, q string, tr processor.TimeR
 //
 //	len(mockedMySQL.QueryLabelsCalls())
 func (mock *MySQL) QueryLabelsCalls() []struct {
-	Ctx context.Context
-	Q   string
-	Tr  processor.TimeRange
+	Ctx  context.Context
+	Q    string
+	Tr   processor.TimeRange
+	Vars map[string]string
 } {
 	var calls []struct {
-		Ctx context.Context
-		Q   string
-		Tr  processor.TimeRange
+		Ctx  context.Context
+		Q    string
+		Tr   processor.TimeRange
+		Vars map[string]string
 	}
 	mock.lockQueryLabels.RLock()
 	calls = mock.calls.QueryLabels

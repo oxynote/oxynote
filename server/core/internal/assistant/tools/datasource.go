@@ -7,6 +7,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/internal/variable"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/prometheus/common/model"
 	"github.com/rs/xid"
@@ -554,12 +555,12 @@ func (queryDataSource) Execute(inp *input) (string, error) {
 		return "", err
 	}
 
-	qq, err := inp.SubstituteVariables(in.Query)
+	vars, err := inp.VariableValues(in.Query)
 	if err != nil {
 		return "", err
 	}
 
-	q := qq[0]
+	q := in.Query
 
 	// each dialect answers in its own shape, so this is the one place a
 	// tool has to know which one it is talking to.
@@ -570,7 +571,7 @@ func (queryDataSource) Execute(inp *input) (string, error) {
 			return "", err
 		}
 
-		res, err := prom.QueryRange(inp.Context(), q, tr)
+		res, err := prom.QueryRange(inp.Context(), variable.Substitute(vars, q)[0], tr)
 		if err != nil {
 			return "", fmt.Errorf("%w; check the query against get_data_source_metadata", err)
 		}
@@ -589,7 +590,7 @@ func (queryDataSource) Execute(inp *input) (string, error) {
 			return "", err
 		}
 
-		res, err := pg.Query(inp.Context(), q, tr)
+		res, err := pg.Query(inp.Context(), q, tr, vars)
 		if err != nil {
 			return "", fmt.Errorf("%w; check the query against get_data_source_metadata", err)
 		}
@@ -599,16 +600,21 @@ func (queryDataSource) Execute(inp *input) (string, error) {
 			return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
 		case in.ChartType == "":
 			return result(newRawRows(res.Columns, res.Rows))
-		default:
-			return result(newChartPreview(res.Transform(in.ChartType)))
 		}
+
+		qr, err := res.Transform(in.ChartType)
+		if err != nil {
+			return "", err
+		}
+
+		return result(newChartPreview(qr))
 	default:
 		my, err := runner.MySQL(inp.Context())
 		if err != nil {
 			return "", err
 		}
 
-		res, err := my.Query(inp.Context(), q, tr)
+		res, err := my.Query(inp.Context(), q, tr, vars)
 		if err != nil {
 			return "", fmt.Errorf("%w; check the query against get_data_source_metadata", err)
 		}
@@ -618,9 +624,14 @@ func (queryDataSource) Execute(inp *input) (string, error) {
 			return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
 		case in.ChartType == "":
 			return result(newRawRows(res.Columns, res.Rows))
-		default:
-			return result(newChartPreview(res.Transform(in.ChartType)))
 		}
+
+		qr, err := res.Transform(in.ChartType)
+		if err != nil {
+			return "", err
+		}
+
+		return result(newChartPreview(qr))
 	}
 }
 

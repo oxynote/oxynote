@@ -237,8 +237,8 @@ var _timeFormatReplacer = strings.NewReplacer(
 //	${__from:date:seconds}   → unix seconds
 //	${__from:date:YYYY-MM}   → custom date format
 //
-// Source-specific processors call this first, so its results can be used as
-// arguments to their own macros ($__timeGroupAlias("time", $__interval)).
+// The Prometheus processor calls this first, so its results can be used in
+// the macros of its own.
 func (tr TimeRange) ProcessQuery(q string) string {
 	// Replace ${__from...} and ${__to...} with modifiers first.
 	q = _timeVarRe.ReplaceAllStringFunc(q, func(match string) string {

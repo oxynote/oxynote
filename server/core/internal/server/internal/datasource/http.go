@@ -295,13 +295,13 @@ func (h *Handler) persistDataSourceStatus(
 	h.runners.Evict(ds.ID)
 }
 
-// substitute returns the texts with the session user's variables
-// substituted. A var-<key> query parameter on the request replaces the
-// stored value of that variable. The tree is fetched only when a text
-// references one.
-func (h *Handler) substitute(r *http.Request, session auth.Session, texts ...string) ([]string, error) {
+// values returns the value of each of the session user's variables. A
+// var-<key> query parameter on the request replaces the stored value of
+// that variable. It is empty when no text references a variable, so the
+// tree is fetched only when one does.
+func (h *Handler) values(r *http.Request, session auth.Session, texts ...string) (map[string]string, error) {
 	if !variable.HasReference(texts...) {
-		return texts, nil
+		return map[string]string{}, nil
 	}
 
 	vars, err := h.variables.FetchTree(r.Context(), session.ActiveOrganizationID, session.UserID)
@@ -317,7 +317,18 @@ func (h *Handler) substitute(r *http.Request, session auth.Session, texts ...str
 		}
 	}
 
-	return vars.Substitute(overrides, texts...), nil
+	return vars.Values(overrides)
+}
+
+// substitute returns the texts with the session user's variables
+// substituted as text.
+func (h *Handler) substitute(r *http.Request, session auth.Session, texts ...string) ([]string, error) {
+	values, err := h.values(r, session, texts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return variable.Substitute(values, texts...), nil
 }
 
 // dataSourceResponse is a data source as the API returns it: with which of

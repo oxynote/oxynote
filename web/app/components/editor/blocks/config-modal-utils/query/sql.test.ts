@@ -128,6 +128,10 @@ describe("useSQLQueryExtension", () => {
 			expect(labels).toContain("$__from")
 			expect(labels).toContain("$__to")
 			expect(labels).toContain("$__interval")
+			expect(labels).toContain("$__interval_ms")
+			expect(labels).toContain("$__range")
+			expect(labels).toContain("$__range_s")
+			expect(labels).toContain("$__range_ms")
 			expect(labels).toContain("$__timeFilter(dateColumn)")
 			expect(labels).toContain(
 				"$__unixEpochGroupAlias(dateColumn,'5m'[, fill])",
@@ -154,6 +158,18 @@ describe("useSQLQueryExtension", () => {
 		)
 		expect(byLabel.get("$__interval")?.info).toBe(
 			"editor.config-modal-utils.query-info.sql.interval",
+		)
+		expect(byLabel.get("$__interval_ms")?.info).toBe(
+			"editor.config-modal-utils.query-info.sql.interval-ms",
+		)
+		expect(byLabel.get("$__range")?.info).toBe(
+			"editor.config-modal-utils.query-info.sql.range",
+		)
+		expect(byLabel.get("$__range_s")?.info).toBe(
+			"editor.config-modal-utils.query-info.sql.range-s",
+		)
+		expect(byLabel.get("$__range_ms")?.info).toBe(
+			"editor.config-modal-utils.query-info.sql.range-ms",
 		)
 	})
 

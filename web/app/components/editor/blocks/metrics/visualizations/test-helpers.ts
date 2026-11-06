@@ -79,7 +79,7 @@ export function chartSeries(option: ChartOption, index = 0): ChartSeries {
 // one row of an axis tooltip, as echarts hands it to the slot
 export function tooltipParam(
 	seriesName: string,
-	value: number,
+	value: number | null,
 	seriesIndex = 0,
 ) {
 	return {

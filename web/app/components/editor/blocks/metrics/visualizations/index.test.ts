@@ -36,7 +36,10 @@ function stubChart() {
 const orderedLabel = (type: GenericQueryChartType) => `auto-${type}`
 
 function okResult(
-	data: { labels: Record<string, string>; metrics: [number, number][] }[],
+	data: {
+		labels: Record<string, string>
+		metrics: [number, number | null][]
+	}[],
 ): GenericQueryResult {
 	return { status: GenericQueryResultStatus.Ok, data }
 }
@@ -226,6 +229,39 @@ describe("mergeVisualizationResults", () => {
 		})
 	})
 
+	it("keeps a null point so the line breaks at the gap", ({ expect }) => {
+		const merged = mergeVisualizationResults(
+			GenericQueryChartType.Line,
+			[
+				queryItem(
+					okResult([
+						{
+							labels: {},
+							metrics: [
+								[1700000000, 1],
+								[1700000060, null],
+								[1700000120, 3],
+							],
+						},
+					]),
+				),
+			],
+			null,
+			orderedLabel,
+		)
+
+		expect(merged.data).toEqual([
+			{
+				name: "auto-line_chart",
+				data: [
+					[new Date(1700000000000), 1],
+					[new Date(1700000060000), null],
+					[new Date(1700000120000), 3],
+				],
+			},
+		])
+	})
+
 	it("concatenates the series of every query into one data set", ({
 		expect,
 	}) => {
@@ -312,7 +348,7 @@ describe("mergeVisualizationResults", () => {
 		})
 	})
 
-	it("skips gauge series whose last sample is not a time-value pair", ({
+	it("skips gauge series whose last sample is not a time-value pair or is null", ({
 		expect,
 	}) => {
 		const merged = mergeVisualizationResults(
@@ -325,6 +361,7 @@ describe("mergeVisualizationResults", () => {
 							metrics: [[1700000000] as unknown as [number, number]],
 						},
 						{ labels: { job: "empty" }, metrics: [] },
+						{ labels: { job: "null" }, metrics: [[1700000000, null]] },
 						{ labels: { job: "good" }, metrics: [[1700000000, 5]] },
 					]),
 					"{{job}}",
@@ -900,6 +937,21 @@ describe("calculateYAxisBounds", () => {
 			calculateYAxisBounds([
 				{ name: "a", data: [[at(0, 0, 0), 10]] },
 				{ name: "b", data: [[at(0, 0, 0), 30]] },
+			]),
+		).toEqual({ min: 5, max: 35 })
+	})
+
+	it("ignores null points", ({ expect }) => {
+		expect(
+			calculateYAxisBounds([
+				{
+					name: "a",
+					data: [
+						[at(0, 0, 0), 10],
+						[at(0, 1, 0), null],
+						[at(0, 2, 0), 30],
+					],
+				},
 			]),
 		).toEqual({ min: 5, max: 35 })
 	})
