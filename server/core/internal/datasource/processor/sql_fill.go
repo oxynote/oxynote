@@ -71,6 +71,10 @@ func newSQLFill(mode string, interval int64, tr TimeRange) (*sqlFill, error) {
 
 // buckets returns how many buckets the range holds.
 func (f sqlFill) buckets() int64 {
+	if f.To < f.From {
+		return 0
+	}
+
 	return (f.To-f.From)/f.Interval + 1
 }
 
