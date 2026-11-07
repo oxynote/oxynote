@@ -1,5 +1,5 @@
 import type { Editor } from "@tiptap/core"
-import { deleteEmptyMetricGrids } from "../blocks/metrics"
+import { deleteEmptyBlockGrids } from "../blocks/grid"
 
 export function deleteNode(editor: Editor, nodePos: number): boolean {
 	const { state, view } = editor
@@ -12,9 +12,9 @@ export function deleteNode(editor: Editor, nodePos: number): boolean {
 
 	tr.delete(nodePos, nodePos + node.nodeSize)
 
-	// Clean up empty MetricGrids in the same transaction to avoid
+	// Clean up empty grids in the same transaction to avoid
 	// position corruption from appendTransaction
-	tr = deleteEmptyMetricGrids(tr, state.schema)
+	tr = deleteEmptyBlockGrids(tr)
 
 	view.dispatch(tr)
 

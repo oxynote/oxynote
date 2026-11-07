@@ -158,10 +158,14 @@ func (m *MySQL) Metadata(ctx context.Context) (*SQLMetadataResult, error) {
 	}, nil
 }
 
-// QueryLabels executes a SQL query with LIMIT 1 against the MySQL data source
-// and returns the string (label) columns with their example values.
-func (m *MySQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (map[string]string, error) {
-	q = tr.ProcessMySQLQuery(q)
+// QueryLabels executes a SQL query with LIMIT 1 against the MySQL data source,
+// with its macros and the variables in vars expanded, and returns the string (label) columns with their example values.
+func (m *MySQL) QueryLabels(ctx context.Context, q string, tr TimeRange, vars map[string]string) (map[string]string, error) {
+	q, _, err := expandSQL(q, _mySQLDialect, tr, vars)
+	if err != nil {
+		return nil, err
+	}
+
 	q = sqlSetLimit(q, 1)
 
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
@@ -217,9 +221,13 @@ func (m *MySQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (map[st
 	return labels, nil
 }
 
-// Query executes a SQL query against the MySQL data source.
-func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange) (*MySQLQueryResult, error) {
-	q = tr.ProcessMySQLQuery(q)
+// Query executes a SQL query against the MySQL data source, with its
+// macros and the variables in vars expanded.
+func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange, vars map[string]string) (*MySQLQueryResult, error) {
+	q, fill, err := expandSQL(q, _mySQLDialect, tr, vars)
+	if err != nil {
+		return nil, err
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
@@ -287,6 +295,7 @@ func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange) (*MySQLQueryR
 		Columns:     columns,
 		ColumnTypes: columnTypes,
 		Rows:        resultRows,
+		Fill:        fill,
 	}, nil
 }
 
@@ -414,6 +423,10 @@ type MySQLQueryResult struct {
 	// tell them apart. It is encoded so a cached result still classifies
 	// its columns.
 	ColumnTypes []string `json:"columnTypes"`
+
+	// Fill specifies the fill mode of the query's group macro, or nil when
+	// it has none. It is encoded so a cached result still fills.
+	Fill *sqlFill `json:"fill,omitempty"`
 }
 
 // HasData reports whether the result holds any row.
@@ -428,12 +441,13 @@ func (mqr *MySQLQueryResult) sql() sqlQueryResult {
 		Columns:     mqr.Columns,
 		Rows:        mqr.Rows,
 		ColumnTypes: mqr.ColumnTypes,
+		Fill:        mqr.Fill,
 	}
 }
 
 // Transform transforms a MySQLQueryResult into a unified QueryResult
 // based on the requested chart type.
-func (mqr *MySQLQueryResult) Transform(ct ChartType) *QueryResult {
+func (mqr *MySQLQueryResult) Transform(ct ChartType) (*QueryResult, error) {
 	return mqr.sql().transform(ct, mysqlParseTimestamp, mysqlParseNumericValue)
 }
 

@@ -36,6 +36,7 @@ const props = defineProps<{
 	thresholds?: GaugeChartThreshold[]
 	axisBounds?: { min?: number | null; max?: number | null }
 	titleRightPadding?: number
+	titleOffsetTop?: number
 	disableAnimation?: boolean
 }>()
 
@@ -380,6 +381,7 @@ const chartStyle = computed(() => {
 			v-if="props.title"
 			:title="props.title"
 			:right-padding="props.titleRightPadding"
+			:offset-top="props.titleOffsetTop"
 		/>
 	</div>
 </template>

@@ -8,10 +8,14 @@ import (
 	"fmt"
 	"maps"
 	"math/rand"
+	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/document/icon"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
@@ -24,6 +28,25 @@ var (
 
 	//go:embed files/available_metrics.json
 	_availableMetrics []byte
+)
+
+// _maxNameLength is the most characters a document name holds, since the
+// whole tree is sent to every member of the organization and the name is
+// indexed for search.
+const _maxNameLength = 200
+
+var (
+	// ErrInvalidName is returned when a document is given a name that is
+	// empty or only white space.
+	ErrInvalidName = errutil.New(http.StatusBadRequest, "document.invalid_name", "document name cannot be empty")
+
+	// ErrInvalidIcon is returned when a document is given an icon the
+	// editor's picker does not offer.
+	ErrInvalidIcon = errutil.New(http.StatusBadRequest, "document.invalid_icon", "document icon is not one the icon picker offers")
+
+	// ErrNameTooLong is returned when a document name holds more than
+	// _maxNameLength characters.
+	ErrNameTooLong = errutil.New(http.StatusBadRequest, "document.name_too_long", "document name cannot be longer than 200 characters")
 )
 
 // DefaultBranch is the name of the default branch for a document.
@@ -83,7 +106,15 @@ type Document struct {
 }
 
 // NewDocument creates a new document instance with the provided organization ID.
-func NewDocument(inp CreateInput, organizationID, createdBy string) Document {
+// The name is kept without the white space around it. It fails on an input
+// Validate refuses.
+func NewDocument(inp CreateInput, organizationID, createdBy string) (Document, error) {
+	inp = inp.sanitize()
+
+	if err := inp.Validate(); err != nil {
+		return Document{}, err
+	}
+
 	now := timeutil.Now()
 
 	return Document{
@@ -101,7 +132,7 @@ func NewDocument(inp CreateInput, organizationID, createdBy string) Document {
 		CreatedBy:      null.StringFrom(createdBy),
 		UpdatedAt:      now,
 		LastUpdatedBy:  null.StringFrom(createdBy),
-	}
+	}, nil
 }
 
 // ApplyUpdate updates document instance with the input data.
@@ -159,7 +190,15 @@ func (d Document) MergeBranch(source Branch, mergedBy string) Document {
 // Comment marks are stripped because comments belong to one branch, and the
 // Yjs state is cleared so the first load rebuilds it from the stripped
 // content. A fork is never protected or default, whatever its source is.
-func (d Document) Fork(branchName, createdBy string) Document {
+// The name is kept without the white space around it, and a name that is
+// empty or too long fails.
+func (d Document) Fork(branchName, createdBy string) (Document, error) {
+	branchName = strings.TrimSpace(branchName)
+
+	if err := validateBranchName(branchName); err != nil {
+		return Document{}, err
+	}
+
 	now := timeutil.Now()
 
 	nd := d
@@ -178,7 +217,7 @@ func (d Document) Fork(branchName, createdBy string) Document {
 		LastUpdatedBy: null.StringFrom(createdBy),
 	}
 
-	return nd
+	return nd, nil
 }
 
 // ApplyProtection sets the protection status of the document branch.
@@ -222,22 +261,34 @@ type BranchSummary struct {
 }
 
 // ApplyBranchUpdate returns a new Document with only the name and protection
-// status updated. It does not modify content or the history.
-func (d Document) ApplyBranchUpdate(name null.String, protected null.Bool, updatedBy string) Document {
-	nd := d
+// status updated. It does not modify content or the history. A new name is
+// kept without the white space around it. It fails when the name is empty or
+// too long, or when the branch may not be renamed.
+func (d Document) ApplyBranchUpdate(inp BranchUpdateInput, updatedBy string) (Document, error) {
+	inp = inp.sanitize()
 
-	if name.Valid {
-		nd.BranchName = name.String
+	if err := inp.Validate(); err != nil {
+		return Document{}, err
 	}
 
-	if protected.Valid {
-		nd.Protected = protected.Bool
+	if err := d.allowsBranchRename(inp.Name); err != nil {
+		return Document{}, err
+	}
+
+	nd := d
+
+	if inp.Name.Valid {
+		nd.BranchName = inp.Name.String
+	}
+
+	if inp.Protected.Valid {
+		nd.Protected = inp.Protected.Bool
 	}
 
 	nd.UpdatedAt = timeutil.Now()
 	nd.LastUpdatedBy = null.StringFrom(updatedBy)
 
-	return nd
+	return nd, nil
 }
 
 // Title names the document the way a status line or a confirm card
@@ -284,6 +335,40 @@ type CreateInput struct {
 
 	// ParentID is the identifier for the parent document, if any.
 	ParentID null.Value[xid.ID] `json:"parentId"`
+}
+
+// Validate reports whether the input, once sanitized, can become a document.
+// An icon is optional, but one that is given must be an icon the picker
+// offers.
+func (ci CreateInput) Validate() error {
+	sanitized := ci.sanitize()
+
+	if err := ValidateName(sanitized.Name); err != nil {
+		return err
+	}
+
+	if sanitized.Icon == "" {
+		return nil
+	}
+
+	if !icon.Find(sanitized.Icon) {
+		return ErrInvalidIcon
+	}
+
+	return nil
+}
+
+// sanitize returns the input with the white space around the name trimmed.
+func (ci CreateInput) sanitize() CreateInput {
+	ci.Name = strings.TrimSpace(ci.Name)
+
+	return ci
+}
+
+// ValidateName reports whether a trimmed document name is neither empty nor
+// longer than _maxNameLength characters.
+func ValidateName(name string) error {
+	return strutil.ValidateName(name, _maxNameLength, ErrInvalidName, ErrNameTooLong)
 }
 
 // ImportInput is the input structure for importing a document.
@@ -347,6 +432,38 @@ func (ui UpdateInput) AddsMaintainers(stored []string) bool {
 	return false
 }
 
+// BranchUpdateInput is the input for renaming a branch or changing its
+// protection. A field left unset keeps its current value.
+type BranchUpdateInput struct {
+	// Name is the new name of the branch.
+	Name null.String `json:"name"`
+
+	// Protected is the new protection status of the branch.
+	Protected null.Bool `json:"protected"`
+}
+
+// Validate reports whether a set name, once trimmed, is neither empty nor
+// too long.
+func (bui BranchUpdateInput) Validate() error {
+	sanitized := bui.sanitize()
+
+	if sanitized.Name.Valid {
+		return validateBranchName(sanitized.Name.String)
+	}
+
+	return nil
+}
+
+// sanitize returns the input with the white space around its name
+// removed.
+func (bui BranchUpdateInput) sanitize() BranchUpdateInput {
+	if bui.Name.Valid {
+		bui.Name = null.StringFrom(strings.TrimSpace(bui.Name.String))
+	}
+
+	return bui
+}
+
 // NewWelcomeDocument creates the document a fresh organization starts
 // with: the getting-started content, its charts reading the given data
 // source or dropped when there is none.
@@ -356,10 +473,14 @@ func NewWelcomeDocument(organizationID, createdBy string, dataSourceID null.Valu
 		return Document{}, err
 	}
 
-	doc := NewDocument(CreateInput{
+	doc, err := NewDocument(CreateInput{
 		Name: "Welcome to Oxynote!",
 		Icon: "mingcute:flag-4-fill",
 	}, organizationID, createdBy)
+	if err != nil {
+		return Document{}, err
+	}
+
 	doc.Content = content
 
 	return doc, nil

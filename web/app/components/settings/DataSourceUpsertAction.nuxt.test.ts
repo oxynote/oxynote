@@ -108,6 +108,17 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			expect(wrapper.text()).toContain("Connect a new Prometheus server")
 		})
 
+		it("describes a loki data source being connected", async ({ expect }) => {
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Loki,
+			})
+
+			expect(wrapper.text()).toContain(t(`${UPSERT}.description.creation.loki`))
+			expect(fields(wrapper).url.attributes("placeholder")).toBe(
+				t(`${UPSERT}.url-field.loki.placeholder`),
+			)
+		})
+
 		it("starts with empty fields", async ({ expect }) => {
 			const wrapper = await mountAction({
 				creationType: DataSourceType.Prometheus,
@@ -137,6 +148,36 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 				name: "Prod metrics",
 				url: "http://prometheus.test",
 				credentials: { username: "reader", password: "secret" },
+			})
+		})
+
+		it("sends a loki data source with its credentials and CA certificate", async ({
+			expect,
+		}) => {
+			const calls = mockEndpoint("POST", "/api/data-sources", () => ({
+				id: EXISTING.id,
+			}))
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Loki,
+			})
+			await fields(wrapper).name.setValue("Prod logs")
+			await fields(wrapper).url.setValue("https://loki.test")
+			await fields(wrapper).username.setValue("reader")
+			await fields(wrapper).password.setValue("secret")
+			await fields(wrapper).caCertificate.setValue(CA_CERTIFICATE)
+
+			await submit(wrapper)
+
+			expect(calls).toHaveLength(1)
+			expect(calls[0]?.body).toEqual({
+				type: DataSourceType.Loki,
+				name: "Prod logs",
+				url: "https://loki.test",
+				credentials: {
+					username: "reader",
+					password: "secret",
+					caCertificate: CA_CERTIFICATE,
+				},
 			})
 		})
 
@@ -307,6 +348,14 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			const wrapper = await mountAction({ updateTarget: EXISTING })
 
 			expect(wrapper.text()).toContain("Update the settings of your Prometheus")
+		})
+
+		it("describes a loki data source being updated", async ({ expect }) => {
+			const wrapper = await mountAction({
+				updateTarget: { ...EXISTING, type: DataSourceType.Loki },
+			})
+
+			expect(wrapper.text()).toContain(t(`${UPSERT}.description.update.loki`))
 		})
 
 		it("starts from the data source's current values", async ({ expect }) => {
@@ -585,13 +634,14 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 	})
 
 	describe("read-only warning", { concurrent: false }, () => {
-		it("leaves prometheus without a read-only warning", async ({ expect }) => {
-			const wrapper = await mountAction({
-				creationType: DataSourceType.Prometheus,
-			})
+		it.for([DataSourceType.Prometheus, DataSourceType.Loki])(
+			"leaves %s without a read-only warning",
+			async (type, { expect }) => {
+				const wrapper = await mountAction({ creationType: type })
 
-			expect(wrapper.text()).not.toContain("read-only")
-		})
+				expect(wrapper.text()).not.toContain("read-only")
+			},
+		)
 
 		it.for([
 			DataSourceType.PostgreSQL,

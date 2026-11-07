@@ -3,11 +3,8 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import MainBlock from "./MainBlock.vue"
 import VisualizationContainer from "./VisualizationContainer.vue"
 import { stubChartColorContext } from "./test-helpers"
-import {
-	MetricBlockWidth,
-	MetricSimulationPreset,
-	type MetricConfig,
-} from "./utils"
+import { MetricSimulationPreset, type MetricConfig } from "./utils"
+import { GridItemWidth } from "../grid/utils"
 import { TimeRangePreset } from "~/utils/time-range"
 import {
 	makeEditor,
@@ -169,22 +166,21 @@ describe("<MetricMainBlock>", { concurrent: false }, () => {
 		expect(root.attributes("data-diff-status")).toBe("added")
 	})
 
-	it.for([
-		MetricBlockWidth.Compact,
-		MetricBlockWidth.Standard,
-		MetricBlockWidth.Wide,
-	])("gives a %s block its own grid span", async (width, { expect }) => {
-		const wrapper = await mountBlock({ attrs: { width: width } })
+	it.for([GridItemWidth.Compact, GridItemWidth.Standard, GridItemWidth.Wide])(
+		"gives a %s block its own grid span",
+		async (width, { expect }) => {
+			const wrapper = await mountBlock({ attrs: { width: width } })
 
-		expect(wrapperClasses(wrapper)).toContain(`metric-block-${width}`)
-	})
+			expect(wrapperClasses(wrapper)).toContain(`grid-item-${width}`)
+		},
+	)
 
 	it("spans a block with no stored width like a standard one", async ({
 		expect,
 	}) => {
 		const wrapper = await mountBlock()
 
-		expect(wrapperClasses(wrapper)).toContain("metric-block-standard")
+		expect(wrapperClasses(wrapper)).toContain("grid-item-standard")
 	})
 
 	it("publishes the block's config for the config modal to read", async ({

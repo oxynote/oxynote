@@ -41,6 +41,21 @@ func (a *agent) InsertTag(ctx context.Context, t tag.Tag) error {
 	return err
 }
 
+// FetchTag retrieves one tag of the organization.
+func (a *agent) FetchTag(ctx context.Context, id xid.ID, organizationID string) (*tag.Tag, error) {
+	q, args := a.selectTag(a.builder.Select(), organizationID).
+		Where(sq.Eq{"tags.id": id}).
+		MustSql()
+
+	var t tag.Tag
+
+	if err := sqlx.GetContext(ctx, a.sql, &t, q, args...); err != nil {
+		return nil, err
+	}
+
+	return &t, nil
+}
+
 // FetchTagTree retrieves an organization's tags in their display order,
 // each with the documents whose default branch carries it. Hidden reflects
 // the given user's own setting; a tag the user never touched reads as
@@ -188,30 +203,17 @@ func (a *agent) UpdateTagTree(ctx context.Context, tree tag.Summaries, organizat
 	})
 }
 
-// UpdateTag renames and/or recolours a tag, leaving an unset field as it
-// is. A tag outside the organization is not found.
-func (a *agent) UpdateTag(ctx context.Context, organizationID string, id xid.ID, inp tag.UpdateInput) error {
-	set := map[string]any{}
-
-	if inp.TagName.Valid {
-		set["tag_name"] = inp.TagName.String
-	}
-
-	if inp.Color.Valid {
-		set["color"] = inp.Color.String
-	}
-
-	// the builder refuses an update that sets nothing, and there is
-	// nothing to write anyway.
-	if len(set) == 0 {
-		return tag.ErrEmptyTagUpdate
-	}
-
+// UpdateTag rewrites a tag's name and colour. A tag outside the
+// organization is not found.
+func (a *agent) UpdateTag(ctx context.Context, t tag.Tag) error {
 	q, args := a.builder.Update("tags").
-		SetMap(set).
+		SetMap(map[string]any{
+			"tag_name": t.TagName,
+			"color":    t.Color,
+		}).
 		Where(sq.Eq{
-			"id":                 id,
-			"fk_organization_id": organizationID,
+			"id":                 t.ID,
+			"fk_organization_id": t.OrganizationID,
 		}).
 		MustSql()
 

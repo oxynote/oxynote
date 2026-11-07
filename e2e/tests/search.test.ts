@@ -138,7 +138,7 @@ test.describe("search", () => {
 				branch_id: branchId,
 				position: "end",
 				// a metric lives in a grid; the root refuses a bare one
-				content: `<metrics><metric>${JSON.stringify({ title })}</metric></metrics>`,
+				content: `<grid><metrics>${JSON.stringify({ title })}</metrics></grid>`,
 			},
 		})
 		expect(inserted.isError, JSON.stringify(inserted.content)).toBeFalsy()

@@ -102,14 +102,13 @@ func (h *Handler) CreateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := inp.Validate(); err != nil {
+	t, err := tagCore.NewTag(inp, session.ActiveOrganizationID, session.UserID)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	t := tagCore.NewTag(inp, session.ActiveOrganizationID, session.UserID)
-
-	if err := h.db.InsertTag(r.Context(), t); err != nil {
+	if err = h.db.InsertTag(r.Context(), t); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -139,18 +138,19 @@ func (h *Handler) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = inp.Validate(); err != nil {
+	t, err := h.db.FetchTag(r.Context(), tagID, session.ActiveOrganizationID)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	err = h.db.UpdateTag(
-		r.Context(),
-		session.ActiveOrganizationID,
-		tagID,
-		inp,
-	)
+	nt, err := t.ApplyUpdate(inp)
 	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err = h.db.UpdateTag(r.Context(), nt); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -349,6 +349,16 @@ func extractBranchPath(r *http.Request) (xid.ID, xid.ID, error) {
 //
 //go:generate ../../../../scripts/codegen/mock -t internal DB db
 type DB interface {
+	TreeDB
+	BranchTagDB
+}
+
+// TreeDB is an interface that handles communication with the database of
+// an organization's tag tree: the tags, their order and who hides them.
+type TreeDB interface {
+	// FetchTag should fetch one tag of the organization.
+	FetchTag(ctx context.Context, id xid.ID, organizationID string) (*tagCore.Tag, error)
+
 	// FetchTagTree should fetch an organization's tags together with the
 	// documents whose default branch carries each of them, in their display
 	// order. Each summary's Hidden should reflect the given user's own
@@ -362,9 +372,9 @@ type DB interface {
 	// InsertTag should store a new tag at the end of its organization's tags.
 	InsertTag(ctx context.Context, t tagCore.Tag) error
 
-	// UpdateTag should rename or recolour a tag in the organization,
-	// preserving its assignments and any field left unset.
-	UpdateTag(ctx context.Context, organizationID string, id xid.ID, inp tagCore.UpdateInput) error
+	// UpdateTag should rewrite a tag's name and colour, preserving its
+	// assignments.
+	UpdateTag(ctx context.Context, t tagCore.Tag) error
 
 	// SetTagVisibility should record whether one user keeps a tag out of
 	// their sidebar, leaving every other user's view untouched.
@@ -377,7 +387,11 @@ type DB interface {
 
 	// DeleteTag should remove a tag and every assignment of it.
 	DeleteTag(ctx context.Context, id xid.ID, organizationID string) error
+}
 
+// BranchTagDB is an interface that handles communication with the database
+// of the tags a document's branch carries.
+type BranchTagDB interface {
 	// FetchBranchTagIDs should fetch the ids of the tags a document's branch
 	// carries, in the tags' display order.
 	FetchBranchTagIDs(ctx context.Context, organizationID string, documentID, branchID xid.ID) ([]xid.ID, error)

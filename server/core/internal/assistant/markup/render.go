@@ -17,7 +17,9 @@ var _plainContainers = map[document.BlockNodeType]string{
 	document.BlockNodeBlockquote: _elemBlockquote,
 	document.BlockNodeBulletList: _elemBullets,
 	document.BlockNodeTaskList:   _elemTasks,
-	document.BlockNodeMetricGrid: _elemMetrics,
+	document.BlockNodeBlockGrid:  _elemGrid,
+	// legacy: documents may still hold metricGrid.
+	document.BlockNodeMetricGrid: _elemGrid,
 }
 
 // _textEscaper escapes the characters that would start markup in text.
@@ -106,7 +108,9 @@ func (r *renderer) block(b document.Block, depth int) {
 			blockAttr(b, document.AttrSize),
 		))
 	case document.BlockNodeMetricBlock:
-		r.raw(depth, startTag(_elemMetric, b), _elemMetric, metricJSON(b))
+		r.raw(depth, startTag(_elemMetrics, b), _elemMetrics, attrsJSON(b))
+	case document.BlockNodeLogBlock:
+		r.raw(depth, startTag(_elemLogs, b), _elemLogs, attrsJSON(b))
 	case document.BlockNodeSplitDoc:
 		r.container(_elemSplitDoc, startTag(_elemSplitDoc, b, blockAttr(b, document.AttrInversed)), b.Content, depth)
 	case document.BlockNodeSplitDocLeft:
@@ -191,13 +195,13 @@ func (r *renderer) param(row document.Block, depth int) {
 	r.line(depth, startTag(_elemParam, row, name, typ)+renderInline(description)+endTag(_elemParam))
 }
 
-// metricJSON returns a metric's attributes as JSON, leaving out the
-// hidden ones and those without a value.
-func metricJSON(b document.Block) string {
+// attrsJSON returns a metric or log block's attributes as JSON, leaving
+// out the hidden ones and those without a value.
+func attrsJSON(b document.Block) string {
 	attrs := make(map[string]any, len(b.Attrs))
 
 	for k, v := range b.Attrs {
-		if v != nil && !_hiddenMetricAttrs[k] {
+		if v != nil && !_hiddenAttrs[k] {
 			attrs[k] = v
 		}
 	}

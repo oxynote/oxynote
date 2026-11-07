@@ -1,26 +1,22 @@
 <script lang="ts" setup>
 import { cn } from "#layers/ui/app/lib/utils"
-import type {
-	MetricConfig,
-	MetricRefreshInterval,
-	MetricTimeRange,
-} from "../utils"
-import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
-import {
-	METRIC_REFRESH_INTERVAL_REFERENCE,
-	METRIC_TIME_RANGE_REFERENCE,
-} from "~/utils/variable"
+import type { MetricConfig } from "../utils"
 import VisualizationContainer from "../VisualizationContainer.vue"
+import RefreshIntervalSelect from "../../config-modal-utils/RefreshIntervalSelect.vue"
+import TimeRangeSelect from "../../config-modal-utils/TimeRangeSelect.vue"
 import BottomConfig from "./BottomConfig.vue"
 import ConfigSidebar from "./ConfigSidebar.vue"
 import { DiffStatus } from "~/components/editor/diff/position-map"
+
+// how far the chart's title moves down while the overlay holds two rows,
+// in pixels. Its centre moves from 19.5 to 26 pixels, the overlay's centre.
+const TITLE_OFFSET_TOP = 6.5
 
 const emit = defineEmits<{
 	(e: "open-settings"): void
 }>()
 
 const editorStore = useEditorStore()
-const { t } = useI18n({ useScope: "global" })
 const isMinWidth1024px = useMediaQuery("(min-width: 1024px)")
 const { isEditable } = useEditorMeta()
 
@@ -90,27 +86,15 @@ const isRefreshIntervalModified = computed(() => {
 		oldConfig.value.refreshInterval !== config.value?.refreshInterval
 	)
 })
+// a changed time range or refresh interval shows its old value under the
+// new one. The two need a taller header, so the overlay grows, and the
+// chart's title moves down to stay centred on it.
+const timesModified = computed(
+	() => isTimeRangeModified.value || isRefreshIntervalModified.value,
+)
 const chartTopOptionElem = useTemplateRef<HTMLDivElement>("chart-top-options")
 const { width: chartTopOptionWidth } = useElementSize(chartTopOptionElem)
 const simulationVisible = ref(false)
-
-// a chart that uses a built-in variable has no value of its own to name,
-// so the label says the shared setting decides
-function timeRangeLabel(value: MetricTimeRange | null) {
-	if (value === METRIC_TIME_RANGE_REFERENCE) {
-		return t("editor.metrics.config.variable-time-range")
-	}
-
-	return value ? t(`general.time-range-options.${value}`) : ""
-}
-
-function refreshIntervalLabel(value: MetricRefreshInterval | null) {
-	if (value === METRIC_REFRESH_INTERVAL_REFERENCE) {
-		return t("editor.metrics.config.variable-refresh-interval")
-	}
-
-	return value ? t(`general.refresh-interval-options-short.${value}`) : ""
-}
 
 function updateOpenStatus(v: boolean) {
 	if (v) {
@@ -184,7 +168,8 @@ function openSettings() {
 								ref="chart-top-options"
 								:class="
 									cn(
-										'absolute top-1.5 right-1.5 z-1 flex flex-col items-end gap-0.5 pr-1 pl-2 md:flex-row md:items-center md:gap-2 md:bg-muted-50-real',
+										'absolute top-1.5 right-1.5 z-1 flex flex-col items-end gap-0.5 pr-1 pl-2 md:top-1 md:h-7 md:flex-row md:items-center md:gap-2 md:bg-muted-50-real',
+										timesModified && 'md:h-11',
 									)
 								"
 							>
@@ -199,139 +184,27 @@ function openSettings() {
 										{{ $t("editor.metrics.simulation.tooltip") }}
 									</ShadcnUiTooltipContent>
 								</ShadcnUiTooltip>
-								<div class="flex flex-col items-end gap-0.5 md:gap-1">
-									<ShadcnUiSelect v-model="config.timeRange">
-										<ShadcnUiSelectTrigger
-											disable-default-styles
-											:disable="isEditingDisabled"
-											as-child
-										>
-											<ShadcnUiButton
-												variant="ghost-plain"
-												size="custom"
-												:class="
-													cn(
-														'gap-1 bg-muted-50-real text-2sm text-foreground md:bg-none',
-														isEditingDisabled &&
-															'pointer-events-none select-text',
-														isTimeRangeModified && 'bg-diff-field-added px-0.5',
-													)
-												"
-											>
-												<Icon name="lucide:clock-9" class="size-3.5" />
-												{{ timeRangeLabel(config.timeRange) }}
-											</ShadcnUiButton>
-										</ShadcnUiSelectTrigger>
-										<ShadcnUiSelectContent class="max-h-[40dvh]" inside-modal>
-											<ShadcnUiSelectItem :value="METRIC_TIME_RANGE_REFERENCE">
-												<span class="text-2sm text-popover-foreground">
-													{{ $t("editor.metrics.config.variable-time-range") }}
-												</span>
-											</ShadcnUiSelectItem>
-											<ShadcnUiSelectSeparator />
-											<ShadcnUiSelectItem
-												v-for="timeRange in Object.values(TimeRangePreset)"
-												:key="timeRange"
-												:value="timeRange"
-											>
-												<span class="text-2sm text-popover-foreground">
-													{{ $t(`general.time-range-options.${timeRange}`) }}
-												</span>
-											</ShadcnUiSelectItem>
-										</ShadcnUiSelectContent>
-									</ShadcnUiSelect>
-									<ShadcnUiButton
-										v-if="isTimeRangeModified && oldConfig"
-										variant="ghost-plain"
-										size="custom"
-										:class="
-											cn(
-												'gap-1 bg-muted-50-real text-2sm text-foreground md:bg-none',
-												isEditingDisabled && 'pointer-events-none select-text',
-												isTimeRangeModified &&
-													'bg-diff-field-removed px-0.5 md:bg-diff-field-removed',
-											)
-										"
-									>
-										<Icon name="lucide:clock-9" class="size-3.5" />
-										{{ timeRangeLabel(oldConfig.timeRange) }}
-									</ShadcnUiButton>
-								</div>
-								<div class="flex flex-col items-end gap-0.5 md:gap-1">
-									<ShadcnUiSelect v-model="config.refreshInterval">
-										<ShadcnUiSelectTrigger
-											disable-default-styles
-											:disable="isEditingDisabled"
-											as-child
-										>
-											<ShadcnUiButton
-												variant="ghost-plain"
-												size="custom"
-												:class="
-													cn(
-														'gap-1 bg-muted-50-real text-2sm text-foreground md:bg-none',
-														isEditingDisabled &&
-															'pointer-events-none select-text',
-														isRefreshIntervalModified &&
-															'bg-diff-field-added px-0.5',
-													)
-												"
-											>
-												<Icon name="lucide:refresh-ccw" class="size-3.5" />
-												{{ refreshIntervalLabel(config.refreshInterval) }}
-											</ShadcnUiButton>
-										</ShadcnUiSelectTrigger>
-										<ShadcnUiSelectContent class="max-h-[40dvh]" inside-modal>
-											<ShadcnUiSelectItem
-												:value="METRIC_REFRESH_INTERVAL_REFERENCE"
-											>
-												<span class="text-2sm text-popover-foreground">
-													{{
-														$t(
-															"editor.metrics.config.variable-refresh-interval",
-														)
-													}}
-												</span>
-											</ShadcnUiSelectItem>
-											<ShadcnUiSelectSeparator />
-											<ShadcnUiSelectItem
-												v-for="refreshInterval in Object.values(
-													RefreshInterval,
-												)"
-												:key="refreshInterval"
-												:value="refreshInterval"
-											>
-												<span class="text-2sm text-popover-foreground">
-													{{
-														$t(
-															`general.refresh-interval-options.${refreshInterval}`,
-														)
-													}}
-												</span>
-											</ShadcnUiSelectItem>
-										</ShadcnUiSelectContent>
-									</ShadcnUiSelect>
-									<ShadcnUiButton
-										v-if="isRefreshIntervalModified && oldConfig"
-										variant="ghost-plain"
-										size="custom"
-										:class="
-											cn(
-												'gap-1 bg-muted-50-real text-2sm text-foreground md:bg-none',
-												isEditingDisabled && 'pointer-events-none select-text',
-												isRefreshIntervalModified &&
-													'bg-diff-field-removed px-0.5 md:bg-diff-field-removed',
-											)
-										"
-									>
-										<Icon name="lucide:refresh-ccw" class="size-3.5" />
-										{{ refreshIntervalLabel(oldConfig.refreshInterval) }}
-									</ShadcnUiButton>
-								</div>
+								<TimeRangeSelect
+									v-model="config.timeRange"
+									:disabled="isEditingDisabled"
+									:old-value="
+										isTimeRangeModified ? oldConfig?.timeRange : undefined
+									"
+								/>
+								<RefreshIntervalSelect
+									v-model="config.refreshInterval"
+									:disabled="isEditingDisabled"
+									:old-value="
+										isRefreshIntervalModified
+											? oldConfig?.refreshInterval
+											: undefined
+									"
+								/>
 							</div>
 							<VisualizationContainer
 								:config="config"
 								:title-right-padding="chartTopOptionWidth"
+								:title-offset-top="timesModified ? TITLE_OFFSET_TOP : 0"
 								hide-empty-action-button
 								simplified-empty
 								:uid="editorStore.activeMetricBlockConfig!"

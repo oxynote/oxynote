@@ -45,7 +45,15 @@ func Test_OpError_describe(t *testing.T) {
 		},
 		"Metric outside its containers is told where it goes": {
 			Msg:    "metricBlock is not allowed there in calloutBlock, which takes paragraph at that point.",
-			Result: "<metric> is not allowed there in <callout>, which takes <p> at that point. A <metric> goes only in <metrics> or a <split_doc>'s <right>.",
+			Result: "<metrics> is not allowed there in <callout>, which takes <p> at that point. A <metrics> goes only in <grid> or a <split_doc>'s <right>.",
+		},
+		"Logs outside a grid are told where they go": {
+			Msg:    "logBlock is not allowed there in the document root, which takes paragraph at that point.",
+			Result: "<logs> is not allowed there in the document root, which takes <p> at that point. A <logs> goes only in <grid>.",
+		},
+		"Grid below the top level is told where it goes": {
+			Msg:    "blockGrid is not allowed there in blockquote, which takes paragraph at that point.",
+			Result: "<grid> is not allowed there in <blockquote>, which takes <p> at that point. A <grid> goes only at the top level of the document.",
 		},
 		"Node type without an element named by the element holding it": {
 			Msg:    "codeBlockTitle would end without text in nrk_7bSz-mJp",

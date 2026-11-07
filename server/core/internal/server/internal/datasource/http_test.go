@@ -549,6 +549,29 @@ func Test_Handler_CreateDataSource(t *testing.T) {
 				},
 			),
 		},
+		"Unknown type": {
+			Body: `{"type":"graphite","name":"test-source","url":"http://source.test","credentials":{"username":"user"}}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"data_source.invalid_type","message":"invalid data source type"}`),
+				wasRunnersRunnerCalled(0),
+				wasExecutorTestConnectionCalled(0),
+				wasDBInsertDataSourceCalled(0),
+			),
+		},
+		"Successful creation with padded upper case type": {
+			Clients: &clientMocks{status: processor.ConnectionStatusSuccess, statusErr: nil},
+			Body:    `{"type":" Prometheus ","name":"test-source","url":"http://source.test","credentials":{"username":"user"}}`,
+			Checks: checks(
+				func(t *testing.T, db *DBMock, _ *runnerMock, _ *VariableManagerMock, rec *httptest.ResponseRecorder, _ *bytes.Buffer) {
+					t.Helper()
+
+					ff := db.InsertDataSourceCalls()
+					require.Len(t, ff, 1)
+					assert.Equal(t, datasourceCore.TypePrometheus, ff[0].Ds.Type)
+					assert.Equal(t, http.StatusCreated, rec.Code)
+				},
+			),
+		},
 	}
 
 	for cn, c := range cc {
@@ -1127,6 +1150,78 @@ func Test_Handler_DeleteDataSource(t *testing.T) {
 			for _, ch := range c.Checks {
 				ch(t, db, exec, vars, rec, logs)
 			}
+		})
+	}
+}
+
+func Test_Handler_values(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Variables *VariableManagerMock
+		Target    string
+		Texts     []string
+		Result    map[string]string
+		Err       error
+		Checks    []check
+	}{
+		"No reference skips the tree": {
+			Texts:  []string{"up", "$__from"},
+			Result: map[string]string{},
+			Checks: checks(wasVariableManagerFetchTreeCalled(0)),
+		},
+		"Error returned by VariableManager.FetchTree": {
+			Variables: stubVariables(assert.AnError),
+			Texts:     []string{"$metric"},
+			Err:       assert.AnError,
+			Checks:    checks(wasVariableManagerFetchTreeCalled(1)),
+		},
+		"Stored values": {
+			Variables: stubVariables(nil),
+			Texts:     []string{"sum($metric)"},
+			Result:    map[string]string{"metric": "up"},
+			Checks:    checks(wasVariableManagerFetchTreeCalled(1)),
+		},
+		"Overridden value": {
+			Variables: stubVariables(nil),
+			Target:    "http://test.com/?var-metric=down&var-other=x",
+			Texts:     []string{"sum($metric)"},
+			Result:    map[string]string{"metric": "down"},
+			Checks:    checks(wasVariableManagerFetchTreeCalled(1)),
+		},
+		"Override that is too long": {
+			Variables: stubVariables(nil),
+			Target:    "http://test.com/?var-metric=" + strings.Repeat("x", 129),
+			Texts:     []string{"sum($metric)"},
+			Err:       variable.ErrValueTooLong,
+			Checks:    checks(wasVariableManagerFetchTreeCalled(1)),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl, db, exec, vars, logs := prepHandler(nil, nil, c.Variables)
+
+			target := c.Target
+			if target == "" {
+				target = "http://test.com/"
+			}
+
+			res, err := hdl.values(httptest.NewRequest(http.MethodGet, target, http.NoBody), _testSession, c.Texts...)
+
+			for _, ch := range c.Checks {
+				ch(t, db, exec, vars, httptest.NewRecorder(), logs)
+			}
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
 		})
 	}
 }

@@ -9,6 +9,7 @@ import {
 	type AuthSession,
 } from "./hocuspocus.js"
 import { replaceYdocContent, transformer } from "./ydocument.js"
+import { EDITOR_SCHEMA_VERSION } from "./schema/index.js"
 import {
 	fragmentXml,
 	stubCore,
@@ -56,6 +57,14 @@ function seededDocument(name = "Runbook"): ConnectedDocument {
 	})
 
 	return doc
+}
+
+// the query parameters a client on this server's editor schema connects
+// with
+function currentClient(): URLSearchParams {
+	return new URLSearchParams({
+		schemaVersion: String(EDITOR_SCHEMA_VERSION),
+	})
 }
 
 function hooksWith(core: StubCore, session: AuthSession | null = SESSION) {
@@ -183,6 +192,7 @@ describe("createDocumentHooks", () => {
 				documentName: "doc1-branch1",
 				request: {},
 				requestHeaders: { cookie: "auth.session=abc" },
+				requestParameters: currentClient(),
 				token: "",
 			})
 
@@ -211,6 +221,7 @@ describe("createDocumentHooks", () => {
 				documentName: "doc1-branch1",
 				request: {},
 				requestHeaders: { cookie: "auth.session=abc" },
+				requestParameters: currentClient(),
 				token: "",
 			})
 
@@ -243,6 +254,7 @@ describe("createDocumentHooks", () => {
 				documentName: "doc1-default",
 				request: {},
 				requestHeaders: { cookie: "auth.session=abc" },
+				requestParameters: currentClient(),
 				token: "",
 			})
 
@@ -276,10 +288,106 @@ describe("createDocumentHooks", () => {
 					requestHeaders: {
 						cookie: "auth.session=abc",
 					},
+					requestParameters: currentClient(),
 					token: "",
 				})
 
 				expect(connectionConfig.readOnly).toBe(false)
+			},
+		)
+
+		// y-prosemirror deletes every node its schema does not know, so a
+		// client on an older schema would wipe the newer blocks
+		it.for([
+			{
+				name: "carries no schema version",
+				input: new URLSearchParams(),
+			},
+			{
+				name: "is on an older schema",
+				input: new URLSearchParams({
+					schemaVersion: String(
+						EDITOR_SCHEMA_VERSION - 1,
+					),
+				}),
+			},
+			{
+				name: "sends a schema version that is not a whole number",
+				input: new URLSearchParams({
+					schemaVersion: "2.5",
+				}),
+			},
+		])(
+			"locks the connection when the client $name",
+			async ({ input }, { expect }) => {
+				const core = stubCore()
+				const hooks = hooksWith(core)
+				const connectionConfig = { readOnly: false }
+
+				const result = await hooks.onAuthenticate({
+					connectionConfig,
+					documentName: "doc1-branch1",
+					request: {},
+					requestHeaders: {
+						cookie: "auth.session=abc",
+					},
+					requestParameters: input,
+					token: "",
+				})
+
+				expect(result).toEqual({ session: SESSION })
+				expect(connectionConfig.readOnly).toBe(true)
+				expect.soft(
+					core.verifyDocumentAccess,
+				).toHaveBeenCalledTimes(1)
+				expect.soft(
+					core.fetchBranches,
+				).toHaveBeenCalledTimes(0)
+			},
+		)
+
+		// the server deploys first, so a client may already be on a newer
+		// schema than the one it connects to
+		it.for([
+			{
+				name: "the server's schema",
+				input: EDITOR_SCHEMA_VERSION,
+			},
+			{
+				name: "a newer schema",
+				input: EDITOR_SCHEMA_VERSION + 1,
+			},
+		])(
+			"leaves the connection writable for a client on $name",
+			async ({ input }, { expect }) => {
+				const core = stubCore()
+				core.fetchBranches.mockResolvedValue([
+					{
+						branchId: "branch1",
+						default: false,
+						protected: false,
+					},
+				])
+				const hooks = hooksWith(core)
+				const connectionConfig = { readOnly: false }
+
+				await hooks.onAuthenticate({
+					connectionConfig,
+					documentName: "doc1-branch1",
+					request: {},
+					requestHeaders: {
+						cookie: "auth.session=abc",
+					},
+					requestParameters: new URLSearchParams({
+						schemaVersion: String(input),
+					}),
+					token: "",
+				})
+
+				expect(connectionConfig.readOnly).toBe(false)
+				expect.soft(
+					core.fetchBranches,
+				).toHaveBeenCalledTimes(1)
 			},
 		)
 
@@ -294,6 +402,7 @@ describe("createDocumentHooks", () => {
 				documentName: "doc1-branch1",
 				request: {},
 				requestHeaders: { cookie: "auth.session=abc" },
+				requestParameters: currentClient(),
 				token: "",
 			})
 
@@ -322,6 +431,7 @@ describe("createDocumentHooks", () => {
 					documentName: "doc1-branch1",
 					request: {},
 					requestHeaders: {},
+					requestParameters: currentClient(),
 					token: "",
 				}),
 			).rejects.toThrow("not authenticated")
@@ -344,6 +454,7 @@ describe("createDocumentHooks", () => {
 					documentName: "doc1-branch1",
 					request: {},
 					requestHeaders: {},
+					requestParameters: currentClient(),
 					token: "force-error",
 				}),
 			).rejects.toThrow("not authenticated")
@@ -352,8 +463,23 @@ describe("createDocumentHooks", () => {
 			)
 		})
 
-		it("propagates a rejected access check", async ({ expect }) => {
-			const failure = new Error("document not accessible")
+		// hocuspocus prints a hook's error in full, and the axios
+		// error core's client rejects with carries the caller's cookie
+		it("rejects with only the message of a failed access check", async ({
+			expect,
+		}) => {
+			const failure = Object.assign(
+				new Error(
+					"Request failed with status code 404",
+				),
+				{
+					config: {
+						headers: {
+							cookie: "session=secret",
+						},
+					},
+				},
+			)
 			const core = stubCore()
 			core.verifyDocumentAccess.mockRejectedValue(failure)
 			const hooks = hooksWith(core)
@@ -364,9 +490,14 @@ describe("createDocumentHooks", () => {
 					documentName: "doc1-branch1",
 					request: {},
 					requestHeaders: {},
+					requestParameters: currentClient(),
 					token: "",
 				}),
-			).rejects.toBe(failure)
+			).rejects.toStrictEqual(
+				new Error(
+					"Request failed with status code 404",
+				),
+			)
 		})
 	})
 
@@ -708,8 +839,15 @@ describe("createDocumentHooks", () => {
 			expect(ydoc).toBeInstanceOf(Y.Doc)
 		})
 
-		it("propagates a failed content fetch", async ({ expect }) => {
-			const failure = new Error("core unreachable")
+		it("rejects with only the message of a failed content fetch", async ({
+			expect,
+		}) => {
+			const failure = Object.assign(
+				new Error("core unreachable"),
+				{
+					config: { url: "http://core:8080" },
+				},
+			)
 			const core = stubCore()
 			core.fetchBranchContent.mockRejectedValue(failure)
 			const hooks = hooksWith(core)
@@ -718,7 +856,7 @@ describe("createDocumentHooks", () => {
 				hooks.onLoadDocument({
 					documentName: "doc1-branch1",
 				}),
-			).rejects.toBe(failure)
+			).rejects.toStrictEqual(new Error("core unreachable"))
 		})
 	})
 
@@ -1003,7 +1141,7 @@ describe("createDocumentHooks", () => {
 					documentName: "doc1-branch1",
 					document: seededDocument(),
 				}),
-			).rejects.toBe("core gone")
+			).rejects.toStrictEqual(new Error("core gone"))
 
 			expect(log.error.mock.calls).toEqual([
 				["persisting doc1-branch1 failed: core gone"],

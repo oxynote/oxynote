@@ -912,7 +912,15 @@ describe("<document-editor>", { concurrent: false }, () => {
 						from: "EditorBlocksMetricsConfigModalBaseModal",
 						target: undefined,
 					},
-					expected: "metric-data-sources",
+					expected: "data-sources",
+				},
+				{
+					name: "opens the data sources from the log settings",
+					input: {
+						from: "EditorBlocksLogsConfigModalBaseModal",
+						target: undefined,
+					},
+					expected: "data-sources",
 				},
 			])("$name", async ({ input, expected }, { expect }) => {
 				seedWorkspace()

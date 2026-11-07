@@ -120,8 +120,8 @@ func (l *Loki) Close() error {
 
 // TestConnection tests the connection to the Loki data source.
 //
-// A version that does not parse is accepted: Grafana Cloud reports its
-// own build names rather than release numbers.
+// A version that does not parse is accepted: hosted Loki services report
+// their own build names rather than release numbers.
 func (l *Loki) TestConnection(ctx context.Context) (ConnectionStatus, error) {
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
@@ -186,7 +186,7 @@ func (l *Loki) LogsVolume(ctx context.Context, q string, tr TimeRange) (*QueryRe
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	step := tr.QueryStep()
+	step := tr.VolumeStep()
 	stepSeconds := int64(step.Seconds())
 	first := tr.From.Unix() / stepSeconds * stepSeconds
 	last := (tr.To.Unix() - 1) / stepSeconds * stepSeconds
@@ -231,7 +231,7 @@ func (l *Loki) LogsVolume(ctx context.Context, q string, tr TimeRange) (*QueryRe
 		}
 	}
 
-	return counts.Result(), nil
+	return counts.Result(first, last, stepSeconds), nil
 }
 
 // LogFields lists the field names the lines carry in the window: the
@@ -325,13 +325,18 @@ func (l *Loki) LogFieldValues(ctx context.Context, field, q string, tr TimeRange
 
 // fetchLines returns the fetcher that reads q's lines from Loki.
 func (l *Loki) fetchLines(q string) LogsFetcher {
-	return func(ctx context.Context, from, end time.Time, limit int) ([]LogLine, error) {
+	return func(ctx context.Context, from, end time.Time, limit int, order LogsOrder) ([]LogLine, error) {
+		direction := "backward"
+		if order == LogsOrderAsc {
+			direction = "forward"
+		}
+
 		params := url.Values{
 			"query":     {q},
 			"start":     {strconv.FormatInt(from.UnixNano(), 10)},
 			"end":       {strconv.FormatInt(end.UnixNano(), 10)},
 			"limit":     {strconv.Itoa(limit)},
-			"direction": {"backward"},
+			"direction": {direction},
 		}
 
 		var res lokiQueryResponse
@@ -367,9 +372,7 @@ func (l *Loki) fetchLines(q string) LogsFetcher {
 		}
 
 		// the result is sorted by stream labels, not by time.
-		slices.SortStableFunc(lines, func(a, b LogLine) int {
-			return b.Time.Compare(a.Time)
-		})
+		order.SortLines(lines)
 
 		return lines[:min(len(lines), limit)], nil
 	}
@@ -397,8 +400,8 @@ func (l *Loki) get(ctx context.Context, path string, params url.Values, header h
 		return _errLokiEndpointNotFound
 	}
 
-	// Loki answers an error in plain text; proxies such as Grafana Cloud
-	// wrap it as JSON. Either is cut to _maxErrorMessageSize.
+	// Loki answers an error in plain text, but the proxies of hosted Loki
+	// services wrap it as JSON. Either is cut to _maxErrorMessageSize.
 	if status != http.StatusOK {
 		var wrapped struct {
 			// Message specifies the error, as proxies write it.
@@ -594,8 +597,7 @@ func (le *lokiEntry) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	// parsed keys win over structured metadata of the same name, as in
-	// Grafana.
+	// parsed keys win over structured metadata of the same name.
 	fields := make(map[string]string, len(meta.StructuredMetadata)+len(meta.Parsed))
 	maps.Copy(fields, meta.StructuredMetadata)
 	maps.Copy(fields, meta.Parsed)

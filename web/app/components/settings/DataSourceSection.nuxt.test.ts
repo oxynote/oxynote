@@ -37,7 +37,7 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 
 	afterEach(disposeMockEndpoints)
 
-	it("offers all five data source types", async ({ expect }) => {
+	it("offers all six data source types", async ({ expect }) => {
 		seedDataSources([])
 
 		const { wrapper } = await mountSection()
@@ -45,6 +45,7 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 		expect(wrapper.text()).toContain(
 			t("settings.data-sources.prometheus.title"),
 		)
+		expect(wrapper.text()).toContain(t("settings.data-sources.loki.title"))
 		expect(wrapper.text()).toContain(
 			t("settings.data-sources.postgresql.title"),
 		)
@@ -96,10 +97,11 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 
 	it.for([
 		{ index: 0, type: DataSourceType.Prometheus },
-		{ index: 1, type: DataSourceType.PostgreSQL },
-		{ index: 2, type: DataSourceType.Supabase },
-		{ index: 3, type: DataSourceType.MySQL },
-		{ index: 4, type: DataSourceType.MariaDB },
+		{ index: 1, type: DataSourceType.Loki },
+		{ index: 2, type: DataSourceType.PostgreSQL },
+		{ index: 3, type: DataSourceType.Supabase },
+		{ index: 4, type: DataSourceType.MySQL },
+		{ index: 5, type: DataSourceType.MariaDB },
 	])(
 		"asks to connect a new $type data source",
 		async ({ index, type }, { expect }) => {
@@ -113,6 +115,7 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 	)
 
 	it.for([
+		DataSourceType.Loki,
 		DataSourceType.PostgreSQL,
 		DataSourceType.Supabase,
 		DataSourceType.MySQL,
@@ -133,6 +136,7 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 	)
 
 	it.for([
+		DataSourceType.Loki,
 		DataSourceType.PostgreSQL,
 		DataSourceType.Supabase,
 		DataSourceType.MySQL,

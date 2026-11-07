@@ -131,6 +131,12 @@ describe("<GaugeChart>", { concurrent: false }, () => {
 		expect(wrapper.findComponent(ChartTitle).exists()).toBe(false)
 	})
 
+	it("moves the title down by the offset it was given", async ({ expect }) => {
+		const wrapper = await mountGauge({ title: "CPU", titleOffsetTop: 6.5 })
+
+		expect(wrapper.findComponent(ChartTitle).props("offsetTop")).toBe(6.5)
+	})
+
 	it("shows the title it was given", async ({ expect }) => {
 		const wrapper = await mountGauge({ title: "CPU" })
 

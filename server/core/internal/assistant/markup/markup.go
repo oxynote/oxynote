@@ -2,7 +2,8 @@
 // writes, and builds ProseMirror blocks back from it.
 //
 // Each block is one element carrying its uid as id. Inline formatting is
-// tags (b, i, u, s, code, a href); pre, mermaid and metric hold raw text.
+// tags (b, i, u, s, code, a href); pre, mermaid, metrics and logs hold raw
+// text.
 // Parts the editor needs but nobody addresses, such as a list entry's
 // paragraph or a split_doc's sides, have no id of their own and keep
 // their stored uids through the element they belong to.
@@ -30,8 +31,9 @@ const (
 	_elemImage      = "img"
 	_elemFigma      = "figma"
 	_elemFile       = "file"
+	_elemGrid       = "grid"
 	_elemMetrics    = "metrics"
-	_elemMetric     = "metric"
+	_elemLogs       = "logs"
 	_elemSplitDoc   = "split_doc"
 	_elemLeft       = "left"
 	_elemRight      = "right"
@@ -92,7 +94,8 @@ var _tagNesting = []string{_tagLink, _tagBold, _tagItalic, _tagUnderline, _tagSt
 var _rawElements = map[string]*regexp.Regexp{
 	_elemCode:    regexp.MustCompile(`&((?:amp;)*)lt;/((?i:` + _elemCode + `))`),
 	_elemMermaid: regexp.MustCompile(`&((?:amp;)*)lt;/((?i:` + _elemMermaid + `))`),
-	_elemMetric:  regexp.MustCompile(`&((?:amp;)*)lt;/((?i:` + _elemMetric + `))`),
+	_elemMetrics: regexp.MustCompile(`&((?:amp;)*)lt;/((?i:` + _elemMetrics + `))`),
+	_elemLogs:    regexp.MustCompile(`&((?:amp;)*)lt;/((?i:` + _elemLogs + `))`),
 }
 
 // _rawCloseTags match the start of a raw element's closing tag in any
@@ -100,14 +103,21 @@ var _rawElements = map[string]*regexp.Regexp{
 var _rawCloseTags = map[string]*regexp.Regexp{
 	_elemCode:    regexp.MustCompile(`</((?i:` + _elemCode + `))`),
 	_elemMermaid: regexp.MustCompile(`</((?i:` + _elemMermaid + `))`),
-	_elemMetric:  regexp.MustCompile(`</((?i:` + _elemMetric + `))`),
+	_elemMetrics: regexp.MustCompile(`</((?i:` + _elemMetrics + `))`),
+	_elemLogs:    regexp.MustCompile(`</((?i:` + _elemLogs + `))`),
 }
 
-// _hiddenMetricAttrs are metric attributes the model never sees: the
-// uid, which is the id, the block comment, and the simulation flag,
-// which core derives.
-var _hiddenMetricAttrs = map[string]bool{
+// _hiddenAttrs are the attributes of a metric or log block the model
+// never sees: the uid, which is the id, the block comment, and a
+// metric's simulation flag, which core derives.
+var _hiddenAttrs = map[string]bool{
 	document.AttrUID:              true,
 	document.AttrCommentID:        true,
 	document.AttrSimulationActive: true,
 }
+
+// _gridItemWidths are the widths of a block inside a grid. They mirror
+// GridItemWidth in web/app/components/editor/blocks/grid/utils.ts. A
+// value added there has to be added here, or the assistant cannot write
+// it.
+var _gridItemWidths = []string{"compact", "standard", "wide"}

@@ -31,6 +31,25 @@ const sections = computed(() => {
 			},
 		},
 		{
+			key: DataSourceType.Loki,
+			icon: "custom-icons:loki",
+			items:
+				fetchDataSources.state.value.data?.filter(
+					(ds) =>
+						ds.type === DataSourceType.Loki &&
+						ds.status !== DataSourceStatus.LocalOptimisticInsert,
+				) ?? [],
+			create: () => {
+				emit("data-source-creation", DataSourceType.Loki)
+			},
+			update: (dataSource: DataSource) => {
+				emit("data-source-update", dataSource)
+			},
+			delete: (dataSource: DataSource) => {
+				emit("data-source-removal", dataSource)
+			},
+		},
+		{
 			key: DataSourceType.PostgreSQL,
 			icon: "devicon:postgresql",
 			items:

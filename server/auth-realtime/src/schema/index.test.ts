@@ -22,7 +22,9 @@ import { FigmaBlock } from "./figma.js"
 import { ImageBlock } from "./image.js"
 import { FileBlock } from "./file.js"
 import { MermaidBlock } from "./mermaid.js"
-import { MetricBlock, MetricGrid } from "./metric.js"
+import { MetricBlock } from "./metric.js"
+import { BlockGrid, MetricGrid } from "./grid.js"
+import { LogBlock } from "./log.js"
 import { schema, transformer } from "../ydocument.js"
 
 interface PMNode {
@@ -83,6 +85,23 @@ function metricBlock(uid: string): PMNode {
 	}
 }
 
+function logBlock(uid: string): PMNode {
+	return {
+		type: "logBlock",
+		attrs: {
+			uid,
+			title: "Errors",
+			dataSourceId: "ds1",
+			queries: [{ expr: '{app="api"}' }],
+			timeRange: "$metric_range",
+			refreshInterval: "1m",
+			timestampFormat: "relative",
+			order: "desc",
+			width: "wide",
+		},
+	}
+}
+
 function titledCodeBlock(uid: string): PMNode {
 	return {
 		type: "titledCodeBlock",
@@ -130,6 +149,8 @@ describe("getEditorExtensions", () => {
 	it.for([
 		{ name: "callout", input: "calloutBlock" },
 		{ name: "metric", input: "metricBlock" },
+		{ name: "log", input: "logBlock" },
+		{ name: "block grid", input: "blockGrid" },
 		{ name: "metric grid", input: "metricGrid" },
 		{ name: "image", input: "imageBlock" },
 		{ name: "file", input: "fileBlock" },
@@ -325,6 +346,30 @@ describe("editor schema", () => {
 			expect(result.content?.[0]?.content?.[0]?.text).toBe(
 				"Page the on-call",
 			)
+		})
+
+		it("keeps a log block's attributes", ({ expect }) => {
+			const input = logBlock("l1")
+
+			expect(roundTrip(input)).toEqual(input)
+		})
+
+		it("keeps metric and log blocks side by side in a block grid", ({
+			expect,
+		}) => {
+			const result = roundTrip({
+				type: "blockGrid",
+				attrs: { uid: "g1" },
+				content: [metricBlock("m1"), logBlock("l1")],
+			})
+
+			expect(result.content?.map((b) => b.type)).toEqual([
+				"metricBlock",
+				"logBlock",
+			])
+			expect(result.content?.[1]?.attrs?.queries).toEqual([
+				{ expr: '{app="api"}' },
+			])
 		})
 
 		it("keeps the blocks inside a metric grid", ({ expect }) => {
@@ -654,6 +699,7 @@ describe("editor schema placement", () => {
 	// checked against this schema, so it has to refuse the same.
 	it.for([
 		{ name: "metricBlock", input: "metricBlock", expected: false },
+		{ name: "logBlock", input: "logBlock", expected: false },
 		{
 			name: "titledCodeBlock",
 			input: "titledCodeBlock",
@@ -705,6 +751,7 @@ describe("editor schema placement", () => {
 			expected: false,
 		},
 		{ name: "paragraph", input: "paragraph", expected: true },
+		{ name: "blockGrid", input: "blockGrid", expected: true },
 		{ name: "metricGrid", input: "metricGrid", expected: true },
 		{
 			name: "splitDocumentation",
@@ -728,6 +775,81 @@ describe("editor schema placement", () => {
 			).toBe(expected)
 		},
 	)
+
+	// a grid sits only at the document root, as in the web editor. Each
+	// parent holds the grid where it would take any other block.
+	it.for([
+		{
+			name: "blockGrid in a blockquote",
+			input: ["blockquote", "blockGrid"],
+		},
+		{
+			name: "metricGrid in a blockquote",
+			input: ["blockquote", "metricGrid"],
+		},
+		{
+			name: "blockGrid in a list item",
+			input: ["listItem", "blockGrid"],
+		},
+	])("keeps $name out", ({ input }, { expect }) => {
+		const [parent, grid] = input
+		const node = schema.nodeFromJSON({
+			type: parent,
+			content: [
+				{ type: "paragraph" },
+				{
+					type: grid,
+					content: [{ type: "metricBlock" }],
+				},
+			],
+		})
+
+		expect(() => {
+			node.check()
+		}).toThrow()
+	})
+
+	it("lets a list item hold another block after its paragraph", ({
+		expect,
+	}) => {
+		const node = schema.nodeFromJSON({
+			type: "listItem",
+			content: [
+				{ type: "paragraph" },
+				{
+					type: "blockquote",
+					content: [{ type: "paragraph" }],
+				},
+			],
+		})
+
+		expect(() => {
+			node.check()
+		}).not.toThrow()
+	})
+
+	// a document keeps the grid's former name until the editor touches
+	// it, so both names have to take the same blocks
+	it.for([
+		{ name: "blockGrid", input: "blockGrid" },
+		{ name: "metricGrid", input: "metricGrid" },
+	])(
+		"lets a $name hold metric and log blocks",
+		({ input }, { expect }) => {
+			const grid = schema.nodeFromJSON({
+				type: input,
+				content: [
+					{ type: "metricBlock" },
+					{ type: "logBlock" },
+					{ type: "metricBlock" },
+				],
+			})
+
+			expect(() => {
+				grid.check()
+			}).not.toThrow()
+		},
+	)
 })
 
 describe("schema html contract", () => {
@@ -738,9 +860,19 @@ describe("schema html contract", () => {
 			expected: "callout-block",
 		},
 		{
+			name: "block grid",
+			input: BlockGrid,
+			expected: "block-grid",
+		},
+		{
 			name: "metric grid",
 			input: MetricGrid,
 			expected: "metric-grid",
+		},
+		{
+			name: "log",
+			input: LogBlock,
+			expected: "log-block",
 		},
 		{
 			name: "metric",

@@ -10,6 +10,7 @@ import (
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
 	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/internal/variable"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +26,7 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 			}
 
 			assert.Equal(t, _testID, exec.dataSources[0].ID)
-			assert.Equal(t, "up", ff[0].Q)
+			assert.Equal(t, "up", variable.Substitute(ff[0].Vars, ff[0].Q)[0])
 			assert.Equal(t, _testParsedTimeRange, ff[0].Tr)
 		}
 	}
@@ -36,7 +37,7 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 		return &clientMocks{
 			err: cs.Error(),
 			sql: &datasourceMock.SQL{
-				QueryLabelsFunc: func(_ context.Context, _ string, _ processor.TimeRange) (map[string]string, error) {
+				QueryLabelsFunc: func(_ context.Context, _ string, _ processor.TimeRange, _ map[string]string) (map[string]string, error) {
 					return labels, err
 				},
 			},
@@ -107,7 +108,7 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 			Target: "http://test.com/?q=up&from=bogus",
 			ID:     _testID.String(),
 			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"From parameter must be a valid RFC3339 timestamp."}`),
+				hasResp(http.StatusBadRequest, `{"code":"from.invalid","message":"from parameter must be a valid RFC3339 timestamp"}`),
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),

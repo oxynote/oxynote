@@ -255,13 +255,18 @@ func (i *input) FetchDataSources() ([]datasource.DataSource, error) {
 func (i *input) CheckDataSources(blocks []document.Block) error {
 	for _, b := range blocks {
 		if raw := b.Attrs.Get(document.AttrDataSourceID).String(); raw != "" {
+			block := "metric block"
+			if b.Type == document.BlockNodeLogBlock {
+				block = "log block"
+			}
+
 			id, err := xid.FromString(raw)
 			if err != nil {
-				return fmt.Errorf("metric %s %q: %w", document.AttrDataSourceID, raw, err)
+				return fmt.Errorf("%s %s %q: %w", block, document.AttrDataSourceID, raw, err)
 			}
 
 			if _, err := i.FetchDataSource(id); err != nil {
-				return fmt.Errorf("metric %s %q: %w", document.AttrDataSourceID, raw, err)
+				return fmt.Errorf("%s %s %q: %w", block, document.AttrDataSourceID, raw, err)
 			}
 		}
 
@@ -459,9 +464,8 @@ func (i *input) CreateDocument(doc document.Document) error {
 		}
 	}
 
-	var tx Tx
-
-	if err := i.db.BeginTx(i.ctx, &tx); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](i.ctx, i.db)
+	if err != nil {
 		return fmt.Errorf("begin: %w", err)
 	}
 
@@ -526,9 +530,8 @@ func (i *input) DeleteDocument(id xid.ID) error {
 		parentID = doc.ParentID
 	}
 
-	var tx Tx
-
-	if err := i.db.BeginTx(i.ctx, &tx); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](i.ctx, i.db)
+	if err != nil {
 		return err
 	}
 
@@ -763,11 +766,12 @@ func (i *input) FetchVariableTree() (variable.Tree, error) {
 	return i.variableMan.FetchTree(i.ctx, i.orgID, i.userID)
 }
 
-// SubstituteVariables returns the texts with the user's variables
-// substituted. The tree is fetched only when a text references one.
-func (i *input) SubstituteVariables(texts ...string) ([]string, error) {
+// VariableValues returns the value of each of the user's variables. It
+// is empty when no text references a variable, so the tree is fetched
+// only when one does.
+func (i *input) VariableValues(texts ...string) (map[string]string, error) {
 	if !variable.HasReference(texts...) {
-		return texts, nil
+		return map[string]string{}, nil
 	}
 
 	vars, err := i.FetchVariableTree()
@@ -775,7 +779,18 @@ func (i *input) SubstituteVariables(texts ...string) ([]string, error) {
 		return nil, err
 	}
 
-	return vars.Substitute(nil, texts...), nil
+	return vars.Values(nil)
+}
+
+// SubstituteVariables returns the texts with the user's variables
+// substituted as text.
+func (i *input) SubstituteVariables(texts ...string) ([]string, error) {
+	values, err := i.VariableValues(texts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return variable.Substitute(values, texts...), nil
 }
 
 // FetchVariableGroup returns the variable group the id names, with its
@@ -942,7 +957,21 @@ func (i *input) CreateTag(t tag.Tag) error {
 
 // UpdateTag renames and/or recolours the tag the id names.
 func (i *input) UpdateTag(tagID xid.ID, inp tag.UpdateInput) error {
-	if err := i.db.UpdateTag(i.ctx, i.orgID, tagID, inp); err != nil {
+	t, err := i.db.FetchTag(i.ctx, tagID, i.orgID)
+	if err != nil {
+		if errutil.IsNotFound(err) {
+			return fmt.Errorf("tag %s: %w", tagID, ErrUnknownTag)
+		}
+
+		return err
+	}
+
+	nt, err := t.ApplyUpdate(inp)
+	if err != nil {
+		return err
+	}
+
+	if err = i.db.UpdateTag(i.ctx, nt); err != nil {
 		if errutil.IsNotFound(err) {
 			return fmt.Errorf("tag %s: %w", tagID, ErrUnknownTag)
 		}
@@ -1295,6 +1324,9 @@ type TagDB interface {
 	// given user hides it. Used by list_tags and every tag lookup.
 	FetchTagTree(ctx context.Context, organizationID, userID string) (tag.Summaries, error)
 
+	// FetchTag should return one tag of the org. Used by update_tag.
+	FetchTag(ctx context.Context, id xid.ID, organizationID string) (*tag.Tag, error)
+
 	// FetchBranchTags should return the tags a document's branch carries
 	// in the tags' display order. Used by get_document.
 	FetchBranchTags(ctx context.Context, organizationID string, documentID, branchID xid.ID) ([]tag.Tag, error)
@@ -1303,9 +1335,9 @@ type TagDB interface {
 	// refusing a name the org already uses. Used by create_tag.
 	InsertTag(ctx context.Context, t tag.Tag) error
 
-	// UpdateTag should rename and/or recolour a tag within the org. Used
-	// by update_tag.
-	UpdateTag(ctx context.Context, organizationID string, id xid.ID, inp tag.UpdateInput) error
+	// UpdateTag should rewrite a tag's name and colour within its org.
+	// Used by update_tag.
+	UpdateTag(ctx context.Context, t tag.Tag) error
 
 	// DeleteTag should remove a tag and every assignment of it. Used by
 	// delete_tag.

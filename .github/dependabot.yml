@@ -15,16 +15,10 @@ updates:
       interval: "monthly"
     commit-message:
       prefix: "deps(web)"
-    # web/packages/lezer-promql is a vendored upstream fork that should track
-    # upstream, not dependabot. These dependencies are only used there, so
-    # ignoring them keeps the fork untouched.
     ignore:
-      - dependency-name: "@lezer/*"
-      - dependency-name: "@rollup/plugin-node-resolve"
-      - dependency-name: "@types/jest"
-      # codemirror-promql pins lezer-promql exactly, and vite aliases that
-      # import to the fork — so any bump needs the fork re-synced to the
-      # matching upstream tag or the generated term ids drift apart.
+      # codemirror-promql pins lezer-promql exactly, and a pnpm override
+      # swaps that import for the fork. So any bump needs the fork re-synced
+      # to the matching upstream tag, or the generated term ids drift apart.
       - dependency-name: "@prometheus-io/codemirror-promql"
       # typescript-eslint caps typescript at <6.1.0 and vue-tsc has not
       # caught up with the 7.x native port, so 6.x is the ceiling until
@@ -39,18 +33,15 @@ updates:
       - dependency-name: "zod"
         versions: [">=4.0.0"]
     groups:
-      # better-auth does not follow semver — 1.x minor releases can be
-      # breaking, so its minor updates go into this breaking-changes group
-      # instead of the safe group. It must stay first so it wins the overlap
-      # with the catch-all groups below. Patch releases still fall through to
-      # the safe group.
-      better-auth-breaking:
+      # better-auth does not follow semver and its plugins pin its internals
+      # exactly, so all its packages move together, one PR per release. The
+      # group takes every update type: an update filtered out here gets a PR
+      # of its own instead of falling through to "safe". It stays first so
+      # it wins the overlap with the catch-all groups below.
+      better-auth:
         patterns:
           - "better-auth"
           - "@better-auth/*"
-        update-types:
-          - "major"
-          - "minor"
       breaking:
         patterns:
           - "*"
@@ -83,16 +74,11 @@ updates:
       - dependency-name: "@hono/node-server"
         versions: [">=2.0.0"]
     groups:
-      # same better-auth non-semver caveat as the web entry above: minor
-      # releases are treated as breaking, patch releases fall through to the
-      # safe group.
-      better-auth-breaking:
+      # same better-auth group as the web entry above.
+      better-auth:
         patterns:
           - "better-auth"
           - "@better-auth/*"
-        update-types:
-          - "major"
-          - "minor"
       breaking:
         patterns:
           - "*"

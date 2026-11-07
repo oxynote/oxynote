@@ -21,7 +21,7 @@ import { DragHandlePlugin } from "./handle-plugin"
 import type { DragHandleDragging } from "./drag"
 import { disableGapZones, enableGapZones } from "./gap-decorations"
 import { findDraggableNodeAtCoords } from "./node-detection.js"
-import { METRIC_BLOCK_NAME, METRIC_GRID_NAME } from "../blocks/node-names"
+import { METRIC_BLOCK_NAME, BLOCK_GRID_NAME } from "../blocks/node-names"
 import { CLONE_IGNORE_ATTR } from "~/utils/object"
 import { paragraph, touchPointer } from "~/components/editor/test-helpers"
 
@@ -76,13 +76,13 @@ const MetricBlock = TiptapNode.create({
 	},
 })
 
-const MetricGrid = TiptapNode.create({
-	name: METRIC_GRID_NAME,
+const BlockGrid = TiptapNode.create({
+	name: BLOCK_GRID_NAME,
 	group: "block",
 	content: `${METRIC_BLOCK_NAME}+`,
 
 	renderHTML() {
-		return ["div", { "data-metric-grid": "" }, 0]
+		return ["div", { "data-block-grid": "" }, 0]
 	},
 })
 
@@ -106,7 +106,7 @@ const extensions = [
 	OrderedList,
 	BlockListItem,
 	MetricBlock,
-	MetricGrid,
+	BlockGrid,
 	CanvasBlock,
 ]
 
@@ -959,7 +959,7 @@ describe("DragHandlePlugin", { concurrent: false }, () => {
 			const { editor, element, handle } = setup({
 				content: [
 					{
-						type: METRIC_GRID_NAME,
+						type: BLOCK_GRID_NAME,
 						content: [
 							{
 								type: METRIC_BLOCK_NAME,

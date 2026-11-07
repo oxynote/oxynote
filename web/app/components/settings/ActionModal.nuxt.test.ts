@@ -194,18 +194,19 @@ describe("<ActionModal>", { concurrent: false }, () => {
 		expect(dialogText()).toBe("")
 	})
 
-	it("titles the data source creation modal after its type", async ({
-		expect,
-	}) => {
-		await mountModal({
-			modelValue: "data-source-creation",
-			opts: DataSourceType.PostgreSQL,
-		})
+	it.for([DataSourceType.PostgreSQL, DataSourceType.Loki])(
+		"titles the %s data source creation modal after its type",
+		async (type, { expect }) => {
+			await mountModal({
+				modelValue: "data-source-creation",
+				opts: type,
+			})
 
-		expect(dialogText()).toContain(
-			t("settings.action-modals.data-source-upsert.title.creation.postgresql"),
-		)
-	})
+			expect(dialogText()).toContain(
+				t(`settings.action-modals.data-source-upsert.title.creation.${type}`),
+			)
+		},
+	)
 
 	it("titles the data source update modal after the target's type", async ({
 		expect,

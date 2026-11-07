@@ -69,7 +69,7 @@ describe("isDraggableNodeType", () => {
 		{ typeName: "horizontalRule", expected: true },
 		{ typeName: "bulletList", expected: false },
 		{ typeName: "doc", expected: false },
-		{ typeName: "metricGrid", expected: false },
+		{ typeName: "blockGrid", expected: false },
 	])(
 		"returns $expected for $typeName",
 		({ typeName, expected }, { expect }) => {

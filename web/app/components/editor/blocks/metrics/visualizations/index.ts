@@ -12,7 +12,7 @@ const MAX_AUTO_DECIMALS_AFTER_LAST_ZERO = 3
 
 export interface BarChartData {
 	name: string // shown in legend (can be label)
-	data: [Date, number][]
+	data: [Date, number | null][]
 }
 
 export type MultipleBarChartData = BarChartData[]
@@ -25,7 +25,7 @@ export interface BarChartThreshold {
 
 export interface LineChartData {
 	name: string // shown in legend (can be label)
-	data: [Date, number][]
+	data: [Date, number | null][]
 }
 
 export type MultipleLineChartData = LineChartData[]
@@ -98,6 +98,12 @@ function truncToDecimals(num: number, decimals: number | null) {
 		}
 	}
 
+	// toFixed throws above 100 digits. Values that small print in exponent
+	// form anyway.
+	if (decimals > 100) {
+		return num
+	}
+
 	return parseFloat(num.toFixed(decimals))
 }
 
@@ -137,9 +143,13 @@ function extractVisualizationData(
 					continue
 				}
 
-				const points: [Date, number][] = []
+				// a null point stays null, so the line breaks at the gap
+				const points: [Date, number | null][] = []
 				for (const [timeUnix, val] of series.metrics) {
-					points.push([new Date(timeUnix * 1000), cleanNum(val)])
+					points.push([
+						new Date(timeUnix * 1000),
+						val === null ? null : cleanNum(val),
+					])
 				}
 
 				res.push({
@@ -163,7 +173,11 @@ function extractVisualizationData(
 
 			for (const series of input.data) {
 				const lastMetric = series.metrics[series.metrics.length - 1]
-				if (!series.metrics.length || lastMetric?.length !== 2) {
+				if (
+					!series.metrics.length ||
+					lastMetric?.length !== 2 ||
+					lastMetric[1] === null
+				) {
 					continue
 				}
 
@@ -192,13 +206,16 @@ function nameFromMetric(
 	orderedLegendLabelFn: (type: GenericQueryChartType) => string,
 	labels: Record<string, string>,
 ) {
-	if (legendLabelFormat) {
-		return legendLabelFormat.replace(
-			/\{\{([a-zA-Z_][\w:]*)\}\}/g,
-			(match: string, variable: string) => {
-				return labels[variable] ?? match
-			},
-		)
+	const name = legendLabelFormat.replace(
+		/\{\{([a-zA-Z_][\w:]*)\}\}/g,
+		(_match: string, variable: string) => {
+			return labels[variable] ?? ""
+		},
+	)
+	// echarts reads an empty legend name as a line break, so a format whose
+	// labels are all missing gets the default name instead
+	if (name.trim()) {
+		return name
 	}
 
 	return orderedLegendLabelFn(type)
@@ -344,12 +361,29 @@ export function yAxisLabelFormatter(
 		return `${value}`
 	}
 
-	if (unit.type === VisualizationCoreUnit.Custom && unit.custom) {
-		return `${value} ${unit.custom.slice(0, VISUALIZATION_MAX_CUSTOM_UNIT_LENGTH)}`
-	}
-
 	const formatScaledNumber = (num: number) =>
 		`${truncToDecimals(num, decimals)}`
+
+	// abbreviates large values with K, M, B and T (e.g. 1234567 -> 1.235M)
+	const formatShortNumber = (num: number) => {
+		const suffixes = ["", "K", "M", "B", "T"]
+		let scaled = num
+		let index = 0
+		let formatted = truncToDecimals(scaled, decimals)
+
+		// check the rounded value, so 999999.9 becomes 1M and not 1000K
+		while (index < suffixes.length - 1 && Math.abs(formatted) >= 1000) {
+			scaled /= 1000
+			index += 1
+			formatted = truncToDecimals(scaled, decimals)
+		}
+
+		return `${formatted}${suffixes[index] ?? ""}`
+	}
+
+	if (unit.type === VisualizationCoreUnit.Custom && unit.custom) {
+		return `${formatShortNumber(value)} ${unit.custom.slice(0, VISUALIZATION_MAX_CUSTOM_UNIT_LENGTH)}`
+	}
 
 	type ScalableUnit = VisualizationTimeUnit | VisualizationDataUnit
 	interface UnitScale {
@@ -476,7 +510,7 @@ export function yAxisLabelFormatter(
 			return `${value * 100}%`
 	}
 
-	return `${value}`
+	return formatShortNumber(value)
 }
 
 /**
@@ -555,7 +589,9 @@ export function calculateYAxisBounds(
 
 	for (const series of data) {
 		for (const [, value] of series.data) {
-			allValues.push(value)
+			if (value !== null) {
+				allValues.push(value)
+			}
 		}
 	}
 

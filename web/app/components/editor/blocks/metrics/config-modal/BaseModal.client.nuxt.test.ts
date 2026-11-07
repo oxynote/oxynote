@@ -196,8 +196,10 @@ describe("<MetricConfigBaseModal>", { concurrent: false }, () => {
 
 		await mountModal()
 
-		const timeRange = t("editor.metrics.config.variable-time-range")
-		const refreshInterval = t("editor.metrics.config.variable-refresh-interval")
+		const timeRange = t("editor.config-modal-utils.variable-time-range")
+		const refreshInterval = t(
+			"editor.config-modal-utils.variable-refresh-interval",
+		)
 
 		// each button names the shared setting, not what it resolves to
 		expect(teleportedButton(timeRange).textContent.trim()).toBe(timeRange)
@@ -210,12 +212,12 @@ describe("<MetricConfigBaseModal>", { concurrent: false }, () => {
 		{
 			name: "offers the global time first",
 			trigger: () => t("general.time-range-options.last_24_hours"),
-			label: () => t("editor.metrics.config.variable-time-range"),
+			label: () => t("editor.config-modal-utils.variable-time-range"),
 		},
 		{
 			name: "offers the global refresh first",
 			trigger: () => t("general.refresh-interval-options-short.30s"),
-			label: () => t("editor.metrics.config.variable-refresh-interval"),
+			label: () => t("editor.config-modal-utils.variable-refresh-interval"),
 		},
 	])("$name", async ({ trigger, label }, { expect }) => {
 		activateBlock({
@@ -292,6 +294,39 @@ describe("<MetricConfigBaseModal>", { concurrent: false }, () => {
 			t("general.time-range-options.last_24_hours"),
 		)
 		expect(dialogText()).toContain(t("general.time-range-options.last_1_hour"))
+	})
+
+	it.for([
+		{
+			name: "moves the chart's title down while it shows an old time range",
+			input: TimeRangePreset.Last1Hour,
+			expected: 6.5,
+		},
+		{
+			name: "keeps the chart's title in place while the time range is unchanged",
+			input: TimeRangePreset.Last24Hours,
+			expected: 0,
+		},
+	])("$name", async ({ input, expected }, { expect }) => {
+		activateBlock({
+			config: {
+				...defaultMetricConfig(),
+				timeRange: TimeRangePreset.Last24Hours,
+			},
+			diffStatus: DiffStatus.Modified,
+			oldConfig: { ...defaultMetricConfig(), timeRange: input },
+		})
+
+		const wrapper = await mountModal()
+
+		expect(
+			wrapper.findComponent(VisualizationContainer).props("titleOffsetTop"),
+		).toBe(expected)
+		expect(
+			teleportedButton(t("general.time-range-options.last_24_hours"))
+				.closest(".absolute")
+				?.classList.contains("md:h-11"),
+		).toBe(expected > 0)
 	})
 
 	it("shows the refresh interval a diff replaced beside the new one", async ({

@@ -13,6 +13,9 @@ func Test_DescribeNode(t *testing.T) {
 	assert.Equal(t, "<p>", DescribeNode(document.BlockNodeParagraph))
 	assert.Equal(t, "<left>", DescribeNode(document.BlockNodeSplitDocLeft))
 	assert.Equal(t, "the document root", DescribeNode(document.BlockNodeDoc))
+	assert.Equal(t, "<grid>", DescribeNode(document.BlockNodeBlockGrid))
+	assert.Equal(t, "<grid>", DescribeNode(document.BlockNodeMetricGrid))
+	assert.Equal(t, "<logs>", DescribeNode(document.BlockNodeLogBlock))
 	assert.Equal(t, "mystery", DescribeNode("mystery"))
 }
 

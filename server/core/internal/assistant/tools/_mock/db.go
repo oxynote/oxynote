@@ -13,6 +13,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
 )
 
@@ -29,7 +30,7 @@ var _ tools.DB = &DB{}
 //			AssignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
 //				panic("mock out the AssignBranchTag method")
 //			},
-//			BeginTxFunc: func(ctx context.Context, dest any) error {
+//			BeginTxFunc: func(ctx context.Context) (sqlutil.Tx, error) {
 //				panic("mock out the BeginTx method")
 //			},
 //			CheckDocumentCycleFunc: func(ctx context.Context, id xid.ID, parentID xid.ID, organizationID string) (bool, error) {
@@ -74,6 +75,9 @@ var _ tools.DB = &DB{}
 //			FetchDocumentTreeByDocumentParentIDFunc: func(ctx context.Context, parentID null.Value[xid.ID], organizationID string) (document.Summaries, error) {
 //				panic("mock out the FetchDocumentTreeByDocumentParentID method")
 //			},
+//			FetchTagFunc: func(ctx context.Context, id xid.ID, organizationID string) (*tag.Tag, error) {
+//				panic("mock out the FetchTag method")
+//			},
 //			FetchTagTreeFunc: func(ctx context.Context, organizationID string, userID string) (tag.Summaries, error) {
 //				panic("mock out the FetchTagTree method")
 //			},
@@ -86,7 +90,7 @@ var _ tools.DB = &DB{}
 //			UpdateDocumentParentIDFunc: func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error {
 //				panic("mock out the UpdateDocumentParentID method")
 //			},
-//			UpdateTagFunc: func(ctx context.Context, organizationID string, id xid.ID, inp tag.UpdateInput) error {
+//			UpdateTagFunc: func(ctx context.Context, t tag.Tag) error {
 //				panic("mock out the UpdateTag method")
 //			},
 //			UpdateTagTreeFunc: func(ctx context.Context, tree tag.Summaries, organizationID string) error {
@@ -103,7 +107,7 @@ type DB struct {
 	AssignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error
 
 	// BeginTxFunc mocks the BeginTx method.
-	BeginTxFunc func(ctx context.Context, dest any) error
+	BeginTxFunc func(ctx context.Context) (sqlutil.Tx, error)
 
 	// CheckDocumentCycleFunc mocks the CheckDocumentCycle method.
 	CheckDocumentCycleFunc func(ctx context.Context, id xid.ID, parentID xid.ID, organizationID string) (bool, error)
@@ -147,6 +151,9 @@ type DB struct {
 	// FetchDocumentTreeByDocumentParentIDFunc mocks the FetchDocumentTreeByDocumentParentID method.
 	FetchDocumentTreeByDocumentParentIDFunc func(ctx context.Context, parentID null.Value[xid.ID], organizationID string) (document.Summaries, error)
 
+	// FetchTagFunc mocks the FetchTag method.
+	FetchTagFunc func(ctx context.Context, id xid.ID, organizationID string) (*tag.Tag, error)
+
 	// FetchTagTreeFunc mocks the FetchTagTree method.
 	FetchTagTreeFunc func(ctx context.Context, organizationID string, userID string) (tag.Summaries, error)
 
@@ -160,7 +167,7 @@ type DB struct {
 	UpdateDocumentParentIDFunc func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error
 
 	// UpdateTagFunc mocks the UpdateTag method.
-	UpdateTagFunc func(ctx context.Context, organizationID string, id xid.ID, inp tag.UpdateInput) error
+	UpdateTagFunc func(ctx context.Context, t tag.Tag) error
 
 	// UpdateTagTreeFunc mocks the UpdateTagTree method.
 	UpdateTagTreeFunc func(ctx context.Context, tree tag.Summaries, organizationID string) error
@@ -184,8 +191,6 @@ type DB struct {
 		BeginTx []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
-			// Dest is the dest argument value.
-			Dest any
 		}
 		// CheckDocumentCycle holds details about calls to the CheckDocumentCycle method.
 		CheckDocumentCycle []struct {
@@ -313,6 +318,15 @@ type DB struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
+		// FetchTag holds details about calls to the FetchTag method.
+		FetchTag []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// ID is the id argument value.
+			ID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
 		// FetchTagTree holds details about calls to the FetchTagTree method.
 		FetchTagTree []struct {
 			// Ctx is the ctx argument value.
@@ -357,12 +371,8 @@ type DB struct {
 		UpdateTag []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
-			// ID is the id argument value.
-			ID xid.ID
-			// Inp is the inp argument value.
-			Inp tag.UpdateInput
+			// T is the t argument value.
+			T tag.Tag
 		}
 		// UpdateTagTree holds details about calls to the UpdateTagTree method.
 		UpdateTagTree []struct {
@@ -390,6 +400,7 @@ type DB struct {
 	lockFetchDocumentHooksByBranchID          sync.RWMutex
 	lockFetchDocumentTree                     sync.RWMutex
 	lockFetchDocumentTreeByDocumentParentID   sync.RWMutex
+	lockFetchTag                              sync.RWMutex
 	lockFetchTagTree                          sync.RWMutex
 	lockInsertTag                             sync.RWMutex
 	lockUnassignBranchTag                     sync.RWMutex
@@ -450,24 +461,23 @@ func (mock *DB) AssignBranchTagCalls() []struct {
 }
 
 // BeginTx calls BeginTxFunc.
-func (mock *DB) BeginTx(ctx context.Context, dest any) error {
+func (mock *DB) BeginTx(ctx context.Context) (sqlutil.Tx, error) {
 	callInfo := struct {
-		Ctx  context.Context
-		Dest any
+		Ctx context.Context
 	}{
-		Ctx:  ctx,
-		Dest: dest,
+		Ctx: ctx,
 	}
 	mock.lockBeginTx.Lock()
 	mock.calls.BeginTx = append(mock.calls.BeginTx, callInfo)
 	mock.lockBeginTx.Unlock()
 	if mock.BeginTxFunc == nil {
 		var (
+			txOut  sqlutil.Tx
 			errOut error
 		)
-		return errOut
+		return txOut, errOut
 	}
-	return mock.BeginTxFunc(ctx, dest)
+	return mock.BeginTxFunc(ctx)
 }
 
 // BeginTxCalls gets all the calls that were made to BeginTx.
@@ -475,12 +485,10 @@ func (mock *DB) BeginTx(ctx context.Context, dest any) error {
 //
 //	len(mockedDB.BeginTxCalls())
 func (mock *DB) BeginTxCalls() []struct {
-	Ctx  context.Context
-	Dest any
+	Ctx context.Context
 } {
 	var calls []struct {
-		Ctx  context.Context
-		Dest any
+		Ctx context.Context
 	}
 	mock.lockBeginTx.RLock()
 	calls = mock.calls.BeginTx
@@ -1102,6 +1110,50 @@ func (mock *DB) FetchDocumentTreeByDocumentParentIDCalls() []struct {
 	return calls
 }
 
+// FetchTag calls FetchTagFunc.
+func (mock *DB) FetchTag(ctx context.Context, id xid.ID, organizationID string) (*tag.Tag, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		ID             xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		ID:             id,
+		OrganizationID: organizationID,
+	}
+	mock.lockFetchTag.Lock()
+	mock.calls.FetchTag = append(mock.calls.FetchTag, callInfo)
+	mock.lockFetchTag.Unlock()
+	if mock.FetchTagFunc == nil {
+		var (
+			tagOut *tag.Tag
+			errOut error
+		)
+		return tagOut, errOut
+	}
+	return mock.FetchTagFunc(ctx, id, organizationID)
+}
+
+// FetchTagCalls gets all the calls that were made to FetchTag.
+// Check the length with:
+//
+//	len(mockedDB.FetchTagCalls())
+func (mock *DB) FetchTagCalls() []struct {
+	Ctx            context.Context
+	ID             xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		ID             xid.ID
+		OrganizationID string
+	}
+	mock.lockFetchTag.RLock()
+	calls = mock.calls.FetchTag
+	mock.lockFetchTag.RUnlock()
+	return calls
+}
+
 // FetchTagTree calls FetchTagTreeFunc.
 func (mock *DB) FetchTagTree(ctx context.Context, organizationID string, userID string) (tag.Summaries, error) {
 	callInfo := struct {
@@ -1284,17 +1336,13 @@ func (mock *DB) UpdateDocumentParentIDCalls() []struct {
 }
 
 // UpdateTag calls UpdateTagFunc.
-func (mock *DB) UpdateTag(ctx context.Context, organizationID string, id xid.ID, inp tag.UpdateInput) error {
+func (mock *DB) UpdateTag(ctx context.Context, t tag.Tag) error {
 	callInfo := struct {
-		Ctx            context.Context
-		OrganizationID string
-		ID             xid.ID
-		Inp            tag.UpdateInput
+		Ctx context.Context
+		T   tag.Tag
 	}{
-		Ctx:            ctx,
-		OrganizationID: organizationID,
-		ID:             id,
-		Inp:            inp,
+		Ctx: ctx,
+		T:   t,
 	}
 	mock.lockUpdateTag.Lock()
 	mock.calls.UpdateTag = append(mock.calls.UpdateTag, callInfo)
@@ -1305,7 +1353,7 @@ func (mock *DB) UpdateTag(ctx context.Context, organizationID string, id xid.ID,
 		)
 		return errOut
 	}
-	return mock.UpdateTagFunc(ctx, organizationID, id, inp)
+	return mock.UpdateTagFunc(ctx, t)
 }
 
 // UpdateTagCalls gets all the calls that were made to UpdateTag.
@@ -1313,16 +1361,12 @@ func (mock *DB) UpdateTag(ctx context.Context, organizationID string, id xid.ID,
 //
 //	len(mockedDB.UpdateTagCalls())
 func (mock *DB) UpdateTagCalls() []struct {
-	Ctx            context.Context
-	OrganizationID string
-	ID             xid.ID
-	Inp            tag.UpdateInput
+	Ctx context.Context
+	T   tag.Tag
 } {
 	var calls []struct {
-		Ctx            context.Context
-		OrganizationID string
-		ID             xid.ID
-		Inp            tag.UpdateInput
+		Ctx context.Context
+		T   tag.Tag
 	}
 	mock.lockUpdateTag.RLock()
 	calls = mock.calls.UpdateTag

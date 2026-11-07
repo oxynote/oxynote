@@ -46,13 +46,12 @@ func (m *Manager) FetchTree(ctx context.Context, organizationID, userID string) 
 
 // CreateGroup creates a group at the end of the organization's groups.
 func (m *Manager) CreateGroup(ctx context.Context, inp variable.GroupCreateInput, organizationID, userID string) (*variable.Group, error) {
-	if err := inp.Validate(); err != nil {
+	g, err := variable.NewGroup(inp, organizationID, userID)
+	if err != nil {
 		return nil, err
 	}
 
-	g := variable.NewGroup(inp, organizationID, userID)
-
-	if err := m.db.CreateVariableGroup(ctx, g); err != nil {
+	if err = m.db.CreateVariableGroup(ctx, g); err != nil {
 		return nil, err
 	}
 
@@ -69,10 +68,6 @@ func (m *Manager) CreateGroup(ctx context.Context, inp variable.GroupCreateInput
 // UpdateGroup renames and/or recolours a group other than the built-in
 // one.
 func (m *Manager) UpdateGroup(ctx context.Context, id xid.ID, inp variable.GroupUpdateInput, organizationID string) error {
-	if err := inp.Validate(); err != nil {
-		return err
-	}
-
 	g, err := m.db.FetchVariableGroup(ctx, id, organizationID)
 	if err != nil {
 		return err
@@ -82,7 +77,12 @@ func (m *Manager) UpdateGroup(ctx context.Context, id xid.ID, inp variable.Group
 		return err
 	}
 
-	if err = m.db.UpdateVariableGroup(ctx, organizationID, id, inp); err != nil {
+	ng, err := g.ApplyUpdate(inp)
+	if err != nil {
+		return err
+	}
+
+	if err = m.db.UpdateVariableGroup(ctx, ng); err != nil {
 		return err
 	}
 
@@ -159,11 +159,12 @@ func (m *Manager) DeleteGroup(ctx context.Context, id xid.ID, organizationID str
 // CreateVariable creates a variable at the end of a group other than the
 // built-in one.
 func (m *Manager) CreateVariable(ctx context.Context, inp variable.Input, organizationID, userID string) (*variable.Variable, error) {
-	if err := inp.Validate(); err != nil {
+	v, err := variable.NewVariable(inp, organizationID, userID)
+	if err != nil {
 		return nil, err
 	}
 
-	g, err := m.db.FetchVariableGroup(ctx, inp.GroupID, organizationID)
+	g, err := m.db.FetchVariableGroup(ctx, v.GroupID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -171,8 +172,6 @@ func (m *Manager) CreateVariable(ctx context.Context, inp variable.Input, organi
 	if err = g.AllowsChange(); err != nil {
 		return nil, err
 	}
-
-	v := variable.NewVariable(inp, organizationID, userID)
 
 	if err = m.db.CreateVariable(ctx, v); err != nil {
 		return nil, err
@@ -192,10 +191,6 @@ func (m *Manager) CreateVariable(ctx context.Context, inp variable.Input, organi
 // built-in one. A type change clears every user's value; a removed option
 // clears the values that picked it.
 func (m *Manager) UpdateVariable(ctx context.Context, id xid.ID, inp variable.Input, organizationID string) error {
-	if err := inp.Validate(); err != nil {
-		return err
-	}
-
 	v, err := m.db.FetchVariable(ctx, id, organizationID)
 	if err != nil {
 		return err
@@ -205,8 +200,13 @@ func (m *Manager) UpdateVariable(ctx context.Context, id xid.ID, inp variable.In
 		return err
 	}
 
-	if inp.GroupID != v.GroupID {
-		g, gerr := m.db.FetchVariableGroup(ctx, inp.GroupID, organizationID)
+	nv, err := v.ApplyUpdate(inp)
+	if err != nil {
+		return err
+	}
+
+	if nv.GroupID != v.GroupID {
+		g, gerr := m.db.FetchVariableGroup(ctx, nv.GroupID, organizationID)
 		if gerr != nil {
 			return gerr
 		}
@@ -216,14 +216,8 @@ func (m *Manager) UpdateVariable(ctx context.Context, id xid.ID, inp variable.In
 		}
 	}
 
-	nv, err := v.Apply(inp)
+	tx, err := sqlutil.BeginTx[Tx](ctx, m.db)
 	if err != nil {
-		return err
-	}
-
-	var tx Tx
-
-	if err = m.db.BeginTx(ctx, &tx); err != nil {
 		return err
 	}
 
@@ -329,7 +323,7 @@ func (m *Manager) SetDefaultValue(ctx context.Context, id xid.ID, value, organiz
 		return err
 	}
 
-	nv, err := v.WithDefault(value)
+	nv, err := v.ApplyDefault(value)
 	if err != nil {
 		return err
 	}
@@ -433,8 +427,8 @@ type GroupDBAgent interface {
 	// display order, the built-in one first.
 	FetchVariableGroups(ctx context.Context, organizationID string) ([]variable.Group, error)
 
-	// UpdateVariableGroup should rename and/or recolour the group.
-	UpdateVariableGroup(ctx context.Context, organizationID string, id xid.ID, inp variable.GroupUpdateInput) error
+	// UpdateVariableGroup should rewrite the group's name and colour.
+	UpdateVariableGroup(ctx context.Context, g variable.Group) error
 
 	// UpdateVariableGroupOrder should rewrite the groups' display order to
 	// their order in the list.

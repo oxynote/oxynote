@@ -218,30 +218,17 @@ func (a *agent) FetchVariableTree(ctx context.Context, organizationID, userID st
 	return variable.NewTree(groups, entries), nil
 }
 
-// UpdateVariableGroup renames and/or recolours a group, leaving an unset
-// field as it is. A group outside the organization is not found.
-func (a *agent) UpdateVariableGroup(ctx context.Context, organizationID string, id xid.ID, inp variable.GroupUpdateInput) error {
-	set := map[string]any{}
-
-	if inp.GroupName.Valid {
-		set["group_name"] = inp.GroupName.String
-	}
-
-	if inp.Color.Valid {
-		set["color"] = inp.Color.String
-	}
-
-	// the builder refuses an update that sets nothing, and there is
-	// nothing to write anyway.
-	if len(set) == 0 {
-		return variable.ErrEmptyGroupUpdate
-	}
-
+// UpdateVariableGroup rewrites a group's name and colour. A group outside
+// the organization is not found.
+func (a *agent) UpdateVariableGroup(ctx context.Context, g variable.Group) error {
 	q, args := a.builder.Update("personal_variable_groups").
-		SetMap(set).
+		SetMap(map[string]any{
+			"group_name": g.GroupName,
+			"color":      g.Color,
+		}).
 		Where(sq.Eq{
-			"id":                 id,
-			"fk_organization_id": organizationID,
+			"id":                 g.ID,
+			"fk_organization_id": g.OrganizationID,
 		}).
 		MustSql()
 

@@ -7,7 +7,7 @@ import * as Y from "yjs"
 import ContentEditor from "./ContentEditor.vue"
 import BlockHandle from "./drag-handle/BlockHandle.vue"
 import { stubThemeColorContext } from "./test-helpers/theme"
-import { METRIC_BLOCK_NAME } from "./blocks/node-names"
+import { LOG_BLOCK_NAME, METRIC_BLOCK_NAME } from "./blocks/node-names"
 import {
 	clearQueryCache,
 	disposeMockEndpoints,
@@ -146,6 +146,7 @@ describe("<ContentEditor>", { concurrent: false }, () => {
 		useEditorStore().updateActiveBranchId(BRANCH_ID)
 		useEditorStore().setReviewableDiffActive(false)
 		useEditorStore().activateMetricBlockConfig(null)
+		useEditorStore().activateLogBlockConfig(null)
 	})
 
 	afterEach(disposeMockEndpoints)
@@ -272,6 +273,47 @@ describe("<ContentEditor>", { concurrent: false }, () => {
 		await nextTick()
 
 		expect(editingNodeUid(branch)).toBeNull()
+	})
+
+	it("tells collaborators which log block is being configured", async ({
+		expect,
+	}) => {
+		const branch = makeBranch()
+		const wrapper = await mountEditor({ branch: branch })
+		await vi.waitFor(() => {
+			expect(wrapper.emitted("editor-ready")).toHaveLength(1)
+		}, WAIT_FOR_OPTIONS)
+
+		useEditorStore().activateLogBlockConfig("log-1")
+		await nextTick()
+
+		expect(editingNodeUid(branch)).toEqual({
+			uid: "log-1",
+			type: LOG_BLOCK_NAME,
+		})
+	})
+
+	it("keeps announcing the configured log block while the selection moves", async ({
+		expect,
+	}) => {
+		const branch = makeBranch()
+		branch.ydoc
+			.getXmlFragment("content")
+			.insert(0, [paragraph("hello world", "block-1")])
+		const wrapper = await mountEditor({ branch: branch })
+		await vi.waitFor(() => {
+			expect(wrapper.emitted("editor-ready")).toHaveLength(1)
+		}, WAIT_FOR_OPTIONS)
+		useEditorStore().activateLogBlockConfig("log-1")
+		await nextTick()
+
+		editorOf(wrapper).commands.setTextSelection(3)
+		await nextTick()
+
+		expect(editingNodeUid(branch)).toEqual({
+			uid: "log-1",
+			type: LOG_BLOCK_NAME,
+		})
 	})
 
 	it("tells collaborators nothing once it is gone", async ({ expect }) => {

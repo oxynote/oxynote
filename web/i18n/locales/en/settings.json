@@ -171,6 +171,7 @@
 				"title": {
 					"creation": {
 						"prometheus": "Connect Prometheus",
+						"loki": "Connect Loki",
 						"postgresql": "Connect PostgreSQL",
 						"supabase": "Connect Supabase",
 						"mysql": "Connect MySQL",
@@ -178,6 +179,7 @@
 					},
 					"update": {
 						"prometheus": "Update Prometheus",
+						"loki": "Update Loki",
 						"postgresql": "Update PostgreSQL",
 						"supabase": "Update Supabase",
 						"mysql": "Update MySQL",
@@ -187,6 +189,7 @@
 				"description": {
 					"creation": {
 						"prometheus": "Connect a new Prometheus server to use in your workspace.",
+						"loki": "Connect a new Loki server to use in your workspace.",
 						"postgresql": "Connect a new PostgreSQL server to use in your workspace.",
 						"supabase": "Connect a Supabase project to use in your workspace.",
 						"mysql": "Connect a new MySQL server to use in your workspace.",
@@ -194,6 +197,7 @@
 					},
 					"update": {
 						"prometheus": "Update the settings of your Prometheus server.",
+						"loki": "Update the settings of your Loki server.",
 						"postgresql": "Update the settings of your PostgreSQL server.",
 						"supabase": "Update the settings of your Supabase project.",
 						"mysql": "Update the settings of your MySQL server.",
@@ -204,6 +208,10 @@
 					"prometheus": {
 						"label": "Data Source Nickname",
 						"placeholder": "Main Prometheus Server"
+					},
+					"loki": {
+						"label": "Data Source Nickname",
+						"placeholder": "Main Loki Server"
 					},
 					"postgresql": {
 						"label": "Data Source Nickname",
@@ -226,6 +234,10 @@
 					"prometheus": {
 						"label": "Data Source URL",
 						"placeholder": "https://prometheus.example.com:9090"
+					},
+					"loki": {
+						"label": "Data Source URL",
+						"placeholder": "https://loki.example.com:3100"
 					},
 					"postgresql": {
 						"label": "Data Source URL",
@@ -260,6 +272,10 @@
 						"label": "Auth Username",
 						"placeholder": "Username"
 					},
+					"loki": {
+						"label": "Auth Username",
+						"placeholder": "Username"
+					},
 					"postgresql": {
 						"label": "Auth Username",
 						"placeholder": "Username"
@@ -279,6 +295,10 @@
 				},
 				"creds-password-field": {
 					"prometheus": {
+						"label": "Auth Password",
+						"placeholder": "Password"
+					},
+					"loki": {
 						"label": "Auth Password",
 						"placeholder": "Password"
 					},
@@ -395,6 +415,7 @@
 			"data-source-removal": {
 				"title": {
 					"prometheus": "Remove Prometheus Data Source",
+					"loki": "Remove Loki Data Source",
 					"postgresql": "Remove PostgreSQL Data Source",
 					"supabase": "Remove Supabase Data Source",
 					"mysql": "Remove MySQL Data Source",
@@ -611,6 +632,39 @@
 					"disconnect": {
 						"title": "Prometheus couldn't be disconnected",
 						"description": "An error occurred while trying to disconnect from Prometheus. Please try again"
+					}
+				}
+			},
+			"loki": {
+				"title": "Loki",
+				"description": "Connect your Loki server and use it in live log blocks in your pages",
+				"connect": "Connect",
+				"connected-label": "Connected",
+				"option-button-screen-reader-hint": "Manage Data Source",
+				"options": {
+					"update": {
+						"title": "Update"
+					},
+					"delete": {
+						"title": "Remove"
+					}
+				},
+				"status-messages": {
+					"success": "Successfully connected",
+					"unauthorized": "Authentication credentials are incorrect",
+					"unreachable": "Loki server is unreachable",
+					"version_not_supported": "Loki version not supported",
+					"invalid_encryption_key": "Stored credentials can no longer be read",
+					"invalid_ca_certificate": "CA certificate is invalid, or the connection does not use TLS"
+				},
+				"errors": {
+					"install": {
+						"title": "Loki data source couldn't be connected",
+						"description": "An error occurred while trying to connect to Loki. Please try again"
+					},
+					"disconnect": {
+						"title": "Loki couldn't be disconnected",
+						"description": "An error occurred while trying to disconnect from Loki. Please try again"
 					}
 				}
 			},

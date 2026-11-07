@@ -7,7 +7,8 @@ import { Logger } from "@hocuspocus/extension-logger"
 import type { Logger as ServiceLogger } from "./logging.js"
 import type { CoreClient } from "./core.js"
 import { toAxiosHeaders, toHeaders } from "./headers.js"
-import { bestEffort, reported } from "./reporting.js"
+import { bestEffort, reportedAsMessage } from "./reporting.js"
+import { EDITOR_SCHEMA_VERSION } from "./schema/index.js"
 import {
 	isSystemContext,
 	replaceYdocContent,
@@ -159,6 +160,15 @@ async function branchIsProtected(
 	return branch?.protected ?? false
 }
 
+// knowsEditorSchema reports whether the client connected with an editor
+// schema at least as new as this server's. y-prosemirror deletes every
+// node its schema does not know, and that delete syncs to everyone.
+function knowsEditorSchema(requestParameters: URLSearchParams): boolean {
+	const version = Number(requestParameters.get("schemaVersion"))
+
+	return Number.isInteger(version) && version >= EDITOR_SCHEMA_VERSION
+}
+
 // the placeholder a branch gets when core has content for it that is not a
 // prosemirror document — a branch that has never been written to.
 function defaultDocumentContent() {
@@ -238,12 +248,14 @@ export function createDocumentHooks({ auth, core, log }: DocumentHookDeps) {
 			documentName,
 			request,
 			requestHeaders,
+			requestParameters,
 			token,
 		}: {
 			connectionConfig: { readOnly: boolean }
 			documentName: string
 			request: any
 			requestHeaders: any
+			requestParameters: URLSearchParams
 			token: string
 		}) {
 			const { documentId, branchIdentifier } =
@@ -260,19 +272,21 @@ export function createDocumentHooks({ auth, core, log }: DocumentHookDeps) {
 			// core's session-authed access endpoint. The caller's
 			// own headers are forwarded, so core rejects a document
 			// the user's organization does not own.
-			await reported(() =>
+			await reportedAsMessage(() =>
 				core.verifyDocumentAccess(documentId, {
 					headers: toAxiosHeaders(requestHeaders),
 				}),
 			)
 
-			connectionConfig.readOnly = await reported(() =>
-				branchIsProtected(
-					core,
-					documentId,
-					branchIdentifier,
-				),
-			)
+			connectionConfig.readOnly =
+				!knowsEditorSchema(requestParameters) ||
+				(await reportedAsMessage(() =>
+					branchIsProtected(
+						core,
+						documentId,
+						branchIdentifier,
+					),
+				))
 
 			return { session }
 		},
@@ -327,7 +341,7 @@ export function createDocumentHooks({ auth, core, log }: DocumentHookDeps) {
 		}: {
 			documentName: string
 		}): Promise<Y.Doc> {
-			return reported(async () => {
+			return reportedAsMessage(async () => {
 				const { documentId, branchIdentifier } =
 					parseDocumentName(documentName)
 				const branchId = await resolveBranchId(
@@ -464,10 +478,15 @@ export function createDocumentHooks({ auth, core, log }: DocumentHookDeps) {
 			} catch (err) {
 				Sentry.captureException(err)
 
+				const message =
+					err instanceof Error
+						? err.message
+						: String(err)
+
 				// changes since the last good persist live only in
 				// memory, so the failure must show without sentry too.
 				log.error(
-					`persisting ${data.documentName} failed: ${err instanceof Error ? err.message : String(err)}`,
+					`persisting ${data.documentName} failed: ${message}`,
 				)
 
 				data.document.broadcastStateless(
@@ -479,7 +498,11 @@ export function createDocumentHooks({ auth, core, log }: DocumentHookDeps) {
 
 				// hocuspocus keeps a document whose store threw in
 				// memory, rather than unloading the unsaved changes.
-				throw err
+				// It also prints what was thrown in full, so only the
+				// message goes back. The flush still gets the original
+				// through lastPersist.
+				// eslint-disable-next-line preserve-caught-error -- a cause is printed too.
+				throw new Error(message)
 			}
 		},
 

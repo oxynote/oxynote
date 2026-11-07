@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +24,7 @@ func Test_PostgreSQLQueryResult_Transform(t *testing.T) {
 		Result    PostgreSQLQueryResult
 		ChartType ChartType
 		Expected  QueryResult
+		Err       error
 	}{
 		"Empty chart type returns type-not-selected": {
 			Result: PostgreSQLQueryResult{
@@ -203,6 +205,74 @@ func Test_PostgreSQLQueryResult_Transform(t *testing.T) {
 				},
 			},
 		},
+		"Fill gives the series a point on every bucket": {
+			Result: PostgreSQLQueryResult{
+				Columns: []string{"time", "value"},
+				Rows: [][]any{
+					{1700000000.0, 10.0},
+					{1700000120.0, 30.0},
+				},
+				Fill: &sqlFill{Interval: 60, From: 1700000000, To: 1700000180},
+			},
+			ChartType: ChartTypeLine,
+			Expected: QueryResult{
+				Status: QueryStatusOK,
+				Data: []QueryResultSeries{
+					{
+						Labels: map[string]string{},
+						Metrics: [][2]any{
+							{int64(1700000000), 10.0},
+							{int64(1700000060), nil},
+							{int64(1700000120), 30.0},
+							{int64(1700000180), nil},
+						},
+					},
+				},
+			},
+		},
+		"Gauge skips a null fill": {
+			Result: PostgreSQLQueryResult{
+				Columns: []string{"time", "value"},
+				Rows:    [][]any{{1700000000.0, 10.0}},
+				Fill:    &sqlFill{Interval: 60, From: 1700000000, To: 1700000180},
+			},
+			ChartType: ChartTypeGauge,
+			Expected: QueryResult{
+				Status: QueryStatusOK,
+				Data: []QueryResultSeries{
+					{
+						Labels:  map[string]string{},
+						Metrics: [][2]any{{int64(1700000000), 10.0}},
+					},
+				},
+			},
+		},
+		"Gauge of a series that is only null fill has no point": {
+			Result: PostgreSQLQueryResult{
+				Columns: []string{"time", "value"},
+				Rows:    [][]any{{1600000000.0, 10.0}},
+				Fill:    &sqlFill{Interval: 60, From: 1700000000, To: 1700000060},
+			},
+			ChartType: ChartTypeGauge,
+			Expected: QueryResult{
+				Status: QueryStatusOK,
+				Data: []QueryResultSeries{
+					{
+						Labels:  map[string]string{},
+						Metrics: [][2]any{},
+					},
+				},
+			},
+		},
+		"Fill of more than the most points is an error": {
+			Result: PostgreSQLQueryResult{
+				Columns: []string{"time", "value"},
+				Rows:    [][]any{{1700000000.0, 10.0}},
+				Fill:    &sqlFill{Interval: 1, From: 1700000000, To: 1700000000 + _maxFilledPoints},
+			},
+			ChartType: ChartTypeLine,
+			Err:       NewInvalidQueryError("the fill gives more than 250000 points; use a longer interval"),
+		},
 		"Gauge keeps only last value per series": {
 			Result: PostgreSQLQueryResult{
 				Columns: []string{"time", "cpu", "memory"},
@@ -282,7 +352,13 @@ func Test_PostgreSQLQueryResult_Transform(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			result := c.Result.Transform(c.ChartType)
+			result, err := c.Result.Transform(c.ChartType)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
 			require.Equal(t, c.Expected.Status, result.Status)
 			assert.Equal(t, c.Expected.Data, result.Data)
 		})
@@ -490,7 +566,7 @@ func Test_PostgreSQL_Close(t *testing.T) {
 			})
 
 			if c.Used {
-				_, err := p.Query(context.Background(), "SELECT 1", _testTimeRange)
+				_, err := p.Query(context.Background(), "SELECT 1", _testTimeRange, nil)
 				require.NoError(t, err)
 			}
 
@@ -796,7 +872,7 @@ func Test_PostgreSQL_QueryLabels(t *testing.T) {
 
 			t.Cleanup(func() { assert.NoError(t, p.Close()) })
 
-			labels, err := p.QueryLabels(context.Background(), c.Query, _testTimeRange)
+			labels, err := p.QueryLabels(context.Background(), c.Query, _testTimeRange, nil)
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Len(t, inp.URLCalls(), 1)
 			assert.Len(t, inp.CredentialsCalls(), c.CredentialsCalls)
@@ -826,12 +902,41 @@ func Test_PostgreSQL_Query(t *testing.T) {
 		Before []string
 
 		Query            string
+		Vars             map[string]string
 		Result           *PostgreSQLQueryResult
 		ErrStatus        int
 		Err              error
 		CredentialsCalls int
 		Check            func(t *testing.T, p *PostgreSQL)
 	}{
+		// every macro, quoting and variable shape the expander produces has
+		// to be SQL Postgres accepts.
+		"Macro corpus runs": {
+			URL:              ownerURL,
+			Query:            "SELECT 1 AS one",
+			Result:           &PostgreSQLQueryResult{Columns: []string{"one"}, Rows: [][]any{{float64(1)}}},
+			CredentialsCalls: 1,
+			Check:            checkPostgreSQLMacroCorpus,
+		},
+		// a value must come back exactly, whatever it holds, read as a
+		// string or as a column name.
+		"Variable values read back exactly": {
+			URL:              ownerURL,
+			Query:            "SELECT 1 AS one",
+			Result:           &PostgreSQLQueryResult{Columns: []string{"one"}, Rows: [][]any{{float64(1)}}},
+			CredentialsCalls: 1,
+			Check:            checkPostgreSQLValuesReadBack,
+		},
+		"Fill mode comes back with the result": {
+			URL:   ownerURL,
+			Query: "SELECT $__timeGroupAlias(to_timestamp(1705312920), '5m', 0), 1 AS value",
+			Result: &PostgreSQLQueryResult{
+				Columns: []string{"time", "value"},
+				Rows:    [][]any{{float64(1705312800), float64(1)}},
+				Fill:    &sqlFill{Value: new(0.0), Interval: 300, From: 1705312800, To: 1705316400},
+			},
+			CredentialsCalls: 1,
+		},
 		"Error returned by connect": {
 			URL:              "://",
 			Query:            "SELECT 1",
@@ -957,11 +1062,11 @@ func Test_PostgreSQL_Query(t *testing.T) {
 			}
 
 			for _, q := range c.Before {
-				_, berr := p.Query(context.Background(), q, _testTimeRange)
+				_, berr := p.Query(context.Background(), q, _testTimeRange, nil)
 				require.NoError(t, berr)
 			}
 
-			result, err := p.Query(context.Background(), c.Query, _testTimeRange)
+			result, err := p.Query(context.Background(), c.Query, _testTimeRange, c.Vars)
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Len(t, inp.URLCalls(), 1)
 			assert.Len(t, inp.CredentialsCalls(), c.CredentialsCalls)
@@ -1298,5 +1403,90 @@ func Test_pgQueryError(t *testing.T) {
 
 			testutil.AssertEqualError(t, c.Err, pgQueryError(c.Inp))
 		})
+	}
+}
+
+// _pgMacroCorpus is every macro, quoting and variable shape the expander
+// writes for Postgres, over the macro_corpus table.
+var _pgMacroCorpus = []string{
+	`SELECT $__time(ts), value FROM macro_corpus`,
+	`SELECT * FROM macro_corpus WHERE $__timeFilter(ts)`,
+	`SELECT * FROM macro_corpus WHERE $__timeFilter("createdAt")`,
+	`SELECT * FROM macro_corpus WHERE ts >= $__timeFrom() AND ts <= $__timeTo()`,
+	`SELECT $__timeGroupAlias("createdAt", '1h'), avg(value) FROM macro_corpus GROUP BY 1`,
+	`SELECT $__timeGroup(ts, $step), $__timeGroup(ts, '$step'), $__timeGroup(ts, $__interval) FROM macro_corpus`,
+	`SELECT * FROM macro_corpus WHERE $__unixEpochFilter(epoch) AND $__unixEpochNanoFilter(epoch_ns)`,
+	`SELECT * FROM macro_corpus WHERE epoch BETWEEN $__unixEpochFrom() AND $__unixEpochTo()`,
+	`SELECT * FROM macro_corpus WHERE epoch_ns BETWEEN $__unixEpochNanoFrom() AND $__unixEpochNanoTo()`,
+	`SELECT $__unixEpochGroupAlias(epoch + 0, '1m') FROM macro_corpus`,
+	`SELECT * FROM macro_corpus WHERE $__timeFilter(CASE WHEN host = ')' THEN ts END)`,
+	`SELECT * FROM macro_corpus WHERE $__timeFilter(ts /* ) */) -- $__timeFilter(oops`,
+	`SELECT * FROM macro_corpus /* $__timeGroup( */ WHERE host = '$name' OR host = E'$name'`,
+	`SELECT "$env" FROM (SELECT 1 AS "prod") AS t`,
+	`SELECT $$ $__from $name $$, $tag$ $1 $tag$, '$__timeFilter(ts)'`,
+	`SELECT $__from AS f, $__to AS t, '$__interval' AS i, $__interval_ms, '$__range', $__range_s, $__range_ms`,
+	`SELECT '${__from:date}'::timestamptz, '${__to:date:iso}'::timestamptz, ${__from:date:seconds}, '${__interval}'`,
+	`SELECT * FROM macro_corpus WHERE value > $limit AND value > -$limit LIMIT $limit`,
+}
+
+// _macroCorpusVars are the variables the macro corpora reference.
+var _macroCorpusVars = map[string]string{
+	"env":   "prod",
+	"name":  `o'brien \ "x"`,
+	"step":  "5m",
+	"limit": "1",
+}
+
+// _macroNastyValues are variable values chosen to break out of every
+// quoted region.
+var _macroNastyValues = []string{
+	"plain", "o'brien", `a\b`, `a\'b`, `\`, `'; DROP TABLE macro_corpus; --`, `"`, "`", "``", `*/`, "--", "$$", "$v", "$q$",
+	"ž unicode", "a\nb", "''", `\\'`,
+}
+
+// checkPostgreSQLMacroCorpus runs every query of the macro corpus, which
+// must all be SQL the database accepts. The table is temporary, so it
+// lives on the one connection the case leaves free and nowhere else.
+func checkPostgreSQLMacroCorpus(t *testing.T, p *PostgreSQL) {
+	t.Helper()
+
+	for _, q := range []string{
+		`CREATE TEMP TABLE macro_corpus (ts timestamptz, "createdAt" timestamptz, epoch bigint, epoch_ns bigint, host text, value double precision)`,
+		"INSERT INTO macro_corpus VALUES ('2024-01-15 10:30:00Z', '2024-01-15 10:30:00Z', 1705314600, 1705314600000000000, 'web-1', 1.5)",
+	} {
+		_, err := p.Query(context.Background(), q, _testTimeRange, nil)
+		require.NoError(t, err)
+	}
+
+	for _, q := range _pgMacroCorpus {
+		_, err := p.Query(context.Background(), q, _testTimeRange, _macroCorpusVars)
+		assert.NoError(t, err, q)
+	}
+}
+
+// checkPostgreSQLValuesReadBack reads every nasty value back, as a string
+// and as a column name, and requires it unchanged.
+func checkPostgreSQLValuesReadBack(t *testing.T, p *PostgreSQL) {
+	t.Helper()
+
+	for _, v := range _macroNastyValues {
+		for _, q := range []string{"SELECT '$v' AS v", "SELECT E'$v' AS v", "SELECT $q$$v$q$ AS v", `SELECT 1 AS "$v"`} {
+			res, err := p.Query(context.Background(), q, _testTimeRange, map[string]string{"v": v})
+			if strings.Contains(q, "$q$") && strings.Contains(v, "$") {
+				assert.Error(t, err, q)
+
+				continue
+			}
+
+			if !assert.NoError(t, err, "%s with %q", q, v) {
+				continue
+			}
+
+			if strings.Contains(q, " AS v") {
+				assert.Equal(t, v, res.Rows[0][0], "%s with %q", q, v)
+			} else {
+				assert.Equal(t, v, res.Columns[0], "%s with %q", q, v)
+			}
+		}
 	}
 }

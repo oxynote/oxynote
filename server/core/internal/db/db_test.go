@@ -28,6 +28,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/ioutil"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	migr "github.com/rubenv/sql-migrate"
@@ -222,11 +223,7 @@ func Test_DetectError(t *testing.T) {
 
 			existing := prepTags(t, db, 1, nil)[0]
 
-			dup := tag.NewTag(
-				tag.CreateInput{TagName: existing.TagName, Color: "green"},
-				existing.OrganizationID,
-				prepUsers(t, db, 1)[0],
-			)
+			dup := prepNewTag(t, existing.TagName, existing.OrganizationID, prepUsers(t, db, 1)[0])
 
 			err := db.InsertTag(context.Background(), dup)
 			require.Error(t, err)
@@ -327,39 +324,15 @@ func Test_DB_migrateUp(t *testing.T) {
 }
 
 func Test_DB_BeginTx(t *testing.T) {
-	type test2 interface {
-		Commit() error
-	}
-
 	cc := map[string]struct {
 		CancelledContext bool
-		Dest             any
-		Panics           bool
-		PanicValue       any
 		Err              error
 	}{
-		"Destination is not a pointer": {
-			Dest:       struct{}{},
-			Panics:     true,
-			PanicValue: "dest is not a pointer",
-		},
-		"Destination is nil": {
-			Dest:       (*struct{})(nil),
-			Panics:     true,
-			PanicValue: "dest is not a pointer",
-		},
-		"Destination cannot hold a transaction": {
-			Dest:   &struct{}{},
-			Panics: true,
-		},
 		"Cancelled context": {
 			CancelledContext: true,
-			Dest:             new(test2),
 			Err:              assert.AnError,
 		},
-		"Successful begin": {
-			Dest: new(test2),
-		},
+		"Successful begin": {},
 	}
 
 	for cn, c := range cc {
@@ -375,32 +348,15 @@ func Test_DB_BeginTx(t *testing.T) {
 				cancel()
 			}
 
-			if c.Panics {
-				if c.PanicValue == nil {
-					require.Panics(t, func() {
-						require.NoError(t, db.BeginTx(ctx, c.Dest))
-					})
-
-					return
-				}
-
-				require.PanicsWithValue(t, c.PanicValue, func() {
-					require.NoError(t, db.BeginTx(ctx, c.Dest))
-				})
-
-				return
-			}
-
-			err := db.BeginTx(ctx, c.Dest)
+			tx, err := db.BeginTx(ctx)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
 
-			val := *c.Dest.(*test2)
-			assert.IsType(t, &Tx{}, val)
-			assert.NoError(t, val.Commit())
+			assert.IsType(t, &Tx{}, tx)
+			assert.NoError(t, tx.Commit())
 		})
 	}
 }
@@ -408,9 +364,8 @@ func Test_DB_BeginTx(t *testing.T) {
 func Test_Tx_SQLTx(t *testing.T) {
 	db := prepTempDB(t)
 
-	var ntx *Tx
-
-	require.NoError(t, db.BeginTx(context.Background(), &ntx))
+	ntx, err := sqlutil.BeginTx[*Tx](context.Background(), db)
+	require.NoError(t, err)
 
 	defer ntx.Rollback() //nolint:errcheck // error provides no meaningful info
 
@@ -422,13 +377,8 @@ func Test_Tx_SQLTx(t *testing.T) {
 func Test_Tx_Commit(t *testing.T) {
 	db := prepTempDB(t)
 
-	type test interface {
-		Commit() error
-	}
-
-	var ntx test
-
-	require.NoError(t, db.BeginTx(context.Background(), &ntx))
+	ntx, err := db.BeginTx(context.Background())
+	require.NoError(t, err)
 	require.NoError(t, ntx.Commit())
 	require.Error(t, ntx.Commit())
 }
@@ -436,13 +386,8 @@ func Test_Tx_Commit(t *testing.T) {
 func Test_Tx_Rollback(t *testing.T) {
 	db := prepTempDB(t)
 
-	type test interface {
-		Rollback() error
-	}
-
-	var ntx test
-
-	require.NoError(t, db.BeginTx(context.Background(), &ntx))
+	ntx, err := db.BeginTx(context.Background())
+	require.NoError(t, err)
 	require.NoError(t, ntx.Rollback())
 	require.Error(t, ntx.Rollback())
 }

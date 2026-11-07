@@ -31,4 +31,12 @@ describe("<ChartTitle>", () => {
 
 		expect(wrapper.attributes("style")).toContain(`max-width: ${expected}`)
 	})
+
+	it("moves down by the offset it was given", async ({ expect }) => {
+		const wrapper = await mountSuspended(ChartTitle, {
+			props: { title: "Requests", offsetTop: 6.5 },
+		})
+
+		expect(wrapper.attributes("style")).toContain("top: calc(0.625rem + 6.5px)")
+	})
 })

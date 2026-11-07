@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -63,7 +62,8 @@ func (p *Prometheus) TestConnection(ctx context.Context) (ConnectionStatus, erro
 
 	res, err := client.Buildinfo(ctx)
 	if err != nil {
-		if strings.Contains(err.Error(), "401") {
+		if perr, ok := errors.AsType[*v1.Error](err); ok && perr.Type == v1.ErrClient &&
+			(perr.Msg == "client error: 401" || perr.Msg == "client error: 403") {
 			return ConnectionStatusUnauthorized, nil
 		}
 
@@ -110,7 +110,7 @@ func (p *Prometheus) QueryRange(ctx context.Context, q string, tr TimeRange) (*P
 
 	ntr := tr.Normalize()
 
-	v, warns, err := client.QueryRange(ctx, ntr.ProcessPrometheusQuery(q), v1.Range{
+	v, warns, _, err := client.QueryRange(ctx, ntr.ProcessPrometheusQuery(q), v1.Range{
 		Start: ntr.From,
 		End:   ntr.To,
 		Step:  ntr.QueryStep(),
@@ -143,7 +143,7 @@ func (p *Prometheus) LabelNames(ctx context.Context, matchers []string, tr TimeR
 
 	ntr := tr.Normalize()
 
-	names, warns, err := client.LabelNames(
+	names, warns, _, err := client.LabelNames(
 		ctx,
 		matchers,
 		ntr.From,
@@ -178,7 +178,7 @@ func (p *Prometheus) LabelValues(ctx context.Context, label string, matchers []s
 
 	ntr := tr.Normalize()
 
-	values, warns, err := client.LabelValues(
+	values, warns, _, err := client.LabelValues(
 		ctx,
 		label,
 		matchers,
@@ -214,7 +214,7 @@ func (p *Prometheus) Series(ctx context.Context, matchers []string, tr TimeRange
 
 	ntr := tr.Normalize()
 
-	series, warns, err := client.Series(
+	series, warns, _, err := client.Series(
 		ctx,
 		matchers,
 		ntr.From,

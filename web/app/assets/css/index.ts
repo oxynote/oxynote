@@ -1,3 +1,4 @@
+import { LogLevel } from "~/utils/api/data-source/logs"
 import { PALETTE_COLORS } from "~/utils/color"
 
 function cssVar(name: string, el: HTMLElement = document.documentElement) {
@@ -82,6 +83,16 @@ export function chartStyles() {
 			mutedText: cssVar("--muted-foreground-50"),
 			emptyGauge: cssVar("--muted-foreground-7"),
 		},
+		logLevels: {
+			[LogLevel.Critical]: cssColorHex("--log-level-critical"),
+			[LogLevel.Error]: cssColorHex("--log-level-error"),
+			[LogLevel.Warning]: cssColorHex("--log-level-warning"),
+			[LogLevel.Info]: cssColorHex("--log-level-info"),
+			[LogLevel.Debug]: cssColorHex("--log-level-debug"),
+			[LogLevel.Trace]: cssColorHex("--log-level-trace"),
+			[LogLevel.Unknown]: cssColorHex("--muted-foreground"),
+		} satisfies Record<LogLevel, string>,
+		logVolumeEmpty: cssColorHex("--log-volume-empty"),
 	}
 }
 

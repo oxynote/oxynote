@@ -252,6 +252,10 @@
 				"live-metrics": {
 					"title": "Live Metrics",
 					"description": "Adds a live chart from one of your data sources."
+				},
+				"live-logs": {
+					"title": "Live Logs",
+					"description": "Adds a live log view from one of your data sources."
 				}
 			}
 		},
@@ -325,7 +329,7 @@
 						"diagram": "Mermaid Diagram"
 					}
 				},
-				"metric-block": {
+				"grid-item": {
 					"width": "Resize",
 					"width-options": {
 						"compact": "Compact",
@@ -542,6 +546,68 @@
 			},
 			"bottom-action-trigger-label": "Add Block"
 		},
+		"config-modal-utils": {
+			"data-source-label": "Data Source",
+			"data-source-empty": {
+				"connect": "Connect Data Source"
+			},
+			"data-source-label-missing": "No data source selected",
+			"data-source-label-deleted": "Deleted data source",
+			"data-source-description-missing": "Click to select a data source",
+			"query-placeholder": {
+				"default": "Enter a query...",
+				"empty": "[empty]",
+				"prometheus": "Enter a PromQL query...",
+				"loki": "Enter a LogQL query...",
+				"postgresql": "Enter a SQL query...",
+				"supabase": "Enter a SQL query...",
+				"mysql": "Enter a SQL query...",
+				"mariadb": "Enter a SQL query..."
+			},
+			"query-info": {
+				"prometheus": {
+					"interval": "Auto-calculated interval based on time range and resolution (ex. \"15s\", \"5m\", \"1h\")",
+					"range": "Duration of the selected time range",
+					"rate-interval": "Safe interval for rate() and increase(), adjusts to scrape frequency"
+				},
+				"variable": "Current value: {value}. You can change it in the variables sidebar.",
+				"loki": {
+					"json": "Extracts the fields of a JSON line. Nested keys are joined with an underscore.",
+					"logfmt": "Extracts the key=value pairs of a logfmt line.",
+					"regexp": "Extracts the named groups of a regular expression as fields.",
+					"pattern": "Extracts fields by matching each line against a pattern of literal text and named captures.",
+					"unpack": "Unpacks a JSON line made by a pack stage, restoring the labels packed into it.",
+					"line-format": "Rewrites each line from a template that can use its labels and fields.",
+					"label-format": "Renames labels, or sets them from a template.",
+					"drop": "Removes the listed labels and fields.",
+					"keep": "Keeps only the listed labels and fields, and removes the rest.",
+					"decolorize": "Removes ANSI color codes from each line.",
+					"contains": "Keeps the lines that contain the text.",
+					"not-contains": "Drops the lines that contain the text.",
+					"matches": "Keeps the lines that match the regular expression.",
+					"not-matches": "Drops the lines that match the regular expression.",
+					"label": "Stream label. Loki indexes it, so a filter on it is fast.",
+					"field": "Field found in the log lines. Loki does not index it, so a filter on it reads every line of the selected streams."
+				},
+				"sql": {
+					"from": "Start of the selected time range in unix milliseconds",
+					"to": "End of the selected time range in unix milliseconds",
+					"interval": "Auto-calculated interval based on time range and resolution (ex. \"15s\", \"5m\", \"1h\")",
+					"interval-ms": "The auto-calculated interval in milliseconds",
+					"range": "Length of the selected time range in whole seconds (ex. \"3600s\")",
+					"range-s": "Length of the selected time range in seconds",
+					"range-ms": "Length of the selected time range in milliseconds",
+					"unix-epoch-from": "Start of the selected time range as a unix epoch timestamp (in seconds)",
+					"unix-epoch-to": "End of the selected time range as a unix epoch timestamp (in seconds)",
+					"unix-epoch-nano-from": "Start of the selected time range as a unix epoch timestamp (in nanoseconds)",
+					"unix-epoch-nano-to": "End of the selected time range as a unix epoch timestamp (in nanoseconds)"
+				}
+			},
+			"variable-time-range": "Global time",
+			"variable-refresh-interval": "Global refresh",
+			"time-range-label": "Time Range",
+			"refresh-interval-label": "Refresh Interval"
+		},
 		"metrics": {
 			"labels": {
 				"line-chart": "Line",
@@ -566,7 +632,11 @@
 				},
 				"query-error": {
 					"title": "Query Error",
-					"multi-query-description": "Query {index}: {error}"
+					"multi-query-description": "Query {index}: {error}",
+					"request-failed": "The metrics could not be loaded. Please try again later"
+				},
+				"loading": {
+					"title": "Loading Data"
 				},
 				"no-data-loaded": {
 					"title": "No Data",
@@ -587,14 +657,6 @@
 				"modal-title-diff-modified": "Live Metrics Changes",
 				"modal-description-normal": "Configure the metric visualization settings",
 				"modal-description-readonly": "View the metric visualization settings",
-				"data-source-label": "Data Source",
-				"data-source-no-options": {
-					"main": "{icon}No data sources available. You can connect one in the {placeholder}.",
-					"placeholder": "settings"
-				},
-				"data-source-label-missing": "No data source selected",
-				"data-source-label-deleted": "Deleted data source",
-				"data-source-description-missing": "Click to select a data source",
 				"type-options": {
 					"line-chart": {
 						"title": "Time Series"
@@ -744,34 +806,8 @@
 						}
 					}
 				},
-				"query-placeholder": {
-					"default": "Enter a query...",
-					"empty": "[empty]",
-					"prometheus": "Enter a PromQL query...",
-					"postgresql": "Enter a SQL query...",
-					"supabase": "Enter a SQL query...",
-					"mysql": "Enter a SQL query...",
-					"mariadb": "Enter a SQL query..."
-				},
 				"query-name-default-format": "Query {index}",
 				"add-query-button": "Add Query",
-				"query-info": {
-					"prometheus": {
-						"interval": "Auto-calculated interval based on time range and resolution (ex. \"15s\", \"5m\", \"1h\")",
-						"range": "Duration of the selected time range",
-						"rate-interval": "Safe interval for rate() and increase(), adjusts to scrape frequency"
-					},
-					"variable": "Current value: {value}. You can change it in the variables sidebar.",
-					"sql": {
-						"from": "Start of the selected time range in unix milliseconds",
-						"to": "End of the selected time range in unix milliseconds",
-						"interval": "Auto-calculated interval based on time range and resolution (ex. \"15s\", \"5m\", \"1h\")",
-						"unix-epoch-from": "Start of the selected time range as a unix epoch timestamp (in seconds)",
-						"unix-epoch-to": "End of the selected time range as a unix epoch timestamp (in seconds)",
-						"unix-epoch-nano-from": "Start of the selected time range as a unix epoch timestamp (in nanoseconds)",
-						"unix-epoch-nano-to": "End of the selected time range as a unix epoch timestamp (in nanoseconds)"
-					}
-				},
 				"title-label": "Title",
 				"title-placeholder": "Enter a title...",
 				"title-empty-value-placeholder": "[empty]",
@@ -834,10 +870,8 @@
 				"legend-format-label": "Legend",
 				"legend-format-placeholder": "{'{{'}some label{'}}'} {'{{'}another label{'}}'}",
 				"legend-format-empty-value-placeholder": "[empty]",
-				"time-range-label": "Time Range",
-				"refresh-interval-label": "Refresh Interval",
-				"variable-time-range": "Global time",
-				"variable-refresh-interval": "Global refresh"
+				"data-source-empty-title": "No metric data sources",
+				"data-source-empty-description": "Connect Prometheus or a SQL database in the settings to chart its data here."
 			},
 			"diff": {
 				"visualization": "Visualization",
@@ -860,6 +894,158 @@
 					"http_requests": "Request rate",
 					"http_latency": "Request latency",
 					"error_rate": "Error rate"
+				}
+			},
+			"tooltip": {
+				"pin-hint": "{count} series · Click to pin and scroll",
+				"unpin-hint": "{count} series · Click elsewhere or press Esc to unpin"
+			}
+		},
+		"logs": {
+			"config": {
+				"modal-trigger-button-normal": "Edit Logs",
+				"modal-trigger-button-readonly": "View Logs",
+				"modal-title-normal": "Edit Live Logs",
+				"modal-title-readonly": "Live Logs",
+				"modal-title-diff-unchanged": "Live Logs",
+				"modal-title-diff-added": "New Live Logs",
+				"modal-title-diff-removed": "Deleted Live Logs",
+				"modal-title-diff-modified": "Live Logs Changes",
+				"modal-description-normal": "Configure the log view settings",
+				"modal-description-readonly": "View the log view settings",
+				"title-label": "Title",
+				"title-placeholder": "Enter a title...",
+				"title-empty-value-placeholder": "[empty]",
+				"timestamp-format-label": "Timestamp Format",
+				"timestamp-format-options": {
+					"none": {
+						"title": "None",
+						"example": "No timestamp"
+					},
+					"readable": {
+						"title": "Readable",
+						"example": "Oct 23, 2026 12:33:22 PM"
+					},
+					"readable_milli": {
+						"title": "Readable with Milliseconds",
+						"example": "Oct 23, 2026 12:33:22.123 PM"
+					},
+					"readable_nano": {
+						"title": "Readable with Nanoseconds",
+						"example": "Oct 23, 2026 12:33:22.123456789 PM"
+					},
+					"readable_time": {
+						"title": "Readable Time",
+						"example": "12:33:22 PM"
+					},
+					"readable_time_milli": {
+						"title": "Readable Time with Milliseconds",
+						"example": "12:33:22.123 PM"
+					},
+					"readable_time_nano": {
+						"title": "Readable Time with Nanoseconds",
+						"example": "12:33:22.123456789 PM"
+					},
+					"numeric": {
+						"title": "Numeric",
+						"example": "2026-10-23 12:33:22"
+					},
+					"numeric_milli": {
+						"title": "Numeric with Milliseconds",
+						"example": "2026-10-23 12:33:22.123"
+					},
+					"numeric_nano": {
+						"title": "Numeric with Nanoseconds",
+						"example": "2026-10-23 12:33:22.123456789"
+					},
+					"numeric_time": {
+						"title": "Numeric Time",
+						"example": "12:33:22"
+					},
+					"numeric_time_milli": {
+						"title": "Numeric Time with Milliseconds",
+						"example": "12:33:22.123"
+					},
+					"numeric_time_nano": {
+						"title": "Numeric Time with Nanoseconds",
+						"example": "12:33:22.123456789"
+					}
+				},
+				"order-label": "Order",
+				"order-options": {
+					"desc": "Newest First",
+					"asc": "Oldest First"
+				},
+				"query-label": "Query",
+				"query-name-default-format": "Query {index}",
+				"add-query-button": "Add Query",
+				"delete-query-button": "Delete Query",
+				"data-source-empty-title": "No log data sources",
+				"data-source-empty-description": "Connect Loki in the settings to show its logs here."
+			},
+			"diff": {
+				"size": "Size"
+			},
+			"levels": {
+				"critical": "Crit",
+				"error": "Error",
+				"warning": "Warn",
+				"info": "Info",
+				"debug": "Debug",
+				"trace": "Trace"
+			},
+			"level-names": {
+				"critical": "Critical",
+				"error": "Error",
+				"warning": "Warning",
+				"info": "Info",
+				"debug": "Debug",
+				"trace": "Trace",
+				"unknown": "Unknown"
+			},
+			"view": {
+				"search-label": "Search logs",
+				"search-placeholder": "Search logs...",
+				"clear-search": "Clear search",
+				"show-volume": "Show log volume",
+				"hide-volume": "Hide log volume",
+				"labels-not-searched": "These labels aren't in the raw log line, so search can't match them.",
+				"fields-not-searched": "These fields aren't in the raw log line, so search can't match them.",
+				"volume-label": "Log volume across the time range",
+				"volume-empty": "No logs in this interval",
+				"line-heading": "Raw log line",
+				"copy-line": "Copy log",
+				"line-copied": "Copied",
+				"indexed-heading": "Indexed fields",
+				"indexed-description": "Fast to filter on",
+				"unindexed-heading": "Unindexed fields",
+				"unindexed-description": "Filtering works but is slower",
+				"include-value": "Show only logs where {key} is this value",
+				"exclude-value": "Hide logs where {key} is this value",
+				"remove-filter": "Remove filter on {key}",
+				"clear-filters": "Clear filters"
+			},
+			"status": {
+				"data-source-not-selected": {
+					"title": "No Data Source Selected",
+					"description": "Choose a Loki data source to see logs",
+					"normal-action-button": "Edit Logs",
+					"readonly-action-button": "View Logs"
+				},
+				"no-query": {
+					"title": "No Query",
+					"description": "Add a LogQL query to see logs",
+					"normal-action-button": "Edit Logs",
+					"readonly-action-button": "View Logs"
+				},
+				"no-lines": {
+					"title": "No Logs",
+					"description": "Nothing matched in this time range",
+					"search-description": "Search looks only at the raw log line. To narrow by a label such as env, open a log and use its filter buttons."
+				},
+				"query-error": {
+					"title": "Query Error",
+					"description": "The data source could not run the query"
 				}
 			}
 		},

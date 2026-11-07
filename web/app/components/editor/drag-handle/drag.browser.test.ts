@@ -1,7 +1,7 @@
 import type { JSONContent } from "@tiptap/core"
 import { Editor } from "@tiptap/core"
 import Blockquote from "@tiptap/extension-blockquote"
-import Document from "@tiptap/extension-document"
+import { ContentDocument } from "../blocks/document"
 import Heading from "@tiptap/extension-heading"
 import {
 	BulletList,
@@ -17,7 +17,8 @@ import { NodeSelection } from "@tiptap/pm/state"
 import { afterEach, describe, it, vi } from "vitest"
 import {
 	METRIC_BLOCK_NAME,
-	METRIC_GRID_NAME,
+	BLOCK_GRID_NAME,
+	LEGACY_METRIC_GRID_NAME,
 	SPLIT_DOCUMENTATION_LEFT_SIDE_NAME,
 	SPLIT_DOCUMENTATION_NAME,
 	SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
@@ -33,7 +34,8 @@ import {
 } from "./test-helpers"
 import {
 	MetricBlockStub,
-	MetricGridStub,
+	BlockGridStub,
+	LegacyMetricGridStub,
 	paragraph,
 } from "~/components/editor/test-helpers"
 
@@ -46,7 +48,7 @@ style.textContent = `
 	.ProseMirror ul, .ProseMirror ol { margin: 8px 0; padding-left: 32px; }
 	.ProseMirror li { margin: 4px 0; }
 	.ProseMirror blockquote { margin: 8px 0 8px 16px; }
-	[data-type="metric-grid"] {
+	[data-type="block-grid"] {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 12px;
@@ -62,11 +64,19 @@ document.head.appendChild(style)
 
 // the drag tests lay the metric blocks out, so the shared stand-ins
 // pick up the DOM and the title the layout assertions read
-const MetricGrid = MetricGridStub.extend({
+const BlockGrid = BlockGridStub.extend({
 	selectable: false,
 
 	renderHTML() {
-		return ["div", { "data-type": "metric-grid" }, 0]
+		return ["div", { "data-type": "block-grid" }, 0]
+	},
+})
+
+const LegacyMetricGrid = LegacyMetricGridStub.extend({
+	selectable: false,
+
+	renderHTML() {
+		return ["div", { "data-type": "block-grid" }, 0]
 	},
 })
 
@@ -103,8 +113,12 @@ function nestedTaskItem(text: string, nested: JSONContent): JSONContent {
 	}
 }
 
-function metricGrid(...blocks: JSONContent[]): JSONContent {
-	return { type: METRIC_GRID_NAME, content: blocks }
+function blockGrid(...blocks: JSONContent[]): JSONContent {
+	return { type: BLOCK_GRID_NAME, content: blocks }
+}
+
+function legacyGrid(...blocks: JSONContent[]): JSONContent {
+	return { type: LEGACY_METRIC_GRID_NAME, content: blocks }
 }
 
 function metricBlock(title: string): JSONContent {
@@ -139,7 +153,7 @@ function mountEditor(
 	const editor = new Editor({
 		element: container,
 		extensions: [
-			Document,
+			ContentDocument,
 			Paragraph,
 			Text,
 			Heading,
@@ -149,7 +163,8 @@ function mountEditor(
 			ListItem,
 			TaskList,
 			TaskItem.configure({ nested: true }),
-			MetricGrid,
+			BlockGrid,
+			LegacyMetricGrid,
 			MetricBlock,
 			SplitDocumentationStub,
 			SplitDocumentationLeftSideStub,
@@ -306,7 +321,10 @@ function gridShape(editor: Editor): string[][] {
 	const grids: string[][] = []
 
 	editor.state.doc.descendants((node) => {
-		if (node.type.name === METRIC_GRID_NAME) {
+		if (
+			node.type.name === BLOCK_GRID_NAME ||
+			node.type.name === LEGACY_METRIC_GRID_NAME
+		) {
 			grids.push(node.children.map((child) => child.attrs.title as string))
 			return false
 		}
@@ -947,7 +965,7 @@ describe("Drag", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const editor = mountEditor(
-				[metricGrid(metricBlock("a"), metricBlock("b")), paragraph("one")],
+				[blockGrid(metricBlock("a"), metricBlock("b")), paragraph("one")],
 				{ gaps: true },
 			)
 			const item = makeNode(editor, "listItem")
@@ -960,7 +978,7 @@ describe("Drag", { concurrent: false }, () => {
 
 			// the gap between the two blocks, the only one of the grid's
 			// vertical gaps that is not off the left edge of the page
-			const gap = forceGapZone("type-metricGrid-pos-0:before:idx-1")
+			const gap = forceGapZone("type-blockGrid-pos-0:before:idx-1")
 			const point = centerOf(gap)
 			expect(document.elementFromPoint(point.x, point.y)).toBe(gap)
 
@@ -1074,7 +1092,7 @@ describe("Drag", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const editor = mountEditor([
-				metricGrid(metricBlock("a"), metricBlock("b"), metricBlock("c")),
+				blockGrid(metricBlock("a"), metricBlock("b"), metricBlock("c")),
 			])
 			startDrag(editor, posOfMetricBlock(editor, "c"))
 
@@ -1109,7 +1127,7 @@ describe("Drag", { concurrent: false }, () => {
 		])("$name", ({ input, expected }, { expect }) => {
 			// one block per row, the way a phone lays the grid out
 			const editor = mountEditor(
-				[metricGrid(metricBlock("a"), metricBlock("b"))],
+				[blockGrid(metricBlock("a"), metricBlock("b"))],
 				{ width: 150 },
 			)
 			startDrag(editor, posOfMetricBlock(editor, input.dragged))
@@ -1130,7 +1148,7 @@ describe("Drag", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const editor = mountEditor(
-				[metricGrid(metricBlock("a"), metricBlock("b"))],
+				[blockGrid(metricBlock("a"), metricBlock("b"))],
 				{ width: 150 },
 			)
 			startDrag(editor, posOfMetricBlock(editor, "a"))
@@ -1151,11 +1169,11 @@ describe("Drag", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const editor = mountEditor([
-				metricGrid(metricBlock("a"), metricBlock("b"), metricBlock("c")),
+				blockGrid(metricBlock("a"), metricBlock("b"), metricBlock("c")),
 			])
 			startDrag(editor, posOfMetricBlock(editor, "c"))
 
-			const grid = q(editor, '[data-type="metric-grid"]')
+			const grid = q(editor, '[data-type="block-grid"]')
 			grid.style.marginLeft = "80px"
 			const gridRect = grid.getBoundingClientRect()
 			const point = { x: gridRect.left - 20, y: gridRect.top + 10 }
@@ -1169,7 +1187,7 @@ describe("Drag", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const editor = mountEditor([
-				metricGrid(metricBlock("a"), metricBlock("b"), metricBlock("c")),
+				blockGrid(metricBlock("a"), metricBlock("b"), metricBlock("c")),
 			])
 			startDrag(editor, posOfMetricBlock(editor, "a"))
 
@@ -1186,7 +1204,7 @@ describe("Drag", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const editor = mountEditor([
-				metricGrid(metricBlock("a"), metricBlock("b"), metricBlock("c")),
+				blockGrid(metricBlock("a"), metricBlock("b"), metricBlock("c")),
 			])
 			startDrag(editor, posOfMetricBlock(editor, "a"))
 
@@ -1209,7 +1227,7 @@ describe("Drag", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const editor = mountEditor([
-				metricGrid(metricBlock("a"), metricBlock("b"), metricBlock("c")),
+				blockGrid(metricBlock("a"), metricBlock("b"), metricBlock("c")),
 			])
 			startDrag(editor, posOfMetricBlock(editor, "b"), {
 				sourceWrapperBounds: {
@@ -1233,7 +1251,7 @@ describe("Drag", { concurrent: false }, () => {
 		}) => {
 			const editor = mountEditor([
 				paragraph("one"),
-				metricGrid(metricBlock("a"), metricBlock("b")),
+				blockGrid(metricBlock("a"), metricBlock("b")),
 			])
 			const gridPos = childPos(editor, 1)
 			startDrag(editor, posOfMetricBlock(editor, "a"), {
@@ -1252,7 +1270,7 @@ describe("Drag", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const editor = mountEditor(
-				[paragraph("one"), paragraph("two"), metricGrid(metricBlock("a"))],
+				[paragraph("one"), paragraph("two"), blockGrid(metricBlock("a"))],
 				{ gaps: true },
 			)
 			const gridPos = childPos(editor, 2)
@@ -1270,19 +1288,75 @@ describe("Drag", { concurrent: false }, () => {
 			drop(editor, point)
 
 			expect(editor.state.doc.toString()).toBe(
-				`doc(metricGrid(metricBlock), paragraph("one"), paragraph("two"))`,
+				`doc(blockGrid(metricBlock), paragraph("one"), paragraph("two"))`,
 			)
 			expect(gridShape(editor)).toEqual([["a"]])
 		})
 
-		it("drops into an empty grid", ({ expect }) => {
+		it("offers no spot inside a blockquote, where a grid may not go", async ({
+			expect,
+		}) => {
+			const editor = mountEditor(
+				[
+					blockGrid(metricBlock("a"), metricBlock("b")),
+					{ type: "blockquote", content: [paragraph("q")] },
+				],
+				{ gaps: true },
+			)
+			const draggedPos = posOfMetricBlock(editor, "a")
+			startDrag(editor, draggedPos)
+			await settleGapZones(editor, draggedPos)
+
+			const keys = [
+				...document.querySelectorAll<HTMLElement>("[data-gap-key]"),
+			].map((el) => el.getAttribute("data-gap-key") ?? "")
+
+			expect.soft(keys).not.toEqual([])
+			expect.soft(keys.filter((key) => key.includes("blockquote"))).toEqual([])
+		})
+
+		it("keeps a block dropped inside a blockquote out of a new grid there", ({
+			expect,
+		}) => {
 			const editor = mountEditor([
-				metricGrid(metricBlock("a"), metricBlock("b")),
-				metricGrid(),
+				blockGrid(metricBlock("a"), metricBlock("b")),
+				{ type: "blockquote", content: [paragraph("q")] },
+			])
+			startDrag(editor, posOfMetricBlock(editor, "a"))
+
+			const point = bottomOf(q(editor, "blockquote p"))
+			dragOver(editor, point)
+			drop(editor, point)
+
+			expect(editor.state.doc.toString()).not.toContain("blockquote(blockGrid")
+		})
+
+		it("drops a block into a legacy grid", ({ expect }) => {
+			const editor = mountEditor([
+				blockGrid(metricBlock("a"), metricBlock("b")),
+				legacyGrid(metricBlock("c")),
 			])
 			startDrag(editor, posOfMetricBlock(editor, "b"))
 
-			const emptyGrid = q(editor, '[data-type="metric-grid"]', 1)
+			const legacy = q(editor, '[data-type="block-grid"]', 1)
+			const point = {
+				x: legacy.getBoundingClientRect().right - 5,
+				y: centerOf(legacy).y,
+			}
+			dragOver(editor, point)
+			drop(editor, point)
+
+			expect(gridShape(editor)).toEqual([["a"], ["c", "b"]])
+		})
+
+		it("drops into an empty grid", ({ expect }) => {
+			const editor = mountEditor([
+				blockGrid(metricBlock("a"), metricBlock("b")),
+				blockGrid(),
+			])
+			startDrag(editor, posOfMetricBlock(editor, "b"))
+
+			const emptyGrid = q(editor, '[data-type="block-grid"]', 1)
 			const point = centerOf(emptyGrid)
 			dragOver(editor, point)
 			drop(editor, point)
@@ -1293,7 +1367,7 @@ describe("Drag", { concurrent: false }, () => {
 		it("keeps the drop on the hovered row of a wrapped grid", ({ expect }) => {
 			const editor = mountEditor(
 				[
-					metricGrid(
+					blockGrid(
 						metricBlock("a"),
 						metricBlock("b"),
 						metricBlock("c"),
@@ -1329,7 +1403,7 @@ describe("Drag", { concurrent: false }, () => {
 		}) => {
 			const editor = mountEditor(
 				[
-					metricGrid(
+					blockGrid(
 						metricBlock("a"),
 						metricBlock("b"),
 						metricBlock("c"),
@@ -1360,7 +1434,7 @@ describe("Drag", { concurrent: false }, () => {
 		it("shows the row-end cursor at a row boundary", async ({ expect }) => {
 			const editor = mountEditor(
 				[
-					metricGrid(
+					blockGrid(
 						metricBlock("a"),
 						metricBlock("b"),
 						metricBlock("c"),
@@ -1405,7 +1479,7 @@ describe("Drag", { concurrent: false }, () => {
 		it("skips grids that have no DOM element", ({ expect }) => {
 			const editor = mountEditor([
 				paragraph("one"),
-				metricGrid(metricBlock("a"), metricBlock("b")),
+				blockGrid(metricBlock("a"), metricBlock("b")),
 			])
 			startDrag(editor, posOfMetricBlock(editor, "a"))
 			const block = q(editor, '[data-type="metric-block"]', 1)
@@ -1419,7 +1493,7 @@ describe("Drag", { concurrent: false }, () => {
 
 		it("refuses a drop at a source wrapper boundary", ({ expect }) => {
 			const editor = mountEditor([
-				metricGrid(metricBlock("a"), metricBlock("b"), metricBlock("c")),
+				blockGrid(metricBlock("a"), metricBlock("b"), metricBlock("c")),
 			])
 			const secondBlockPos = posOfMetricBlock(editor, "b")
 			startDrag(editor, posOfMetricBlock(editor, "c"), {
@@ -1441,7 +1515,7 @@ describe("Drag", { concurrent: false }, () => {
 		it("positions the row-end cursor without gap zones", ({ expect }) => {
 			const editor = mountEditor(
 				[
-					metricGrid(
+					blockGrid(
 						metricBlock("a"),
 						metricBlock("b"),
 						metricBlock("c"),
@@ -1474,7 +1548,7 @@ describe("Drag", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const editor = mountEditor([
-				metricGrid(metricBlock("a"), metricBlock("b")),
+				blockGrid(metricBlock("a"), metricBlock("b")),
 				paragraph("one"),
 			])
 			editor.commands.setTextSelection(editor.state.doc.content.size - 1)
@@ -1489,7 +1563,7 @@ describe("Drag", { concurrent: false }, () => {
 				pos === 0 ? nodeDOM(pos) : null,
 			)
 
-			dragOver(editor, centerOf(q(editor, '[data-type="metric-grid"]')))
+			dragOver(editor, centerOf(q(editor, '[data-type="block-grid"]')))
 
 			expect(cursorVisible()).toBe(true)
 			expect(cursorElem()?.style.height).toBe("0px")
@@ -1523,7 +1597,7 @@ describe("Drag", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const editor = mountEditor(
-				[metricGrid(metricBlock("a"), metricBlock("b"), metricBlock("c"))],
+				[blockGrid(metricBlock("a"), metricBlock("b"), metricBlock("c"))],
 				{ gaps: true },
 			)
 			const draggedPos = posOfMetricBlock(editor, "c")
@@ -1535,7 +1609,7 @@ describe("Drag", { concurrent: false }, () => {
 			dragOver(editor, { x: rect.right - 5, y: centerOf(first).y })
 
 			const gapRect = gapZone(
-				"type-metricGrid-pos-0:before:idx-1",
+				"type-blockGrid-pos-0:before:idx-1",
 			).getBoundingClientRect()
 			const editorLeft = editor.view.dom.getBoundingClientRect().left
 
@@ -1543,22 +1617,6 @@ describe("Drag", { concurrent: false }, () => {
 			expect(parseFloat(cursorElem()?.style.left ?? "0")).toBeCloseTo(
 				gapRect.left + gapRect.width / 2 - 1.5 - editorLeft,
 				1,
-			)
-		})
-
-		it("drops into an empty grid nested in another block", ({ expect }) => {
-			const editor = mountEditor([
-				metricGrid(metricBlock("a")),
-				{ type: "blockquote", content: [metricGrid()] },
-			])
-			startDrag(editor, posOfMetricBlock(editor, "a"))
-
-			const point = centerOf(q(editor, 'blockquote [data-type="metric-grid"]'))
-			dragOver(editor, point)
-			drop(editor, point)
-
-			expect(editor.state.doc.toString()).toBe(
-				`doc(blockquote(metricGrid(metricBlock), metricGrid))`,
 			)
 		})
 	})

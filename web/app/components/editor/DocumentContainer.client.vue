@@ -11,12 +11,15 @@ import { refreshGapDecorationsInBackground } from "./drag-handle/gap-decorations
 import { editorCaretColors } from "~/assets/css"
 import { DOCUMENT_HOOK_QUERY_KEYS } from "~/composables/api/useDocumentHookAPI"
 import { asyncRenderBlockUids } from "./blocks/async-render"
+import { EDITOR_SCHEMA_VERSION } from "./schema-extensions"
 
 interface BranchProviderEntry {
 	provider: HocuspocusProvider
 	ydoc: Y.Doc
 	synced: Ref<boolean>
 }
+
+let unsubWsHooksChange: (() => void) | null | undefined = null
 
 // NOTE: this component is remounted every time the document ID
 // is changed (page change)
@@ -56,7 +59,6 @@ const fetchTargetBranchHooks = documentHookAPI.useFetchDocumentHooksByDocID(
 )
 const queryCache = useQueryCache()
 const wsState = useWebSocketStateStore()
-let unsubWsHooksChange: (() => void) | null | undefined = null
 
 const userCaretDetails = computed(() => {
 	const caretColors = editorCaretColors()
@@ -301,7 +303,7 @@ function createBranchProvider(
 	const ydoc = new Y.Doc()
 	const synced = ref(false)
 	const provider = new HocuspocusProvider({
-		url: config.public.authRealtimeAPIBaseWsURL,
+		url: `${config.public.authRealtimeAPIBaseWsURL}?schemaVersion=${EDITOR_SCHEMA_VERSION}`,
 		name: streamName,
 		document: ydoc,
 		token: "notoken",

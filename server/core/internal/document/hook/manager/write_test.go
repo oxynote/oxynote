@@ -14,6 +14,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -242,7 +243,7 @@ func Test_Manager_CreateHook(t *testing.T) {
 			}
 
 			dbm := &DBMock{
-				BeginTxFunc: testutil.StubBeginTx(c.Tx, c.BeginErr),
+				BeginTxFunc: testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr),
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
 					return doc, c.FetchErr
 				},
@@ -477,7 +478,7 @@ func Test_Manager_UpdateHook(t *testing.T) {
 				wc = webchange.NewClient("http://127.0.0.1:1", "key")
 			}
 
-			dbm := stubStoredHook(&DBMock{BeginTxFunc: testutil.StubBeginTx(tx, c.BeginErr)}, stored, c.FetchErr)
+			dbm := stubStoredHook(&DBMock{BeginTxFunc: testutil.StubBeginTx[sqlutil.Tx](tx, c.BeginErr)}, stored, c.FetchErr)
 			man := newTestManager(t, dbm, &fakePublisher{}, wc)
 
 			if c.FlushErr != nil {
@@ -784,7 +785,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 			}
 
 			dbm := stubStoredHook(&DBMock{
-				BeginTxFunc: testutil.StubBeginTx(tx, c.BeginErr),
+				BeginTxFunc: testutil.StubBeginTx[sqlutil.Tx](tx, c.BeginErr),
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
 					return &document.Document{Protected: c.Protected}, c.BranchFetchErr
 				},

@@ -2,9 +2,9 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import type { DOMWrapper, VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it } from "vitest"
 import ConfigSidebar from "./ConfigSidebar.vue"
-import ConfigField from "../ConfigField.vue"
+import ConfigField from "../../config-modal-utils/ConfigField.vue"
 import ThresholdInput from "./ThresholdInput.vue"
-import DataSourceSelect from "./DataSourceSelect.vue"
+import DataSourceSelect from "../../config-modal-utils/DataSourceSelect.vue"
 import SimulationPresetSelect from "./SimulationPresetSelect.vue"
 import {
 	defaultMetricConfig,
@@ -496,6 +496,44 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 
 		expect(at(rows, 0).props("color")).toBe("#111111")
 		expect(at(rows, 1).props("color")).toBe("#222222")
+	})
+
+	it("tells the data source picker what to say without metric sources", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSidebar()
+
+		const select = wrapper.getComponent(DataSourceSelect)
+
+		expect(select.props("emptyTitle")).toBe(
+			t("editor.metrics.config.data-source-empty-title"),
+		)
+		expect(select.props("emptyDescription")).toBe(
+			t("editor.metrics.config.data-source-empty-description"),
+		)
+	})
+
+	it("lets both data source pickers of a diff offer only metric sources", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSidebar({
+			modelValue: configWith({ dataSourceId: "new" }),
+			diffStatus: DiffStatus.Modified,
+			oldConfig: configWith({ dataSourceId: "old" }),
+		})
+
+		const types = wrapper
+			.findAllComponents(DataSourceSelect)
+			.map((s) => s.props("types") as DataSourceType[])
+		const metricTypes = [
+			DataSourceType.Prometheus,
+			DataSourceType.PostgreSQL,
+			DataSourceType.Supabase,
+			DataSourceType.MySQL,
+			DataSourceType.MariaDB,
+		]
+
+		expect(types).toEqual([metricTypes, metricTypes])
 	})
 
 	it("asks the host to open the data source settings", async ({ expect }) => {

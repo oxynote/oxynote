@@ -3,6 +3,7 @@ package tools
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/guregu/null/v5"
@@ -11,6 +12,9 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/rs/xid"
 )
+
+// _defaultDocumentIcon is the icon a document created without one gets.
+const _defaultDocumentIcon = "mingcute:document-2-fill"
 
 // listDocumentsArgs is what list_documents is called with.
 type listDocumentsArgs struct {
@@ -286,10 +290,23 @@ func (a createDocumentArgs) Validate() error {
 	}
 
 	if a.Icon != "" {
-		return icon.Validate(a.Icon)
+		if err := icon.Validate(a.Icon); err != nil {
+			return err
+		}
 	}
 
-	return nil
+	return a.input().Validate()
+}
+
+// input returns the arguments as the domain's create input, with the
+// default icon when none is given.
+func (a createDocumentArgs) input() document.CreateInput {
+	iconID := a.Icon
+	if iconID == "" {
+		iconID = _defaultDocumentIcon
+	}
+
+	return document.CreateInput{Name: a.Name, Icon: iconID, ParentID: a.ParentID}
 }
 
 // Info returns the tool's model-facing description.
@@ -319,7 +336,7 @@ func (createDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 	// is the one write whose summary names no target.
 	return ActionSummary{
 		Tool:    NameCreateDocument,
-		Summary: fmt.Sprintf("Create document %q", in.Name),
+		Summary: fmt.Sprintf("Create document %q", strings.TrimSpace(in.Name)),
 	}, nil
 }
 
@@ -331,18 +348,12 @@ func (createDocument) Execute(inp *input) (string, error) {
 		return "", err
 	}
 
-	iconID := in.Icon
-	if iconID == "" {
-		iconID = "mingcute:document-2-fill"
+	doc, err := document.NewDocument(in.input(), inp.orgID, inp.userID)
+	if err != nil {
+		return "", err
 	}
 
-	doc := document.NewDocument(document.CreateInput{
-		Name:     in.Name,
-		Icon:     iconID,
-		ParentID: in.ParentID,
-	}, inp.orgID, inp.userID)
-
-	if err := inp.CreateDocument(doc); err != nil {
+	if err = inp.CreateDocument(doc); err != nil {
 		return "", err
 	}
 
@@ -455,6 +466,12 @@ func (a updateDocumentArgs) Validate() error {
 		return errors.New("give at least one of name, icon or parent_id")
 	}
 
+	if a.Name != "" {
+		if err := document.ValidateName(strings.TrimSpace(a.Name)); err != nil {
+			return err
+		}
+	}
+
 	if a.Icon != "" {
 		if err := icon.Validate(a.Icon); err != nil {
 			return err
@@ -539,6 +556,8 @@ func (updateDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
+	in.Name = strings.TrimSpace(in.Name)
+
 	doc, err := inp.FetchDocument(in.DocumentID)
 	if err != nil {
 		return ActionSummary{}, fmt.Errorf("fetch document: %w", err)
@@ -560,6 +579,8 @@ func (updateDocument) Execute(inp *input) (string, error) {
 	if err := inp.Decode(&in); err != nil {
 		return "", err
 	}
+
+	in.Name = strings.TrimSpace(in.Name)
 
 	doc, err := inp.FetchDocument(in.DocumentID)
 	if err != nil {

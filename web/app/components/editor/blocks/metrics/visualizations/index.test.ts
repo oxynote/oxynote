@@ -36,7 +36,10 @@ function stubChart() {
 const orderedLabel = (type: GenericQueryChartType) => `auto-${type}`
 
 function okResult(
-	data: { labels: Record<string, string>; metrics: [number, number][] }[],
+	data: {
+		labels: Record<string, string>
+		metrics: [number, number | null][]
+	}[],
 ): GenericQueryResult {
 	return { status: GenericQueryResultStatus.Ok, data }
 }
@@ -226,6 +229,39 @@ describe("mergeVisualizationResults", () => {
 		})
 	})
 
+	it("keeps a null point so the line breaks at the gap", ({ expect }) => {
+		const merged = mergeVisualizationResults(
+			GenericQueryChartType.Line,
+			[
+				queryItem(
+					okResult([
+						{
+							labels: {},
+							metrics: [
+								[1700000000, 1],
+								[1700000060, null],
+								[1700000120, 3],
+							],
+						},
+					]),
+				),
+			],
+			null,
+			orderedLabel,
+		)
+
+		expect(merged.data).toEqual([
+			{
+				name: "auto-line_chart",
+				data: [
+					[new Date(1700000000000), 1],
+					[new Date(1700000060000), null],
+					[new Date(1700000120000), 3],
+				],
+			},
+		])
+	})
+
 	it("concatenates the series of every query into one data set", ({
 		expect,
 	}) => {
@@ -312,7 +348,7 @@ describe("mergeVisualizationResults", () => {
 		})
 	})
 
-	it("skips gauge series whose last sample is not a time-value pair", ({
+	it("skips gauge series whose last sample is not a time-value pair or is null", ({
 		expect,
 	}) => {
 		const merged = mergeVisualizationResults(
@@ -325,6 +361,7 @@ describe("mergeVisualizationResults", () => {
 							metrics: [[1700000000] as unknown as [number, number]],
 						},
 						{ labels: { job: "empty" }, metrics: [] },
+						{ labels: { job: "null" }, metrics: [[1700000000, null]] },
 						{ labels: { job: "good" }, metrics: [[1700000000, 5]] },
 					]),
 					"{{job}}",
@@ -424,10 +461,16 @@ describe("mergeVisualizationResults", () => {
 			expected: "api on node-1",
 		},
 		{
-			name: "leaves an unknown template variable untouched",
+			name: "drops a template variable the series has no label for",
 			format: "{{job}}/{{missing}}",
 			labels: { job: "api" },
-			expected: "api/{{missing}}",
+			expected: "api/",
+		},
+		{
+			name: "falls back to the ordered legend label when nothing is left",
+			format: "{{missing}} {{other}}",
+			labels: { job: "api" },
+			expected: "auto-line_chart",
 		},
 		{
 			name: "substitutes a variable containing a colon",
@@ -678,6 +721,48 @@ describe("yAxisLabelFormatter", () => {
 	})
 
 	it.for([
+		{ value: 999, expected: "999" },
+		{ value: 1500, expected: "1.5K" },
+		{ value: -2500, expected: "-2.5K" },
+		{ value: 1234567, expected: "1.235M" },
+		{ value: 3e9, expected: "3B" },
+		{ value: 4.5e12, expected: "4.5T" },
+		{ value: 1e15, expected: "1000T" },
+		{ value: 999.9999, expected: "1K" },
+		{ value: 999999.9, expected: "1M" },
+		{ value: 0, expected: "0" },
+		{ value: 12.345678, expected: "12.346" },
+		{ value: 1e-99, expected: "1e-99" },
+	])(
+		"abbreviates a unitless $value to $expected",
+		({ value, expected }, { expect }) => {
+			expect(yAxisLabelFormatter({}, value)).toBe(expected)
+		},
+	)
+
+	it("abbreviates a value with a custom unit", ({ expect }) => {
+		expect(
+			yAxisLabelFormatter(
+				{ type: VisualizationCoreUnit.Custom, custom: "req/s" },
+				1234567,
+			),
+		).toBe("1.235M req/s")
+	})
+
+	it("applies the configured decimal count to an abbreviated value", ({
+		expect,
+	}) => {
+		expect(yAxisLabelFormatter({}, 1234567, 2)).toBe("1.23M")
+		expect(
+			yAxisLabelFormatter(
+				{ type: VisualizationCoreUnit.Custom, custom: "req/s" },
+				1234567,
+				2,
+			),
+		).toBe("1.23M req/s")
+	})
+
+	it.for([
 		{ unit: VisualizationTimeUnit.Nanoseconds, value: 1, expected: "1 ns" },
 		{
 			unit: VisualizationTimeUnit.Nanoseconds,
@@ -852,6 +937,21 @@ describe("calculateYAxisBounds", () => {
 			calculateYAxisBounds([
 				{ name: "a", data: [[at(0, 0, 0), 10]] },
 				{ name: "b", data: [[at(0, 0, 0), 30]] },
+			]),
+		).toEqual({ min: 5, max: 35 })
+	})
+
+	it("ignores null points", ({ expect }) => {
+		expect(
+			calculateYAxisBounds([
+				{
+					name: "a",
+					data: [
+						[at(0, 0, 0), 10],
+						[at(0, 1, 0), null],
+						[at(0, 2, 0), 30],
+					],
+				},
 			]),
 		).toEqual({ min: 5, max: 35 })
 	})

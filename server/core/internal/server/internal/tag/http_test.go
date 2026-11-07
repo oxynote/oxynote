@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	tagCore "github.com/oxynote/oxynote/server/core/internal/tag"
@@ -335,7 +334,7 @@ func Test_Handler_CreateTag(t *testing.T) {
 		},
 		"Successful creation": {
 			DB:       &DBMock{},
-			Payload:  `{"tagName":"Production","color":"green"}`,
+			Payload:  `{"tagName":" Production ","color":"green"}`,
 			Code:     http.StatusCreated,
 			Inserts:  1,
 			Notifies: 1,
@@ -390,6 +389,22 @@ func Test_Handler_UpdateTag(t *testing.T) {
 
 	checks := func(cc ...check) []check { return cc }
 
+	stored := tagCore.Tag{
+		ID:             _tagID,
+		OrganizationID: "org1",
+		TagName:        "Production",
+		Color:          "blue",
+		SortIndex:      2,
+	}
+
+	updated := func(name, color string) tagCore.Tag {
+		t := stored
+		t.TagName = name
+		t.Color = color
+
+		return t
+	}
+
 	hasResp := func(code int, body string) check {
 		return func(t *testing.T, _ *DBMock, _ *wsMock.Topic, rec *httptest.ResponseRecorder) {
 			assert.Equal(t, code, rec.Code)
@@ -403,7 +418,21 @@ func Test_Handler_UpdateTag(t *testing.T) {
 		}
 	}
 
-	wasUpdateCalled := func(count int, inp tagCore.UpdateInput) check {
+	wasFetchCalled := func(count int) check {
+		return func(t *testing.T, db *DBMock, _ *wsMock.Topic, _ *httptest.ResponseRecorder) {
+			calls := db.FetchTagCalls()
+			require.Len(t, calls, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, _tagID, calls[0].ID)
+			assert.Equal(t, "org1", calls[0].OrganizationID)
+		}
+	}
+
+	wasUpdateCalled := func(count int, tg tagCore.Tag) check {
 		return func(t *testing.T, db *DBMock, _ *wsMock.Topic, _ *httptest.ResponseRecorder) {
 			calls := db.UpdateTagCalls()
 			require.Len(t, calls, count)
@@ -412,9 +441,7 @@ func Test_Handler_UpdateTag(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, "org1", calls[0].OrganizationID)
-			assert.Equal(t, _tagID, calls[0].ID)
-			assert.Equal(t, inp, calls[0].Inp)
+			assert.Equal(t, tg, calls[0].T)
 		}
 	}
 
@@ -431,10 +458,19 @@ func Test_Handler_UpdateTag(t *testing.T) {
 		}
 	}
 
-	stubDB := func(err error) *DBMock {
+	stubDB := func(fetchErr, updateErr error) *DBMock {
 		return &DBMock{
-			UpdateTagFunc: func(context.Context, string, xid.ID, tagCore.UpdateInput) error {
-				return err
+			FetchTagFunc: func(context.Context, xid.ID, string) (*tagCore.Tag, error) {
+				if fetchErr != nil {
+					return nil, fetchErr
+				}
+
+				t := stored
+
+				return &t, nil
+			},
+			UpdateTagFunc: func(context.Context, tagCore.Tag) error {
+				return updateErr
 			},
 		}
 	}
@@ -453,7 +489,8 @@ func Test_Handler_UpdateTag(t *testing.T) {
 			JSON:      `{`,
 			Checks: checks(
 				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
-				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasFetchCalled(0),
+				wasUpdateCalled(0, tagCore.Tag{}),
 				wasPublishCalled(0),
 			),
 		},
@@ -463,7 +500,8 @@ func Test_Handler_UpdateTag(t *testing.T) {
 			JSON:  `{"tagName":"Release"}`,
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
-				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasFetchCalled(0),
+				wasUpdateCalled(0, tagCore.Tag{}),
 				wasPublishCalled(0),
 			),
 		},
@@ -473,60 +511,85 @@ func Test_Handler_UpdateTag(t *testing.T) {
 			JSON:  `{`,
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"request.invalid_json","message":"invalid JSON body"}`),
-				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasFetchCalled(0),
+				wasUpdateCalled(0, tagCore.Tag{}),
 				wasPublishCalled(0),
 			),
 		},
-		"Empty update": {
-			DB:    &DBMock{},
-			TagID: _tagID.String(),
-			JSON:  `{}`,
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"tag.empty_update","message":"tag update needs a name or a colour"}`),
-				wasUpdateCalled(0, tagCore.UpdateInput{}),
-				wasPublishCalled(0),
-			),
-		},
-		"Error returned by DB.UpdateTag": {
-			DB:    stubDB(assert.AnError),
+		"Error returned by DB.FetchTag": {
+			DB:    stubDB(assert.AnError, nil),
 			TagID: _tagID.String(),
 			JSON:  `{"tagName":"Release"}`,
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
-				wasUpdateCalled(1, tagCore.UpdateInput{TagName: null.StringFrom("Release")}),
+				wasFetchCalled(1),
+				wasUpdateCalled(0, tagCore.Tag{}),
 				wasPublishCalled(0),
 			),
 		},
-		"Duplicate name returned by DB.UpdateTag": {
-			DB:    stubDB(tagCore.ErrDuplicateTagName),
-			TagID: _tagID.String(),
-			JSON:  `{"tagName":"Release"}`,
-			Checks: checks(
-				hasResp(http.StatusConflict, `{"code":"tag.duplicate_name","message":"tag name is already in use"}`),
-				wasUpdateCalled(1, tagCore.UpdateInput{TagName: null.StringFrom("Release")}),
-				wasPublishCalled(0),
-			),
-		},
-		"Missing or foreign tag returned by DB.UpdateTag": {
-			DB:    stubDB(errutil.ErrNotFound),
+		"Missing or foreign tag returned by DB.FetchTag": {
+			DB:    stubDB(errutil.ErrNotFound, nil),
 			TagID: _tagID.String(),
 			JSON:  `{"tagName":"Release"}`,
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
-				wasUpdateCalled(1, tagCore.UpdateInput{TagName: null.StringFrom("Release")}),
+				wasFetchCalled(1),
+				wasUpdateCalled(0, tagCore.Tag{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Empty update": {
+			DB:    stubDB(nil, nil),
+			TagID: _tagID.String(),
+			JSON:  `{}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"tag.empty_update","message":"tag update needs a name or a colour"}`),
+				wasFetchCalled(1),
+				wasUpdateCalled(0, tagCore.Tag{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Name over the length limit": {
+			DB:    stubDB(nil, nil),
+			TagID: _tagID.String(),
+			JSON:  `{"tagName":"` + strings.Repeat("a", 65) + `"}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"tag.name_too_long","message":"tag name cannot be longer than 64 characters"}`),
+				wasFetchCalled(1),
+				wasUpdateCalled(0, tagCore.Tag{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Error returned by DB.UpdateTag": {
+			DB:    stubDB(nil, assert.AnError),
+			TagID: _tagID.String(),
+			JSON:  `{"tagName":"Release"}`,
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasFetchCalled(1),
+				wasUpdateCalled(1, updated("Release", "blue")),
+				wasPublishCalled(0),
+			),
+		},
+		"Duplicate name returned by DB.UpdateTag": {
+			DB:    stubDB(nil, tagCore.ErrDuplicateTagName),
+			TagID: _tagID.String(),
+			JSON:  `{"tagName":"Release"}`,
+			Checks: checks(
+				hasResp(http.StatusConflict, `{"code":"tag.duplicate_name","message":"tag name is already in use"}`),
+				wasFetchCalled(1),
+				wasUpdateCalled(1, updated("Release", "blue")),
 				wasPublishCalled(0),
 			),
 		},
 		"Successful update": {
-			DB:    &DBMock{},
+			DB:    stubDB(nil, nil),
 			TagID: _tagID.String(),
-			JSON:  `{"tagName":"Release","color":"green"}`,
+			JSON:  `{"tagName":" Release ","color":"green"}`,
 			Checks: checks(
 				hasResp(http.StatusNoContent, ""),
-				wasUpdateCalled(1, tagCore.UpdateInput{
-					TagName: null.StringFrom("Release"),
-					Color:   null.StringFrom("green"),
-				}),
+				wasFetchCalled(1),
+				wasUpdateCalled(1, updated("Release", "green")),
 				wasPublishCalled(1),
 			),
 		},

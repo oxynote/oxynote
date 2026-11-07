@@ -125,7 +125,7 @@ func Test_decodeMetricAttrs(t *testing.T) {
 		},
 		"A refresh interval following another variable": {
 			Text: `{"refreshInterval":"$env"}`,
-			Err:  errors.New("metric refreshInterval must be one of: $metric_refresh, 5s, 10s, 30s, 1m, 5m, 15m, 30m, 1h, 2h, 1d"),
+			Err:  errors.New("metric block refreshInterval must be one of: $metric_refresh, 5s, 10s, 30s, 1m, 5m, 15m, 30m, 1h, 2h, 1d"),
 		},
 		"Not JSON": {
 			Text: "{",
@@ -133,7 +133,7 @@ func Test_decodeMetricAttrs(t *testing.T) {
 		},
 		"Non-string width": {
 			Text: `{"width":1}`,
-			Err:  errors.New("metric width must be one of: compact, standard, wide"),
+			Err:  errors.New("metric block width must be one of: compact, standard, wide"),
 		},
 		"Unknown visualization type": {
 			Text: `{"visualizationType":"pie_chart"}`,
@@ -157,7 +157,7 @@ func Test_decodeMetricAttrs(t *testing.T) {
 		},
 		"A query row missing its query": {
 			Text: `{"queries":[{"name":"a","query":"up"},{"name":"b"}]}`,
-			Err:  errors.New("metric query 2: name and query are required"),
+			Err:  errors.New("metric block query 2: name and query are required"),
 		},
 		"Thresholds that are not an array": {
 			Text: `{"thresholds":90}`,
@@ -169,11 +169,11 @@ func Test_decodeMetricAttrs(t *testing.T) {
 		},
 		"A threshold colour outside the palette": {
 			Text: `{"thresholds":[{"value":90,"color":"red"},{"value":95,"color":"crimson"}]}`,
-			Err:  errors.New("metric threshold 2: color must be one of: red, orange, amber, yellow, lime, green, emerald, teal, cyan, sky, blue, indigo, violet, purple, fuchsia, pink"),
+			Err:  errors.New("metric block threshold 2: color must be one of: red, orange, amber, yellow, lime, green, emerald, teal, cyan, sky, blue, indigo, violet, purple, fuchsia, pink"),
 		},
 		"A base threshold colour outside the palette": {
 			Text: `{"baseThresholdColor":"#00ff00"}`,
-			Err:  errors.New("metric baseThresholdColor must be one of: red, orange, amber, yellow, lime, green, emerald, teal, cyan, sky, blue, indigo, violet, purple, fuchsia, pink"),
+			Err:  errors.New("metric block baseThresholdColor must be one of: red, orange, amber, yellow, lime, green, emerald, teal, cyan, sky, blue, indigo, violet, purple, fuchsia, pink"),
 		},
 		"Colours the stored metric already carries": {
 			Text: `{"thresholds":[{"value":90,"color":"` + legacyColor + `"}],"baseThresholdColor":"` + legacyColor + `"}`,
@@ -238,39 +238,6 @@ func Test_storedMetricColors(t *testing.T) {
 	}
 }
 
-func Test_metricValues(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		Key    string
-		Result []string
-	}{
-		"An enum without a reference": {
-			Key:    document.AttrWidth,
-			Result: []string{"compact", "standard", "wide"},
-		},
-		"An enum led by its reference": {
-			Key:    document.AttrRefreshInterval,
-			Result: []string{"$metric_refresh", "5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"},
-		},
-		"The time range led by its reference": {
-			Key:    document.AttrTimeRange,
-			Result: append([]string{"$metric_range"}, document.MetricTimeRanges()...),
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, c.Result, metricValues(c.Key))
-
-			// the reference is never written into the shared enum table.
-			assert.NotContains(t, _metricEnums[c.Key], _metricReferences[c.Key])
-		})
-	}
-}
-
 func Test_setSimulation(t *testing.T) {
 	t.Parallel()
 
@@ -322,55 +289,6 @@ func Test_setSimulation(t *testing.T) {
 			t.Parallel()
 
 			setSimulation(c.Attrs, c.Stored)
-
-			assert.Equal(t, c.Expected, c.Attrs)
-		})
-	}
-}
-
-func Test_setMetricWindow(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		Attrs    document.Attributes
-		Stored   document.Block
-		Expected document.Attributes
-	}{
-		"A new metric follows the built-in variables": {
-			Attrs:    document.Attributes{},
-			Expected: document.Attributes{"timeRange": "$metric_range", "refreshInterval": "$metric_refresh"},
-		},
-		"A new metric keeps the preset it names": {
-			Attrs:    document.Attributes{"timeRange": "last_1_hour"},
-			Expected: document.Attributes{"timeRange": "last_1_hour", "refreshInterval": "$metric_refresh"},
-		},
-		"A re-sent metric keeps its stored window": {
-			Attrs:    document.Attributes{},
-			Stored:   document.Block{Type: document.BlockNodeMetricBlock, Attrs: document.Attributes{"timeRange": "last_1_hour", "refreshInterval": "1m"}},
-			Expected: document.Attributes{"timeRange": "last_1_hour", "refreshInterval": "1m"},
-		},
-		"A re-sent metric stored without a window stays without one": {
-			Attrs:    document.Attributes{},
-			Stored:   document.Block{Type: document.BlockNodeMetricBlock, Attrs: document.Attributes{}},
-			Expected: document.Attributes{},
-		},
-		"A re-sent metric takes the window it names": {
-			Attrs:    document.Attributes{"timeRange": "$metric_range"},
-			Stored:   document.Block{Type: document.BlockNodeMetricBlock, Attrs: document.Attributes{"timeRange": "last_1_hour"}},
-			Expected: document.Attributes{"timeRange": "$metric_range"},
-		},
-		"An id given to another kind of block counts as new": {
-			Attrs:    document.Attributes{},
-			Stored:   document.Block{Type: document.BlockNodeParagraph, Attrs: document.Attributes{"timeRange": "last_1_hour"}},
-			Expected: document.Attributes{"timeRange": "$metric_range", "refreshInterval": "$metric_refresh"},
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			setMetricWindow(c.Attrs, c.Stored)
 
 			assert.Equal(t, c.Expected, c.Attrs)
 		})

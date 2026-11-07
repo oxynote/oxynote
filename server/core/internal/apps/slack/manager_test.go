@@ -412,12 +412,12 @@ func Test_Manager_VerifyMiddleware(t *testing.T) {
 
 	// signRequest builds a request carrying the Slack signature headers
 	// for the given body, signed with the given secret.
-	signRequest := func(t *testing.T, body, secret string) *http.Request {
+	signRequestAt := func(t *testing.T, body, secret string, at time.Time) *http.Request {
 		t.Helper()
 
 		r := httptest.NewRequest(http.MethodPost, "/slack/events", bytes.NewBufferString(body))
 
-		ts := strconv.FormatInt(time.Now().Unix(), 10)
+		ts := strconv.FormatInt(at.Unix(), 10)
 
 		mac := hmac.New(sha256.New, []byte(secret))
 
@@ -428,6 +428,12 @@ func Test_Manager_VerifyMiddleware(t *testing.T) {
 		r.Header.Set("X-Slack-Signature", "v0="+hex.EncodeToString(mac.Sum(nil)))
 
 		return r
+	}
+
+	signRequest := func(t *testing.T, body, secret string) *http.Request {
+		t.Helper()
+
+		return signRequestAt(t, body, secret, time.Now())
 	}
 
 	cc := map[string]struct {
@@ -446,13 +452,37 @@ func Test_Manager_VerifyMiddleware(t *testing.T) {
 			Request: func(t *testing.T) *http.Request {
 				return signRequest(t, `{}`, "other-secret")
 			},
-			Err: assert.AnError,
+			Err: ErrInvalidSignature,
 		},
 		"Request without signature headers fails": {
 			Request: func(_ *testing.T) *http.Request {
 				return httptest.NewRequest(http.MethodPost, "/slack/events", http.NoBody)
 			},
-			Err: assert.AnError,
+			Err: ErrInvalidSignature,
+		},
+		"Request without signature header fails": {
+			Request: func(t *testing.T) *http.Request {
+				r := signRequest(t, `{}`, _testSignatureSecret)
+				r.Header.Del("X-Slack-Signature")
+
+				return r
+			},
+			Err: ErrInvalidSignature,
+		},
+		"Request without timestamp header fails": {
+			Request: func(t *testing.T) *http.Request {
+				r := signRequest(t, `{}`, _testSignatureSecret)
+				r.Header.Del("X-Slack-Request-Timestamp")
+
+				return r
+			},
+			Err: ErrInvalidSignature,
+		},
+		"Request with an expired timestamp fails": {
+			Request: func(t *testing.T) *http.Request {
+				return signRequestAt(t, `{}`, _testSignatureSecret, time.Now().Add(-10*time.Minute))
+			},
+			Err: ErrInvalidSignature,
 		},
 		// a request signed with the empty secret is exactly what a forger
 		// could produce against an unconfigured deployment.
@@ -469,7 +499,7 @@ func Test_Manager_VerifyMiddleware(t *testing.T) {
 			Request: func(_ *testing.T) *http.Request {
 				r := httptest.NewRequest(http.MethodPost, "/slack/events", iotest.ErrReader(assert.AnError))
 				r.Header.Set("X-Slack-Request-Timestamp", strconv.FormatInt(time.Now().Unix(), 10))
-				r.Header.Set("X-Slack-Signature", "v0=deadbeef")
+				r.Header.Set("X-Slack-Signature", "v0="+hex.EncodeToString(make([]byte, sha256.Size)))
 
 				return r
 			},

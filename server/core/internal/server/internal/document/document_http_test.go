@@ -1291,7 +1291,7 @@ func Test_Handler_UpdateDocumentTree(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			db := &DBMock{BeginTxFunc: testutil.StubBeginTx(c.Tx, c.BeginErr)}
+			db := &DBMock{BeginTxFunc: testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)}
 			hdl, cnt := newTestHandler(db, &fakePublisher{})
 
 			rec := httptest.NewRecorder()
@@ -1784,8 +1784,8 @@ func Test_Handler_SearchDocumentsLegacy(t *testing.T) {
 }
 
 func Test_Handler_CreateDocument(t *testing.T) {
-	validBody := `{"name":"New doc","icon":"icon"}`
-	parentBody := `{"name":"New doc","icon":"icon","parentId":"` + xid.New().String() + `"}`
+	validBody := `{"name":"New doc","icon":"mingcute:rocket-fill"}`
+	parentBody := `{"name":"New doc","icon":"mingcute:rocket-fill","parentId":"` + xid.New().String() + `"}`
 
 	cc := map[string]struct {
 		Tx                                  *TxMock
@@ -1794,6 +1794,7 @@ func Test_Handler_CreateDocument(t *testing.T) {
 		NoSession                           bool
 		Body                                string
 		RespCode                            int
+		RespJSON                            string
 		Committed                           int
 		TreeCbs                             int
 		BeginTx                             int
@@ -1816,6 +1817,30 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			Tx:       &TxMock{},
 			Body:     "{",
 			RespCode: http.StatusBadRequest,
+		},
+		"Empty name": {
+			Tx:       &TxMock{},
+			Body:     `{"name":"","icon":"mingcute:rocket-fill"}`,
+			RespCode: http.StatusBadRequest,
+			RespJSON: `{"code":"document.invalid_name","message":"document name cannot be empty"}`,
+		},
+		"Name of only white space": {
+			Tx:       &TxMock{},
+			Body:     `{"name":"   ","icon":"mingcute:rocket-fill"}`,
+			RespCode: http.StatusBadRequest,
+			RespJSON: `{"code":"document.invalid_name","message":"document name cannot be empty"}`,
+		},
+		"Name over 200 characters": {
+			Tx:       &TxMock{},
+			Body:     `{"name":"` + strings.Repeat("a", 201) + `","icon":"mingcute:rocket-fill"}`,
+			RespCode: http.StatusBadRequest,
+			RespJSON: `{"code":"document.name_too_long","message":"document name cannot be longer than 200 characters"}`,
+		},
+		"Icon the picker does not offer": {
+			Tx:       &TxMock{},
+			Body:     `{"name":"New doc","icon":"not-an-icon"}`,
+			RespCode: http.StatusBadRequest,
+			RespJSON: `{"code":"document.invalid_icon","message":"document icon is not one the icon picker offers"}`,
 		},
 		"Error returned by DB.BeginTx": {
 			Tx:       &TxMock{},
@@ -1986,7 +2011,7 @@ func Test_Handler_CreateDocument(t *testing.T) {
 				queue = &SearchQueueMock{}
 			}
 
-			db := &DBMock{BeginTxFunc: testutil.StubBeginTx(c.Tx, c.BeginErr)}
+			db := &DBMock{BeginTxFunc: testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)}
 			hdl, cnt := newTestHandler(db, &fakePublisher{})
 			hdl.searchQueue = queue
 
@@ -1995,6 +2020,11 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			hdl.CreateDocument(rec, newRequest(http.MethodPost, c.Body, c.NoSession, true, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
+
+			if c.RespJSON != "" {
+				assert.JSONEq(t, c.RespJSON, rec.Body.String())
+			}
+
 			assert.Len(t, db.BeginTxCalls(), c.BeginTx)
 			assert.Len(t, c.Tx.CheckDocumentExistsCalls(), c.CheckDocumentExists)
 			assert.Len(t, c.Tx.InsertDocumentCalls(), c.InsertDocument)
@@ -2168,7 +2198,7 @@ func Test_Handler_DeleteDocument(t *testing.T) {
 				queue = &SearchQueueMock{}
 			}
 
-			c.DB.BeginTxFunc = testutil.StubBeginTx(c.Tx, c.BeginErr)
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			hdl, cnt := newTestHandler(c.DB, &fakePublisher{})
 			hdl.searchQueue = queue
@@ -2509,7 +2539,7 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 				storer = &StorerMock{}
 			}
 
-			c.DB.BeginTxFunc = testutil.StubBeginTx(c.Tx, c.BeginErr)
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			hdl, cnt := newTestHandler(c.DB, &fakePublisher{})
 			hdl.storer = storer

@@ -331,6 +331,51 @@ describe("filterSlashItems", () => {
 	)
 
 	it.for([
+		{ title: "Live Metrics", command: "insertMetricBlock" },
+		{ title: "Live Logs", command: "insertLogBlock" },
+	])(
+		"returns a $title command that inserts its block where the slash was typed",
+		({ title, command }, { expect }) => {
+			const calls: [string, unknown][] = []
+			const chain: Record<string, (arg?: unknown) => unknown> = {}
+			const record = (name: string) => (arg?: unknown) => {
+				calls.push([name, arg])
+
+				return chain
+			}
+
+			chain.focus = record("focus")
+			chain.deleteRange = record("deleteRange")
+			chain[command] = record(command)
+			chain.run = record("run")
+
+			const state = stateAt("top")
+			const editor = {
+				state,
+				extensionManager: { extensions: [] },
+				chain: () => chain,
+			} as unknown as Editor
+			const range = { from: state.selection.from, to: state.selection.from }
+
+			const item = filterSlashItems({ query: title, editor, t }).find(
+				(v) => t(v.titleI18nKey) === title,
+			)
+			if (!item) {
+				throw new Error(`the ${title} item is missing from the slash menu`)
+			}
+
+			item.command({ editor, range })
+
+			expect(calls).toEqual([
+				["focus", undefined],
+				["deleteRange", range],
+				[command, range.from],
+				["run", undefined],
+			])
+		},
+	)
+
+	it.for([
 		{ title: "File", expected: FILE_BLOCK_NAME },
 		{ title: "Image", expected: IMAGE_BLOCK_NAME },
 	])(

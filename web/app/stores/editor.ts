@@ -1,10 +1,12 @@
 import { defineStore } from "pinia"
 import type { MetricConfig } from "~/components/editor/blocks/metrics/utils"
+import type { LogConfig } from "~/components/editor/blocks/logs/utils"
 import type { DiffStatus } from "~/components/editor/diff/position-map"
 
 type DocumentId = string
 type BranchId = string
 type BlockId = string
+type BlockMap<T> = Record<DocumentId, Record<BranchId, Record<BlockId, T>>>
 
 export const EDITOR_COMPACT_MAX_WIDTH_PX = 1280
 
@@ -17,19 +19,16 @@ export const useEditorStore = defineStore("editor", () => {
 	const mappedDefaultBranchId = ref<BranchId | null>(null) // used to track the branch that the default branch of the document is currently mapped to (can be different from activeBranchId)
 	const targetBranchId = ref<BranchId | null>(null) // used for diffs and merges
 	const branchReviewableActionsActive = ref(false) // whether the active branch has reviewable actions (approve/merge) that should be shown in the UI or not, determined based on the document and branch metadata and permissions
-	const metricBlockConfigs = ref<
-		Record<DocumentId, Record<BranchId, Record<BlockId, MetricConfig>>>
-	>({})
+	const metricBlockConfigs = ref<BlockMap<MetricConfig>>({})
 	const activeMetricBlockConfig = ref<string | null>(null) // uid of the active metric block being edited/viewed in modal
-	const metricBlockDiffStatuses = ref<
-		Record<DocumentId, Record<BranchId, Record<BlockId, DiffStatus | null>>>
-	>({})
-	const metricBlockOldConfigs = ref<
-		Record<DocumentId, Record<BranchId, Record<BlockId, MetricConfig | null>>>
-	>({})
-	const metricBlockNextRefreshTimestamps = ref<
-		Record<DocumentId, Record<BranchId, Record<BlockId, Date>>>
-	>({})
+	const metricBlockDiffStatuses = ref<BlockMap<DiffStatus | null>>({})
+	const metricBlockOldConfigs = ref<BlockMap<MetricConfig | null>>({})
+	const metricBlockNextRefreshTimestamps = ref<BlockMap<Date>>({})
+	const logBlockConfigs = ref<BlockMap<LogConfig>>({})
+	const activeLogBlockConfig = ref<string | null>(null) // uid of the active log block being edited/viewed in modal
+	const logBlockDiffStatuses = ref<BlockMap<DiffStatus | null>>({})
+	const logBlockOldConfigs = ref<BlockMap<LogConfig | null>>({})
+	const logBlockNextRefreshTimestamps = ref<BlockMap<Date>>({})
 	const lastDragDropTimestamp = ref<Date | null>(null)
 	const reviewableDiffActive = ref(false)
 	const aiAssistantOpen = ref(false)
@@ -61,7 +60,7 @@ export const useEditorStore = defineStore("editor", () => {
 
 	function updateActiveDocumentId(id: string | null) {
 		if (activeDocumentId.value !== id) {
-			clearMetricBlockData()
+			clearBlockData()
 			setReviewableDiffActive(false)
 			// reset the branch ids, the new document load renews them
 			activeBranchId.value = null
@@ -100,27 +99,14 @@ export const useEditorStore = defineStore("editor", () => {
 		reviewableDiffActive.value = active
 
 		if (!active) {
-			clearMetricBlockDiffData()
+			clearBlockDiffData()
 		}
 	}
 
 	function setMetricBlockConfig(blockId: string, config: MetricConfig) {
-		if (!activeDocumentId.value) {
-			throw new Error(
-				"Cannot set metric block config without an active document",
-			)
-		}
+		const [docId, branchId] = resolveBranch("set metric block config")
 
-		if (!activeBranchId.value) {
-			throw new Error("Cannot set metric block config without an active branch")
-		}
-
-		const docConfigs = metricBlockConfigs.value[activeDocumentId.value] ?? {}
-		const branchConfigs = docConfigs[activeBranchId.value] ?? {}
-
-		branchConfigs[blockId] = config
-		docConfigs[activeBranchId.value] = branchConfigs
-		metricBlockConfigs.value[activeDocumentId.value] = docConfigs
+		setBlockEntry(metricBlockConfigs.value, docId, branchId, blockId, config)
 	}
 
 	function removeMetricBlockConfig(
@@ -128,23 +114,18 @@ export const useEditorStore = defineStore("editor", () => {
 		docId?: string,
 		branchId?: string,
 	) {
-		const resolvedDocId = docId ?? activeDocumentId.value
-		if (!resolvedDocId) {
-			throw new Error(
-				"Cannot remove metric block config without an active document",
-			)
-		}
+		const [resolvedDocId, resolvedBranchId] = resolveBranch(
+			"remove metric block config",
+			docId,
+			branchId,
+		)
 
-		const resolvedBranchId = branchId ?? activeBranchId.value
-		if (!resolvedBranchId) {
-			throw new Error(
-				"Cannot remove metric block config without an active branch",
-			)
-		}
-
-		delete metricBlockConfigs.value[resolvedDocId]?.[resolvedBranchId]?.[
-			blockId
-		]
+		removeBlockEntry(
+			metricBlockConfigs.value,
+			resolvedDocId,
+			resolvedBranchId,
+			blockId,
+		)
 	}
 
 	function setMetricBlockDiffInfo(
@@ -152,32 +133,22 @@ export const useEditorStore = defineStore("editor", () => {
 		diffStatus: DiffStatus,
 		oldConfig: MetricConfig | null,
 	) {
-		if (!activeDocumentId.value) {
-			throw new Error(
-				"Cannot set metric block diff info without an active document",
-			)
-		}
+		const [docId, branchId] = resolveBranch("set metric block diff info")
 
-		if (!activeBranchId.value) {
-			throw new Error(
-				"Cannot set metric block diff info without an active branch",
-			)
-		}
-
-		const docStatuses =
-			metricBlockDiffStatuses.value[activeDocumentId.value] ?? {}
-		const branchStatuses = docStatuses[activeBranchId.value] ?? {}
-		const docOldConfigs =
-			metricBlockOldConfigs.value[activeDocumentId.value] ?? {}
-		const branchOldConfigs = docOldConfigs[activeBranchId.value] ?? {}
-
-		branchStatuses[blockId] = diffStatus
-		docStatuses[activeBranchId.value] = branchStatuses
-		metricBlockDiffStatuses.value[activeDocumentId.value] = docStatuses
-
-		branchOldConfigs[blockId] = oldConfig
-		docOldConfigs[activeBranchId.value] = branchOldConfigs
-		metricBlockOldConfigs.value[activeDocumentId.value] = docOldConfigs
+		setBlockEntry(
+			metricBlockDiffStatuses.value,
+			docId,
+			branchId,
+			blockId,
+			diffStatus,
+		)
+		setBlockEntry(
+			metricBlockOldConfigs.value,
+			docId,
+			branchId,
+			blockId,
+			oldConfig,
+		)
 	}
 
 	function removeMetricBlockDiffInfo(
@@ -185,26 +156,24 @@ export const useEditorStore = defineStore("editor", () => {
 		docId?: string,
 		branchId?: string,
 	) {
-		const resolvedDocId = docId ?? activeDocumentId.value
-		if (!resolvedDocId) {
-			throw new Error(
-				"Cannot remove metric block diff info without an active document",
-			)
-		}
+		const [resolvedDocId, resolvedBranchId] = resolveBranch(
+			"remove metric block diff info",
+			docId,
+			branchId,
+		)
 
-		const resolvedBranchId = branchId ?? activeBranchId.value
-		if (!resolvedBranchId) {
-			throw new Error(
-				"Cannot remove metric block diff info without an active branch",
-			)
-		}
-
-		delete metricBlockDiffStatuses.value[resolvedDocId]?.[resolvedBranchId]?.[
-			blockId
-		]
-		delete metricBlockOldConfigs.value[resolvedDocId]?.[resolvedBranchId]?.[
-			blockId
-		]
+		removeBlockEntry(
+			metricBlockDiffStatuses.value,
+			resolvedDocId,
+			resolvedBranchId,
+			blockId,
+		)
+		removeBlockEntry(
+			metricBlockOldConfigs.value,
+			resolvedDocId,
+			resolvedBranchId,
+			blockId,
+		)
 	}
 
 	function activateMetricBlockConfig(uid: string | null) {
@@ -212,45 +181,24 @@ export const useEditorStore = defineStore("editor", () => {
 	}
 
 	function setMetricBlockNextRefreshTimestamp(blockId: string, ms: number) {
-		if (!activeDocumentId.value) {
-			throw new Error(
-				"Cannot set metric block next refresh timestamp without an active document",
-			)
-		}
+		const [docId, branchId] = resolveBranch(
+			"set metric block next refresh timestamp",
+		)
 
-		if (!activeBranchId.value) {
-			throw new Error(
-				"Cannot set metric block next refresh timestamp without an active branch",
-			)
-		}
-
-		const docTimestamps =
-			metricBlockNextRefreshTimestamps.value[activeDocumentId.value] ?? {}
-		const branchTimestamps = docTimestamps[activeBranchId.value] ?? {}
-
-		branchTimestamps[blockId] = new Date(Date.now() + ms)
-		docTimestamps[activeBranchId.value] = branchTimestamps
-		metricBlockNextRefreshTimestamps.value[activeDocumentId.value] =
-			docTimestamps
+		setBlockEntry(
+			metricBlockNextRefreshTimestamps.value,
+			docId,
+			branchId,
+			blockId,
+			new Date(Date.now() + ms),
+		)
 	}
 
 	function isMetricBlockDueForRefresh(blockId: string): boolean {
-		if (!activeDocumentId.value) {
-			throw new Error(
-				"Cannot check metric block refresh status without an active document",
-			)
-		}
-
-		if (!activeBranchId.value) {
-			throw new Error(
-				"Cannot check metric block refresh status without an active branch",
-			)
-		}
+		const [docId, branchId] = resolveBranch("check metric block refresh status")
 
 		const nextRefresh =
-			metricBlockNextRefreshTimestamps.value[activeDocumentId.value]?.[
-				activeBranchId.value
-			]?.[blockId]
+			metricBlockNextRefreshTimestamps.value[docId]?.[branchId]?.[blockId]
 		if (!nextRefresh) {
 			return true
 		}
@@ -259,21 +207,124 @@ export const useEditorStore = defineStore("editor", () => {
 	}
 
 	function clearMetricBlockNextRefreshTimestamp(blockUid: string) {
-		if (!activeDocumentId.value) {
-			throw new Error(
-				"Cannot clear metric block refresh timestamp without an active document",
-			)
+		const [docId, branchId] = resolveBranch(
+			"clear metric block refresh timestamp",
+		)
+
+		removeBlockEntry(
+			metricBlockNextRefreshTimestamps.value,
+			docId,
+			branchId,
+			blockUid,
+		)
+	}
+
+	function setLogBlockConfig(blockId: string, config: LogConfig) {
+		const [docId, branchId] = resolveBranch("set log block config")
+
+		setBlockEntry(logBlockConfigs.value, docId, branchId, blockId, config)
+	}
+
+	function removeLogBlockConfig(
+		blockId: string,
+		docId?: string,
+		branchId?: string,
+	) {
+		const [resolvedDocId, resolvedBranchId] = resolveBranch(
+			"remove log block config",
+			docId,
+			branchId,
+		)
+
+		removeBlockEntry(
+			logBlockConfigs.value,
+			resolvedDocId,
+			resolvedBranchId,
+			blockId,
+		)
+	}
+
+	function setLogBlockDiffInfo(
+		blockId: string,
+		diffStatus: DiffStatus,
+		oldConfig: LogConfig | null,
+	) {
+		const [docId, branchId] = resolveBranch("set log block diff info")
+
+		setBlockEntry(
+			logBlockDiffStatuses.value,
+			docId,
+			branchId,
+			blockId,
+			diffStatus,
+		)
+		setBlockEntry(logBlockOldConfigs.value, docId, branchId, blockId, oldConfig)
+	}
+
+	function removeLogBlockDiffInfo(
+		blockId: string,
+		docId?: string,
+		branchId?: string,
+	) {
+		const [resolvedDocId, resolvedBranchId] = resolveBranch(
+			"remove log block diff info",
+			docId,
+			branchId,
+		)
+
+		removeBlockEntry(
+			logBlockDiffStatuses.value,
+			resolvedDocId,
+			resolvedBranchId,
+			blockId,
+		)
+		removeBlockEntry(
+			logBlockOldConfigs.value,
+			resolvedDocId,
+			resolvedBranchId,
+			blockId,
+		)
+	}
+
+	function activateLogBlockConfig(uid: string | null) {
+		activeLogBlockConfig.value = uid
+	}
+
+	function setLogBlockNextRefreshTimestamp(blockId: string, ms: number) {
+		const [docId, branchId] = resolveBranch(
+			"set log block next refresh timestamp",
+		)
+
+		setBlockEntry(
+			logBlockNextRefreshTimestamps.value,
+			docId,
+			branchId,
+			blockId,
+			new Date(Date.now() + ms),
+		)
+	}
+
+	function isLogBlockDueForRefresh(blockId: string): boolean {
+		const [docId, branchId] = resolveBranch("check log block refresh status")
+
+		const nextRefresh =
+			logBlockNextRefreshTimestamps.value[docId]?.[branchId]?.[blockId]
+		if (!nextRefresh) {
+			return true
 		}
 
-		if (!activeBranchId.value) {
-			throw new Error(
-				"Cannot clear metric block refresh timestamp without an active branch",
-			)
-		}
+		return Date.now() >= nextRefresh.getTime()
+	}
 
-		delete metricBlockNextRefreshTimestamps.value[activeDocumentId.value]?.[
-			activeBranchId.value
-		]?.[blockUid]
+	function clearLogBlockNextRefreshTimestamp(blockUid: string) {
+		const [docId, branchId] = resolveBranch("clear log block refresh timestamp")
+
+		removeBlockEntry(
+			logBlockNextRefreshTimestamps.value,
+			docId,
+			branchId,
+			blockUid,
+		)
 	}
 
 	function updateLastDragDropTimestamp() {
@@ -304,27 +355,96 @@ export const useEditorStore = defineStore("editor", () => {
 		settledBlockRenders.value.add(id)
 	}
 
-	function clearMetricBlockData() {
+	function clearBlockData() {
 		if (!activeDocumentId.value) {
 			return
 		}
 
-		activeMetricBlockConfig.value = null
-		delete metricBlockNextRefreshTimestamps.value[activeDocumentId.value]
-		delete metricBlockConfigs.value[activeDocumentId.value]
-		delete metricBlockDiffStatuses.value[activeDocumentId.value]
-		delete metricBlockOldConfigs.value[activeDocumentId.value]
+		clearMetricBlockData(activeDocumentId.value)
+		clearLogBlockData(activeDocumentId.value)
 		mermaidBlockShowCode.value = {}
 		settledBlockRenders.value = new Set()
 	}
 
+	function clearBlockDiffData() {
+		clearMetricBlockDiffData()
+		clearLogBlockDiffData()
+	}
+
+	function clearMetricBlockData(docId: DocumentId) {
+		activeMetricBlockConfig.value = null
+		delete metricBlockConfigs.value[docId]
+		delete metricBlockDiffStatuses.value[docId]
+		delete metricBlockOldConfigs.value[docId]
+		delete metricBlockNextRefreshTimestamps.value[docId]
+	}
+
 	function clearMetricBlockDiffData() {
-		for (const docId of Object.keys(metricBlockDiffStatuses.value)) {
-			delete metricBlockDiffStatuses.value[docId]
+		clearAllEntries(metricBlockDiffStatuses.value)
+		clearAllEntries(metricBlockOldConfigs.value)
+	}
+
+	function clearLogBlockData(docId: DocumentId) {
+		activeLogBlockConfig.value = null
+		delete logBlockConfigs.value[docId]
+		delete logBlockDiffStatuses.value[docId]
+		delete logBlockOldConfigs.value[docId]
+		delete logBlockNextRefreshTimestamps.value[docId]
+	}
+
+	function clearLogBlockDiffData() {
+		clearAllEntries(logBlockDiffStatuses.value)
+		clearAllEntries(logBlockOldConfigs.value)
+	}
+
+	// resolveBranch returns the given document and branch, falling back to
+	// the active ones. It throws when either is missing, naming the action
+	// that needed them.
+	function resolveBranch(
+		action: string,
+		docId?: DocumentId,
+		branchId?: BranchId,
+	): [DocumentId, BranchId] {
+		const resolvedDocId = docId ?? activeDocumentId.value
+		if (!resolvedDocId) {
+			throw new Error(`Cannot ${action} without an active document`)
 		}
 
-		for (const docId of Object.keys(metricBlockOldConfigs.value)) {
-			delete metricBlockOldConfigs.value[docId]
+		const resolvedBranchId = branchId ?? activeBranchId.value
+		if (!resolvedBranchId) {
+			throw new Error(`Cannot ${action} without an active branch`)
+		}
+
+		return [resolvedDocId, resolvedBranchId]
+	}
+
+	function setBlockEntry<T>(
+		map: BlockMap<T>,
+		docId: DocumentId,
+		branchId: BranchId,
+		blockId: BlockId,
+		value: T,
+	) {
+		const docEntries = map[docId] ?? {}
+		const branchEntries = docEntries[branchId] ?? {}
+
+		branchEntries[blockId] = value
+		docEntries[branchId] = branchEntries
+		map[docId] = docEntries
+	}
+
+	function removeBlockEntry<T>(
+		map: BlockMap<T>,
+		docId: DocumentId,
+		branchId: BranchId,
+		blockId: BlockId,
+	) {
+		delete map[docId]?.[branchId]?.[blockId]
+	}
+
+	function clearAllEntries<T>(map: BlockMap<T>) {
+		for (const docId of Object.keys(map)) {
+			delete map[docId]
 		}
 	}
 
@@ -356,6 +476,18 @@ export const useEditorStore = defineStore("editor", () => {
 		removeMetricBlockDiffInfo,
 		activeMetricBlockConfig,
 		activateMetricBlockConfig,
+		logBlockConfigs,
+		setLogBlockConfig,
+		removeLogBlockConfig,
+		logBlockDiffStatuses,
+		logBlockOldConfigs,
+		setLogBlockDiffInfo,
+		removeLogBlockDiffInfo,
+		activeLogBlockConfig,
+		activateLogBlockConfig,
+		setLogBlockNextRefreshTimestamp,
+		isLogBlockDueForRefresh,
+		clearLogBlockNextRefreshTimestamp,
 		setMetricBlockNextRefreshTimestamp,
 		isMetricBlockDueForRefresh,
 		clearMetricBlockNextRefreshTimestamp,

@@ -2,11 +2,11 @@ import type { ShallowRef, Ref } from "vue"
 import type { Extensions, JSONContent } from "@tiptap/core"
 import type * as Y from "yjs"
 import { Editor } from "@tiptap/vue-3"
-import Document from "@tiptap/extension-document"
+import { ContentDocument } from "~/components/editor/blocks/document"
 import Heading from "@tiptap/extension-heading"
 import Paragraph from "@tiptap/extension-paragraph"
 import Text from "@tiptap/extension-text"
-import { yXmlFragmentToProseMirrorRootNode } from "y-prosemirror"
+import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap"
 import { DiffAttributes } from "~/components/editor/diff/diff-attributes"
 import { DiffDecorations } from "~/components/editor/diff/diff-decorations"
 import {
@@ -137,7 +137,7 @@ export function useDiffEditor(
 	const editorInstance = new Editor({
 		editable: true,
 		extensions: [
-			Document,
+			ContentDocument,
 			Text,
 			...patchedExtensions,
 			DiffTextAddedMark,

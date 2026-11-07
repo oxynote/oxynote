@@ -62,7 +62,7 @@ function toRow(change: AttributeChange): FieldChange {
 			return row(t("editor.metrics.config.title-label"), change)
 		case "dataSourceId":
 			return row(
-				t("editor.metrics.config.data-source-label"),
+				t("editor.config-modal-utils.data-source-label"),
 				change,
 				dataSourceName,
 			)
@@ -74,20 +74,20 @@ function toRow(change: AttributeChange): FieldChange {
 			)
 		case "timeRange":
 			return row(
-				t("editor.metrics.config.time-range-label"),
+				t("editor.config-modal-utils.time-range-label"),
 				change,
 				(value) =>
 					value === METRIC_TIME_RANGE_REFERENCE
-						? t("editor.metrics.config.variable-time-range")
+						? t("editor.config-modal-utils.variable-time-range")
 						: t(`general.time-range-options.${displayValue(value)}`),
 			)
 		case "refreshInterval":
 			return row(
-				t("editor.metrics.config.refresh-interval-label"),
+				t("editor.config-modal-utils.refresh-interval-label"),
 				change,
 				(value) =>
 					value === METRIC_REFRESH_INTERVAL_REFERENCE
-						? t("editor.metrics.config.variable-refresh-interval")
+						? t("editor.config-modal-utils.variable-refresh-interval")
 						: t(`general.refresh-interval-options.${displayValue(value)}`),
 			)
 		case "thresholds":
@@ -113,7 +113,7 @@ function toRow(change: AttributeChange): FieldChange {
 		case "width":
 			return row(t("editor.metrics.diff.size"), change, (value) =>
 				t(
-					`editor.drag-handle.options.metric-block.width-options.${displayValue(value)}`,
+					`editor.drag-handle.options.grid-item.width-options.${displayValue(value)}`,
 				),
 			)
 		default:
@@ -151,7 +151,7 @@ function dataSourceName(id: unknown): string {
 	)
 
 	return (
-		dataSource?.name ?? t("editor.metrics.config.data-source-label-deleted")
+		dataSource?.name ?? t("editor.config-modal-utils.data-source-label-deleted")
 	)
 }
 

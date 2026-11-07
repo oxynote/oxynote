@@ -5,13 +5,15 @@
 const props = defineProps<{
 	title: string
 	rightPadding?: number
+	offsetTop?: number
 }>()
 </script>
 
 <template>
 	<div
-		class="pointer-events-none absolute top-[0.5625rem] left-2.5 truncate text-2base leading-[1.0625rem] text-foreground"
+		class="pointer-events-none absolute left-2.5 truncate text-2base leading-[1.0625rem] text-foreground"
 		:style="{
+			top: `calc(0.625rem + ${props.offsetTop ?? 0}px)`,
 			maxWidth: `max(calc(90% - ${props.rightPadding ?? 0}px), 3.125rem)`,
 		}"
 	>

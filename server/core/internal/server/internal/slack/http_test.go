@@ -2,13 +2,19 @@ package slack
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
@@ -179,11 +185,70 @@ func Test_Handler_RequireConfigured(t *testing.T) {
 func Test_Handler_VerifySignature(t *testing.T) {
 	t.Parallel()
 
+	// signedRequest builds a request signed with the handler's signature
+	// secret at the given time.
+	signedRequest := func(t *testing.T, at time.Time, secret string) *http.Request {
+		t.Helper()
+
+		const body = "a=b"
+
+		r := httptest.NewRequest(http.MethodPost, "/api/apps/slack/events", strings.NewReader(body))
+
+		ts := strconv.FormatInt(at.Unix(), 10)
+
+		mac := hmac.New(sha256.New, []byte(secret))
+
+		_, err := fmt.Fprintf(mac, "v0:%s:%s", ts, body)
+		require.NoError(t, err)
+
+		r.Header.Set("X-Slack-Request-Timestamp", ts)
+		r.Header.Set("X-Slack-Signature", "v0="+hex.EncodeToString(mac.Sum(nil)))
+
+		return r
+	}
+
 	cc := map[string]struct {
-		RespCode int
+		Configured bool
+		Request    func(t *testing.T) *http.Request
+		RespCode   int
+		Code       string
 	}{
 		"Slack app not configured": {
+			Request: func(_ *testing.T) *http.Request {
+				return httptest.NewRequest(http.MethodPost, "/api/apps/slack/events", http.NoBody)
+			},
 			RespCode: http.StatusNotFound,
+		},
+		"Missing signature headers": {
+			Configured: true,
+			Request: func(_ *testing.T) *http.Request {
+				return httptest.NewRequest(http.MethodPost, "/api/apps/slack/events", strings.NewReader("a=b"))
+			},
+			RespCode: http.StatusUnauthorized,
+			Code:     "slack.invalid_signature",
+		},
+		"Wrong signature": {
+			Configured: true,
+			Request: func(t *testing.T) *http.Request {
+				return signedRequest(t, time.Now(), "other-secret")
+			},
+			RespCode: http.StatusUnauthorized,
+			Code:     "slack.invalid_signature",
+		},
+		"Expired timestamp": {
+			Configured: true,
+			Request: func(t *testing.T) *http.Request {
+				return signedRequest(t, time.Now().Add(-10*time.Minute), "sig")
+			},
+			RespCode: http.StatusUnauthorized,
+			Code:     "slack.invalid_signature",
+		},
+		"Correctly signed request reaches the next handler": {
+			Configured: true,
+			Request: func(t *testing.T) *http.Request {
+				return signedRequest(t, time.Now(), "sig")
+			},
+			RespCode: http.StatusNoContent,
 		},
 	}
 
@@ -191,19 +256,27 @@ func Test_Handler_VerifySignature(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			h := newMockedHandler(t, false, &DBMock{}, nil)
+			h := newMockedHandler(t, c.Configured, &DBMock{}, nil)
 
 			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusNoContent)
 			})
 
-			req := httptest.NewRequest(http.MethodPost, "/api/apps/slack/events", http.NoBody)
 			rec := httptest.NewRecorder()
 
-			h.VerifySignature(next).ServeHTTP(rec, req)
+			h.VerifySignature(next).ServeHTTP(rec, c.Request(t))
 
 			if rec.Code != c.RespCode {
 				t.Fatalf("status = %d, want %d", rec.Code, c.RespCode)
+			}
+
+			if c.Code != "" {
+				var body struct {
+					Code string `json:"code"`
+				}
+
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+				assert.Equal(t, c.Code, body.Code)
 			}
 		})
 	}

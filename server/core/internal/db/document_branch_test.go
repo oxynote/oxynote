@@ -1435,9 +1435,8 @@ func Test_agent_RecordDocumentBranchHistoryEntry(t *testing.T) {
 		"Inside a transaction the entry holds its write": func(t *testing.T, db *DB) tcase {
 			doc, hooks := prepBranch(t, db, 1, nil)
 
-			var tx *Tx
-
-			require.NoError(t, db.BeginTx(context.Background(), &tx))
+			tx, err := sqlutil.BeginTx[*Tx](context.Background(), db)
+			require.NoError(t, err)
 
 			doc.Content.Content[0].Text = "Written in the transaction."
 

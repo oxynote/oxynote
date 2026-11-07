@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/internal/variable"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
@@ -12,14 +13,16 @@ import (
 // the generic query cannot run.
 var ErrTypeNotSupported = errutil.New(http.StatusBadRequest, "data_source.type_not_supported", "Generic query is not supported for this data source type.")
 
-// Query runs q against the data source the runner operates and returns
-// the result in the unified shape, whatever the source speaks. A query
-// that answered nothing is normalised to QueryStatusNoData here, so no
-// caller has to tell a nil result from an empty one.
+// Query runs q, with the variables in vars, against the data source the
+// runner operates and returns the result in the unified shape, whatever
+// the source speaks. A query that answered nothing is normalised to
+// QueryStatusNoData here, so no caller has to tell a nil result from an
+// empty one.
 func Query(
 	ctx context.Context,
 	r Runner,
 	q string,
+	vars map[string]string,
 	tr processor.TimeRange,
 	ct processor.ChartType,
 ) (*processor.QueryResult, error) {
@@ -30,7 +33,7 @@ func Query(
 			return nil, err
 		}
 
-		res, err := client.QueryRange(ctx, q, tr)
+		res, err := client.QueryRange(ctx, variable.Substitute(vars, q)[0], tr)
 		if err != nil {
 			return nil, err
 		}
@@ -46,7 +49,7 @@ func Query(
 			return nil, err
 		}
 
-		res, err := client.Query(ctx, q, tr)
+		res, err := client.Query(ctx, q, tr, vars)
 		if err != nil {
 			return nil, err
 		}
@@ -55,14 +58,14 @@ func Query(
 			return noData(), nil
 		}
 
-		return res.Transform(ct), nil
+		return res.Transform(ct)
 	case TypeMariaDB, TypeMySQL:
 		client, err := r.MySQL(ctx)
 		if err != nil {
 			return nil, err
 		}
 
-		res, err := client.Query(ctx, q, tr)
+		res, err := client.Query(ctx, q, tr, vars)
 		if err != nil {
 			return nil, err
 		}
@@ -71,7 +74,7 @@ func Query(
 			return noData(), nil
 		}
 
-		return res.Transform(ct), nil
+		return res.Transform(ct)
 	default:
 		return nil, ErrTypeNotSupported
 	}

@@ -262,7 +262,7 @@ function mergeBlocks(
 		removedIdx++
 	}
 
-	// step 5a: always unwrap transparent types (e.g. metricGrid) —
+	// step 5a: always unwrap transparent types (e.g. blockGrid) —
 	// they never carry diff status, only their children do.
 	if (options.transparentTypes?.length) {
 		for (const [i, block] of mergedContent.entries()) {

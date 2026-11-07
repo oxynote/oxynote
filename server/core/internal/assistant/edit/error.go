@@ -20,7 +20,9 @@ var _nodeName = regexp.MustCompile(`\b[a-z][A-Za-z]*\b`)
 var _placementHints = map[document.BlockNodeType]string{
 	document.BlockNodeTitledCodeBlock: "A titled <pre> goes only in a <split_doc>'s <right>; leave the title out for code anywhere else.",
 	document.BlockNodeParamList:       "<params> go only in a <split_doc>'s <left>, after its heading and text.",
-	document.BlockNodeMetricBlock:     "A <metric> goes only in <metrics> or a <split_doc>'s <right>.",
+	document.BlockNodeMetricBlock:     "A <metrics> goes only in <grid> or a <split_doc>'s <right>.",
+	document.BlockNodeLogBlock:        "A <logs> goes only in <grid>.",
+	document.BlockNodeBlockGrid:       "A <grid> goes only at the top level of the document.",
 }
 
 // OpError describes one operation's failure on the Node side.

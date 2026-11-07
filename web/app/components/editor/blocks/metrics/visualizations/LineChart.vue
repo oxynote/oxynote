@@ -28,8 +28,9 @@ import {
 	type LineChartThreshold,
 	type MultipleLineChartData,
 } from "."
-import { cn } from "#layers/ui/app/lib/utils"
 import type { VisualizationUnit } from "../utils"
+import ChartTooltip from "./ChartTooltip.vue"
+import { useTooltipPin } from "./tooltip-pin"
 
 // Register ECharts modules
 use([
@@ -53,6 +54,7 @@ type ECOption = ComposeOption<
 const props = defineProps<{
 	title?: string
 	titleRightPadding?: number
+	titleOffsetTop?: number
 	seriesData: MultipleLineChartData
 	unit: {
 		type?: VisualizationUnit | null
@@ -70,6 +72,7 @@ const chartElem = useTemplateRef<InstanceType<typeof VChart>>("chart")
 useChartSize(containerElem, chartElem, () => option.value)
 const { color } = useAppearance()
 const { browserType } = useDetectHost()
+const tooltipPin = useTooltipPin(chartElem, containerElem)
 
 const themeVersion = ref(0)
 watch(
@@ -117,9 +120,7 @@ const option = computed<ECOption>(() => {
 			borderColor: st.lineChart.tooltipBorder,
 			borderWidth: 1,
 			padding: 0,
-			order: "seriesAsc",
-			appendTo: () => document.body,
-			className: cn("z-tooltip"),
+			...tooltipPin.tooltipOption.value,
 		},
 		legend: {
 			show: props.showLegend,
@@ -159,7 +160,7 @@ const option = computed<ECOption>(() => {
 			left: 10,
 			right: 12,
 			bottom: props.showLegend ? 30 : 10,
-			top: props.title ? 40 : 10,
+			top: (props.title ? 40 : 10) + (props.titleOffsetTop ?? 0),
 			outerBoundsMode: "same",
 			outerBoundsContain: "axisLabel",
 		},
@@ -224,7 +225,13 @@ const option = computed<ECOption>(() => {
 			name: s.name,
 			type: "line" as const,
 			animation: !props.disableAnimation,
-			data: s.data,
+			// echarts pairs old and new points by name, or by index when they
+			// have none. Naming each by its time keeps a refresh that slides
+			// the window from morphing points through their neighbours' values.
+			data: s.data.map(([time, value]) => ({
+				name: String(time.getTime()),
+				value: [time, value],
+			})),
 			smooth: false,
 			symbol: "none",
 			emphasis: {
@@ -289,47 +296,22 @@ const legendHandler = computed(() => {
 			@legendselectchanged="
 				(p: unknown) => legendHandler(p as LegendSelectChangedPayload)
 			"
+			@zr:click="tooltipPin.togglePin"
 		>
 			<template #tooltip="params">
-				<div class="flex flex-col">
-					<div
-						v-if="Array.isArray(params) && params.length > 0"
-						class="px-2 pt-1 text-2sm text-foreground"
-					>
-						{{
-							$d((params[0] as any).value[0] as Date, "short-with-full-time")
-						}}
-					</div>
-					<div class="mt-1 mb-0.5 h-0.25 bg-border" />
-					<div class="flex flex-col px-2 pb-1">
-						<div
-							v-for="(param, i) in params"
-							:key="(param as any).seriesName || i"
-							class="flex items-center"
-						>
-							<!-- eslint-disable-next-line vue/no-v-html -->
-							<div v-html="(param as any).marker" />
-							<div class="text-2sm text-foreground/60">
-								{{ (param as any).seriesName }}
-							</div>
-							<div class="ml-1.5 text-2sm text-foreground">
-								{{
-									yAxisLabelFormatter(
-										props.unit,
-										(param as any).value[1],
-										props.decimals ?? null,
-									)
-								}}
-							</div>
-						</div>
-					</div>
-				</div>
+				<ChartTooltip
+					:params="params"
+					:unit="props.unit"
+					:decimals="props.decimals"
+					:pinned="tooltipPin.pinned.value"
+				/>
 			</template>
 		</VChart>
 		<ChartTitle
 			v-if="props.title"
 			:title="props.title"
 			:right-padding="props.titleRightPadding"
+			:offset-top="props.titleOffsetTop"
 		/>
 	</div>
 </template>

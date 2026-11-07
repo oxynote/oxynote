@@ -1,6 +1,10 @@
 import { createPinia } from "pinia"
 import { describe, it, vi } from "vitest"
 import type { MetricConfig } from "~/components/editor/blocks/metrics/utils"
+import {
+	defaultLogConfig,
+	type LogConfig,
+} from "~/components/editor/blocks/logs/utils"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 import { useEditorStore } from "./editor"
 
@@ -30,6 +34,10 @@ function metricConfig(title: string): MetricConfig {
 		simulationPreset: null,
 		simulationActive: false,
 	}
+}
+
+function logConfig(title: string): LogConfig {
+	return { ...defaultLogConfig(), title: title }
 }
 
 // timer-driven behaviour runs under fake timers inside a synchronous body,
@@ -97,6 +105,20 @@ describe("useEditorStore", () => {
 			expect(store.activeMetricBlockConfig).toBeNull()
 			expect(store.mermaidBlockShowCode).toEqual({})
 			expect(store.settledBlockRenders.size).toBe(0)
+		})
+
+		it("clears log block state when the document changes", ({ expect }) => {
+			const store = makeActiveStore()
+			store.setLogBlockConfig("block1", logConfig("cfg"))
+			store.setLogBlockDiffInfo("block1", DiffStatus.Added, null)
+			store.activateLogBlockConfig("block1")
+
+			store.updateActiveDocumentId("doc2")
+
+			expect(store.logBlockConfigs).toEqual({})
+			expect(store.logBlockDiffStatuses).toEqual({})
+			expect(store.logBlockOldConfigs).toEqual({})
+			expect(store.activeLogBlockConfig).toBeNull()
 		})
 
 		it("deactivates the reviewable diff when the document changes", ({
@@ -249,6 +271,20 @@ describe("useEditorStore", () => {
 
 			expect(store.metricBlockDiffStatuses).toEqual({})
 			expect(store.metricBlockOldConfigs).toEqual({})
+		})
+
+		it("clears log block diff data when deactivated", ({ expect }) => {
+			const store = makeActiveStore()
+			store.setLogBlockConfig("block1", logConfig("cfg"))
+			store.setLogBlockDiffInfo("block1", DiffStatus.Modified, logConfig("old"))
+
+			store.setReviewableDiffActive(false)
+
+			expect(store.logBlockDiffStatuses).toEqual({})
+			expect(store.logBlockOldConfigs).toEqual({})
+			expect(store.logBlockConfigs).toEqual({
+				doc1: { branch1: { block1: logConfig("cfg") } },
+			})
 		})
 	})
 
@@ -543,6 +579,289 @@ describe("useEditorStore", () => {
 				store.clearMetricBlockNextRefreshTimestamp("block1")
 			}).toThrow(
 				"Cannot clear metric block refresh timestamp without an active branch",
+			)
+		})
+	})
+
+	describe("setLogBlockConfig", () => {
+		it("stores the config under the active document and branch", ({
+			expect,
+		}) => {
+			const store = makeActiveStore()
+
+			store.setLogBlockConfig("block1", logConfig("cfg"))
+
+			expect(store.logBlockConfigs).toEqual({
+				doc1: { branch1: { block1: logConfig("cfg") } },
+			})
+		})
+
+		it("throws without an active document", ({ expect }) => {
+			const store = makeStore()
+
+			expect(() => {
+				store.setLogBlockConfig("block1", logConfig("cfg"))
+			}).toThrow("Cannot set log block config without an active document")
+		})
+
+		it("throws without an active branch", ({ expect }) => {
+			const store = makeStore()
+			store.updateActiveDocumentId("doc1")
+
+			expect(() => {
+				store.setLogBlockConfig("block1", logConfig("cfg"))
+			}).toThrow("Cannot set log block config without an active branch")
+		})
+	})
+
+	describe("removeLogBlockConfig", () => {
+		it("removes the config for the active document and branch", ({
+			expect,
+		}) => {
+			const store = makeActiveStore()
+			store.setLogBlockConfig("block1", logConfig("cfg"))
+
+			store.removeLogBlockConfig("block1")
+
+			expect(store.logBlockConfigs).toEqual({ doc1: { branch1: {} } })
+		})
+
+		it("removes the config for an explicitly given document and branch", ({
+			expect,
+		}) => {
+			const store = makeActiveStore()
+			store.setLogBlockConfig("block1", logConfig("cfg"))
+			store.updateActiveBranchId("branch2")
+
+			store.removeLogBlockConfig("block1", "doc1", "branch1")
+
+			expect(store.logBlockConfigs).toEqual({ doc1: { branch1: {} } })
+		})
+
+		it("ignores a block without a stored config", ({ expect }) => {
+			const store = makeActiveStore()
+
+			store.removeLogBlockConfig("block1")
+
+			expect(store.logBlockConfigs).toEqual({})
+		})
+
+		it("throws without an active document", ({ expect }) => {
+			const store = makeStore()
+
+			expect(() => {
+				store.removeLogBlockConfig("block1")
+			}).toThrow("Cannot remove log block config without an active document")
+		})
+
+		it("throws without an active branch", ({ expect }) => {
+			const store = makeStore()
+			store.updateActiveDocumentId("doc1")
+
+			expect(() => {
+				store.removeLogBlockConfig("block1")
+			}).toThrow("Cannot remove log block config without an active branch")
+		})
+	})
+
+	describe("setLogBlockDiffInfo", () => {
+		it("stores the diff status and the old config", ({ expect }) => {
+			const store = makeActiveStore()
+
+			store.setLogBlockDiffInfo("block1", DiffStatus.Modified, logConfig("old"))
+
+			expect(store.logBlockDiffStatuses).toEqual({
+				doc1: { branch1: { block1: DiffStatus.Modified } },
+			})
+			expect(store.logBlockOldConfigs).toEqual({
+				doc1: { branch1: { block1: logConfig("old") } },
+			})
+		})
+
+		it("stores a null old config for an added block", ({ expect }) => {
+			const store = makeActiveStore()
+
+			store.setLogBlockDiffInfo("block1", DiffStatus.Added, null)
+
+			expect(store.logBlockOldConfigs).toEqual({
+				doc1: { branch1: { block1: null } },
+			})
+		})
+
+		it("throws without an active document", ({ expect }) => {
+			const store = makeStore()
+
+			expect(() => {
+				store.setLogBlockDiffInfo("block1", DiffStatus.Added, null)
+			}).toThrow("Cannot set log block diff info without an active document")
+		})
+
+		it("throws without an active branch", ({ expect }) => {
+			const store = makeStore()
+			store.updateActiveDocumentId("doc1")
+
+			expect(() => {
+				store.setLogBlockDiffInfo("block1", DiffStatus.Added, null)
+			}).toThrow("Cannot set log block diff info without an active branch")
+		})
+	})
+
+	describe("removeLogBlockDiffInfo", () => {
+		it("removes the diff status and the old config", ({ expect }) => {
+			const store = makeActiveStore()
+			store.setLogBlockDiffInfo("block1", DiffStatus.Modified, logConfig("old"))
+
+			store.removeLogBlockDiffInfo("block1")
+
+			expect(store.logBlockDiffStatuses).toEqual({ doc1: { branch1: {} } })
+			expect(store.logBlockOldConfigs).toEqual({ doc1: { branch1: {} } })
+		})
+
+		it("removes the diff info only for the explicitly given document and branch", ({
+			expect,
+		}) => {
+			// switching the branch clears all diff data, so the info can only
+			// live under the branch that is active when it is set
+			const store = makeActiveStore()
+			store.updateActiveBranchId("branch2")
+			store.setLogBlockDiffInfo("block1", DiffStatus.Modified, null)
+
+			store.removeLogBlockDiffInfo("block1", "doc1", "branch1")
+
+			expect(store.logBlockDiffStatuses).toEqual({
+				doc1: { branch2: { block1: DiffStatus.Modified } },
+			})
+		})
+
+		it("throws without an active document", ({ expect }) => {
+			const store = makeStore()
+
+			expect(() => {
+				store.removeLogBlockDiffInfo("block1")
+			}).toThrow("Cannot remove log block diff info without an active document")
+		})
+
+		it("throws without an active branch", ({ expect }) => {
+			const store = makeStore()
+			store.updateActiveDocumentId("doc1")
+
+			expect(() => {
+				store.removeLogBlockDiffInfo("block1")
+			}).toThrow("Cannot remove log block diff info without an active branch")
+		})
+	})
+
+	describe("activateLogBlockConfig", () => {
+		it("sets the active config uid", ({ expect }) => {
+			const store = makeStore()
+
+			store.activateLogBlockConfig("uid1")
+
+			expect(store.activeLogBlockConfig).toBe("uid1")
+		})
+
+		it("clears the active config uid", ({ expect }) => {
+			const store = makeStore()
+			store.activateLogBlockConfig("uid1")
+
+			store.activateLogBlockConfig(null)
+
+			expect(store.activeLogBlockConfig).toBeNull()
+		})
+	})
+
+	describe("setLogBlockNextRefreshTimestamp", () => {
+		it("schedules the next refresh after the given interval", ({ expect }) => {
+			withFakeNow(() => {
+				const store = makeActiveStore()
+
+				store.setLogBlockNextRefreshTimestamp("block1", 5000)
+
+				expect(store.isLogBlockDueForRefresh("block1")).toBe(false)
+
+				vi.advanceTimersByTime(5000)
+
+				expect(store.isLogBlockDueForRefresh("block1")).toBe(true)
+			})
+		})
+
+		it("throws without an active document", ({ expect }) => {
+			const store = makeStore()
+
+			expect(() => {
+				store.setLogBlockNextRefreshTimestamp("block1", 5000)
+			}).toThrow(
+				"Cannot set log block next refresh timestamp without an active document",
+			)
+		})
+
+		it("throws without an active branch", ({ expect }) => {
+			const store = makeStore()
+			store.updateActiveDocumentId("doc1")
+
+			expect(() => {
+				store.setLogBlockNextRefreshTimestamp("block1", 5000)
+			}).toThrow(
+				"Cannot set log block next refresh timestamp without an active branch",
+			)
+		})
+	})
+
+	describe("isLogBlockDueForRefresh", () => {
+		it("reports due when no refresh is scheduled", ({ expect }) => {
+			const store = makeActiveStore()
+
+			expect(store.isLogBlockDueForRefresh("block1")).toBe(true)
+		})
+
+		it("throws without an active document", ({ expect }) => {
+			const store = makeStore()
+
+			expect(() => store.isLogBlockDueForRefresh("block1")).toThrow(
+				"Cannot check log block refresh status without an active document",
+			)
+		})
+
+		it("throws without an active branch", ({ expect }) => {
+			const store = makeStore()
+			store.updateActiveDocumentId("doc1")
+
+			expect(() => store.isLogBlockDueForRefresh("block1")).toThrow(
+				"Cannot check log block refresh status without an active branch",
+			)
+		})
+	})
+
+	describe("clearLogBlockNextRefreshTimestamp", () => {
+		it("makes the block due again", ({ expect }) => {
+			withFakeNow(() => {
+				const store = makeActiveStore()
+				store.setLogBlockNextRefreshTimestamp("block1", 5000)
+
+				store.clearLogBlockNextRefreshTimestamp("block1")
+
+				expect(store.isLogBlockDueForRefresh("block1")).toBe(true)
+			})
+		})
+
+		it("throws without an active document", ({ expect }) => {
+			const store = makeStore()
+
+			expect(() => {
+				store.clearLogBlockNextRefreshTimestamp("block1")
+			}).toThrow(
+				"Cannot clear log block refresh timestamp without an active document",
+			)
+		})
+
+		it("throws without an active branch", ({ expect }) => {
+			const store = makeStore()
+			store.updateActiveDocumentId("doc1")
+
+			expect(() => {
+				store.clearLogBlockNextRefreshTimestamp("block1")
+			}).toThrow(
+				"Cannot clear log block refresh timestamp without an active branch",
 			)
 		})
 	})

@@ -39,7 +39,7 @@ func (h *Handler) FetchSQLQueryLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	qq, err := h.substitute(r, session, query)
+	vars, err := h.values(r, session, query)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -51,7 +51,7 @@ func (h *Handler) FetchSQLQueryLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	labels, err := client.QueryLabels(r.Context(), qq[0], *tr)
+	labels, err := client.QueryLabels(r.Context(), query, *tr, vars)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return

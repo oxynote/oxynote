@@ -55,6 +55,20 @@ func Test_Render(t *testing.T) {
 			assert.Equal(t, string(want), got)
 		})
 	}
+
+	// a grid keeps its former name until an editor touches it.
+	t.Run("Legacy grid reads as a block grid", func(t *testing.T) {
+		t.Parallel()
+
+		grid, ok := loadFixture(t, "all_blocks").FindByUID("g1")
+		require.True(t, ok)
+		require.Equal(t, document.BlockNodeBlockGrid, grid.Type)
+
+		legacy := grid
+		legacy.Type = document.BlockNodeMetricGrid
+
+		assert.Equal(t, Render([]document.Block{grid}), Render([]document.Block{legacy}))
+	})
 }
 
 func Test_renderer_entry(t *testing.T) {

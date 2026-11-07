@@ -46,6 +46,15 @@ function sampleBlocks(): PMNode[] {
 // builds a live document through the same path the Hocuspocus server
 // uses, so every block carries the uid the uid-addressed operations
 // look up.
+// quoted returns a blockquote holding one paragraph
+function quoted(uid: string, paragraphUid: string): PMNode {
+	return {
+		type: "blockquote",
+		attrs: { uid },
+		content: [textParagraph(paragraphUid, "Quoted line")],
+	}
+}
+
 function docWith(blocks: PMNode[]): Y.Doc {
 	const doc = new Y.Doc()
 	replaceYdocContent(doc, {
@@ -285,6 +294,37 @@ describe("applyOperations", () => {
 				"callout",
 				"head",
 			])
+		})
+
+		it("refuses a grid below the document root, leaving the document as it was", ({
+			expect,
+		}) => {
+			const doc = docWith([quoted("quote", "quoted")])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "insert",
+					position: "after",
+					reference_uid: "quoted",
+					block: {
+						type: "blockGrid",
+						attrs: { uid: "grid" },
+						content: [
+							{
+								type: "metricBlock",
+								attrs: {
+									uid: "metric",
+								},
+							},
+						],
+					},
+				},
+			])
+
+			expect(result.errors[0]?.message).toContain(
+				"blockGrid is not allowed there in blockquote",
+			)
+			expect(blockByUid(doc, "quote").length).toBe(1)
 		})
 
 		const positionCases: {
@@ -615,7 +655,7 @@ describe("applyOperations", () => {
 				{
 					kind: "append",
 					block: {
-						type: "metricGrid",
+						type: "blockGrid",
 						attrs: { uid: "grid" },
 						content: [
 							{
@@ -1076,6 +1116,41 @@ describe("applyOperations", () => {
 				"head",
 			])
 			expect(blockByUid(doc, "callout").length).toBe(1)
+		})
+
+		it("refuses to move a grid below the document root, leaving the document as it was", ({
+			expect,
+		}) => {
+			const doc = docWith([
+				{
+					type: "blockGrid",
+					attrs: { uid: "grid" },
+					content: [
+						{
+							type: "metricBlock",
+							attrs: {
+								uid: "metric",
+							},
+						},
+					],
+				},
+				quoted("quote", "quoted"),
+			])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: "grid",
+					position: "after",
+					reference_uid: "quoted",
+				},
+			])
+
+			expect(result.errors[0]?.message).toContain(
+				"blockGrid is not allowed there in blockquote",
+			)
+			expect(topUids(doc)).toEqual(["grid", "quote"])
+			expect(blockByUid(doc, "quote").length).toBe(1)
 		})
 
 		it("moves a nested block out to the document root", ({

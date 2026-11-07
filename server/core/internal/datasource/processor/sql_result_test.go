@@ -1,10 +1,37 @@
 package processor
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func Test_sqlQueryResult_metrics(t *testing.T) {
+	points := []sqlPoint{{time: 0, value: 1}, {time: 60, value: 2}}
+
+	cc := map[string]struct {
+		Fill      *sqlFill
+		ChartType ChartType
+		Result    [][2]any
+	}{
+		"Line":                       {ChartType: ChartTypeLine, Result: [][2]any{{int64(0), 1.0}, {int64(60), 2.0}}},
+		"Gauge keeps the last point": {ChartType: ChartTypeGauge, Result: [][2]any{{int64(60), 2.0}}},
+		"Filled line":                {Fill: &sqlFill{Interval: 60, From: 0, To: 120}, ChartType: ChartTypeLine, Result: [][2]any{{int64(0), 1.0}, {int64(60), 2.0}, {int64(120), nil}}},
+		"Gauge skips a null point":   {Fill: &sqlFill{Interval: 60, From: 0, To: 120}, ChartType: ChartTypeGauge, Result: [][2]any{{int64(60), 2.0}}},
+		"Gauge of only null points":  {Fill: &sqlFill{Interval: 60, From: 600, To: 660}, ChartType: ChartTypeGauge, Result: [][2]any{}},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			sqr := sqlQueryResult{Fill: c.Fill}
+
+			assert.Equal(t, c.Result, sqr.metrics(slices.Clone(points), c.ChartType))
+		})
+	}
+}
 
 func Test_sqlQueryResult_identifyColumns(t *testing.T) {
 	cc := map[string]struct {

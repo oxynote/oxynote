@@ -1,0 +1,207 @@
+import { mountSuspended } from "@nuxt/test-utils/runtime"
+import {
+	enableAutoUnmount,
+	flushPromises,
+	type VueWrapper,
+} from "@vue/test-utils"
+import { afterEach, beforeEach, describe, it } from "vitest"
+import TimeRangeSelect from "./TimeRangeSelect.vue"
+import { TimeRangePreset } from "~/utils/time-range"
+import {
+	METRIC_TIME_RANGE_REFERENCE,
+	type TimeRangeSetting,
+} from "~/utils/variable"
+import { at, clearTeleportedOverlays, t } from "~/components/test-helpers"
+
+// the open list is teleported into <body>, which every mount shares
+describe("<TimeRangeSelect>", { concurrent: false }, () => {
+	enableAutoUnmount(afterEach)
+
+	beforeEach(() => {
+		clearTeleportedOverlays()
+	})
+
+	it.for<{
+		name: string
+		input: TimeRangeSetting | null
+		expected: () => string
+	}>([
+		{
+			name: "labels a preset with its name",
+			input: TimeRangePreset.Last24Hours,
+			expected: () => t("general.time-range-options.last_24_hours"),
+		},
+		{
+			name: "labels the built-in reference as the shared setting",
+			input: METRIC_TIME_RANGE_REFERENCE,
+			expected: () => t("editor.config-modal-utils.variable-time-range"),
+		},
+		{
+			name: "leaves the label empty without a time range",
+			input: null,
+			expected: () => "",
+		},
+	])("$name", async ({ input, expected }, { expect }) => {
+		const wrapper = await mountSelect({ modelValue: input })
+
+		expect(buttons(wrapper)).toHaveLength(1)
+		expect(at(buttons(wrapper), 0).text()).toBe(expected())
+	})
+
+	it("lists the built-in reference first, then every preset", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSelect({
+			modelValue: TimeRangePreset.Last24Hours,
+		})
+
+		await openList(wrapper)
+
+		expect(optionLabels()).toEqual([
+			t("editor.config-modal-utils.variable-time-range"),
+			...Object.values(TimeRangePreset).map((preset) =>
+				t(`general.time-range-options.${preset}`),
+			),
+		])
+	})
+
+	it("stores the time range once one is picked", async ({ expect }) => {
+		const wrapper = await mountSelect({
+			modelValue: TimeRangePreset.Last24Hours,
+		})
+		await openList(wrapper)
+
+		pickOption(t("editor.config-modal-utils.variable-time-range"))
+		// the item selects only after two ticks of its own
+		await flushPromises()
+
+		expect(wrapper.emitted("update:modelValue")).toEqual([
+			[METRIC_TIME_RANGE_REFERENCE],
+		])
+	})
+
+	it.for([
+		{ input: false, expected: false },
+		{ input: true, expected: true },
+	])(
+		"blocks pointer input on the trigger when disabled is $input",
+		async ({ input, expected }, { expect }) => {
+			const wrapper = await mountSelect({
+				modelValue: TimeRangePreset.Last24Hours,
+				disabled: input,
+			})
+
+			expect(
+				at(buttons(wrapper), 0).classes().includes("pointer-events-none"),
+			).toBe(expected)
+		},
+	)
+
+	it("keeps a disabled trigger fully opaque in both themes", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSelect({
+			modelValue: TimeRangePreset.Last24Hours,
+			disabled: true,
+		})
+
+		expect(at(buttons(wrapper), 0).classes()).toEqual(
+			expect.arrayContaining([
+				"disabled:opacity-100",
+				"dark:disabled:opacity-100",
+			]),
+		)
+	})
+
+	it("opens no list from the keyboard while disabled", async ({ expect }) => {
+		const wrapper = await mountSelect({
+			modelValue: TimeRangePreset.Last24Hours,
+			disabled: true,
+		})
+
+		await openList(wrapper)
+
+		expect.soft(at(buttons(wrapper), 0).attributes("disabled")).toBeDefined()
+		expect.soft(optionLabels()).toEqual([])
+	})
+
+	it("tints nothing and shows no old time range outside a modification", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSelect({
+			modelValue: TimeRangePreset.Last24Hours,
+		})
+
+		expect(buttons(wrapper)).toHaveLength(1)
+		expect(at(buttons(wrapper), 0).classes()).not.toContain(
+			"bg-diff-field-added",
+		)
+	})
+
+	it.for<{
+		name: string
+		oldValue: TimeRangeSetting | null
+		expected: () => string
+	}>([
+		{
+			name: "shows the time range a diff replaced beside the new one",
+			oldValue: TimeRangePreset.Last1Hour,
+			expected: () => t("general.time-range-options.last_1_hour"),
+		},
+		{
+			name: "shows an empty old time range when a diff set the first one",
+			oldValue: null,
+			expected: () => "",
+		},
+	])("$name", async ({ oldValue, expected }, { expect }) => {
+		const wrapper = await mountSelect({
+			modelValue: TimeRangePreset.Last24Hours,
+			oldValue: oldValue,
+		})
+
+		expect(buttons(wrapper)).toHaveLength(2)
+
+		const current = at(buttons(wrapper), 0)
+		const old = at(buttons(wrapper), 1)
+
+		expect
+			.soft(current.text())
+			.toBe(t("general.time-range-options.last_24_hours"))
+		expect.soft(current.classes()).toContain("bg-diff-field-added")
+		expect.soft(old.text()).toBe(expected())
+		expect.soft(old.classes()).toContain("bg-diff-field-removed")
+	})
+})
+
+function mountSelect(props: {
+	modelValue: TimeRangeSetting | null
+	disabled?: boolean
+	oldValue?: TimeRangeSetting | null
+}) {
+	return mountSuspended(TimeRangeSelect, {
+		props: { disabled: false, ...props },
+	})
+}
+
+function buttons(wrapper: VueWrapper) {
+	return wrapper.findAll("button")
+}
+
+async function openList(wrapper: VueWrapper) {
+	await at(buttons(wrapper), 0).trigger("keydown", { key: "Enter" })
+	await nextTick()
+}
+
+function optionLabels(): string[] {
+	return Array.from(document.body.querySelectorAll("[role='option']")).map(
+		(o) => o.textContent.trim(),
+	)
+}
+
+function pickOption(label: string) {
+	Array.from(document.body.querySelectorAll("[role='option']"))
+		.find((o) => o.textContent.trim() === label)
+		?.dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+		)
+}

@@ -3,6 +3,8 @@
 // denominator, and nothing here is imported by app code.
 import { mountSuspended } from "@nuxt/test-utils/runtime"
 import type { VueWrapper } from "@vue/test-utils"
+import { nextTick } from "vue"
+import { emitFrom } from "~/components/test-helpers"
 
 // eslint's ts program resolves .vue imports as error typed, so a chart
 // component handed to mountChart looks unsafe to it while vue-tsc types
@@ -30,6 +32,12 @@ export interface ChartSeries {
 // the slice of the echarts option the suites assert on
 export interface ChartOption {
 	legend: { show?: boolean; data?: string[] }
+	tooltip: {
+		confine?: boolean
+		triggerOn?: string
+		appendTo?: unknown
+		className?: string
+	}
 	grid: { top: number; bottom: number }
 	xAxis: { axisLabel: { formatter: (value: number) => string } }
 	yAxis: {
@@ -65,4 +73,24 @@ export function chartSeries(option: ChartOption, index = 0): ChartSeries {
 	}
 
 	return series
+}
+
+// one row of an axis tooltip, as echarts hands it to the slot
+export function tooltipParam(
+	seriesName: string,
+	value: number | null,
+	seriesIndex = 0,
+) {
+	return {
+		seriesName: seriesName,
+		seriesIndex: seriesIndex,
+		marker: "",
+		value: [new Date("2026-01-01T00:00:00Z"), value],
+	}
+}
+
+// a click in the plot at a fixed spot, as echarts reports it on zr:click
+export async function clickChart(wrapper: VueWrapper) {
+	emitFrom(wrapper, "VChart", "zr:click", { offsetX: 120, offsetY: 40 })
+	await nextTick()
 }

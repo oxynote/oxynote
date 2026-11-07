@@ -53,14 +53,20 @@ const (
 	// AttrStart is the number an ordered list counts from.
 	AttrStart = "start"
 
-	// AttrDataSourceID is the data source a metric block queries.
+	// AttrDataSourceID is the data source a metric or log block queries.
 	AttrDataSourceID = "dataSourceId"
 
 	// AttrVisualizationType is the chart a metric block renders.
 	AttrVisualizationType = "visualizationType"
 
-	// AttrQueries holds a metric block's query rows.
+	// AttrQueries holds a metric or log block's query rows.
 	AttrQueries = "queries"
+
+	// AttrTimestampFormat is how a log block writes each row's time.
+	AttrTimestampFormat = "timestampFormat"
+
+	// AttrOrder is the order a log block lists its rows in.
+	AttrOrder = "order"
 
 	// AttrTimeRange is the preset window a metric block renders.
 	AttrTimeRange = "timeRange"

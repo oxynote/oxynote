@@ -58,7 +58,7 @@ type recordingPostgreSQL struct {
 	ranges []processor.TimeRange
 }
 
-func (rp *recordingPostgreSQL) Query(_ context.Context, _ string, tr processor.TimeRange) (*processor.PostgreSQLQueryResult, error) {
+func (rp *recordingPostgreSQL) Query(_ context.Context, _ string, tr processor.TimeRange, _ map[string]string) (*processor.PostgreSQLQueryResult, error) {
 	rp.ranges = append(rp.ranges, tr)
 
 	return rp.res, nil
@@ -73,7 +73,7 @@ type recordingMySQL struct {
 	ranges []processor.TimeRange
 }
 
-func (rm *recordingMySQL) Query(_ context.Context, _ string, tr processor.TimeRange) (*processor.MySQLQueryResult, error) {
+func (rm *recordingMySQL) Query(_ context.Context, _ string, tr processor.TimeRange, _ map[string]string) (*processor.MySQLQueryResult, error) {
 	rm.ranges = append(rm.ranges, tr)
 
 	return rm.res, nil
@@ -230,76 +230,112 @@ func Test_cachedPrometheus_QueryRange(t *testing.T) {
 func Test_cachedPostgreSQL_Query(t *testing.T) {
 	t.Parallel()
 
-	inner := &recordingPostgreSQL{
-		res: &processor.PostgreSQLQueryResult{
-			Columns: []string{"time", "host", "value"},
-			Rows: [][]any{
-				{"2024-01-01T12:00:00Z", "web-1", 10.5},
-				{"2024-01-01T12:01:00Z", "web-2", 20.5},
-			},
-		},
-	}
+	// a fill only comes from a query or a kept answer, so the result is
+	// decoded. The kept answer must still fill.
+	var res processor.PostgreSQLQueryResult
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"columns": ["time", "host", "value"],
+		"rows": [["2024-01-01T12:00:00Z", "web-1", 10.5], ["2024-01-01T12:01:00Z", "web-2", 20.5]],
+		"fill": {"interval": 60, "from": 1704110400, "to": 1704110460}
+	}`), &res))
+
+	inner := &recordingPostgreSQL{res: &res}
 
 	m, _ := prepCacheManager(t, stubCache(nil, nil, nil))
 	cp := cachedPostgreSQL{PostgreSQL: inner, m: m, ds: DataSource{ID: xid.New()}}
 
 	tr := processor.TimeRange{From: _testCacheFrom, To: _testCacheFrom.Add(time.Hour)}
 
-	fresh, err := cp.Query(context.Background(), "SELECT 1", tr)
+	fresh, err := cp.Query(context.Background(), "SELECT $env", tr, map[string]string{"env": "prod"})
 	require.NoError(t, err)
 
 	// a viewer a few seconds later on the same grid reads the same answer.
 	later := processor.TimeRange{From: tr.From.Add(3 * time.Second), To: tr.To.Add(3 * time.Second)}
 
-	kept, err := cp.Query(context.Background(), "SELECT 1", later)
+	kept, err := cp.Query(context.Background(), "SELECT $env", later, map[string]string{"env": "prod"})
 	require.NoError(t, err)
 
 	// the kept answer draws the same chart as the fresh one.
-	assert.Equal(t, fresh.Transform(processor.ChartTypeLine), kept.Transform(processor.ChartTypeLine))
-
-	// another query is another answer.
-	_, err = cp.Query(context.Background(), "SELECT 2", tr)
+	freshRes, err := fresh.Transform(processor.ChartTypeLine)
 	require.NoError(t, err)
 
-	assert.Equal(t, []processor.TimeRange{tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid)}, inner.ranges)
+	keptRes, err := kept.Transform(processor.ChartTypeLine)
+	require.NoError(t, err)
+
+	assert.Equal(t, freshRes, keptRes)
+
+	// the fill adds the bucket the rows lack.
+	require.NotEmpty(t, keptRes.Data)
+	assert.Len(t, keptRes.Data[0].Metrics, 2)
+
+	// another query is another answer.
+	_, err = cp.Query(context.Background(), "SELECT 2", tr, map[string]string{"env": "prod"})
+	require.NoError(t, err)
+
+	// so is the same query with another variable value.
+	_, err = cp.Query(context.Background(), "SELECT $env", tr, map[string]string{"env": "dev"})
+	require.NoError(t, err)
+
+	assert.Equal(t, []processor.TimeRange{tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid)}, inner.ranges)
 }
 
 func Test_cachedMySQL_Query(t *testing.T) {
 	t.Parallel()
 
-	inner := &recordingMySQL{
-		res: &processor.MySQLQueryResult{
-			Columns:     []string{"time", "code", "day", "total", "ratio"},
-			ColumnTypes: []string{"BIGINT", "VARCHAR", "DATE", "DECIMAL", "FLOAT"},
-			Rows:        [][]any{{int64(1704110400), "200", "2024-01-01T00:00:00Z", "10.50", 1.5}},
-		},
-	}
+	// a fill only comes from a query or a kept answer, so the result is
+	// decoded. The kept answer must still fill.
+	var res processor.MySQLQueryResult
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"columns": ["time", "code", "day", "total", "ratio"],
+		"columnTypes": ["BIGINT", "VARCHAR", "DATE", "DECIMAL", "FLOAT"],
+		"rows": [[1704110400, "200", "2024-01-01T00:00:00Z", "10.50", 1.5]],
+		"fill": {"previous": true, "interval": 60, "from": 1704110400, "to": 1704110460}
+	}`), &res))
+
+	inner := &recordingMySQL{res: &res}
 
 	m, _ := prepCacheManager(t, stubCache(nil, nil, nil))
 	cm := cachedMySQL{MySQL: inner, m: m, ds: DataSource{ID: xid.New()}}
 
 	tr := processor.TimeRange{From: _testCacheFrom, To: _testCacheFrom.Add(time.Hour)}
 
-	fresh, err := cm.Query(context.Background(), "SELECT 1", tr)
+	fresh, err := cm.Query(context.Background(), "SELECT $env", tr, map[string]string{"env": "prod"})
 	require.NoError(t, err)
 
 	// a viewer a few seconds later on the same grid reads the same answer.
 	later := processor.TimeRange{From: tr.From.Add(3 * time.Second), To: tr.To.Add(3 * time.Second)}
 
-	kept, err := cm.Query(context.Background(), "SELECT 1", later)
+	kept, err := cm.Query(context.Background(), "SELECT $env", later, map[string]string{"env": "prod"})
 	require.NoError(t, err)
 
 	// the column types travel with the answer, so the VARCHAR of numbers
 	// stays a label rather than turning into a series, and the date label
 	// reads the same.
 	assert.Equal(t, inner.res.ColumnTypes, kept.ColumnTypes)
-	assert.Equal(t, fresh.Transform(processor.ChartTypeLine), kept.Transform(processor.ChartTypeLine))
 
-	// another query is another answer.
-	_, err = cm.Query(context.Background(), "SELECT 2", tr)
+	freshRes, err := fresh.Transform(processor.ChartTypeLine)
 	require.NoError(t, err)
 
-	assert.Equal(t, []processor.TimeRange{tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid)}, inner.ranges)
+	keptRes, err := kept.Transform(processor.ChartTypeLine)
+	require.NoError(t, err)
+
+	assert.Equal(t, freshRes, keptRes)
+
+	// the fill adds the bucket the rows lack.
+	require.NotEmpty(t, keptRes.Data)
+	assert.Len(t, keptRes.Data[0].Metrics, 2)
+
+	// another query is another answer.
+	_, err = cm.Query(context.Background(), "SELECT 2", tr, map[string]string{"env": "prod"})
+	require.NoError(t, err)
+
+	// so is the same query with another variable value.
+	_, err = cm.Query(context.Background(), "SELECT $env", tr, map[string]string{"env": "dev"})
+	require.NoError(t, err)
+
+	assert.Equal(t, []processor.TimeRange{tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid)}, inner.ranges)
 }
 
 func Test_cachedLogs_TestConnection(t *testing.T) {
@@ -331,7 +367,7 @@ func Test_cachedLogs_Logs(t *testing.T) {
 					Fields: map[string]string{},
 				},
 			},
-			Cursor: null.ValueFrom(*cursor),
+			NextCursor: null.ValueFrom(*cursor),
 		},
 	}
 
@@ -365,7 +401,11 @@ func Test_cachedLogs_Logs(t *testing.T) {
 	_, err = cl.Logs(context.Background(), `{app="web"}`, tr, page)
 	require.NoError(t, err)
 
-	assert.Equal(t, []processor.TimeRange{tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid)}, inner.ranges)
+	// so is a page read in another order.
+	_, err = cl.Logs(context.Background(), `{app="api"}`, tr, processor.LogsPage{Limit: 10, Cursor: page.Cursor, Order: processor.LogsOrderAsc})
+	require.NoError(t, err)
+
+	assert.Equal(t, []processor.TimeRange{tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid), tr.AlignTo(_cacheGrid)}, inner.ranges)
 }
 
 func Test_cachedLogs_LogsVolume(t *testing.T) {
@@ -707,6 +747,32 @@ func Test_cachedQuery(t *testing.T) {
 
 				assert.Contains(t, buf.String(), c.Log)
 			})
+		})
+	}
+}
+
+func Test_variableArgs(t *testing.T) {
+	cc := map[string]struct {
+		Query  string
+		Vars   map[string]string
+		Result []string
+	}{
+		"No variables": {
+			Query:  "SELECT $env",
+			Result: []string{},
+		},
+		"Referenced variables in key order": {
+			Query:  "SELECT $step, '$env', $a",
+			Vars:   map[string]string{"step": "5m", "env": "prod", "a": "", "other": "x"},
+			Result: []string{"a=", "env=prod", "step=5m"},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, variableArgs(c.Query, c.Vars))
 		})
 	}
 }
