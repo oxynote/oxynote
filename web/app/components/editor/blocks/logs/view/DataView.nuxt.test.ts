@@ -1,6 +1,10 @@
 import { format } from "date-fns"
 import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime"
-import { enableAutoUnmount, type VueWrapper } from "@vue/test-utils"
+import {
+	enableAutoUnmount,
+	flushPromises,
+	type VueWrapper,
+} from "@vue/test-utils"
 import { setResponseStatus } from "h3"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import DataView from "./DataView.vue"
@@ -1093,6 +1097,31 @@ describe("<DataView>", { concurrent: false }, () => {
 			// the old interval would have waited until 12:00:10
 			expect(calls).toHaveLength(2)
 			expect(calls[1]?.query.to).toBe("2026-01-01T12:00:06.000Z")
+		})
+
+		it("clears a changed interval's deadline once the ids arrive", async ({
+			expect,
+		}) => {
+			mockEndpoint("GET", LINES_URL, () => logsResult([]))
+			const config = logConfig({ refreshInterval: RefreshInterval.S10 })
+			const wrapper = await mountView(config)
+			await settleLogRequests()
+
+			// the branch id leaves with the route while the next document loads
+			useEditorStore().activeBranchId = null
+
+			// the interval changes before the id comes back, so the clear has
+			// to wait for it instead of throwing
+			await wrapper.setProps({
+				config: { ...config, refreshInterval: RefreshInterval.S5 },
+			})
+
+			useEditorStore().activeBranchId = BRANCH_ID
+			await flushPromises()
+
+			// the saved ten seconds are gone, so the five second interval is
+			// due now
+			expect(useEditorStore().isLogBlockDueForRefresh(UID)).toBe(true)
 		})
 
 		it("adds the lines that arrived since, keeping the loaded ones, while scrolled", async ({

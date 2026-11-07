@@ -115,10 +115,32 @@ const refreshIntervalMs = computed(() =>
 
 // the timer restarts when the interval changes, but the saved next
 // refresh still holds the old interval. Clear it so a shorter interval
-// does not wait for the old one.
+// does not wait for the old one. The ids arrive with the route, often
+// after the block has mounted, so a change that arrives first is cleared
+// when they do.
+const intervalChangedBeforeIds = ref(false)
+
 watch(refreshIntervalMs, () => {
+	if (!editorStore.activeDocumentId || !editorStore.activeBranchId) {
+		intervalChangedBeforeIds.value = true
+
+		return
+	}
+
 	editorStore.clearLogBlockNextRefreshTimestamp(props.uid)
 })
+
+watch(
+	[() => editorStore.activeDocumentId, () => editorStore.activeBranchId],
+	([docId, branchId]) => {
+		if (!intervalChangedBeforeIds.value || !docId || !branchId) {
+			return
+		}
+
+		intervalChangedBeforeIds.value = false
+		editorStore.clearLogBlockNextRefreshTimestamp(props.uid)
+	},
+)
 const fetchLogs = useLogs(
 	() => props.config.dataSourceId,
 	() => {

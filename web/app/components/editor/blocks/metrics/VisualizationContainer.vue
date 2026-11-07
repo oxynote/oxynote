@@ -61,10 +61,32 @@ const refreshIntervalMs = computed(() =>
 
 // the timer restarts when the interval changes, but the saved next
 // refresh still holds the old interval. Clear it so a shorter interval
-// does not wait for the old one.
+// does not wait for the old one. The ids arrive with the route, often
+// after the block has mounted, so a change that arrives first is cleared
+// when they do.
+const intervalChangedBeforeIds = ref(false)
+
 watch(refreshIntervalMs, () => {
+	if (!editorStore.activeDocumentId || !editorStore.activeBranchId) {
+		intervalChangedBeforeIds.value = true
+
+		return
+	}
+
 	editorStore.clearMetricBlockNextRefreshTimestamp(props.uid)
 })
+
+watch(
+	[() => editorStore.activeDocumentId, () => editorStore.activeBranchId],
+	([docId, branchId]) => {
+		if (!intervalChangedBeforeIds.value || !docId || !branchId) {
+			return
+		}
+
+		intervalChangedBeforeIds.value = false
+		editorStore.clearMetricBlockNextRefreshTimestamp(props.uid)
+	},
+)
 
 // a simulation stands in for a metric that has not arrived yet. A source
 // that cannot be reached is a different problem, and drawing a plausible
