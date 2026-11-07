@@ -63,6 +63,14 @@ function extractedRow(field: ExtractedField): FieldRow {
 		}
 	}
 
+	if (field.isNull) {
+		return {
+			...row,
+			filter: null,
+			disabledReason: t("editor.logs.view.filter-null"),
+		}
+	}
+
 	if (field.nested) {
 		return {
 			...row,

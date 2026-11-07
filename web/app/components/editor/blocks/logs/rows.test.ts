@@ -298,6 +298,7 @@ describe("extractedFields", () => {
 				display: "m",
 				format: LineFormat.JSON,
 				nested: false,
+				isNull: false,
 			},
 			{
 				key: "n",
@@ -305,6 +306,7 @@ describe("extractedFields", () => {
 				display: "2",
 				format: LineFormat.JSON,
 				nested: false,
+				isNull: false,
 			},
 			{
 				key: "user",
@@ -312,6 +314,7 @@ describe("extractedFields", () => {
 				display: '{"id":1}',
 				format: LineFormat.JSON,
 				nested: true,
+				isNull: false,
 			},
 			{
 				key: "region",
@@ -319,6 +322,7 @@ describe("extractedFields", () => {
 				display: "eu",
 				format: null,
 				nested: false,
+				isNull: false,
 			},
 			{
 				key: "user_id",
@@ -326,6 +330,7 @@ describe("extractedFields", () => {
 				display: "1",
 				format: null,
 				nested: false,
+				isNull: false,
 			},
 		])
 	})
@@ -340,6 +345,7 @@ describe("extractedFields", () => {
 				display: '"a b"',
 				format: LineFormat.Logfmt,
 				nested: false,
+				isNull: false,
 			},
 		])
 	})

@@ -17,11 +17,15 @@ const PARSERS: Record<LineFormat, string> = {
 	[LineFormat.Logfmt]: "logfmt",
 }
 
-// the stages that can remove or rename a key before a filter reads it
-const KEY_CHANGING_STAGES = new Set([
+// the stages that can rewrite the line or remove or rename a key. The row
+// reads the line as it comes out of the query, so after such a stage its
+// keys may not match the keys Loki parsed.
+const LOG_CHANGING_STAGES = new Set([
 	"DropLabelsExpr",
 	"KeepLabelsExpr",
 	"LabelFormatExpr",
+	"LineFormatExpr",
+	"DecolorizeExpr",
 ])
 
 // lokiDialect reads LogQL queries and names keys as Loki's parsers do
@@ -82,14 +86,14 @@ function withViewFilters(
 // canFilterLineKey tells whether a filter on a key read from a line of the
 // given format works on the query. It does when the query parses the line
 // in that format, or parses it in no way so the filter can add the parser.
-// It does not when the query parses the line some other way or can change
-// its keys, because the key may then not reach the filter.
+// It does not when the query parses the line some other way, or can change
+// the line or its keys, because the key may then not reach the filter.
 function canFilterLineKey(query: string, format: LineFormat): boolean {
 	const stages = queryStages(query)
 
 	return (
 		!stages.unreadable &&
-		!stages.changesKeys &&
+		!stages.changesLog &&
 		(!stages.parsers.length || stages.parsers.includes(format))
 	)
 }
@@ -106,8 +110,7 @@ function lineKeyName(key: string, log: Log): string {
 }
 
 // repeatsLineKey tells whether a key Loki parsed is a line key under Loki's
-// name for it. Loki writes a value that is not text in its own way, so for
-// such a value only the key is compared.
+// name for it, with the same value
 function repeatsLineKey(
 	[key, value]: KeyValue,
 	lineKey: string,
@@ -120,7 +123,7 @@ function repeatsLineKey(
 	const lineName = lineKey.replace(KEY_CHAR, "_")
 
 	if (lineName === name) {
-		return typeof lineValue !== "string" || lineValue === value
+		return sameValue(value, lineValue)
 	}
 
 	return (
@@ -129,6 +132,21 @@ function repeatsLineKey(
 		typeof lineValue === "object" &&
 		name.startsWith(`${lineName}_`)
 	)
+}
+
+// sameValue tells whether Loki's text for a value is the line's value. Loki
+// keeps a JSON number as it is written in the line, which can differ from
+// how JavaScript writes it. So numbers compare by value.
+function sameValue(text: string, lineValue: unknown): boolean {
+	if (typeof lineValue === "string") {
+		return text === lineValue
+	}
+
+	if (typeof lineValue === "number") {
+		return text.trim() !== "" && Number(text) === lineValue
+	}
+
+	return text === JSON.stringify(lineValue)
 }
 
 function matcher(filter: LogFilter): string {
@@ -179,12 +197,12 @@ function streamSelector(query: string): { from: number; to: number } | null {
 // not parse, so its stages are unknown.
 function queryStages(query: string): {
 	parsers: (LineFormat | "other")[]
-	changesKeys: boolean
+	changesLog: boolean
 	unreadable: boolean
 } {
 	const stages = {
 		parsers: [] as (LineFormat | "other")[],
-		changesKeys: false,
+		changesLog: false,
 		unreadable: false,
 	}
 
@@ -192,8 +210,8 @@ function queryStages(query: string): {
 		enter: (node) => {
 			if (node.type.isError) {
 				stages.unreadable = true
-			} else if (KEY_CHANGING_STAGES.has(node.name)) {
-				stages.changesKeys = true
+			} else if (LOG_CHANGING_STAGES.has(node.name)) {
+				stages.changesLog = true
 			} else if (node.name === "LogfmtParser") {
 				stages.parsers.push(LineFormat.Logfmt)
 			} else if (node.name === "LabelParser") {

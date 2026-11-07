@@ -160,6 +160,14 @@ describe("<RowDetails>", { concurrent: false }, () => {
 			},
 			expected: "editor.logs.view.filter-nested",
 		},
+		{
+			name: "turns off the filter of a null line value",
+			input: {
+				log: { line: '{"status":null}', parsed: undefined },
+				formats: [LineFormat.JSON],
+			},
+			expected: "editor.logs.view.filter-null",
+		},
 	])("$name", async ({ input, expected }, { expect }) => {
 		const wrapper = await mountUnderTooltipProvider(RowDetails, {
 			props: {

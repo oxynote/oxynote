@@ -22,6 +22,8 @@ export interface ExtractedField {
 	format: LineFormat | null
 	// an object or array, which a source may split into one key per entry
 	nested: boolean
+	// a JSON null, which a source may not parse as a value at all
+	isNull: boolean
 }
 
 // one row of a details table. filter is what its buttons add, or null
@@ -259,6 +261,7 @@ function extract(
 					display: typeof value === "string" ? displayValue(value) : text,
 					format: line.format,
 					nested: value !== null && typeof value === "object",
+					isNull: value === null,
 				}
 			})
 		: []
@@ -278,6 +281,7 @@ function extract(
 			display: displayValue(value),
 			format: null,
 			nested: false,
+			isNull: false,
 		}))
 
 	return [...fromLine, ...fromParser]

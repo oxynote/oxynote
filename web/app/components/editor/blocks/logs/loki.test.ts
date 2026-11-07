@@ -203,7 +203,17 @@ describe("lokiDialect.canFilterLineKey", () => {
 		{
 			query: '{job="api"} | line_format "{{.x}}"',
 			format: LineFormat.JSON,
-			expected: true,
+			expected: false,
+		},
+		{
+			query: '{job="api"} | json | line_format "{{.x}}"',
+			format: LineFormat.JSON,
+			expected: false,
+		},
+		{
+			query: '{job="api"} | decolorize',
+			format: LineFormat.Logfmt,
+			expected: false,
 		},
 		{ query: '{job="api"} | json', format: LineFormat.Logfmt, expected: false },
 		{
@@ -300,11 +310,31 @@ describe("lokiDialect.repeatsLineKey", () => {
 			expected: true,
 		},
 		{
-			name: "compares only the key for a value that is not text",
+			name: "compares a number by value, however Loki writes it",
 			input: {
 				parsed: ["n", "1e300"],
 				lineKey: "n",
 				lineValue: 1e300,
+				nested: true,
+			},
+			expected: true,
+		},
+		{
+			name: "is false for a number the parser gave another value",
+			input: {
+				parsed: ["count", "two"],
+				lineKey: "count",
+				lineValue: 1,
+				nested: true,
+			},
+			expected: false,
+		},
+		{
+			name: "compares a boolean by its JSON text",
+			input: {
+				parsed: ["ok", "true"],
+				lineKey: "ok",
+				lineValue: true,
 				nested: true,
 			},
 			expected: true,
