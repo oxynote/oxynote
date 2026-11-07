@@ -61,7 +61,7 @@ function close() {
 		v-else
 		:class="
 			cn(
-				'grid transition-[grid-template-columns] duration-200 ease-out',
+				'grid transition-[grid-template-columns] duration-200 ease-out print:hidden',
 				!mounted && 'max-[78.125rem]:hidden',
 				open && sidebarOpen
 					? 'grid-cols-[clamp(20rem,22dvw,26.25rem)]'
