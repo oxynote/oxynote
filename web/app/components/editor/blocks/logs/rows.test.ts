@@ -249,6 +249,36 @@ describe("messageParts", () => {
 			],
 		},
 		{
+			name: "marks a search spanning a key, its equals sign and its value",
+			input: { text: "user=ada", search: "user=ada" },
+			expected: [
+				{ text: "user", kind: "key", match: true },
+				{ text: "=", kind: "separator", match: true },
+				{ text: "ada", kind: "plain", match: true },
+			],
+		},
+		{
+			name: "marks a search spanning a key and its value in any case",
+			input: { text: "level=error", search: "LEVEL=ERROR" },
+			expected: [
+				{ text: "level", kind: "key", match: true },
+				{ text: "=", kind: "separator", match: true },
+				{ text: "error", kind: "plain", match: true },
+			],
+		},
+		{
+			name: "marks a search spanning a value and the next key",
+			input: { text: "level=error user=ada", search: "error user" },
+			expected: [
+				{ text: "level", kind: "key", match: false },
+				{ text: "=", kind: "separator", match: false },
+				{ text: "error ", kind: "plain", match: true },
+				{ text: "user", kind: "key", match: true },
+				{ text: "=", kind: "separator", match: false },
+				{ text: "ada", kind: "plain", match: false },
+			],
+		},
+		{
 			name: "keeps the space between a key and its equals sign plain",
 			input: { text: "level =error", search: "" },
 			expected: [

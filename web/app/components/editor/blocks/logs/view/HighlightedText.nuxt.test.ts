@@ -49,6 +49,19 @@ describe("<HighlightedText>", () => {
 		).toEqual(["lev", "el"])
 	})
 
+	it("marks a search spanning a key, its equals sign and its value", async ({
+		expect,
+	}) => {
+		const wrapper = await mountInParagraph("user=ada", "user=ada", true)
+
+		expect(wrapper.text()).toBe("user=ada")
+		expect(wrapper.findAll("mark").map((m) => m.text())).toEqual([
+			"user",
+			"=",
+			"ada",
+		])
+	})
+
 	it("colours nothing without the key colouring", async ({ expect }) => {
 		const wrapper = await mountInParagraph("level=error", "")
 
