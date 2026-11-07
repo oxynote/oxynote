@@ -1,3 +1,5 @@
+import { showToastMessage } from "~/components/toast"
+
 export default defineNuxtPlugin((nuxtApp) => {
 	const config = useRuntimeConfig()
 	const route = useRoute()
@@ -37,6 +39,8 @@ export default defineNuxtPlugin((nuxtApp) => {
 				const current = route.fullPath || "/"
 				await redirectToLogin(current, false, nuxtApp)
 			}
+
+			notifyRoleNotAllowed(response, nuxtApp)
 		},
 	})
 
@@ -67,6 +71,8 @@ export default defineNuxtPlugin((nuxtApp) => {
 				const current = route.fullPath || "/"
 				await redirectToLogin(current, false, nuxtApp)
 			}
+
+			notifyRoleNotAllowed(response, nuxtApp)
 		},
 	})
 
@@ -77,6 +83,26 @@ export default defineNuxtPlugin((nuxtApp) => {
 		},
 	}
 })
+
+// the code core answers with when the member's role does not allow an
+// action. Other 403s are each caller's to explain.
+const FORBIDDEN_CODE = "member.forbidden"
+
+// a role refusal reaches the user as one toast, whichever call hit it.
+function notifyRoleNotAllowed(
+	response: Response & { _data?: unknown },
+	nuxtApp: { $i18n: { t: (key: string) => string } },
+) {
+	if (
+		!import.meta.client ||
+		response.status !== 403 ||
+		(response._data as { code?: unknown } | undefined)?.code !== FORBIDDEN_CODE
+	) {
+		return
+	}
+
+	showToastMessage("error", nuxtApp.$i18n.t("general.errors.role-not-allowed"))
+}
 
 export function redirectToLogin(
 	currentPath: string | undefined,

@@ -109,6 +109,10 @@
 						"title": "Account couldn't be deleted",
 						"description": "You are the last member of this workspace, and it needs at least one"
 					},
+					"last-admin": {
+						"title": "Account couldn't be deleted",
+						"description": "You are the last admin of this workspace. Make another member an admin first"
+					},
 					"password-required": "Please enter your current password",
 					"invalid-password": "Incorrect password",
 					"no-password": {
@@ -139,6 +143,7 @@
 				"description-max-members-reached": "You have reached the maximum number of members for your workspace. Contact us via email or Discord if you want to add more.",
 				"email-label": "Email address",
 				"email-placeholder": "Email address",
+				"role-label": "Role",
 				"submit-button": "Send Invitation",
 				"cancel-button": "Cancel",
 				"close-button": "Close",
@@ -515,6 +520,9 @@
 				},
 				"delete": {
 					"title": "Remove"
+				},
+				"role": {
+					"title": "Role"
 				}
 			},
 			"success-messages": {
@@ -535,6 +543,9 @@
 					"name": {
 						"title": "Workspace name couldn't be changed",
 						"description": "An error occurred while trying to change the workspace name. Please try again"
+					},
+					"role": {
+						"title": "Role couldn't be changed"
 					}
 				}
 			}

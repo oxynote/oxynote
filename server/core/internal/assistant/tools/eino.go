@@ -10,6 +10,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 )
 
 // This file is the whole of the assistant's coupling to eino. Tools
@@ -33,7 +34,7 @@ type readToolOutput struct {
 func (readToolOutput) Info() Info {
 	return Info{
 		Name:        NameReadToolOutput,
-		Traits:      Traits{Internal: true},
+		Traits:      Traits{Internal: true, Role: org.RoleViewer},
 		Description: "Return the full output of an earlier tool call that was too large to keep in the conversation.",
 		Properties: map[string]any{
 			"file_path": map[string]any{"type": "string", "description": "The path shown in the truncation notice."},

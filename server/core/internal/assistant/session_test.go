@@ -17,6 +17,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
@@ -151,7 +152,7 @@ func prepSession(t *testing.T, m *Manager) (*session, *recorder) {
 
 	rec, writer := newRecorder()
 
-	s, err := m.newSession(context.Background(), "org", "user", writer)
+	s, err := m.newSession(context.Background(), "org", "user", org.RoleEditor, writer)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -166,6 +167,7 @@ func Test_Manager_newSession(t *testing.T) {
 
 	cc := map[string]struct {
 		OmitSummary bool
+		Role        org.Role
 		Stores      storeCalls
 		Writes      int
 		Err         error
@@ -175,6 +177,12 @@ func Test_Manager_newSession(t *testing.T) {
 			Err:         assert.AnError,
 		},
 		"Session restores the conversation": {
+			Role:   org.RoleEditor,
+			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
+			Writes: 1,
+		},
+		"Viewer session": {
+			Role:   org.RoleViewer,
 			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
 			Writes: 1,
 		},
@@ -198,7 +206,7 @@ func Test_Manager_newSession(t *testing.T) {
 
 			rec, writer := newRecorder()
 
-			s, err := m.newSession(context.Background(), "org", "user", writer)
+			s, err := m.newSession(context.Background(), "org", "user", c.Role, writer)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			st.assertCalls(t, c.Stores)
@@ -216,6 +224,7 @@ func Test_Manager_newSession(t *testing.T) {
 			assert.Equal(t, persist.SessionKey("org", "user"), s.key)
 			assert.Same(t, m, s.man)
 			assert.Same(t, writer, s.writer)
+			assert.Equal(t, c.Role, s.role)
 			assert.NotNil(t, s.runner)
 			assert.NotNil(t, s.supv)
 			assert.Empty(t, s.activeDocumentID)
@@ -237,7 +246,7 @@ func Test_session_Close(t *testing.T) {
 	m, _ := testManagerStores()
 	rec, writer := newRecorder()
 
-	s, err := m.newSession(context.Background(), "org", "user", writer)
+	s, err := m.newSession(context.Background(), "org", "user", org.RoleEditor, writer)
 	require.NoError(t, err)
 
 	require.NoError(t, s.Close())
@@ -942,6 +951,9 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 			}
 
 			db := &toolsMock.DB{
+				FetchOrganizationMemberRoleFunc: func(context.Context, string, string) (org.Role, error) {
+					return org.RoleEditor, nil
+				},
 				FetchDocumentByBranchIDFunc: func(_ context.Context, id xid.ID, orgID string) (*document.Document, error) {
 					return &document.Document{
 						BranchID:       id,
@@ -1264,8 +1276,9 @@ func Test_session_runOptions(t *testing.T) {
 	s, _ := prepSession(t, m)
 	s.SetActiveDocument("doc-3", "")
 
-	// the checkpoint id and the active document snapshot, so a mid-turn
-	// navigation cannot shift the prompt under an in-flight turn.
+	// the checkpoint id and the session values: the active document
+	// snapshot, so a mid-turn navigation cannot shift the prompt under an
+	// in-flight turn, and whether the user may only read.
 	assert.Len(t, s.runOptions(nil), 2)
 }
 

@@ -34,7 +34,7 @@ export interface BootstrapDeps {
 	accounts: AccountAdapter
 	hashPassword: (password: string) => Promise<string>
 	// better-auth's createOrganization. It runs the organization hooks
-	// and makes the user the owner.
+	// and makes the user an admin.
 	createOrganization: (organization: {
 		name: string
 		slug: string

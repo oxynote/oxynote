@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -12,6 +13,8 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"github.com/oxynote/oxynote/server/core/internal/org"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -60,6 +63,9 @@ type gateCase struct {
 	// ApplyCalls is the number of edits that must have reached the
 	// applier.
 	ApplyCalls int
+
+	// RoleCalls is the number of role reads before a write runs.
+	RoleCalls int
 }
 
 func Test_confirming_InvokableRun(t *testing.T) {
@@ -112,6 +118,7 @@ func Test_confirming_InvokableRun(t *testing.T) {
 			RespJSON:                     `{"content":"<p id=\"a\">hi</p>\n"}`,
 			FetchDocumentByBranchIDCalls: 1,
 			ApplyCalls:                   1,
+			RoleCalls:                    1,
 		},
 		"Approve-all never covers a destructive write": {
 			Name:                         NameDeleteBlock,
@@ -127,6 +134,7 @@ func Test_confirming_InvokableRun(t *testing.T) {
 			RespJSON:                     `{"content":"<p id=\"a\">hi</p>\n"}`,
 			FetchDocumentByBranchIDCalls: 2,
 			ApplyCalls:                   1,
+			RoleCalls:                    1,
 		},
 		"Declined confirmation reports the refusal": {
 			Name:                         NameReplaceBlocks,
@@ -163,7 +171,7 @@ func Test_confirming_InvokableRun(t *testing.T) {
 
 			// the tool as the registry stored it, wrapper and all, so the
 			// test exercises what the agent actually runs.
-			ct, ok := New(testDeps(db, applier, nil)).tools[c.Name]
+			ct, ok := New(testDeps(db, applier, nil), org.RoleAdmin).tools[c.Name]
 			require.True(t, ok, "%s is not in the registry", c.Name)
 
 			var (
@@ -238,6 +246,7 @@ func Test_confirming_InvokableRun(t *testing.T) {
 			assert.Len(t, db.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchIDCalls)
 			assert.Len(t, db.FetchDocumentTreeCalls(), c.FetchDocumentTreeCalls)
 			assert.Len(t, applier.ApplyCalls(), c.ApplyCalls)
+			assert.Len(t, db.FetchOrganizationMemberRoleCalls(), c.RoleCalls)
 
 			// no case fails a branch lookup, names a data source or a
 			// parent, or runs create_document or delete_document past
@@ -254,6 +263,79 @@ func Test_confirming_InvokableRun(t *testing.T) {
 			}
 
 			require.NoError(t, err)
+			assert.JSONEq(t, c.RespJSON, res)
+		})
+	}
+}
+
+// A chat outlives a role change, so the role is read again when a
+// confirmed write runs.
+func Test_confirming_run(t *testing.T) {
+	t.Parallel()
+
+	writeArgs := `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","content":"<p id=\"a\">hi</p>"}`
+
+	cc := map[string]struct {
+		Role                         org.Role
+		RoleErr                      error
+		Err                          error
+		RespJSON                     string
+		FetchDocumentByBranchIDCalls int
+		ApplyCalls                   int
+	}{
+		"Error returned by DB.FetchOrganizationMemberRole": {
+			RoleErr: assert.AnError,
+			Err:     assert.AnError,
+		},
+		"Removed user is refused": {
+			RoleErr:  sql.ErrNoRows,
+			RespJSON: `{"approved":false,"reason":"your role does not allow this"}`,
+		},
+		"Demoted user is refused": {
+			Role:     org.RoleViewer,
+			RespJSON: `{"approved":false,"reason":"your role does not allow this"}`,
+		},
+		"Editor's write runs": {
+			Role:                         org.RoleEditor,
+			RespJSON:                     `{"content":"<p id=\"a\">hi</p>\n"}`,
+			FetchDocumentByBranchIDCalls: 1,
+			ApplyCalls:                   1,
+		},
+		"Admin's write runs": {
+			Role:                         org.RoleAdmin,
+			RespJSON:                     `{"content":"<p id=\"a\">hi</p>\n"}`,
+			FetchDocumentByBranchIDCalls: 1,
+			ApplyCalls:                   1,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := stubContentDB(nil)
+			db.FetchOrganizationMemberRoleFunc = func(context.Context, string, string) (org.Role, error) {
+				return c.Role, c.RoleErr
+			}
+
+			applier := stubApplier()
+
+			ct, ok := New(testDeps(db, applier, nil), org.RoleAdmin).tools[NameReplaceBlocks].(*confirming)
+			require.True(t, ok)
+
+			res, err := ct.run(context.Background(), writeArgs)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			calls := db.FetchOrganizationMemberRoleCalls()
+			require.Len(t, calls, 1)
+			assert.Equal(t, "org", calls[0].OrganizationID)
+			assert.Len(t, db.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchIDCalls)
+			assert.Len(t, applier.ApplyCalls(), c.ApplyCalls)
+
+			if err != nil {
+				return
+			}
+
 			assert.JSONEq(t, c.RespJSON, res)
 		})
 	}

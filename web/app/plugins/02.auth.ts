@@ -1,6 +1,7 @@
 import { createAuthClient } from "better-auth/vue"
 import { organizationClient } from "better-auth/client/plugins"
 import { electronProxyClient } from "@better-auth/electron/proxy"
+import { ac, roles } from "~/utils/member-roles"
 
 // Usage example:
 // const { $authClient } = useNuxtApp()
@@ -30,7 +31,10 @@ function create(baseURL: string, headers?: Record<string, string>) {
 			credentials: __DESKTOP_BUILD__ ? "omit" : "include",
 		},
 		plugins: [
-			organizationClient(),
+			organizationClient({
+				ac,
+				roles,
+			}),
 			// Web-only effect: when the sign-in page is opened by Electron via
 			// requestAuth(), this redirects back to oxynote:// once OAuth
 			// completes. No-op when no Electron query params are present.

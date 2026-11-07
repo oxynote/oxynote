@@ -91,6 +91,14 @@
 			"1h": "1h",
 			"2h": "2h",
 			"1d": "1d"
+		},
+		"errors": {
+			"role-not-allowed": "Access denied."
+		},
+		"member-roles": {
+			"admin": "Admin",
+			"editor": "Editor",
+			"viewer": "Viewer"
 		}
 	},
 	"storage-errors": {

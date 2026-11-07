@@ -78,6 +78,7 @@ declare module "#app" {
 				inviteOrganizationMember(args: unknown): Promise<unknown>
 				cancelOrganizationInvitation(args: unknown): Promise<unknown>
 				removeOrganizationMember(args: unknown): Promise<unknown>
+				updateOrganizationMemberRole(args: unknown): Promise<unknown>
 			}
 		}
 	}

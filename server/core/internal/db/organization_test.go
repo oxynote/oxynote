@@ -8,6 +8,7 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
@@ -192,6 +193,96 @@ func Test_agent_CheckOrganizationMember(t *testing.T) {
 			}
 
 			assert.Equal(t, c.Result, ok)
+		})
+	}
+}
+
+func Test_agent_FetchOrganizationMemberRole(t *testing.T) {
+	type tcase struct {
+		CancelledContext bool
+		OrganizationID   string
+		UserID           string
+		Result           org.Role
+		Err              error
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(t *testing.T, db *DB) tcase {
+			organizationID := prepOrganizations(t, db, 1)[0]
+			users := prepUsers(t, db, 1)
+			prepOrganizationMembers(t, db, organizationID, users)
+
+			return tcase{
+				CancelledContext: true,
+				OrganizationID:   organizationID,
+				UserID:           users[0],
+				Err:              assert.AnError,
+			}
+		},
+		"User is not a member": func(t *testing.T, db *DB) tcase {
+			organizationID := prepOrganizations(t, db, 1)[0]
+			users := prepUsers(t, db, 1)
+
+			return tcase{
+				OrganizationID: organizationID,
+				UserID:         users[0],
+				Err:            sql.ErrNoRows,
+			}
+		},
+		"User is a member of another organization": func(t *testing.T, db *DB) tcase {
+			organizationIDs := prepOrganizations(t, db, 2)
+			users := prepUsers(t, db, 1)
+			prepOrganizationMembers(t, db, organizationIDs[1], users)
+
+			return tcase{
+				OrganizationID: organizationIDs[0],
+				UserID:         users[0],
+				Err:            sql.ErrNoRows,
+			}
+		},
+		"Successful fetch": func(t *testing.T, db *DB) tcase {
+			organizationID := prepOrganizations(t, db, 1)[0]
+			users := prepUsers(t, db, 2)
+			prepOrganizationMembers(t, db, organizationID, users)
+
+			q, args := db.builder.Update("organization_members").
+				Set("role", "viewer").
+				Where(sq.Eq{"fk_user_id": users[1]}).
+				MustSql()
+
+			_, err := db.sql.Exec(q, args...)
+			require.NoError(t, err)
+
+			return tcase{
+				OrganizationID: organizationID,
+				UserID:         users[1],
+				Result:         org.RoleViewer,
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchOrganizationMemberRole(ctx, c.OrganizationID, c.UserID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
 		})
 	}
 }

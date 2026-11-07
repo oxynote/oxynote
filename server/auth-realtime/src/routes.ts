@@ -638,30 +638,32 @@ export function createRoutes({
 			return c.json({ error: "invalid token" }, 401)
 		}
 
+		let role: string | null
+
 		try {
 			if (!(await store.hasOAuthConsent(clientId, userId))) {
 				return c.json({ error: "consent revoked" }, 401)
 			}
 
-			if (
-				!(await store.isOrganizationMember(
-					userId,
-					organizationId,
-				))
-			) {
-				return c.json(
-					{ error: "not an organization member" },
-					401,
-				)
-			}
+			// read per request rather than from the token, so a role
+			// change applies to the next tool call.
+			role = await store.memberRole(userId, organizationId)
 		} catch (err) {
 			Sentry.captureException(err)
 			return c.json({ error: "token validation failed" }, 500)
 		}
 
+		if (role === null) {
+			return c.json(
+				{ error: "not an organization member" },
+				401,
+			)
+		}
+
 		return c.json({
 			userId,
 			organizationId,
+			role,
 			clientId,
 			scopes,
 			expiresAt: payload.exp,

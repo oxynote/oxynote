@@ -9,6 +9,7 @@ import (
 	"time"
 
 	sdkauth "github.com/modelcontextprotocol/go-sdk/auth"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 )
@@ -27,6 +28,10 @@ type Session struct {
 	// OrganizationID is the organization the token was bound to at
 	// issuance.
 	OrganizationID string `json:"organizationId"`
+
+	// Role specifies the role the user holds in that organization now,
+	// read on every request.
+	Role org.Role `json:"role"`
 
 	// ClientID is the OAuth client the token was issued for.
 	ClientID string `json:"clientId"`

@@ -36,6 +36,8 @@ const handlers: Record<string, (args: never) => Promise<unknown>> = {
 		authClient.organization.cancelInvitation(args),
 	"auth:removeOrganizationMember": (args) =>
 		authClient.organization.removeMember(args),
+	"auth:updateOrganizationMemberRole": (args) =>
+		authClient.organization.updateMemberRole(args),
 }
 
 export function registerAuthIpcHandlers() {

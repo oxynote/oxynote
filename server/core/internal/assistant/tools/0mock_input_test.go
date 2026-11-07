@@ -147,6 +147,9 @@ var _ Input = &InputMock{}
 //			ResetHookFunc: func(hk *hook.Hook) error {
 //				panic("mock out the ResetHook method")
 //			},
+//			ResetVariableValueFunc: func(variableID xid.ID) error {
+//				panic("mock out the ResetVariableValue method")
+//			},
 //			SearchDocumentBlocksFunc: func(query string, limit int) ([]search.Block, error) {
 //				panic("mock out the SearchDocumentBlocks method")
 //			},
@@ -306,6 +309,9 @@ type InputMock struct {
 
 	// ResetHookFunc mocks the ResetHook method.
 	ResetHookFunc func(hk *hook.Hook) error
+
+	// ResetVariableValueFunc mocks the ResetVariableValue method.
+	ResetVariableValueFunc func(variableID xid.ID) error
 
 	// SearchDocumentBlocksFunc mocks the SearchDocumentBlocks method.
 	SearchDocumentBlocksFunc func(query string, limit int) ([]search.Block, error)
@@ -562,6 +568,11 @@ type InputMock struct {
 			// Hk is the hk argument value.
 			Hk *hook.Hook
 		}
+		// ResetVariableValue holds details about calls to the ResetVariableValue method.
+		ResetVariableValue []struct {
+			// VariableID is the variableID argument value.
+			VariableID xid.ID
+		}
 		// SearchDocumentBlocks holds details about calls to the SearchDocumentBlocks method.
 		SearchDocumentBlocks []struct {
 			// Query is the query argument value.
@@ -680,6 +691,7 @@ type InputMock struct {
 	lockReadToolOutput          sync.RWMutex
 	lockRenameDocument          sync.RWMutex
 	lockResetHook               sync.RWMutex
+	lockResetVariableValue      sync.RWMutex
 	lockSearchDocumentBlocks    sync.RWMutex
 	lockSetVariableDefault      sync.RWMutex
 	lockSetVariableValue        sync.RWMutex
@@ -2116,6 +2128,41 @@ func (mock *InputMock) ResetHookCalls() []struct {
 	mock.lockResetHook.RLock()
 	calls = mock.calls.ResetHook
 	mock.lockResetHook.RUnlock()
+	return calls
+}
+
+// ResetVariableValue calls ResetVariableValueFunc.
+func (mock *InputMock) ResetVariableValue(variableID xid.ID) error {
+	callInfo := struct {
+		VariableID xid.ID
+	}{
+		VariableID: variableID,
+	}
+	mock.lockResetVariableValue.Lock()
+	mock.calls.ResetVariableValue = append(mock.calls.ResetVariableValue, callInfo)
+	mock.lockResetVariableValue.Unlock()
+	if mock.ResetVariableValueFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.ResetVariableValueFunc(variableID)
+}
+
+// ResetVariableValueCalls gets all the calls that were made to ResetVariableValue.
+// Check the length with:
+//
+//	len(mockedInput.ResetVariableValueCalls())
+func (mock *InputMock) ResetVariableValueCalls() []struct {
+	VariableID xid.ID
+} {
+	var calls []struct {
+		VariableID xid.ID
+	}
+	mock.lockResetVariableValue.RLock()
+	calls = mock.calls.ResetVariableValue
+	mock.lockResetVariableValue.RUnlock()
 	return calls
 }
 

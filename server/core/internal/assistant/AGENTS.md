@@ -66,7 +66,8 @@ server picks it up for free.
   not in `Exec`. Block writes go through `ApplyEdit`. What core cannot
   check, placement and content order, is auth-realtime's, against the
   editor schema (`validate.ts`).
-- **`Info.Traits` says what a tool is**; the zero value is a plain read.
+- **`Info.Traits` says what a tool is**. Every tool names `Role`, the
+  least role that may call it, and a set holds only what its role reaches.
   `Write` gates behind confirmation and protects the result from context
   middlewares (only writes have a `Summary`; `Test_New` checks).
   `Destructive` keeps it outside "approve all" (every `delete_*`).
