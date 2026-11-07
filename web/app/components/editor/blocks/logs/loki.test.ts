@@ -242,6 +242,7 @@ describe("lokiDialect.lineKeyName", () => {
 		{ input: "2xx", expected: "_2xx" },
 		{ input: "app", expected: "app_extracted" },
 		{ input: "trace-id", expected: "trace_id_extracted" },
+		{ input: "constructor", expected: "constructor" },
 	])("names $input as $expected", ({ input, expected }, { expect }) => {
 		const log: Log = {
 			id: "l1",

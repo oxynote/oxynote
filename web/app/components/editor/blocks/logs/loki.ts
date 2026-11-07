@@ -100,7 +100,7 @@ function lineKeyName(key: string, log: Log): string {
 	const name = key.replace(KEY_CHAR, "_")
 	const safe = /^[0-9]/.test(name) ? `_${name}` : name
 
-	return safe in log.labels || safe in log.fields
+	return Object.hasOwn(log.labels, safe) || Object.hasOwn(log.fields, safe)
 		? `${safe}${CLASH_SUFFIX}`
 		: safe
 }
