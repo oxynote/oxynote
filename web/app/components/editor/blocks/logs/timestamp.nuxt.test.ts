@@ -138,10 +138,17 @@ describe("formatLogTime", () => {
 		).toEqual({ date: "2026-01-02", time: "03:04:05.678000000" })
 	})
 
-	it("shows an unparsable time as it is", ({ expect }) => {
+	it.for([
+		{ name: "returns null for a time that does not parse", input: "yesterday" },
+		{
+			name: "returns null for the zero time a source sends without a time",
+			input: "0001-01-01T00:00:00Z",
+		},
+		{ name: "returns null for the Unix epoch", input: "1970-01-01T00:00:00Z" },
+	])("$name", ({ input }, { expect }) => {
 		expect(
-			formatLogTime("yesterday", LogTimestampFormat.Readable, appDate()),
-		).toEqual({ date: "", time: "yesterday" })
+			formatLogTime(input, LogTimestampFormat.Numeric, appDate()),
+		).toBeNull()
 	})
 })
 

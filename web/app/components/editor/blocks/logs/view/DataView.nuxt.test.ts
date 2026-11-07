@@ -83,6 +83,10 @@ describe("<DataView>", { concurrent: false }, () => {
 		editorStore.updateActiveBranchId(BRANCH_ID)
 		editorStore.setReviewableDiffActive(false)
 		visibility.near = ref(true)
+		// the view picks how to write its queries from the source's type
+		mockEndpoint("GET", "/api/data-sources", () => [
+			{ id: DATA_SOURCE_ID, name: "Loki", type: DataSourceType.Loki },
+		])
 		// the window is read from the clock. Only Date and the refresh
 		// interval are faked, so the app's own setup still runs.
 		vi.useFakeTimers({
@@ -219,6 +223,34 @@ describe("<DataView>", { concurrent: false }, () => {
 			).toBe(true)
 			expect(calls).toHaveLength(0)
 		})
+
+		it.for([
+			{ name: "that was deleted", input: [] },
+			{
+				name: "whose queries it cannot write",
+				input: [
+					{
+						id: DATA_SOURCE_ID,
+						name: "Prometheus",
+						type: DataSourceType.Prometheus,
+					},
+				],
+			},
+		])(
+			"asks for a data source again for one $name",
+			async ({ input }, { expect }) => {
+				const calls = mockEndpoint("GET", LINES_URL, () => logsResult([]))
+				mockEndpoint("GET", "/api/data-sources", () => input)
+
+				const wrapper = await mountView(logConfig())
+				await settleLogRequests()
+
+				expect(emptyState(wrapper).title).toBe(
+					t("editor.logs.status.data-source-not-selected.title"),
+				)
+				expect(calls).toHaveLength(0)
+			},
+		)
 
 		it.for([
 			{ name: "without a query", queries: [] },

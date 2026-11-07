@@ -68,11 +68,11 @@ const FORMATS: Record<
 
 // formatLogTime writes a line's time in the block's format and the reader's
 // time zone. It splits the time into a date part and a time part that the
-// row colours apart, and is null when the format shows no time. The
-// readable formats follow the locale, so English shows AM and PM. A
-// numeric one reads like "2026-10-29 13:23:43.123". Every format
-// keeps the fraction exact down to the nanosecond, which a Date cannot
-// hold.
+// row colours apart, and is null when the format shows no time or the
+// time is unknown. The readable formats follow the locale, so English
+// shows AM and PM. A numeric one reads like "2026-10-29 13:23:43.123".
+// Every format keeps the fraction exact down to the nanosecond, which a
+// Date cannot hold.
 export function formatLogTime(
 	time: string,
 	timestampFormat: LogTimestampFormat,
@@ -85,8 +85,10 @@ export function formatLogTime(
 	const parts = TIME_PARTS.exec(time)
 	const [, seconds = "", fraction, zone = ""] = parts ?? []
 	const date = new Date(parts ? `${seconds}${zone}` : time)
-	if (Number.isNaN(date.getTime())) {
-		return { date: "", time: time }
+	// a source without a time sends the zero time, which falls before the
+	// Unix epoch. So such a time is unknown, like one that does not parse.
+	if (!(date.getTime() > 0)) {
+		return null
 	}
 
 	const { readable, withDate, digits } = FORMATS[timestampFormat]

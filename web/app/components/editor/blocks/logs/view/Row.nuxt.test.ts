@@ -2,6 +2,8 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { flushPromises, type VueWrapper } from "@vue/test-utils"
 import { describe, it } from "vitest"
 import Row from "./Row.vue"
+import { LineFormat } from "../dialect"
+import { lokiDialect } from "../loki"
 import { LogTimestampFormat } from "../utils"
 import {
 	findButtonByText,
@@ -45,8 +47,23 @@ describe("<Row>", () => {
 		).toBe(expected)
 	})
 
-	it("shows no time when the format hides it", async ({ expect }) => {
-		const wrapper = await mountRow({ timestampFormat: LogTimestampFormat.None })
+	it.for([
+		{
+			name: "shows no time when the format hides it",
+			input: { time: LOCAL_TIME, format: LogTimestampFormat.None },
+		},
+		{
+			name: "shows no time when the time is unknown",
+			input: {
+				time: "0001-01-01T00:00:00Z",
+				format: LogTimestampFormat.Numeric,
+			},
+		},
+	])("$name", async ({ input }, { expect }) => {
+		const wrapper = await mountRow({
+			log: makeLog({ time: input.time }),
+			timestampFormat: input.format,
+		})
 
 		expect(wrapper.find("button .tabular-nums").exists()).toBe(false)
 	})
@@ -63,9 +80,32 @@ describe("<Row>", () => {
 
 	it.for<{
 		name: string
-		input: Pick<Log, "line" | "labels">
+		input: Pick<Log, "line" | "labels"> &
+			Partial<Pick<Log, "level" | "fields" | "parsed">>
 		expected: string
 	}>([
+		{
+			name: "splits a logfmt line and shows the extra parser keys with its keys",
+			input: {
+				level: LogLevel.Error,
+				line: 'level=error msg="value out of range" value=+Inf',
+				labels: { app: "chaos" },
+				fields: { trace_id: "abc" },
+				parsed: {
+					level: "error",
+					msg: "value out of range",
+					value: "+Inf",
+					unit: "ms",
+				},
+			},
+			expected:
+				"value out of range · value=+Inf unit=ms · trace_id=abc · app=chaos",
+		},
+		{
+			name: "starts with the labels of a line of only white space",
+			input: { line: "  ", labels: { app: "chaos" } },
+			expected: "app=chaos",
+		},
 		{
 			name: "sums up a line by its message, fields and labels",
 			input: {
@@ -92,7 +132,8 @@ describe("<Row>", () => {
 
 	it.for<{
 		name: string
-		input: Pick<Log, "line" | "labels" | "fields">
+		input: Pick<Log, "line" | "labels" | "fields"> &
+			Partial<Pick<Log, "parsed">>
 		expected: string[]
 	}>([
 		{
@@ -123,7 +164,17 @@ describe("<Row>", () => {
 			expected: ["Ada"],
 		},
 		{
-			name: "leaves the parsed fields of a plain line unmarked",
+			name: "marks the search in the keys a parser took from a plain line",
+			input: {
+				line: "Ada signed in",
+				labels: {},
+				fields: {},
+				parsed: { user: "ada" },
+			},
+			expected: ["Ada", "ada"],
+		},
+		{
+			name: "leaves the fields carried beside a plain line unmarked",
 			input: {
 				line: "Ada signed in",
 				labels: {},
@@ -257,6 +308,8 @@ function rowProps(
 		log: makeLog(),
 		timestampFormat: LogTimestampFormat.Numeric,
 		search: "",
+		dialect: lokiDialect,
+		lineFilterFormats: Object.values(LineFormat),
 		expanded: false,
 		...props,
 	}

@@ -1,7 +1,7 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { describe, it } from "vitest"
 import FilterChips from "./FilterChips.vue"
-import type { LogFilter } from "../logql"
+import type { LogFilter } from "../dialect"
 import { findButtonByText, t } from "~/components/test-helpers"
 
 describe("<FilterChips>", () => {
