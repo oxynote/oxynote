@@ -4,6 +4,9 @@ const LEVEL_KEYS = new Set(["level", "lvl", "detected_level"])
 // the keys a JSON line names its message with, in order of preference
 const MESSAGE_KEYS = ["msg", "message", "log"]
 
+// a word before an equals sign is a logfmt key
+const KEY_BEFORE_EQUALS = /\b[\w_]+(?=\s*=)/g
+
 export type KeyValue = [key: string, value: string]
 
 // fieldsInLine is true when the fields are written in the line itself.
@@ -24,6 +27,14 @@ export interface QueryLogs {
 
 export interface TextPart {
 	text: string
+	match: boolean
+}
+
+export type MessagePartKind = "key" | "separator" | "plain"
+
+export interface MessagePart {
+	text: string
+	kind: MessagePartKind
 	match: boolean
 }
 
@@ -94,6 +105,50 @@ export function highlightParts(text: string, search: string): TextPart[] {
 	}
 
 	return parts
+}
+
+// messageParts splits a plain log line into its logfmt keys, the equals
+// signs after them and the rest, then marks the search inside each part
+export function messageParts(text: string, search: string): MessagePart[] {
+	const segments: { text: string; kind: MessagePartKind }[] = []
+	let start = 0
+
+	for (const match of text.matchAll(KEY_BEFORE_EQUALS)) {
+		const key = match[0]
+		const index = match.index
+
+		if (index > start) {
+			segments.push({ text: text.slice(start, index), kind: "plain" })
+		}
+
+		segments.push({ text: key, kind: "key" })
+		start = index + key.length
+
+		const separator = /^(\s*)(=)/.exec(text.slice(start))
+		const gap = separator?.[1] ?? ""
+		const equals = separator?.[2] ?? ""
+
+		if (equals) {
+			if (gap) {
+				segments.push({ text: gap, kind: "plain" })
+			}
+
+			segments.push({ text: equals, kind: "separator" })
+			start += gap.length + equals.length
+		}
+	}
+
+	if (start < text.length) {
+		segments.push({ text: text.slice(start), kind: "plain" })
+	}
+
+	return segments.flatMap((segment) =>
+		highlightParts(segment.text, search).map((part) => ({
+			text: part.text,
+			kind: segment.kind,
+			match: part.match,
+		})),
+	)
 }
 
 // mergeQueryLogs interleaves the logs each query loaded, in the order
