@@ -124,6 +124,7 @@ shared meaning gets its own neutrally named token.
 | | `log-level-info` | `#0071c2` | `#51a2ff` |
 | | `log-level-debug` | `#009966` | `#00d492` |
 | | `log-level-trace` | `#62748e` | `#90a1b9` |
+| | `log-level-unknown` | `#737373` | `#a1a1a1` |
 | | `log-volume-empty` (dash for an interval without lines) | `#a1a1a1` | `#525252` |
 
 Recurring pattern for a tinted feature surface: the feature colour at

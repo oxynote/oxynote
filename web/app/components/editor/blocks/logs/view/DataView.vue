@@ -7,7 +7,8 @@ import SearchControl from "./SearchControl.vue"
 import VolumeStrip from "./VolumeStrip.vue"
 import { useBlockVariables } from "../../variables"
 import { mergeQueryLogs } from "../rows"
-import { withViewFilters, type LogFilter } from "../logql"
+import { LineFormat, type LogDialect, type LogFilter } from "../dialect"
+import { lokiDialect } from "../loki"
 import type { LogConfig } from "../utils"
 import { volumeBuckets } from "../volume"
 import {
@@ -73,6 +74,7 @@ const editorStore = useEditorStore()
 const { isEditable } = useEditorMeta()
 const blockVariables = useBlockVariables()
 const { useLogs, useLogVolume } = useLogDataSourceAPI()
+const { fetchDataSources } = useDataSourceAPI()
 
 const root = useTemplateRef<HTMLDivElement>("root")
 const scroller = useTemplateRef<
@@ -105,6 +107,22 @@ const isEditingDisabled = computed(
 const queries = refDebounced(
 	computed(() => (props.config.queries ?? []).map((q) => q.query)),
 	QUERY_DEBOUNCE_MS,
+)
+// the query language of the block's data source, or null until the
+// source is known
+const dialect = computed<LogDialect | null>(() => {
+	const source = fetchDataSources.state.value.data?.find(
+		(s) => s.id === props.config.dataSourceId,
+	)
+
+	return source?.type === DataSourceType.Loki ? lokiDialect : null
+})
+// a filter on a key read from a line runs on every query, so it needs
+// every query to let it through
+const lineFilterFormats = computed(() =>
+	Object.values(LineFormat).filter((format) =>
+		queries.value.every((q) => dialect.value?.canFilterLineKey(q, format)),
+	),
 )
 const refreshIntervalMs = computed(() =>
 	refreshIntervalToMs(
@@ -148,7 +166,13 @@ const logs = computed(() => {
 })
 const buckets = computed(() => volumeBuckets(fetchVolume.data.value ?? []))
 const state = computed(() => {
-	if (!props.config.dataSourceId) {
+	// a deleted source, or one whose queries the view cannot write, is
+	// missing from the loaded list or has no dialect. So the block asks
+	// for a source again.
+	if (
+		!props.config.dataSourceId ||
+		(fetchDataSources.state.value.data && !dialect.value)
+	) {
 		return "data-source-not-selected"
 	}
 
@@ -293,12 +317,18 @@ watchImmediate(
 )
 
 // the block's queries narrowed by this view's filters and search, or null
-// while a query or a variable it needs is missing
+// while a query, a variable it needs or the source's dialect is missing
 function viewParams(): LogQueriesParams | null {
 	const timeRange = blockVariables.timeRange(props.config.timeRange)
 	const variableValues = blockVariables.queryValues(queries.value)
+	const queryDialect = dialect.value
 
-	if (!timeRange || !variableValues || !canRunLogQueries(queries.value)) {
+	if (
+		!timeRange ||
+		!variableValues ||
+		!queryDialect ||
+		!canRunLogQueries(queries.value)
+	) {
 		return null
 	}
 
@@ -306,7 +336,7 @@ function viewParams(): LogQueriesParams | null {
 
 	return {
 		queries: queries.value.map((q) =>
-			withViewFilters(q, filters.value, search.value),
+			queryDialect.withViewFilters(q, filters.value, search.value),
 		),
 		from: window.from,
 		to: window.to,
@@ -561,10 +591,13 @@ async function readNewData() {
 					reader scrolls. The key gives each log its own row. So an open row
 					does not close and open again with an animation. -->
 					<Row
+						v-if="dialect"
 						:key="item.id"
 						:log="item"
 						:timestamp-format="props.config.timestampFormat"
 						:search="search"
+						:dialect="dialect"
+						:line-filter-formats="lineFilterFormats"
 						:expanded="expandedIds.has(item.id)"
 						:class="
 							cn(

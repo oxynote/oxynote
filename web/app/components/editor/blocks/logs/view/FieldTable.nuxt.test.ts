@@ -1,13 +1,36 @@
-import { mountSuspended } from "@nuxt/test-utils/runtime"
 import type { VueWrapper } from "@vue/test-utils"
 import { describe, it } from "vitest"
 import FieldTable from "./FieldTable.vue"
-import type { KeyValue } from "../rows"
-import { findButtonByText, t } from "~/components/test-helpers"
+import { LineFormat } from "../dialect"
+import type { FieldRow } from "../rows"
+import {
+	findButtonByText,
+	mountUnderTooltipProvider,
+	t,
+} from "~/components/test-helpers"
 
-const ENTRIES: KeyValue[] = [
-	["env", "prod"],
-	["job", "api"],
+const ENTRIES: FieldRow[] = [
+	{
+		key: "env",
+		value: "prod",
+		filter: { key: "env", value: "prod", indexed: true },
+	},
+	{
+		key: "http.status",
+		value: "500",
+		filter: {
+			key: "http_status",
+			value: "500",
+			indexed: false,
+			format: LineFormat.JSON,
+		},
+	},
+	{
+		key: "user",
+		value: '{"id":1}',
+		filter: null,
+		disabledReason: "nested",
+	},
 ]
 
 describe("<FieldTable>", () => {
@@ -16,8 +39,18 @@ describe("<FieldTable>", () => {
 
 		expect(rows(wrapper)).toEqual([
 			["env", "prod"],
-			["job", "api"],
+			["http.status", "500"],
+			["user", '{"id":1}'],
 		])
+	})
+
+	it("says none without entries", async ({ expect }) => {
+		const wrapper = await mountTable({ entries: [] })
+
+		expect(wrapper.get(".divide-y").text()).toBe(
+			t("editor.logs.view.section-empty"),
+		)
+		expect(wrapper.findAll("button")).toHaveLength(0)
 	})
 
 	it("widens the key column once the view has room", async ({ expect }) => {
@@ -29,31 +62,60 @@ describe("<FieldTable>", () => {
 	})
 
 	it.for([
-		{ label: "include-value", indexed: true, exclude: false },
-		{ label: "exclude-value", indexed: true, exclude: true },
-		{ label: "include-value", indexed: false, exclude: false },
-		{ label: "exclude-value", indexed: false, exclude: true },
+		{ label: "include-value", exclude: false },
+		{ label: "exclude-value", exclude: true },
 	])(
-		"asks to filter by a value from its $label button when indexed is $indexed",
-		async ({ label, indexed, exclude }, { expect }) => {
-			const wrapper = await mountTable({ entries: ENTRIES, indexed })
+		"asks for its row's filter from the $label button",
+		async ({ label, exclude }, { expect }) => {
+			const wrapper = await mountTable({ entries: ENTRIES })
 
 			await findButtonByText(
 				wrapper,
-				t(`editor.logs.view.${label}`, { key: "job" }),
+				t(`editor.logs.view.${label}`, { key: "http.status" }),
 			).trigger("click")
 
-			expect(wrapper.emitted("filter")).toEqual([
-				[{ key: "job", value: "api", indexed, exclude }],
+			expect(wrapper.emitted("filter")).toBeUndefined()
+			expect(table(wrapper).emitted("filter")).toEqual([
+				[
+					{
+						key: "http_status",
+						value: "500",
+						indexed: false,
+						format: LineFormat.JSON,
+						exclude,
+					},
+				],
 			])
 		},
 	)
+
+	it("turns off the buttons of a row without a filter and explains why", async ({
+		expect,
+	}) => {
+		const wrapper = await mountTable({ entries: ENTRIES })
+		const userRow = wrapper.findAll(".divide-y > div").at(2)
+		const buttons = userRow?.findAll("button") ?? []
+
+		expect(buttons).toHaveLength(2)
+		expect(buttons.every((b) => b.attributes("disabled") !== undefined)).toBe(
+			true,
+		)
+		expect(wrapper.findAll("[data-slot='tooltip-trigger']")).toHaveLength(1)
+		expect(userRow?.find("[data-slot='tooltip-trigger']").exists()).toBe(true)
+
+		await buttons[0]?.trigger("click")
+
+		expect(table(wrapper).emitted("filter")).toBeUndefined()
+	})
 })
 
-function mountTable(props: { entries: KeyValue[]; indexed?: boolean }) {
-	return mountSuspended(FieldTable, {
-		props: { indexed: false, ...props },
-	})
+function mountTable(props: { entries: FieldRow[] }) {
+	return mountUnderTooltipProvider(FieldTable, { props })
+}
+
+// the table inside the tooltip provider, which holds its emitted events
+function table(wrapper: VueWrapper) {
+	return wrapper.findComponent(FieldTable)
 }
 
 // each row's key and value, which are the cells that truncate
