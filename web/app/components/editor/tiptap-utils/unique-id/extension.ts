@@ -52,7 +52,11 @@ export interface UniqueIDOptions {
 	updateDocument: boolean
 }
 
-export const UniqueID = Extension.create<UniqueIDOptions>({
+export interface UniqueIDStorage {
+	cleanupSyncedListener?: (() => void) | null
+}
+
+export const UniqueID = Extension.create<UniqueIDOptions, UniqueIDStorage>({
 	name: "uniqueID",
 
 	// we’ll set a very high priority to make sure this runs first
@@ -66,6 +70,12 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 			generateID: () => uuidv4(),
 			filterTransaction: null,
 			updateDocument: true,
+		}
+	},
+
+	addStorage() {
+		return {
+			cleanupSyncedListener: null,
 		}
 	},
 
@@ -146,6 +156,7 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 
 			if (provider) {
 				provider.off("synced", createIds)
+				this.storage.cleanupSyncedListener = null
 			}
 		}
 
@@ -161,10 +172,18 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 			}
 
 			provider.on("synced", createIds)
+			this.storage.cleanupSyncedListener = () => {
+				provider.off("synced", createIds)
+			}
 		} else {
 			createIds()
 			return
 		}
+	},
+
+	onDestroy() {
+		this.storage.cleanupSyncedListener?.()
+		this.storage.cleanupSyncedListener = null
 	},
 
 	addProseMirrorPlugins() {
