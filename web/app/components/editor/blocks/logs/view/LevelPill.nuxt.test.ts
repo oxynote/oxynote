@@ -10,6 +10,7 @@ const LEVELS = [
 	LogLevel.Info,
 	LogLevel.Debug,
 	LogLevel.Trace,
+	LogLevel.Unknown,
 ]
 
 describe("<LevelPill>", () => {
@@ -33,14 +34,5 @@ describe("<LevelPill>", () => {
 		)
 
 		expect(new Set(colours).size).toBe(LEVELS.length)
-	})
-
-	it("keeps an empty column for an unknown level", async ({ expect }) => {
-		const wrapper = await mountSuspended(LevelPill, {
-			props: { level: LogLevel.Unknown },
-		})
-
-		expect(wrapper.text()).toBe("")
-		expect(wrapper.get("span").classes()).toContain("w-12.5")
 	})
 })

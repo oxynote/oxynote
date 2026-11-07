@@ -4,8 +4,8 @@ import HighlightedText from "./HighlightedText.vue"
 import LevelPill from "./LevelPill.vue"
 import RowDetails from "./RowDetails.vue"
 import UnsearchedPart from "./UnsearchedPart.vue"
-import { displayValue, summarizeLog } from "../rows"
-import type { LogFilter } from "../logql"
+import { summarizeLog } from "../rows"
+import type { LineFormat, LogDialect, LogFilter } from "../dialect"
 import { formatLogTime } from "../timestamp"
 import type { LogTimestampFormat } from "../utils"
 
@@ -18,6 +18,8 @@ const props = defineProps<{
 	log: Log
 	timestampFormat: LogTimestampFormat
 	search: string
+	dialect: LogDialect
+	lineFilterFormats: LineFormat[]
 }>()
 const emit = defineEmits<{
 	(e: "filter", filter: LogFilter): void
@@ -29,18 +31,19 @@ const { d } = useI18n({ useScope: "global" })
 const time = computed(() =>
 	formatLogTime(props.log.time, props.timestampFormat, d),
 )
-const summary = computed(() => summarizeLog(props.log))
+const summary = computed(() => summarizeLog(props.log, props.dialect))
 const searching = computed(() => props.search.trim().length > 0)
-// the search runs on the line only, so only the message and the fields
-// written in the line can match it. While a search is on, the other parts
+// the search runs on the line only. So only the message and the fields
+// taken from the line can match. While a search is on, the other parts
 // fade and a tooltip says why.
 const groups = computed(() =>
 	[
 		{
 			kind: "fields" as const,
-			pairs: summary.value.fields,
-			searched: summary.value.fieldsInLine,
+			pairs: summary.value.extracted,
+			searched: true,
 		},
+		{ kind: "fields" as const, pairs: summary.value.fields, searched: false },
 		{ kind: "labels" as const, pairs: summary.value.labels, searched: false },
 	].filter((g) => g.pairs.length),
 )
@@ -83,7 +86,7 @@ const groups = computed(() =>
 						:is="searching && !group.searched ? UnsearchedPart : 'span'"
 						v-bind="searching && !group.searched ? { kind: group.kind } : {}"
 					>
-						<template v-for="([key, value], index) in group.pairs" :key="key">
+						<template v-for="([key, value], index) in group.pairs" :key="index">
 							<template v-if="index > 0">{{ PAIR_SEPARATOR }}</template>
 							<span class="text-muted-foreground">
 								<HighlightedText
@@ -95,7 +98,7 @@ const groups = computed(() =>
 								{{ KEY_VALUE_SEPARATOR }}
 							</span>
 							<HighlightedText
-								:text="displayValue(value)"
+								:text="value"
 								:search="group.searched ? props.search : ''"
 							/>
 						</template>
@@ -119,6 +122,8 @@ const groups = computed(() =>
 		>
 			<RowDetails
 				:log="props.log"
+				:dialect="props.dialect"
+				:line-filter-formats="props.lineFilterFormats"
 				@filter="(filter) => emit('filter', filter)"
 			/>
 		</ShadcnUiCollapsibleContent>

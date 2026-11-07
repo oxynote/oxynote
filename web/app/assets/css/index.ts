@@ -90,7 +90,7 @@ export function chartStyles() {
 			[LogLevel.Info]: cssColorHex("--log-level-info"),
 			[LogLevel.Debug]: cssColorHex("--log-level-debug"),
 			[LogLevel.Trace]: cssColorHex("--log-level-trace"),
-			[LogLevel.Unknown]: cssColorHex("--muted-foreground"),
+			[LogLevel.Unknown]: cssColorHex("--log-level-unknown"),
 		} satisfies Record<LogLevel, string>,
 		logVolumeEmpty: cssColorHex("--log-volume-empty"),
 	}

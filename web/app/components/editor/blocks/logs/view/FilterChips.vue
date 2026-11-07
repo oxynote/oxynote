@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { LogFilter } from "../logql"
+import type { LogFilter } from "../dialect"
 
 const INCLUDE_MARK = "="
 const EXCLUDE_MARK = "≠"

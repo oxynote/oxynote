@@ -1,6 +1,7 @@
 import { describe, it } from "vitest"
 import {
 	displayValue,
+	extractedFields,
 	highlightParts,
 	mergeBounds,
 	mergeQueryLogs,
@@ -11,13 +12,24 @@ import {
 	type KeyValue,
 	type LogSummary,
 } from "./rows"
+import { LineFormat, type LogDialect } from "./dialect"
 
 const NOON_MILLIS = BigInt(Date.UTC(2026, 0, 1, 12, 0, 0))
+// a source that names a parsed key as the line does, so these tests read
+// only the generic rules
+const EXACT_DIALECT: LogDialect = {
+	withViewFilters: (query) => query,
+	canFilterLineKey: () => true,
+	lineKeyName: (key) => key,
+	repeatsLineKey: ([key, value], lineKey, lineValue) =>
+		key === lineKey && (typeof lineValue !== "string" || lineValue === value),
+}
 
 describe("summarizeLog", () => {
 	it.for<{
 		name: string
-		input: Pick<Log, "line" | "labels" | "fields" | "parsed">
+		input: Pick<Log, "line" | "labels" | "fields"> &
+			Partial<Pick<Log, "level" | "parsed">>
 		expected: LogSummary
 	}>([
 		{
@@ -29,11 +41,11 @@ describe("summarizeLog", () => {
 			},
 			expected: {
 				message: "GET /health 200",
+				extracted: [],
 				fields: [
 					["method", "GET"],
 					["status", "200"],
 				],
-				fieldsInLine: false,
 				labels: [
 					["env", "prod"],
 					["job", "api"],
@@ -41,18 +53,109 @@ describe("summarizeLog", () => {
 			},
 		},
 		{
-			name: "leaves out of a plain line the keys a parser took from it",
+			name: "shows the keys a parser took from a plain line",
 			input: {
+				line: "GET /health 200",
+				labels: {},
+				fields: {},
+				parsed: { status: "200", method: "GET" },
+			},
+			expected: {
+				message: "GET /health 200",
+				extracted: [
+					["method", "GET"],
+					["status", "200"],
+				],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "splits a logfmt line and leaves out the parser keys it repeats",
+			input: {
+				level: LogLevel.Error,
 				line: 'level=error msg="value out of range" value=+Inf',
 				labels: {},
 				fields: { trace_id: "abc" },
-				parsed: { msg: "value out of range", value: "+Inf" },
+				parsed: { level: "error", msg: "value out of range", value: "+Inf" },
 			},
 			expected: {
-				message: 'level=error msg="value out of range" value=+Inf',
+				message: "value out of range",
+				extracted: [["value", "+Inf"]],
 				fields: [["trace_id", "abc"]],
-				fieldsInLine: false,
 				labels: [],
+			},
+		},
+		{
+			name: "keeps a parser key whose value differs from the line",
+			input: {
+				line: "status=200",
+				labels: {},
+				fields: {},
+				parsed: { status: "500" },
+			},
+			expected: {
+				message: "",
+				extracted: [
+					["status", "200"],
+					["status", "500"],
+				],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "reads quoted and empty logfmt values without escapes",
+			input: {
+				line: 'msg="say \\"hi\\"" empty= spaced="two words" go="\\x01"',
+				labels: {},
+				fields: {},
+			},
+			expected: {
+				message: 'say "hi"',
+				extracted: [
+					["empty", '""'],
+					["spaced", '"two words"'],
+					["go", "\\x01"],
+				],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "keeps a line with a word outside logfmt pairs as plain text",
+			input: { line: "user=bob logged in", labels: {}, fields: {} },
+			expected: {
+				message: "user=bob logged in",
+				extracted: [],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "keeps the level keys when the level is unknown",
+			input: {
+				level: LogLevel.Unknown,
+				line: "level=notice msg=hi",
+				labels: {},
+				fields: { detected_level: "notice" },
+				parsed: { level: "notice" },
+			},
+			expected: {
+				message: "hi",
+				extracted: [["level", "notice"]],
+				fields: [["detected_level", "notice"]],
+				labels: [],
+			},
+		},
+		{
+			name: "gives a line of only white space no message",
+			input: { line: "   ", labels: { app: "api" }, fields: {} },
+			expected: {
+				message: "",
+				extracted: [],
+				fields: [],
+				labels: [["app", "api"]],
 			},
 		},
 		{
@@ -60,35 +163,50 @@ describe("summarizeLog", () => {
 			input: {
 				line: '{"status":"200","msg":"done","level":"info","lvl":"i","detected_level":"info","method":"GET"}',
 				labels: { job: "api" },
-				fields: { ignored: "x" },
+				fields: {},
 			},
 			expected: {
 				message: "done",
-				fields: [
+				extracted: [
 					["status", "200"],
 					["method", "GET"],
 				],
-				fieldsInLine: true,
+				fields: [],
 				labels: [["job", "api"]],
 			},
 		},
 		{
-			name: "writes non-string JSON values as JSON",
+			name: "keeps the fields carried beside a JSON line",
 			input: {
-				line: '{"message":"done","count":3,"ok":true,"none":null,"user":{"id":1},"tags":["a"]}',
+				line: '{"msg":"login ok","user":"bob"}',
+				labels: {},
+				fields: { trace_id: "abc", detected_level: "info" },
+			},
+			expected: {
+				message: "login ok",
+				extracted: [["user", "bob"]],
+				fields: [["trace_id", "abc"]],
+				labels: [],
+			},
+		},
+		{
+			name: "writes non-string JSON values as JSON without escapes",
+			input: {
+				line: '{"message":"done","count":3,"ok":true,"none":null,"user":{"id":1,"name":"a b"},"tags":["a"],"quote":"say \\"hi\\""}',
 				labels: {},
 				fields: {},
 			},
 			expected: {
 				message: "done",
-				fields: [
+				extracted: [
 					["count", "3"],
 					["ok", "true"],
 					["none", "null"],
-					["user", '{"id":1}'],
+					["user", '{"id":1,"name":"a b"}'],
 					["tags", '["a"]'],
+					["quote", '"say "hi""'],
 				],
-				fieldsInLine: true,
+				fields: [],
 				labels: [],
 			},
 		},
@@ -101,11 +219,11 @@ describe("summarizeLog", () => {
 			},
 			expected: {
 				message: "a",
-				fields: [
+				extracted: [
 					["log", "c"],
 					["message", "b"],
 				],
-				fieldsInLine: true,
+				fields: [],
 				labels: [],
 			},
 		},
@@ -118,8 +236,8 @@ describe("summarizeLog", () => {
 			},
 			expected: {
 				message: "started",
-				fields: [["msg", "5"]],
-				fieldsInLine: true,
+				extracted: [["msg", "5"]],
+				fields: [],
 				labels: [],
 			},
 		},
@@ -128,8 +246,8 @@ describe("summarizeLog", () => {
 			input: { line: '  {"status":"200"}', labels: {}, fields: {} },
 			expected: {
 				message: "",
-				fields: [["status", "200"]],
-				fieldsInLine: true,
+				extracted: [["status", "200"]],
+				fields: [],
 				labels: [],
 			},
 		},
@@ -138,8 +256,8 @@ describe("summarizeLog", () => {
 			input: { line: "{not json", labels: {}, fields: { a: "1" } },
 			expected: {
 				message: "{not json",
+				extracted: [],
 				fields: [["a", "1"]],
-				fieldsInLine: false,
 				labels: [],
 			},
 		},
@@ -148,13 +266,82 @@ describe("summarizeLog", () => {
 			input: { line: '["a"]', labels: {}, fields: {} },
 			expected: {
 				message: '["a"]',
+				extracted: [],
 				fields: [],
-				fieldsInLine: false,
 				labels: [],
 			},
 		},
 	])("$name", ({ input, expected }, { expect }) => {
-		expect(summarizeLog(makeLog({ id: "l1", ...input }))).toEqual(expected)
+		expect(
+			summarizeLog(makeLog({ id: "l1", ...input }), EXACT_DIALECT),
+		).toEqual(expected)
+	})
+})
+
+describe("extractedFields", () => {
+	it("lists every line key, then the parser keys the line does not repeat, keeping the keys of a nested value", ({
+		expect,
+	}) => {
+		expect(
+			extractedFields(
+				makeLog({
+					id: "l1",
+					line: '{"msg":"m","n":2,"user":{"id":1}}',
+					parsed: { msg: "m", user_id: "1", region: "eu" },
+				}),
+				EXACT_DIALECT,
+			),
+		).toEqual([
+			{
+				key: "msg",
+				value: "m",
+				display: "m",
+				format: LineFormat.JSON,
+				nested: false,
+			},
+			{
+				key: "n",
+				value: "2",
+				display: "2",
+				format: LineFormat.JSON,
+				nested: false,
+			},
+			{
+				key: "user",
+				value: '{"id":1}',
+				display: '{"id":1}',
+				format: LineFormat.JSON,
+				nested: true,
+			},
+			{
+				key: "region",
+				value: "eu",
+				display: "eu",
+				format: null,
+				nested: false,
+			},
+			{
+				key: "user_id",
+				value: "1",
+				display: "1",
+				format: null,
+				nested: false,
+			},
+		])
+	})
+
+	it("reads a logfmt line in its own format", ({ expect }) => {
+		expect(
+			extractedFields(makeLog({ id: "l1", line: 'msg="a b"' }), EXACT_DIALECT),
+		).toEqual([
+			{
+				key: "msg",
+				value: "a b",
+				display: '"a b"',
+				format: LineFormat.Logfmt,
+				nested: false,
+			},
+		])
 	})
 })
 
@@ -164,8 +351,9 @@ describe("displayValue", () => {
 		{ input: "a=b", expected: "a=b" },
 		{ input: "", expected: '""' },
 		{ input: "two words", expected: '"two words"' },
-		{ input: "tab\there", expected: '"tab\\there"' },
-		{ input: 'say "hi"', expected: '"say \\"hi\\""' },
+		{ input: "tab\there", expected: '"tab\there"' },
+		{ input: 'say "hi"', expected: '"say "hi""' },
+		{ input: 'a"b', expected: 'a"b' },
 	])("writes $input as $expected", ({ input, expected }, { expect }) => {
 		expect(displayValue(input)).toBe(expected)
 	})

@@ -1,17 +1,45 @@
+import { LineFormat, type LogDialect, type LogFilter } from "./dialect"
+
 // the keys that repeat a line's level, which its pill already shows
 const LEVEL_KEYS = new Set(["level", "lvl", "detected_level"])
 
-// the keys a JSON line names its message with, in order of preference
+// the keys a structured line names its message with, in order of preference
 const MESSAGE_KEYS = ["msg", "message", "log"]
+
+// one logfmt pair: a key, then a quoted or a bare value. A bare value ends
+// at white space.
+const LOGFMT_PAIR = /\s*([^\s="]+)=("(?:[^"\\]|\\.)*"|[^\s"]*)(?=\s|$)/y
 
 export type KeyValue = [key: string, value: string]
 
-// fieldsInLine is true when the fields are written in the line itself.
-// Only the line is searched, so only such fields can match a search.
+// a key read from the line, or one the query's parser added
+export interface ExtractedField {
+	key: string
+	value: string
+	// how the row writes the value
+	display: string
+	// the format the key was read in, or null for a key the parser added
+	format: LineFormat | null
+	// an object or array, which a source may split into one key per entry
+	nested: boolean
+}
+
+// one row of a details table. filter is what its buttons add, or null
+// when they are off, and then disabledReason says why.
+export interface FieldRow {
+	key: string
+	value: string
+	filter: Omit<LogFilter, "exclude"> | null
+	disabledReason?: string
+}
+
+// extracted holds the fields from the line, which a search can match.
+// fields are carried beside the line, so a search cannot match them. Every
+// value is ready to show.
 export interface LogSummary {
 	message: string
+	extracted: KeyValue[]
 	fields: KeyValue[]
-	fieldsInLine: boolean
 	labels: KeyValue[]
 }
 
@@ -27,44 +55,58 @@ export interface TextPart {
 	match: boolean
 }
 
-// summarizeLog splits a log into what its row shows: the message, the
-// log's own fields and the stream labels. A JSON line gives its message
-// and fields key by key. Any other line is its own message, and its fields
-// are what the line carries besides its text. The keys a parser took from
-// the line stay out, because the message already shows them.
-export function summarizeLog(log: Log): LogSummary {
-	const labels = sortedEntries(log.labels)
-	const json = parseJSONObject(log.line)
+interface ReadLine {
+	record: Record<string, unknown>
+	format: LineFormat
+}
 
-	if (!json) {
-		return {
-			message: log.line,
-			fields: sortedEntries(log.fields).filter(([k]) => !LEVEL_KEYS.has(k)),
-			fieldsInLine: false,
-			labels: labels,
-		}
-	}
-
-	const messageKey = MESSAGE_KEYS.find((k) => typeof json[k] === "string")
-	const fields = Object.entries(json)
-		.filter(([k]) => k !== messageKey && !LEVEL_KEYS.has(k))
-		.map(([k, v]): KeyValue => [
-			k,
-			typeof v === "string" ? v : JSON.stringify(v),
-		])
+// summarizeLog splits a log into what its row shows. A JSON or logfmt line
+// gives its message, and its other keys join the extracted fields. Any
+// other line is its own message. A known level shows in the pill, so its
+// keys stay out. An unknown one keeps them, so no part of the log goes
+// missing.
+export function summarizeLog(log: Log, dialect: LogDialect): LogSummary {
+	const shown = (key: string) =>
+		log.level === LogLevel.Unknown || !LEVEL_KEYS.has(key)
+	const line = readLine(log.line)
+	const messageKey = line
+		? MESSAGE_KEYS.find((k) => typeof line.record[k] === "string")
+		: undefined
+	const message = line
+		? messageKey
+			? String(line.record[messageKey])
+			: ""
+		: log.line
 
 	return {
-		message: messageKey ? String(json[messageKey]) : "",
-		fields: fields,
-		fieldsInLine: true,
-		labels: labels,
+		// a message of only white space is no message, so the row shows
+		// nothing in its place
+		message: message.trim() ? message : "",
+		extracted: extract(log, line, dialect, true)
+			.filter((f) => !(f.format && f.key === messageKey) && shown(f.key))
+			.map((f): KeyValue => [f.key, f.display]),
+		fields: sortedEntries(log.fields)
+			.filter(([k]) => shown(k))
+			.map(displayPair),
+		labels: sortedEntries(log.labels).map(displayPair),
 	}
 }
 
-// displayValue writes a value as logfmt does: quoted only when it is empty
-// or holds white space or a quote
+// extractedFields lists the keys of a JSON or logfmt line in their order,
+// then the keys the query's parser added. A parser key that repeats a line
+// key stays out. A key the source made from a nested value stays in,
+// because it can be filtered on and the nested value cannot.
+export function extractedFields(
+	log: Log,
+	dialect: LogDialect,
+): ExtractedField[] {
+	return extract(log, readLine(log.line), dialect, false)
+}
+
+// displayValue quotes a value when it is empty or holds white space, so the
+// pairs stay apart. It adds no escapes, so the text reads as written.
 export function displayValue(value: string): string {
-	return value === "" || /[\s"]/.test(value) ? JSON.stringify(value) : value
+	return value === "" || /\s/.test(value) ? `"${value}"` : value
 }
 
 // highlightParts splits text around every case-insensitive occurrence of
@@ -195,6 +237,65 @@ export function sortedEntries(record: Record<string, string>): KeyValue[] {
 	return Object.entries(record).sort(([a], [b]) => a.localeCompare(b))
 }
 
+function displayPair([key, value]: KeyValue): KeyValue {
+	return [key, displayValue(value)]
+}
+
+// extract leaves out the keys the source made from a nested value only when
+// nestedRepeats is true
+function extract(
+	log: Log,
+	line: ReadLine | null,
+	dialect: LogDialect,
+	nestedRepeats: boolean,
+): ExtractedField[] {
+	const fromLine = line
+		? Object.entries(line.record).map(([key, value]): ExtractedField => {
+				const text = typeof value === "string" ? value : JSON.stringify(value)
+
+				return {
+					key: key,
+					value: text,
+					display: typeof value === "string" ? displayValue(value) : text,
+					format: line.format,
+					nested: value !== null && typeof value === "object",
+				}
+			})
+		: []
+	const fromParser = sortedEntries(log.parsed ?? {})
+		.filter(
+			(pair) =>
+				!(
+					line &&
+					Object.entries(line.record).some(([k, v]) =>
+						dialect.repeatsLineKey(pair, k, v, nestedRepeats),
+					)
+				),
+		)
+		.map(([key, value]): ExtractedField => ({
+			key: key,
+			value: value,
+			display: displayValue(value),
+			format: null,
+			nested: false,
+		}))
+
+	return [...fromLine, ...fromParser]
+}
+
+// readLine reads a JSON or logfmt line key by key, or gives null for any
+// other line
+function readLine(line: string): ReadLine | null {
+	const json = parseJSONObject(line)
+	if (json) {
+		return { record: json, format: LineFormat.JSON }
+	}
+
+	const logfmt = parseLogfmt(line)
+
+	return logfmt ? { record: logfmt, format: LineFormat.Logfmt } : null
+}
+
 function parseJSONObject(text: string): Record<string, unknown> | null {
 	if (!text.trimStart().startsWith("{")) {
 		return null
@@ -208,5 +309,36 @@ function parseJSONObject(text: string): Record<string, unknown> | null {
 			: null
 	} catch {
 		return null
+	}
+}
+
+// parseLogfmt reads a line made only of logfmt pairs. A line with any other
+// word is plain text, so it gives null.
+function parseLogfmt(line: string): Record<string, string> | null {
+	const pairs: KeyValue[] = []
+	let at = 0
+
+	while (/\S/.test(line.slice(at))) {
+		LOGFMT_PAIR.lastIndex = at
+		const match = LOGFMT_PAIR.exec(line)
+		if (!match) {
+			return null
+		}
+
+		const [, key = "", value = ""] = match
+		pairs.push([key, value.startsWith('"') ? unquote(value) : value])
+		at = LOGFMT_PAIR.lastIndex
+	}
+
+	return pairs.length ? Object.fromEntries(pairs) : null
+}
+
+// unquote reads a quoted logfmt value. An escape JSON does not know, such
+// as Go's \x, leaves the text between the quotes as written.
+function unquote(quoted: string): string {
+	try {
+		return String(JSON.parse(quoted))
+	} catch {
+		return quoted.slice(1, -1)
 	}
 }

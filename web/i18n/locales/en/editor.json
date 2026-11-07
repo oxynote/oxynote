@@ -992,7 +992,8 @@
 				"warning": "Warn",
 				"info": "Info",
 				"debug": "Debug",
-				"trace": "Trace"
+				"trace": "Trace",
+				"unknown": "Other"
 			},
 			"level-names": {
 				"critical": "Critical",
@@ -1001,7 +1002,7 @@
 				"info": "Info",
 				"debug": "Debug",
 				"trace": "Trace",
-				"unknown": "Unknown"
+				"unknown": "Other"
 			},
 			"view": {
 				"search-label": "Search logs",
@@ -1009,17 +1010,22 @@
 				"clear-search": "Clear search",
 				"show-volume": "Show log volume",
 				"hide-volume": "Hide log volume",
-				"labels-not-searched": "These labels aren't in the raw log line, so search can't match them.",
-				"fields-not-searched": "These fields aren't in the raw log line, so search can't match them.",
+				"labels-not-searched": "These labels aren't in the raw log line, so search can't match them",
+				"fields-not-searched": "These fields aren't in the raw log line, so search can't match them",
 				"volume-label": "Log volume across the time range",
 				"volume-empty": "No logs in this interval",
 				"line-heading": "Raw log line",
 				"copy-line": "Copy log",
 				"line-copied": "Copied",
-				"indexed-heading": "Indexed fields",
-				"indexed-description": "Fast to filter on",
-				"unindexed-heading": "Unindexed fields",
-				"unindexed-description": "Filtering works but is slower",
+				"origin-heading": "Origin fields",
+				"origin-description": "Indexed, set by the system that sent the log",
+				"metadata-heading": "Metadata fields",
+				"metadata-description": "Unindexed, sent alongside the log",
+				"content-heading": "Content fields",
+				"content-description": "Unindexed, read from the log",
+				"section-empty": "None",
+				"filter-query-blocked": "Can't filter on this field, because the query reads or changes fields in its own way",
+				"filter-nested": "Can't filter on this field, because its value holds more fields inside it",
 				"include-value": "Show only logs where {key} is this value",
 				"exclude-value": "Hide logs where {key} is this value",
 				"remove-filter": "Remove filter on {key}",

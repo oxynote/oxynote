@@ -54,6 +54,10 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 		editorStore.updateActiveBranchId(BRANCH_ID)
 		editorStore.setReviewableDiffActive(false)
 		editorStore.activateLogBlockConfig(null)
+		// the view picks how to write its queries from the source's type
+		mockEndpoint("GET", "/api/data-sources", () => [
+			{ id: DATA_SOURCE_ID, name: "Loki", type: DataSourceType.Loki },
+		])
 	})
 
 	afterEach(disposeMockEndpoints)
