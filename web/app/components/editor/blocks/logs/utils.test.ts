@@ -4,22 +4,21 @@ import {
 	defaultLogConfig,
 	LogTimestampFormat,
 } from "./utils"
-import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
 import {
 	METRIC_REFRESH_INTERVAL_REFERENCE,
 	METRIC_TIME_RANGE_REFERENCE,
 } from "~/utils/variable"
 
 describe("defaultLogConfig", () => {
-	it("returns a config with one empty query, the last 5 minutes refreshed every 5 minutes, readable times and the newest entries first", ({
+	it("returns a config with one empty query, the global time range and refresh interval, readable times and the newest entries first", ({
 		expect,
 	}) => {
 		expect(defaultLogConfig()).toEqual({
 			title: "",
 			dataSourceId: null,
 			queries: [{ name: "Query 1", query: "" }],
-			timeRange: TimeRangePreset.Last5Minutes,
-			refreshInterval: RefreshInterval.M5,
+			timeRange: METRIC_TIME_RANGE_REFERENCE,
+			refreshInterval: METRIC_REFRESH_INTERVAL_REFERENCE,
 			timestampFormat: LogTimestampFormat.ReadableTime,
 			order: LogOrder.Desc,
 		})

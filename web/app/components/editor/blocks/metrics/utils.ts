@@ -1,6 +1,10 @@
 import { DEFAULT_PALETTE_COLOR } from "~/utils/color"
-import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
-import type { RefreshIntervalSetting, TimeRangeSetting } from "~/utils/variable"
+import {
+	METRIC_REFRESH_INTERVAL_REFERENCE,
+	METRIC_TIME_RANGE_REFERENCE,
+	type RefreshIntervalSetting,
+	type TimeRangeSetting,
+} from "~/utils/variable"
 
 export const CONFIG_DEBOUNCE_MS = 500
 export const NODE_ATTR_UPDATE_REFRESH_DISABLE_MS = CONFIG_DEBOUNCE_MS + 1000 // slightly longer than config debounce to avoid content refreshes on drag-drop
@@ -106,8 +110,8 @@ export function defaultMetricConfig(): MetricConfig {
 		visualizationType: GenericQueryChartType.Line,
 		// NOTE: this doesn't use i18n because this isn't a reactive context
 		queries: [{ name: "Query 1", query: "", legendFormat: "" }],
-		timeRange: TimeRangePreset.Last5Minutes,
-		refreshInterval: RefreshInterval.M5,
+		timeRange: METRIC_TIME_RANGE_REFERENCE,
+		refreshInterval: METRIC_REFRESH_INTERVAL_REFERENCE,
 		thresholds: null,
 		baseThresholdColor: DEFAULT_PALETTE_COLOR,
 		decimals: null,
