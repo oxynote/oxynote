@@ -96,6 +96,53 @@ describe("<Row>", () => {
 		expected: string[]
 	}>([
 		{
+			name: "colours the keys of a plain logfmt line",
+			input: {
+				line: 'level=error msg="value out of range" value=+Inf',
+				labels: {},
+				fields: {},
+			},
+			expected: ["level", "msg", "value"],
+		},
+		{
+			name: "leaves the keys of a JSON message uncoloured",
+			input: {
+				line: '{"msg":"level=error","status":"200"}',
+				labels: {},
+				fields: {},
+			},
+			expected: ["status"],
+		},
+	])("$name", async ({ input, expected }, { expect }) => {
+		const wrapper = await mountRow({ log: makeLog(input) })
+
+		expect(
+			summary(wrapper)
+				.findAll(".text-muted-foreground")
+				.map((part) => part.text()),
+		).toEqual(expected)
+	})
+
+	it("keeps the text of a coloured line unchanged", async ({ expect }) => {
+		const wrapper = await mountRow({
+			log: makeLog({
+				line: 'level=error msg="value out of range" value=+Inf',
+				labels: {},
+				fields: {},
+			}),
+		})
+
+		expect(summary(wrapper).text()).toBe(
+			'level=error msg="value out of range" value=+Inf',
+		)
+	})
+
+	it.for<{
+		name: string
+		input: Pick<Log, "line" | "labels" | "fields">
+		expected: string[]
+	}>([
+		{
 			name: "marks the search in the message and the fields of a JSON line",
 			input: {
 				line: '{"msg":"Ada signed in","user":"ada"}',
@@ -121,6 +168,24 @@ describe("<Row>", () => {
 				fields: { user: "ada" },
 			},
 			expected: ["Ada"],
+		},
+		{
+			name: "marks the search in the value of a plain logfmt line",
+			input: {
+				line: "user=ada",
+				labels: {},
+				fields: {},
+			},
+			expected: ["ada"],
+		},
+		{
+			name: "marks the search inside a coloured key of a plain line",
+			input: {
+				line: "adapter=on",
+				labels: {},
+				fields: {},
+			},
+			expected: ["ada"],
 		},
 	])("$name", async ({ input, expected }, { expect }) => {
 		const wrapper = await mountUnderTooltipProvider(Row, {

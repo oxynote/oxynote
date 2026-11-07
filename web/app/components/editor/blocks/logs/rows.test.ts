@@ -4,12 +4,14 @@ import {
 	highlightParts,
 	mergeBounds,
 	mergeQueryLogs,
+	messageParts,
 	pastIn,
 	sortedEntries,
 	summarizeLog,
 	timeNanos,
 	type KeyValue,
 	type LogSummary,
+	type MessagePart,
 } from "./rows"
 
 const NOON_MILLIS = BigInt(Date.UTC(2026, 0, 1, 12, 0, 0))
@@ -194,6 +196,100 @@ describe("highlightParts", () => {
 		},
 	])("$name", ({ input, expected }, { expect }) => {
 		expect(highlightParts(input.text, input.search)).toEqual(expected)
+	})
+})
+
+describe("messageParts", () => {
+	it.for<{
+		name: string
+		input: { text: string; search: string }
+		expected: MessagePart[]
+	}>([
+		{
+			name: "leaves a line without keys as one plain part",
+			input: { text: "deploy finished", search: "" },
+			expected: [{ text: "deploy finished", kind: "plain", match: false }],
+		},
+		{
+			name: "marks the keys and equals signs of a logfmt line",
+			input: {
+				text: 'level=error msg="value out of range" value=+Inf',
+				search: "",
+			},
+			expected: [
+				{ text: "level", kind: "key", match: false },
+				{ text: "=", kind: "separator", match: false },
+				{ text: "error ", kind: "plain", match: false },
+				{ text: "msg", kind: "key", match: false },
+				{ text: "=", kind: "separator", match: false },
+				{ text: '"value out of range" ', kind: "plain", match: false },
+				{ text: "value", kind: "key", match: false },
+				{ text: "=", kind: "separator", match: false },
+				{ text: "+Inf", kind: "plain", match: false },
+			],
+		},
+		{
+			name: "marks the search inside a key",
+			input: { text: "level=error", search: "lev" },
+			expected: [
+				{ text: "lev", kind: "key", match: true },
+				{ text: "el", kind: "key", match: false },
+				{ text: "=", kind: "separator", match: false },
+				{ text: "error", kind: "plain", match: false },
+			],
+		},
+		{
+			name: "marks the search inside a value",
+			input: { text: "level=error", search: "err" },
+			expected: [
+				{ text: "level", kind: "key", match: false },
+				{ text: "=", kind: "separator", match: false },
+				{ text: "err", kind: "plain", match: true },
+				{ text: "or", kind: "plain", match: false },
+			],
+		},
+		{
+			name: "marks a search spanning a key, its equals sign and its value",
+			input: { text: "user=ada", search: "user=ada" },
+			expected: [
+				{ text: "user", kind: "key", match: true },
+				{ text: "=", kind: "separator", match: true },
+				{ text: "ada", kind: "plain", match: true },
+			],
+		},
+		{
+			name: "marks a search spanning a key and its value in any case",
+			input: { text: "level=error", search: "LEVEL=ERROR" },
+			expected: [
+				{ text: "level", kind: "key", match: true },
+				{ text: "=", kind: "separator", match: true },
+				{ text: "error", kind: "plain", match: true },
+			],
+		},
+		{
+			name: "marks a search spanning a value and the next key",
+			input: { text: "level=error user=ada", search: "error user" },
+			expected: [
+				{ text: "level", kind: "key", match: false },
+				{ text: "=", kind: "separator", match: false },
+				{ text: "error ", kind: "plain", match: true },
+				{ text: "user", kind: "key", match: true },
+				{ text: "=", kind: "separator", match: false },
+				{ text: "ada", kind: "plain", match: false },
+			],
+		},
+		{
+			name: "keeps the space between a key and its equals sign plain",
+			input: { text: "level =error", search: "" },
+			expected: [
+				{ text: "level", kind: "key", match: false },
+				{ text: " ", kind: "plain", match: false },
+				{ text: "=", kind: "separator", match: false },
+				{ text: "error", kind: "plain", match: false },
+			],
+		},
+	])("$name", ({ input, expected }, { expect }) => {
+		expect(messageParts(input.text, input.search)).toEqual(expected)
 	})
 })
 

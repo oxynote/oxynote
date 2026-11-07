@@ -71,7 +71,11 @@ const groups = computed(() =>
 			<span
 				class="min-w-0 flex-1 [scrollbar-width:none] overflow-x-auto overflow-y-hidden overscroll-x-none text-2sm whitespace-nowrap text-foreground"
 			>
-				<HighlightedText :text="summary.message" :search="props.search" />
+				<HighlightedText
+					:text="summary.message"
+					:search="props.search"
+					:colour-keys="!summary.fieldsInLine"
+				/>
 				<template v-for="(group, groupIndex) in groups" :key="groupIndex">
 					<span
 						v-if="summary.message || groupIndex > 0"

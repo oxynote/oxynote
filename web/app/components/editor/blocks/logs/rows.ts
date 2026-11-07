@@ -4,6 +4,9 @@ const LEVEL_KEYS = new Set(["level", "lvl", "detected_level"])
 // the keys a JSON line names its message with, in order of preference
 const MESSAGE_KEYS = ["msg", "message", "log"]
 
+// a word before an equals sign is a logfmt key
+const KEY_BEFORE_EQUALS = /\b[\w_]+(?=\s*=)/g
+
 export type KeyValue = [key: string, value: string]
 
 // fieldsInLine is true when the fields are written in the line itself.
@@ -24,6 +27,14 @@ export interface QueryLogs {
 
 export interface TextPart {
 	text: string
+	match: boolean
+}
+
+export type MessagePartKind = "key" | "separator" | "plain"
+
+export interface MessagePart {
+	text: string
+	kind: MessagePartKind
 	match: boolean
 }
 
@@ -69,28 +80,131 @@ export function displayValue(value: string): string {
 // highlightParts splits text around every case-insensitive occurrence of
 // the search
 export function highlightParts(text: string, search: string): TextPart[] {
-	const term = search.trim().toLowerCase()
-	if (!term) {
-		return [{ text: text, match: false }]
-	}
-
 	const parts: TextPart[] = []
-	const lower = text.toLowerCase()
 	let start = 0
-	let found = lower.indexOf(term)
 
-	while (found >= 0) {
-		if (found > start) {
-			parts.push({ text: text.slice(start, found), match: false })
+	for (const match of matchRanges(text, search)) {
+		if (match.start > start) {
+			parts.push({ text: text.slice(start, match.start), match: false })
 		}
 
-		parts.push({ text: text.slice(found, found + term.length), match: true })
-		start = found + term.length
-		found = lower.indexOf(term, start)
+		parts.push({ text: text.slice(match.start, match.end), match: true })
+		start = match.end
 	}
 
 	if (start < text.length) {
 		parts.push({ text: text.slice(start), match: false })
+	}
+
+	return parts
+}
+
+// matchRanges lists every case-insensitive occurrence of the search in
+// the text, in order. An empty search matches nothing.
+function matchRanges(
+	text: string,
+	search: string,
+): { start: number; end: number }[] {
+	const term = search.trim().toLowerCase()
+	const ranges: { start: number; end: number }[] = []
+
+	if (!term) {
+		return ranges
+	}
+
+	const lower = text.toLowerCase()
+	let found = lower.indexOf(term)
+
+	while (found >= 0) {
+		ranges.push({ start: found, end: found + term.length })
+		found = lower.indexOf(term, found + term.length)
+	}
+
+	return ranges
+}
+
+// messageParts splits a plain log line into its logfmt keys, the equals
+// signs after them and the rest. The search is matched against the whole
+// line first, then cut at the colour boundaries, so a match spanning a
+// key, its equals sign and its value still highlights.
+export function messageParts(text: string, search: string): MessagePart[] {
+	const segments: {
+		start: number
+		end: number
+		kind: MessagePartKind
+	}[] = []
+	let start = 0
+
+	for (const match of text.matchAll(KEY_BEFORE_EQUALS)) {
+		const key = match[0]
+		const index = match.index
+
+		if (index > start) {
+			segments.push({ start: start, end: index, kind: "plain" })
+		}
+
+		segments.push({ start: index, end: index + key.length, kind: "key" })
+		start = index + key.length
+
+		const separator = /^(\s*)(=)/.exec(text.slice(start))
+		const gap = separator?.[1] ?? ""
+		const equals = separator?.[2] ?? ""
+
+		if (equals) {
+			if (gap) {
+				segments.push({ start: start, end: start + gap.length, kind: "plain" })
+			}
+
+			segments.push({
+				start: start + gap.length,
+				end: start + gap.length + equals.length,
+				kind: "separator",
+			})
+			start += gap.length + equals.length
+		}
+	}
+
+	if (start < text.length) {
+		segments.push({ start: start, end: text.length, kind: "plain" })
+	}
+
+	const matches = matchRanges(text, search)
+	const parts: MessagePart[] = []
+
+	for (const segment of segments) {
+		let cursor = segment.start
+
+		for (const match of matches) {
+			if (match.end <= segment.start || match.start >= segment.end) {
+				continue
+			}
+
+			const matchStart = Math.max(match.start, segment.start)
+			const matchEnd = Math.min(match.end, segment.end)
+
+			if (matchStart > cursor) {
+				parts.push({
+					text: text.slice(cursor, matchStart),
+					kind: segment.kind,
+					match: false,
+				})
+			}
+
+			parts.push({
+				text: text.slice(matchStart, matchEnd),
+				kind: segment.kind,
+				match: true,
+			})
+			cursor = matchEnd
+		}
+
+		if (cursor < segment.end) {
+			parts.push({
+				text: text.slice(cursor, segment.end),
+				kind: segment.kind,
+				match: false,
+			})
+		}
 	}
 
 	return parts
