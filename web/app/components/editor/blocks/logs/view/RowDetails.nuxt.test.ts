@@ -45,6 +45,23 @@ describe("<RowDetails>", { concurrent: false }, () => {
 		)
 	})
 
+	it("lists the parsed keys with the fields, a parsed key winning over a field of its name", async ({
+		expect,
+	}) => {
+		const wrapper = await mountDetails(
+			makeLog({
+				fields: { trace_id: "abc", level: "debug" },
+				parsed: { msg: "deploy finished", level: "info" },
+			}),
+		)
+
+		expect(tableRows(wrapper)[1]).toEqual([
+			["level", "info"],
+			["msg", "deploy finished"],
+			["trace_id", "abc"],
+		])
+	})
+
 	it.for([
 		{
 			name: "leaves out the indexed table for a line without labels",

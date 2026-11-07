@@ -392,8 +392,12 @@ type LogLine struct {
 	Labels map[string]string `json:"labels"`
 
 	// Fields specifies everything else the line carries, flattened, as
-	// text.
+	// text, such as Loki structured metadata.
 	Fields map[string]string `json:"fields"`
+
+	// Parsed specifies the keys a parser stage of the query took from the
+	// line itself, such as LogQL's logfmt. It is empty when no parser ran.
+	Parsed map[string]string `json:"parsed,omitempty"`
 }
 
 // LogsResult is one page of a window's lines.

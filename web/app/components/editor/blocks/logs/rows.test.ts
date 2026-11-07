@@ -17,11 +17,11 @@ const NOON_MILLIS = BigInt(Date.UTC(2026, 0, 1, 12, 0, 0))
 describe("summarizeLog", () => {
 	it.for<{
 		name: string
-		input: Pick<Log, "line" | "labels" | "fields">
+		input: Pick<Log, "line" | "labels" | "fields" | "parsed">
 		expected: LogSummary
 	}>([
 		{
-			name: "keeps a plain line as its message with the parsed fields by key",
+			name: "keeps a plain line as its message with its fields by key",
 			input: {
 				line: "GET /health 200",
 				labels: { job: "api", env: "prod" },
@@ -38,6 +38,21 @@ describe("summarizeLog", () => {
 					["env", "prod"],
 					["job", "api"],
 				],
+			},
+		},
+		{
+			name: "leaves out of a plain line the keys a parser took from it",
+			input: {
+				line: 'level=error msg="value out of range" value=+Inf',
+				labels: {},
+				fields: { trace_id: "abc" },
+				parsed: { msg: "value out of range", value: "+Inf" },
+			},
+			expected: {
+				message: 'level=error msg="value out of range" value=+Inf',
+				fields: [["trace_id", "abc"]],
+				fieldsInLine: false,
+				labels: [],
 			},
 		},
 		{

@@ -44,6 +44,9 @@ export interface Log {
 	line: string
 	labels: Record<string, string>
 	fields: Record<string, string>
+	// the keys a parser stage of the query took from the line, such as
+	// LogQL's logfmt. Absent when no parser ran.
+	parsed?: Record<string, string>
 }
 
 // both cursors are opaque. nextCursor reads on past the result's last line,

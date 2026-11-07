@@ -15,7 +15,10 @@ const emit = defineEmits<{
 
 const copied = ref(false)
 const labels = computed<KeyValue[]>(() => sortedEntries(props.log.labels))
-const fields = computed<KeyValue[]>(() => sortedEntries(props.log.fields))
+// a parsed key wins over a field of the same name
+const fields = computed<KeyValue[]>(() =>
+	sortedEntries({ ...props.log.fields, ...props.log.parsed }),
+)
 
 async function copyLine() {
 	try {

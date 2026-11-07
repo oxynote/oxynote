@@ -550,8 +550,11 @@ type lokiEntry struct {
 	// line is the message.
 	line string
 
-	// fields is the line's structured metadata and parsed keys.
-	fields map[string]string
+	// metadata is the line's structured metadata.
+	metadata map[string]string
+
+	// parsed is the keys a parser stage took from the line.
+	parsed map[string]string
 }
 
 // UnmarshalJSON decodes an entry from its array form.
@@ -597,15 +600,14 @@ func (le *lokiEntry) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	// parsed keys win over structured metadata of the same name.
-	fields := make(map[string]string, len(meta.StructuredMetadata)+len(meta.Parsed))
-	maps.Copy(fields, meta.StructuredMetadata)
-	maps.Copy(fields, meta.Parsed)
+	metadata := make(map[string]string, len(meta.StructuredMetadata))
+	maps.Copy(metadata, meta.StructuredMetadata)
 
 	*le = lokiEntry{
-		ns:     ns,
-		line:   line,
-		fields: fields,
+		ns:       ns,
+		line:     line,
+		metadata: metadata,
+		parsed:   meta.Parsed,
 	}
 
 	return nil
@@ -619,14 +621,17 @@ func (le lokiEntry) logLine(stream map[string]string) LogLine {
 	return LogLine{
 		Time: time.Unix(0, le.ns).UTC(),
 		Level: newLogLevel(cmp.Or(
-			le.fields[_lokiDetectedLevel],
-			le.fields[_lokiLevel],
+			le.parsed[_lokiDetectedLevel],
+			le.metadata[_lokiDetectedLevel],
+			le.parsed[_lokiLevel],
+			le.metadata[_lokiLevel],
 			labels[_lokiDetectedLevel],
 			labels[_lokiLevel],
 		)),
 		Line:   le.line,
 		Labels: labels,
-		Fields: le.fields,
+		Fields: le.metadata,
+		Parsed: le.parsed,
 	}
 }
 
