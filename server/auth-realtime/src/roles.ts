@@ -7,7 +7,7 @@ import {
 
 // a workspace member's role. The web app and core keep the same three
 // roles.
-export const ROLES = ["admin", "editor", "viewer"] as const
+const ROLES = ["admin", "editor", "viewer"] as const
 
 export type Role = (typeof ROLES)[number]
 
