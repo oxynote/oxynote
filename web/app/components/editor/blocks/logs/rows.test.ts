@@ -33,7 +33,7 @@ describe("summarizeLog", () => {
 					["method", "GET"],
 					["status", "200"],
 				],
-				fieldsInLine: false,
+				lineFields: [],
 				labels: [
 					["env", "prod"],
 					["job", "api"],
@@ -51,7 +51,7 @@ describe("summarizeLog", () => {
 			expected: {
 				message: 'level=error msg="value out of range" value=+Inf',
 				fields: [["trace_id", "abc"]],
-				fieldsInLine: false,
+				lineFields: [],
 				labels: [],
 			},
 		},
@@ -60,16 +60,30 @@ describe("summarizeLog", () => {
 			input: {
 				line: '{"status":"200","msg":"done","level":"info","lvl":"i","detected_level":"info","method":"GET"}',
 				labels: { job: "api" },
-				fields: { ignored: "x" },
+				fields: {},
 			},
 			expected: {
 				message: "done",
-				fields: [
+				lineFields: [
 					["status", "200"],
 					["method", "GET"],
 				],
-				fieldsInLine: true,
+				fields: [],
 				labels: [["job", "api"]],
+			},
+		},
+		{
+			name: "keeps the fields carried beside a JSON line",
+			input: {
+				line: '{"msg":"login ok","user":"bob"}',
+				labels: {},
+				fields: { trace_id: "abc", detected_level: "info" },
+			},
+			expected: {
+				message: "login ok",
+				lineFields: [["user", "bob"]],
+				fields: [["trace_id", "abc"]],
+				labels: [],
 			},
 		},
 		{
@@ -81,14 +95,14 @@ describe("summarizeLog", () => {
 			},
 			expected: {
 				message: "done",
-				fields: [
+				lineFields: [
 					["count", "3"],
 					["ok", "true"],
 					["none", "null"],
 					["user", '{"id":1}'],
 					["tags", '["a"]'],
 				],
-				fieldsInLine: true,
+				fields: [],
 				labels: [],
 			},
 		},
@@ -101,11 +115,11 @@ describe("summarizeLog", () => {
 			},
 			expected: {
 				message: "a",
-				fields: [
+				lineFields: [
 					["log", "c"],
 					["message", "b"],
 				],
-				fieldsInLine: true,
+				fields: [],
 				labels: [],
 			},
 		},
@@ -118,8 +132,8 @@ describe("summarizeLog", () => {
 			},
 			expected: {
 				message: "started",
-				fields: [["msg", "5"]],
-				fieldsInLine: true,
+				lineFields: [["msg", "5"]],
+				fields: [],
 				labels: [],
 			},
 		},
@@ -128,8 +142,8 @@ describe("summarizeLog", () => {
 			input: { line: '  {"status":"200"}', labels: {}, fields: {} },
 			expected: {
 				message: "",
-				fields: [["status", "200"]],
-				fieldsInLine: true,
+				lineFields: [["status", "200"]],
+				fields: [],
 				labels: [],
 			},
 		},
@@ -139,7 +153,7 @@ describe("summarizeLog", () => {
 			expected: {
 				message: "{not json",
 				fields: [["a", "1"]],
-				fieldsInLine: false,
+				lineFields: [],
 				labels: [],
 			},
 		},
@@ -149,7 +163,7 @@ describe("summarizeLog", () => {
 			expected: {
 				message: '["a"]',
 				fields: [],
-				fieldsInLine: false,
+				lineFields: [],
 				labels: [],
 			},
 		},

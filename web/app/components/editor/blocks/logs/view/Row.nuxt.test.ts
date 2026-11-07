@@ -114,6 +114,15 @@ describe("<Row>", () => {
 			expected: ["Ada"],
 		},
 		{
+			name: "leaves the fields carried beside a JSON line unmarked",
+			input: {
+				line: '{"msg":"Ada signed in"}',
+				labels: {},
+				fields: { user: "ada" },
+			},
+			expected: ["Ada"],
+		},
+		{
 			name: "leaves the parsed fields of a plain line unmarked",
 			input: {
 				line: "Ada signed in",
@@ -136,9 +145,9 @@ describe("<Row>", () => {
 
 	it.for([
 		{
-			name: "fades the labels while a search is on",
+			name: "fades the fields carried beside the line and the labels while a search is on",
 			input: "ada",
-			expected: ["env=prod"],
+			expected: ["trace_id=abc", "env=prod"],
 		},
 		{ name: "fades nothing without a search", input: "", expected: [] },
 	])("$name", async ({ input, expected }, { expect }) => {
@@ -147,6 +156,7 @@ describe("<Row>", () => {
 				log: makeLog({
 					line: '{"msg":"Ada signed in"}',
 					labels: { env: "prod" },
+					fields: { trace_id: "abc" },
 				}),
 				search: input,
 			}),

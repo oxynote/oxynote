@@ -6,12 +6,12 @@ const MESSAGE_KEYS = ["msg", "message", "log"]
 
 export type KeyValue = [key: string, value: string]
 
-// fieldsInLine is true when the fields are written in the line itself.
-// Only the line is searched, so only such fields can match a search.
+// lineFields are written in the line itself, and fields are carried beside
+// it. Only the line is searched, so only lineFields can match a search.
 export interface LogSummary {
 	message: string
+	lineFields: KeyValue[]
 	fields: KeyValue[]
-	fieldsInLine: boolean
 	labels: KeyValue[]
 }
 
@@ -29,24 +29,24 @@ export interface TextPart {
 
 // summarizeLog splits a log into what its row shows: the message, the
 // log's own fields and the stream labels. A JSON line gives its message
-// and fields key by key. Any other line is its own message, and its fields
-// are what the line carries besides its text. The keys a parser took from
-// the line stay out, because the message already shows them.
+// and lineFields key by key. Any other line is its own message. The keys a
+// parser took from a line stay out, because the message already shows them.
 export function summarizeLog(log: Log): LogSummary {
 	const labels = sortedEntries(log.labels)
+	const fields = sortedEntries(log.fields).filter(([k]) => !LEVEL_KEYS.has(k))
 	const json = parseJSONObject(log.line)
 
 	if (!json) {
 		return {
 			message: log.line,
-			fields: sortedEntries(log.fields).filter(([k]) => !LEVEL_KEYS.has(k)),
-			fieldsInLine: false,
+			lineFields: [],
+			fields: fields,
 			labels: labels,
 		}
 	}
 
 	const messageKey = MESSAGE_KEYS.find((k) => typeof json[k] === "string")
-	const fields = Object.entries(json)
+	const lineFields = Object.entries(json)
 		.filter(([k]) => k !== messageKey && !LEVEL_KEYS.has(k))
 		.map(([k, v]): KeyValue => [
 			k,
@@ -55,8 +55,8 @@ export function summarizeLog(log: Log): LogSummary {
 
 	return {
 		message: messageKey ? String(json[messageKey]) : "",
+		lineFields: lineFields,
 		fields: fields,
-		fieldsInLine: true,
 		labels: labels,
 	}
 }

@@ -38,9 +38,10 @@ const groups = computed(() =>
 	[
 		{
 			kind: "fields" as const,
-			pairs: summary.value.fields,
-			searched: summary.value.fieldsInLine,
+			pairs: summary.value.lineFields,
+			searched: true,
 		},
+		{ kind: "fields" as const, pairs: summary.value.fields, searched: false },
 		{ kind: "labels" as const, pairs: summary.value.labels, searched: false },
 	].filter((g) => g.pairs.length),
 )
