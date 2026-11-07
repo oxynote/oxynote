@@ -1225,6 +1225,44 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 			expect(useEditorStore().isMetricBlockDueForRefresh(uid)).toBe(true)
 		})
 
+		it("uses a changed interval instead of waiting for the old one", async ({
+			expect,
+		}) => {
+			vi.useFakeTimers({ toFake: ["Date"] })
+			const tree = variableTree()
+			const refresh = at(at(tree, 0).variables, 1)
+			refresh.value = at(refresh.options, 0).id
+			seedQueryData(VARIABLE_QUERY_KEYS.tree, tree)
+			mockEndpoint("GET", QUERY_URL, () => seriesResult())
+			const uid = nextUid()
+
+			const wrapper = await mountContainer(
+				metricConfig({ refreshInterval: METRIC_REFRESH_INTERVAL_REFERENCE }),
+				{ uid: uid },
+			)
+
+			await vi.waitFor(() => {
+				expect(wrapper.emitted("loading")).toEqual([[true], [false]])
+			}, WAIT_FOR_OPTIONS)
+
+			const start = Date.now()
+
+			// the saved time is five minutes away
+			vi.setSystemTime(start + 60_000)
+			expect(useEditorStore().isMetricBlockDueForRefresh(uid)).toBe(false)
+
+			// changing the variable to one minute clears it, so the block is
+			// due now instead of waiting for the old five minutes
+			const nextTree = variableTree()
+			const nextRefresh = at(at(nextTree, 0).variables, 1)
+			nextRefresh.value = at(nextRefresh.options, 1).id
+			seedQueryData(VARIABLE_QUERY_KEYS.tree, nextTree)
+
+			await vi.waitFor(() => {
+				expect(useEditorStore().isMetricBlockDueForRefresh(uid)).toBe(true)
+			}, WAIT_FOR_OPTIONS)
+		})
+
 		it("queries again when a value its queries reference changes", async ({
 			expect,
 		}) => {

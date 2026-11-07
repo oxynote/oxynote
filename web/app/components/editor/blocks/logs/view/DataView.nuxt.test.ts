@@ -1074,6 +1074,27 @@ describe("<DataView>", { concurrent: false }, () => {
 			expect(useEditorStore().isLogBlockDueForRefresh(UID)).toBe(false)
 		})
 
+		it("uses a changed interval instead of waiting for the old one", async ({
+			expect,
+		}) => {
+			const calls = mockEndpoint("GET", LINES_URL, () => logsResult([]))
+			const config = logConfig({ refreshInterval: RefreshInterval.S10 })
+			const wrapper = await mountView(config)
+			await settleLogRequests()
+
+			await vi.advanceTimersByTimeAsync(1_000)
+			await wrapper.setProps({
+				config: { ...config, refreshInterval: RefreshInterval.S5 },
+			})
+
+			await vi.advanceTimersByTimeAsync(5_000)
+			await settleLogRequests()
+
+			// the old interval would have waited until 12:00:10
+			expect(calls).toHaveLength(2)
+			expect(calls[1]?.query.to).toBe("2026-01-01T12:00:06.000Z")
+		})
+
 		it("adds the lines that arrived since, keeping the loaded ones, while scrolled", async ({
 			expect,
 		}) => {

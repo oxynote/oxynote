@@ -112,6 +112,13 @@ const refreshIntervalMs = computed(() =>
 			RefreshInterval.M5,
 	),
 )
+
+// the timer restarts when the interval changes, but the saved next
+// refresh still holds the old interval. Clear it so a shorter interval
+// does not wait for the old one.
+watch(refreshIntervalMs, () => {
+	editorStore.clearLogBlockNextRefreshTimestamp(props.uid)
+})
 const fetchLogs = useLogs(
 	() => props.config.dataSourceId,
 	() => {

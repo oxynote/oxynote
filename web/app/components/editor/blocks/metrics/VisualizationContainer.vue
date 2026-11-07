@@ -59,6 +59,13 @@ const refreshIntervalMs = computed(() =>
 	),
 )
 
+// the timer restarts when the interval changes, but the saved next
+// refresh still holds the old interval. Clear it so a shorter interval
+// does not wait for the old one.
+watch(refreshIntervalMs, () => {
+	editorStore.clearMetricBlockNextRefreshTimestamp(props.uid)
+})
+
 // a simulation stands in for a metric that has not arrived yet. A source
 // that cannot be reached is a different problem, and drawing a plausible
 // chart over one hides the thing actually worth fixing — so the block
