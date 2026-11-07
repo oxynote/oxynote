@@ -20,7 +20,10 @@ import { nodeType as nodeTypeOf } from "~/components/editor/test-helpers"
 import { insertMetricBlock, MetricBlock } from "."
 import { BlockGrid } from "../grid"
 import { GridItemWidth } from "../grid/utils"
-import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
+import {
+	METRIC_REFRESH_INTERVAL_REFERENCE,
+	METRIC_TIME_RANGE_REFERENCE,
+} from "~/utils/variable"
 
 const schema = getSchema([
 	ContentDocument,
@@ -97,8 +100,8 @@ describe("MetricBlock", () => {
 				dataSourceId: null,
 				visualizationType: GenericQueryChartType.Line,
 				queries: [{ name: "Query 1", query: "", legendFormat: "" }],
-				timeRange: TimeRangePreset.Last5Minutes,
-				refreshInterval: RefreshInterval.M5,
+				timeRange: METRIC_TIME_RANGE_REFERENCE,
+				refreshInterval: METRIC_REFRESH_INTERVAL_REFERENCE,
 				thresholds: null,
 				baseThresholdColor: "green",
 				decimals: null,

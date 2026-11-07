@@ -1,5 +1,9 @@
-import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
-import type { RefreshIntervalSetting, TimeRangeSetting } from "~/utils/variable"
+import {
+	METRIC_REFRESH_INTERVAL_REFERENCE,
+	METRIC_TIME_RANGE_REFERENCE,
+	type RefreshIntervalSetting,
+	type TimeRangeSetting,
+} from "~/utils/variable"
 
 export enum LogTimestampFormat {
 	None = "none",
@@ -39,8 +43,8 @@ export function defaultLogConfig(): LogConfig {
 		dataSourceId: null,
 		// this runs outside a reactive context, so the name is not translated
 		queries: [{ name: "Query 1", query: "" }],
-		timeRange: TimeRangePreset.Last5Minutes,
-		refreshInterval: RefreshInterval.M5,
+		timeRange: METRIC_TIME_RANGE_REFERENCE,
+		refreshInterval: METRIC_REFRESH_INTERVAL_REFERENCE,
 		timestampFormat: LogTimestampFormat.ReadableTime,
 		order: LogOrder.Desc,
 	}

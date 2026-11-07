@@ -12,7 +12,10 @@ import { insertLogBlock, LogBlock } from "."
 import { LogTimestampFormat } from "./utils"
 import { BlockGrid } from "../grid"
 import { GridItemWidth } from "../grid/utils"
-import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
+import {
+	METRIC_REFRESH_INTERVAL_REFERENCE,
+	METRIC_TIME_RANGE_REFERENCE,
+} from "~/utils/variable"
 
 const schema = getSchema([
 	ContentDocument,
@@ -64,8 +67,8 @@ describe("LogBlock", () => {
 				title: "",
 				dataSourceId: null,
 				queries: [{ name: "Query 1", query: "" }],
-				timeRange: TimeRangePreset.Last5Minutes,
-				refreshInterval: RefreshInterval.M5,
+				timeRange: METRIC_TIME_RANGE_REFERENCE,
+				refreshInterval: METRIC_REFRESH_INTERVAL_REFERENCE,
 				timestampFormat: LogTimestampFormat.ReadableTime,
 				order: LogOrder.Desc,
 				width: GridItemWidth.Standard,
