@@ -55,6 +55,7 @@ var _dataSourceToolNames = []string{
 	"get_data_source_metadata",
 	"list_prometheus_labels",
 	"list_prometheus_series",
+	"list_log_fields",
 	"query_data_source",
 }
 

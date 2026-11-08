@@ -104,6 +104,9 @@ func Test_MCPInstructions(t *testing.T) {
 	// metrics follow the built-in variables on both surfaces.
 	assert.Contains(t, got, "Metrics follow the built-in metric_range and metric_refresh variables")
 
+	// a logs block is checked through the same tools as a metric.
+	assert.Contains(t, got, "Before adding a metric or logs block, find names with get_data_source_metadata")
+
 	// the persona and its confirmation flow are the chat surface's;
 	// telling an MCP client about either would be a lie.
 	assert.NotContains(t, got, "Rubber Duck")

@@ -27,6 +27,7 @@ func allToolNames() []Name {
 		NameGetDataSourceMetadata,
 		NameListPrometheusLabels,
 		NameListPrometheusSeries,
+		NameListLogFields,
 		NameQueryDataSource,
 		NameCreateDocument,
 		NameDeleteDocument,
@@ -342,7 +343,7 @@ func Test_Set_Grouped(t *testing.T) {
 		GroupTags:        {NameListTags, NameCreateTag, NameUpdateTag, NameDeleteTag, NameSetTagAssignment},
 		GroupVariables:   {NameListVariables, NameCreateVariableGroup, NameUpdateVariableGroup, NameDeleteVariableGroup, NameCreateVariable, NameUpdateVariable, NameDeleteVariable, NameSetVariableValue},
 		GroupHooks:       {NameListHooks, NameCreateHook, NameUpdateHook, NameDeleteHook},
-		GroupDataSources: {NameListDataSources, NameGetDataSourceMetadata, NameListPrometheusLabels, NameListPrometheusSeries, NameQueryDataSource},
+		GroupDataSources: {NameListDataSources, NameGetDataSourceMetadata, NameListPrometheusLabels, NameListPrometheusSeries, NameListLogFields, NameQueryDataSource},
 	}, got)
 }
 

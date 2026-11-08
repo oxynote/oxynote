@@ -40,6 +40,7 @@ const (
 	NameGetDataSourceMetadata Name = "get_data_source_metadata"
 	NameListPrometheusLabels  Name = "list_prometheus_labels"
 	NameListPrometheusSeries  Name = "list_prometheus_series"
+	NameListLogFields         Name = "list_log_fields"
 	NameQueryDataSource       Name = "query_data_source"
 )
 
@@ -123,6 +124,7 @@ func New(deps *Deps) *Set {
 		getDataSourceMetadata{},
 		listPrometheusLabels{},
 		listPrometheusSeries{},
+		listLogFields{},
 		queryDataSource{},
 
 		createDocument{},

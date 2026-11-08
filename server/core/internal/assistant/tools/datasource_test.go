@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
@@ -90,12 +93,13 @@ type dataSourceCase struct {
 	// Variables answers the variable reads. Nil holds the stubbed tree.
 	Variables *VariableManagerMock
 
-	// Prometheus, SQL, PostgreSQL and MySQL are the clients the runner
+	// Prometheus, SQL, PostgreSQL, MySQL and Logs are the clients the runner
 	// hands out. Nil is a don't-care client.
 	Prometheus *datasourceMock.Prometheus
 	SQL        *datasourceMock.SQL
 	PostgreSQL *datasourceMock.PostgreSQL
 	MySQL      *datasourceMock.MySQL
+	Logs       *datasourceMock.Logs
 
 	// NoClient indicates the runner hands out no client at all, which is
 	// what the real runner reports for the wrong type or a failed
@@ -132,6 +136,7 @@ type dataSourceCalls struct {
 	SQL                int
 	PostgreSQL         int
 	MySQL              int
+	Logs               int
 	PrometheusMetadata int
 	LabelNames         int
 	LabelValues        int
@@ -140,6 +145,9 @@ type dataSourceCalls struct {
 	SQLMetadata        int
 	PostgreSQLQuery    int
 	MySQLQuery         int
+	LogFields          int
+	LogFieldValues     int
+	LogsLogs           int
 }
 
 // runDataSourceCase executes a data-source tool and asserts the outcome
@@ -152,6 +160,7 @@ func runDataSourceCase(t *testing.T, tl Tool, name Name, c dataSourceCase) {
 	sql := cmp.Or(c.SQL, &datasourceMock.SQL{})
 	pg := cmp.Or(c.PostgreSQL, &datasourceMock.PostgreSQL{})
 	my := cmp.Or(c.MySQL, &datasourceMock.MySQL{})
+	logs := cmp.Or(c.Logs, &datasourceMock.Logs{})
 
 	runner := &datasourceMock.Runner{
 		TypeFunc: func() datasource.Type { return c.Type },
@@ -183,6 +192,13 @@ func runDataSourceCase(t *testing.T, tl Tool, name Name, c dataSourceCase) {
 
 			return my, nil
 		},
+		LogsFunc: func(context.Context) (datasource.Logs, error) {
+			if c.NoClient {
+				return nil, assert.AnError
+			}
+
+			return logs, nil
+		},
 	}
 
 	d := dataSourceDeps(t, c.Type, runner)
@@ -212,6 +228,7 @@ func runDataSourceCase(t *testing.T, tl Tool, name Name, c dataSourceCase) {
 		SQL:                len(runner.SQLCalls()),
 		PostgreSQL:         len(runner.PostgreSQLCalls()),
 		MySQL:              len(runner.MySQLCalls()),
+		Logs:               len(runner.LogsCalls()),
 		PrometheusMetadata: len(prom.MetadataCalls()),
 		LabelNames:         len(prom.LabelNamesCalls()),
 		LabelValues:        len(prom.LabelValuesCalls()),
@@ -220,6 +237,9 @@ func runDataSourceCase(t *testing.T, tl Tool, name Name, c dataSourceCase) {
 		SQLMetadata:        len(sql.MetadataCalls()),
 		PostgreSQLQuery:    len(pg.QueryCalls()),
 		MySQLQuery:         len(my.QueryCalls()),
+		LogFields:          len(logs.LogFieldsCalls()),
+		LogFieldValues:     len(logs.LogFieldValuesCalls()),
+		LogsLogs:           len(logs.LogsCalls()),
 	}
 
 	assert.Equal(t, c.Calls, calls)
@@ -268,6 +288,8 @@ func Test_listDataSources_Info(t *testing.T) {
 	assert.Equal(t, NameListDataSources, info.Name)
 	assert.Empty(t, info.Required)
 	assert.Empty(t, info.Properties)
+	assert.Contains(t, info.Description, "prometheus, loki, postgresql")
+	assert.Contains(t, info.Description, "loki holds logs")
 }
 
 func Test_listDataSources_Execute(t *testing.T) {
@@ -414,6 +436,22 @@ func Test_getDataSourceMetadata_Execute(t *testing.T) {
 			Contains: `{"default_schema":"public","tables":{"public.orders":["id","total"]}}`,
 			Calls:    dataSourceCalls{FetchDataSource: 1, Runner: 1, Type: 1, SQL: 1, SQLMetadata: 1},
 		},
+		// the fields of the last hour, of every log, so no query narrows
+		// them.
+		"Fields of a Loki data source": {
+			Type: datasource.TypeLoki,
+			Logs: &datasourceMock.Logs{
+				LogFieldsFunc: func(_ context.Context, q string, tr processor.TimeRange) (*processor.LogFieldsResult, error) {
+					assert.Empty(t, q)
+					assert.Equal(t, time.Hour, tr.To.Sub(tr.From))
+
+					return &processor.LogFieldsResult{Fields: []processor.LogField{{Name: "app", Kind: processor.LogFieldKindLabel}}}, nil
+				},
+			},
+			Args:     `{"data_source_id":"` + id + `"}`,
+			Contains: `{"fields":[{"name":"app","kind":"label"}]}`,
+			Calls:    dataSourceCalls{FetchDataSource: 1, Runner: 1, Type: 1, Logs: 1, LogFields: 1},
+		},
 		"Unreadable arguments": {
 			Type: datasource.TypePrometheus,
 			Args: `{`,
@@ -425,6 +463,24 @@ func Test_getDataSourceMetadata_Execute(t *testing.T) {
 			Args:     `{"data_source_id":"` + id + `"}`,
 			Err:      assert.AnError,
 			Calls:    dataSourceCalls{FetchDataSource: 1, Runner: 1, Type: 1, Prometheus: 1},
+		},
+		"Error returned by Runner.Logs": {
+			Type:     datasource.TypeLoki,
+			NoClient: true,
+			Args:     `{"data_source_id":"` + id + `"}`,
+			Err:      assert.AnError,
+			Calls:    dataSourceCalls{FetchDataSource: 1, Runner: 1, Type: 1, Logs: 1},
+		},
+		"Error returned by Logs.LogFields": {
+			Type: datasource.TypeLoki,
+			Logs: &datasourceMock.Logs{
+				LogFieldsFunc: func(context.Context, string, processor.TimeRange) (*processor.LogFieldsResult, error) {
+					return nil, assert.AnError
+				},
+			},
+			Args:  `{"data_source_id":"` + id + `"}`,
+			Err:   assert.AnError,
+			Calls: dataSourceCalls{FetchDataSource: 1, Runner: 1, Type: 1, Logs: 1, LogFields: 1},
 		},
 		"Error returned by Runner.SQL": {
 			Type:     datasource.TypePostgreSQL,
@@ -643,6 +699,15 @@ func Test_listPrometheusLabels_Execute(t *testing.T) {
 			Err:      assert.AnError,
 			Calls:    dataSourceCalls{FetchDataSource: 1, Runner: 1, Prometheus: 1},
 		},
+		// the runner refuses the wrong type, naming it, so the tool adds
+		// nothing of its own.
+		"A Loki data source is refused": {
+			Type:     datasource.TypeLoki,
+			NoClient: true,
+			Args:     `{"data_source_id":"` + id + `"}`,
+			Err:      assert.AnError,
+			Calls:    dataSourceCalls{FetchDataSource: 1, Runner: 1, Prometheus: 1},
+		},
 		"Error returned by Prometheus.LabelNames": {
 			Type:       datasource.TypePrometheus,
 			Prometheus: client(),
@@ -854,6 +919,220 @@ func Test_listPrometheusSeries_Execute(t *testing.T) {
 	}
 }
 
+func Test_logFieldsArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Args logFieldsArgs
+		Err  error
+	}{
+		"Data source id is required": {
+			Args: logFieldsArgs{Field: "app"},
+			Err:  errors.New("data_source_id is required"),
+		},
+		"Valid arguments": {
+			Args: logFieldsArgs{DataSourceID: _testDataSourceID},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Args.Validate())
+		})
+	}
+}
+
+func Test_listLogFields_Info(t *testing.T) {
+	t.Parallel()
+
+	info := listLogFields{}.Info()
+
+	assert.Equal(t, Traits{DataSource: true, Group: GroupDataSources}, info.Traits)
+
+	assert.Equal(t, NameListLogFields, info.Name)
+	assert.Equal(t, []string{"data_source_id"}, info.Required)
+	assert.Contains(t, info.Properties, "field")
+	assert.Contains(t, info.Properties, "query")
+	assert.Contains(t, info.Properties, "from")
+	assert.Contains(t, info.Properties, "to")
+	assert.NotContains(t, info.Description, "lines")
+}
+
+func Test_listLogFields_Title(t *testing.T) {
+	t.Parallel()
+
+	id := _testDataSourceID.String()
+
+	cc := map[string]struct {
+		Args            string
+		Expected        string
+		FetchDataSource int
+	}{
+		"The field names": {
+			Args:            `{"data_source_id":"` + id + `"}`,
+			Expected:        `Listing fields of "prod"`,
+			FetchDataSource: 1,
+		},
+		"Values of one field": {
+			Args:            `{"data_source_id":"` + id + `","field":"app"}`,
+			Expected:        `Listing values of field "app" in "prod"`,
+			FetchDataSource: 1,
+		},
+		"A data source of another organisation": {
+			Args:            `{"data_source_id":"` + xid.New().String() + `"}`,
+			FetchDataSource: 1,
+		},
+		"Unreadable arguments": {
+			Args: `{`,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := dataSourceDB(datasource.TypeLoki)
+
+			// arguments that name nothing it can describe make no line.
+			assert.Equal(t, c.Expected, listLogFields{}.Title(testDeps(db, nil, nil).newInput(context.Background(), NameListLogFields, json.RawMessage(c.Args))))
+			assert.Len(t, db.FetchDataSourceCalls(), c.FetchDataSource)
+		})
+	}
+}
+
+func Test_listLogFields_Execute(t *testing.T) {
+	t.Parallel()
+
+	id := _testDataSourceID.String()
+
+	client := func() *datasourceMock.Logs {
+		return &datasourceMock.Logs{
+			LogFieldsFunc: func(_ context.Context, q string, tr processor.TimeRange) (*processor.LogFieldsResult, error) {
+				if q == "boom" || strings.Contains(q, "$") {
+					return nil, assert.AnError
+				}
+
+				assert.Equal(t, time.Hour, tr.To.Sub(tr.From))
+
+				name := "app"
+				if q != "" {
+					name = "narrowed"
+				}
+
+				return &processor.LogFieldsResult{Fields: []processor.LogField{{Name: name, Kind: processor.LogFieldKindLabel}}}, nil
+			},
+			LogFieldValuesFunc: func(_ context.Context, field, q string, _ processor.TimeRange) (*processor.LogFieldValuesResult, error) {
+				if field == "boom" || strings.Contains(q, "$") {
+					return nil, assert.AnError
+				}
+
+				value := "api"
+				if q != "" {
+					value = "narrowed"
+				}
+
+				return &processor.LogFieldValuesResult{Values: []processor.LogFieldValue{{Value: value, Count: null.IntFrom(3)}}}, nil
+			},
+		}
+	}
+
+	// a $ left in a query fails the read, so the substitution cases pass
+	// only when every reference was replaced from stubVariableTree.
+	cc := map[string]dataSourceCase{
+		"The field names": {
+			Type:     datasource.TypeLoki,
+			Logs:     client(),
+			Args:     `{"data_source_id":"` + id + `"}`,
+			Contains: `{"fields":[{"name":"app","kind":"label"}]}`,
+			Calls:    dataSourceCalls{FetchDataSource: 1, Runner: 1, Logs: 1, LogFields: 1},
+		},
+		"The field names of the logs a query matches": {
+			Type:     datasource.TypeLoki,
+			Logs:     client(),
+			Args:     `{"data_source_id":"` + id + `","query":"{region=\"$region\"}"}`,
+			Contains: `"name":"narrowed"`,
+			Calls:    dataSourceCalls{FetchDataSource: 1, Runner: 1, FetchTree: 1, Logs: 1, LogFields: 1},
+		},
+		"The values a field takes with their counts": {
+			Type:     datasource.TypeLoki,
+			Logs:     client(),
+			Args:     `{"data_source_id":"` + id + `","field":"app"}`,
+			Contains: `{"values":[{"value":"api","count":3}]}`,
+			Calls:    dataSourceCalls{FetchDataSource: 1, Runner: 1, Logs: 1, LogFieldValues: 1},
+		},
+		"The values a field takes in the logs a query matches": {
+			Type:     datasource.TypeLoki,
+			Logs:     client(),
+			Args:     `{"data_source_id":"` + id + `","field":"app","query":"{region=\"$region\"}"}`,
+			Contains: `"value":"narrowed"`,
+			Calls:    dataSourceCalls{FetchDataSource: 1, Runner: 1, FetchTree: 1, Logs: 1, LogFieldValues: 1},
+		},
+		"Error returned by VariableManager.FetchTree": {
+			Type:      datasource.TypeLoki,
+			Variables: failingTreeManager(),
+			Logs:      client(),
+			Args:      `{"data_source_id":"` + id + `","query":"{region=\"$region\"}"}`,
+			Err:       assert.AnError,
+			Calls:     dataSourceCalls{FetchDataSource: 1, Runner: 1, FetchTree: 1},
+		},
+		"Unreadable arguments": {
+			Type: datasource.TypeLoki,
+			Logs: client(),
+			Args: `{`,
+			Err:  assert.AnError,
+		},
+		"An unparseable range start": {
+			Type: datasource.TypeLoki,
+			Logs: client(),
+			Args: `{"data_source_id":"` + id + `","from":"yesterday"}`,
+			Err:  assert.AnError,
+		},
+		"An inverted range": {
+			Type: datasource.TypeLoki,
+			Logs: client(),
+			Args: `{"data_source_id":"` + id + `","from":"2026-08-01T12:00:00Z","to":"2026-08-01T10:00:00Z"}`,
+			Err:  assert.AnError,
+		},
+		// the runner refuses the wrong type, naming it, so the tool adds
+		// nothing of its own.
+		"A Prometheus data source is refused": {
+			Type:     datasource.TypePrometheus,
+			NoClient: true,
+			Args:     `{"data_source_id":"` + id + `"}`,
+			Err:      assert.AnError,
+			Calls:    dataSourceCalls{FetchDataSource: 1, Runner: 1, Logs: 1},
+		},
+		"Error returned by Logs.LogFields": {
+			Type:  datasource.TypeLoki,
+			Logs:  client(),
+			Args:  `{"data_source_id":"` + id + `","query":"boom"}`,
+			Err:   assert.AnError,
+			Calls: dataSourceCalls{FetchDataSource: 1, Runner: 1, Logs: 1, LogFields: 1},
+		},
+		"Error returned by Logs.LogFieldValues": {
+			Type:  datasource.TypeLoki,
+			Logs:  client(),
+			Args:  `{"data_source_id":"` + id + `","field":"boom"}`,
+			Err:   assert.AnError,
+			Calls: dataSourceCalls{FetchDataSource: 1, Runner: 1, Logs: 1, LogFieldValues: 1},
+		},
+	}
+
+	maps.Copy(cc, badIDCases(func(id string) string {
+		return `{"data_source_id":"` + id + `"}`
+	}))
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			runDataSourceCase(t, listLogFields{}, NameListLogFields, c)
+		})
+	}
+}
+
 func Test_queryDataSourceArgs_Validate(t *testing.T) {
 	t.Parallel()
 
@@ -1009,6 +1288,21 @@ func Test_queryDataSource_Execute(t *testing.T) {
 		}
 	}
 
+	logs := func() *datasourceMock.Logs {
+		return &datasourceMock.Logs{
+			LogsFunc: func(_ context.Context, q string, _ processor.TimeRange, _ processor.LogsPage) (*processor.LogsResult, error) {
+				if strings.Contains(q, "$") {
+					return nil, assert.AnError
+				}
+
+				return &processor.LogsResult{
+					Status: processor.QueryStatusOK,
+					Lines:  []processor.LogLine{{Level: processor.LogLevelError, Line: q}},
+				}, nil
+			},
+		}
+	}
+
 	// a $ left in a query fails it, so these pass only when every
 	// reference resolves from stubVariableTree. Both dialect
 	// clients are handed out, so the tool's own dispatch decides which
@@ -1142,6 +1436,21 @@ func Test_queryDataSource_Execute(t *testing.T) {
 			Contains:   `"status":"no-data"`,
 			Calls:      dataSourceCalls{FetchDataSource: 1, Runner: 1, Type: 1, MySQL: 1, MySQLQuery: 1},
 		},
+		"Loki substituted variables": {
+			Type:     datasource.TypeLoki,
+			Logs:     logs(),
+			Args:     `{"data_source_id":"` + id + `","query":"{region=\"$region\"}"}`,
+			Contains: `"level":"error","message":"{region=\"eu-west-1\"}"`,
+			Calls:    dataSourceCalls{FetchDataSource: 1, Runner: 1, FetchTree: 1, Type: 1, Logs: 1, LogsLogs: 1},
+		},
+		// no chart draws logs, so the check is refused before any read.
+		"A Loki chart check is refused": {
+			Type:  datasource.TypeLoki,
+			Logs:  logs(),
+			Args:  `{"data_source_id":"` + id + `","query":"{app=\"api\"}","chart_type":"line_chart"}`,
+			Err:   _errLogsChartType,
+			Calls: dataSourceCalls{FetchDataSource: 1, Runner: 1, Type: 1},
+		},
 		"Unreadable arguments": {
 			Type:       datasource.TypePostgreSQL,
 			PostgreSQL: pg(),
@@ -1252,6 +1561,84 @@ func Test_queryDataSource_Execute(t *testing.T) {
 	}
 }
 
+func Test_queryLogs(t *testing.T) {
+	t.Parallel()
+
+	logs := &datasourceMock.Logs{
+		LogsFunc: func(_ context.Context, q string, _ processor.TimeRange, page processor.LogsPage) (*processor.LogsResult, error) {
+			// the newest logs, at most the cap of them.
+			assert.Equal(t, processor.LogsPage{Limit: _maxRawLogs, Order: processor.LogsOrderDesc}, page)
+
+			switch q {
+			case "boom":
+				return nil, assert.AnError
+			case "empty":
+				return &processor.LogsResult{Status: processor.QueryStatusNoData}, nil
+			default:
+				return &processor.LogsResult{
+					Status: processor.QueryStatusOK,
+					Lines:  []processor.LogLine{{Level: processor.LogLevelError, Line: q}},
+				}, nil
+			}
+		},
+	}
+
+	cc := map[string]struct {
+		NoClient bool
+		Query    string
+		Result   string
+		Err      error
+	}{
+		"The newest logs": {
+			Query:  `{app="api"}`,
+			Result: `{"status":"ok","logs":[{"time":"0001-01-01T00:00:00Z","level":"error","message":"{app=\"api\"}"}],"has_more":false}`,
+		},
+		"A query that matches no log is no-data": {
+			Query:  "empty",
+			Result: `{"status":"no-data"}`,
+		},
+		"Error returned by Runner.Logs": {
+			NoClient: true,
+			Query:    `{app="api"}`,
+			Err:      assert.AnError,
+		},
+		// a metric query fails in the client, so the hint names what the
+		// tool runs.
+		"Error returned by Logs.Logs": {
+			Query: "boom",
+			Err:   fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since metric queries such as rate() are not supported", assert.AnError),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			runner := &datasourceMock.Runner{
+				LogsFunc: func(context.Context) (datasource.Logs, error) {
+					if c.NoClient {
+						return nil, assert.AnError
+					}
+
+					return logs, nil
+				},
+			}
+
+			inp := dataSourceDeps(t, datasource.TypeLoki, runner).newInput(context.Background(), NameQueryDataSource, nil)
+
+			got, err := queryLogs(inp, runner, c.Query, processor.TimeRange{})
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.JSONEq(t, c.Result, got)
+		})
+	}
+}
+
 func Test_newRawSeries(t *testing.T) {
 	t.Parallel()
 
@@ -1321,6 +1708,89 @@ func Test_newRawSeries(t *testing.T) {
 			assert.Len(t, m[0].Values, c.Points)
 			// the points kept are the latest ones.
 			assert.InDelta(t, float64(len(c.Input.Result.(model.Matrix)[0].Values)-1), float64(m[0].Values[len(m[0].Values)-1].Value), 0)
+		})
+	}
+}
+
+func Test_newRawLogs(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+
+	line := processor.LogLine{
+		ID:     "1",
+		Time:   at,
+		Level:  processor.LogLevelWarning,
+		Line:   "slow request",
+		Labels: map[string]string{"app": "api"},
+		Fields: map[string]string{"trace_id": "abc"},
+		Parsed: map[string]string{"duration": "2s"},
+	}
+
+	cc := map[string]struct {
+		Input  *processor.LogsResult
+		Result rawLogs
+	}{
+		"Every log is kept with its detail": {
+			Input: &processor.LogsResult{Status: processor.QueryStatusOK, Lines: []processor.LogLine{line}},
+			Result: rawLogs{
+				Status: processor.QueryStatusOK,
+				Logs: []rawLog{{
+					Time:    at,
+					Level:   processor.LogLevelWarning,
+					Message: "slow request",
+					Labels:  map[string]string{"app": "api"},
+					Fields:  map[string]string{"trace_id": "abc"},
+					Parsed:  map[string]string{"duration": "2s"},
+				}},
+			},
+		},
+		"More logs past the page are flagged": {
+			Input: &processor.LogsResult{
+				Status:     processor.QueryStatusOK,
+				Lines:      []processor.LogLine{line},
+				NextCursor: null.ValueFrom(processor.Cursor{}),
+			},
+			Result: rawLogs{
+				Status: processor.QueryStatusOK,
+				Logs: []rawLog{{
+					Time:    at,
+					Level:   processor.LogLevelWarning,
+					Message: "slow request",
+					Labels:  map[string]string{"app": "api"},
+					Fields:  map[string]string{"trace_id": "abc"},
+					Parsed:  map[string]string{"duration": "2s"},
+				}},
+				HasMore: true,
+			},
+		},
+		"A timestamp group past the cap is cut": {
+			// a page whose logs share one timestamp holds the whole group,
+			// however long it is.
+			Input: &processor.LogsResult{
+				Status: processor.QueryStatusOK,
+				Lines:  slices.Repeat([]processor.LogLine{line}, _maxRawLogs+1),
+			},
+			Result: rawLogs{
+				Status: processor.QueryStatusOK,
+				Logs: slices.Repeat([]rawLog{{
+					Time:    at,
+					Level:   processor.LogLevelWarning,
+					Message: "slow request",
+					Labels:  map[string]string{"app": "api"},
+					Fields:  map[string]string{"trace_id": "abc"},
+					Parsed:  map[string]string{"duration": "2s"},
+				}}, _maxRawLogs),
+				HasMore: true,
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, newRawLogs(c.Input))
 		})
 	}
 }

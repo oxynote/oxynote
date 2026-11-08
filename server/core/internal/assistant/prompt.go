@@ -40,7 +40,7 @@ Read tools run immediately. Write tools wait for the user's confirmation, and ev
 // Shared verbatim between the chat prompt and the MCP instructions.
 const _workflowSection = `## Workflow
 
-Read before you write: find the document with list_documents or search_documents and read it with get_document. Every content tool names a branch by branch_id: listings and search hits carry one, get_document lists every branch, and a protected branch is read-only. Before adding a metric, find names with get_data_source_metadata and run the query through query_data_source with the chart_type you intend, so you know it renders. Metrics follow the built-in metric_range and metric_refresh variables, so to show another period, set the variable rather than editing charts.
+Read before you write: find the document with list_documents or search_documents and read it with get_document. Every content tool names a branch by branch_id: listings and search hits carry one, get_document lists every branch, and a protected branch is read-only. Before adding a metric or logs block, find names with get_data_source_metadata and run the query through query_data_source, with the chart_type you intend for a metric, so you know it renders. Metrics follow the built-in metric_range and metric_refresh variables, so to show another period, set the variable rather than editing charts.
 
 `
 
