@@ -384,10 +384,10 @@ func Test_Manager_ToolSet(t *testing.T) {
 
 	// the set carries the full registry — the ten document tools,
 	// the five tag tools, the eight variable tools, the four hook tools,
-	// the five data-source tools and the offloaded-result reader — wired
+	// the six data-source tools and the offloaded-result reader — wired
 	// from the manager's shared dependencies and scoped to the requested
 	// pair.
-	assert.Len(t, s.Tools(), 33)
+	assert.Len(t, s.Tools(), 34)
 }
 
 func Test_Manager_claimTurn(t *testing.T) {

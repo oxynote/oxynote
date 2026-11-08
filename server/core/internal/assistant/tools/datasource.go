@@ -31,6 +31,9 @@ const (
 
 	// _maxRawRows caps the rows of a raw SQL answer.
 	_maxRawRows = 200
+
+	// _maxRawLogs caps the logs of a raw Loki answer, keeping the newest.
+	_maxRawLogs = 100
 )
 
 // _maxPreviewSeries caps how many series a chart check describes. A
@@ -48,6 +51,10 @@ var _errUnknownDataSource = errors.New("no data source with that id in this orga
 // _errInvertedTimeRange reports a range whose start falls after its end,
 // once either absent end has been defaulted.
 var _errInvertedTimeRange = errors.New("'from' is after 'to'; the range start must be the earlier timestamp")
+
+// _errLogsChartType is returned when a chart check is asked of a Loki
+// data source, whose logs no chart draws.
+var _errLogsChartType = errors.New("a loki data source draws no chart; omit chart_type, and show the logs in a <logs> block")
 
 // _timeRangeProps are the from and to arguments every ranged read takes.
 var _timeRangeProps = map[string]any{
@@ -98,7 +105,7 @@ type dataSourceInfo struct {
 	// Name is the data source's display name.
 	Name string `json:"name"`
 
-	// Type is what the data source speaks (prometheus, postgresql,
+	// Type is what the data source speaks (prometheus, loki, postgresql,
 	// supabase, mariadb, mysql), which decides the tools that serve it.
 	Type datasource.Type `json:"type"`
 
@@ -120,7 +127,7 @@ func (listDataSources) Info() Info {
 	return Info{
 		Name:        NameListDataSources,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true},
-		Description: "List the organisation's data sources as {id, name, type, status}. type (prometheus, postgresql, supabase, mariadb or mysql) decides the query language and which tools serve it. Start here: the other data source tools take an id from this list.",
+		Description: "List the organisation's data sources as {id, name, type, status}. type (prometheus, loki, postgresql, supabase, mariadb or mysql) decides the query language and which tools serve it; loki holds logs. Start here: the other data source tools take an id from this list.",
 		Properties:  map[string]any{},
 	}
 }
@@ -172,7 +179,7 @@ func (getDataSourceMetadata) Info() Info {
 	return Info{
 		Name:        NameGetDataSourceMetadata,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true},
-		Description: "Describe what a data source holds: for Prometheus, each metric with its type, help and unit; for SQL, {default_schema, tables: {table: [columns]}}. Read it before writing a query, so the names in it are real ones.",
+		Description: "Describe what a data source holds: for Prometheus, each metric with its type, help and unit; for Loki, the labels its logs carry over the last hour, while list_log_fields with a query finds their other fields; for SQL, {default_schema, tables: {table: [columns]}}. Read it before writing a query, so the names in it are real ones.",
 		Properties:  map[string]any{"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription}},
 		Required:    []string{"data_source_id"},
 	}
@@ -208,7 +215,8 @@ func (getDataSourceMetadata) Execute(inp *input) (string, error) {
 		return "", err
 	}
 
-	if runner.Type() == datasource.TypePrometheus {
+	typ := runner.Type()
+	if typ == datasource.TypePrometheus {
 		prom, perr := runner.Prometheus(inp.Context())
 		if perr != nil {
 			return "", perr
@@ -217,6 +225,22 @@ func (getDataSourceMetadata) Execute(inp *input) (string, error) {
 		res, merr := prom.Metadata(inp.Context())
 		if merr != nil {
 			return "", merr
+		}
+
+		return result(res)
+	}
+
+	if typ == datasource.TypeLoki {
+		logs, lerr := runner.Logs(inp.Context())
+		if lerr != nil {
+			return "", lerr
+		}
+
+		to := timeutil.Now()
+
+		res, ferr := logs.LogFields(inp.Context(), "", processor.TimeRange{From: to.Add(-_defaultQueryWindow), To: to})
+		if ferr != nil {
+			return "", ferr
 		}
 
 		return result(res)
@@ -466,6 +490,117 @@ func (listPrometheusSeries) Execute(inp *input) (string, error) {
 	return result(res)
 }
 
+// logFieldsArgs is what list_log_fields is called with.
+type logFieldsArgs struct {
+	timeRangeArgs
+
+	// DataSourceID names the Loki data source.
+	DataSourceID xid.ID `json:"data_source_id"`
+
+	// Field, when set, asks for the values of that field instead of the
+	// field names.
+	Field string `json:"field"`
+
+	// Query narrows the answer to the logs it matches.
+	Query string `json:"query"`
+}
+
+// Validate checks the arguments are complete.
+func (a logFieldsArgs) Validate() error {
+	if a.DataSourceID.IsNil() {
+		return errRequired("data_source_id")
+	}
+
+	return nil
+}
+
+// listLogFields lists the field names the logs of a Loki data source
+// carry, or the values one field takes.
+type listLogFields struct{}
+
+// Info returns the tool's model-facing description.
+func (listLogFields) Info() Info {
+	return Info{
+		Name:        NameListLogFields,
+		Traits:      Traits{Group: GroupDataSources, DataSource: true},
+		Description: "List the field names the logs of a Loki data source carry or, with field set, the values that field takes, counted when the source counts them. Without query only labels and their values come back. A LogQL query narrows either to the logs it matches and adds their other fields. Use it to find the fields and values a log query should filter on.",
+		Properties: map[string]any{
+			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
+			"field":          map[string]any{"type": "string", "description": "Optional. A field, such as detected_level, whose values to list instead of the names."},
+			"query":          map[string]any{"type": "string", "description": "Optional. A LogQL log query, such as {app=\"api\"}, whose logs to read the fields from."},
+			"from":           _timeRangeProps["from"],
+			"to":             _timeRangeProps["to"],
+		},
+		Required: []string{"data_source_id"},
+	}
+}
+
+// Title announces the data source being read, and the field when one
+// was named.
+func (listLogFields) Title(inp DescribeInput) string {
+	var in logFieldsArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return ""
+	}
+
+	ds, err := inp.FetchDataSource(in.DataSourceID)
+	if err != nil {
+		return ""
+	}
+
+	if in.Field != "" {
+		return fmt.Sprintf("Listing values of field %q in %q", in.Field, ds.Name)
+	}
+
+	return fmt.Sprintf("Listing fields of %q", ds.Name)
+}
+
+// Execute fetches the field names, or the named field's values.
+func (listLogFields) Execute(inp *input) (string, error) {
+	var in logFieldsArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return "", err
+	}
+
+	tr, err := in.resolve()
+	if err != nil {
+		return "", err
+	}
+
+	runner, err := inp.DataSourceRunner(in.DataSourceID)
+	if err != nil {
+		return "", err
+	}
+
+	qq, err := inp.SubstituteVariables(in.Query)
+	if err != nil {
+		return "", err
+	}
+
+	logs, err := runner.Logs(inp.Context())
+	if err != nil {
+		return "", err
+	}
+
+	if in.Field != "" {
+		res, verr := logs.LogFieldValues(inp.Context(), in.Field, qq[0], tr)
+		if verr != nil {
+			return "", verr
+		}
+
+		return result(res)
+	}
+
+	res, err := logs.LogFields(inp.Context(), qq[0], tr)
+	if err != nil {
+		return "", err
+	}
+
+	return result(res)
+}
+
 // queryDataSourceArgs is what query_data_source is called with.
 type queryDataSourceArgs struct {
 	timeRangeArgs
@@ -473,7 +608,7 @@ type queryDataSourceArgs struct {
 	// DataSourceID names the data source.
 	DataSourceID xid.ID `json:"data_source_id"`
 
-	// Query is the PromQL or SQL to run. Required.
+	// Query is the PromQL, LogQL or SQL to run. Required.
 	Query string `json:"query"`
 
 	// ChartType, when set, asks for what a metric block of that chart
@@ -503,14 +638,14 @@ func (queryDataSource) Info() Info {
 	return Info{
 		Name:        NameQueryDataSource,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true},
-		Description: fmt.Sprintf("Run a query over a time range: PromQL for Prometheus, read-only SQL for the others, where $__ macros such as $__timeFilter expand against the range. Without chart_type it returns the raw answer, capped at %d series of %d points or %d rows. With chart_type it returns what a metric block would draw: status, series count, and each series' labels, point count and endpoints. Check a query that way before putting it in a block.", _maxRawSeries, _maxRawPoints, _maxRawRows),
+		Description: fmt.Sprintf("Run a query over a time range: PromQL for Prometheus, a LogQL log query for Loki, read-only SQL for the others, where $__ macros such as $__timeFilter expand against the range. Without chart_type it returns the raw answer, capped at %d series of %d points, %d rows, or the newest %d logs, each with its time, level, message, labels and fields. has_more says older logs matched, so narrow the query or the range to see them. With chart_type it returns what a metric block would draw: status, series count, and each series' labels, point count and endpoints. Check a query that way before putting it in a block.", _maxRawSeries, _maxRawPoints, _maxRawRows, _maxRawLogs),
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
-			"query":          map[string]any{"type": "string", "description": "The PromQL or SQL to run. For a SQL chart, select a time column aliased time and one or more numeric columns."},
+			"query":          map[string]any{"type": "string", "description": "The PromQL, LogQL or SQL to run. For a SQL chart, select a time column aliased time and one or more numeric columns."},
 			"chart_type": map[string]any{
 				"type":        "string",
 				"enum":        []processor.ChartType{processor.ChartTypeLine, processor.ChartTypeBar, processor.ChartTypeGauge},
-				"description": "Optional. The chart to check the query against; omit it for the values themselves.",
+				"description": "Optional. The chart to check the query against; omit it for the values themselves. Not for Loki.",
 			},
 			"from": _timeRangeProps["from"],
 			"to":   _timeRangeProps["to"],
@@ -584,6 +719,12 @@ func (queryDataSource) Execute(inp *input) (string, error) {
 		default:
 			return result(newChartPreview(res.Transform(in.ChartType)))
 		}
+	case datasource.TypeLoki:
+		if in.ChartType != "" {
+			return "", _errLogsChartType
+		}
+
+		return queryLogs(inp, runner, variable.Substitute(vars, q)[0], tr)
 	case datasource.TypePostgreSQL, datasource.TypeSupabase:
 		pg, err := runner.PostgreSQL(inp.Context())
 		if err != nil {
@@ -635,6 +776,28 @@ func (queryDataSource) Execute(inp *input) (string, error) {
 	}
 }
 
+// queryLogs reads the newest logs a LogQL query matches, as
+// query_data_source answers for a Loki data source.
+func queryLogs(inp *input, runner datasource.Runner, q string, tr processor.TimeRange) (string, error) {
+	logs, err := runner.Logs(inp.Context())
+	if err != nil {
+		return "", err
+	}
+
+	page := processor.LogsPage{Limit: _maxRawLogs, Order: processor.LogsOrderDesc}
+
+	res, err := logs.Logs(inp.Context(), q, tr, page)
+	if err != nil {
+		return "", fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since metric queries such as rate() are not supported", err)
+	}
+
+	if !res.HasData() {
+		return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
+	}
+
+	return result(newRawLogs(res))
+}
+
 // rawSeries is a raw Prometheus answer, cut down to _maxRawSeries series
 // of the latest _maxRawPoints points each.
 type rawSeries struct {
@@ -677,6 +840,66 @@ func newRawSeries(res *processor.PrometheusQueryResult) rawSeries {
 
 	if cut {
 		out.Truncated = fmt.Sprintf("%d of %d series, each its latest %d points at most; set chart_type to describe them all", len(capped), len(matrix), _maxRawPoints)
+	}
+
+	return out
+}
+
+// rawLogs is a raw Loki answer, cut down to its newest _maxRawLogs logs.
+type rawLogs struct {
+	// Status is whether the query matched any log.
+	Status processor.QueryStatus `json:"status"`
+
+	// Logs are the newest logs the query matched, newest first.
+	Logs []rawLog `json:"logs"`
+
+	// HasMore is whether more logs matched than the ones shown.
+	HasMore bool `json:"has_more"`
+}
+
+// rawLog is one log of a raw Loki answer.
+type rawLog struct {
+	// Time is when the log was written, in UTC.
+	Time time.Time `json:"time"`
+
+	// Level is the log's normalised severity.
+	Level processor.LogLevel `json:"level"`
+
+	// Message is the log itself.
+	Message string `json:"message"`
+
+	// Labels are what the source indexes the log by.
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// Fields are everything else the log carries, such as structured
+	// metadata.
+	Fields map[string]string `json:"fields,omitempty"`
+
+	// Parsed are the keys a parser stage of the query took from the log.
+	Parsed map[string]string `json:"parsed,omitempty"`
+}
+
+// newRawLogs renames a page of logs for the model. The page was read at
+// _maxRawLogs, but a page whose logs share one timestamp holds that whole
+// group, so it is cut to the cap again.
+func newRawLogs(res *processor.LogsResult) rawLogs {
+	lines := res.Lines[:min(len(res.Lines), _maxRawLogs)]
+
+	out := rawLogs{
+		Status:  res.Status,
+		Logs:    make([]rawLog, 0, len(lines)),
+		HasMore: res.NextCursor.Valid || len(res.Lines) > len(lines),
+	}
+
+	for _, l := range lines {
+		out.Logs = append(out.Logs, rawLog{
+			Time:    l.Time,
+			Level:   l.Level,
+			Message: l.Line,
+			Labels:  l.Labels,
+			Fields:  l.Fields,
+			Parsed:  l.Parsed,
+		})
 	}
 
 	return out
