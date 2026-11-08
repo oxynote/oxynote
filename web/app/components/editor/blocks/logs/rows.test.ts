@@ -271,6 +271,62 @@ describe("summarizeLog", () => {
 				labels: [],
 			},
 		},
+		{
+			name: "leaves out a field the line repeats",
+			input: {
+				line: '{"msg":"order placed","trace_id":"4bf9"}',
+				labels: {},
+				fields: { trace_id: "4bf9" },
+			},
+			expected: {
+				message: "order placed",
+				extracted: [["trace_id", "4bf9"]],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "leaves out a field a logfmt line repeats",
+			input: {
+				line: "msg=ready trace_id=4bf9",
+				labels: {},
+				fields: { trace_id: "4bf9" },
+			},
+			expected: {
+				message: "ready",
+				extracted: [["trace_id", "4bf9"]],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "leaves out a field a JSON number repeats",
+			input: {
+				line: '{"msg":"done","attempt":25}',
+				labels: {},
+				fields: { attempt: "25" },
+			},
+			expected: {
+				message: "done",
+				extracted: [["attempt", "25"]],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "keeps a field whose value differs from the line",
+			input: {
+				line: '{"msg":"order placed","trace_id":"4bf9"}',
+				labels: {},
+				fields: { trace_id: "other" },
+			},
+			expected: {
+				message: "order placed",
+				extracted: [["trace_id", "4bf9"]],
+				fields: [["trace_id", "other"]],
+				labels: [],
+			},
+		},
 	])("$name", ({ input, expected }, { expect }) => {
 		expect(
 			summarizeLog(makeLog({ id: "l1", ...input }), EXACT_DIALECT),
