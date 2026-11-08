@@ -28,7 +28,7 @@ func (listVariables) Info() Info {
 	return Info{
 		Name:        NameListVariables,
 		Traits:      Traits{Group: GroupVariables},
-		Description: "List the global variables by group as [{id, name, color, builtin, variables: [{id, key, name, description, type, builtin, default, value, options}]}]. Queries and metrics reference a variable as $key, so one change updates every metric using it; each user picks their own. default is what anyone without their own sees; for a list, its first option's id. value is the user's own, or null. A built-in's definition cannot change; set_variable_value sets its value or default.",
+		Description: "List the global variables by group as [{id, name, color, builtin, variables: [{id, key, name, description, type, builtin, default, value, options}]}]. Queries and metrics reference a variable as $key, so one change updates every metric using it. Each user picks their own value. default is what anyone without one sees, and for a list it is its first option's id. value is the user's own, or null. A built-in's definition cannot change, but set_variable_value sets its value or default.",
 		Properties:  map[string]any{},
 	}
 }
@@ -162,7 +162,7 @@ func (createVariableGroup) Info() Info {
 	return Info{
 		Name:        NameCreateVariableGroup,
 		Traits:      Traits{Group: GroupVariables, Write: true},
-		Description: "Create a variable group, last in order, and return {group_id}. The name has to be unused.",
+		Description: "Create a variable group, last in order, and return {group_id}. The name must be unused.",
 		Properties: map[string]any{
 			"name":  map[string]any{"type": "string", "description": "The display name."},
 			"color": map[string]any{"type": "string", "enum": tag.ColorNames(), "description": "The colour."},
@@ -225,11 +225,11 @@ func (updateVariableGroup) Info() Info {
 	return Info{
 		Name:        NameUpdateVariableGroup,
 		Traits:      Traits{Group: GroupVariables, Write: true, Idempotent: true},
-		Description: "Rename or recolour a variable group other than the built-in one; give only what changes. Returns {group_id}.",
+		Description: "Rename or recolour a variable group other than the built-in one. Give only what changes. Returns {group_id}.",
 		Properties: map[string]any{
 			"group_id": map[string]any{"type": "string", "description": _variableGroupIDDescription},
-			"name":     map[string]any{"type": "string", "description": "Optional. The new display name."},
-			"color":    map[string]any{"type": "string", "description": "Optional. The new colour, a create_variable_group colour."},
+			"name":     map[string]any{"type": "string", "description": "The new display name."},
+			"color":    map[string]any{"type": "string", "enum": tag.ColorNames(), "description": "The new colour."},
 		},
 		Required: []string{"group_id"},
 	}
@@ -392,12 +392,12 @@ func (createVariable) Info() Info {
 	return Info{
 		Name:        NameCreateVariable,
 		Traits:      Traits{Group: GroupVariables, Write: true},
-		Description: "Create a global variable, last in its group, and return {variable_id}. The key has to be unused and match ^[a-z][a-z0-9_]*$. A list takes options, the first being the default; other types take a default instead, required for a time range.",
+		Description: "Create a global variable, last in its group, and return {variable_id}. The key must be unused and match ^[a-z][a-z0-9_]*$. A list takes options, and the first is its default. Other types take a default, which a time range requires.",
 		Properties: map[string]any{
 			"group_id":    map[string]any{"type": "string", "description": _variableGroupIDDescription},
 			"key":         map[string]any{"type": "string", "description": "The key, without the $."},
 			"name":        map[string]any{"type": "string", "description": "The display name."},
-			"description": map[string]any{"type": "string", "description": "Optional. What the variable is for."},
+			"description": map[string]any{"type": "string", "description": "What the variable is for."},
 			"type":        map[string]any{"type": "string", "enum": _variableTypes, "description": "The kind of value."},
 			"default":     map[string]any{"type": "string", "description": _variableDefaultDescription},
 			"options":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "A list's option values in order."},
@@ -504,16 +504,16 @@ func (updateVariable) Info() Info {
 	return Info{
 		Name:        NameUpdateVariable,
 		Traits:      Traits{Group: GroupVariables, Write: true, Overwrites: true, Idempotent: true},
-		Description: "Change a global variable other than a built-in one, whose default set_variable_value sets; give only what changes. group_id moves it to the end of that group. options replace a list's; users who picked a removed value see the default again. A type change resets everyone's value. Returns {variable_id}.",
+		Description: "Change a global variable and return {variable_id}. Give only what changes. A type change resets everyone's value. New options replace a list's options, and users who picked a removed value see the default again. A built-in variable cannot change, but set_variable_value sets its default.",
 		Properties: map[string]any{
 			"variable_id": map[string]any{"type": "string", "description": _variableIDDescription},
-			"group_id":    map[string]any{"type": "string", "description": "Optional. Moves it to the end of this group."},
-			"key":         map[string]any{"type": "string", "description": "Optional. The new key, without the $."},
-			"name":        map[string]any{"type": "string", "description": "Optional. The new display name."},
-			"description": map[string]any{"type": "string", "description": "Optional. Empty clears it."},
-			"type":        map[string]any{"type": "string", "enum": _variableTypes, "description": "Optional. The new kind of value."},
-			"default":     map[string]any{"type": "string", "description": "Optional. " + _variableDefaultDescription},
-			"options":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional. A list's option values in order."},
+			"group_id":    map[string]any{"type": "string", "description": "The group to move the variable to, at its end."},
+			"key":         map[string]any{"type": "string", "description": "The new key, without the $."},
+			"name":        map[string]any{"type": "string", "description": "The new display name."},
+			"description": map[string]any{"type": "string", "description": "The new description. An empty string clears it."},
+			"type":        map[string]any{"type": "string", "enum": _variableTypes, "description": "The new kind of value."},
+			"default":     map[string]any{"type": "string", "description": _variableDefaultDescription},
+			"options":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "A list's new option values in order."},
 		},
 		Required: []string{"variable_id"},
 	}
@@ -699,11 +699,11 @@ func (setVariableValue) Info() Info {
 	return Info{
 		Name:        NameSetVariableValue,
 		Traits:      Traits{Group: GroupVariables, Write: true, Idempotent: true},
-		Description: "Set the current user's own value of a global variable, built-ins included, or with default its organisation-wide default; prefer the user's own. Set metric_range to show every chart another period. A list takes an option id, a number a decimal, a time range a preset such as last_24_hours, text anything. Returns {variable_id, value, default}.",
+		Description: "Set the current user's own value of a global variable, built-ins included. With default it sets the organisation-wide default instead, but prefer the user's own. Set metric_range to show every chart over another period. A list takes an option id, a number a decimal, a time range a preset such as last_24_hours, and text anything. Returns {variable_id, value, default}.",
 		Properties: map[string]any{
 			"variable_id": map[string]any{"type": "string", "description": _variableIDDescription},
 			"value":       map[string]any{"type": "string", "description": "The new value."},
-			"default":     map[string]any{"type": "boolean", "description": "Optional. True sets what everyone without their own value sees."},
+			"default":     map[string]any{"type": "boolean", "default": false, "description": "True sets what everyone without their own value sees."},
 		},
 		Required: []string{"variable_id", "value"},
 	}
