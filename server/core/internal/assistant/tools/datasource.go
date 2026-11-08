@@ -439,7 +439,7 @@ func (listLogFields) Info() Info {
 	return Info{
 		Name:        NameListLogFields,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true},
-		Description: "List the field names the logs of a Loki data source carry. With field, it lists that field's values instead, counted when the source counts them. Without query only labels and their values come back. A LogQL query narrows either list to the logs it matches and adds their other fields. Use it to find what a log query should filter on. A filter on a field that is not a label needs a parser stage before it, such as | json or | logfmt for the line's format.",
+		Description: "List the field names the logs of a Loki data source carry. With field, it lists that field's values instead, counted when the source counts them. Without query only labels and their values come back. A LogQL query narrows either list to the logs it matches and adds their other fields. Use it to find what a log query should filter on. A filter on a field parsed from a log needs a parser stage first: | json for JSON logs, | logfmt for key=value logs. detected_level and other structured metadata need no parser, but they are not labels, so filter them after the selector, as in | detected_level=\"error\".",
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
 			"field":          map[string]any{"type": "string", "description": "A field, such as detected_level, whose values to list."},
@@ -538,7 +538,7 @@ func (queryDataSource) Info() Info {
 		Description: fmt.Sprintf("Run a query over a time range. Use PromQL for Prometheus, a LogQL log query for Loki and read-only SQL for the others. In SQL, $__ macros such as $__timeFilter expand against the range. Without chart_type it returns the raw answer: at most %d series of %d points, %d rows, or the newest %d logs. Each log has its time, level, message, labels and fields. has_more says older logs matched, so narrow the query or the range to see them. With chart_type it returns what a metric block would draw: status, series count, and each series' labels, point count and endpoints. Check a query that way before you put it in a block.", _maxRawSeries, _maxRawPoints, _maxRawRows, _maxRawLogs),
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
-			"query":          map[string]any{"type": "string", "description": "The PromQL, LogQL or SQL to run. In LogQL, put a parser stage such as | json or | logfmt before a filter on a field that is not a label, since without it the filter matches nothing. For a SQL chart, select a time column aliased time and one or more numeric columns."},
+			"query":          map[string]any{"type": "string", "description": "The PromQL, LogQL or SQL to run. In LogQL, only labels go inside {}. A field parsed from the line needs | json or | logfmt before its filter, and detected_level goes after the selector, as in | detected_level=\"error\". For a SQL chart, select a time column aliased time and one or more numeric columns."},
 			"chart_type": map[string]any{
 				"type":        "string",
 				"enum":        []processor.ChartType{processor.ChartTypeLine, processor.ChartTypeBar, processor.ChartTypeGauge},

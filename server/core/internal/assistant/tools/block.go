@@ -27,13 +27,13 @@ const (
 // _contentDescription describes the XML a block write takes. Only
 // insert_blocks carries it, and the others refer to it there.
 var _contentDescription = "The blocks as XML, one element per block, with all text inside an element such as <p>.\n" +
-	"- <p> and <h1> to <h3> hold plain text.\n" +
+	"- <p> holds text with inline marks. <h1> to <h3> hold plain text.\n" +
 	"- <ul> and <ol start> hold <li>, and <tasks> holds <task checked>. An entry holds its text, then any blocks nested under it.\n" +
 	"- <blockquote> and <callout icon> hold blocks. A callout's icon takes the ids create_document's icon does.\n" +
 	"- <pre language> holds raw code. It takes a title only in a split_doc's <right>.\n" +
 	"- <mermaid> holds raw source. Mermaid ends a gantt task name or timeline period at its first colon, so write a colon inside one as #58;, never as &#58;.\n" +
 	"- <hr/>, <img src alt title width/> and <figma src width height/> are empty.\n" +
-	"- <grid> sits at the top level and holds every <metrics> (a chart) and <logs>, each a JSON object of attributes. A row fits 3 compact, 2 standard or 1 wide, never a standard beside a compact. Fill every row. A <grid> holds no text, so text about the charts, when there is some, goes in a block before it.\n" +
+	"- <grid> sits at the top level and holds <metrics> (a chart) and <logs>, each a JSON object of attributes. A row fits 3 compact, 2 standard or 1 wide, never a standard beside a compact. Fill every row. A <grid> holds no text, so text about the charts, when there is some, goes in a block before it.\n" +
 	"- <split_doc inversed> holds <left> then <right>. <left> has an <h1>, then <p>, lists or <callout>, then any <params header> of <param name type>description</param>. " +
 	"<right> holds a titled <pre>, a <metrics> or a <mermaid>.\n" +
 	"Inline text takes <b>, <i>, <u>, <s>, <code> and <a href>. " +
@@ -63,7 +63,7 @@ func (insertBlocks) Info() Info {
 	return Info{
 		Name:        NameInsertBlocks,
 		Traits:      Traits{Write: true},
-		Description: "Insert new blocks, written as XML, at a document's start or end or beside the block reference_block_uid names. Returns the written blocks as XML with their ids. Every element is a new block, so leave out id, and use replace_blocks to change existing ones. Wrap every <metrics> and <logs> in a <grid>. A block not allowed where it lands is refused, naming what that place takes.",
+		Description: "Insert new blocks, written as XML, at a document's start or end or beside the block reference_block_uid names. Returns the written blocks as XML with their ids. Every element is a new block, so leave out id, and use replace_blocks to change existing ones. A <metrics> or <logs> always sits in a <grid>, apart from a <metrics> in a split_doc's <right>. A block not allowed where it lands is refused, naming what that place takes.",
 		Properties: map[string]any{
 			"document_id":         map[string]any{"type": "string", "description": _documentIDDescription},
 			"branch_id":           map[string]any{"type": "string", "description": _writeBranchIDDescription},

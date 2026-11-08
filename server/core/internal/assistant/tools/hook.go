@@ -315,7 +315,7 @@ func (deleteHook) Info() Info {
 	return Info{
 		Name:        NameDeleteHook,
 		Traits:      Traits{Group: GroupHooks, Write: true, Destructive: true},
-		Description: "Delete a hook and what it watches outside the document. Returns {hook_id, deleted}. It cannot be restored. update_hook without settings clears what it flagged instead. A protected branch keeps its hooks.",
+		Description: "Delete a hook and stop its watch outside the document. Returns {hook_id, deleted}. It cannot be restored. update_hook without settings clears what it flagged instead. A protected branch keeps its hooks.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
 			"hook_id":     map[string]any{"type": "string", "description": _hookIDDescription},
