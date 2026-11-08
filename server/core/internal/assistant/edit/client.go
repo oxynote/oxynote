@@ -58,8 +58,9 @@ func NewClient(httpClient *http.Client, baseURL string) *Client {
 // prompt can reach. userID is the person an ordinary batch credits, and
 // is empty for a system batch.
 //
-// A transport failure is returned as an error, and then nothing was
-// applied. An operation the service refused comes back in Result.Errors.
+// A transport failure is returned as an error. The batch may still have
+// been applied, since the response can be lost after Node applies it. An
+// operation the service refused comes back in Result.Errors.
 func (c *Client) Apply(
 	ctx context.Context,
 	documentID, branchID xid.ID,

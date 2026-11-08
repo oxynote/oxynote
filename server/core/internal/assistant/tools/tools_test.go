@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
@@ -488,6 +489,33 @@ func Test_decodeTool(t *testing.T) {
 			Decode: decodeTool[createTag],
 			Args:   `{"color":"blue"}`,
 			Err:    errRequired("name"),
+		},
+		// the range is embedded in every ranged tool, so its fields
+		// decode as the tool's own.
+		"Time range": {
+			Decode: decodeTool[queryDataSource],
+			Args:   `{"data_source_id":"` + _testDataSourceID.String() + `","query":"up","from":"2026-08-01T10:00:00Z","to":"2026-08-01T12:00:00Z"}`,
+			Result: queryDataSource{
+				timeRange: timeRange{
+					From: time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC),
+					To:   time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
+				},
+				DataSourceID: _testDataSourceID,
+				Query:        "up",
+			},
+		},
+		// a range left out stays zero, which resolve reads as the last
+		// hour.
+		"Time range left out": {
+			Decode: decodeTool[queryDataSource],
+			Args:   `{"data_source_id":"` + _testDataSourceID.String() + `","query":"up"}`,
+			Result: queryDataSource{DataSourceID: _testDataSourceID, Query: "up"},
+		},
+		"Empty time": {
+			Decode:    decodeTool[queryDataSource],
+			Args:      `{"data_source_id":"` + _testDataSourceID.String() + `","query":"up","from":""}`,
+			Err:       assert.AnError,
+			ErrPrefix: "invalid input: ",
 		},
 		"Decoded": {
 			Decode: decodeTool[setTagAssignment],

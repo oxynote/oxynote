@@ -4,10 +4,10 @@
 // result too large to keep in context.
 //
 // All four hang off one key from SessionKey. The checkpoint and the
-// offloaded results share one byte store. Read and write failures are
-// logged, not returned, so lost state costs context but never the chat.
-// The checkpoint store is the exception, since its contract is the agent
-// runner's.
+// offloaded results share one byte store. History and Pendings log their
+// failures instead of returning them, so lost state costs context, not
+// the chat. Offload and Checkpoints return theirs to the middleware and
+// the agent runner that call them.
 package persist
 
 import (
