@@ -53,17 +53,13 @@ func NewClient(httpClient *http.Client, baseURL string) *Client {
 // Apply submits the given operations to the Node service for the
 // (documentID, branchID) document and returns the outcome.
 //
-// A system batch is one core originated rather than a person: its persist
-// is allowed onto a protected branch, where the writes an editor or the
-// assistant makes are refused. Only a caller acting for core itself may
-// pass true — nothing reachable from a prompt may. The userID is the
-// person an ordinary batch is made for, and its persist credits them. It
+// A system batch comes from core, not a person, so its persist may reach
+// a protected branch. Only core itself passes true, never anything a
+// prompt can reach. userID is the person an ordinary batch credits, and
 // is empty for a system batch.
-// Any transport-level failure (bad status, malformed response) is
-// returned as an error and no
-// operations are considered applied; an operation the service
-// refused within an otherwise successful HTTP response is surfaced
-// via Result.Errors.
+//
+// A transport failure is returned as an error, and then nothing was
+// applied. An operation the service refused comes back in Result.Errors.
 func (c *Client) Apply(
 	ctx context.Context,
 	documentID, branchID xid.ID,

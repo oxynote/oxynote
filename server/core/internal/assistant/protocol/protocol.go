@@ -2,12 +2,8 @@
 // between the AI chat client and the assistant session running on
 // the server.
 //
-// Tools execute server-side: the protocol carries text deltas,
-// completion signals, conversation history, errors, and a
-// confirmation handshake the client uses to approve or decline
-// batched write operations. The full set of tools and their inputs
-// lives in package tools — this file only describes the wire
-// envelope.
+// Tools run on the server. The protocol carries text, completion
+// signals, history, errors and the confirmation of writes.
 package protocol
 
 import (
@@ -39,9 +35,9 @@ const (
 
 	// ServerTypeTextEnd signals that the assistant has finished
 	// streaming one run of text. Kind tells the client whether the
-	// text was intermediate narration (status — render as a
-	// transient pill, don't persist in chat history) or the final
-	// response (message — push into the chat as a real bubble).
+	// text was intermediate narration (status, shown as a transient pill
+	// and kept out of the chat history) or the final response (message,
+	// shown in the chat as a real bubble).
 	ServerTypeTextEnd ServerMessageType = "text_end"
 
 	// ServerTypeToolStatus carries a short, user-facing label
@@ -58,12 +54,12 @@ type ServerMessageType string
 
 const (
 	// TextEndKindStatus means the just-streamed text was the model
-	// thinking out loud before invoking tools — show as a transient
-	// status indicator and discard once superseded.
+	// thinking out loud before invoking tools. Show it as a transient
+	// status and discard it once superseded.
 	TextEndKindStatus TextEndKind = "status"
 
 	// TextEndKindMessage means the just-streamed text is the
-	// assistant's final answer for this turn — keep it in the chat.
+	// assistant's final answer for this turn. Keep it in the chat.
 	TextEndKindMessage TextEndKind = "message"
 )
 
@@ -83,13 +79,9 @@ const (
 	// decline) of a previously-sent ConfirmRequest.
 	ClientTypeConfirmResponse ClientMessageType = "confirm_response"
 
-	// ClientTypeSetActiveDocument tells the session which document,
-	// and which branch of it, the user is currently viewing so the
-	// system prompt can resolve "this document" without an explicit
-	// id. The payload carries documentId and, when the client knows
-	// it, branchId. Sent on connect and again whenever the user
-	// navigates between documents or branches — the connection itself
-	// persists across switches so an in-flight turn isn't torn down.
+	// ClientTypeSetActiveDocument names the document and branch the
+	// user is viewing, as documentId and an optional branchId. It is
+	// sent on connect and on every navigation, over the same connection.
 	ClientTypeSetActiveDocument ClientMessageType = "set_active_document"
 )
 
@@ -130,8 +122,8 @@ func NewTextEndMessage(kind TextEndKind) TextEndMessage {
 
 // ToolStatusMessage carries a short label describing a tool the
 // assistant is about to run. Tool is the raw tool name (same set
-// as ConfirmAction.Tool) — the client maps it to a color category
-// to keep the pill consistent with the confirm UI.
+// as ConfirmAction.Tool). The client maps it to a colour category, so
+// the pill matches the confirm UI.
 type ToolStatusMessage struct {
 	// Type is always ServerTypeToolStatus.
 	Type ServerMessageType `json:"type"`
@@ -258,9 +250,8 @@ type ConfirmResponse struct {
 	Approved bool `json:"approved"`
 
 	// All, when set alongside Approved=true, also auto-approves
-	// any further write batches in the current turn — the server
-	// skips the prompt and proceeds directly. Resets at the next
-	// user message.
+	// any further write batches in the current turn, so the server
+	// skips the prompt. It resets at the next user message.
 	All bool `json:"all,omitempty"`
 }
 

@@ -52,14 +52,9 @@ type stubVariableManager struct {
 	tools.VariableManager
 }
 
-// stubChatModel builds a chat model that answers with the given
-// messages in order. The last one repeats once the script runs out, so
-// a test that under-specifies gets a terminating answer rather than a
-// hanging agent loop.
-//
-// Every answer is a fresh message, as a real provider's would be: the
-// agent stamps an id onto each response it receives, so handing out the
-// same message twice would let two runs write over each other.
+// stubChatModel answers with the given messages in order, repeating the
+// last one, so a test never hangs the agent loop. Every answer is a
+// fresh copy, because the agent stamps an id on each one it receives.
 func stubChatModel(responses ...*schema.Message) *mock.ChatModel {
 	var (
 		mu  sync.Mutex
@@ -382,9 +377,9 @@ func Test_Manager_ToolSet(t *testing.T) {
 	s := m.ToolSet("org1", "user1")
 	require.NotNil(t, s)
 
-	// the set carries the full registry — the ten document tools,
-	// the five tag tools, the eight variable tools, the four hook tools,
-	// the six data-source tools and the offloaded-result reader — wired
+	// the set carries the full registry: the ten document tools, the
+	// five tag tools, the eight variable tools, the four hook tools, the
+	// six data-source tools and the offloaded-result reader. It is wired
 	// from the manager's shared dependencies and scoped to the requested
 	// pair.
 	assert.Len(t, s.Tools(), 34)

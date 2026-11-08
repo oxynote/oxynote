@@ -19,14 +19,6 @@ var _variableTypes = []string{
 	string(variable.TypeTimeRange),
 }
 
-// listVariablesArgs is what list_variables is called with.
-type listVariablesArgs struct{}
-
-// Validate accepts every payload: nothing is required.
-func (listVariablesArgs) Validate() error {
-	return nil
-}
-
 // listVariables returns the organisation's variable groups with their
 // variables and the user's own values.
 type listVariables struct{}
@@ -41,20 +33,19 @@ func (listVariables) Info() Info {
 	}
 }
 
-// Execute lists every group with its variables.
-func (listVariables) Execute(inp *input) (string, error) {
-	var in listVariablesArgs
+// Validate accepts every payload: nothing is required.
+func (listVariables) Validate() error {
+	return nil
+}
 
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
+// Exec lists every group with its variables.
+func (listVariables) Exec(inp Input) (any, error) {
 	tree, err := inp.FetchVariableTree()
 	if err != nil {
-		return "", fmt.Errorf("fetch variables: %w", err)
+		return nil, fmt.Errorf("fetching variables: %w", err)
 	}
 
-	out := variableListResult{Groups: make([]variableGroupEntry, 0, len(tree))}
+	out := listVariablesResult{Groups: make([]variableGroupEntry, 0, len(tree))}
 
 	for _, g := range tree {
 		ge := variableGroupEntry{
@@ -88,11 +79,11 @@ func (listVariables) Execute(inp *input) (string, error) {
 		out.Groups = append(out.Groups, ge)
 	}
 
-	return result(out)
+	return out, nil
 }
 
-// variableListResult is what list_variables returns.
-type variableListResult struct {
+// listVariablesResult is what list_variables returns.
+type listVariablesResult struct {
 	// Groups is every variable group in the organisation, in sidebar
 	// order.
 	Groups []variableGroupEntry `json:"groups"`
@@ -157,35 +148,14 @@ type variableOptionEntry struct {
 	Value string `json:"value"`
 }
 
-// createVariableGroupArgs is what create_variable_group is called with.
-type createVariableGroupArgs struct {
+// createVariableGroup creates a variable group in the organisation.
+type createVariableGroup struct {
 	// Name is the new group's display name. Required.
 	Name string `json:"name"`
 
 	// ColorName is the new group's colour as a palette name. Required.
 	ColorName string `json:"color"`
 }
-
-// Validate checks the arguments are complete and the colour in the palette.
-func (a createVariableGroupArgs) Validate() error {
-	if a.Name == "" {
-		return errRequired("name")
-	}
-
-	if a.ColorName == "" {
-		return errRequired("color")
-	}
-
-	return a.input().Validate()
-}
-
-// input returns the arguments as the domain's create input.
-func (a createVariableGroupArgs) input() variable.GroupCreateInput {
-	return variable.GroupCreateInput{GroupName: a.Name, Color: a.ColorName}
-}
-
-// createVariableGroup creates a variable group in the organisation.
-type createVariableGroup struct{}
 
 // Info returns the tool's model-facing description.
 func (createVariableGroup) Info() Info {
@@ -201,45 +171,44 @@ func (createVariableGroup) Info() Info {
 	}
 }
 
-// Summary describes the group the model wants to create.
-func (createVariableGroup) Summary(inp DescribeInput) (ActionSummary, error) {
-	var in createVariableGroupArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ActionSummary{}, err
+// Validate checks the arguments are complete and the colour in the palette.
+func (cvg createVariableGroup) Validate() error {
+	if cvg.Name == "" {
+		return errRequired("name")
 	}
 
+	if cvg.ColorName == "" {
+		return errRequired("color")
+	}
+
+	return cvg.input().Validate()
+}
+
+// Summary describes the group the model wants to create.
+func (cvg createVariableGroup) Summary(_ DescribeInput) (ActionSummary, error) {
 	return ActionSummary{
 		Tool:    NameCreateVariableGroup,
-		Summary: fmt.Sprintf("Create variable group %s (%s)", in.Name, in.ColorName),
+		Summary: fmt.Sprintf("Create variable group %s (%s)", cvg.Name, cvg.ColorName),
 	}, nil
 }
 
-// Execute creates the group.
-func (createVariableGroup) Execute(inp *input) (string, error) {
-	var in createVariableGroupArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	g, err := inp.CreateVariableGroup(in.input())
+// Exec creates the group.
+func (cvg createVariableGroup) Exec(inp Input) (any, error) {
+	g, err := inp.CreateVariableGroup(cvg.input())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return result(variableGroupResult{GroupID: g.ID})
+	return variableGroupResult{GroupID: g.ID}, nil
 }
 
-// variableGroupResult is what create_variable_group and
-// update_variable_group return.
-type variableGroupResult struct {
-	// GroupID addresses the group in every later call.
-	GroupID xid.ID `json:"group_id"`
+// input returns the arguments as the domain's create input.
+func (cvg createVariableGroup) input() variable.GroupCreateInput {
+	return variable.GroupCreateInput{GroupName: cvg.Name, Color: cvg.ColorName}
 }
 
-// updateVariableGroupArgs is what update_variable_group is called with.
-type updateVariableGroupArgs struct {
+// updateVariableGroup renames or recolours a variable group.
+type updateVariableGroup struct {
 	// GroupID names the group being changed.
 	GroupID xid.ID `json:"group_id"`
 
@@ -250,38 +219,6 @@ type updateVariableGroupArgs struct {
 	// unchanged.
 	ColorName string `json:"color"`
 }
-
-// Validate checks the arguments name a group and change something.
-func (a updateVariableGroupArgs) Validate() error {
-	if a.GroupID.IsNil() {
-		return errRequired("group_id")
-	}
-
-	if a.Name == "" && a.ColorName == "" {
-		return errors.New("give at least one of name or color")
-	}
-
-	return a.input().Validate()
-}
-
-// input returns the arguments as the domain's update input, with only
-// the fields that were given set.
-func (a updateVariableGroupArgs) input() variable.GroupUpdateInput {
-	var inp variable.GroupUpdateInput
-
-	if a.Name != "" {
-		inp.GroupName = null.StringFrom(a.Name)
-	}
-
-	if a.ColorName != "" {
-		inp.Color = null.StringFrom(a.ColorName)
-	}
-
-	return inp
-}
-
-// updateVariableGroup renames or recolours a variable group.
-type updateVariableGroup struct{}
 
 // Info returns the tool's model-facing description.
 func (updateVariableGroup) Info() Info {
@@ -298,67 +235,79 @@ func (updateVariableGroup) Info() Info {
 	}
 }
 
-// Summary lists the changes the model asked for.
-func (updateVariableGroup) Summary(inp DescribeInput) (ActionSummary, error) {
-	var in updateVariableGroupArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ActionSummary{}, err
+// Validate checks the arguments name a group and change something.
+func (uvg updateVariableGroup) Validate() error {
+	if uvg.GroupID.IsNil() {
+		return errRequired("group_id")
 	}
 
-	g, err := inp.FetchVariableGroup(in.GroupID)
+	if uvg.Name == "" && uvg.ColorName == "" {
+		return errors.New("give at least one of name or color")
+	}
+
+	return uvg.input().Validate()
+}
+
+// Summary lists the changes the model asked for.
+func (uvg updateVariableGroup) Summary(inp DescribeInput) (ActionSummary, error) {
+	g, err := inp.FetchVariableGroup(uvg.GroupID)
 	if err != nil {
-		return ActionSummary{}, fmt.Errorf("fetch variable group: %w", err)
+		return ActionSummary{}, fmt.Errorf("fetching variable group: %w", err)
 	}
 
 	var changes []string
 
-	if in.Name != "" {
-		changes = append(changes, fmt.Sprintf("rename variable group %s to %q", g.GroupName, in.Name))
+	if uvg.Name != "" {
+		changes = append(changes, fmt.Sprintf("rename variable group %s to %q", g.GroupName, uvg.Name))
 	}
 
-	if in.ColorName != "" {
-		changes = append(changes, fmt.Sprintf("set the colour of variable group %s to %s", g.GroupName, in.ColorName))
+	if uvg.ColorName != "" {
+		changes = append(changes, fmt.Sprintf("set the colour of variable group %s to %s", g.GroupName, uvg.ColorName))
 	}
 
 	return ActionSummary{
 		Tool:    NameUpdateVariableGroup,
-		Summary: sentence(changes),
+		Summary: joinClauses(changes),
 	}, nil
 }
 
-// Execute applies the change.
-func (updateVariableGroup) Execute(inp *input) (string, error) {
-	var in updateVariableGroupArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
+// Exec applies the change.
+func (uvg updateVariableGroup) Exec(inp Input) (any, error) {
+	if err := inp.UpdateVariableGroup(uvg.GroupID, uvg.input()); err != nil {
+		return nil, err
 	}
 
-	if err := inp.UpdateVariableGroup(in.GroupID, in.input()); err != nil {
-		return "", err
-	}
-
-	return result(variableGroupResult{GroupID: in.GroupID})
+	return variableGroupResult{GroupID: uvg.GroupID}, nil
 }
 
-// deleteVariableGroupArgs is what delete_variable_group is called with.
-type deleteVariableGroupArgs struct {
-	// GroupID names the group being deleted.
+// input returns the arguments as the domain's update input, with only
+// the fields that were given set.
+func (uvg updateVariableGroup) input() variable.GroupUpdateInput {
+	var inp variable.GroupUpdateInput
+
+	if uvg.Name != "" {
+		inp.GroupName = null.StringFrom(uvg.Name)
+	}
+
+	if uvg.ColorName != "" {
+		inp.Color = null.StringFrom(uvg.ColorName)
+	}
+
+	return inp
+}
+
+// variableGroupResult is what create_variable_group and
+// update_variable_group return.
+type variableGroupResult struct {
+	// GroupID addresses the group in every later call.
 	GroupID xid.ID `json:"group_id"`
 }
 
-// Validate checks the arguments are complete.
-func (a deleteVariableGroupArgs) Validate() error {
-	if a.GroupID.IsNil() {
-		return errRequired("group_id")
-	}
-
-	return nil
-}
-
 // deleteVariableGroup removes an empty variable group.
-type deleteVariableGroup struct{}
+type deleteVariableGroup struct {
+	// GroupID names the group being deleted.
+	GroupID xid.ID `json:"group_id"`
+}
 
 // Info returns the tool's model-facing description.
 func (deleteVariableGroup) Info() Info {
@@ -373,17 +322,20 @@ func (deleteVariableGroup) Info() Info {
 	}
 }
 
-// Summary names the group the model wants to delete.
-func (deleteVariableGroup) Summary(inp DescribeInput) (ActionSummary, error) {
-	var in deleteVariableGroupArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ActionSummary{}, err
+// Validate checks the arguments are complete.
+func (dvg deleteVariableGroup) Validate() error {
+	if dvg.GroupID.IsNil() {
+		return errRequired("group_id")
 	}
 
-	g, err := inp.FetchVariableGroup(in.GroupID)
+	return nil
+}
+
+// Summary names the group the model wants to delete.
+func (dvg deleteVariableGroup) Summary(inp DescribeInput) (ActionSummary, error) {
+	g, err := inp.FetchVariableGroup(dvg.GroupID)
 	if err != nil {
-		return ActionSummary{}, fmt.Errorf("fetch variable group: %w", err)
+		return ActionSummary{}, fmt.Errorf("fetching variable group: %w", err)
 	}
 
 	return ActionSummary{
@@ -392,23 +344,17 @@ func (deleteVariableGroup) Summary(inp DescribeInput) (ActionSummary, error) {
 	}, nil
 }
 
-// Execute deletes the group.
-func (deleteVariableGroup) Execute(inp *input) (string, error) {
-	var in deleteVariableGroupArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
+// Exec deletes the group.
+func (dvg deleteVariableGroup) Exec(inp Input) (any, error) {
+	if err := inp.DeleteVariableGroup(dvg.GroupID); err != nil {
+		return nil, err
 	}
 
-	if err := inp.DeleteVariableGroup(in.GroupID); err != nil {
-		return "", err
-	}
-
-	return result(deletedVariableGroupResult{GroupID: in.GroupID, Deleted: true})
+	return deleteVariableGroupResult{GroupID: dvg.GroupID, Deleted: true}, nil
 }
 
-// deletedVariableGroupResult is what delete_variable_group returns.
-type deletedVariableGroupResult struct {
+// deleteVariableGroupResult is what delete_variable_group returns.
+type deleteVariableGroupResult struct {
 	// GroupID is the group that was removed.
 	GroupID xid.ID `json:"group_id"`
 
@@ -416,8 +362,8 @@ type deletedVariableGroupResult struct {
 	Deleted bool `json:"deleted"`
 }
 
-// createVariableArgs is what create_variable is called with.
-type createVariableArgs struct {
+// createVariable creates a variable in a group.
+type createVariable struct {
 	// GroupID names the group the variable goes in. Required.
 	GroupID xid.ID `json:"group_id"`
 
@@ -441,51 +387,6 @@ type createVariableArgs struct {
 	Options []string `json:"options"`
 }
 
-// Validate checks the arguments are complete and form a valid variable.
-func (a createVariableArgs) Validate() error {
-	if a.GroupID.IsNil() {
-		return errRequired("group_id")
-	}
-
-	if a.Key == "" {
-		return errRequired("key")
-	}
-
-	if a.Name == "" {
-		return errRequired("name")
-	}
-
-	if a.Type == "" {
-		return errRequired("type")
-	}
-
-	return a.input().Validate()
-}
-
-// input returns the arguments as the domain's variable input.
-func (a createVariableArgs) input() variable.Input {
-	inp := variable.Input{
-		GroupID:      a.GroupID,
-		Key:          a.Key,
-		Name:         a.Name,
-		Type:         a.Type,
-		DefaultValue: a.Default,
-	}
-
-	if a.Description != "" {
-		inp.Description = null.StringFrom(a.Description)
-	}
-
-	for _, o := range a.Options {
-		inp.Options = append(inp.Options, variable.OptionInput{Value: o})
-	}
-
-	return inp
-}
-
-// createVariable creates a variable in a group.
-type createVariable struct{}
-
 // Info returns the tool's model-facing description.
 func (createVariable) Info() Info {
 	return Info{
@@ -505,50 +406,73 @@ func (createVariable) Info() Info {
 	}
 }
 
-// Summary names the variable and the group it goes in.
-func (createVariable) Summary(inp DescribeInput) (ActionSummary, error) {
-	var in createVariableArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ActionSummary{}, err
+// Validate checks the arguments are complete and form a valid variable.
+func (cv createVariable) Validate() error {
+	if cv.GroupID.IsNil() {
+		return errRequired("group_id")
 	}
 
-	g, err := inp.FetchVariableGroup(in.GroupID)
+	if cv.Key == "" {
+		return errRequired("key")
+	}
+
+	if cv.Name == "" {
+		return errRequired("name")
+	}
+
+	if cv.Type == "" {
+		return errRequired("type")
+	}
+
+	return cv.input().Validate()
+}
+
+// Summary names the variable and the group it goes in.
+func (cv createVariable) Summary(inp DescribeInput) (ActionSummary, error) {
+	g, err := inp.FetchVariableGroup(cv.GroupID)
 	if err != nil {
-		return ActionSummary{}, fmt.Errorf("fetch variable group: %w", err)
+		return ActionSummary{}, fmt.Errorf("fetching variable group: %w", err)
 	}
 
 	return ActionSummary{
 		Tool:    NameCreateVariable,
-		Summary: fmt.Sprintf("Create %s variable $%s in %s", in.Type, in.Key, g.GroupName),
+		Summary: fmt.Sprintf("Create %s variable $%s in %s", cv.Type, cv.Key, g.GroupName),
 	}, nil
 }
 
-// Execute creates the variable.
-func (createVariable) Execute(inp *input) (string, error) {
-	var in createVariableArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	v, err := inp.CreateVariable(in.input())
+// Exec creates the variable.
+func (cv createVariable) Exec(inp Input) (any, error) {
+	v, err := inp.CreateVariable(cv.input())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return result(variableResult{VariableID: v.ID})
+	return variableResult{VariableID: v.ID}, nil
 }
 
-// variableResult is what create_variable and update_variable return.
-type variableResult struct {
-	// VariableID addresses the variable in every later call.
-	VariableID xid.ID `json:"variable_id"`
+// input returns the arguments as the domain's variable input.
+func (cv createVariable) input() variable.Input {
+	inp := variable.Input{
+		GroupID:      cv.GroupID,
+		Key:          cv.Key,
+		Name:         cv.Name,
+		Type:         cv.Type,
+		DefaultValue: cv.Default,
+	}
+
+	if cv.Description != "" {
+		inp.Description = null.StringFrom(cv.Description)
+	}
+
+	for _, o := range cv.Options {
+		inp.Options = append(inp.Options, variable.OptionInput{Value: o})
+	}
+
+	return inp
 }
 
-// updateVariableArgs is what update_variable is called with. Every
-// field but the id is optional and keeps its current value when absent.
-type updateVariableArgs struct {
+// updateVariable changes a variable's definition.
+type updateVariable struct {
 	// VariableID names the variable being changed.
 	VariableID xid.ID `json:"variable_id"`
 
@@ -575,72 +499,6 @@ type updateVariableArgs struct {
 	Options []string `json:"options"`
 }
 
-// Validate checks the arguments name a variable.
-func (a updateVariableArgs) Validate() error {
-	if a.VariableID.IsNil() {
-		return errRequired("variable_id")
-	}
-
-	if a.Type != "" {
-		return a.Type.Validate()
-	}
-
-	return nil
-}
-
-// input returns the variable's definition with the given fields laid
-// over the current one. A type change drops what only the old type had:
-// the options of a list and the default of anything else.
-func (a updateVariableArgs) input(current variable.Entry) variable.Input {
-	inp := variable.Input{
-		GroupID:      cmp.Or(a.GroupID, current.GroupID),
-		Key:          cmp.Or(a.Key, current.Key),
-		Name:         cmp.Or(a.Name, current.Name),
-		Description:  current.Description,
-		Type:         cmp.Or(a.Type, current.Type),
-		DefaultValue: current.DefaultValue,
-	}
-
-	if a.Description.Valid {
-		inp.Description = null.NewString(a.Description.String, a.Description.String != "")
-	}
-
-	if inp.Type != current.Type || inp.Type == variable.TypeList {
-		inp.DefaultValue = null.String{}
-	}
-
-	if a.Default.Valid {
-		inp.DefaultValue = a.Default
-	}
-
-	if inp.Type == variable.TypeList && current.Type == variable.TypeList {
-		for _, o := range current.Options {
-			inp.Options = append(inp.Options, variable.OptionInput{ID: null.ValueFrom(o.ID), Value: o.Value})
-		}
-	}
-
-	if a.Options != nil {
-		inp.Options = make([]variable.OptionInput, 0, len(a.Options))
-
-		for _, value := range a.Options {
-			oi := variable.OptionInput{Value: value}
-
-			for _, o := range current.Options {
-				if o.Value == value {
-					oi.ID = null.ValueFrom(o.ID)
-				}
-			}
-
-			inp.Options = append(inp.Options, oi)
-		}
-	}
-
-	return inp
-}
-
-// updateVariable changes a variable's definition.
-type updateVariable struct{}
-
 // Info returns the tool's model-facing description.
 func (updateVariable) Info() Info {
 	return Info{
@@ -661,23 +519,30 @@ func (updateVariable) Info() Info {
 	}
 }
 
-// Summary names the variable being changed.
-func (updateVariable) Summary(inp DescribeInput) (ActionSummary, error) {
-	var in updateVariableArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ActionSummary{}, err
+// Validate checks the arguments name a variable.
+func (uv updateVariable) Validate() error {
+	if uv.VariableID.IsNil() {
+		return errRequired("variable_id")
 	}
 
-	v, err := inp.FetchVariable(in.VariableID)
+	if uv.Type != "" {
+		return uv.Type.Validate()
+	}
+
+	return nil
+}
+
+// Summary names the variable being changed.
+func (uv updateVariable) Summary(inp DescribeInput) (ActionSummary, error) {
+	v, err := inp.FetchVariable(uv.VariableID)
 	if err != nil {
-		return ActionSummary{}, fmt.Errorf("fetch variable: %w", err)
+		return ActionSummary{}, fmt.Errorf("fetching variable: %w", err)
 	}
 
 	summary := "Update variable $" + v.Key
 
-	if in.Type != "" && in.Type != v.Type {
-		summary += fmt.Sprintf(" and make it %s, resetting everyone's value", in.Type)
+	if uv.Type != "" && uv.Type != v.Type {
+		summary += fmt.Sprintf(" and make it %s, resetting everyone's value", uv.Type)
 	}
 
 	return ActionSummary{
@@ -686,43 +551,81 @@ func (updateVariable) Summary(inp DescribeInput) (ActionSummary, error) {
 	}, nil
 }
 
-// Execute applies the change over the current definition.
-func (updateVariable) Execute(inp *input) (string, error) {
-	var in updateVariableArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	current, err := inp.FetchVariable(in.VariableID)
+// Exec applies the change over the current definition.
+func (uv updateVariable) Exec(inp Input) (any, error) {
+	current, err := inp.FetchVariable(uv.VariableID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	if err = inp.UpdateVariable(in.VariableID, in.input(*current)); err != nil {
-		return "", err
+	if err = inp.UpdateVariable(uv.VariableID, uv.input(*current)); err != nil {
+		return nil, err
 	}
 
-	return result(variableResult{VariableID: in.VariableID})
+	return variableResult{VariableID: uv.VariableID}, nil
 }
 
-// deleteVariableArgs is what delete_variable is called with.
-type deleteVariableArgs struct {
-	// VariableID names the variable being deleted.
+// input returns the variable's definition with the given fields laid
+// over the current one. A type change drops what only the old type had:
+// the options of a list and the default of anything else.
+func (uv updateVariable) input(current variable.Entry) variable.Input {
+	inp := variable.Input{
+		GroupID:      cmp.Or(uv.GroupID, current.GroupID),
+		Key:          cmp.Or(uv.Key, current.Key),
+		Name:         cmp.Or(uv.Name, current.Name),
+		Description:  current.Description,
+		Type:         cmp.Or(uv.Type, current.Type),
+		DefaultValue: current.DefaultValue,
+	}
+
+	if uv.Description.Valid {
+		inp.Description = null.NewString(uv.Description.String, uv.Description.String != "")
+	}
+
+	if inp.Type != current.Type || inp.Type == variable.TypeList {
+		inp.DefaultValue = null.String{}
+	}
+
+	if uv.Default.Valid {
+		inp.DefaultValue = uv.Default
+	}
+
+	if inp.Type == variable.TypeList && current.Type == variable.TypeList {
+		for _, o := range current.Options {
+			inp.Options = append(inp.Options, variable.OptionInput{ID: null.ValueFrom(o.ID), Value: o.Value})
+		}
+	}
+
+	if uv.Options != nil {
+		inp.Options = make([]variable.OptionInput, 0, len(uv.Options))
+
+		for _, value := range uv.Options {
+			oi := variable.OptionInput{Value: value}
+
+			for _, o := range current.Options {
+				if o.Value == value {
+					oi.ID = null.ValueFrom(o.ID)
+				}
+			}
+
+			inp.Options = append(inp.Options, oi)
+		}
+	}
+
+	return inp
+}
+
+// variableResult is what create_variable and update_variable return.
+type variableResult struct {
+	// VariableID addresses the variable in every later call.
 	VariableID xid.ID `json:"variable_id"`
 }
 
-// Validate checks the arguments are complete.
-func (a deleteVariableArgs) Validate() error {
-	if a.VariableID.IsNil() {
-		return errRequired("variable_id")
-	}
-
-	return nil
-}
-
 // deleteVariable removes a variable.
-type deleteVariable struct{}
+type deleteVariable struct {
+	// VariableID names the variable being deleted.
+	VariableID xid.ID `json:"variable_id"`
+}
 
 // Info returns the tool's model-facing description.
 func (deleteVariable) Info() Info {
@@ -737,17 +640,20 @@ func (deleteVariable) Info() Info {
 	}
 }
 
-// Summary names the variable the model wants to delete.
-func (deleteVariable) Summary(inp DescribeInput) (ActionSummary, error) {
-	var in deleteVariableArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ActionSummary{}, err
+// Validate checks the arguments are complete.
+func (dv deleteVariable) Validate() error {
+	if dv.VariableID.IsNil() {
+		return errRequired("variable_id")
 	}
 
-	v, err := inp.FetchVariable(in.VariableID)
+	return nil
+}
+
+// Summary names the variable the model wants to delete.
+func (dv deleteVariable) Summary(inp DescribeInput) (ActionSummary, error) {
+	v, err := inp.FetchVariable(dv.VariableID)
 	if err != nil {
-		return ActionSummary{}, fmt.Errorf("fetch variable: %w", err)
+		return ActionSummary{}, fmt.Errorf("fetching variable: %w", err)
 	}
 
 	return ActionSummary{
@@ -756,23 +662,17 @@ func (deleteVariable) Summary(inp DescribeInput) (ActionSummary, error) {
 	}, nil
 }
 
-// Execute deletes the variable.
-func (deleteVariable) Execute(inp *input) (string, error) {
-	var in deleteVariableArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
+// Exec deletes the variable.
+func (dv deleteVariable) Exec(inp Input) (any, error) {
+	if err := inp.DeleteVariable(dv.VariableID); err != nil {
+		return nil, err
 	}
 
-	if err := inp.DeleteVariable(in.VariableID); err != nil {
-		return "", err
-	}
-
-	return result(deletedVariableResult{VariableID: in.VariableID, Deleted: true})
+	return deleteVariableResult{VariableID: dv.VariableID, Deleted: true}, nil
 }
 
-// deletedVariableResult is what delete_variable returns.
-type deletedVariableResult struct {
+// deleteVariableResult is what delete_variable returns.
+type deleteVariableResult struct {
 	// VariableID is the variable that was removed.
 	VariableID xid.ID `json:"variable_id"`
 
@@ -780,8 +680,9 @@ type deletedVariableResult struct {
 	Deleted bool `json:"deleted"`
 }
 
-// setVariableValueArgs is what set_variable_value is called with.
-type setVariableValueArgs struct {
+// setVariableValue sets the current user's own value of a variable, or
+// its organisation-wide default.
+type setVariableValue struct {
 	// VariableID names the variable.
 	VariableID xid.ID `json:"variable_id"`
 
@@ -792,23 +693,6 @@ type setVariableValueArgs struct {
 	// value.
 	Default bool `json:"default"`
 }
-
-// Validate checks the arguments name a variable and give a value.
-func (a setVariableValueArgs) Validate() error {
-	if a.VariableID.IsNil() {
-		return errRequired("variable_id")
-	}
-
-	if !a.Value.Valid {
-		return errRequired("value")
-	}
-
-	return nil
-}
-
-// setVariableValue sets the current user's own value of a variable, or
-// its organisation-wide default.
-type setVariableValue struct{}
 
 // Info returns the tool's model-facing description.
 func (setVariableValue) Info() Info {
@@ -825,20 +709,27 @@ func (setVariableValue) Info() Info {
 	}
 }
 
+// Validate checks the arguments name a variable and give a value.
+func (svv setVariableValue) Validate() error {
+	if svv.VariableID.IsNil() {
+		return errRequired("variable_id")
+	}
+
+	if !svv.Value.Valid {
+		return errRequired("value")
+	}
+
+	return nil
+}
+
 // Summary names the variable and the value it takes.
-func (setVariableValue) Summary(inp DescribeInput) (ActionSummary, error) {
-	var in setVariableValueArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ActionSummary{}, err
-	}
-
-	v, err := inp.FetchVariable(in.VariableID)
+func (svv setVariableValue) Summary(inp DescribeInput) (ActionSummary, error) {
+	v, err := inp.FetchVariable(svv.VariableID)
 	if err != nil {
-		return ActionSummary{}, fmt.Errorf("fetch variable: %w", err)
+		return ActionSummary{}, fmt.Errorf("fetching variable: %w", err)
 	}
 
-	value := in.Value.String
+	value := svv.Value.String
 
 	// a list's value is an option id, which means nothing on a card.
 	for _, o := range v.Options {
@@ -848,7 +739,7 @@ func (setVariableValue) Summary(inp DescribeInput) (ActionSummary, error) {
 	}
 
 	summary := fmt.Sprintf("Set your $%s to %q", v.Key, value)
-	if in.Default {
+	if svv.Default {
 		summary = fmt.Sprintf("Set the default of $%s to %q", v.Key, value)
 	}
 
@@ -858,24 +749,18 @@ func (setVariableValue) Summary(inp DescribeInput) (ActionSummary, error) {
 	}, nil
 }
 
-// Execute sets the value or the default.
-func (setVariableValue) Execute(inp *input) (string, error) {
-	var in setVariableValueArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
+// Exec sets the value or the default.
+func (svv setVariableValue) Exec(inp Input) (any, error) {
 	set := inp.SetVariableValue
-	if in.Default {
+	if svv.Default {
 		set = inp.SetVariableDefault
 	}
 
-	if err := set(in.VariableID, in.Value.String); err != nil {
-		return "", err
+	if err := set(svv.VariableID, svv.Value.String); err != nil {
+		return nil, err
 	}
 
-	return result(setVariableValueResult{VariableID: in.VariableID, Value: in.Value.String, Default: in.Default})
+	return setVariableValueResult{VariableID: svv.VariableID, Value: svv.Value.String, Default: svv.Default}, nil
 }
 
 // setVariableValueResult is what set_variable_value returns.
@@ -888,4 +773,37 @@ type setVariableValueResult struct {
 
 	// Default indicates the organisation's default was set.
 	Default bool `json:"default"`
+}
+
+// VariableInput is what the variable tools reach on top of
+// DescribeInput.
+type VariableInput interface {
+	// FetchVariableTree should return the organisation's variables by
+	// group.
+	FetchVariableTree() (variable.Tree, error)
+
+	// CreateVariableGroup should store a new variable group.
+	CreateVariableGroup(inp variable.GroupCreateInput) (*variable.Group, error)
+
+	// UpdateVariableGroup should apply the update to the group.
+	UpdateVariableGroup(groupID xid.ID, inp variable.GroupUpdateInput) error
+
+	// DeleteVariableGroup should delete the group.
+	DeleteVariableGroup(groupID xid.ID) error
+
+	// CreateVariable should store a new variable.
+	CreateVariable(inp variable.Input) (*variable.Variable, error)
+
+	// UpdateVariable should apply the update to the variable.
+	UpdateVariable(variableID xid.ID, inp variable.Input) error
+
+	// DeleteVariable should delete the variable.
+	DeleteVariable(variableID xid.ID) error
+
+	// SetVariableValue should set the user's own value of the variable.
+	SetVariableValue(variableID xid.ID, value string) error
+
+	// SetVariableDefault should set the organisation's default value of
+	// the variable.
+	SetVariableDefault(variableID xid.ID, value string) error
 }

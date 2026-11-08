@@ -1,9 +1,11 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
@@ -15,37 +17,17 @@ import (
 // vocabulary; einoTool translates that into the interface the agent
 // framework calls. Nothing else in the package imports eino.
 
-// NameReadToolOutput retrieves a tool result that was too large to keep
-// in the conversation.
-//
-// It exists because of eino: the reduction middleware offloads an
-// oversized result, leaves a notice naming the path it was stored at,
-// and tells the model to fetch it with a read tool — which it names but
-// does not provide. This is that tool.
-//
-// It is deliberately not called read_file: the assistant's vocabulary
-// is documents and blocks, and a generic file tool sitting next to
-// get_document invites the model to reach for the wrong one.
+// NameReadToolOutput retrieves a tool result too large to keep in the
+// conversation. eino's reduction middleware names it but does not
+// provide it.
 const NameReadToolOutput Name = "read_tool_output"
-
-// readToolOutputArgs is what read_tool_output is called with.
-type readToolOutputArgs struct {
-	// FilePath is the stored output to retrieve.
-	FilePath string `json:"file_path"`
-}
-
-// Validate checks the arguments are complete.
-func (a readToolOutputArgs) Validate() error {
-	if a.FilePath == "" {
-		return errRequired("file_path")
-	}
-
-	return nil
-}
 
 // readToolOutput hands the model back a result the reduction middleware
 // moved out of the conversation.
-type readToolOutput struct{}
+type readToolOutput struct {
+	// FilePath is the stored output to retrieve.
+	FilePath string `json:"file_path"`
+}
 
 // Info returns the tool's model-facing description.
 func (readToolOutput) Info() Info {
@@ -61,22 +43,25 @@ func (readToolOutput) Info() Info {
 	}
 }
 
-// Execute returns the stored output.
-func (readToolOutput) Execute(inp *input) (string, error) {
-	var in readToolOutputArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
+// Validate checks the arguments are complete.
+func (rt readToolOutput) Validate() error {
+	if rt.FilePath == "" {
+		return errRequired("file_path")
 	}
 
-	return inp.offload.Read(inp.Context(), in.FilePath)
+	return nil
+}
+
+// Exec returns the stored output.
+func (rt readToolOutput) Exec(inp Input) (any, error) {
+	return inp.ReadToolOutput(rt.FilePath)
 }
 
 // einoTool adapts one of this package's tools to the interface the
 // agent framework invokes.
 type einoTool struct {
-	// tl is the tool being adapted.
-	tl Tool
+	// reg is the tool being adapted.
+	reg registration
 
 	// deps is the session wiring each call's input is built from.
 	deps *Deps
@@ -86,21 +71,15 @@ type einoTool struct {
 	info Info
 }
 
-// newEinoTool creates a fresh instance of einoTool.
-func newEinoTool(tl Tool, deps *Deps) *einoTool {
-	return &einoTool{tl: tl, deps: deps, info: tl.Info()}
-}
-
 // Info describes the tool to the model, converting this package's
 // description into the framework's shape.
 func (et *einoTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return et.info.toEino()
 }
 
-// Run performs the call, handing the tool an input built from this
-// call's context and arguments. A failure names the tool.
+// Run performs the call. A failure names the tool.
 func (et *einoTool) Run(ctx context.Context, args json.RawMessage) (string, error) {
-	out, err := et.tl.Execute(et.input(ctx, string(args)))
+	out, err := et.call(ctx, args)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", et.info.Name, err)
 	}
@@ -108,22 +87,29 @@ func (et *einoTool) Run(ctx context.Context, args json.RawMessage) (string, erro
 	return out, nil
 }
 
-// InvokableRun performs the call for the agent framework, which hands
-// its arguments over as a string and may pass options this adapter has
-// no use for.
-//
-// A failed call comes back as the call's result rather than as an
-// error. The framework ends the whole turn on a tool error, and most of
-// what fails here is the model's own doing — a query the data source
-// rejected, a block the schema refuses, an id that names nothing — which
-// it can fix if it is told. Handing the text back lets it try again,
-// which is what a person watching the chat expects; ending the turn
-// leaves them with nothing.
-//
-// Only this surface is affected. The confirmation gate wraps this method
-// and raises its interrupt before reaching it, so a pending write still
-// pauses the turn, and a caller that runs a tool directly — the MCP
-// server does — still sees the error itself.
+// call decodes the arguments into the tool, runs it and encodes its
+// result. A string result is encoded already, so it is returned as it is.
+func (et *einoTool) call(ctx context.Context, args json.RawMessage) (string, error) {
+	tl, err := et.reg.decode(args)
+	if err != nil {
+		return "", err
+	}
+
+	res, err := tl.Exec(et.input(ctx))
+	if err != nil {
+		return "", err
+	}
+
+	if s, ok := res.(string); ok {
+		return s, nil
+	}
+
+	return encodeResult(res)
+}
+
+// InvokableRun performs the call for the agent framework. A failure is
+// returned as the call's result, since an error would end the turn and
+// the model can often fix the call.
 func (et *einoTool) InvokableRun(
 	ctx context.Context,
 	argumentsInJSON string,
@@ -151,8 +137,13 @@ func (et *einoTool) Title(ctx context.Context, args json.RawMessage) string {
 		return sum.Summary
 	}
 
-	if t, ok := et.tl.(titler); ok {
-		return t.Title(et.input(ctx, string(args)))
+	tl, err := et.reg.decode(args)
+	if err != nil {
+		return ""
+	}
+
+	if t, ok := tl.(titler); ok {
+		return t.Title(et.input(ctx))
 	}
 
 	return ""
@@ -162,12 +153,17 @@ func (et *einoTool) Title(ctx context.Context, args json.RawMessage) string {
 // for a tool the registry gated, which is only ever a write, and every
 // write describes itself. A failure names the tool.
 func (et *einoTool) Summary(ctx context.Context, args json.RawMessage) (ActionSummary, error) {
-	s, ok := et.tl.(summarizer)
+	tl, err := et.reg.decode(args)
+	if err != nil {
+		return ActionSummary{}, fmt.Errorf("%s: %w", et.info.Name, err)
+	}
+
+	s, ok := tl.(summarizer)
 	if !ok {
 		return ActionSummary{}, fmt.Errorf("%s: proposes no change to describe", et.info.Name)
 	}
 
-	sum, err := s.Summary(et.input(ctx, string(args)))
+	sum, err := s.Summary(et.input(ctx))
 	if err != nil {
 		return ActionSummary{}, fmt.Errorf("%s: %w", et.info.Name, err)
 	}
@@ -176,8 +172,13 @@ func (et *einoTool) Summary(ctx context.Context, args json.RawMessage) (ActionSu
 }
 
 // input assembles the per-call input the tool is handed.
-func (et *einoTool) input(ctx context.Context, args string) *input {
-	return et.deps.newInput(ctx, et.info.Name, json.RawMessage(args))
+func (et *einoTool) input(ctx context.Context) *input {
+	return et.deps.newInput(ctx, et.info.Name)
+}
+
+// newEinoTool creates a fresh instance of einoTool.
+func newEinoTool(reg registration, deps *Deps) *einoTool {
+	return &einoTool{reg: reg, deps: deps, info: reg.info}
 }
 
 // toEino converts the description into the framework's shape, wrapping
@@ -202,4 +203,19 @@ func (info Info) toEino() (*schema.ToolInfo, error) {
 		Desc:        info.Description,
 		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(js),
 	}, nil
+}
+
+// encodeResult encodes a tool result as JSON. <, > and & are left as
+// they are, since escaped they cost the model six characters each.
+func encodeResult(v any) (string, error) {
+	var buf bytes.Buffer
+
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+
+	if err := enc.Encode(v); err != nil {
+		return "", fmt.Errorf("encoding tool result: %w", err)
+	}
+
+	return strings.TrimSuffix(buf.String(), "\n"), nil
 }

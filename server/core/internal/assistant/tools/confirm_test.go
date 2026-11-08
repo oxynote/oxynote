@@ -173,11 +173,9 @@ func Test_confirming_InvokableRun(t *testing.T) {
 
 			switch {
 			case c.Rejected != "":
-				// the same payload would be rejected by the tool on
-				// resume, so the run must not spend a confirmation on
-				// it. The rejection is the call's result, not an
-				// error: an error would end the turn, and the payload
-				// is the model's to fix.
+				// the tool would refuse this payload on resume, so it
+				// is refused now, as the call's result for the model
+				// to fix.
 				res, err = ct.InvokableRun(context.Background(), c.Args)
 				require.NoError(t, err, "bad arguments must not end the turn")
 				assert.Contains(t, res, c.Rejected)
@@ -388,7 +386,7 @@ func Test_confirming_interrupt(t *testing.T) {
 
 			db := stubContentDB(nil)
 			applier := stubApplier()
-			gate := &confirming{einoTool: newEinoTool(replaceBlocks{}, testDeps(db, applier, nil))}
+			gate := &confirming{einoTool: newEinoTool(register[replaceBlocks](), testDeps(db, applier, nil))}
 
 			res, err := gate.interrupt(context.Background(), json.RawMessage(c.Args))
 

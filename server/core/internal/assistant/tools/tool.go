@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
@@ -11,13 +12,9 @@ import (
 	"github.com/rs/xid"
 )
 
-// Info is a tool's model-facing description: the name the model calls,
-// the prose it reads to decide when to call it, and the JSON-schema
-// fragment describing the arguments.
-//
-// It is a value rather than a method call on a live tool because a
-// description never depends on a request — the same tool describes
-// itself identically in every session.
+// Info is a tool's model-facing description: its name, the prose the
+// model reads, and the schema of its arguments. It never depends on a
+// call.
 type Info struct {
 	// Name is the tool's canonical identifier.
 	Name Name
@@ -40,10 +37,8 @@ type Info struct {
 }
 
 // Schema returns the tool's arguments as a JSON-schema object.
-// Properties are already a schema fragment, so this only wraps them —
-// which keeps each tool's own schema the single source of truth for
-// every surface that has to describe it, rather than restating it in a
-// second vocabulary per surface.
+// Properties are already a schema fragment, so this only wraps them,
+// and every surface describes a tool from its own schema.
 func (info Info) Schema() map[string]any {
 	out := map[string]any{
 		"type":       "object",
@@ -64,66 +59,56 @@ func (info Info) Schema() map[string]any {
 // than being interrogated for them from several.
 type Traits struct {
 	// Write indicates the tool mutates a document. It gates the tool
-	// behind user confirmation and protects its result from being
-	// cleared by the context middlewares — the model has to keep
-	// knowing what it changed, while a stale read can always be taken
-	// again. It is also the only thing asked: a tool declaring it is
-	// what Summary is called on.
+	// behind user confirmation, and the context middlewares never clear
+	// its result, since the model has to keep knowing what it changed.
+	// Only a write has a Summary.
 	Write bool
 
-	// Destructive indicates the tool removes content. These are
-	// confirmed every time, even inside a turn the user auto-approved:
-	// their tool descriptions promise as much, and an approve-all meant
-	// for text edits is not consent to delete a document.
+	// Destructive indicates the tool removes content. It is confirmed
+	// every time, even inside a turn the user auto-approved.
 	Destructive bool
 
-	// Overwrites indicates the write replaces content or state the
-	// caller did not name: a replaced block's nested blocks and the uids
-	// comments and hooks hang off, everyone's values when a variable
-	// changes type, or a hook's watch state. It is what MCP's destructive
-	// hint reports, and it is deliberately not Destructive — a client
-	// deciding whether to auto-approve needs to know, while an
-	// approve-all inside a chat turn is meant to cover exactly these
-	// edits.
+	// Overwrites indicates the write replaces content the caller did not
+	// name, such as a replaced block's children. MCP reports it as the
+	// destructive hint. An approve-all still covers it, so it is not
+	// Destructive.
 	Overwrites bool
 
 	// Idempotent indicates a repeated call with the same arguments
-	// changes nothing more. It is what MCP's idempotent hint reports.
+	// changes nothing more. MCP reports it as the idempotent hint.
 	Idempotent bool
 
 	// DataSource indicates the tool reads one of the organisation's
-	// outbound data-source connections rather than its documents. A
-	// surface that gates access by scope asks it: over MCP these tools
-	// need their own grant, since querying an organisation's databases
-	// is not the same permission as reading its documents.
+	// outbound data-source connections. Over MCP these tools need their
+	// own scope.
 	DataSource bool
 
-	// Internal keeps a tool off surfaces that serve the registry to
-	// clients outside this process. It marks a tool that only makes
-	// sense inside an assistant conversation, so an MCP client — which
-	// holds none of the conversation state such a tool addresses —
-	// never sees it offered.
+	// Internal keeps a tool off surfaces outside this process. Such a
+	// tool only makes sense inside an assistant conversation, which an
+	// MCP client does not have.
 	Internal bool
 
 	// Group names the tools the chat assistant loads together on
-	// request instead of up front. Empty is a tool every conversation
-	// starts with. Other surfaces offer every tool either way.
+	// request. Empty is a tool every conversation starts with. Other
+	// surfaces offer every tool either way.
 	Group Group
 }
 
-// Tool is a tool the model can call. What a tool is — whether it
-// mutates, whether it survives an approve-all, whether it belongs
-// outside this process — it states in its Info's Traits, so there is one
-// answer to ask and nothing to hold in step.
+// Tool is a tool the model can call. Its fields are the call's
+// arguments, decoded and validated before any of its methods runs. What
+// it is, such as whether it writes, it states in its Info's Traits.
 type Tool interface {
 	// Info should return the tool's model-facing description and traits.
+	// It reads no field, so the zero value answers it.
 	Info() Info
 
-	// Execute should perform the tool's work and return the result
-	// serialised for the model. inp is the call's arguments together
-	// with every read and write the tools share, scoped to the session's
-	// organisation.
-	Execute(inp *input) (string, error)
+	// Validate should reject arguments the tool cannot act on: a
+	// required one that is missing, or a value outside its range.
+	Validate() error
+
+	// Exec should perform the call and return its result. inp reaches
+	// every read and write, scoped to the session's organisation.
+	Exec(inp Input) (any, error)
 }
 
 // titler is a read that announces itself while it runs. A read without
@@ -139,39 +124,18 @@ type titler interface {
 // card asking the user to approve it. Every write is one.
 type summarizer interface {
 	// Summary should describe the change without performing it, and
-	// reject arguments it cannot read: a payload Execute would refuse is
+	// reject arguments it cannot act on: a payload Exec would refuse is
 	// not worth asking the user to approve.
 	Summary(inp DescribeInput) (ActionSummary, error)
 }
 
-// Args is one tool call's decoded arguments. Validate is what Decode
-// runs once the payload is read, so a tool states what it requires next
-// to the fields that carry it, and nothing downstream of Decode sees a
-// payload the tool cannot act on.
-type Args interface {
-	// Validate should reject arguments the tool cannot act on: a
-	// required one that is missing, or a value outside its range.
-	Validate() error
-}
-
-// DescribeInput is what a tool is handed when it is asked to describe
-// itself — for the status line while it runs, or the card asking the
-// user to approve it. It carries the arguments the tool was about to
-// receive plus the read-only lookups needed to name their subject.
-//
-// It deliberately reaches nothing that mutates: describing a pending
-// write must never perform it, and here that is enforced by the type
-// rather than by remembering.
+// DescribeInput is the read-only half of Input: the lookups a tool needs
+// to name what a call is about, for its status line or the card asking
+// the user to approve it. It reaches nothing that writes, so describing
+// a write cannot perform it.
 type DescribeInput interface {
 	// Context should return the context of the call being described.
 	Context() context.Context
-
-	// Decode should decode the call's arguments into dst and validate
-	// them, reporting a payload that is malformed or incomplete as an
-	// error. It is the only way into a call's
-	// arguments: a description that cannot read them says so rather
-	// than describing a call from zero values.
-	Decode(dst Args) error
 
 	// FetchDocument should return the document the id names, on its default
 	// branch, for a description that has to name its subject.
@@ -205,6 +169,36 @@ type DescribeInput interface {
 	// FetchHook should return the hook the id names on the document, for
 	// a description that has to name its subject.
 	FetchHook(documentID, hookID xid.ID) (*hook.Hook, error)
+}
+
+// Input is everything a tool call reaches: the call's context, the
+// session it runs in, and the reads and writes of every subject.
+//
+//go:generate ../../../scripts/codegen/mock -t internal Input input
+type Input interface {
+	DescribeInput
+	SessionInput
+	DocumentInput
+	SearchInput
+	TagInput
+	VariableInput
+	HookInput
+	DataSourceInput
+}
+
+// SessionInput is what a tool reaches of the session it runs in.
+type SessionInput interface {
+	// OrganizationID should return the organisation the session acts in.
+	OrganizationID() string
+
+	// UserID should return the user the session acts for.
+	UserID() string
+
+	// Warn should log a problem the tool worked around, naming the tool.
+	Warn(msg string, attrs ...slog.Attr)
+
+	// ReadToolOutput should return the tool result stored at the path.
+	ReadToolOutput(path string) (string, error)
 }
 
 // OffloadReader is the retrieval half of the store holding tool results

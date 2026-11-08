@@ -20,30 +20,14 @@ const (
 	_searchLimitMax = 50
 )
 
-// searchDocumentsArgs is what search_documents is called with.
-type searchDocumentsArgs struct {
+// searchDocuments runs a full-text search across the organisation.
+type searchDocuments struct {
 	// Query is the text being searched for. Required.
 	Query string `json:"query"`
 
 	// Limit caps the number of hits. Zero takes the default.
 	Limit int `json:"limit"`
 }
-
-// Validate checks the arguments are complete.
-func (a searchDocumentsArgs) Validate() error {
-	if a.Query == "" {
-		return errRequired("query")
-	}
-
-	if err := search.ValidateQuery(a.Query); err != nil {
-		return fmt.Errorf("query must be at most %d characters; search for the key terms instead", search.MaxQueryLength)
-	}
-
-	return nil
-}
-
-// searchDocuments runs a full-text search across the organisation.
-type searchDocuments struct{}
 
 // Info returns the tool's model-facing description.
 func (searchDocuments) Info() Info {
@@ -61,26 +45,27 @@ func (searchDocuments) Info() Info {
 	}
 }
 
-// Title announces the query being run.
-func (searchDocuments) Title(inp DescribeInput) string {
-	var in searchDocumentsArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ""
+// Validate checks the arguments are complete.
+func (sd searchDocuments) Validate() error {
+	if sd.Query == "" {
+		return errRequired("query")
 	}
 
-	return fmt.Sprintf("Searching for %q", in.Query)
+	if err := search.ValidateQuery(sd.Query); err != nil {
+		return fmt.Errorf("query must be at most %d characters; search for the key terms instead", search.MaxQueryLength)
+	}
+
+	return nil
 }
 
-// Execute searches the index and decorates hits with document names.
-func (searchDocuments) Execute(inp *input) (string, error) {
-	var in searchDocumentsArgs
+// Title announces the query being run.
+func (sd searchDocuments) Title(_ DescribeInput) string {
+	return fmt.Sprintf("Searching for %q", sd.Query)
+}
 
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	limit := in.Limit
+// Exec searches the index and decorates hits with document names.
+func (sd searchDocuments) Exec(inp Input) (any, error) {
+	limit := sd.Limit
 	if limit <= 0 {
 		limit = _searchLimitDefault
 	}
@@ -89,9 +74,9 @@ func (searchDocuments) Execute(inp *input) (string, error) {
 		limit = _searchLimitMax
 	}
 
-	blocks, err := inp.search.SearchDocumentBlocks(inp.Context(), inp.orgID, in.Query, limit)
+	blocks, err := inp.SearchDocumentBlocks(sd.Query, limit)
 	if err != nil {
-		return "", fmt.Errorf("search: %w", err)
+		return nil, fmt.Errorf("searching: %w", err)
 	}
 
 	// the index holds neither document names nor branch protection; both
@@ -118,7 +103,7 @@ func (searchDocuments) Execute(inp *input) (string, error) {
 	// hits of one branch are listed under it once, in the order its
 	// first hit ranked.
 	var (
-		out   = searchResult{Documents: []searchDocument{}}
+		out   = searchDocumentsResult{Documents: []searchDocument{}}
 		index = map[xid.ID]int{}
 	)
 
@@ -165,11 +150,11 @@ func (searchDocuments) Execute(inp *input) (string, error) {
 		})
 	}
 
-	return result(out)
+	return out, nil
 }
 
-// searchResult is what search_documents returns.
-type searchResult struct {
+// searchDocumentsResult is what search_documents returns.
+type searchDocumentsResult struct {
 	// Documents are the document branches holding a match, in the order
 	// of their best hit.
 	Documents []searchDocument `json:"documents"`
@@ -214,4 +199,11 @@ type searchHit struct {
 
 	// Text is the block's indexed text.
 	Text string `json:"text"`
+}
+
+// SearchInput is what search_documents reaches on top of DescribeInput.
+type SearchInput interface {
+	// SearchDocumentBlocks should return at most limit blocks whose text
+	// matches the query.
+	SearchDocumentBlocks(query string, limit int) ([]search.Block, error)
 }

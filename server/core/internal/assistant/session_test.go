@@ -1017,7 +1017,7 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 			assert.Empty(t, db.FetchDataSourceCalls())
 
 			if c.AbandonedUnderClaim {
-				// nothing resumed and nothing was applied — and the claim
+				// nothing resumed and nothing was applied, and the claim
 				// was handed back, so the abandoning turn's successor can
 				// start.
 				assert.Empty(t, applier.ApplyCalls())
@@ -1051,8 +1051,8 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 			assert.False(t, found)
 
 			// every run stays anchored to the document the user is
-			// viewing — the auto-approve flag of an "approve all"
-			// answer must not displace it from the session values.
+			// viewing. The auto-approve flag of an "approve all" answer
+			// must not displace it from the session values.
 			for _, call := range cm.StreamCalls() {
 				require.NotEmpty(t, call.Input)
 				assert.Contains(t, call.Input[0].Content, docID.String())
@@ -1170,7 +1170,7 @@ func Test_session_goTurn(t *testing.T) {
 
 			// a parked turn's record has to be durable before anything
 			// else can claim the conversation: a message arriving in that
-			// window — on this connection or another of the same user —
+			// window, on this connection or another of the same user,
 			// would see no pending confirmation and orphan the checkpoint
 			// the parked turn is waiting on.
 			var claimedAtSave atomic.Bool

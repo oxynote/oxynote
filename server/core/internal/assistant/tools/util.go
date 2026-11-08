@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -48,23 +46,6 @@ const (
 	_matchersDescription = `PromQL series selectors, such as ["up", "{job=\"api\"}"].`
 )
 
-// result is the single place tool result envelopes are serialised;
-// centralising it keeps the JSON shape consistent. <, > and & stay as
-// they are: escaped, they cost the model six characters each, and
-// document content is full of them.
-func result(v any) (string, error) {
-	var buf bytes.Buffer
-
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-
-	if err := enc.Encode(v); err != nil {
-		return "", fmt.Errorf("marshalling tool result: %w", err)
-	}
-
-	return strings.TrimSuffix(buf.String(), "\n"), nil
-}
-
 // countPhrase phrases a count of the noun for a summary, such as
 // "1 page" or "3 pages".
 func countPhrase(n int, noun string) string {
@@ -75,9 +56,9 @@ func countPhrase(n int, noun string) string {
 	return fmt.Sprintf("%d %ss", n, noun)
 }
 
-// sentence joins clauses as "A, b and c", with the first letter
+// joinClauses joins clauses as "A, b and c", with the first letter
 // capitalised.
-func sentence(clauses []string) string {
+func joinClauses(clauses []string) string {
 	s := clauses[len(clauses)-1]
 	if len(clauses) > 1 {
 		s = strings.Join(clauses[:len(clauses)-1], ", ") + " and " + s

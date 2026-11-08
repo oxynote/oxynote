@@ -11,8 +11,8 @@ import (
 // newOpenAI builds an OpenAI chat model.
 //
 // BaseURL is honoured whether or not Azure is enabled, so this provider
-// also serves any endpoint speaking the OpenAI chat-completions protocol
-// — self-hosted inference servers, gateways, and compatibility layers.
+// also serves any endpoint speaking the OpenAI chat-completions protocol,
+// such as self-hosted inference servers and gateways.
 func newOpenAI(ctx context.Context, opts Options) (model.ToolCallingChatModel, error) {
 	// MaxCompletionTokens supersedes the SDK's deprecated MaxTokens,
 	// which reasoning models reject outright.

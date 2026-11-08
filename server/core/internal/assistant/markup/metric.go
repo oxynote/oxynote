@@ -141,13 +141,10 @@ type metricThreshold struct {
 	Color string `json:"color"`
 }
 
-// decodeMetricAttrs reads a metric's JSON attributes and checks them:
-// every enum holds one of its values, every other attribute has its
-// type, every query has a name and a query, and every threshold colour
-// is a palette name. A colour the stored metric already carries passes
-// too, since one saved before thresholds stored names holds css and a
-// re-sent chart keeps it. stored is the metric the element's id names,
-// or the zero block.
+// decodeMetricAttrs reads and checks a metric's JSON attributes. A
+// threshold colour must be a palette name, or one the stored metric
+// already carries, since older metrics hold css. stored is the metric
+// the element's id names, or the zero block.
 func decodeMetricAttrs(text string, stored document.Block) (document.Attributes, error) {
 	attrs := document.Attributes{}
 

@@ -3,15 +3,11 @@
 // turn paused on a confirmation, the confirmation itself, and any tool
 // result too large to keep in context.
 //
-// All four hang off one key, minted by SessionKey, so a conversation is
-// addressed the same way wherever it is stored. Keeping them together
-// is what makes that keyspace ownable — and two of them, the checkpoint
-// and the offloaded results, share a single byte store.
-//
-// Failures to read or write are logged and swallowed rather than
-// returned. Losing a conversation's stored state costs the user context,
-// never their ability to chat; the one exception is the checkpoint
-// store, whose contract belongs to the agent runner.
+// All four hang off one key from SessionKey. The checkpoint and the
+// offloaded results share one byte store. Read and write failures are
+// logged, not returned, so lost state costs context but never the chat.
+// The checkpoint store is the exception, since its contract is the agent
+// runner's.
 package persist
 
 import (
@@ -34,14 +30,9 @@ type Starter interface {
 	Start(ctx context.Context)
 }
 
-// BlobStore is the persistence surface for the opaque byte payloads one
-// conversation accumulates: the checkpoint of a paused turn, and any
-// tool result too large to keep in context. The redkit BytesStore
-// satisfies it.
-//
-// Both users share this one declaration because they share the store
-// itself; Offload never calls Delete, since an offloaded result is
-// reclaimed by the conversation's expiry rather than by us.
+// BlobStore stores a conversation's byte payloads: the checkpoint of a
+// paused turn and the offloaded tool results. Offload never deletes, as
+// the conversation's expiry reclaims its results.
 //
 //go:generate ../../../scripts/codegen/mock -t both BlobStore blob_store
 type BlobStore interface {

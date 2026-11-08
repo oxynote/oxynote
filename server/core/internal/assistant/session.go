@@ -112,13 +112,9 @@ func (s *session) rememberMessages(msgs []*schema.Message) {
 	s.mu.Unlock()
 }
 
-// resendPendingConfirmation re-delivers an unanswered confirmation, so
-// a user who reloaded the page or lost their connection can still
-// answer the writes their assistant is waiting on.
-//
-// It belongs to the session rather than a turn: the turn that asked the
-// question ended when the run parked, and the one that will answer it
-// does not exist until the user replies.
+// resendPendingConfirmation re-delivers an unanswered confirmation after
+// a reload or a reconnect. It is the session's, because no turn is
+// running while the run is parked.
 func (s *session) resendPendingConfirmation(ctx context.Context) {
 	pending := s.man.pendings.Load(ctx, s.key)
 	if pending == nil {
@@ -139,15 +135,9 @@ func (s *session) sendHistory(ctx context.Context) {
 	s.writer.WriteJSON(ctx, protocol.NewHistoryMessage(entries))
 }
 
-// buildHistory converts the stored conversation into the entries the
-// client restores into its chat pane.
-//
-// Only what a person said or was told is shown. Tool calls and their
-// results stay in the model's context, where they let it remember what
-// it already read and changed, but they are machinery rather than
-// conversation. An assistant message accompanying a tool call is
-// intermediate narration ("Let me look at that document…") and is
-// skipped for the same reason.
+// buildHistory converts the stored conversation into the client's chat
+// entries. Only what the user said and the final answers are shown. Tool
+// calls, their results and the narration beside them are left out.
 func buildHistory(messages []*schema.Message) []protocol.HistoryEntry {
 	entries := make([]protocol.HistoryEntry, 0, len(messages))
 
@@ -362,13 +352,9 @@ func (s *session) beginTurn(ctx context.Context) bool {
 	return true
 }
 
-// goTurn runs one turn on the supervisor, guaranteeing the claim is
-// released and the client hears about it even if the turn panics.
-//
-// A turn that parks on a confirmation returns it rather than sending it
-// itself, so the claim is already free by the time the client is asked.
-// Otherwise a fast answer would arrive while the finished turn still held
-// the claim and be rejected as "already processing".
+// goTurn runs one turn on the supervisor and releases the claim even if
+// the turn panics. A parked turn returns its confirmation instead of
+// sending it, so the claim is free before the client can answer.
 func (s *session) goTurn(ctx context.Context, fn func(context.Context) *persist.PendingConfirm) {
 	s.supv.Go(func(sctx context.Context) {
 		defer logutil.Recover(s.man.log, nil)
@@ -376,16 +362,10 @@ func (s *session) goTurn(ctx context.Context, fn func(context.Context) *persist.
 		var pending *persist.PendingConfirm
 
 		defer func() {
-			// the pending record must survive the connection: its
-			// checkpoint is already in Redis, and losing the record
-			// would make the parked turn unreachable on reconnect.
-			//
-			// It is written before the claim is released, because a
-			// message arriving on any connection of the same user the
-			// moment the claim frees looks up the pending record to
-			// decide whether to abandon a parked turn, and would find
-			// nothing while this write was still in flight — then delete
-			// the checkpoint this record points at.
+			// the pending record must outlive the connection, or the
+			// parked turn is lost. It is written before the claim is
+			// released, because the next message looks it up to decide
+			// whether to abandon the turn.
 			if pending != nil {
 				s.man.pendings.Save(context.WithoutCancel(ctx), s.key, *pending)
 			}

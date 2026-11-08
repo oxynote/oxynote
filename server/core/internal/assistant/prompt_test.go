@@ -113,7 +113,7 @@ func Test_MCPInstructions(t *testing.T) {
 	assert.NotContains(t, got, "confirmation")
 
 	// the house style holds here as in the chat prompt.
-	assert.NotContains(t, got, "—")
+	assert.NotContains(t, got, "\u2014")
 	assert.NotContains(t, got, "organization")
 }
 

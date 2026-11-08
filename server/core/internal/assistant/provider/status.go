@@ -17,9 +17,8 @@ const (
 	StatusActiveButWeak Status = "active-but-weak"
 
 	// StatusInactiveTooWeak specifies that the configured model is not
-	// known to be strong enough to run the assistant — it is either
-	// listed as too weak or not listed at all — so the assistant is
-	// disabled.
+	// known to be strong enough to run the assistant, because it is
+	// listed as too weak or not listed at all. The assistant is disabled.
 	StatusInactiveTooWeak Status = "inactive-too-weak"
 
 	// StatusInactive specifies that the assistant is disabled because
