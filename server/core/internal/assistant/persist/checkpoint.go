@@ -9,14 +9,9 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
-// Checkpoints stores the paused turns of a conversation, adapting the
-// byte store to the checkpoint contract the agent runner expects.
-//
-// A checkpoint is the whole paused turn: the conversation so far, the
-// tool calls awaiting approval, and the session values that go with
-// them. Holding it in Redis rather than in memory is what lets a
-// pending confirmation outlive both a dropped connection and a restart
-// of this process.
+// Checkpoints stores a conversation's paused turns for the agent runner.
+// A checkpoint holds the whole paused turn. It lives in Redis, so a
+// pending confirmation survives a dropped connection and a restart.
 type Checkpoints struct {
 	log *slog.Logger
 
@@ -58,7 +53,7 @@ func (c *Checkpoints) Set(ctx context.Context, checkPointID string, checkPoint [
 // The runner never calls this: it only ever writes checkpoints, and
 // consults the optional deleter interface from a code path this
 // assistant does not use. Cleanup is therefore ours, driven from the
-// points where a turn stops being resumable — see Clear.
+// points where a turn stops being resumable, as Clear does.
 func (c *Checkpoints) Delete(ctx context.Context, checkPointID string) error {
 	if err := c.store.Delete(ctx, checkpointKey(checkPointID)); err != nil {
 		return fmt.Errorf("deleting checkpoint: %w", err)

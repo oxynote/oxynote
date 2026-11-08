@@ -3,11 +3,15 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -80,8 +84,10 @@ func Test_New(t *testing.T) {
 
 		require.True(t, ok, "the registry holds an unexpected %T", it)
 
-		tl := et.tl
-		tr := tl.Info().Traits
+		tr := et.info.Traits
+
+		tl, derr := et.reg.decode(json.RawMessage(requiredArgs(t, name)))
+		require.NoError(t, derr)
 
 		// a write has to describe what it proposes, and nothing else
 		// has anything to propose: this asks what a compiler cannot,
@@ -90,7 +96,7 @@ func Test_New(t *testing.T) {
 		require.Equal(t, tr.Write, summarizes, "%s declares Write=%v but summarizer=%v", name, tr.Write, summarizes)
 
 		if summarizes {
-			sum, serr := s.Summary(testDeps(stubContentDB(nil), nil, nil).newInput(context.Background(), name, json.RawMessage(requiredArgs(t, name))))
+			sum, serr := s.Summary(testDeps(stubContentDB(nil), nil, nil).newInput(context.Background(), name))
 			require.NoError(t, serr)
 			assert.NotEmpty(t, sum.Summary, "%s has an empty summary", name)
 		}
@@ -114,26 +120,6 @@ func Test_New(t *testing.T) {
 		// a batch of text edits is not consent to delete.
 		assert.Equal(t, tr.Destructive, c.destructive, "%s gate destructive flag", name)
 	}
-}
-
-func Test_Set_Tools(t *testing.T) {
-	t.Parallel()
-
-	ts := New(testDeps(nil, nil, nil)).Tools()
-	require.Len(t, ts, len(allToolNames()))
-
-	got := make([]Name, 0, len(ts))
-
-	for _, bt := range ts {
-		info, err := bt.Info(context.Background())
-		require.NoError(t, err)
-
-		got = append(got, Name(info.Name))
-	}
-
-	// the order is the registration order, every session: a shuffled
-	// tool list would defeat provider prompt caching.
-	assert.Equal(t, allToolNames(), got)
 }
 
 func Test_Set_Entries(t *testing.T) {
@@ -171,11 +157,9 @@ func Test_Set_Entries(t *testing.T) {
 	for i, e := range entries {
 		assert.Equal(t, allToolNames()[i], e.Info.Name)
 
-		// every model-facing string follows the rules a description keeps
-		// on both surfaces: it says nothing about a confirmation flow,
-		// which only the chat surface has, every argument is described,
-		// and the text carries the house style (no em dash, British
-		// spelling), since the model copies the punctuation it is shown.
+		// every model-facing string says nothing of confirmation, which
+		// only the chat has, describes every argument, and keeps the
+		// house style, since the model copies what it is shown.
 		texts := map[string]string{"description": e.Info.Description}
 
 		var walk func(props map[string]any, prefix string)
@@ -282,43 +266,24 @@ func Test_Set_Entry(t *testing.T) {
 	}
 }
 
-func Test_Set_WriteNames(t *testing.T) {
+func Test_Set_Tools(t *testing.T) {
 	t.Parallel()
 
-	s := New(testDeps(nil, nil, nil))
+	ts := New(testDeps(nil, nil, nil)).Tools()
+	require.Len(t, ts, len(allToolNames()))
 
-	got := s.WriteNames()
+	got := make([]Name, 0, len(ts))
 
-	// exactly the tools gated behind confirmation, so the context
-	// middlewares and the gate cannot drift apart.
-	assert.ElementsMatch(t, []string{
-		string(NameCreateDocument),
-		string(NameDeleteDocument),
-		string(NameUpdateDocument),
-		string(NameInsertBlocks),
-		string(NameReplaceBlocks),
-		string(NameDeleteBlock),
-		string(NameMoveBlock),
-		string(NameCreateTag),
-		string(NameUpdateTag),
-		string(NameDeleteTag),
-		string(NameSetTagAssignment),
-		string(NameCreateVariableGroup),
-		string(NameUpdateVariableGroup),
-		string(NameDeleteVariableGroup),
-		string(NameCreateVariable),
-		string(NameUpdateVariable),
-		string(NameDeleteVariable),
-		string(NameSetVariableValue),
-		string(NameCreateHook),
-		string(NameUpdateHook),
-		string(NameDeleteHook),
-	}, got)
+	for _, bt := range ts {
+		info, err := bt.Info(context.Background())
+		require.NoError(t, err)
 
-	// mutating the returned slice must not affect the registry.
-	got[0] = "clobbered"
+		got = append(got, Name(info.Name))
+	}
 
-	assert.NotContains(t, s.WriteNames(), "clobbered")
+	// the order is the registration order, every session: a shuffled
+	// tool list would defeat provider prompt caching.
+	assert.Equal(t, allToolNames(), got)
 }
 
 func Test_Set_Grouped(t *testing.T) {
@@ -428,6 +393,156 @@ func Test_Set_Label(t *testing.T) {
 			assert.Len(t, db.FetchDocumentByBranchIDCalls(), c.BranchFetches)
 			assert.Empty(t, db.FetchDocumentBranchesCalls())
 			assert.Len(t, db.FetchTagTreeCalls(), c.TagTreeFetches)
+		})
+	}
+}
+
+func Test_Set_WriteNames(t *testing.T) {
+	t.Parallel()
+
+	s := New(testDeps(nil, nil, nil))
+
+	got := s.WriteNames()
+
+	// exactly the tools gated behind confirmation, so the context
+	// middlewares and the gate cannot drift apart.
+	assert.ElementsMatch(t, []string{
+		string(NameCreateDocument),
+		string(NameDeleteDocument),
+		string(NameUpdateDocument),
+		string(NameInsertBlocks),
+		string(NameReplaceBlocks),
+		string(NameDeleteBlock),
+		string(NameMoveBlock),
+		string(NameCreateTag),
+		string(NameUpdateTag),
+		string(NameDeleteTag),
+		string(NameSetTagAssignment),
+		string(NameCreateVariableGroup),
+		string(NameUpdateVariableGroup),
+		string(NameDeleteVariableGroup),
+		string(NameCreateVariable),
+		string(NameUpdateVariable),
+		string(NameDeleteVariable),
+		string(NameSetVariableValue),
+		string(NameCreateHook),
+		string(NameUpdateHook),
+		string(NameDeleteHook),
+	}, got)
+
+	// mutating the returned slice must not affect the registry.
+	got[0] = "clobbered"
+
+	assert.NotContains(t, s.WriteNames(), "clobbered")
+}
+
+func Test_register(t *testing.T) {
+	t.Parallel()
+
+	reg := register[createTag]()
+
+	assert.Equal(t, createTag{}.Info(), reg.info)
+
+	tl, err := reg.decode(json.RawMessage(`{"name":"Release","color":"blue"}`))
+	require.NoError(t, err)
+
+	assert.Equal(t, createTag{Name: "Release", ColorName: "blue"}, tl)
+}
+
+func Test_decodeTool(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Decode    func(args json.RawMessage) (Tool, error)
+		Args      string
+		Result    Tool
+		Err       error
+		ErrPrefix string
+	}{
+		// a provider may call a tool without parameters with no arguments
+		// at all.
+		"Empty payload": {
+			Decode: decodeTool[listTags],
+			Args:   ``,
+			Result: listTags{},
+		},
+		"Malformed JSON": {
+			Decode:    decodeTool[createTag],
+			Args:      `{`,
+			Err:       assert.AnError,
+			ErrPrefix: "invalid input: ",
+		},
+		"Wrong type": {
+			Decode:    decodeTool[createTag],
+			Args:      `{"name":1,"color":"blue"}`,
+			Err:       assert.AnError,
+			ErrPrefix: "invalid input: ",
+		},
+		// a malformed id is nearly always a miscopied one, so the message
+		// says how to get it right.
+		"Miscopied id": {
+			Decode: decodeTool[deleteTag],
+			Args:   `{"tag_id":"abc"}`,
+			Err:    errors.New("tag_id is not an id; copy all 20 characters exactly from the result that gave it"),
+		},
+		"Error returned by Validate": {
+			Decode: decodeTool[createTag],
+			Args:   `{"color":"blue"}`,
+			Err:    errRequired("name"),
+		},
+		// the range is embedded in every ranged tool, so its fields
+		// decode as the tool's own.
+		"Time range": {
+			Decode: decodeTool[queryDataSource],
+			Args:   `{"data_source_id":"` + _testDataSourceID.String() + `","query":"up","from":"2026-08-01T10:00:00Z","to":"2026-08-01T12:00:00Z"}`,
+			Result: queryDataSource{
+				timeRange: timeRange{
+					From: time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC),
+					To:   time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
+				},
+				DataSourceID: _testDataSourceID,
+				Query:        "up",
+			},
+		},
+		// a range left out stays zero, which resolve reads as the last
+		// hour.
+		"Time range left out": {
+			Decode: decodeTool[queryDataSource],
+			Args:   `{"data_source_id":"` + _testDataSourceID.String() + `","query":"up"}`,
+			Result: queryDataSource{DataSourceID: _testDataSourceID, Query: "up"},
+		},
+		"Empty time": {
+			Decode:    decodeTool[queryDataSource],
+			Args:      `{"data_source_id":"` + _testDataSourceID.String() + `","query":"up","from":""}`,
+			Err:       assert.AnError,
+			ErrPrefix: "invalid input: ",
+		},
+		"Decoded": {
+			Decode: decodeTool[setTagAssignment],
+			Args:   `{` + targetArgs(_stubMainBranchID) + `,"tag_id":"` + _testTagID.String() + `","assigned":false}`,
+			Result: setTagAssignment{
+				docTarget: docTarget{DocumentID: _testDocID, BranchID: _stubMainBranchID},
+				TagID:     _testTagID,
+				Assigned:  null.ValueFrom(false),
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			tl, err := c.Decode(json.RawMessage(c.Args))
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, tl)
+				assert.True(t, strings.HasPrefix(err.Error(), c.ErrPrefix), err.Error())
+
+				return
+			}
+
+			assert.Equal(t, c.Result, tl)
 		})
 	}
 }

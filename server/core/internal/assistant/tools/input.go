@@ -1,14 +1,10 @@
 package tools
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
-	"reflect"
 	"slices"
 	"strings"
 
@@ -47,13 +43,39 @@ var ErrUnknownVariableGroup = errors.New("no variable group with that id in this
 // be used to reach a hook through a document it is not on.
 var _errUnknownHook = errors.New("no hook with that id on this document; call list_hooks for the ids it has")
 
-// Deps carries the wiring a tool set is built from: the services every
-// tool reaches through and the (organization, user) pair every call is
-// scoped to.
-//
-// It is built once per session. The per-call input a tool actually sees
-// is assembled from it by the eino adapter, which is the only thing
-// that knows a call's context and arguments.
+// _errCyclicParent is what a move reports when the new parent is the
+// document itself or sits under it.
+var _errCyclicParent = errors.New("a document cannot be moved under itself or one of its descendants; pick a parent outside its subtree")
+
+// _errUnknownBlock is what a block read or write reports for a uid the
+// document does not hold. The message names the read that lists the
+// current uids, since a stale uid is the usual cause.
+var _errUnknownBlock = errors.New("no block with that uid in this document; call get_document for the current uids")
+
+// _errUnknownParent is what a create or move reports for a parent id
+// that names no document in the organisation. It says where the ids the
+// model may use come from.
+var _errUnknownParent = errors.New("no document with that id to use as parent; call list_documents for the ids that exist")
+
+// ErrUnknownDocument is what a document lookup reports for an id that
+// names nothing in the session's organisation. Another organisation's
+// id lands here too, which is the point: the tools cannot be used to
+// discover that a document exists elsewhere.
+var ErrUnknownDocument = errors.New("no document with that id in this organisation; call list_documents for the ids that exist")
+
+// _errBranchProtected is what a content write reports for a branch that
+// is protected. Reading it stays allowed; the caller is told which of
+// the document's branches would take the write instead.
+var _errBranchProtected = errors.New("this branch is protected and takes no edits")
+
+// ErrUnknownBranch is what a branch lookup reports for an id the
+// document does not have. The document's branches travel with it, since
+// a stale or guessed id is the usual cause.
+var ErrUnknownBranch = errors.New("this document has no branch with that id")
+
+// Deps is the wiring a tool set is built from: the services and the
+// (organisation, user) pair every call is scoped to. It is built once
+// per session, and the adapter builds each call's input from it.
 type Deps struct {
 	// log is scoped to the session's (org, user) and used to record
 	// per-tool outcomes so we can diagnose AI loops without
@@ -153,10 +175,14 @@ func NewDeps(
 	}
 }
 
-// input is one tool call: the session's wiring plus the context and
-// arguments of the call being served. Execute receives it whole; Title
-// and Summary receive it as a DescribeInput, which reaches nothing that
-// writes.
+// newInput creates a fresh instance of input for one tool call.
+func (d *Deps) newInput(ctx context.Context, name Name) *input {
+	return &input{Deps: d, name: name, ctx: ctx}
+}
+
+// input is one tool call: the session's wiring plus the context of the
+// call being served. Exec receives it as an Input, and Title and Summary
+// as a DescribeInput, which reaches nothing that writes.
 type input struct {
 	*Deps
 
@@ -168,18 +194,10 @@ type input struct {
 	// to the session.
 	ctx context.Context //nolint:containedctx // the input is the call, and is rebuilt per call
 
-	// args is the raw JSON the model supplied.
-	args json.RawMessage
-
 	// branches holds the branches this call has fetched, by branch id.
 	// A call reads its branch in several steps, and they share one
 	// fetch.
 	branches map[xid.ID]*document.Document
-}
-
-// newInput creates a fresh instance of input for one tool call.
-func (d *Deps) newInput(ctx context.Context, name Name, args json.RawMessage) *input {
-	return &input{Deps: d, name: name, ctx: ctx, args: args}
 }
 
 // Context returns the context of the call being served.
@@ -187,44 +205,29 @@ func (i *input) Context() context.Context {
 	return i.ctx
 }
 
-// Decode decodes the call's arguments into dst and validates them.
-//
-// Decoding uses json/v2 because its errors name the argument they
-// failed on. A domain type that parses itself — an id, a timestamp, an
-// enum — reports only that the value is bad; the path json/v2 adds is
-// what makes the message actionable for the model.
-//
-// A provider calling a tool that declares no parameters may send no
-// arguments at all rather than an empty object, so an empty payload
-// reads as one; Validate still decides whether that is acceptable.
-func (i *input) Decode(dst Args) error {
-	args := i.args
-	if len(bytes.TrimSpace(args)) == 0 {
-		args = json.RawMessage("{}")
-	}
-
-	if err := jsonv2.Unmarshal(args, dst); err != nil {
-		// a malformed id is nearly always a miscopied one, so the
-		// message says how to get it right rather than naming Go types.
-		var serr *jsonv2.SemanticError
-		if errors.As(err, &serr) && serr.GoType == reflect.TypeFor[xid.ID]() {
-			return fmt.Errorf(
-				"%s is not an id; copy all 20 characters exactly from the result that gave it",
-				strings.TrimPrefix(string(serr.JSONPointer), "/"),
-			)
-		}
-
-		return fmt.Errorf("invalid input: %w", err)
-	}
-
-	return dst.Validate()
+// OrganizationID returns the organisation the session acts in.
+func (i *input) OrganizationID() string {
+	return i.orgID
 }
 
-// FetchDataSource returns the data source the id names.
-//
-// The lookup is the cross-org safety check: FetchDataSource scopes by
-// organisation, so an id belonging to another one is as absent as an id
-// belonging to nobody, and the model is told the same thing either way.
+// UserID returns the user the session acts for.
+func (i *input) UserID() string {
+	return i.userID
+}
+
+// ReadToolOutput returns the tool result stored at the path.
+func (i *input) ReadToolOutput(path string) (string, error) {
+	return i.offload.Read(i.ctx, path)
+}
+
+// SearchDocumentBlocks returns at most limit blocks of the
+// organisation's documents whose text matches the query.
+func (i *input) SearchDocumentBlocks(query string, limit int) ([]search.Block, error) {
+	return i.search.SearchDocumentBlocks(i.ctx, i.orgID, query, limit)
+}
+
+// FetchDataSource returns the data source the id names. The lookup is
+// scoped to the organisation, so another organisation's id is unknown.
 func (i *input) FetchDataSource(dataSourceID xid.ID) (*datasource.DataSource, error) {
 	ds, err := i.db.FetchDataSource(i.ctx, dataSourceID, i.orgID)
 	if err != nil {
@@ -244,14 +247,8 @@ func (i *input) FetchDataSources() ([]datasource.DataSource, error) {
 }
 
 // CheckDataSources refuses blocks, nested ones included, that name a
-// data source the organisation does not own.
-//
-// It sits with the write rather than with the schema because it is the
-// only check that needs the database: markup.Build can say the id is
-// a string, but only a lookup can say it addresses something, and a
-// metric block pointing at nothing renders as a broken chart the user
-// then has to fix by hand. The ids are the strings the blocks store, so
-// they are parsed here.
+// data source the organisation does not own. It needs the database, so
+// markup.Build cannot do it.
 func (i *input) CheckDataSources(blocks []document.Block) error {
 	for _, b := range blocks {
 		if raw := b.Attrs.Get(document.AttrDataSourceID).String(); raw != "" {
@@ -318,14 +315,14 @@ func (i *input) FetchBranch(documentID, branchID xid.ID) (*document.Document, er
 	doc, err := i.db.FetchDocumentByBranchID(i.ctx, branchID, i.orgID)
 	if err != nil {
 		if errutil.IsNotFound(err) {
-			return nil, i.unknownBranch(documentID, branchID)
+			return nil, i.unknownBranchError(documentID, branchID)
 		}
 
 		return nil, err
 	}
 
 	if doc.ID != documentID {
-		return nil, i.unknownBranch(documentID, branchID)
+		return nil, i.unknownBranchError(documentID, branchID)
 	}
 
 	if i.branches == nil {
@@ -337,10 +334,10 @@ func (i *input) FetchBranch(documentID, branchID xid.ID) (*document.Document, er
 	return doc, nil
 }
 
-// unknownBranch tells a branch the document does not have from a
-// document the organisation does not have: the branch list is empty
-// only for the latter, since every document has at least one.
-func (i *input) unknownBranch(documentID, branchID xid.ID) error {
+// unknownBranchError returns the error for a branch the document does
+// not have. A document without branches is itself unknown, since every
+// document has one.
+func (i *input) unknownBranchError(documentID, branchID xid.ID) error {
 	branches, err := i.FetchDocumentBranches(documentID)
 	if err != nil {
 		return err
@@ -447,12 +444,7 @@ func (i *input) FetchDocumentChildren(parentID null.Value[xid.ID]) (document.Sum
 }
 
 // CreateDocument inserts the document, its maintainer row and its
-// search job.
-//
-// The three writes go together: a half-created document the model then
-// retries leaves two of them behind, one without a maintainer and
-// invisible to search. The parent is checked here rather than by the
-// caller, so the invariant travels with the write that depends on it.
+// search job in one transaction, after checking the parent exists.
 func (i *input) CreateDocument(doc document.Document) error {
 	if doc.ParentID.Valid {
 		if err := i.db.CheckDocumentExists(i.ctx, doc.ParentID.V, i.orgID); err != nil {
@@ -466,29 +458,29 @@ func (i *input) CreateDocument(doc document.Document) error {
 
 	tx, err := sqlutil.BeginTx[Tx](i.ctx, i.db)
 	if err != nil {
-		return fmt.Errorf("begin: %w", err)
+		return fmt.Errorf("beginning transaction: %w", err)
 	}
 
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
 	if err := tx.InsertDocument(i.ctx, doc); err != nil {
-		return fmt.Errorf("insert: %w", err)
+		return fmt.Errorf("inserting document: %w", err)
 	}
 
 	// mirror the HTTP create path: whoever asked for the document
 	// becomes its first maintainer so they own it from the start.
 	if err := tx.UpsertDocumentMaintainers(i.ctx, doc.ID, i.orgID, []string{i.userID}); err != nil {
-		return fmt.Errorf("upsert maintainers: %w", err)
+		return fmt.Errorf("upserting maintainers: %w", err)
 	}
 
 	// without this the document is invisible to search until someone
 	// edits it, since only the persist path queues a job.
 	if err := i.searchQueue.Enqueue(i.ctx, tx, search.BranchScope(i.orgID, doc.ID, doc.BranchID)); err != nil {
-		return fmt.Errorf("enqueue search job: %w", err)
+		return fmt.Errorf("enqueuing search job: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit: %w", err)
+		return fmt.Errorf("committing: %w", err)
 	}
 
 	i.notifyTreeChange(doc.ParentID)
@@ -496,31 +488,9 @@ func (i *input) CreateDocument(doc document.Document) error {
 	return nil
 }
 
-// _errCyclicParent is what a move reports when the new parent is the
-// document itself or sits under it.
-var _errCyclicParent = errors.New("a document cannot be moved under itself or one of its descendants; pick a parent outside its subtree")
-
-// _errUnknownBlock is what a block read or write reports for a uid the
-// document does not hold. The message names the read that lists the
-// current uids, since a stale uid is the usual cause.
-var _errUnknownBlock = errors.New("no block with that uid in this document; call get_document for the current uids")
-
-// _errUnknownParent is what a create or move reports for a parent id
-// that names no document in the organisation. It says where the ids the
-// model may use come from.
-var _errUnknownParent = errors.New("no document with that id to use as parent; call list_documents for the ids that exist")
-
-// ErrUnknownDocument is what a document lookup reports for an id that
-// names nothing in the session's organisation. Another organisation's
-// id lands here too, which is the point: the tools cannot be used to
-// discover that a document exists elsewhere.
-var ErrUnknownDocument = errors.New("no document with that id in this organisation; call list_documents for the ids that exist")
-
-// DeleteDocument removes the document. The delete reports the ids of the
-// destroyed subtree, and their search-index removal is queued in the
-// same transaction: after the commit nothing else knows what went away.
-// An empty subtree means the delete matched nothing, which is reported
-// as an error rather than a silent success.
+// DeleteDocument removes the document and its subtree, and queues their
+// search removal in the same transaction, since nothing else knows the
+// ids after the commit. A delete that matched nothing is an error.
 func (i *input) DeleteDocument(id xid.ID) error {
 	// the parent is read before the row goes, to tell the subtree that
 	// changed. A document that cannot be read leaves the root's.
@@ -548,12 +518,12 @@ func (i *input) DeleteDocument(id xid.ID) error {
 
 	for _, id := range ids {
 		if err := i.searchQueue.Enqueue(i.ctx, tx, search.DocumentScope(i.orgID, id)); err != nil {
-			return fmt.Errorf("enqueue search job: %w", err)
+			return fmt.Errorf("enqueuing search job: %w", err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit: %w", err)
+		return fmt.Errorf("committing: %w", err)
 	}
 
 	i.notifyTreeChange(parentID)
@@ -561,12 +531,8 @@ func (i *input) DeleteDocument(id xid.ID) error {
 	return nil
 }
 
-// MoveDocument re-parents the document doc describes.
-//
-// The destination is validated here rather than by the caller: a move
-// that lands under a missing parent, or under the document's own
-// subtree, is a broken tree, and the check belongs with the write that
-// would cause it.
+// MoveDocument re-parents the document. It refuses a missing parent and
+// a parent inside the document's own subtree.
 func (i *input) MoveDocument(doc *document.Document, parentID null.Value[xid.ID]) error {
 	if parentID.Valid { //nolint:nestif // the branching is sequential and readable
 		if err := i.db.CheckDocumentExists(i.ctx, parentID.V, i.orgID); err != nil {
@@ -579,7 +545,7 @@ func (i *input) MoveDocument(doc *document.Document, parentID null.Value[xid.ID]
 
 		cycle, err := i.db.CheckDocumentCycle(i.ctx, doc.ID, parentID.V, i.orgID)
 		if err != nil {
-			return fmt.Errorf("parent check: %w", err)
+			return fmt.Errorf("checking parent: %w", err)
 		}
 
 		if cycle {
@@ -588,7 +554,7 @@ func (i *input) MoveDocument(doc *document.Document, parentID null.Value[xid.ID]
 	}
 
 	if err := i.db.UpdateDocumentParentID(i.ctx, doc.ID, parentID, i.orgID); err != nil {
-		return fmt.Errorf("update: %w", err)
+		return fmt.Errorf("updating parent: %w", err)
 	}
 
 	// the move changes the shape of both subtrees; when they are the
@@ -635,20 +601,9 @@ func (i *input) Warn(msg string, attrs ...slog.Attr) {
 		append([]slog.Attr{slog.String("tool", string(i.name))}, attrs...)...)
 }
 
-// _errBranchProtected is what a content write reports for a branch that
-// is protected. Reading it stays allowed; the caller is told which of
-// the document's branches would take the write instead.
-var _errBranchProtected = errors.New("this branch is protected and takes no edits")
-
-// ErrUnknownBranch is what a branch lookup reports for an id the
-// document does not have. The document's branches travel with it, since
-// a stale or guessed id is the usual cause.
-var ErrUnknownBranch = errors.New("this document has no branch with that id")
-
-// protectedBranch builds the refusal for a write to a protected branch,
-// naming the document's unprotected branches so the caller has
-// somewhere to write, or saying there is none.
-func (i *input) protectedBranch(doc *document.Document) error {
+// protectedBranchError returns the refusal of a write to a protected
+// branch, naming the branches that take writes, if any.
+func (i *input) protectedBranchError(doc *document.Document) error {
 	branches, err := i.FetchDocumentBranches(doc.ID)
 	if err != nil {
 		return fmt.Errorf("branch %s: %w; %w", doc.BranchName, _errBranchProtected, err)
@@ -662,37 +617,20 @@ func (i *input) protectedBranch(doc *document.Document) error {
 	return fmt.Errorf("branch %s: %w; write to one of %s", doc.BranchName, _errBranchProtected, branchLabels(open))
 }
 
-// branchLabels lists the branches, each as "name (id)": the name is what
-// a person calls it and the id is what a tool call takes.
-func branchLabels(branches []document.BranchSummary) string {
-	labels := make([]string, 0, len(branches))
-
-	for _, b := range branches {
-		labels = append(labels, fmt.Sprintf("%s (%s)", b.BranchName, b.BranchID))
-	}
-
-	return strings.Join(labels, ", ")
-}
-
-// ApplyEdit is the shared tail of every content-mutating write tool: it
-// loads the branch, ships the operation batch to Node, and returns the
-// operation Node refused, if any, in which case nothing was applied. What
-// the write produced is the tool's own to describe, which spares a second
-// fetch of the document. The branch lookup is scoped to the organisation,
-// so a document of another one is refused as unknown.
+// ApplyEdit ships the operations to the branch, scoped to the
+// organisation. If Node refuses one, it returns that one and nothing was
+// applied.
 func (i *input) ApplyEdit(documentID, branchID xid.ID, ops []edit.Operation) error {
 	doc, err := i.FetchBranch(documentID, branchID)
 	if err != nil {
 		return fmt.Errorf("fetching document: %w", err)
 	}
 
-	// a protected branch takes no write but core's own, and this is not
-	// one: the operations endpoint applies the batch to the live Y.Doc
-	// regardless, and only the persist behind it is refused. Without
-	// this the call reports success, the change shows up in every open
-	// editor, and it is gone at the next load.
+	// Node applies the batch to the live Y.Doc even on a protected
+	// branch and only refuses the persist, so the edit would show and
+	// then vanish. It is refused here instead.
 	if doc.Protected {
-		return i.protectedBranch(doc)
+		return i.protectedBranchError(doc)
 	}
 
 	res, err := i.applier.Apply(
@@ -724,9 +662,8 @@ func (i *input) ApplyEdit(documentID, branchID xid.ID, ops []edit.Operation) err
 	return nil
 }
 
-// notifyTreeChange invokes the tree notifier when one is configured.
-// Safe to call from any tool — a nil notifier silently no-ops so tests
-// that don't wire one don't trip.
+// notifyTreeChange invokes the tree notifier when one is configured. A
+// nil notifier does nothing, so tests that wire none do not trip.
 func (i *input) notifyTreeChange(parentID null.Value[xid.ID]) {
 	if i.tree == nil {
 		return
@@ -1010,7 +947,7 @@ func (i *input) AssignTag(documentID, branchID, tagID xid.ID) error {
 	}
 
 	if err = doc.AllowsDocumentChange(); err != nil {
-		return i.protectedBranch(doc)
+		return i.protectedBranchError(doc)
 	}
 
 	if err := i.db.AssignBranchTag(i.ctx, i.orgID, doc.ID, doc.BranchID, tagID); err != nil {
@@ -1038,7 +975,7 @@ func (i *input) UnassignTag(documentID, branchID, tagID xid.ID) error {
 	}
 
 	if err = doc.AllowsDocumentChange(); err != nil {
-		return i.protectedBranch(doc)
+		return i.protectedBranchError(doc)
 	}
 
 	if _, err := i.FetchTag(tagID); err != nil {
@@ -1152,7 +1089,7 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 	// the manager refuses this too, but this error names the branches
 	// that take the change.
 	if err = doc.AllowsDocumentChange(); err != nil {
-		return nil, i.protectedBranch(doc)
+		return nil, i.protectedBranchError(doc)
 	}
 
 	// the manager would refuse this too, but the integration's own error
@@ -1224,7 +1161,7 @@ func (i *input) DeleteHook(hk *hook.Hook) error {
 		}
 
 		if err = doc.AllowsDocumentChange(); err != nil {
-			return i.protectedBranch(doc)
+			return i.protectedBranchError(doc)
 		}
 	}
 
@@ -1233,6 +1170,18 @@ func (i *input) DeleteHook(hk *hook.Hook) error {
 	}
 
 	return nil
+}
+
+// branchLabels lists the branches, each as "name (id)": the name is what
+// a person calls it and the id is what a tool call takes.
+func branchLabels(branches []document.BranchSummary) string {
+	labels := make([]string, 0, len(branches))
+
+	for _, b := range branches {
+		labels = append(labels, fmt.Sprintf("%s (%s)", b.BranchName, b.BranchID))
+	}
+
+	return strings.Join(labels, ", ")
 }
 
 // DataSourceRunners hands out the runner for a data source. The
@@ -1464,10 +1413,7 @@ type Searcher interface {
 	SearchDocumentBlocks(ctx context.Context, organizationID, query string, limit int) ([]search.Block, error)
 }
 
-// TreeNotifier publishes document-tree-change events so connected
-// clients can refresh their sidebar after assistant-driven creates,
-// deletes, moves, renames, or icon changes. The server document handler
-// satisfies this interface via its NotifyTreeChange method.
+// TreeNotifier tells connected clients to refresh the document tree.
 //
 //go:generate ../../../scripts/codegen/mock -t internal TreeNotifier tree_notifier
 type TreeNotifier interface {
@@ -1478,10 +1424,8 @@ type TreeNotifier interface {
 	NotifyTreeChange(organizationID string, parentID null.Value[xid.ID])
 }
 
-// TagNotifier publishes tag-tree-change events so connected clients can
-// refresh their sidebar's tag tree after assistant-driven tag writes.
-// The server tag handler satisfies this interface via its
-// NotifyTreeChange method.
+// TagNotifier tells connected clients to refresh the tag tree and a
+// branch's tags.
 //
 //go:generate ../../../scripts/codegen/mock -t internal TagNotifier tag_notifier
 type TagNotifier interface {
@@ -1496,9 +1440,8 @@ type TagNotifier interface {
 	NotifyBranchTagsChange(organizationID string, documentID, branchID xid.ID)
 }
 
-// EditApplier is the live-document mutation surface the write tools
-// use for content edits and the rename/set-icon ops. The edit.Client
-// satisfies it.
+// EditApplier applies operations to a live document. edit.Client
+// implements it.
 //
 //go:generate ../../../scripts/codegen/mock -t both EditApplier edit_applier
 type EditApplier interface {

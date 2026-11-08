@@ -1,6 +1,5 @@
-// Package edit is the Go client for the Node-side edit
-// operations endpoint that mutates live Y.Docs. AI-generated edits
-// flow:
+// Package edit is the Go client for the Node endpoint that edits live
+// Y.Docs. An assistant edit flows like this:
 //
 //	markup  --markup.Build-->  document.Block (PM JSON)
 //	                                    |
@@ -8,25 +7,21 @@
 //	edit.Operation  --Apply-->  POST /api/internal/.../operations
 //	                              |
 //	                              v
-//	Node hocuspocus opens a direct connection, mutates the Y.Doc in
-//	one transaction, broadcasts to subscribers, and disconnects.
+//	Node opens the Y.Doc, changes it in one transaction, broadcasts
+//	the change and disconnects.
 //
-// Use the package-level constructors (InsertAfter, Append,
-// Replace, …) to build operations; Client.Apply ships them to
-// Node, which applies the whole batch or none of it.
+// Build operations with the constructors (InsertAfter, Append, Replace).
+// Client.Apply ships them, and Node applies the whole batch or none.
 package edit
 
 import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 )
 
-// Operation is one edit to apply to a live document, in the JSON shape
-// the Node endpoint expects. Only the fields meaningful to its kind are
-// set; omitempty keeps the wire payload tight. Operations are built with
-// the package-level constructors and applied as a batch via
-// Client.Apply. A block-carrying operation takes the expanded editor
-// tree, uids already resolved, so the caller can report the uids the
-// write lands with.
+// Operation is one edit of a live document, in the JSON the Node
+// endpoint expects. Only the fields its kind uses are set. A block
+// carries the expanded editor tree with its uids resolved, so the caller
+// can report the uids the write lands with.
 type Operation struct {
 	// Kind names the operation ("insert", "append", …); set on
 	// every op.

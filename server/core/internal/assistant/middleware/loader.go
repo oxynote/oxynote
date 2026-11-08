@@ -35,14 +35,10 @@ var _groupSummaries = map[tools.Group]string{
 	tools.GroupDataSources: "list data sources, their metrics and tables, and run queries before adding a chart",
 }
 
-// Loader keeps the grouped tools out of the model's tool list until the
-// model loads their group with load_tools. Most conversations never use
-// them, and their definitions are over half of the list.
-//
-// A load answers with the group's definitions as tool references. The
-// Anthropic API expands them where they stand, outside the cached
-// prefix, so the tool list never changes and the prompt cache holds.
-// Only a model that expands references can use it.
+// Loader keeps the grouped tools out of the tool list until the model
+// loads their group with load_tools. A load answers with tool references,
+// which the Anthropic API expands in place, so the cached prefix never
+// changes. Only a model that expands references can use it.
 type Loader struct {
 	*adk.BaseChatModelAgentMiddleware
 

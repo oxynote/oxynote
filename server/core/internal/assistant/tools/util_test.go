@@ -4,27 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
-
-func Test_result(t *testing.T) {
-	t.Parallel()
-
-	// error
-	_, err := result(make(chan int))
-	assert.Error(t, err)
-
-	// success
-	res, err := result(map[string]any{"ok": true})
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"ok":true}`, res)
-}
-
-func Test_errRequired(t *testing.T) {
-	t.Parallel()
-
-	assert.EqualError(t, errRequired("document_id"), "document_id is required")
-}
 
 func Test_countPhrase(t *testing.T) {
 	t.Parallel()
@@ -55,7 +35,7 @@ func Test_countPhrase(t *testing.T) {
 	}
 }
 
-func Test_sentence(t *testing.T) {
+func Test_joinClauses(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
@@ -80,7 +60,13 @@ func Test_sentence(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, c.Result, sentence(c.Clauses))
+			assert.Equal(t, c.Result, joinClauses(c.Clauses))
 		})
 	}
+}
+
+func Test_errRequired(t *testing.T) {
+	t.Parallel()
+
+	assert.EqualError(t, errRequired("document_id"), "document_id is required")
 }

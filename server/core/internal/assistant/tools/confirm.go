@@ -21,22 +21,16 @@ const _declinedResult = `{"approved":false,"reason":"user declined"}`
 // survives the checkpoint written when the turn is interrupted.
 const SessionKeyAutoApprove = "oxynote_assistant_auto_approve"
 
-// the checkpoint is gob-encoded, and both values sit behind interface
-// fields in it: confirmState as the interrupt state, ActionSummary as
-// the interrupt info. gob needs a name for a concrete type it meets
-// through an interface, and a checkpoint already in Redis carries the
-// name it was written with, so a rename fails to decode it.
+// the checkpoint is gob-encoded and holds both types behind interfaces,
+// so gob needs their names. A stored checkpoint carries the name it was
+// written with, so renaming either type breaks decoding it.
 func init() { //nolint:gochecknoinits // gob names must be registered before any checkpoint is decoded
 	schema.RegisterName[confirmState]("oxynote_assistant_confirm_state")
 	schema.RegisterName[ActionSummary]("oxynote_assistant_action_summary")
 }
 
-// ActionSummary is the human-readable description of a pending write op
-// surfaced to the confirm UI. Built from the same JSON args the tool was
-// about to receive: describing a write never executes it.
-//
-// It is this package's own shape; turn.go converts it into the
-// protocol.ConfirmAction the client is sent.
+// ActionSummary describes a pending write for the confirm card. turn.go
+// converts it into the protocol.ConfirmAction the client receives.
 type ActionSummary struct {
 	// Tool is the name of the tool being proposed.
 	Tool Name
@@ -80,14 +74,9 @@ func autoApproved(ctx context.Context) bool {
 	return ok && approved
 }
 
-// confirming gates a write tool behind user confirmation.
-//
-// The gate interrupts *before* the wrapped tool does any work. Resuming
-// reruns the tool from the top, so a tool that acted first and asked
-// second would apply its edit twice.
-//
-// It is applied by the registry rather than by each tool, so a write
-// cannot slip through by forgetting to ask.
+// confirming gates a write tool behind user confirmation. It interrupts
+// before the tool does any work, because resuming reruns the tool from
+// the top.
 type confirming struct {
 	// einoTool is the gated tool's adapter. Embedding it forwards Info,
 	// so the model sees the tool's own description unchanged, and gives
@@ -133,16 +122,9 @@ func (c *confirming) InvokableRun(
 	return c.einoTool.InvokableRun(ctx, argumentsInJSON, opts...)
 }
 
-// interrupt suspends the run and hands the client a human-readable
-// description of the write awaiting approval.
-//
-// Arguments the tool cannot read fail here rather than parking the run:
-// the same payload would be rejected by the tool on resume, so asking
-// the user to approve it spends a confirmation on a call that was never
-// going to happen. The rejection comes back as the call's result rather
-// than as an error, for the same reason einoTool.InvokableRun does it: a
-// bad payload is the model's to fix, and it can only fix what it is told
-// about, while an error ends the turn and leaves the user with nothing.
+// interrupt suspends the run and hands the client the summary of the
+// write awaiting approval. Arguments the tool cannot read fail here,
+// as the call's result, instead of parking a run that cannot resume.
 func (c *confirming) interrupt(ctx context.Context, args json.RawMessage) (string, error) {
 	summary, err := c.Summary(ctx, args)
 	if err != nil {

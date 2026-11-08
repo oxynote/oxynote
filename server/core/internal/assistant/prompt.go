@@ -124,22 +124,18 @@ func buildSystemPrompt(activeDocumentID, activeBranchID string) string {
 	return sb.String()
 }
 
-// genModelInput builds the model's input for one run: the system
-// prompt, anchored to whichever document the user currently has open,
-// followed by the conversation so far.
-//
-// The prompt is assembled here rather than through the framework's
-// template support because it contains literal braces, which the
-// template would try to interpolate.
+// genModelInput builds the input for one run: the system prompt for the
+// open document, then the conversation. It skips the framework's
+// templates, because the prompt holds literal braces.
 func genModelInput(ctx context.Context, _ string, input *adk.AgentInput) ([]*schema.Message, error) {
 	msgs := make([]*schema.Message, 0, len(input.Messages)+1)
 	msgs = append(msgs, schema.SystemMessage(buildSystemPrompt(sessionString(ctx, _sessionKeyActiveDocument), sessionString(ctx, _sessionKeyActiveBranch))))
 
 	// the conversation a completed run leaves behind includes the system
 	// message this function prepended, so appending the input verbatim
-	// would stack one more prompt every turn — and keep stale ones whose
-	// current-context section names a document the user has left. Only
-	// the fresh prompt survives.
+	// would stack one more prompt every turn. It would also keep stale
+	// ones whose current-context section names a document the user has
+	// left. Only the fresh prompt survives.
 	for _, msg := range input.Messages {
 		if msg != nil && msg.Role == schema.System {
 			continue

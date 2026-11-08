@@ -23,11 +23,11 @@ spelling (`prompt_test.go` and `tools_test.go` enforce both).
 `tools/`, grouped by subject: `document.go`, `block.go`, `tag.go`,
 `variable.go`, `hook.go`, `search.go`, `datasource.go`; `eino.go` holds
 the framework adapter and `read_tool_output`. `tools.Set` is the only list of tools;
-adding one means its type plus a line there, and the MCP server picks it up
-for free.
+adding one means its type plus a `register[T]()` line there, and the MCP
+server picks it up for free.
 
-- **Tools implement this package's `Tool`** (`Info`, `Execute`), never
-  eino's interfaces; only `eino.go` imports eino. A read may add `Title`
+- **Tools implement this package's `Tool`** (`Info`, `Validate`, `Exec`),
+  never eino's interfaces; only `eino.go` imports eino. A read may add `Title`
   for its status line; every write adds `Summary`, which is also its
   status line. Other surfaces use `Entry.Info` to describe and
   `Entry.Tool.Run` to run.
@@ -51,18 +51,19 @@ for free.
   argument that fixes it (`edit.Result.Err` rewrites the realtime
   service's errors; `ErrUnknownDocument`, `_errUnknownBlock`,
   `_errBranchProtected`, `_errUnknownParent` follow suit).
-- **`Decode` is the only way into arguments.** Every tool has a `<tool>Args`
-  type with `Validate() error` (`errRequired(key)`); ids are `xid.ID`,
-  timestamps `time.Time`, enums self-validating; `encoding/json/v2` reports
-  the JSON path. An empty string is invalid, never absent.
+- **A tool's fields are its arguments.** The registry decodes each call
+  into the tool (json/v2 names the bad path) and runs `Validate`
+  (`errRequired(key)`) before any other method. An empty string is
+  invalid, never absent. `Exec` returns a value the adapter serialises.
 - `Title`/`Summary` fetch what they name and use the row's name; an
-  unresolvable target is no title, or an error from `Summary`. `*input`
-  is built per call, scoped to the session's (organisation, user), with
-  `Fetch*`-prefixed reads; one call's steps share a branch fetch.
-  `DescribeInput` is its read-only half.
+  unresolvable target is no title, or an error from `Summary`. Tools reach
+  everything through `Input`, a facade of per-subject parts at the bottom
+  of the file using them, never `Deps`. Tool tests stub `InputMock`;
+  `Test_input_*` covers the database. One call's steps share a branch
+  fetch.
 - **A write owns its invariants** on the `input` method that performs it
   (`MoveDocument` refuses a missing parent or a move under its own subtree),
-  not in `Execute`. Block writes go through `ApplyEdit`. What core cannot
+  not in `Exec`. Block writes go through `ApplyEdit`. What core cannot
   check, placement and content order, is auth-realtime's, against the
   editor schema (`validate.ts`).
 - **`Info.Traits` says what a tool is**; the zero value is a plain read.

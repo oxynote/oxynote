@@ -14,13 +14,9 @@ import (
 	"github.com/rs/xid"
 )
 
-// turn is one user message being answered: the agent run it starts, the
-// output relayed back to the client, and the outcome — finished, failed,
-// or parked on a confirmation the user has to answer.
-//
-// It exists for the length of that one exchange. The session it belongs
-// to outlives it and holds everything that spans several: the
-// conversation, the active document, the connection itself.
+// turn is one user message being answered: the agent run, the output
+// relayed to the client, and the outcome. That is finished, failed, or
+// parked on a confirmation. The session outlives it.
 type turn struct {
 	// sess is the conversation this turn belongs to.
 	sess *session
@@ -47,10 +43,9 @@ func (t *turn) fail(ctx context.Context, msg string, err error) {
 // into protocol messages until the run finishes, fails, or pauses for a
 // confirmation.
 //
-// A run that pauses returns the confirmation it is waiting on and sends
-// no done: the turn is still in progress from the user's point of view.
-// The caller asks the user once the session is free, so an immediate
-// answer is not mistaken for a second concurrent turn.
+// A paused run returns its confirmation and sends no done. The caller
+// asks the user once the session is free, so a fast answer is not taken
+// for a second turn.
 func (t *turn) run(
 	ctx context.Context,
 	iter *adk.AsyncIterator[*adk.AgentEvent],

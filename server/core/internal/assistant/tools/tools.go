@@ -1,27 +1,25 @@
-// Package tools owns the AI assistant's tool surface. Tools are grouped
-// by what they act on — documents, blocks, tags, hooks, the search index — and each
-// describes itself, names what it is about to do, and does its work in
-// this package's own vocabulary; eino.go is the only place that speaks
-// the agent framework's. All tools execute server-side — there is no
-// client-side forwarding.
+// Package tools owns the AI assistant's tools. They are grouped by what
+// they act on, such as documents, blocks or tags. Each describes itself
+// and does its work in this package's own vocabulary, and only eino.go
+// speaks the agent framework's. Every tool runs on the server.
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
+	"errors"
+	"fmt"
+	"reflect"
 	"slices"
+	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/rs/xid"
 )
 
-// Name is the canonical identifier of one tool the assistant
-// exposes to the model. Names use snake_case; they double as the
-// model-facing tool name and the protocol confirm-action's "tool"
-// field.
-type Name string
-
-// Read tools — never confirmed. The assistant runs these
-// immediately on every relevant turn.
+// Read tools are never confirmed. The assistant runs them at once.
 const (
 	NameListDocuments   Name = "list_documents"
 	NameGetDocument     Name = "get_document"
@@ -31,8 +29,7 @@ const (
 	NameListVariables   Name = "list_variables"
 )
 
-// Data-source tools — reads against the organisation's outbound
-// connections. They reach systems outside Oxynote, so a surface that
+// Data-source tools read the organisation's outbound connections. They reach systems outside Oxynote, so a surface that
 // gates by scope asks Traits.DataSource rather than lumping them in
 // with the document reads.
 const (
@@ -44,8 +41,7 @@ const (
 	NameQueryDataSource       Name = "query_data_source"
 )
 
-// Write tools — always confirmed. Deletes are the most
-// destructive but the same confirm gate covers all of them.
+// Write tools are always confirmed, deletes included.
 const (
 	NameCreateDocument   Name = "create_document"
 	NameDeleteDocument   Name = "delete_document"
@@ -79,19 +75,20 @@ const (
 	GroupDataSources Group = "data_sources"
 )
 
+// Name is the canonical identifier of one tool the assistant
+// exposes to the model. Names use snake_case; they double as the
+// model-facing tool name and the protocol confirm-action's "tool"
+// field.
+type Name string
+
 // Group is a set of tools the chat assistant loads on request. Most
 // conversations never use them, and their definitions are over half of
 // the tool list. Values are snake_case like tool names, because the
 // model names a group to load it.
 type Group string
 
-// Set is the tools one session offers the model: an immutable registry
-// built once from the session's wiring and handed straight to the agent.
-//
-// It is the only place that names every tool. What a tool is — whether
-// it needs confirming, whether it survives an approve-all, whether it
-// belongs on surfaces outside this process — the tool states in its own
-// Traits, so there is no second list to keep in step with this one.
+// Set is the tools one session offers the model, built once from the
+// session's wiring. It is the only list of tools.
 type Set struct {
 	// tools maps each tool's name to the value that serves it, already
 	// wrapped in its confirmation gate where one applies.
@@ -113,49 +110,49 @@ type Set struct {
 
 // New creates a fresh instance of Set.
 func New(deps *Deps) *Set {
-	all := []Tool{
-		listDocuments{},
-		getDocument{},
-		listTags{},
-		listHooks{},
-		listVariables{},
-		searchDocuments{},
-		listDataSources{},
-		getDataSourceMetadata{},
-		listPrometheusLabels{},
-		listPrometheusSeries{},
-		listLogFields{},
-		queryDataSource{},
+	all := []registration{
+		register[listDocuments](),
+		register[getDocument](),
+		register[listTags](),
+		register[listHooks](),
+		register[listVariables](),
+		register[searchDocuments](),
+		register[listDataSources](),
+		register[getDataSourceMetadata](),
+		register[listPrometheusLabels](),
+		register[listPrometheusSeries](),
+		register[listLogFields](),
+		register[queryDataSource](),
 
-		createDocument{},
-		deleteDocument{},
-		updateDocument{},
-		insertBlocks{},
-		replaceBlocks{},
-		deleteBlock{},
-		moveBlock{},
-		createTag{},
-		updateTag{},
-		deleteTag{},
-		setTagAssignment{},
-		createVariableGroup{},
-		updateVariableGroup{},
-		deleteVariableGroup{},
-		createVariable{},
-		updateVariable{},
-		deleteVariable{},
-		setVariableValue{},
-		createHook{},
-		updateHook{},
-		deleteHook{},
+		register[createDocument](),
+		register[deleteDocument](),
+		register[updateDocument](),
+		register[insertBlocks](),
+		register[replaceBlocks](),
+		register[deleteBlock](),
+		register[moveBlock](),
+		register[createTag](),
+		register[updateTag](),
+		register[deleteTag](),
+		register[setTagAssignment](),
+		register[createVariableGroup](),
+		register[updateVariableGroup](),
+		register[deleteVariableGroup](),
+		register[createVariable](),
+		register[updateVariable](),
+		register[deleteVariable](),
+		register[setVariableValue](),
+		register[createHook](),
+		register[updateHook](),
+		register[deleteHook](),
 
-		readToolOutput{},
+		register[readToolOutput](),
 	}
 
 	s := &Set{tools: make(map[Name]registryTool, len(all))}
 
-	for _, tl := range all {
-		et := newEinoTool(tl, deps)
+	for _, reg := range all {
+		et := newEinoTool(reg, deps)
 		tr := et.info.Traits
 
 		s.entries = append(s.entries, Entry{
@@ -179,21 +176,6 @@ func New(deps *Deps) *Set {
 	}
 
 	return s
-}
-
-// Entry describes one registered tool: how it describes itself, and its
-// implementation with no confirmation gate applied.
-type Entry struct {
-	// Info is the tool's own description and traits. A surface that has
-	// to announce the tool builds its description from this, so no
-	// surface has to restate a schema the tool already owns.
-	Info Info
-
-	// Tool is the tool without its confirmation gate. Running it
-	// performs the write immediately, so it belongs only to surfaces
-	// whose client owns the approval story (the MCP server); the
-	// assistant's chat loop must use Tools.
-	Tool Runner
 }
 
 // Entries returns every tool in registration order, ungated. The MCP
@@ -242,16 +224,9 @@ func (s *Set) Grouped() map[Group][]tool.BaseTool {
 	return out
 }
 
-// Label returns a short line describing what the named tool is about to
-// do, or an empty string for tools too noisy or too generic to
-// announce. An unknown name is not an error: the agent may run tools
-// this set does not own.
-//
-// Arguments the tool cannot read are an empty label too. The caller
-// announces a call it is about to make, and that call is about to fail
-// on the same arguments — the failure is the tool's to report, and
-// announcing a status line derived from nothing would only precede it
-// with a lie.
+// Label returns the status line of the named tool's call, or an empty
+// string for a tool this set does not own, a tool without a title, or
+// arguments the tool cannot read.
 func (s *Set) Label(ctx context.Context, name Name, args json.RawMessage) string {
 	t, ok := s.tools[name]
 	if !ok {
@@ -261,14 +236,78 @@ func (s *Set) Label(ctx context.Context, name Name, args json.RawMessage) string
 	return t.Title(ctx, args)
 }
 
-// WriteNames returns every tool that mutates a document.
-//
-// The context middlewares use it to decide what must never be cleared
-// from the conversation: the model has to keep knowing what it changed,
-// while a stale read can always be taken again. The list is exactly the
-// set of tools gated behind confirmation, so the two cannot drift.
+// WriteNames returns every tool that mutates a document, which are
+// exactly the gated ones. The context middlewares never clear their
+// results.
 func (s *Set) WriteNames() []string {
 	return slices.Clone(s.writes)
+}
+
+// Entry describes one registered tool: how it describes itself, and its
+// implementation with no confirmation gate applied.
+type Entry struct {
+	// Info is the tool's own description and traits. A surface that has
+	// to announce the tool builds its description from this, so no
+	// surface has to restate a schema the tool already owns.
+	Info Info
+
+	// Tool is the tool without its confirmation gate. Running it
+	// performs the write immediately, so it belongs only to surfaces
+	// whose client owns the approval story (the MCP server); the
+	// assistant's chat loop must use Tools.
+	Tool Runner
+}
+
+// registration is one tool as the registry holds it: its description,
+// and how a call's arguments become the tool.
+type registration struct {
+	// info is the tool's description. It never depends on a call.
+	info Info
+
+	// decode reads and validates a call's arguments into the tool.
+	decode func(args json.RawMessage) (Tool, error)
+}
+
+// register returns the registration of the tool type T.
+func register[T Tool]() registration {
+	var zero T
+
+	return registration{
+		info:   zero.Info(),
+		decode: decodeTool[T],
+	}
+}
+
+// decodeTool decodes a call's arguments into a T and validates them.
+// json/v2 names the argument that failed. An empty payload reads as an
+// empty object, since a provider may send none to a tool without
+// parameters.
+func decodeTool[T Tool](args json.RawMessage) (Tool, error) {
+	if len(bytes.TrimSpace(args)) == 0 {
+		args = json.RawMessage("{}")
+	}
+
+	var tl T
+
+	if err := jsonv2.Unmarshal(args, &tl); err != nil {
+		// a malformed id is nearly always a miscopied one, so the
+		// message says how to get it right rather than naming Go types.
+		var serr *jsonv2.SemanticError
+		if errors.As(err, &serr) && serr.GoType == reflect.TypeFor[xid.ID]() {
+			return nil, fmt.Errorf(
+				"%s is not an id; copy all 20 characters exactly from the result that gave it",
+				strings.TrimPrefix(string(serr.JSONPointer), "/"),
+			)
+		}
+
+		return nil, fmt.Errorf("invalid input: %w", err)
+	}
+
+	if err := tl.Validate(); err != nil {
+		return nil, err
+	}
+
+	return tl, nil
 }
 
 // Runner runs one tool call in this package's own vocabulary: the raw
@@ -283,8 +322,8 @@ type Runner interface {
 
 // registryTool is what the registry stores: a tool the agent can invoke
 // that can also describe what it is about to do. The adapter and the
-// confirmation gate wrapping it both satisfy it — the gate embeds the
-// adapter — so Label reaches Title without asking which one it holds.
+// gate that embeds it both satisfy it, so Label reaches Title without
+// asking which one it holds.
 type registryTool interface {
 	tool.InvokableTool
 

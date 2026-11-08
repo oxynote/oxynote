@@ -13,16 +13,10 @@ import (
 // _offloadKeyPrefix namespaces offloaded results in the store.
 const _offloadKeyPrefix = "assistant:offload:"
 
-// Offload parks oversized tool results outside the conversation and
-// hands them back on request. It satisfies the storage contract the
-// reduction middleware writes through; the tool the model calls to read
-// one back lives in the tools package, which owns everything the model
-// can invoke.
-//
-// Without it a large result has to be destroyed to keep the conversation
-// affordable, and whatever the model was reading is simply gone. Here
-// the conversation keeps a preview and a handle, and the content stays
-// retrievable for as long as the conversation does.
+// Offload keeps oversized tool results outside the conversation and
+// hands them back on request, for as long as the conversation lives. The
+// reduction middleware writes through it, and read_tool_output in the
+// tools package reads one back.
 type Offload struct {
 	// store holds the offloaded payloads, expiring with the
 	// conversation.

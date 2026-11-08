@@ -7,6 +7,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/prometheus/common/model"
@@ -62,37 +63,51 @@ var _timeRangeProps = map[string]any{
 	"to":   map[string]any{"type": "string", "description": _toDescription},
 }
 
-// timeRangeArgs is the range every data-source read can be narrowed
-// with. Both ends are optional: the tools serve a model that usually
-// means "recently" and should not have to compute timestamps to say so.
-type timeRangeArgs struct {
-	// From is the range start. Zero means an hour before the end.
-	From time.Time `json:"from"`
+// listDataSources lists the organisation's data sources.
+type listDataSources struct{}
 
-	// To is the range end. Zero means now.
-	To time.Time `json:"to"`
+// Info returns the tool's model-facing description.
+func (listDataSources) Info() Info {
+	return Info{
+		Name:        NameListDataSources,
+		Traits:      Traits{Group: GroupDataSources, DataSource: true},
+		Description: "List the organisation's data sources as {id, name, type, status}. type (prometheus, loki, postgresql, supabase, mariadb or mysql) decides the query language and which tools serve it; loki holds logs. Start here: the other data source tools take an id from this list.",
+		Properties:  map[string]any{},
+	}
 }
 
-// resolve turns the pair into a time range, defaulting the end to now
-// and the start to an hour before it. An inverted range is rejected
-// here rather than handed to a backend, so the model is told the
-// arguments are backwards instead of seeing a backend-shaped failure.
-func (a timeRangeArgs) resolve() (processor.TimeRange, error) {
-	out := processor.TimeRange{From: a.From, To: a.To}
+// Validate accepts every payload: nothing is required.
+func (listDataSources) Validate() error {
+	return nil
+}
 
-	if out.To.IsZero() {
-		out.To = timeutil.Now()
+// Exec lists the data sources the organisation owns.
+func (listDataSources) Exec(inp Input) (any, error) {
+	sources, err := inp.FetchDataSources()
+	if err != nil {
+		return nil, err
 	}
 
-	if out.From.IsZero() {
-		out.From = out.To.Add(-_defaultQueryWindow)
+	out := make([]dataSourceInfo, 0, len(sources))
+
+	for _, ds := range sources {
+		out = append(out, dataSourceInfo{
+			ID:     ds.ID,
+			Name:   ds.Name,
+			Type:   ds.Type,
+			Status: ds.Status,
+		})
 	}
 
-	if out.From.After(out.To) {
-		return processor.TimeRange{}, _errInvertedTimeRange
-	}
+	return listDataSourcesResult{
+		DataSources: out,
+	}, nil
+}
 
-	return out, nil
+// listDataSourcesResult is what list_data_sources returns.
+type listDataSourcesResult struct {
+	// DataSources are the organisation's data sources.
+	DataSources []dataSourceInfo `json:"data_sources"`
 }
 
 // dataSourceInfo is one row of list_data_sources. It is deliberately
@@ -113,66 +128,12 @@ type dataSourceInfo struct {
 	Status processor.ConnectionStatus `json:"status"`
 }
 
-// dataSourcesResult is what list_data_sources returns.
-type dataSourcesResult struct {
-	// DataSources are the organisation's data sources.
-	DataSources []dataSourceInfo `json:"data_sources"`
-}
-
-// listDataSources lists the organisation's data sources.
-type listDataSources struct{}
-
-// Info returns the tool's model-facing description.
-func (listDataSources) Info() Info {
-	return Info{
-		Name:        NameListDataSources,
-		Traits:      Traits{Group: GroupDataSources, DataSource: true},
-		Description: "List the organisation's data sources as {id, name, type, status}. type (prometheus, loki, postgresql, supabase, mariadb or mysql) decides the query language and which tools serve it; loki holds logs. Start here: the other data source tools take an id from this list.",
-		Properties:  map[string]any{},
-	}
-}
-
-// Execute lists the data sources the organisation owns.
-func (listDataSources) Execute(inp *input) (string, error) {
-	sources, err := inp.FetchDataSources()
-	if err != nil {
-		return "", err
-	}
-
-	out := make([]dataSourceInfo, 0, len(sources))
-
-	for _, ds := range sources {
-		out = append(out, dataSourceInfo{
-			ID:     ds.ID,
-			Name:   ds.Name,
-			Type:   ds.Type,
-			Status: ds.Status,
-		})
-	}
-
-	return result(dataSourcesResult{
-		DataSources: out,
-	})
-}
-
-// dataSourceArgs is what get_data_source_metadata is called with.
-type dataSourceArgs struct {
+// getDataSourceMetadata describes what a data source holds: the metrics
+// of a Prometheus one, the tables and columns of a SQL one.
+type getDataSourceMetadata struct {
 	// DataSourceID names the data source.
 	DataSourceID xid.ID `json:"data_source_id"`
 }
-
-// Validate checks the arguments are complete.
-func (a dataSourceArgs) Validate() error {
-	if a.DataSourceID.IsNil() {
-		return errRequired("data_source_id")
-	}
-
-	return nil
-}
-
-// getDataSourceMetadata describes what a data source holds: the metrics
-// of a Prometheus one, the tables and columns of a SQL one.
-type getDataSourceMetadata struct{}
 
 // Info returns the tool's model-facing description.
 func (getDataSourceMetadata) Info() Info {
@@ -185,15 +146,18 @@ func (getDataSourceMetadata) Info() Info {
 	}
 }
 
-// Title announces the data source being read.
-func (getDataSourceMetadata) Title(inp DescribeInput) string {
-	var in dataSourceArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ""
+// Validate checks the arguments are complete.
+func (gm getDataSourceMetadata) Validate() error {
+	if gm.DataSourceID.IsNil() {
+		return errRequired("data_source_id")
 	}
 
-	ds, err := inp.FetchDataSource(in.DataSourceID)
+	return nil
+}
+
+// Title announces the data source being read.
+func (gm getDataSourceMetadata) Title(inp DescribeInput) string {
+	ds, err := inp.FetchDataSource(gm.DataSourceID)
 	if err != nil {
 		return ""
 	}
@@ -201,59 +165,53 @@ func (getDataSourceMetadata) Title(inp DescribeInput) string {
 	return fmt.Sprintf("Reading what %q holds", ds.Name)
 }
 
-// Execute fetches the metadata of whichever kind of data source the id
+// Exec fetches the metadata of whichever kind of data source the id
 // names.
-func (getDataSourceMetadata) Execute(inp *input) (string, error) {
-	var in dataSourceArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	runner, err := inp.DataSourceRunner(in.DataSourceID)
+func (gm getDataSourceMetadata) Exec(inp Input) (any, error) {
+	runner, err := inp.DataSourceRunner(gm.DataSourceID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	typ := runner.Type()
 	if typ == datasource.TypePrometheus {
 		prom, perr := runner.Prometheus(inp.Context())
 		if perr != nil {
-			return "", perr
+			return nil, perr
 		}
 
 		res, merr := prom.Metadata(inp.Context())
 		if merr != nil {
-			return "", merr
+			return nil, merr
 		}
 
-		return result(res)
+		return res, nil
 	}
 
 	if typ == datasource.TypeLoki {
 		logs, lerr := runner.Logs(inp.Context())
 		if lerr != nil {
-			return "", lerr
+			return nil, lerr
 		}
 
 		to := timeutil.Now()
 
 		res, ferr := logs.LogFields(inp.Context(), "", processor.TimeRange{From: to.Add(-_defaultQueryWindow), To: to})
 		if ferr != nil {
-			return "", ferr
+			return nil, ferr
 		}
 
-		return result(res)
+		return res, nil
 	}
 
 	sql, err := runner.SQL(inp.Context())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	res, err := sql.Metadata(inp.Context())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	out := sqlMetadataResult{
@@ -271,7 +229,7 @@ func (getDataSourceMetadata) Execute(inp *input) (string, error) {
 		out.Tables[name] = columns
 	}
 
-	return result(out)
+	return out, nil
 }
 
 // sqlMetadataResult is what get_data_source_metadata returns for a SQL
@@ -284,9 +242,10 @@ type sqlMetadataResult struct {
 	Tables map[string][]string `json:"tables"`
 }
 
-// prometheusLabelsArgs is what list_prometheus_labels is called with.
-type prometheusLabelsArgs struct {
-	timeRangeArgs
+// listPrometheusLabels lists the label names of a Prometheus data
+// source, or the values one label takes.
+type listPrometheusLabels struct {
+	timeRange
 
 	// DataSourceID names the Prometheus data source.
 	DataSourceID xid.ID `json:"data_source_id"`
@@ -298,19 +257,6 @@ type prometheusLabelsArgs struct {
 	// Matchers narrows the answer to the series they select.
 	Matchers []string `json:"matchers"`
 }
-
-// Validate checks the arguments are complete.
-func (a prometheusLabelsArgs) Validate() error {
-	if a.DataSourceID.IsNil() {
-		return errRequired("data_source_id")
-	}
-
-	return nil
-}
-
-// listPrometheusLabels lists the label names of a Prometheus data
-// source, or the values one label takes.
-type listPrometheusLabels struct{}
 
 // Info returns the tool's model-facing description.
 func (listPrometheusLabels) Info() Info {
@@ -329,75 +275,72 @@ func (listPrometheusLabels) Info() Info {
 	}
 }
 
-// Title announces the data source being read, and the label when one
-// was named.
-func (listPrometheusLabels) Title(inp DescribeInput) string {
-	var in prometheusLabelsArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ""
+// Validate checks the arguments are complete.
+func (lpl listPrometheusLabels) Validate() error {
+	if lpl.DataSourceID.IsNil() {
+		return errRequired("data_source_id")
 	}
 
-	ds, err := inp.FetchDataSource(in.DataSourceID)
+	return nil
+}
+
+// Title announces the data source being read, and the label when one
+// was named.
+func (lpl listPrometheusLabels) Title(inp DescribeInput) string {
+	ds, err := inp.FetchDataSource(lpl.DataSourceID)
 	if err != nil {
 		return ""
 	}
 
-	if in.Label != "" {
-		return fmt.Sprintf("Listing values of label %q in %q", in.Label, ds.Name)
+	if lpl.Label != "" {
+		return fmt.Sprintf("Listing values of label %q in %q", lpl.Label, ds.Name)
 	}
 
 	return fmt.Sprintf("Listing labels of %q", ds.Name)
 }
 
-// Execute fetches the label names, or the named label's values.
-func (listPrometheusLabels) Execute(inp *input) (string, error) {
-	var in prometheusLabelsArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
+// Exec fetches the label names, or the named label's values.
+func (lpl listPrometheusLabels) Exec(inp Input) (any, error) {
+	tr, err := lpl.resolve()
+	if err != nil {
+		return nil, err
 	}
 
-	tr, err := in.resolve()
+	runner, err := inp.DataSourceRunner(lpl.DataSourceID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	runner, err := inp.DataSourceRunner(in.DataSourceID)
+	matchers, err := inp.SubstituteVariables(lpl.Matchers...)
 	if err != nil {
-		return "", err
-	}
-
-	matchers, err := inp.SubstituteVariables(in.Matchers...)
-	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	prom, err := runner.Prometheus(inp.Context())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	if in.Label != "" {
-		res, verr := prom.LabelValues(inp.Context(), in.Label, matchers, tr)
+	if lpl.Label != "" {
+		res, verr := prom.LabelValues(inp.Context(), lpl.Label, matchers, tr)
 		if verr != nil {
-			return "", verr
+			return nil, verr
 		}
 
-		return result(res)
+		return res, nil
 	}
 
 	res, err := prom.LabelNames(inp.Context(), matchers, tr)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return result(res)
+	return res, nil
 }
 
-// prometheusSeriesArgs is what list_prometheus_series is called with.
-type prometheusSeriesArgs struct {
-	timeRangeArgs
+// listPrometheusSeries lists the series matching a set of selectors.
+type listPrometheusSeries struct {
+	timeRange
 
 	// DataSourceID names the Prometheus data source.
 	DataSourceID xid.ID `json:"data_source_id"`
@@ -405,22 +348,6 @@ type prometheusSeriesArgs struct {
 	// Matchers select the series to return. Required.
 	Matchers []string `json:"matchers"`
 }
-
-// Validate checks the arguments are complete.
-func (a prometheusSeriesArgs) Validate() error {
-	if a.DataSourceID.IsNil() {
-		return errRequired("data_source_id")
-	}
-
-	if len(a.Matchers) == 0 {
-		return errRequired("matchers")
-	}
-
-	return nil
-}
-
-// listPrometheusSeries lists the series matching a set of selectors.
-type listPrometheusSeries struct{}
 
 // Info returns the tool's model-facing description.
 func (listPrometheusSeries) Info() Info {
@@ -438,15 +365,22 @@ func (listPrometheusSeries) Info() Info {
 	}
 }
 
-// Title announces the data source being read.
-func (listPrometheusSeries) Title(inp DescribeInput) string {
-	var in prometheusSeriesArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ""
+// Validate checks the arguments are complete.
+func (lps listPrometheusSeries) Validate() error {
+	if lps.DataSourceID.IsNil() {
+		return errRequired("data_source_id")
 	}
 
-	ds, err := inp.FetchDataSource(in.DataSourceID)
+	if len(lps.Matchers) == 0 {
+		return errRequired("matchers")
+	}
+
+	return nil
+}
+
+// Title announces the data source being read.
+func (lps listPrometheusSeries) Title(inp DescribeInput) string {
+	ds, err := inp.FetchDataSource(lps.DataSourceID)
 	if err != nil {
 		return ""
 	}
@@ -454,45 +388,40 @@ func (listPrometheusSeries) Title(inp DescribeInput) string {
 	return fmt.Sprintf("Listing series of %q", ds.Name)
 }
 
-// Execute fetches the matching series.
-func (listPrometheusSeries) Execute(inp *input) (string, error) {
-	var in prometheusSeriesArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
+// Exec fetches the matching series.
+func (lps listPrometheusSeries) Exec(inp Input) (any, error) {
+	tr, err := lps.resolve()
+	if err != nil {
+		return nil, err
 	}
 
-	tr, err := in.resolve()
+	runner, err := inp.DataSourceRunner(lps.DataSourceID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	runner, err := inp.DataSourceRunner(in.DataSourceID)
+	matchers, err := inp.SubstituteVariables(lps.Matchers...)
 	if err != nil {
-		return "", err
-	}
-
-	matchers, err := inp.SubstituteVariables(in.Matchers...)
-	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	prom, err := runner.Prometheus(inp.Context())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	res, err := prom.Series(inp.Context(), matchers, tr)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return result(res)
+	return res, nil
 }
 
-// logFieldsArgs is what list_log_fields is called with.
-type logFieldsArgs struct {
-	timeRangeArgs
+// listLogFields lists the field names the logs of a Loki data source
+// carry, or the values one field takes.
+type listLogFields struct {
+	timeRange
 
 	// DataSourceID names the Loki data source.
 	DataSourceID xid.ID `json:"data_source_id"`
@@ -504,19 +433,6 @@ type logFieldsArgs struct {
 	// Query narrows the answer to the logs it matches.
 	Query string `json:"query"`
 }
-
-// Validate checks the arguments are complete.
-func (a logFieldsArgs) Validate() error {
-	if a.DataSourceID.IsNil() {
-		return errRequired("data_source_id")
-	}
-
-	return nil
-}
-
-// listLogFields lists the field names the logs of a Loki data source
-// carry, or the values one field takes.
-type listLogFields struct{}
 
 // Info returns the tool's model-facing description.
 func (listLogFields) Info() Info {
@@ -535,75 +451,73 @@ func (listLogFields) Info() Info {
 	}
 }
 
-// Title announces the data source being read, and the field when one
-// was named.
-func (listLogFields) Title(inp DescribeInput) string {
-	var in logFieldsArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ""
+// Validate checks the arguments are complete.
+func (llf listLogFields) Validate() error {
+	if llf.DataSourceID.IsNil() {
+		return errRequired("data_source_id")
 	}
 
-	ds, err := inp.FetchDataSource(in.DataSourceID)
+	return nil
+}
+
+// Title announces the data source being read, and the field when one
+// was named.
+func (llf listLogFields) Title(inp DescribeInput) string {
+	ds, err := inp.FetchDataSource(llf.DataSourceID)
 	if err != nil {
 		return ""
 	}
 
-	if in.Field != "" {
-		return fmt.Sprintf("Listing values of field %q in %q", in.Field, ds.Name)
+	if llf.Field != "" {
+		return fmt.Sprintf("Listing values of field %q in %q", llf.Field, ds.Name)
 	}
 
 	return fmt.Sprintf("Listing fields of %q", ds.Name)
 }
 
-// Execute fetches the field names, or the named field's values.
-func (listLogFields) Execute(inp *input) (string, error) {
-	var in logFieldsArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
+// Exec fetches the field names, or the named field's values.
+func (llf listLogFields) Exec(inp Input) (any, error) {
+	tr, err := llf.resolve()
+	if err != nil {
+		return nil, err
 	}
 
-	tr, err := in.resolve()
+	runner, err := inp.DataSourceRunner(llf.DataSourceID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	runner, err := inp.DataSourceRunner(in.DataSourceID)
+	qq, err := inp.SubstituteVariables(llf.Query)
 	if err != nil {
-		return "", err
-	}
-
-	qq, err := inp.SubstituteVariables(in.Query)
-	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	logs, err := runner.Logs(inp.Context())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	if in.Field != "" {
-		res, verr := logs.LogFieldValues(inp.Context(), in.Field, qq[0], tr)
+	if llf.Field != "" {
+		res, verr := logs.LogFieldValues(inp.Context(), llf.Field, qq[0], tr)
 		if verr != nil {
-			return "", verr
+			return nil, verr
 		}
 
-		return result(res)
+		return res, nil
 	}
 
 	res, err := logs.LogFields(inp.Context(), qq[0], tr)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return result(res)
+	return res, nil
 }
 
-// queryDataSourceArgs is what query_data_source is called with.
-type queryDataSourceArgs struct {
-	timeRangeArgs
+// queryDataSource runs a query against a data source in the language it
+// speaks.
+type queryDataSource struct {
+	timeRange
 
 	// DataSourceID names the data source.
 	DataSourceID xid.ID `json:"data_source_id"`
@@ -615,23 +529,6 @@ type queryDataSourceArgs struct {
 	// type would draw instead of the raw answer.
 	ChartType processor.ChartType `json:"chart_type"`
 }
-
-// Validate checks the arguments are complete.
-func (a queryDataSourceArgs) Validate() error {
-	if a.DataSourceID.IsNil() {
-		return errRequired("data_source_id")
-	}
-
-	if a.Query == "" {
-		return errRequired("query")
-	}
-
-	return nil
-}
-
-// queryDataSource runs a query against a data source in the language it
-// speaks.
-type queryDataSource struct{}
 
 // Info returns the tool's model-facing description.
 func (queryDataSource) Info() Info {
@@ -654,15 +551,22 @@ func (queryDataSource) Info() Info {
 	}
 }
 
-// Title announces the data source being queried.
-func (queryDataSource) Title(inp DescribeInput) string {
-	var in queryDataSourceArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ""
+// Validate checks the arguments are complete.
+func (qd queryDataSource) Validate() error {
+	if qd.DataSourceID.IsNil() {
+		return errRequired("data_source_id")
 	}
 
-	ds, err := inp.FetchDataSource(in.DataSourceID)
+	if qd.Query == "" {
+		return errRequired("query")
+	}
+
+	return nil
+}
+
+// Title announces the data source being queried.
+func (qd queryDataSource) Title(inp DescribeInput) string {
+	ds, err := inp.FetchDataSource(qd.DataSourceID)
 	if err != nil {
 		return ""
 	}
@@ -670,32 +574,26 @@ func (queryDataSource) Title(inp DescribeInput) string {
 	return fmt.Sprintf("Querying %q", ds.Name)
 }
 
-// Execute runs the query in whichever language the data source speaks,
+// Exec runs the query in whichever language the data source speaks,
 // answering with the raw data or, when a chart type was named, with what
 // the chart would draw.
-func (queryDataSource) Execute(inp *input) (string, error) {
-	var in queryDataSourceArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	tr, err := in.resolve()
+func (qd queryDataSource) Exec(inp Input) (any, error) {
+	tr, err := qd.resolve()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	runner, err := inp.DataSourceRunner(in.DataSourceID)
+	runner, err := inp.DataSourceRunner(qd.DataSourceID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	vars, err := inp.VariableValues(in.Query)
+	vars, err := inp.VariableValues(qd.Query)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	q := in.Query
+	q := qd.Query
 
 	// each dialect answers in its own shape, so this is the one place a
 	// tool has to know which one it is talking to.
@@ -703,99 +601,99 @@ func (queryDataSource) Execute(inp *input) (string, error) {
 	case datasource.TypePrometheus:
 		prom, err := runner.Prometheus(inp.Context())
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		res, err := prom.QueryRange(inp.Context(), variable.Substitute(vars, q)[0], tr)
 		if err != nil {
-			return "", fmt.Errorf("%w; check the query against get_data_source_metadata", err)
+			return nil, fmt.Errorf("%w; check the query against get_data_source_metadata", err)
 		}
 
 		switch {
 		case res == nil:
-			return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
-		case in.ChartType == "":
-			return result(newRawSeries(res))
+			return &processor.QueryResult{Status: processor.QueryStatusNoData}, nil
+		case qd.ChartType == "":
+			return newRawSeries(res), nil
 		default:
-			return result(newChartPreview(res.Transform(in.ChartType)))
+			return newChartPreview(res.Transform(qd.ChartType)), nil
 		}
 	case datasource.TypeLoki:
-		if in.ChartType != "" {
-			return "", _errLogsChartType
+		if qd.ChartType != "" {
+			return nil, _errLogsChartType
 		}
 
 		return queryLogs(inp, runner, variable.Substitute(vars, q)[0], tr)
 	case datasource.TypePostgreSQL, datasource.TypeSupabase:
 		pg, err := runner.PostgreSQL(inp.Context())
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		res, err := pg.Query(inp.Context(), q, tr, vars)
 		if err != nil {
-			return "", fmt.Errorf("%w; check the query against get_data_source_metadata", err)
+			return nil, fmt.Errorf("%w; check the query against get_data_source_metadata", err)
 		}
 
 		switch {
 		case res == nil:
-			return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
-		case in.ChartType == "":
-			return result(newRawRows(res.Columns, res.Rows))
+			return &processor.QueryResult{Status: processor.QueryStatusNoData}, nil
+		case qd.ChartType == "":
+			return newRawRows(res.Columns, res.Rows), nil
 		}
 
-		qr, err := res.Transform(in.ChartType)
+		qr, err := res.Transform(qd.ChartType)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
-		return result(newChartPreview(qr))
+		return newChartPreview(qr), nil
 	default:
 		my, err := runner.MySQL(inp.Context())
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		res, err := my.Query(inp.Context(), q, tr, vars)
 		if err != nil {
-			return "", fmt.Errorf("%w; check the query against get_data_source_metadata", err)
+			return nil, fmt.Errorf("%w; check the query against get_data_source_metadata", err)
 		}
 
 		switch {
 		case res == nil:
-			return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
-		case in.ChartType == "":
-			return result(newRawRows(res.Columns, res.Rows))
+			return &processor.QueryResult{Status: processor.QueryStatusNoData}, nil
+		case qd.ChartType == "":
+			return newRawRows(res.Columns, res.Rows), nil
 		}
 
-		qr, err := res.Transform(in.ChartType)
+		qr, err := res.Transform(qd.ChartType)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
-		return result(newChartPreview(qr))
+		return newChartPreview(qr), nil
 	}
 }
 
 // queryLogs reads the newest logs a LogQL query matches, as
 // query_data_source answers for a Loki data source.
-func queryLogs(inp *input, runner datasource.Runner, q string, tr processor.TimeRange) (string, error) {
+func queryLogs(inp Input, runner datasource.Runner, q string, tr processor.TimeRange) (any, error) {
 	logs, err := runner.Logs(inp.Context())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	page := processor.LogsPage{Limit: _maxRawLogs, Order: processor.LogsOrderDesc}
 
 	res, err := logs.Logs(inp.Context(), q, tr, page)
 	if err != nil {
-		return "", fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since metric queries such as rate() are not supported", err)
+		return nil, fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since metric queries such as rate() are not supported", err)
 	}
 
 	if !res.HasData() {
-		return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
+		return &processor.QueryResult{Status: processor.QueryStatusNoData}, nil
 	}
 
-	return result(newRawLogs(res))
+	return newRawLogs(res), nil
 }
 
 // rawSeries is a raw Prometheus answer, cut down to _maxRawSeries series
@@ -930,10 +828,7 @@ func newRawRows(columns []string, rows [][]any) rawRows {
 }
 
 // chartPreview is what a query answers with when a chart type was
-// named. Naming one asks whether the query renders, not what it
-// contains — so the shape of the answer is reported and the points
-// behind it are not. A caller that wants the data omits chart_type and
-// gets the raw result.
+// named: the shape of what the chart would draw, without its points.
 type chartPreview struct {
 	// Status is the render outcome: whether the data fits the chart.
 	Status processor.QueryStatus `json:"status"`
@@ -982,4 +877,60 @@ func newChartPreview(qr *processor.QueryResult) chartPreview {
 	}
 
 	return out
+}
+
+// timeRange is the range every data-source read can be narrowed
+// with. Both ends are optional: the tools serve a model that usually
+// means "recently" and should not have to compute timestamps to say so.
+type timeRange struct {
+	// From is the range start. Zero means an hour before the end.
+	From time.Time `json:"from"`
+
+	// To is the range end. Zero means now.
+	To time.Time `json:"to"`
+}
+
+// resolve turns the pair into a time range, defaulting the end to now
+// and the start to an hour before it. An inverted range is rejected
+// here rather than handed to a backend, so the model is told the
+// arguments are backwards instead of seeing a backend-shaped failure.
+func (a timeRange) resolve() (processor.TimeRange, error) {
+	out := processor.TimeRange{From: a.From, To: a.To}
+
+	if out.To.IsZero() {
+		out.To = timeutil.Now()
+	}
+
+	if out.From.IsZero() {
+		out.From = out.To.Add(-_defaultQueryWindow)
+	}
+
+	if out.From.After(out.To) {
+		return processor.TimeRange{}, _errInvertedTimeRange
+	}
+
+	return out, nil
+}
+
+// DataSourceInput is what the data-source tools reach on top of
+// DescribeInput.
+type DataSourceInput interface {
+	// FetchDataSources should return the organisation's data sources.
+	FetchDataSources() ([]datasource.DataSource, error)
+
+	// DataSourceRunner should return the runner that reads the data
+	// source.
+	DataSourceRunner(id xid.ID) (datasource.Runner, error)
+
+	// CheckDataSources should refuse blocks naming a data source the
+	// organisation does not have.
+	CheckDataSources(blocks []document.Block) error
+
+	// VariableValues should return the value of every variable the texts
+	// name, keyed by name.
+	VariableValues(texts ...string) (map[string]string, error)
+
+	// SubstituteVariables should return the texts with the variables
+	// they name replaced by their values.
+	SubstituteVariables(texts ...string) ([]string, error)
 }

@@ -9,14 +9,6 @@ import (
 	"github.com/rs/xid"
 )
 
-// listTagsArgs is what list_tags is called with.
-type listTagsArgs struct{}
-
-// Validate accepts every payload: nothing is required.
-func (listTagsArgs) Validate() error {
-	return nil
-}
-
 // listTags returns the organisation's tags with the documents carrying
 // them.
 type listTags struct{}
@@ -31,20 +23,19 @@ func (listTags) Info() Info {
 	}
 }
 
-// Execute lists every tag with the documents carrying it.
-func (listTags) Execute(inp *input) (string, error) {
-	var in listTagsArgs
+// Validate accepts every payload: nothing is required.
+func (listTags) Validate() error {
+	return nil
+}
 
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
+// Exec lists every tag with the documents carrying it.
+func (listTags) Exec(inp Input) (any, error) {
 	tree, err := inp.FetchTagTree()
 	if err != nil {
-		return "", fmt.Errorf("fetch tags: %w", err)
+		return nil, fmt.Errorf("fetching tags: %w", err)
 	}
 
-	out := tagListResult{Tags: make([]tagEntry, 0, len(tree))}
+	out := listTagsResult{Tags: make([]tagEntry, 0, len(tree))}
 
 	for _, s := range tree {
 		e := tagEntry{
@@ -67,11 +58,11 @@ func (listTags) Execute(inp *input) (string, error) {
 		out.Tags = append(out.Tags, e)
 	}
 
-	return result(out)
+	return out, nil
 }
 
-// tagListResult is what list_tags returns.
-type tagListResult struct {
+// listTagsResult is what list_tags returns.
+type listTagsResult struct {
 	// Tags is every tag in the organisation, in sidebar order.
 	Tags []tagEntry `json:"tags"`
 }
@@ -103,35 +94,14 @@ type tagDocument struct {
 	DefaultBranchID xid.ID `json:"default_branch_id"`
 }
 
-// createTagArgs is what create_tag is called with.
-type createTagArgs struct {
+// createTag creates a new tag in the organisation.
+type createTag struct {
 	// Name is the new tag's display name. Required.
 	Name string `json:"name"`
 
 	// ColorName is the new tag's colour as a palette name. Required.
 	ColorName string `json:"color"`
 }
-
-// Validate checks the arguments are complete and the colour in the palette.
-func (a createTagArgs) Validate() error {
-	if a.Name == "" {
-		return errRequired("name")
-	}
-
-	if a.ColorName == "" {
-		return errRequired("color")
-	}
-
-	return a.input().Validate()
-}
-
-// input returns the arguments as the domain's create input.
-func (a createTagArgs) input() tag.CreateInput {
-	return tag.CreateInput{TagName: a.Name, Color: a.ColorName}
-}
-
-// createTag creates a new tag in the organisation.
-type createTag struct{}
 
 // Info returns the tool's model-facing description.
 func (createTag) Info() Info {
@@ -147,48 +117,54 @@ func (createTag) Info() Info {
 	}
 }
 
-// Summary describes the tag the model wants to create.
-func (createTag) Summary(inp DescribeInput) (ActionSummary, error) {
-	var in createTagArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ActionSummary{}, err
+// Validate checks the arguments are complete and the colour in the palette.
+func (ct createTag) Validate() error {
+	if ct.Name == "" {
+		return errRequired("name")
 	}
 
+	if ct.ColorName == "" {
+		return errRequired("color")
+	}
+
+	return ct.input().Validate()
+}
+
+// Summary describes the tag the model wants to create.
+func (ct createTag) Summary(_ DescribeInput) (ActionSummary, error) {
 	return ActionSummary{
 		Tool:    NameCreateTag,
-		Summary: fmt.Sprintf("Create tag %s (%s)", in.Name, in.ColorName),
+		Summary: fmt.Sprintf("Create tag %s (%s)", ct.Name, ct.ColorName),
 	}, nil
 }
 
-// Execute creates the tag and refreshes the tag tree.
-func (createTag) Execute(inp *input) (string, error) {
-	var in createTagArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	t, err := tag.NewTag(in.input(), inp.orgID, inp.userID)
+// Exec creates the tag.
+func (ct createTag) Exec(inp Input) (any, error) {
+	t, err := tag.NewTag(ct.input(), inp.OrganizationID(), inp.UserID())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if err = inp.CreateTag(t); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return result(createdTagResult{TagID: t.ID})
+	return createTagResult{TagID: t.ID}, nil
 }
 
-// createdTagResult is what create_tag returns.
-type createdTagResult struct {
+// input returns the arguments as the domain's create input.
+func (ct createTag) input() tag.CreateInput {
+	return tag.CreateInput{TagName: ct.Name, Color: ct.ColorName}
+}
+
+// createTagResult is what create_tag returns.
+type createTagResult struct {
 	// TagID addresses the new tag in every later call.
 	TagID xid.ID `json:"tag_id"`
 }
 
-// updateTagArgs is what update_tag is called with.
-type updateTagArgs struct {
+// updateTag renames, recolours or moves a tag, any of them in one call.
+type updateTag struct {
 	// TagID names the tag being changed.
 	TagID xid.ID `json:"tag_id"`
 
@@ -203,68 +179,6 @@ type updateTagArgs struct {
 	// it where it is.
 	SortIndex null.Value[int] `json:"sort_index"`
 }
-
-// Validate checks the arguments name a tag and change something.
-func (a updateTagArgs) Validate() error {
-	if a.TagID.IsNil() {
-		return errRequired("tag_id")
-	}
-
-	if !a.renames() {
-		if !a.SortIndex.Valid {
-			return errors.New("give at least one of name, color or sort_index")
-		}
-
-		return nil
-	}
-
-	return a.input().Validate()
-}
-
-// renames reports whether the call changes the name or the colour, which
-// is the tag's own update rather than a move.
-func (a updateTagArgs) renames() bool {
-	return a.Name != "" || a.ColorName != ""
-}
-
-// input returns the arguments as the domain's update input, with only
-// the fields that were given set.
-func (a updateTagArgs) input() tag.UpdateInput {
-	var inp tag.UpdateInput
-
-	if a.Name != "" {
-		inp.TagName = null.StringFrom(a.Name)
-	}
-
-	if a.ColorName != "" {
-		inp.Color = null.StringFrom(a.ColorName)
-	}
-
-	return inp
-}
-
-// changes lists the requested changes in the words the confirm card
-// uses, in a fixed order so the same request always reads the same.
-func (a updateTagArgs) changes(currentName string) []string {
-	var out []string
-
-	if a.Name != "" {
-		out = append(out, fmt.Sprintf("rename %s to %q", currentName, a.Name))
-	}
-
-	if a.ColorName != "" {
-		out = append(out, "set the colour to "+a.ColorName)
-	}
-
-	if a.SortIndex.Valid {
-		out = append(out, fmt.Sprintf("move it to position %d", a.SortIndex.V+1))
-	}
-
-	return out
-}
-
-// updateTag renames, recolours or moves a tag, any of them in one call.
-type updateTag struct{}
 
 // Info returns the tool's model-facing description.
 func (updateTag) Info() Info {
@@ -282,70 +196,117 @@ func (updateTag) Info() Info {
 	}
 }
 
-// Summary lists exactly the changes the model asked for.
-func (updateTag) Summary(inp DescribeInput) (ActionSummary, error) {
-	var in updateTagArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ActionSummary{}, err
+// Validate checks the arguments name a tag and change something.
+func (ut updateTag) Validate() error {
+	if ut.TagID.IsNil() {
+		return errRequired("tag_id")
 	}
 
-	tg, err := inp.FetchTag(in.TagID)
+	if !ut.renames() {
+		if !ut.SortIndex.Valid {
+			return errors.New("give at least one of name, color or sort_index")
+		}
+
+		return nil
+	}
+
+	return ut.input().Validate()
+}
+
+// Summary lists exactly the changes the model asked for.
+func (ut updateTag) Summary(inp DescribeInput) (ActionSummary, error) {
+	tg, err := inp.FetchTag(ut.TagID)
 	if err != nil {
-		return ActionSummary{}, fmt.Errorf("fetch tag: %w", err)
+		return ActionSummary{}, fmt.Errorf("fetching tag: %w", err)
 	}
 
 	return ActionSummary{
 		Tool:    NameUpdateTag,
-		Summary: sentence(in.changes(tg.TagName)),
+		Summary: joinClauses(ut.changes(tg.TagName)),
 	}, nil
 }
 
-// Execute applies the change and refreshes the tag tree.
-func (updateTag) Execute(inp *input) (string, error) {
-	var in updateTagArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
+// Exec applies the change.
+func (ut updateTag) Exec(inp Input) (any, error) {
 	// the rename and the move are two writes. The move is tried on the
 	// current order first, so a position it would refuse fails the call
 	// before the rename is saved.
-	if in.renames() && in.SortIndex.Valid {
+	if ut.renames() && ut.SortIndex.Valid {
 		tree, err := inp.FetchTagTree()
 		if err != nil {
-			return "", fmt.Errorf("fetching tags: %w", err)
+			return nil, fmt.Errorf("fetching tags: %w", err)
 		}
 
-		if _, err := tree.Swap(in.TagID, in.SortIndex.V); err != nil {
-			return "", err
-		}
-	}
-
-	if in.renames() {
-		if err := inp.UpdateTag(in.TagID, in.input()); err != nil {
-			return "", err
+		if _, err := tree.Swap(ut.TagID, ut.SortIndex.V); err != nil {
+			return nil, err
 		}
 	}
 
-	if in.SortIndex.Valid {
-		if err := inp.MoveTag(in.TagID, in.SortIndex.V); err != nil {
-			return "", err
+	if ut.renames() {
+		if err := inp.UpdateTag(ut.TagID, ut.input()); err != nil {
+			return nil, err
 		}
 	}
 
-	out := updatedTagResult{TagID: in.TagID, Name: in.Name, ColorName: in.ColorName}
-	if in.SortIndex.Valid {
-		out.SortIndex = &in.SortIndex.V
+	if ut.SortIndex.Valid {
+		if err := inp.MoveTag(ut.TagID, ut.SortIndex.V); err != nil {
+			return nil, err
+		}
 	}
 
-	return result(out)
+	out := updateTagResult{TagID: ut.TagID, Name: ut.Name, ColorName: ut.ColorName}
+	if ut.SortIndex.Valid {
+		out.SortIndex = &ut.SortIndex.V
+	}
+
+	return out, nil
 }
 
-// updatedTagResult is what update_tag returns: the tag and the fields
+// renames reports whether the call changes the name or the colour, which
+// is the tag's own update rather than a move.
+func (ut updateTag) renames() bool {
+	return ut.Name != "" || ut.ColorName != ""
+}
+
+// input returns the arguments as the domain's update input, with only
+// the fields that were given set.
+func (ut updateTag) input() tag.UpdateInput {
+	var inp tag.UpdateInput
+
+	if ut.Name != "" {
+		inp.TagName = null.StringFrom(ut.Name)
+	}
+
+	if ut.ColorName != "" {
+		inp.Color = null.StringFrom(ut.ColorName)
+	}
+
+	return inp
+}
+
+// changes lists the requested changes in the words the confirm card
+// uses, in a fixed order so the same request always reads the same.
+func (ut updateTag) changes(currentName string) []string {
+	var out []string
+
+	if ut.Name != "" {
+		out = append(out, fmt.Sprintf("rename %s to %q", currentName, ut.Name))
+	}
+
+	if ut.ColorName != "" {
+		out = append(out, "set the colour to "+ut.ColorName)
+	}
+
+	if ut.SortIndex.Valid {
+		out = append(out, fmt.Sprintf("move it to position %d", ut.SortIndex.V+1))
+	}
+
+	return out
+}
+
+// updateTagResult is what update_tag returns: the tag and the fields
 // that changed.
-type updatedTagResult struct {
+type updateTagResult struct {
 	// TagID is the tag that was changed.
 	TagID xid.ID `json:"tag_id"`
 
@@ -359,23 +320,11 @@ type updatedTagResult struct {
 	SortIndex *int `json:"sort_index,omitempty"`
 }
 
-// deleteTagArgs is what delete_tag is called with.
-type deleteTagArgs struct {
+// deleteTag removes a tag from the organisation.
+type deleteTag struct {
 	// TagID names the tag being deleted.
 	TagID xid.ID `json:"tag_id"`
 }
-
-// Validate checks the arguments are complete.
-func (a deleteTagArgs) Validate() error {
-	if a.TagID.IsNil() {
-		return errRequired("tag_id")
-	}
-
-	return nil
-}
-
-// deleteTag removes a tag from the organisation.
-type deleteTag struct{}
 
 // Info returns the tool's model-facing description.
 func (deleteTag) Info() Info {
@@ -390,17 +339,20 @@ func (deleteTag) Info() Info {
 	}
 }
 
-// Summary describes the tag the model wants to delete.
-func (deleteTag) Summary(inp DescribeInput) (ActionSummary, error) {
-	var in deleteTagArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ActionSummary{}, err
+// Validate checks the arguments are complete.
+func (dt deleteTag) Validate() error {
+	if dt.TagID.IsNil() {
+		return errRequired("tag_id")
 	}
 
-	tg, err := inp.FetchTag(in.TagID)
+	return nil
+}
+
+// Summary describes the tag the model wants to delete.
+func (dt deleteTag) Summary(inp DescribeInput) (ActionSummary, error) {
+	tg, err := inp.FetchTag(dt.TagID)
 	if err != nil {
-		return ActionSummary{}, fmt.Errorf("fetch tag: %w", err)
+		return ActionSummary{}, fmt.Errorf("fetching tag: %w", err)
 	}
 
 	summary := "Delete tag " + tg.TagName
@@ -418,23 +370,17 @@ func (deleteTag) Summary(inp DescribeInput) (ActionSummary, error) {
 	}, nil
 }
 
-// Execute deletes the tag and refreshes the tag tree.
-func (deleteTag) Execute(inp *input) (string, error) {
-	var in deleteTagArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
+// Exec deletes the tag.
+func (dt deleteTag) Exec(inp Input) (any, error) {
+	if err := inp.DeleteTag(dt.TagID); err != nil {
+		return nil, err
 	}
 
-	if err := inp.DeleteTag(in.TagID); err != nil {
-		return "", err
-	}
-
-	return result(deletedTagResult{TagID: in.TagID, Deleted: true})
+	return deleteTagResult{TagID: dt.TagID, Deleted: true}, nil
 }
 
-// deletedTagResult is what delete_tag returns.
-type deletedTagResult struct {
+// deleteTagResult is what delete_tag returns.
+type deleteTagResult struct {
 	// TagID is the tag that was removed.
 	TagID xid.ID `json:"tag_id"`
 
@@ -443,9 +389,8 @@ type deletedTagResult struct {
 	Deleted bool `json:"deleted"`
 }
 
-// setTagAssignmentArgs is what set_tag_assignment is called with: a
-// branch, a tag, and whether the branch carries it.
-type setTagAssignmentArgs struct {
+// setTagAssignment puts a tag on a document branch or takes it off.
+type setTagAssignment struct {
 	docTarget
 
 	// TagID names the tag.
@@ -455,27 +400,6 @@ type setTagAssignmentArgs struct {
 	// Required, since false is an answer.
 	Assigned null.Value[bool] `json:"assigned"`
 }
-
-// Validate checks the arguments name a branch and a tag and say which
-// way the assignment goes.
-func (a setTagAssignmentArgs) Validate() error {
-	if err := a.docTarget.Validate(); err != nil {
-		return err
-	}
-
-	if a.TagID.IsNil() {
-		return errRequired("tag_id")
-	}
-
-	if !a.Assigned.Valid {
-		return errRequired("assigned")
-	}
-
-	return nil
-}
-
-// setTagAssignment puts a tag on a document branch or takes it off.
-type setTagAssignment struct{}
 
 // Info returns the tool's model-facing description.
 func (setTagAssignment) Info() Info {
@@ -493,26 +417,38 @@ func (setTagAssignment) Info() Info {
 	}
 }
 
+// Validate checks the arguments name a branch and a tag and say which
+// way the assignment goes.
+func (sta setTagAssignment) Validate() error {
+	if err := sta.docTarget.Validate(); err != nil {
+		return err
+	}
+
+	if sta.TagID.IsNil() {
+		return errRequired("tag_id")
+	}
+
+	if !sta.Assigned.Valid {
+		return errRequired("assigned")
+	}
+
+	return nil
+}
+
 // Summary names the tag and the document it goes on or comes off.
-func (setTagAssignment) Summary(inp DescribeInput) (ActionSummary, error) {
-	var in setTagAssignmentArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ActionSummary{}, err
+func (sta setTagAssignment) Summary(inp DescribeInput) (ActionSummary, error) {
+	doc, err := inp.FetchBranch(sta.DocumentID, sta.BranchID)
+	if err != nil {
+		return ActionSummary{}, fmt.Errorf("fetching document: %w", err)
 	}
 
-	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
+	tg, err := inp.FetchTag(sta.TagID)
 	if err != nil {
-		return ActionSummary{}, fmt.Errorf("fetch document: %w", err)
-	}
-
-	tg, err := inp.FetchTag(in.TagID)
-	if err != nil {
-		return ActionSummary{}, fmt.Errorf("fetch tag: %w", err)
+		return ActionSummary{}, fmt.Errorf("fetching tag: %w", err)
 	}
 
 	summary := fmt.Sprintf("Take tag %s off %s", tg.TagName, doc.Title())
-	if in.Assigned.V {
+	if sta.Assigned.V {
 		summary = fmt.Sprintf("Put tag %s on %s", tg.TagName, doc.Title())
 	}
 
@@ -524,32 +460,26 @@ func (setTagAssignment) Summary(inp DescribeInput) (ActionSummary, error) {
 	}, nil
 }
 
-// Execute assigns or unassigns the tag and refreshes the tag tree.
-func (setTagAssignment) Execute(inp *input) (string, error) {
-	var in setTagAssignmentArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	if in.Assigned.V {
-		if err := inp.AssignTag(in.DocumentID, in.BranchID, in.TagID); err != nil {
-			return "", err
+// Exec assigns or unassigns the tag.
+func (sta setTagAssignment) Exec(inp Input) (any, error) {
+	if sta.Assigned.V {
+		if err := inp.AssignTag(sta.DocumentID, sta.BranchID, sta.TagID); err != nil {
+			return nil, err
 		}
-	} else if err := inp.UnassignTag(in.DocumentID, in.BranchID, in.TagID); err != nil {
-		return "", err
+	} else if err := inp.UnassignTag(sta.DocumentID, sta.BranchID, sta.TagID); err != nil {
+		return nil, err
 	}
 
-	return result(tagAssignmentResult{
-		DocumentID: in.DocumentID,
-		BranchID:   in.BranchID,
-		TagID:      in.TagID,
-		Assigned:   in.Assigned.V,
-	})
+	return setTagAssignmentResult{
+		DocumentID: sta.DocumentID,
+		BranchID:   sta.BranchID,
+		TagID:      sta.TagID,
+		Assigned:   sta.Assigned.V,
+	}, nil
 }
 
-// tagAssignmentResult is what set_tag_assignment returns.
-type tagAssignmentResult struct {
+// setTagAssignmentResult is what set_tag_assignment returns.
+type setTagAssignmentResult struct {
 	// DocumentID is the document whose branch changed.
 	DocumentID xid.ID `json:"document_id"`
 
@@ -561,4 +491,31 @@ type tagAssignmentResult struct {
 
 	// Assigned is whether the branch now carries the tag.
 	Assigned bool `json:"assigned"`
+}
+
+// TagInput is what the tag tools reach on top of DescribeInput.
+type TagInput interface {
+	// FetchTagTree should return the organisation's tags.
+	FetchTagTree() (tag.Summaries, error)
+
+	// FetchBranchTags should return the tags the branch carries.
+	FetchBranchTags(documentID, branchID xid.ID) ([]tag.Tag, error)
+
+	// CreateTag should store the new tag.
+	CreateTag(t tag.Tag) error
+
+	// UpdateTag should apply the update to the tag.
+	UpdateTag(tagID xid.ID, inp tag.UpdateInput) error
+
+	// DeleteTag should delete the tag.
+	DeleteTag(tagID xid.ID) error
+
+	// AssignTag should put the tag on the branch.
+	AssignTag(documentID, branchID, tagID xid.ID) error
+
+	// UnassignTag should take the tag off the branch.
+	UnassignTag(documentID, branchID, tagID xid.ID) error
+
+	// MoveTag should move the tag to the sort index.
+	MoveTag(tagID xid.ID, sortIndex int) error
 }

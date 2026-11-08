@@ -1,12 +1,10 @@
 // Package markup renders documents as the XML the assistant reads and
 // writes, and builds ProseMirror blocks back from it.
 //
-// Each block is one element carrying its uid as id. Inline formatting is
-// tags (b, i, u, s, code, a href); pre, mermaid, metrics and logs hold raw
-// text.
-// Parts the editor needs but nobody addresses, such as a list entry's
-// paragraph or a split_doc's sides, have no id of their own and keep
-// their stored uids through the element they belong to.
+// Each block is one element with its uid as id. Inline formatting is
+// tags (b, i, u, s, code, a href), and pre, mermaid, metrics and logs
+// hold raw text. Parts nobody addresses, such as a list entry's
+// paragraph, have no id and keep their uids through their element.
 package markup
 
 import (

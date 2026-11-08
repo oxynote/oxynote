@@ -130,8 +130,8 @@ func Test_parseModels(t *testing.T) {
 	// supported provider has an entry, every entry belongs to a
 	// supported provider, each default is on its own list, every group
 	// carries a status a listed model can have, and no model id appears
-	// in two groups — map iteration would make such a duplicate resolve
-	// to a random status.
+	// in two groups, since map iteration would give such a duplicate a
+	// random status.
 	models, err = parseModels(_modelsJSON)
 	require.NoError(t, err)
 

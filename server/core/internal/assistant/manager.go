@@ -1,12 +1,8 @@
-// Package assistant runs the AI chat that lets the user interact with
-// documents in their organisation. The Manager holds shared
-// dependencies (chat model, DB, edit-RPC client, the persist stores,
-// metrics); each connected user gets a session that drives one agent
-// run per user message.
-//
-// No vendor SDK appears here: the model arrives as an eino interface
-// built by the provider package, so the assistant behaves identically
-// whichever provider the operator configured.
+// Package assistant runs the AI chat over an organisation's documents.
+// The Manager holds the shared dependencies, and each connected user
+// gets a session that runs the agent once per message. The model comes
+// from the provider package as an eino interface, so no vendor SDK is
+// imported here.
 package assistant
 
 import (
@@ -89,22 +85,12 @@ type Manager struct {
 	metrics *metrics
 }
 
-// NewManager constructs an assistant Manager. The chatModel is built by
-// the provider package from the operator's configuration; summaryModel
-// backs context summarisation and may be the same model. The editClient
-// is the edit pipe to the Node hocuspocus service; the search client
-// backs the search_documents tool and searchQueue queues the
-// search jobs of document writes; providerName labels token
-// metrics so usage stays readable across a provider change.
-// loadToolsOnRequest says whether the model expands tool references, so
-// the grouped tools can load on request.
-//
-// githubMan and webchangeClient tell the hook tools which integrations
-// exist; hookMan runs hook writes and variableMan the variable reads and
-// writes. The tree notifier broadcasts sidebar refresh events after
-// document tree mutations and is wired post-construction via
-// SetTreeNotifier because the document handler that satisfies it is
-// built later, inside server.NewServer.
+// NewManager creates a fresh instance of Manager. summaryModel
+// summarises long conversations and may be chatModel itself.
+// providerName labels the token metrics. loadToolsOnRequest says whether
+// the model expands tool references, so grouped tools can load on
+// request. The tree notifier is wired later through SetTreeNotifier,
+// because server.NewServer builds the handler that implements it.
 func NewManager(
 	log *slog.Logger,
 	db tools.DB,
@@ -264,13 +250,10 @@ func (m *Manager) releaseTurn(key string) {
 	delete(m.turns.m, key)
 }
 
-// Chat runs an assistant chat over the given connection for the given
-// organisation and user. It owns the read loop: inbound messages are
-// dispatched to a fresh session until the connection reports io.EOF (a
-// clean client close, returning nil) or fails with any other error.
-// The session starts without an active document; the client sends a
-// set_active_document message right after connect to tell the model
-// which document is in view.
+// Chat runs an assistant chat over the connection for the organisation
+// and user. It reads messages until the connection closes: io.EOF
+// returns nil, any other failure is returned. The client names the open
+// document with set_active_document right after connecting.
 func (m *Manager) Chat(ctx context.Context, orgID, userID string, conn protocol.SessionConn) error {
 	s, err := m.newSession(ctx, orgID, userID, conn)
 	if err != nil {

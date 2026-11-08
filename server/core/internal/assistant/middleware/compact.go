@@ -16,33 +16,17 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 )
 
-// _maxToolResultChars is the largest single tool result kept in the
-// conversation whole. Past it the result is offloaded and replaced with
-// a head/tail preview plus a handle the model can read back.
-//
-// It sits where a document has to be genuinely large before the model
-// stops seeing it in full — around five hundred blocks of summary — so
-// truncation stays the exception rather than something ordinary reads
-// hit. Lower, and routine reads would cost an extra turn to page back
-// in; higher, and one result could take a quarter of the context
-// window. This is eino's own default, restated as a decision rather
-// than inherited silently.
+// _maxToolResultChars is the largest tool result kept whole. A larger
+// one is offloaded and replaced with a preview and a handle. It is
+// eino's default, about five hundred blocks of document, so ordinary
+// reads stay whole.
 const _maxToolResultChars = 50_000
 
 // NewCompaction builds the two middlewares that keep a long conversation
-// affordable without losing it.
-//
-// Reduction handles tool-result bloat: an oversized result is offloaded
-// and previewed rather than destroyed, and old read results are cleared
-// once the conversation outgrows its token budget. Summarization handles
-// length: past a threshold the conversation is summarised rather than
-// having its oldest messages silently dropped.
-//
-// Write results are never cleared. The model has to remember what it
-// changed in order to talk about it in a later turn, and re-reading a
-// document cannot recover the fact that it was the one who edited it.
-// Nor are load_tools results: their references are what keeps a loaded
-// group's tools callable.
+// affordable. Reduction offloads oversized results and clears old reads.
+// Summarization summarises the conversation past a threshold. Write and
+// load_tools results are never cleared: the model must remember what it
+// changed, and a loaded group stays callable through its references.
 func NewCompaction(
 	ctx context.Context,
 	summaryModel model.ToolCallingChatModel,
@@ -80,17 +64,10 @@ func NewCompaction(
 	}, nil
 }
 
-// newClearRewriter builds the rewriter that replaces a cleared read
-// round with a short note saying the content is stale, so the model
-// knows it once read the document and that what it remembers may no
-// longer be current.
-//
-// eino invokes the rewriter for every round before it consults
-// ClearExcludeTools, so a round containing any write call is handed
-// back exactly as it was — rewriting it here would destroy the write
-// result despite the exclusion list and invite the model to re-execute
-// the write. The later per-call pass then clears whatever reads share
-// the round while keeping the writes.
+// newClearRewriter replaces a cleared read round with a note that the
+// content is stale. eino calls it before it checks ClearExcludeTools, so
+// a round holding a write is returned unchanged. The later per-call pass
+// clears its reads and keeps the writes.
 func newClearRewriter(writeNames []string) func(
 	ctx context.Context,
 	toolCallMsg *schema.Message,
