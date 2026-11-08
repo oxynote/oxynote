@@ -252,8 +252,8 @@ describe("<Row>", () => {
 
 		// the origin, metadata and content tables each keep their own rows
 		const metadata = wrapper.findAll(".divide-y")[1]
-		expect(metadata.text()).toContain("trace_id")
-		expect(metadata.text()).toContain("4bf9")
+		expect(metadata?.text()).toContain("trace_id")
+		expect(metadata?.text()).toContain("4bf9")
 	})
 
 	it("grows its details open when expanded after mounting", async ({
