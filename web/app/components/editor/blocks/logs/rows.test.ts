@@ -13,6 +13,7 @@ import {
 	type LogSummary,
 } from "./rows"
 import { LineFormat, type LogDialect } from "./dialect"
+import { lokiDialect } from "./loki"
 
 const NOON_MILLIS = BigInt(Date.UTC(2026, 0, 1, 12, 0, 0))
 // a source that names a parsed key as the line does, so these tests read
@@ -26,6 +27,31 @@ const EXACT_DIALECT: LogDialect = {
 }
 
 describe("summarizeLog", () => {
+	it("preserves JSON number text in the summary without repeating parsed fields", ({
+		expect,
+	}) => {
+		const log = makeLog({
+			id: "l1",
+			line: '{"msg":"order placed","duration_ms":25.0,"order_id":9007199254740993,"tiny":1e-400}',
+			parsed: {
+				duration_ms: "25.0",
+				order_id: "9007199254740993",
+				tiny: "1e-400",
+			},
+		})
+
+		expect(summarizeLog(log, lokiDialect)).toEqual({
+			message: "order placed",
+			extracted: [
+				["duration_ms", "25.0"],
+				["order_id", "9007199254740993"],
+				["tiny", "1e-400"],
+			],
+			fields: [],
+			labels: [],
+		})
+	})
+
 	it.for<{
 		name: string
 		input: Pick<Log, "line" | "labels" | "fields"> &
@@ -279,6 +305,106 @@ describe("summarizeLog", () => {
 })
 
 describe("extractedFields", () => {
+	it("keeps empty and integer keys, numeric strings and empty containers distinct", ({
+		expect,
+	}) => {
+		const log = makeLog({
+			id: "l1",
+			line: '{"2":25.0,"1":9007199254740993,"":-0.0,"text":"25.0","array":[],"object":{}}',
+		})
+
+		expect(
+			extractedFields(log, lokiDialect).map((f) => [f.key, f.value, f.nested]),
+		).toEqual([
+			["1", "9007199254740993", false],
+			["2", "25.0", false],
+			["", "-0.0", false],
+			["text", "25.0", false],
+			["array", "[]", true],
+			["object", "{}", true],
+		])
+	})
+
+	it.for([
+		"25.0",
+		"9007199254740993",
+		"-9007199254740993",
+		"0.000000000000000000123",
+		"1e+30",
+		"1E-400",
+		"1e400",
+		"-0",
+		"-0.0",
+	])("preserves %s as the displayed and filter value", (number, { expect }) => {
+		const fields = extractedFields(
+			makeLog({ id: "l1", line: `{"n":${number}}`, parsed: { n: number } }),
+			lokiDialect,
+		)
+
+		expect(fields).toEqual([
+			{
+				key: "n",
+				value: number,
+				display: number,
+				format: LineFormat.JSON,
+				nested: false,
+				isNull: false,
+			},
+		])
+	})
+
+	it("preserves nested numbers without treating numbers as messages or nested fields", ({
+		expect,
+	}) => {
+		const log = makeLog({
+			id: "l1",
+			line: '{"msg":25.0,"message":"done","data":{"n":9007199254740993,"items":[25.0,null,true]},"ok":true,"none":null}',
+		})
+		const fields = extractedFields(log, lokiDialect)
+
+		expect(fields.map((f) => [f.key, f.value, f.nested, f.isNull])).toEqual([
+			["msg", "25.0", false, false],
+			["message", "done", false, false],
+			["data", '{"n":9007199254740993,"items":[25.0,null,true]}', true, false],
+			["ok", "true", false, false],
+			["none", "null", false, true],
+		])
+		expect(summarizeLog(log, lokiDialect).message).toBe("done")
+	})
+
+	it("reads escaped keys and delimiters inside strings and keeps the last duplicate key", ({
+		expect,
+	}) => {
+		const log = makeLog({
+			id: "l1",
+			line: ' { "n": 1, "text": "a \\"quote\\" },:[ 25.0", "nested": [{"n":2}], "\\u006e": 25.0, "__proto__": 9007199254740993 } ',
+		})
+
+		expect(
+			extractedFields(log, lokiDialect).map((f) => [f.key, f.value]),
+		).toEqual([
+			["n", "25.0"],
+			["text", 'a "quote" },:[ 25.0'],
+			["nested", '[{"n":2}]'],
+			["__proto__", "9007199254740993"],
+		])
+	})
+
+	it("keeps a parser number that differs beyond JavaScript integer precision", ({
+		expect,
+	}) => {
+		const log = makeLog({
+			id: "l1",
+			line: '{"n":9007199254740993}',
+			parsed: { n: "9007199254740992" },
+		})
+
+		expect(extractedFields(log, lokiDialect).map((f) => f.value)).toEqual([
+			"9007199254740993",
+			"9007199254740992",
+		])
+	})
+
 	it("lists every line key, then the parser keys the line does not repeat, keeping the keys of a nested value", ({
 		expect,
 	}) => {

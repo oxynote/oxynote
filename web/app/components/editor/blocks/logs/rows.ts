@@ -10,6 +10,9 @@ const MESSAGE_KEYS = ["msg", "message", "log"]
 // at white space.
 const LOGFMT_PAIR = /\s*([^\s="]+)=("(?:[^"\\]|\\.)*"|[^\s"]*)(?=\s|$)/y
 
+// JSON strings are consumed whole, so their punctuation is not a delimiter
+const JSON_DELIMITER = /"(?:[^"\\]|\\.)*"|[{}[\],:]/g
+
 export type KeyValue = [key: string, value: string]
 
 // a key read from the line, or one the query's parser added
@@ -60,6 +63,7 @@ export interface TextPart {
 interface ReadLine {
 	record: Record<string, unknown>
 	format: LineFormat
+	text?: Map<string, string>
 }
 
 // summarizeLog splits a log into what its row shows. A JSON or logfmt line
@@ -253,7 +257,10 @@ function extract(
 ): ExtractedField[] {
 	const fromLine = line
 		? Object.entries(line.record).map(([key, value]): ExtractedField => {
-				const text = typeof value === "string" ? value : JSON.stringify(value)
+				const text =
+					typeof value === "string"
+						? value
+						: (line.text?.get(key) ?? JSON.stringify(value))
 
 				return {
 					key: key,
@@ -271,7 +278,12 @@ function extract(
 				!(
 					line &&
 					Object.entries(line.record).some(([k, v]) =>
-						dialect.repeatsLineKey(pair, k, v, nestedRepeats),
+						dialect.repeatsLineKey(
+							pair,
+							k,
+							typeof v === "number" ? line.text?.get(k) : v,
+							nestedRepeats,
+						),
 					)
 				),
 		)
@@ -292,7 +304,7 @@ function extract(
 function readLine(line: string): ReadLine | null {
 	const json = parseJSONObject(line)
 	if (json) {
-		return { record: json, format: LineFormat.JSON }
+		return json
 	}
 
 	const logfmt = parseLogfmt(line)
@@ -300,7 +312,7 @@ function readLine(line: string): ReadLine | null {
 	return logfmt ? { record: logfmt, format: LineFormat.Logfmt } : null
 }
 
-function parseJSONObject(text: string): Record<string, unknown> | null {
+function parseJSONObject(text: string): ReadLine | null {
 	if (!text.trimStart().startsWith("{")) {
 		return null
 	}
@@ -308,12 +320,46 @@ function parseJSONObject(text: string): Record<string, unknown> | null {
 	try {
 		const parsed: unknown = JSON.parse(text)
 
-		return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-			? (parsed as Record<string, unknown>)
-			: null
+		return {
+			record: parsed as Record<string, unknown>,
+			format: LineFormat.JSON,
+			text: jsonFieldText(text),
+		}
 	} catch {
 		return null
 	}
+}
+
+// JSON.parse validates the line and keeps its value types. Read field text
+// from the source so numbers never pass through JavaScript serialization.
+function jsonFieldText(text: string): Map<string, string> {
+	const fields = new Map<string, string>()
+	let depth = 0
+	let key = ""
+	let start = 0
+
+	for (const match of text.matchAll(JSON_DELIMITER)) {
+		const token = match[0]
+
+		if (depth === 1) {
+			if (token.startsWith('"') && !start) {
+				key = JSON.parse(token) as string
+			} else if (token === ":") {
+				start = match.index + 1
+			} else if ((token === "," || token === "}") && start) {
+				fields.set(key, text.slice(start, match.index).trim())
+				start = 0
+			}
+		}
+
+		if (token === "{" || token === "[") {
+			depth++
+		} else if (token === "}" || token === "]") {
+			depth--
+		}
+	}
+
+	return fields
 }
 
 // parseLogfmt reads a line made only of logfmt pairs. A line with any other

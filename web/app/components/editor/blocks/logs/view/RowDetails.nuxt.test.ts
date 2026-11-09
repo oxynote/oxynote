@@ -2,7 +2,7 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { flushPromises, type VueWrapper } from "@vue/test-utils"
 import { afterEach, describe, it, vi } from "vitest"
 import RowDetails from "./RowDetails.vue"
-import { LineFormat } from "../dialect"
+import { LineFormat, type LogFilter } from "../dialect"
 import { lokiDialect } from "../loki"
 import {
 	findButtonByText,
@@ -85,6 +85,50 @@ describe("<RowDetails>", { concurrent: false }, () => {
 			t("editor.logs.view.section-empty"),
 		)
 	})
+
+	it.for([
+		{ key: "duration_ms", value: "25.0", exclude: false },
+		{ key: "duration_ms", value: "25.0", exclude: true },
+		{ key: "order_id", value: "9007199254740993", exclude: false },
+		{ key: "order_id", value: "9007199254740993", exclude: true },
+	])(
+		"filters $key=$value with exclude=$exclude using its original JSON text",
+		async ({ key, value, exclude }, { expect }) => {
+			const wrapper = await mountDetails(
+				makeLog({
+					line: '{"duration_ms":25.0,"order_id":9007199254740993}',
+					parsed: undefined,
+				}),
+			)
+
+			await findButtonByText(
+				wrapper,
+				t(
+					exclude
+						? "editor.logs.view.exclude-value"
+						: "editor.logs.view.include-value",
+					{ key },
+				),
+			).trigger("click")
+
+			const filters = (wrapper.emitted<[LogFilter]>("filter") ?? []).map(
+				([filter]) => filter,
+			)
+
+			expect(tableRows(wrapper)[2]).toEqual([
+				["duration_ms", "25.0"],
+				["order_id", "9007199254740993"],
+			])
+			expect(filters).toEqual([
+				{ key, value, indexed: false, exclude, format: LineFormat.JSON },
+			])
+			expect(
+				lokiDialect.withViewFilters('{app="issue-336-test"}', filters, ""),
+			).toBe(
+				`{app="issue-336-test"} | json | ${key}${exclude ? "!=" : "="}"${value}"`,
+			)
+		},
+	)
 
 	it.for([
 		{
