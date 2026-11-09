@@ -1,6 +1,6 @@
 import { parser } from "@oxynote/lezer-logql"
 import { LineFormat, type LogDialect, type LogFilter } from "./dialect"
-import type { KeyValue } from "./rows"
+import { isNumberText, type KeyValue } from "./rows"
 
 // RE2 metacharacters, which a search has to match literally
 const REGEX_SPECIAL = /[\\.+*?()|[\]{}^$]/g
@@ -130,6 +130,7 @@ function repeatsLineKey(
 		nested &&
 		lineValue !== null &&
 		typeof lineValue === "object" &&
+		!isNumberText(lineValue) &&
 		name.startsWith(`${lineName}_`)
 	)
 }
@@ -142,8 +143,10 @@ function sameValue(text: string, lineValue: unknown): boolean {
 		return text === lineValue
 	}
 
-	if (typeof lineValue === "number") {
-		return text.trim() !== "" && Number(text) === lineValue
+	if (typeof lineValue === "number" || isNumberText(lineValue)) {
+		return (
+			text.trim() !== "" && Number(text) === Number(JSON.stringify(lineValue))
+		)
 	}
 
 	return text === JSON.stringify(lineValue)

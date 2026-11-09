@@ -267,6 +267,11 @@ describe("lokiDialect.lineKeyName", () => {
 	})
 })
 
+// 25.0 as the line writes it
+const RAW_25 = (JSON as JSON & { rawJSON: (text: string) => unknown }).rawJSON(
+	"25.0",
+)
+
 describe("lokiDialect.repeatsLineKey", () => {
 	it.for([
 		{
@@ -318,6 +323,26 @@ describe("lokiDialect.repeatsLineKey", () => {
 				nested: true,
 			},
 			expected: true,
+		},
+		{
+			name: "compares a number kept as written by value",
+			input: {
+				parsed: ["ms", "25"],
+				lineKey: "ms",
+				lineValue: RAW_25,
+				nested: true,
+			},
+			expected: true,
+		},
+		{
+			name: "is false for a key that only starts like a number key",
+			input: {
+				parsed: ["ms_x", "25"],
+				lineKey: "ms",
+				lineValue: RAW_25,
+				nested: true,
+			},
+			expected: false,
 		},
 		{
 			name: "is false for a number the parser gave another value",
