@@ -17,6 +17,13 @@ export function postAuthDocumentUrl(
 	return `${baseUrl || ""}${next ? decodeURIComponent(next) : defaultPath}`
 }
 
+// where a refused OIDC sign-in lands. The other providers fail to the same
+// page with the same codes, so the marker tells the page that ending the
+// OIDC provider's session would help.
+export function oidcErrorCallbackUrl(baseUrl: string | undefined): string {
+	return `${baseUrl || ""}/auth-error?provider=oidc`
+}
+
 // a server redirect to the login page cannot put the hash in next, because
 // the server never sees one. The browser keeps it on the login url instead,
 // so it is added back here

@@ -9,6 +9,15 @@ export interface SocialProviderCredentials {
 	clientSecret: string
 }
 
+export interface OidcProvider {
+	issuerUrl: string
+	clientId: string
+	clientSecret: string
+	// the label of the login button.
+	displayName: string
+	scopes: string[]
+}
+
 export interface Env {
 	// where core answers. The variable behind it is still spelled
 	// BACKEND_URL because that name is baked into every deployment's env
@@ -39,6 +48,12 @@ export interface Env {
 	socialProviders: Partial<
 		Record<SocialProviderName, SocialProviderCredentials>
 	>
+	// undefined leaves OIDC sign-in off.
+	oidc: OidcProvider | undefined
+	// false where an identity provider is the only way in. Then a
+	// single-organization deployment has no default admin, and its first
+	// user becomes the admin instead.
+	passwordLoginEnabled: boolean
 	// Infinity when unlimited. A limit of one organization is the
 	// single-organization mode: it is created at boot, and only invited
 	// users may sign up.
@@ -136,12 +151,24 @@ const SOCIAL_PROVIDERS = [
 	secretKey: string
 }[]
 
-// every variable the service reads, spelled out. Only the social
+const OIDC_ISSUER_KEY = "OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_ISSUER_URL"
+
+const OIDC_REQUIRED_KEYS = [
+	"OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_ID",
+	"OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_SECRET",
+] as const
+
+const OIDC_OPTIONAL_KEYS = [
+	"OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_DISPLAY_NAME",
+	"OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_SCOPES",
+] as const
+
+// every variable the service reads, spelled out. Only the social and OIDC
 // credentials, the valkey URL, the trusted origins and the MCP resource
 // are allowed to be absent. A missing MCP resource leaves MCP off. A
 // provider with neither half is left unregistered, and one with a single
 // half is a boot error rather than a broken OAuth redirect discovered by
-// a user.
+// a user. The same holds for OIDC, keyed on its issuer.
 const schema = z
 	.object({
 		OXYNOTE_AUTH_REALTIME_BACKEND_URL: httpUrl(),
@@ -196,6 +223,25 @@ const schema = z
 		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SLACK_CLIENT_SECRET: z
 			.string()
 			.optional(),
+		// the issuer serves its endpoints at
+		// /.well-known/openid-configuration, so a trailing slash is
+		// dropped before that path is appended.
+		[OIDC_ISSUER_KEY]: httpUrl()
+			.transform((value) => value.replace(/\/+$/, ""))
+			.optional(),
+		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_ID: z
+			.string()
+			.optional(),
+		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_SECRET: z
+			.string()
+			.optional(),
+		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_DISPLAY_NAME: z
+			.string()
+			.optional(),
+		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_SCOPES: z
+			.string()
+			.optional(),
+		OXYNOTE_AUTH_REALTIME_PASSWORD_LOGIN_DISABLED: flag(false),
 	})
 	.superRefine((values, ctx) => {
 		for (const provider of SOCIAL_PROVIDERS) {
@@ -214,6 +260,52 @@ const schema = z
 						: provider.idKey,
 				],
 				message: `${provider.name} needs both a client id and a client secret, or neither`,
+			})
+		}
+
+		if (values[OIDC_ISSUER_KEY]) {
+			for (const key of OIDC_REQUIRED_KEYS) {
+				if (!values[key]) {
+					ctx.addIssue({
+						code: "custom",
+						path: [key],
+						message: `required when ${OIDC_ISSUER_KEY} is set`,
+					})
+				}
+			}
+		} else {
+			for (const key of [
+				...OIDC_REQUIRED_KEYS,
+				...OIDC_OPTIONAL_KEYS,
+			]) {
+				if (values[key]) {
+					ctx.addIssue({
+						code: "custom",
+						path: [key],
+						message: `only meaningful with ${OIDC_ISSUER_KEY}`,
+					})
+				}
+			}
+		}
+
+		// with no password and no provider, nobody could sign in.
+		const hasProvider =
+			Boolean(values[OIDC_ISSUER_KEY]) ||
+			SOCIAL_PROVIDERS.some(
+				(provider) =>
+					values[provider.idKey] &&
+					values[provider.secretKey],
+			)
+		if (
+			values.OXYNOTE_AUTH_REALTIME_PASSWORD_LOGIN_DISABLED &&
+			!hasProvider
+		) {
+			ctx.addIssue({
+				code: "custom",
+				path: [
+					"OXYNOTE_AUTH_REALTIME_PASSWORD_LOGIN_DISABLED",
+				],
+				message: "needs an OIDC or social provider, or nobody can sign in",
 			})
 		}
 	})
@@ -239,6 +331,31 @@ function socialProviders(
 	}
 
 	return providers
+}
+
+function oidcProvider(values: ParsedEnv): OidcProvider | undefined {
+	const issuerUrl = values[OIDC_ISSUER_KEY]
+	const clientId = values.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_ID
+	const clientSecret =
+		values.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_SECRET
+	if (!issuerUrl || !clientId || !clientSecret) {
+		return undefined
+	}
+
+	return {
+		issuerUrl,
+		clientId,
+		clientSecret,
+		displayName:
+			values.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_DISPLAY_NAME ??
+			"SSO",
+		scopes: (
+			values.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_SCOPES ??
+			"openid email profile"
+		)
+			.split(/\s+/)
+			.filter(Boolean),
+	}
 }
 
 // loadEnv parses the process environment into the typed configuration the
@@ -292,6 +409,9 @@ export function loadEnv(source: Record<string, string | undefined>): Env {
 		mcpResource: values.OXYNOTE_AUTH_REALTIME_MCP_RESOURCE,
 		mcpTokenIssuer: `${authOrigin}/api/auth`,
 		socialProviders: socialProviders(values),
+		oidc: oidcProvider(values),
+		passwordLoginEnabled:
+			!values.OXYNOTE_AUTH_REALTIME_PASSWORD_LOGIN_DISABLED,
 		maxOrganizations:
 			values.OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATIONS,
 		maxOrganizationMembers:

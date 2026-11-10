@@ -190,6 +190,44 @@ describe("<login>", { concurrent: false }, () => {
 		},
 	)
 
+	it("signs in through the identity provider under its configured name", async ({
+		expect,
+	}) => {
+		seedAuthConfig({ methods: ["oidc"], oidcDisplayName: "Keycloak" })
+		const calls = mockSocialSignIn()
+		const wrapper = await mountSuspended(Login)
+
+		await findButtonByText(
+			wrapper,
+			t("onboarding.login.login-oidc", { name: "Keycloak" }),
+		).trigger("click")
+		await settleSignIn(calls)
+
+		expect.soft(calls[0]?.body).toEqual({
+			provider: "oidc",
+			callbackURL: "http://test.local/",
+			newUserCallbackURL: "http://test.local/welcome",
+			errorCallbackURL: "http://test.local/auth-error?provider=oidc",
+		})
+		expect.soft(toast.custom).not.toHaveBeenCalled()
+	})
+
+	it("offers no password form or reset when password login is off", async ({
+		expect,
+	}) => {
+		seedAuthConfig({ methods: ["oidc"], oidcDisplayName: "Keycloak" })
+
+		const wrapper = await mountSuspended(Login)
+
+		expect.soft(wrapper.find('input[type="password"]').exists()).toBe(false)
+		expect
+			.soft(wrapper.text())
+			.not.toContain(t("onboarding.login.login-email-password"))
+		expect
+			.soft(wrapper.text())
+			.not.toContain(t("onboarding.login.forgot-password.placeholders.reset"))
+	})
+
 	it("sends a social sign-in back to the next page, hash included", async ({
 		expect,
 	}) => {
@@ -294,14 +332,20 @@ describe("<login>", { concurrent: false }, () => {
 			methods: ["github", "slack", "email-password"],
 			expected: "onboarding.login.login-github",
 		},
+		{
+			methods: ["google", "oidc", "email-password"],
+			expected: "onboarding.login.login-oidc",
+		},
 	] as const)(
 		"marks the first of $methods.length methods as primary",
 		async ({ methods, expected }, { expect }) => {
-			seedAuthConfig({ methods: [...methods] })
+			seedAuthConfig({ methods: [...methods], oidcDisplayName: "SSO" })
 
 			const wrapper = await mountSuspended(Login)
 
-			expect(primaryButtonTexts(wrapper)).toEqual([t(expected)])
+			expect(primaryButtonTexts(wrapper)).toEqual([
+				t(expected, { name: "SSO" }),
+			])
 		},
 	)
 

@@ -46,6 +46,10 @@ app on http://localhost:3000, which reloads as you save. If `make start`
 refuses to run after a pull because your env files no longer match the
 templates, run `make sync-env`. It keeps your values.
 
+To try single sign-on, add `OIDC=1` (`make start OIDC=1`). It adds a
+Keycloak with two users, alice and bob, whose passwords are their names.
+Its admin console is at http://localhost:8180 as admin/admin.
+
 ## Repository Layout
 
 - `web/`: the frontend, built with Nuxt 4 and Vue 3. It ships as a web app

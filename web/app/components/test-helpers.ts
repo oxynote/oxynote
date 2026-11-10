@@ -90,6 +90,7 @@ export function seedCapabilities(capabilities: Partial<Capabilities> = {}) {
 export function seedAuthConfig(config: Partial<AuthConfig> = {}) {
 	seedQueryData(["auth", "config"], {
 		methods: ["email-password"],
+		oidcDisplayName: null,
 		emailEnabled: true,
 		singleOrganization: false,
 		maxOrganizationMembers: 5,

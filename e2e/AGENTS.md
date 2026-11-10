@@ -99,6 +99,11 @@ A third, `oxynote-single-workspace` (`:19082`), keeps the default workspace
 limits; only `prod-single-workspace.test.ts` drives it, through
 `helpers/single-workspace.ts`. Its tests share the one workspace and its
 admin, so the file runs serially, without retries, read-only tests first.
+Two more sign in through the `keycloak` service (`:19180`):
+`oxynote-oidc` (`:19083`) for `prod-oidc-sign-in.test.ts`, and
+`oxynote-oidc-single-workspace` (`:19084`, password login off) for
+`prod-oidc-single-workspace.test.ts`, which runs serially like the one
+above. Origins live in `helpers/oidc.ts`.
 Compose builds nothing; the image comes from `make prod-build`, tagged
 `:e2e-prod`, and CI's cache reaches it through `PROD_BUILD_EXTRA`. A `probe`
 container (idle alpine on the private network) exists for the
@@ -180,8 +185,9 @@ cheaper tier can:
 - Never `page.route()` an application endpoint, stub a response or seed the
   database out of band. Reach state through the product's own surface; the
   HTTP API is the fallback where the UI offers no path, never SQL.
-- Mail is real (mailpit). Third-party edges (OAuth providers) have no
-  doubles, so only email-password auth is covered.
+- Mail is real (mailpit), and so is OIDC: the prod stack runs keycloak,
+  and each test creates its own keycloak user through the admin API. The
+  other OAuth providers have no doubles and stay untested.
 - Needing a mock is the signal the case belongs in the component tier.
 - **Collaboration runs as two real users**: `joinAsSecondUser` sends the
   invitation from settings and has the invitee sign up, verify, log in and

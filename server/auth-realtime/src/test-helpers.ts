@@ -110,6 +110,8 @@ export function testEnv(overrides: Partial<Env> = {}): Env {
 		mcpResource: "http://localhost:8080/core/api/mcp",
 		mcpTokenIssuer: "http://localhost:8080/api/auth",
 		socialProviders: {},
+		oidc: undefined,
+		passwordLoginEnabled: true,
 		maxOrganizations: 100,
 		maxOrganizationMembers: 5,
 		rateLimitEnabled: true,

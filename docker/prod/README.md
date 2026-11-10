@@ -61,6 +61,7 @@ cleanly. An incomplete group fails the boot with the missing name.
 | GitHub App | `OXYNOTE_GITHUB_APP_ID`, `OXYNOTE_GITHUB_APP_SLUG`, `OXYNOTE_GITHUB_APP_SIGNATURE_SECRET`; mount the app's private key at `/oxynote/github/private-key.pem` |
 | Slack app | `OXYNOTE_SLACK_APP_CLIENT_ID`, `OXYNOTE_SLACK_APP_CLIENT_SECRET`, `OXYNOTE_SLACK_APP_SIGNATURE_SECRET` |
 | Social login | `OXYNOTE_SOCIAL_LOGIN_{GITHUB,GOOGLE,SLACK}_CLIENT_ID` + `_CLIENT_SECRET` (both halves per provider) |
+| Single sign-on (OIDC) | `OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL`, `_CLIENT_ID`, `_CLIENT_SECRET`, optional `_DISPLAY_NAME`, `_SCOPES` and `_CA_CERTS`. See [Single sign-on](#single-sign-on-oidc) below. |
 | AI assistant | `OXYNOTE_AI_ASSISTANT_PROVIDER` (`anthropic`, `openai`, `google`, `ollama`, `openrouter`) plus the vendor's credentials, detailed in [docs/ai.md](../../docs/ai.md): `OXYNOTE_AI_ASSISTANT_API_KEY`, `_MODEL`, `_BASE_URL`, `_MAX_TOKENS`, `_REQUEST_TIMEOUT`, `_SUMMARY_MODEL`, `_AZURE_API_VERSION`, `_BEDROCK_{REGION,ACCESS_KEY,SECRET_ACCESS_KEY,SESSION_TOKEN}`, `_VERTEX_{PROJECT_ID,REGION,SERVICE_ACCOUNT_JSON}` |
 | URL watching | `OXYNOTE_CHANGE_DETECTION_URL`, `OXYNOTE_CHANGE_DETECTION_API_KEY` (a changedetection.io instance) |
 
@@ -99,6 +100,8 @@ workspace:
   the email address, the password and the workspace name in the settings.
   The admin's address receives no email, so a new address is confirmed by a
   link sent to the new address only.
+  With password login disabled the first user becomes the admin instead,
+  as [Single sign-on](#single-sign-on-oidc) describes.
 - Nobody can sign up without an invitation. The signup page sends other
   visitors to the login page, and an invited address can create its account
   from the invitation link.
@@ -111,6 +114,57 @@ them until then, so change the password before exposing the instance.
 Any other value lets people sign up and create their own workspace until
 the limit is reached. After that they can still sign up, but only to join a
 workspace through an invitation.
+
+### Single sign-on (OIDC)
+
+Any OpenID Connect identity provider can sign users in: Keycloak,
+Authentik, Authelia, Zitadel, Okta, Entra ID, Dex and others.
+
+1. Register a confidential client at the provider. Its redirect URI is
+   `<OXYNOTE_PUBLIC_URL>/auth-realtime/api/auth/callback/oidc`, and its
+   post-logout redirect URI is `<OXYNOTE_PUBLIC_URL>/login`.
+2. Set `OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL` to the issuer, for example
+   `https://keycloak.example.com/realms/engineering`. The endpoints are
+   read from `<issuer>/.well-known/openid-configuration` at boot, and the
+   boot fails if that document cannot be fetched.
+3. Set `OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_ID` and `_CLIENT_SECRET`.
+
+`OXYNOTE_SOCIAL_LOGIN_OIDC_DISPLAY_NAME` names the provider on the login and
+signup buttons ("Log in with SSO" by default).
+`OXYNOTE_SOCIAL_LOGIN_OIDC_SCOPES` is space-separated and defaults to
+`openid email profile`.
+
+If the provider's certificate comes from a private CA, mount that CA's
+certificates as one PEM file and set `OXYNOTE_SOCIAL_LOGIN_OIDC_CA_CERTS`
+to its path, for example `-v ./company-ca.pem:/oxynote/oidc-ca.pem:ro` with
+`/oxynote/oidc-ca.pem`.
+
+A user who already has an account with the same email lands in that
+account when both Oxynote and the provider have verified the email.
+Otherwise the sign-in is refused. Without an email sender Oxynote verifies
+no address, so an existing password account cannot join this way.
+
+With an email sender, a new user whose email the provider has not verified
+gets a verification link from Oxynote first, as a password sign-up does.
+
+A refused sign-in offers **Use a different account**, which ends the
+provider's session so someone else can sign in. That needs a provider with
+an end-session endpoint, as Keycloak has. Authelia has none, so there the
+user logs out at Authelia itself.
+
+#### Sign-in only through the provider
+
+`OXYNOTE_PASSWORD_LOGIN_DISABLED=true` removes email and password sign-in,
+sign-up and password reset. It needs OIDC or a social login provider.
+
+On a single workspace this also changes the first boot. No default admin is
+created. Instead, the first user to sign in creates the workspace and
+becomes its admin, and everyone after that needs an invitation. So sign in
+right after the first boot.
+
+On an existing deployment, the admin should first sign in once through the
+provider with the same verified email. Then disable password login, or
+nobody may be left who can manage the workspace.
 
 ### Tuning
 

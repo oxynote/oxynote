@@ -2,6 +2,7 @@ import { describe, it, vi } from "vitest"
 import {
 	bootstrapSingleOrganization,
 	createDefaultAdminLookup,
+	createFirstUserOrganization,
 } from "./bootstrap.js"
 import { stubLog, stubStore, testEnv } from "./test-helpers.js"
 
@@ -12,6 +13,7 @@ function deps(
 		maxOrganizations?: number
 		organizations?: number
 		existingAdmin?: string
+		passwordLoginEnabled?: boolean
 	} = {},
 ) {
 	const store = stubStore()
@@ -36,6 +38,8 @@ function deps(
 	return {
 		env: testEnv({
 			maxOrganizations: overrides.maxOrganizations ?? 1,
+			passwordLoginEnabled:
+				overrides.passwordLoginEnabled ?? true,
 		}),
 		store,
 		log: stubLog(),
@@ -119,6 +123,23 @@ describe("bootstrapSingleOrganization", () => {
 		expect.soft(d.log.warn).not.toHaveBeenCalled()
 	})
 
+	// nobody could sign in as an admin with a password, so the first
+	// user creates the organization instead
+	it("creates no admin and no organization when password login is off", async ({
+		expect,
+	}) => {
+		const d = deps({ passwordLoginEnabled: false })
+
+		await bootstrapSingleOrganization(d)
+
+		expect(d.log.warn).toHaveBeenCalledExactlyOnceWith(
+			expect.stringContaining("first user"),
+		)
+		expect.soft(d.accounts.findUserByEmail).not.toHaveBeenCalled()
+		expect.soft(d.accounts.createUser).not.toHaveBeenCalled()
+		expect.soft(d.createOrganization).not.toHaveBeenCalled()
+	})
+
 	it("propagates a failed organization creation", async ({ expect }) => {
 		const failure = new Error("core unreachable")
 		const d = deps()
@@ -139,6 +160,69 @@ describe("bootstrapSingleOrganization", () => {
 			failure,
 		)
 		expect.soft(d.createOrganization).not.toHaveBeenCalled()
+	})
+})
+
+describe("createFirstUserOrganization", () => {
+	it("makes the first user create the organization when password login is off", async ({
+		expect,
+	}) => {
+		const d = deps({ passwordLoginEnabled: false })
+
+		await createFirstUserOrganization(d, "user-1")
+
+		expect(d.createOrganization).toHaveBeenCalledExactlyOnceWith({
+			name: "Sea of Tranquility",
+			slug: "sea-of-tranquility",
+			userId: "user-1",
+		})
+		expect.soft(d.random).toHaveBeenCalledTimes(1)
+	})
+
+	it.for([
+		{
+			name: "password login is on",
+			input: { passwordLoginEnabled: true },
+			expected: 0,
+		},
+		{
+			name: "more than one organization is allowed",
+			input: {
+				passwordLoginEnabled: false,
+				maxOrganizations: 100,
+			},
+			expected: 0,
+		},
+		{
+			name: "the organization exists",
+			input: {
+				passwordLoginEnabled: false,
+				organizations: 1,
+			},
+			expected: 1,
+		},
+	])(
+		"does nothing when $name",
+		async ({ input, expected }, { expect }) => {
+			const d = deps(input)
+
+			await createFirstUserOrganization(d, "user-1")
+
+			expect.soft(d.createOrganization).not.toHaveBeenCalled()
+			expect.soft(
+				d.store.totalOrganizationCount,
+			).toHaveBeenCalledTimes(expected)
+		},
+	)
+
+	it("propagates a failed organization creation", async ({ expect }) => {
+		const failure = new Error("core unreachable")
+		const d = deps({ passwordLoginEnabled: false })
+		d.createOrganization.mockRejectedValue(failure)
+
+		await expect(
+			createFirstUserOrganization(d, "user-1"),
+		).rejects.toBe(failure)
 	})
 })
 

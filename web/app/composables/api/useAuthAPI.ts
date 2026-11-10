@@ -4,6 +4,7 @@ export const AUTH_QUERY_KEYS = {
 
 export default function () {
 	const { $authRealtimeAPIClient } = useNuxtApp()
+	const config = useRuntimeConfig()
 
 	const fetchAuthConfig = useQuery({
 		key: AUTH_QUERY_KEYS.config,
@@ -24,6 +25,23 @@ export default function () {
 		() => fetchAuthConfig.state.value.data?.emailEnabled ?? true,
 	)
 
+	// the same assumption for password login, which a deployment may leave
+	// to its identity provider.
+	const isPasswordLoginEnabled = computed(
+		() =>
+			fetchAuthConfig.state.value.data?.methods.includes("email-password") ??
+			true,
+	)
+
+	// empty while the config loads and when OIDC is off.
+	const oidcDisplayName = computed(
+		() => fetchAuthConfig.state.value.data?.oidcDisplayName ?? "",
+	)
+
+	// ends the identity provider's session, which then returns the browser
+	// to the login page.
+	const oidcEndSessionUrl = `${config.public.authRealtimeAPIBaseHttpURL}/api/oidc/end-session`
+
 	// until the config arrives the instance is assumed to allow signup and
 	// any number of members; the server enforces its own limits either way.
 	const isSingleOrganization = computed(
@@ -43,7 +61,10 @@ export default function () {
 		defaultAdmin,
 		fetchAuthConfig,
 		isEmailEnabled,
+		isPasswordLoginEnabled,
 		isSingleOrganization,
 		maxOrganizationMembers,
+		oidcDisplayName,
+		oidcEndSessionUrl,
 	}
 }

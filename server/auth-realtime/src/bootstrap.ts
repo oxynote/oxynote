@@ -47,7 +47,8 @@ export interface BootstrapDeps {
 // bootstrapSingleOrganization creates the organization and its admin when a
 // single-organization deployment has none yet. It runs before the service
 // listens, so no signup can race it. An admin left over from a failed run
-// is reused.
+// is reused. Without password login nobody could sign in as that admin, so
+// the first user creates the organization instead.
 export async function bootstrapSingleOrganization({
 	env,
 	store,
@@ -62,6 +63,14 @@ export async function bootstrapSingleOrganization({
 	}
 
 	if ((await store.totalOrganizationCount()) > 0) {
+		return
+	}
+
+	if (!env.passwordLoginEnabled) {
+		log.warn(
+			"password login is off, so the first user to sign in becomes the admin.",
+		)
+
 		return
 	}
 
@@ -100,6 +109,30 @@ export async function bootstrapSingleOrganization({
 	log.warn(
 		`created the ${organization.name} organization. Sign in as ${bootstrapAdmin.email} with the default password and change both.`,
 	)
+}
+
+export type FirstUserDeps = Pick<
+	BootstrapDeps,
+	"env" | "store" | "createOrganization" | "random"
+>
+
+// createFirstUserOrganization makes a new account create the organization
+// of a single-organization deployment without password login, while that
+// organization does not exist yet. better-auth makes its creator the
+// admin.
+export async function createFirstUserOrganization(
+	{ env, store, createOrganization, random }: FirstUserDeps,
+	userId: string,
+): Promise<void> {
+	if (env.maxOrganizations !== 1 || env.passwordLoginEnabled) {
+		return
+	}
+
+	if ((await store.totalOrganizationCount()) > 0) {
+		return
+	}
+
+	await createOrganization({ ...pickOrganization(random), userId })
 }
 
 export interface DefaultAdmin {

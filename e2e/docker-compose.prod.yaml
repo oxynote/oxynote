@@ -12,9 +12,9 @@
 #   - no named volumes, so every run starts from an empty database and an
 #     empty data volume (the generated secrets are regenerated per run)
 #   - no container_name, and its own ports (:19080 front door, :19081 the
-#     instance without email, :19082 the single-workspace instance, :19025
-#     mailpit), so it coexists with the dev stack and the e2e dev stack
-#     alike
+#     instance without email, :19082 the single-workspace instance, :19083
+#     and :19084 the OIDC instances, :19180 keycloak, :19025 mailpit), so it
+#     coexists with the dev stack and the e2e dev stack alike
 #   - env is inlined and committed; there is nothing secret to protect
 #   - every image is pinned
 #   - no OXYNOTE_DB_DSN, OXYNOTE_VALKEY_DSN or OXYNOTE_OBJECT_STORAGE_DSN, which
@@ -89,6 +89,90 @@ services:
       - OXYNOTE_RATE_LIMIT_DISABLED=true
     stop_grace_period: 60s
 
+  # the same image signing in through keycloak, with any number of
+  # workspaces. Only the OIDC sign-in tests drive it.
+  #
+  # the issuer is keycloak's address on the private network. Discovery
+  # through it sends the browser to keycloak's published port, so both
+  # sides reach keycloak at the issuer keycloak names itself.
+  oxynote-oidc:
+    image: ghcr.io/oxynote/oxynote:e2e-prod
+    ports:
+      - "19083:8080"
+    environment:
+      - OXYNOTE_PUBLIC_URL=http://localhost:19083
+      - OXYNOTE_SMTP_DSN=smtp://mailpit:1025?tls=none
+      - OXYNOTE_EMAIL_FROM_ADDRESS=Oxynote <team@oxynote.io>
+      - OXYNOTE_MAX_ORGANIZATION_MEMBERS=5
+      - OXYNOTE_MAX_ORGANIZATIONS=100000
+      - OXYNOTE_RATE_LIMIT_DISABLED=true
+      - OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL=http://keycloak:8080/realms/oxynote
+      - OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_ID=oxynote
+      - OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_SECRET=oxynote-e2e-secret
+      - OXYNOTE_SOCIAL_LOGIN_OIDC_DISPLAY_NAME=Keycloak
+    # discovery runs once at boot, and a failed one stops the image.
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    stop_grace_period: 60s
+
+  # one workspace that only keycloak signs in to, whose first user becomes
+  # the admin. Its tests share that workspace, so like the single-workspace
+  # instance above, no other test may use it.
+  oxynote-oidc-single-workspace:
+    image: ghcr.io/oxynote/oxynote:e2e-prod
+    ports:
+      - "19084:8080"
+    environment:
+      - OXYNOTE_PUBLIC_URL=http://localhost:19084
+      - OXYNOTE_SMTP_DSN=smtp://mailpit:1025?tls=none
+      - OXYNOTE_EMAIL_FROM_ADDRESS=Oxynote <team@oxynote.io>
+      - OXYNOTE_RATE_LIMIT_DISABLED=true
+      - OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL=http://keycloak:8080/realms/oxynote
+      - OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_ID=oxynote
+      - OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_SECRET=oxynote-e2e-secret
+      - OXYNOTE_SOCIAL_LOGIN_OIDC_DISPLAY_NAME=Keycloak
+      - OXYNOTE_PASSWORD_LOGIN_DISABLED=true
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    stop_grace_period: 60s
+
+  # the identity provider of both OIDC instances. Its realm comes from the
+  # inline config below. The tests create their own users through the admin
+  # API, and alice (verified) and bob (unverified), both with their name as
+  # password, are there for trying it by hand. The admin console is at
+  # http://localhost:19180 as admin/admin.
+  #
+  # KC_HOSTNAME is the address the browser uses. The dynamic backchannel
+  # lets the instances fetch tokens and keys through keycloak:8080, while
+  # every token still names the browser's address as its issuer.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      - KC_BOOTSTRAP_ADMIN_USERNAME=admin
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+      - KC_HOSTNAME=http://localhost:19180
+      - KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true
+      - KC_HEALTH_ENABLED=true
+    ports:
+      - "19180:8080"
+    configs:
+      - source: keycloak-realm
+        target: /opt/keycloak/data/import/oxynote.json
+    # the image has no curl or wget, so bash asks the management port.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '200 OK' <&3
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
   # a sibling on the private network, and the only honest way to ask the
   # question the trust boundary answers: can a container that is not caddy
   # reach core, auth-realtime or the web server directly? The prod tests
@@ -113,3 +197,53 @@ services:
       - MP_QUIET=true
     ports:
       - "19025:8025"
+
+configs:
+  keycloak-realm:
+    content: |
+      {
+        "realm": "oxynote",
+        "enabled": true,
+        "sslRequired": "none",
+        "verifyEmail": false,
+        "registrationAllowed": false,
+        "clients": [
+          {
+            "clientId": "oxynote",
+            "enabled": true,
+            "protocol": "openid-connect",
+            "publicClient": false,
+            "secret": "oxynote-e2e-secret",
+            "standardFlowEnabled": true,
+            "directAccessGrantsEnabled": false,
+            "redirectUris": [
+              "http://localhost:19083/auth-realtime/api/auth/callback/oidc",
+              "http://localhost:19084/auth-realtime/api/auth/callback/oidc"
+            ],
+            "attributes": {
+              "pkce.code.challenge.method": "S256",
+              "post.logout.redirect.uris": "http://localhost:19083/login##http://localhost:19084/login"
+            }
+          }
+        ],
+        "users": [
+          {
+            "username": "alice",
+            "email": "alice@oxynote.test",
+            "emailVerified": true,
+            "firstName": "Alice",
+            "lastName": "Example",
+            "enabled": true,
+            "credentials": [{ "type": "password", "value": "alice" }]
+          },
+          {
+            "username": "bob",
+            "email": "bob@oxynote.test",
+            "emailVerified": false,
+            "firstName": "Bob",
+            "lastName": "Example",
+            "enabled": true,
+            "credentials": [{ "type": "password", "value": "bob" }]
+          }
+        ]
+      }

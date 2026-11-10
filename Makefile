@@ -5,9 +5,13 @@
 E2E_DEV_COMPOSE_EXTRA ?=
 PROD_BUILD_EXTRA ?=
 
+# OIDC=1 layers keycloak over the dev stack and signs in through it.
+OIDC ?=
+
 # one compose invocation per stack. Only the dev stack is a project name
 # away from the others; the e2e stacks are named by their own files.
-COMPOSE := docker-compose -p oxynote -f docker/docker-compose.dev.yaml
+COMPOSE := docker-compose -p oxynote -f docker/docker-compose.dev.yaml \
+	$(if $(OIDC),-f docker/docker-compose.oidc.yaml)
 E2E_DEV_COMPOSE := docker compose -f e2e/docker-compose.dev.yaml $(E2E_DEV_COMPOSE_EXTRA)
 E2E_PROD_COMPOSE := docker compose -f e2e/docker-compose.prod.yaml
 PROD_COMPOSE := docker compose -f docker/prod/docker-compose.example.yaml \
@@ -48,9 +52,10 @@ run: check-env build-go sync-changedetection-key
 start: check-env build-go sync-changedetection-key
 	$(COMPOSE) --profile web up --build -d
 
+# keycloak goes down with the rest, whether or not OIDC=1 started it.
 .PHONY: stop
 stop:
-	$(COMPOSE) --profile web down
+	$(COMPOSE) -f docker/docker-compose.oidc.yaml --profile web down
 
 # the e2e stack runs on its own ports with throwaway state, so it can be
 # up at the same time as the dev stack.

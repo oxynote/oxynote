@@ -7,6 +7,7 @@ import {
 	createOrganizationHooks,
 	createSecondaryStorage,
 	electronCallbackOverride,
+	localSignOut,
 	invitationLink,
 	organizationClaims,
 	refuseLastMemberOrAdminDeletion,
@@ -39,6 +40,14 @@ function stubRedis() {
 const GOOGLE = {
 	clientId: "google-id",
 	clientSecret: "google-secret",
+}
+
+const OIDC = {
+	issuerUrl: "https://idp.example.com/realms/team",
+	clientId: "oxynote",
+	clientSecret: "oidc-secret",
+	displayName: "Keycloak",
+	scopes: ["openid", "email", "profile"],
 }
 
 // better-auth starts its context eagerly, and the mcp plugin seeds its
@@ -89,8 +98,25 @@ function configured<T>(callback: T | undefined): T {
 }
 
 describe("authMethods", () => {
-	it("always offers email and password", ({ expect }) => {
+	it("offers email and password by default", ({ expect }) => {
 		expect(authMethods(testEnv())).toEqual(["email-password"])
+	})
+
+	it("offers oidc when it is configured", ({ expect }) => {
+		expect(authMethods(testEnv({ oidc: OIDC }))).toEqual([
+			"email-password",
+			"oidc",
+		])
+	})
+
+	it("leaves out email and password when password login is off", ({
+		expect,
+	}) => {
+		const methods = authMethods(
+			testEnv({ oidc: OIDC, passwordLoginEnabled: false }),
+		)
+
+		expect(methods).toEqual(["oidc"])
 	})
 
 	it("offers each provider that has credentials", ({ expect }) => {
@@ -239,6 +265,30 @@ describe("electronCallbackOverride", () => {
 				input,
 				"http://localhost:8080",
 			),
+		).toBeUndefined()
+	})
+})
+
+describe("localSignOut", () => {
+	// the provider's session keeps the user signed in to other apps
+	it("keeps a sign-out from redirecting to the provider's logout", ({
+		expect,
+	}) => {
+		expect(
+			localSignOut({
+				path: "/sign-out",
+				body: { state: "s" },
+			}),
+		).toEqual({
+			context: {
+				body: { state: "s", disableRedirect: true },
+			},
+		})
+	})
+
+	it("leaves another path untouched", ({ expect }) => {
+		expect(
+			localSignOut({ path: "/sign-in/social", body: {} }),
 		).toBeUndefined()
 	})
 })
@@ -865,6 +915,52 @@ describe("checkSignUpAllowed", () => {
 			),
 		).rejects.toBe(failure)
 	})
+
+	// that first account creates the organization and becomes its admin
+	it("allows the first account while no organization exists and password login is off", async ({
+		expect,
+	}) => {
+		const store = stubStore()
+		store.totalOrganizationCount.mockResolvedValue(0)
+
+		await expect(
+			checkSignUpAllowed(
+				testEnv({
+					maxOrganizations: 1,
+					passwordLoginEnabled: false,
+				}),
+				store,
+				"a@b.c",
+				true,
+			),
+		).resolves.toBeUndefined()
+		expect.soft(store.hasPendingInvitation).not.toHaveBeenCalled()
+	})
+
+	it("refuses an uninvited address once the organization exists and password login is off", async ({
+		expect,
+	}) => {
+		const store = stubStore()
+		store.totalOrganizationCount.mockResolvedValue(1)
+		store.hasPendingInvitation.mockResolvedValue(false)
+
+		await expect(
+			checkSignUpAllowed(
+				testEnv({
+					maxOrganizations: 1,
+					passwordLoginEnabled: false,
+				}),
+				store,
+				"a@b.c",
+				true,
+			),
+		).rejects.toMatchObject({
+			body: { code: "SIGN_UP_DISABLED" },
+		})
+		expect.soft(store.hasPendingInvitation).toHaveBeenCalledWith(
+			"a@b.c",
+		)
+	})
 })
 
 describe("refuseLastMemberOrAdminDeletion", () => {
@@ -1368,6 +1464,51 @@ describe("createAuth", () => {
 			redirectURI:
 				"http://localhost:8080/auth-realtime/api/auth/callback/google",
 		})
+	})
+
+	it("registers no oidc plugin without an issuer", ({ expect }) => {
+		const { auth } = buildAuth()
+
+		expect(
+			auth.options.plugins.some(
+				(plugin) => plugin.id === "generic-oauth",
+			),
+		).toBe(false)
+	})
+
+	// the discovery fetch runs while the context is built. Failing it
+	// keeps the test away from the network.
+	it("registers the oidc provider discovered from its issuer with a browser-reachable redirect", ({
+		expect,
+	}) => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(() => Promise.reject(new Error("offline"))),
+		)
+
+		const { auth } = buildAuth({ env: testEnv({ oidc: OIDC }) })
+		const plugin = auth.options.plugins.find(
+			(candidate) => candidate.id === "generic-oauth",
+		) as unknown as { options: { config: unknown[] } } | undefined
+
+		expect(plugin?.options.config).toEqual([
+			{
+				providerId: "oidc",
+				name: "Keycloak",
+				discoveryUrl:
+					"https://idp.example.com/realms/team/.well-known/openid-configuration",
+				clientId: "oxynote",
+				clientSecret: "oidc-secret",
+				scopes: ["openid", "email", "profile"],
+				redirectURI:
+					"http://localhost:8080/auth-realtime/api/auth/callback/oidc",
+				postLogoutRedirectURI:
+					"http://localhost:8080/login",
+				requireIdTokenVerification: true,
+				requireEmailVerification: true,
+				authentication: "basic",
+			},
+		])
 	})
 
 	it.for([
@@ -1874,6 +2015,20 @@ describe("createAuth", () => {
 			expect(answer).toBeUndefined()
 			expect.soft(updateUser).not.toHaveBeenCalled()
 		})
+
+		it("signs out of this service only", async ({ expect }) => {
+			const { auth } = buildAuth()
+
+			const answer = await auth.options.hooks.before({
+				path: "/sign-out",
+				body: {},
+				context: {},
+			} as never)
+
+			expect(answer).toEqual({
+				context: { body: { disableRedirect: true } },
+			})
+		})
 	})
 
 	describe("single-organization mode", () => {
@@ -1895,6 +2050,66 @@ describe("createAuth", () => {
 			).rejects.toMatchObject({
 				body: { code: "SIGN_UP_DISABLED" },
 			})
+		})
+
+		it("makes the first user without password login create the organization", async ({
+			expect,
+		}) => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(() =>
+					Promise.reject(new Error("offline")),
+				),
+			)
+			const store = stubStore()
+			store.totalOrganizationCount.mockResolvedValue(0)
+			const { auth } = buildAuth({
+				env: testEnv({
+					maxOrganizations: 1,
+					oidc: OIDC,
+					passwordLoginEnabled: false,
+				}),
+				store,
+			})
+			const createOrganization = vi
+				.spyOn(auth.api, "createOrganization")
+				.mockResolvedValue(null as never)
+
+			await auth.options.databaseHooks.user.create.after(
+				{ id: "user-1" } as never,
+				{} as never,
+			)
+
+			expect(createOrganization).toHaveBeenCalledTimes(1)
+			expect(
+				createOrganization.mock.calls[0]?.[0],
+			).toMatchObject({
+				body: { userId: "user-1" },
+			})
+		})
+
+		it("creates no organization for a user this service creates", async ({
+			expect,
+		}) => {
+			const store = stubStore()
+			const { auth } = buildAuth({
+				env: testEnv({ maxOrganizations: 1 }),
+				store,
+			})
+			const createOrganization = vi.spyOn(
+				auth.api,
+				"createOrganization",
+			)
+
+			await auth.options.databaseHooks.user.create.after(
+				{ id: "admin-1" } as never,
+				undefined as never,
+			)
+
+			expect.soft(createOrganization).not.toHaveBeenCalled()
+			expect.soft(
+				store.totalOrganizationCount,
+			).not.toHaveBeenCalled()
 		})
 
 		it("lets this service create a user outside a request", async ({
@@ -1994,6 +2209,31 @@ describe("createAuth", () => {
 				auth.options.emailAndPassword
 					.revokeSessionsOnPasswordReset,
 			).toBe(true)
+		})
+
+		it("refuses password sign-in and reset when password login is off", ({
+			expect,
+		}) => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(() =>
+					Promise.reject(new Error("offline")),
+				),
+			)
+
+			const { auth } = buildAuth({
+				env: testEnv({
+					oidc: OIDC,
+					passwordLoginEnabled: false,
+				}),
+			})
+
+			expect(auth.options.emailAndPassword.enabled).toBe(
+				false,
+			)
+			expect(
+				auth.options.emailAndPassword.sendResetPassword,
+			).toBeUndefined()
 		})
 	})
 })

@@ -235,6 +235,20 @@ export function buildChildEnvs(
 			config.socialLogin.slack?.clientId ?? "",
 		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SLACK_CLIENT_SECRET:
 			config.socialLogin.slack?.clientSecret ?? "",
+		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_ISSUER_URL:
+			config.oidcLogin?.issuerUrl ?? "",
+		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_ID:
+			config.oidcLogin?.clientId ?? "",
+		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_SECRET:
+			config.oidcLogin?.clientSecret ?? "",
+		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_DISPLAY_NAME:
+			config.oidcLogin?.displayName ?? "",
+		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_SCOPES:
+			config.oidcLogin?.scopes ?? "",
+		OXYNOTE_AUTH_REALTIME_PASSWORD_LOGIN_DISABLED:
+			config.passwordLoginDisabled ? "true" : "false",
+		// node trusts these besides its public CAs.
+		NODE_EXTRA_CA_CERTS: config.oidcLogin?.caCertsPath ?? "",
 		SENTRY_DSN: sentryDsns.authRealtimeDsn,
 	}
 

@@ -18,6 +18,7 @@ const {
 	hasPassword,
 	updateUser,
 } = useAuthSession()
+const { isPasswordLoginEnabled } = useAuthAPI()
 const {
 	fetchSlackConnectionStatus,
 	fetchSlackUserLinkSettings,
@@ -317,52 +318,56 @@ function handleAvatarClick() {
 				</div>
 			</ShadcnUiFormItem>
 		</ShadcnUiFormField>
-		<div class="my-3.5 h-px w-full bg-border" />
-		<div
-			class="flex w-full flex-col justify-between gap-2 sm:flex-row sm:items-center"
-		>
-			<div class="flex flex-col gap-0.5">
-				<div class="text-2base">
-					{{ $t("settings.profile.password-label") }}
-				</div>
-				<i18n-t
-					scope="global"
-					keypath="settings.profile.password-description.main"
-					tag="div"
-					class="text-xs text-muted-foreground"
-				>
-					<template #status>
-						<!-- the separator is an expression, not a text node — a bare "."
-							would pick up a leading space from template-whitespace
-							condensing (and prettier reflows the >-glue trick away) -->
-						<span v-if="fetchAccounts.state.value.data?.data && !hasPassword">
-							{{ ". " }}
-							<span class="font-semibold">
-								{{ $t("settings.profile.password-description.status-not-set") }}
-							</span>
-						</span>
-					</template>
-				</i18n-t>
-			</div>
+		<template v-if="isPasswordLoginEnabled">
+			<div class="my-3.5 h-px w-full bg-border" />
 			<div
-				class="flex w-full items-center justify-between gap-1.5 sm:max-w-44 sm:min-w-44 sm:justify-end md:max-w-52 md:min-w-0 lg:max-w-70"
+				class="flex w-full flex-col justify-between gap-2 sm:flex-row sm:items-center"
 			>
-				<ShadcnUiButton
-					v-if="fetchAccounts.state.value.data?.data"
-					type="button"
-					variant="ghost-plain"
-					class="gap-1.5 p-0 text-sm"
-					@click="emit('password-change')"
+				<div class="flex flex-col gap-0.5">
+					<div class="text-2base">
+						{{ $t("settings.profile.password-label") }}
+					</div>
+					<i18n-t
+						scope="global"
+						keypath="settings.profile.password-description.main"
+						tag="div"
+						class="text-xs text-muted-foreground"
+					>
+						<template #status>
+							<!-- the separator is an expression, not a text node — a bare "."
+								would pick up a leading space from template-whitespace
+								condensing (and prettier reflows the >-glue trick away) -->
+							<span v-if="fetchAccounts.state.value.data?.data && !hasPassword">
+								{{ ". " }}
+								<span class="font-semibold">
+									{{
+										$t("settings.profile.password-description.status-not-set")
+									}}
+								</span>
+							</span>
+						</template>
+					</i18n-t>
+				</div>
+				<div
+					class="flex w-full items-center justify-between gap-1.5 sm:max-w-44 sm:min-w-44 sm:justify-end md:max-w-52 md:min-w-0 lg:max-w-70"
 				>
-					<Icon name="lucide:key-round" />
-					{{
-						hasPassword
-							? $t("settings.profile.password-change-button")
-							: $t("settings.profile.password-set-button")
-					}}
-				</ShadcnUiButton>
+					<ShadcnUiButton
+						v-if="fetchAccounts.state.value.data?.data"
+						type="button"
+						variant="ghost-plain"
+						class="gap-1.5 p-0 text-sm"
+						@click="emit('password-change')"
+					>
+						<Icon name="lucide:key-round" />
+						{{
+							hasPassword
+								? $t("settings.profile.password-change-button")
+								: $t("settings.profile.password-set-button")
+						}}
+					</ShadcnUiButton>
+				</div>
 			</div>
-		</div>
+		</template>
 		<div class="my-3.5 h-px w-full bg-border" />
 		<div
 			class="flex w-full flex-col justify-between gap-2 sm:flex-row sm:items-center"
