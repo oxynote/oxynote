@@ -13,6 +13,7 @@ import {
 	type LogSummary,
 } from "./rows"
 import { LineFormat, type LogDialect } from "./dialect"
+
 const NOON_MILLIS = BigInt(Date.UTC(2026, 0, 1, 12, 0, 0))
 const MULTILINE_LOGFMT = [
 	'level=error msg="charge failed" provider=cardsim duration_ms=3687',
