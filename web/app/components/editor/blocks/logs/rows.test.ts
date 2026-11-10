@@ -13,6 +13,7 @@ import {
 	type LogSummary,
 } from "./rows"
 import { LineFormat, type LogDialect } from "./dialect"
+
 const NOON_MILLIS = BigInt(Date.UTC(2026, 0, 1, 12, 0, 0))
 // a source that names a parsed key as the line does, so these tests read
 // only the generic rules
