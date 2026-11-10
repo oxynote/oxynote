@@ -432,6 +432,7 @@ function opDelete(doc: Y.Doc, op: DeleteOp): void {
 
 	found.parent.delete(found.index, 1)
 	checkChildrenOf(found.parent)
+	deleteEmptyGrid(found.parent)
 }
 
 function opMove(doc: Y.Doc, op: MoveOp): void {
@@ -491,6 +492,7 @@ function opMove(doc: Y.Doc, op: MoveOp): void {
 	}
 
 	checkChildrenOf(reference.parent, PLACE_ADVICE)
+	deleteEmptyGrid(found.parent)
 }
 
 // moveInGrid moves a block next to a block of grid. Within the grid only
@@ -525,6 +527,7 @@ function moveInGrid(
 	checkChildrenOf(found.parent)
 	checkChildrenOf(grid, PLACE_ADVICE)
 	placeInGrid(layout, clone, null, target)
+	deleteEmptyGrid(found.parent)
 }
 
 function opSetStackOrder(doc: Y.Doc, op: SetStackOrderOp): void {
@@ -626,6 +629,25 @@ function gridOf(parent: Y.XmlFragment): Y.XmlElement | null {
 	return parent instanceof Y.XmlElement && GRID_NAMES.has(parent.nodeName)
 		? parent
 		: null
+}
+
+// deleteEmptyGrid deletes parent when it is a grid with no blocks left, as
+// the editor does. But a grid that is the only block of its parent stays,
+// because deleting it would leave the parent empty.
+function deleteEmptyGrid(parent: Y.XmlFragment): void {
+	const grid = gridOf(parent)
+	const holder = grid?.parent
+
+	if (
+		!grid ||
+		grid.length > 0 ||
+		!(holder instanceof Y.XmlFragment) ||
+		holder.length < 2
+	) {
+		return
+	}
+
+	holder.delete(holder.toArray().indexOf(grid), 1)
 }
 
 // checkOutsideGrid refuses a position only a block in a grid has
@@ -833,6 +855,11 @@ function insertBlock(
 	advice = "",
 ): void {
 	checkBlock(block)
+
+	// a grid without blocks shows nothing, so a new grid must hold one
+	if (GRID_NAMES.has(block.type) && !block.content?.length) {
+		throw new Error(`${block.type} must hold at least one block`)
+	}
 
 	const first = transformer
 		.toYdoc({ type: "doc", content: [block] }, "content")

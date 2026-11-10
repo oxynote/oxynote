@@ -1555,7 +1555,7 @@ describe("applyOperations", () => {
 			expect(blockByUid(doc, "b")).toBe(moved)
 		})
 
-		it("moves a block from another grid in without its old places", ({
+		it("moves a block from another grid in without its old places and deletes the grid it empties", ({
 			expect,
 		}) => {
 			const doc = docWith([
@@ -1590,6 +1590,7 @@ describe("applyOperations", () => {
 			expect(
 				attrsOf(blockByUid(doc, "m")).stackPos,
 			).toBeUndefined()
+			expect(findBlock(doc, "h")).toBeUndefined()
 		})
 
 		it.for([
@@ -1871,6 +1872,112 @@ describe("applyOperations", () => {
 					"b 12,0 12x1",
 				])
 			}
+		})
+
+		it("deletes the grid a delete takes the last block from", ({
+			expect,
+		}) => {
+			const doc = docWith([
+				grid("g", gridBlock("a")),
+				textParagraph("p", "Line"),
+			])
+
+			const result = applyOperations(doc, [
+				{ kind: "delete", block_uid: "a" },
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(topUids(doc)).toEqual(["p"])
+		})
+
+		it("keeps an emptied grid that is the document's only block", ({
+			expect,
+		}) => {
+			const doc = docWith([grid("g", gridBlock("a"))])
+
+			const result = applyOperations(doc, [
+				{ kind: "delete", block_uid: "a" },
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(topUids(doc)).toEqual(["g"])
+		})
+
+		it("deletes the grid a move takes the last block out of", ({
+			expect,
+		}) => {
+			const doc = docWith([
+				grid("g", gridBlock("a")),
+				{
+					type: "splitDocumentation",
+					attrs: { uid: "s" },
+					content: [
+						{
+							type: "splitDocumentationLeftSide",
+							content: [
+								{
+									type: "heading",
+									attrs: {
+										uid: "h",
+										level: 2,
+									},
+									content: [
+										{
+											type: "text",
+											text: "Title",
+										},
+									],
+								},
+								textParagraph(
+									"l",
+									"Left",
+								),
+							],
+						},
+						{
+							type: "splitDocumentationRightSide",
+							content: [
+								gridBlock("r"),
+							],
+						},
+					],
+				},
+			])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: "a",
+					position: "after",
+					reference_uid: "r",
+				},
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(topUids(doc)).toEqual(["s"])
+			expect(findBlock(doc, "a")).toBeDefined()
+		})
+
+		it("refuses to write a grid without blocks", ({ expect }) => {
+			const doc = docWith([textParagraph("p", "Line")])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "insert",
+					position: "after",
+					reference_uid: "p",
+					block: {
+						type: "blockGrid",
+						attrs: { uid: "n" },
+						content: [],
+					},
+				},
+			])
+
+			expect(result.errors[0]?.message).toContain(
+				"blockGrid must hold at least one block",
+			)
+			expect(topUids(doc)).toEqual(["p"])
 		})
 	})
 
