@@ -1,4 +1,5 @@
 import { describe, it } from "vitest"
+import { LineFormat, type LogDialect } from "./dialect"
 import {
 	displayValue,
 	extractedFields,
@@ -12,8 +13,6 @@ import {
 	type KeyValue,
 	type LogSummary,
 } from "./rows"
-import { LineFormat, type LogDialect } from "./dialect"
-
 const NOON_MILLIS = BigInt(Date.UTC(2026, 0, 1, 12, 0, 0))
 const MULTILINE_LOGFMT = [
 	'level=error msg="charge failed" provider=cardsim duration_ms=3687',
@@ -150,6 +149,23 @@ describe("summarizeLog", () => {
 					["empty", '""'],
 					["spaced", '"two words"'],
 					["go", "\\x01"],
+				],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "keeps the first value of a repeated logfmt key, as Loki does",
+			input: {
+				line: "component=billing component=stripe-client attempt=1 attempt=2",
+				labels: {},
+				fields: {},
+			},
+			expected: {
+				message: "",
+				extracted: [
+					["component", "billing"],
+					["attempt", "1"],
 				],
 				fields: [],
 				labels: [],
