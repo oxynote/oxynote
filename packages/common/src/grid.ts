@@ -196,6 +196,7 @@ export function dropInGrid(
 		h: dragged.h,
 		id: dragged.index ?? rects.length,
 	}
+
 	switch (target.kind) {
 		case "line":
 			placeAtLine(boxes, box, target.x)

@@ -311,7 +311,10 @@ function gridLayout() {
 					return new Slice(withoutGridPlaces(only.content, false), 0, 0)
 				}
 
-				const content = withoutGridPlaces(slice.content, intoGrid)
+				const content = withoutGridPlaces(
+					withoutOpenGridPlaces(slice.content, slice.openStart, slice.openEnd),
+					intoGrid,
+				)
 
 				return content === slice.content
 					? slice
@@ -402,6 +405,33 @@ function gridDecorations(grid: PMNode, gridPos: number): Decoration[] {
 	})
 
 	return decorations
+}
+
+// withoutOpenGridPlaces drops the places of the blocks in a grid at an open
+// edge of a slice. Only part of that grid was copied, so its blocks land
+// like loose blocks.
+function withoutOpenGridPlaces(
+	content: Fragment,
+	openStart: number,
+	openEnd: number,
+): Fragment {
+	let result = content
+	const edges = [
+		{ index: 0, open: openStart },
+		{ index: content.childCount - 1, open: openEnd },
+	]
+
+	for (const { index, open } of edges) {
+		const node = result.maybeChild(index)
+		if (open > 0 && node && BLOCK_GRID_NAMES.has(node.type.name)) {
+			const blocks = withoutGridPlaces(node.content, false)
+			if (blocks !== node.content) {
+				result = result.replaceChild(index, node.copy(blocks))
+			}
+		}
+	}
+
+	return result
 }
 
 // withoutGridPlaces drops the places of the grid blocks in content. So

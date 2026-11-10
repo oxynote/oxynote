@@ -176,6 +176,24 @@ describe("<GridItemMenu>", { concurrent: false }, () => {
 		])
 	})
 
+	it("keeps the height the block has now when the width changes", async ({
+		expect,
+	}) => {
+		const { dispatch, state } = await mountMenu(
+			gridDoc(block("a", { height: 2 }), block("b")),
+			1,
+			{ height: 1 },
+		)
+		await openSubmenu(t("editor.drag-handle.options.grid-item.width"))
+
+		menuItem(t("editor.grid-item.width-options.wide")).click()
+
+		expect(cells(applied(state, dispatch).child(0))).toEqual([
+			"a 0,0 24x2",
+			"b 12,2 12x1",
+		])
+	})
+
 	it("writes only the blocks whose cells change", async ({ expect }) => {
 		const placedA = { widePosX: 0, widePosY: 0, width: 12, height: 1 }
 		const placedB = { widePosX: 12, widePosY: 0, width: 12, height: 1 }

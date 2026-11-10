@@ -74,6 +74,25 @@ describe("findGridDrop", { concurrent: false }, () => {
 		).toBeUndefined()
 	})
 
+	it("finds nothing when a grid block is dragged with more content", ({
+		expect,
+	}) => {
+		const editor = mountEditor([blockGrid(metricBlock("a")), paragraph("p")])
+		const point = pointIn(blockElement(editor, "a"), 0.5, 0.5)
+		const slice = new Slice(
+			Fragment.from([
+				editor.state.doc.child(0).child(0),
+				editor.state.doc.child(1),
+			]),
+			0,
+			0,
+		)
+
+		expect(
+			findGridDrop(editor.view, point.x, point.y, slice, false),
+		).toBeUndefined()
+	})
+
 	it("takes a moved block for one from outside the grid while nothing is selected", ({
 		expect,
 	}) => {

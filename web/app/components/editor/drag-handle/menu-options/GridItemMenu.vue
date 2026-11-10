@@ -90,10 +90,11 @@ const otherHeight = computed(() =>
 	heightName(size.value.h) ? null : gridSizeLabel(t, "height", size.value.h),
 )
 
-// resize gives the block new columns or rows. In a grid, the grid makes
-// room. The blocks beside it slide and the ones below it move. Then every
-// block gets its new cells.
-function resize(w: number, h: number) {
+// resize gives the block new columns or rows. The size it keeps is read
+// from the block now, since another user may have changed it since the
+// menu opened. In a grid, the grid makes room. The blocks beside it slide
+// and the ones below it move. Then every block gets its new cells.
+function resize(change: { w: number } | { h: number }) {
 	if (props.hovered == null) {
 		return
 	}
@@ -106,6 +107,7 @@ function resize(w: number, h: number) {
 		return
 	}
 
+	const { w, h } = { ...gridItemOf(node.attrs), ...change }
 	const $pos = state.doc.resolve(pos)
 	const grid = $pos.parent
 	const tr = state.tr
@@ -148,7 +150,7 @@ function resize(w: number, h: number) {
 					v-for="width in widths"
 					:key="width.value"
 					:active="width.value === size.w"
-					@click="resize(width.value, size.h)"
+					@click="resize({ w: width.value })"
 				>
 					<div class="flex w-full items-center gap-1">
 						<Icon :name="width.icon" />
@@ -177,7 +179,7 @@ function resize(w: number, h: number) {
 					v-for="height in heights"
 					:key="height.value"
 					:active="height.value === size.h"
-					@click="resize(size.w, height.value)"
+					@click="resize({ h: height.value })"
 				>
 					<div class="flex w-full items-center gap-1">
 						<Icon :name="height.icon" />

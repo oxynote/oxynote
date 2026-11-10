@@ -8,7 +8,8 @@ const TAB_STOPS =
 	'a[href], button, input, select, textarea, [tabindex], [contenteditable="true"]'
 
 // the direction of the Tab key while it is down, or null after any other
-// key. One pair of document listeners keeps it for every grid.
+// key, a pointer press or leaving the window. One set of listeners keeps
+// it for every grid.
 let tabbing: "forward" | "backward" | null = null
 let trackingTabs = false
 
@@ -32,18 +33,24 @@ export function trackTabbing(): void {
 	document.addEventListener(
 		"keydown",
 		(event) => {
-			tabbing =
-				event.key === "Tab" ? (event.shiftKey ? "backward" : "forward") : null
+			const plainTab =
+				event.key === "Tab" && !event.altKey && !event.ctrlKey && !event.metaKey
+
+			tabbing = plainTab ? (event.shiftKey ? "backward" : "forward") : null
 		},
 		{ capture: true },
 	)
-	document.addEventListener(
-		"keyup",
-		() => {
-			tabbing = null
-		},
-		{ capture: true },
-	)
+
+	// the keyup of a Tab that leaves the page never reaches the document
+	for (const type of ["keyup", "pointerdown"]) {
+		document.addEventListener(type, stopTabbing, { capture: true })
+	}
+
+	window.addEventListener("blur", stopTabbing)
+}
+
+function stopTabbing(): void {
+	tabbing = null
 }
 
 // tabDirection returns the direction of a Tab press while the Tab key is

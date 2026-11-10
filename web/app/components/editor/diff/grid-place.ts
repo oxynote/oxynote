@@ -3,6 +3,7 @@ import {
 	gridItemOf,
 	layoutGrid,
 	stackOrder,
+	stackPlaces,
 	stackPosOf,
 } from "@oxynote/common/grid"
 import {
@@ -122,14 +123,12 @@ export function gridItemRow(
 function placeBlocks(grid: JSONContent): JSONContent {
 	const blocks = grid.content ?? []
 	const rects = layoutGrid(blocks.map((block) => gridItemOf(block.attrs ?? {})))
-	const stack: number[] = []
-
-	stackOrder(
-		rects,
-		blocks.map((block) => stackPosOf(block.attrs ?? {})),
-	).forEach((i, place) => {
-		stack[i] = place
-	})
+	const stack = stackPlaces(
+		stackOrder(
+			rects,
+			blocks.map((block) => stackPosOf(block.attrs ?? {})),
+		),
+	)
 
 	return {
 		...grid,

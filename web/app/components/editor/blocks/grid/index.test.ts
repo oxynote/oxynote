@@ -467,6 +467,34 @@ describe("grid paste", () => {
 		expect(pasted && cellsOf(pasted.content)).toEqual(expected)
 	})
 
+	it("drops the places of the blocks in a grid copied in part", ({
+		expect,
+	}) => {
+		const doc = nodeType(placedSchema, "doc").create(null, [
+			nodeType(placedSchema, "paragraph").create(),
+		])
+		const plugin = layoutPlugin()
+		const state = EditorState.create({ doc: doc })
+		const slice = new Slice(
+			Fragment.from(
+				placedGrid(placed({ widePosX: 12, widePosY: 0, stackPos: 1 })),
+			),
+			1,
+			1,
+		)
+
+		const pasted = plugin.props.transformPasted?.call(
+			plugin,
+			slice,
+			{ state: state } as never,
+			false,
+		)
+
+		expect(pasted && cellsOf(pasted.content)).toEqual([
+			{ widePosX: null, widePosY: null, stackPos: null },
+		])
+	})
+
 	it("adds the blocks of a whole grid pasted onto a block of a grid to that grid", ({
 		expect,
 	}) => {

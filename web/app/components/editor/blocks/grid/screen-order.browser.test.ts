@@ -64,6 +64,11 @@ describe("tabDirection", { concurrent: false }, () => {
 			input: { keys: "{Tab>}{Escape>}", release: "{/Escape}{/Tab}" },
 			expected: null,
 		},
+		{
+			name: "nothing while Ctrl+Tab is down",
+			input: { keys: "{Control>}{Tab>}", release: "{/Tab}{/Control}" },
+			expected: null,
+		},
 	])("tells $name", async ({ input, expected }, { expect }) => {
 		onTestFinished(() => userEvent.keyboard(input.release))
 
@@ -77,6 +82,20 @@ describe("tabDirection", { concurrent: false }, () => {
 
 		expect(tabDirection()).toBeNull()
 	})
+
+	it.for(["pointerdown", "blur"])(
+		"tells nothing after a %s while Tab is down",
+		async (type, { expect }) => {
+			onTestFinished(() => userEvent.keyboard("{/Tab}"))
+			await userEvent.keyboard("{Tab>}")
+
+			const target = type === "blur" ? window : document
+
+			target.dispatchEvent(new Event(type))
+
+			expect(tabDirection()).toBeNull()
+		},
+	)
 })
 
 // focus is one per document, so these tests take turns

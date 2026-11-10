@@ -78,8 +78,8 @@ const LINE_REM = 0.1875
 
 // findGridDrop finds where a grid block dragged to the point lands in the
 // grid under it. A block that is copied, not moved, comes into the grid as
-// a new one. It returns undefined when no grid block is dragged or no grid
-// is under the point. It returns null when the drop would change nothing
+// a new one. It returns undefined when the slice is not one grid block or
+// no grid is under the point. It returns null when the drop would change nothing
 // or has no room.
 export function findGridDrop(
 	view: EditorView,
@@ -89,7 +89,11 @@ export function findGridDrop(
 	moving: boolean,
 ): GridDrop | null | undefined {
 	const dragged = slice?.content.firstChild
-	if (!dragged || !GRID_ITEM_NAMES.has(dragged.type.name)) {
+	if (
+		!dragged ||
+		slice.content.childCount > 1 ||
+		!GRID_ITEM_NAMES.has(dragged.type.name)
+	) {
 		return undefined
 	}
 
