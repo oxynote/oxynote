@@ -63,7 +63,6 @@
 		"@tiptap/extension-collaboration-caret": "^3.31.3",
 		"@tiptap/extension-file-handler": "^3.31.3",
 		"@tiptap/extension-list": "^3.31.3",
-		"@tiptap/extension-node-range": "^3.31.3",
 		"@tiptap/extension-text-style": "^3.31.3",
 		"@tiptap/extension-typography": "^3.31.3",
 		"@tiptap/extensions": "^3.31.3",

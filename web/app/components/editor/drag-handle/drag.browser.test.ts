@@ -496,6 +496,34 @@ describe("Drag", { concurrent: false }, () => {
 		})
 	})
 
+	describe("text drags", () => {
+		it("refuses a drag of a selection that spans more than one block", ({
+			expect,
+		}) => {
+			const editor = mountEditor([paragraph("one"), paragraph("two")])
+			editor.commands.setTextSelection({ from: 2, to: 8 })
+			const event = dragEvent("dragstart", centerOf(q(editor, "p")), true)
+
+			q(editor, "p").dispatchEvent(event)
+
+			expect(event.defaultPrevented).toBe(true)
+			expect(editor.view.dragging).toBeNull()
+		})
+
+		it("lets a selection inside one block be dragged", ({ expect }) => {
+			const editor = mountEditor([paragraph("one"), paragraph("two")])
+			editor.commands.setTextSelection({ from: 1, to: 3 })
+			const event = dragEvent("dragstart", centerOf(q(editor, "p")), true)
+
+			q(editor, "p").dispatchEvent(event)
+
+			const slice = editor.view.dragging?.slice
+
+			expect(event.defaultPrevented).toBe(false)
+			expect(slice?.content.textBetween(0, slice.content.size)).toBe("on")
+		})
+	})
+
 	describe("block drop positions", () => {
 		it("moves the dragged block above the hovered block", ({ expect }) => {
 			const editor = mountEditor([

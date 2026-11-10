@@ -9,7 +9,6 @@ import type { Node } from "@tiptap/pm/model"
 import {
 	type EditorState,
 	type Transaction,
-	type SelectionRange,
 	Plugin,
 	PluginKey,
 	NodeSelection,
@@ -21,10 +20,6 @@ import {
 	type ProsemirrorBinding,
 } from "@tiptap/y-tiptap"
 import type * as Y from "yjs"
-import {
-	getSelectionRanges,
-	NodeRangeSelection,
-} from "@tiptap/extension-node-range"
 import { Fragment, Slice } from "@tiptap/pm/model"
 import type { HocuspocusProvider } from "@hocuspocus/provider"
 import { findDraggableNodeAtCoords } from "./node-detection.js"
@@ -232,8 +227,9 @@ function findSourceWrapperBounds(
 	return null
 }
 
-// handleDragData sets up the drag event for dragging nodes, and renders a
-// drag image when asked.
+// handleDragData sets up the drag event for the block at nodePos, and
+// renders a drag image when asked. It drags that block alone, even when a
+// selection covers more blocks.
 function handleDragData(
 	event: DragEvent,
 	editor: Editor,
@@ -247,58 +243,24 @@ function handleDragData(
 	}
 
 	const { doc, tr } = view.state
-	const { empty, $from, $to } = view.state.selection
 
 	const node = doc.nodeAt(nodePos)
 	if (!node) {
 		return
 	}
 
-	const nodeEndPos = nodePos + node.nodeSize
-	const selectionRanges = empty ? [] : getSelectionRanges($from, $to, 0)
-	const shouldDragFullSelection =
-		!empty &&
-		selectionRanges.some((range) => {
-			return range.$from.pos === nodePos && range.$to.pos === nodeEndPos
-		})
+	const slice = new Slice(Fragment.from(node), 0, 0)
 
-	let slice: Slice
-	let ranges: SelectionRange[]
-
-	if (shouldDragFullSelection) {
-		// The dragged node is one of the selected nodes - use full selection
-		// shouldDragFullSelection can only be true when some() matched, so the
-		// range list is non-empty here
-		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- see above
-		const from = selectionRanges[0]!.$from.pos
-		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- see above
-		const to = selectionRanges[selectionRanges.length - 1]!.$to.pos
-		const selection = NodeRangeSelection.create(doc, from, to)
-		slice = selection.content()
-		ranges = selectionRanges
-		tr.setSelection(selection)
-	} else {
-		// Single node drag - use NodeSelection for exact node
-		slice = new Slice(Fragment.from(node), 0, 0)
-		ranges = [{ $from: doc.resolve(nodePos), $to: doc.resolve(nodeEndPos) }]
-
-		// Use NodeSelection for single node (doesn't expand to siblings)
-		const selection = NodeSelection.create(doc, nodePos)
-		tr.setSelection(selection)
-	}
-
+	tr.setSelection(NodeSelection.create(doc, nodePos))
 	event.dataTransfer.clearData()
 
 	if (withDragImage) {
 		const wrapper = document.createElement("div")
+		const element = view.nodeDOM(nodePos) as HTMLElement | null
 
-		ranges.forEach((range) => {
-			const element = view.nodeDOM(range.$from.pos) as HTMLElement | null
-			if (element) {
-				const clonedElement = cloneElement(element)
-				wrapper.append(clonedElement)
-			}
-		})
+		if (element) {
+			wrapper.append(cloneElement(element))
+		}
 
 		wrapper.style.position = "absolute"
 		wrapper.style.top = "-10000px"

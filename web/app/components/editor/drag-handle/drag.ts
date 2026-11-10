@@ -991,6 +991,19 @@ export const Drag = Extension.create<DragOptions>({
 			new Plugin({
 				props: {
 					handleDOMEvents: {
+						// a drag from inside the text carries the selection. The block
+						// handle drags one block at a time, so a selection that spans
+						// more than one block is not dragged.
+						dragstart(view, e) {
+							const { $from, $to } = view.state.selection
+							if ($from.sameParent($to)) {
+								return false
+							}
+
+							e.preventDefault()
+
+							return true
+						},
 						dragover(view, e) {
 							// Reset dropHandled at drag start to allow the next drop
 							if (!lastMouse) {
