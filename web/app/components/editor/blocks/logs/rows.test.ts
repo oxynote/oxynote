@@ -391,6 +391,22 @@ describe("extractedFields", () => {
 		])
 	})
 
+	it("keeps a JSON number as the line writes it", ({ expect }) => {
+		expect(
+			extractedFields(
+				makeLog({
+					id: "l1",
+					line: '{"ms":25.0,"id":9007199254740993,"n":{"x":1.50}}',
+				}),
+				EXACT_DIALECT,
+			).map((f) => [f.key, f.value, f.display, f.nested]),
+		).toEqual([
+			["ms", "25.0", "25.0", false],
+			["id", "9007199254740993", "9007199254740993", false],
+			["n", '{"x":1.50}', '{"x":1.50}', true],
+		])
+	})
+
 	it("reads a logfmt line in its own format", ({ expect }) => {
 		expect(
 			extractedFields(makeLog({ id: "l1", line: 'msg="a b"' }), EXACT_DIALECT),

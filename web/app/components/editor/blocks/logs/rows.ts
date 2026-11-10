@@ -10,6 +10,13 @@ const MESSAGE_KEYS = ["msg", "message", "log"]
 // at white space.
 const LOGFMT_PAIR = /\s*([^\s="]+)=("(?:[^"\\]|\\.)*"|[^\s"]*)(?=\s|$)/y
 
+// JSON's source text API, which the TypeScript lib does not type yet. An
+// older engine has no isRawJSON and gives the reviver no source.
+const SOURCE_JSON = JSON as JSON & {
+	rawJSON: (text: string) => unknown
+	isRawJSON?: (value: unknown) => boolean
+}
+
 export type KeyValue = [key: string, value: string]
 
 // a key read from the line, or one the query's parser added
@@ -277,7 +284,8 @@ function extract(
 					value: text,
 					display: typeof value === "string" ? displayValue(value) : text,
 					format: line.format,
-					nested: value !== null && typeof value === "object",
+					nested:
+						value !== null && typeof value === "object" && !isNumberText(value),
 					isNull: value === null,
 				}
 			})
@@ -323,7 +331,7 @@ function parseJSONObject(text: string): Record<string, unknown> | null {
 	}
 
 	try {
-		const parsed: unknown = JSON.parse(text)
+		const parsed: unknown = JSON.parse(text, keepNumberText)
 
 		return parsed && typeof parsed === "object" && !Array.isArray(parsed)
 			? (parsed as Record<string, unknown>)
@@ -331,6 +339,22 @@ function parseJSONObject(text: string): Record<string, unknown> | null {
 	} catch {
 		return null
 	}
+}
+
+// keepNumberText keeps a number as written, because Loki compares that
+// text. JSON.parse reads 25.0 as 25 and rounds integers past 2^53.
+function keepNumberText(
+	_key: string,
+	value: unknown,
+	context?: { source?: string },
+): unknown {
+	return typeof value === "number" && context?.source !== undefined
+		? SOURCE_JSON.rawJSON(context.source)
+		: value
+}
+
+export function isNumberText(value: unknown): boolean {
+	return SOURCE_JSON.isRawJSON?.(value) ?? false
 }
 
 // parseLogfmt reads a line made only of logfmt pairs. A line with any other

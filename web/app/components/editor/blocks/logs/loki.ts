@@ -1,6 +1,6 @@
 import { parser } from "@oxynote/lezer-logql"
 import { LineFormat, type LogDialect, type LogFilter } from "./dialect"
-import type { KeyValue } from "./rows"
+import { isNumberText, type KeyValue } from "./rows"
 
 // RE2 metacharacters, which a search has to match literally
 const REGEX_SPECIAL = /[\\.+*?()|[\]{}^$]/g
@@ -10,6 +10,7 @@ const REGEX_SPECIAL = /[\\.+*?()|[\]{}^$]/g
 // suffix when the key clashes with a label or field.
 const KEY_CHAR = /[^A-Za-z0-9_]/g
 const CLASH_SUFFIX = "_extracted"
+const NUMBER = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/
 
 // the LogQL parser that reads each line format
 const PARSERS: Record<LineFormat, string> = {
@@ -130,6 +131,7 @@ function repeatsLineKey(
 		nested &&
 		lineValue !== null &&
 		typeof lineValue === "object" &&
+		!isNumberText(lineValue) &&
 		name.startsWith(`${lineName}_`)
 	)
 }
@@ -142,11 +144,32 @@ function sameValue(text: string, lineValue: unknown): boolean {
 		return text === lineValue
 	}
 
-	if (typeof lineValue === "number") {
-		return text.trim() !== "" && Number(text) === lineValue
+	if (typeof lineValue === "number" || isNumberText(lineValue)) {
+		const value = numberValue(text)
+
+		return value !== null && value === numberValue(JSON.stringify(lineValue))
 	}
 
 	return text === JSON.stringify(lineValue)
+}
+
+// numberValue writes JSON number text as its significant digits and an
+// exponent, so equal numbers give the same text and no digit is lost
+function numberValue(text: string): string | null {
+	const match = NUMBER.exec(text)
+
+	if (!match) {
+		return null
+	}
+
+	const [, sign = "", whole = "", fraction = "", exponent = "0"] = match
+	const digits = `${whole}${fraction}`.replace(/^0+/, "")
+	const significant = digits.replace(/0+$/, "")
+	const shift = digits.length - significant.length - fraction.length
+
+	return significant
+		? `${sign}${significant}e${BigInt(exponent) + BigInt(shift)}`
+		: "0"
 }
 
 function matcher(filter: LogFilter): string {
