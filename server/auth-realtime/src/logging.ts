@@ -5,10 +5,11 @@ import { pino, type DestinationStream } from "pino"
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR"
 
 export interface Logger {
-	debug(message: string): void
-	info(message: string): void
-	warn(message: string): void
-	error(message: string): void
+    debug(message: string): void
+    info(message: string): void
+    warn(message: string): void
+    error(message: string): void
+    flush(callback?: (error?: Error) => void): void
 }
 
 // the record shape matches core's slog output, so both services in a

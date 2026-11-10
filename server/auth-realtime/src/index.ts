@@ -61,7 +61,12 @@ try {
 		redis.on("error", (err) => {
 			if (connecting) return
 
-			log.error(err.message)
+			const message =
+				err instanceof Error && err.message
+					? err.message
+					: String(err)
+
+			log.error(`Valkey client error: ${message || "unknown error"}`)
 		})
 
 		try {
@@ -245,6 +250,6 @@ try {
 	process.once("SIGTERM", () => void shutdown())
 } catch (error) {
 	log.error(error instanceof Error ? error.message : String(error))
-	process.exit(1)
+    log.flush(() => process.exit(1))
 }
 
