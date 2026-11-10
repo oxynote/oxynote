@@ -131,6 +131,15 @@ test:
 	@$(QUIET) "testing launcher" sh -c 'cd docker/prod/launcher && pnpm run test'
 	@$(QUIET) "testing packages/common" sh -c 'cd packages/common && pnpm run test'
 
+# the benchmarks of every package. They only measure, so they never fail on
+# a slow result. Their output is the result, so nothing here runs quietly.
+.PHONY: bench
+bench:
+	cd web && pnpm run bench
+	cd server/auth-realtime && pnpm run bench
+	cd docker/prod/launcher && pnpm run bench
+	cd packages/common && pnpm run bench
+
 # everything CI checks, to run before a commit. Nothing here modifies a
 # file.
 .PHONY: check-all

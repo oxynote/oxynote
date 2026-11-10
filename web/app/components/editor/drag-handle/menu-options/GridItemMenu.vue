@@ -9,7 +9,6 @@ import {
 	gridItemOf,
 	GridItemHeight,
 	GridItemWidth,
-	heightName,
 	resizeInGrid,
 	widthName,
 } from "@oxynote/common/grid"
@@ -82,12 +81,10 @@ const heights = computed(() =>
 		icon: HEIGHT_ICONS[name],
 	})),
 )
-// a size without a name in the menu. It shows only while the block has it.
+// a width without a name in the menu. It shows only while the block has
+// it. Every height a block can have has a name.
 const otherWidth = computed(() =>
 	widthName(size.value.w) ? null : gridSizeLabel(t, "width", size.value.w),
-)
-const otherHeight = computed(() =>
-	heightName(size.value.h) ? null : gridSizeLabel(t, "height", size.value.h),
 )
 
 // resize gives the block new columns or rows. The size it keeps is read
@@ -169,12 +166,6 @@ function resize(change: { w: number } | { h: number }) {
 				</div>
 			</ShadcnUiDropdownMenuSubTrigger>
 			<ShadcnUiDropdownMenuSubContent>
-				<ShadcnUiDropdownMenuItem v-if="otherHeight" active disabled>
-					<div class="flex w-full items-center gap-1">
-						<Icon name="mingcute:ruler-line" />
-						<span>{{ otherHeight }}</span>
-					</div>
-				</ShadcnUiDropdownMenuItem>
 				<ShadcnUiDropdownMenuItem
 					v-for="height in heights"
 					:key="height.value"

@@ -28,6 +28,7 @@ import {
 import { BLOCK_GRID_NAMES, GRID_ITEM_NAMES } from "./utils"
 import { gridLayoutOf, gridStackOf } from "./layout"
 import {
+	GRID_LAYOUT_ATTRS,
 	GRID_PLACE_ATTRS,
 	stackPlaces,
 	withoutPlaces,
@@ -185,20 +186,14 @@ function legacyGridMigration(editor: Editor) {
 		// merge or an undo, can bring one in.
 		state: {
 			init: (_, state) => holdsLegacyGrid(state.doc),
-			apply(tr, holds, oldState, newState) {
+			apply(tr, holds, _oldState, newState) {
 				if (!tr.docChanged) {
 					return holds
 				}
 
-				if (holds) {
-					return holdsLegacyGrid(newState.doc)
-				}
-
-				if (isChangeOrigin(tr)) {
-					return holdsNewLegacyGrid(oldState.doc, newState.doc)
-				}
-
-				return false
+				return holds || isChangeOrigin(tr)
+					? holdsLegacyGrid(newState.doc)
+					: false
 			},
 		},
 		appendTransaction(transactions, oldState, newState) {
@@ -258,25 +253,6 @@ function holdsLegacyGrid(doc: PMNode): boolean {
 	return false
 }
 
-// holdsNewLegacyGrid reports whether a remote change brought a legacy grid
-// to the root. y-prosemirror rebuilds the whole document on a remote change
-// but reuses the nodes that stay the same, so only new nodes are checked.
-function holdsNewLegacyGrid(oldDoc: PMNode, newDoc: PMNode): boolean {
-	const kept = new Set<PMNode>()
-
-	oldDoc.forEach((child) => kept.add(child))
-
-	for (let i = 0; i < newDoc.childCount; i++) {
-		const child = newDoc.child(i)
-
-		if (!kept.has(child) && child.type.name === LEGACY_METRIC_GRID_NAME) {
-			return true
-		}
-	}
-
-	return false
-}
-
 // gridLayout hands every grid block its cells. A block gets them as CSS
 // variables on its node. The grid's style uses these variables to place
 // the block, so the blocks themselves hold no layout code.
@@ -325,50 +301,102 @@ function gridLayout() {
 }
 
 // relaidOut maps the decorations through a change and lays out again only
-// the root grids the change touches. y-tiptap hands a remote change over as
-// a document of all new nodes. So the change is found by comparing the two
-// documents, not the nodes' identity.
+// the root nodes the change touches. y-tiptap hands a remote change over as
+// a document of all new nodes. So the root nodes are compared from both
+// ends by what the layout reads (see sameDecorations). A deep comparison
+// would read all the text of the document on each remote keystroke. A
+// change ends at the edge of a root node, so mapping drops the decorations
+// of every grid in it.
 function relaidOut(
 	set: DecorationSet,
 	oldDoc: PMNode,
 	newDoc: PMNode,
 ): DecorationSet {
-	const start = oldDoc.content.findDiffStart(newDoc.content)
-	const end = oldDoc.content.findDiffEnd(newDoc.content)
+	const before = oldDoc.content
+	const after = newDoc.content
+	let start = 0
+	let from = 0
 
-	if (start === null || !end) {
+	while (
+		start < before.childCount &&
+		start < after.childCount &&
+		sameDecorations(before.child(start), after.child(start))
+	) {
+		from += before.child(start).nodeSize
+		start++
+	}
+
+	let oldEnd = before.childCount
+	let newEnd = after.childCount
+	let oldTo = before.size
+	let newTo = after.size
+
+	while (
+		oldEnd > start &&
+		newEnd > start &&
+		sameDecorations(before.child(oldEnd - 1), after.child(newEnd - 1))
+	) {
+		oldEnd--
+		newEnd--
+		oldTo -= before.child(oldEnd).nodeSize
+		newTo -= after.child(newEnd).nodeSize
+	}
+
+	if (oldEnd === start && newEnd === start) {
 		return set
 	}
 
-	let oldEnd = end.a
-	let newEnd = end.b
-
-	// findDiffEnd searches from the back. When content repeats around the
-	// change, the end it finds can lie before the start. Then the end moves
-	// forward, as prosemirror-view does in this case.
-	if (oldEnd < start && oldDoc.content.size < newDoc.content.size) {
-		newEnd = start + newEnd - oldEnd
-		oldEnd = start
-	} else if (newEnd < start) {
-		oldEnd = start + oldEnd - newEnd
-		newEnd = start
-	}
-
 	const mapped = set.map(
-		new Mapping([new StepMap([start, oldEnd - start, newEnd - start])]),
+		new Mapping([new StepMap([from, oldTo - from, newTo - from])]),
 		newDoc,
 	)
-	const stale: Decoration[] = []
 	const fresh: Decoration[] = []
 
-	newDoc.forEach((node, pos) => {
-		if (pos < newEnd && pos + node.nodeSize > start) {
-			stale.push(...mapped.find(pos, pos + node.nodeSize))
-			fresh.push(...gridDecorations(node, pos))
-		}
-	})
+	for (let i = start, pos = from; i < newEnd; i++) {
+		const node = after.child(i)
 
-	return mapped.remove(stale).add(newDoc, fresh)
+		fresh.push(...gridDecorations(node, pos))
+		pos += node.nodeSize
+	}
+
+	return mapped.add(newDoc, fresh)
+}
+
+// sameDecorations reports whether two root nodes get the same decorations
+// at the same place. That holds when they have the same size and are both
+// grids or both something else. Two grids also need blocks of the same
+// sizes with the same layout attributes.
+function sameDecorations(a: PMNode, b: PMNode): boolean {
+	if (a === b) {
+		return true
+	}
+
+	const grid = BLOCK_GRID_NAMES.has(a.type.name)
+	if (a.nodeSize !== b.nodeSize || grid !== BLOCK_GRID_NAMES.has(b.type.name)) {
+		return false
+	}
+
+	if (!grid) {
+		return true
+	}
+
+	if (a.childCount !== b.childCount) {
+		return false
+	}
+
+	for (let i = 0; i < a.childCount; i++) {
+		const blockA = a.child(i)
+		const blockB = b.child(i)
+
+		if (
+			blockA.nodeSize !== blockB.nodeSize ||
+			GRID_LAYOUT_ATTRS.some((key) => blockA.attrs[key] !== blockB.attrs[key])
+		) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // gridDecorations gives each block of a root grid its cells and its place

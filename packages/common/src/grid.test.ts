@@ -39,12 +39,12 @@ describe("gridItemOf", () => {
 		},
 		{
 			name: "reads its place and size",
-			input: { widePosX: 2, widePosY: 4, width: 10, height: 3 },
-			expected: { x: 2, y: 4, w: 10, h: 3 },
+			input: { widePosX: 2, widePosY: 4, width: 10, height: 2 },
+			expected: { x: 2, y: 4, w: 10, h: 2 },
 		},
 		{
-			name: "falls back to one row for more rows than a block spans",
-			input: { height: 1000 },
+			name: "falls back to one row for more rows than the tallest height",
+			input: { height: 3 },
 			expected: { x: null, y: null, w: 12, h: 1 },
 		},
 		{
@@ -181,6 +181,16 @@ describe("layoutGrid", () => {
 			name: "flows a block without a place after the placed ones and floats it up",
 			input: [item(0, 0, 12, 2), item(12, 0, 12), legacy(12)],
 			expected: [rect(0, 0, 12, 2), rect(12, 0, 12), rect(12, 1, 12)],
+		},
+		{
+			name: "flows a block without a place into a gap between placed ones",
+			input: [item(0, 0, 8), item(16, 0, 8), legacy(8)],
+			expected: [rect(0, 0, 8), rect(16, 0, 8), rect(8, 0, 8)],
+		},
+		{
+			name: "flows a tall block past cells taken only in its second row",
+			input: [item(0, 0, 12), item(12, 1, 12), legacy(12, 2)],
+			expected: [rect(0, 0, 12), rect(12, 0, 12), rect(0, 1, 12, 2)],
 		},
 		{
 			name: "floats a block stored far down up at once",

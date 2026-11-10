@@ -115,6 +115,8 @@ export default defineConfig({
 				// serve — test code, not app code
 				"app/**/test-helpers.ts",
 				"app/**/test-helpers/**",
+				// a benchmark measures code, it is not code to cover
+				"app/**/*.bench.ts",
 			],
 			// set from the measured baseline and ratcheted up as suites
 			// grow. 100% is not the target: genuinely untestable branches
@@ -147,6 +149,9 @@ export default defineConfig({
 						"**/*.nuxt.test.ts",
 						"**/*.browser.test.ts",
 					],
+					// benchmarks run only in chromium. It times the code as
+					// the app runs it, and the editor needs its DOM.
+					benchmark: { include: [] },
 				},
 			},
 			{
@@ -208,6 +213,7 @@ export default defineConfig({
 					// slowest of them outgrows the 5s default
 					testTimeout: 20_000,
 					include: ["app/**/*.nuxt.test.ts"],
+					benchmark: { include: [] },
 					setupFiles: ["./vitest.nuxt-setup.ts"],
 					environmentOptions: {
 						nuxt: {

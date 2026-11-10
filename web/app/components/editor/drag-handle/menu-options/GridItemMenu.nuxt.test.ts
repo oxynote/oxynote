@@ -101,35 +101,17 @@ describe("<GridItemMenu>", { concurrent: false }, () => {
 		expect(checked(t(`editor.grid-item.${expected}`))).toBe(true)
 	})
 
-	it.for([
-		{
-			name: "columns",
-			input: { attrs: { width: 10 }, menu: "width" },
-			expected: { key: "width-options.columns", count: 10 },
-		},
-		{
-			name: "rows",
-			input: { attrs: { height: 3 }, menu: "height" },
-			expected: { key: "height-options.rows", count: 3 },
-		},
-	])(
-		"shows and marks the $name of a size the menu has no name for",
-		async ({ input, expected }, { expect }) => {
-			await mountMenu(gridDoc(block("a", input.attrs)), 1, input.attrs)
+	it("shows and marks the columns of a width the menu has no name for", async ({
+		expect,
+	}) => {
+		await mountMenu(gridDoc(block("a", { width: 10 })), 1, { width: 10 })
 
-			await openSubmenu(t(`editor.drag-handle.options.grid-item.${input.menu}`))
+		await openSubmenu(t("editor.drag-handle.options.grid-item.width"))
 
-			expect(
-				checked(
-					t(
-						`editor.grid-item.${expected.key}`,
-						{ count: expected.count },
-						expected.count,
-					),
-				),
-			).toBe(true)
-		},
-	)
+		expect(
+			checked(t("editor.grid-item.width-options.columns", { count: 10 }, 10)),
+		).toBe(true)
+	})
 
 	it("leaves the columns and rows of a named size out", async ({ expect }) => {
 		await mountMenu(gridDoc(block("a")), 1)

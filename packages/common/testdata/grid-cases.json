@@ -284,6 +284,33 @@
 			"stackOrder": [0, 1]
 		},
 		{
+			"name": "a height above the tallest named one falls back",
+			"blocks": [
+				{
+					"height": 2
+				},
+				{
+					"height": 3
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 12,
+					"h": 2
+				},
+				{
+					"x": 12,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1],
+			"stackOrder": [0, 1]
+		},
+		{
 			"name": "stacked places, and a block without one after its wide neighbour",
 			"blocks": [
 				{

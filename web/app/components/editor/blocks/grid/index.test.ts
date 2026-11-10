@@ -106,6 +106,22 @@ const placedSchema = getSchema([
 	Text,
 	BlockGrid,
 	GridMetricBlockStub,
+	Uid,
+])
+
+// a grid block that holds text, so its size changes with the text
+const TextGridItem = Node.create({
+	name: "textGridItem",
+	group: GRID_ITEM_GROUP,
+	content: "text*",
+})
+
+const textGridSchema = getSchema([
+	ContentDocument,
+	Paragraph,
+	Text,
+	BlockGrid,
+	TextGridItem,
 ])
 
 // a schema that knows paragraphs but no grid node type
@@ -361,6 +377,34 @@ describe("gridLayout", () => {
 		},
 	)
 
+	it("places the decorations by the new sizes of a grid's blocks", ({
+		expect,
+	}) => {
+		const item = (text: string) =>
+			nodeType(textGridSchema, "textGridItem").create(
+				null,
+				textGridSchema.text(text),
+			)
+		const doc = nodeType(textGridSchema, "doc").create(null, [
+			nodeType(textGridSchema, BLOCK_GRID_NAME).create(null, [
+				item("ab"),
+				item("c"),
+			]),
+		])
+		const edited = nodeType(textGridSchema, "doc").create(null, [
+			nodeType(textGridSchema, BLOCK_GRID_NAME).create(null, [
+				item("a"),
+				item("bc"),
+			]),
+		])
+
+		const moved = applyLayoutEdit(doc, (tr) =>
+			tr.replaceWith(0, doc.content.size, edited.content),
+		)
+
+		expect(moved.find().map((decoration) => decoration.from)).toEqual([1, 4])
+	})
+
 	describe(
 		"when a remote change replaces every node",
 		{ concurrent: false },
@@ -384,6 +428,73 @@ describe("gridLayout", () => {
 						0,
 						doc.content.size,
 						placedSchema.nodeFromJSON(doc.toJSON()).content,
+					),
+				)
+
+				expect.soft(plugin.getState(next)).toBe(plugin.getState(state))
+				expect.soft(vi.mocked(layoutGrid)).not.toHaveBeenCalled()
+			})
+
+			it("lays out nothing when it edits text outside every grid", ({
+				expect,
+			}) => {
+				const doc = twoGrids()
+				const plugin = layoutPlugin()
+				const state = EditorState.create({ doc: doc, plugins: [plugin] })
+				const json = doc.toJSON() as JSONContent
+				const paragraph = json.content?.[1]
+
+				if (!paragraph) {
+					throw new Error("a paragraph sits between the grids")
+				}
+
+				paragraph.content = [{ type: "text", text: "ab" }]
+				vi.mocked(layoutGrid).mockClear()
+
+				const next = state.apply(
+					state.tr.replaceWith(
+						0,
+						doc.content.size,
+						placedSchema.nodeFromJSON(json).content,
+					),
+				)
+
+				expect.soft(vi.mocked(layoutGrid)).not.toHaveBeenCalled()
+				expect.soft(cellStyles(plugin.getState(next)?.find() ?? [])).toEqual([
+					{
+						from: 1,
+						style:
+							"--grid-col:1;--grid-row:1;--grid-w:12;--grid-h:1;--grid-order:0",
+					},
+					{
+						from: 8,
+						style:
+							"--grid-col:1;--grid-row:1;--grid-w:12;--grid-h:1;--grid-order:0",
+					},
+				])
+			})
+
+			it("keeps the decorations when it edits a block's other attributes", ({
+				expect,
+			}) => {
+				const doc = twoGrids()
+				const plugin = layoutPlugin()
+				const state = EditorState.create({ doc: doc, plugins: [plugin] })
+				const json = doc.toJSON() as JSONContent
+				const block = json.content?.[2]?.content?.[0]
+
+				if (!block) {
+					throw new Error("the second grid holds a block")
+				}
+
+				block.attrs = { ...block.attrs, uid: "renamed" }
+				vi.mocked(layoutGrid).mockClear()
+
+				const next = state.apply(
+					state.tr.replaceWith(
+						0,
+						doc.content.size,
+						placedSchema.nodeFromJSON(json).content,
 					),
 				)
 

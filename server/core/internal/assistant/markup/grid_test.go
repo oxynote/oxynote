@@ -312,9 +312,9 @@ func Test_gridItemOf(t *testing.T) {
 				document.AttrWidePosX: 2.0,
 				document.AttrWidePosY: 3.0,
 				document.AttrWidth:    10.0,
-				document.AttrHeight:   3.0,
+				document.AttrHeight:   2.0,
 			},
-			Result: gridBox{placed: true, x: 2, y: 3, w: 10, h: 3},
+			Result: gridBox{placed: true, x: 2, y: 3, w: 10, h: 2},
 		},
 		"Size out of range is standard": {
 			Attrs:  document.Attributes{document.AttrWidth: 25.0, document.AttrHeight: 25.0},
@@ -363,7 +363,7 @@ func Test_gridSizeName(t *testing.T) {
 		"Legacy width name":                      {Attrs: document.Attributes{document.AttrWidth: "compact"}, Key: document.AttrWidth, Result: "compact"},
 		"Missing width":                          {Attrs: document.Attributes{}, Key: document.AttrWidth, Result: "standard"},
 		"Height with a name":                     {Attrs: document.Attributes{document.AttrHeight: 2.0}, Key: document.AttrHeight, Result: "tall"},
-		"Height past the named ones":             {Attrs: document.Attributes{document.AttrHeight: 5.0}, Key: document.AttrHeight, Result: "tall"},
+		"Height past the tallest name":           {Attrs: document.Attributes{document.AttrHeight: 3.0}, Key: document.AttrHeight, Result: "standard"},
 	}
 
 	for cn, c := range cc {
@@ -519,6 +519,79 @@ func Test_gridBox_overlaps(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 			assert.Equal(t, c.Result, c.Rect.box(0).overlaps(c.Other.box(1)))
+		})
+	}
+}
+
+func Test_take(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Taken  map[int]uint32
+		Rect   gridRect
+		Result map[int]uint32
+	}{
+		"Box marks each row it spans": {
+			Taken:  map[int]uint32{},
+			Rect:   gridRect{2, 1, 3, 2},
+			Result: map[int]uint32{1: 0b11100, 2: 0b11100},
+		},
+		"Box keeps the cells already taken": {
+			Taken:  map[int]uint32{0: 0b1},
+			Rect:   gridRect{4, 0, 2, 1},
+			Result: map[int]uint32{0: 0b110001},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			take(c.Taken, c.Rect.box(0))
+			assert.Equal(t, c.Result, c.Taken)
+		})
+	}
+}
+
+func Test_fits(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Taken  map[int]uint32
+		Rect   gridRect
+		Result bool
+	}{
+		"Box on free cells":          {Taken: map[int]uint32{0: 0xfff}, Rect: gridRect{12, 0, 12, 1}, Result: true},
+		"Box covering a taken cell":  {Taken: map[int]uint32{1: 1 << 5}, Rect: gridRect{0, 0, 12, 2}},
+		"Box past the right edge":    {Taken: map[int]uint32{}, Rect: gridRect{20, 0, 8, 1}},
+		"Box below the taken cells":  {Taken: map[int]uint32{0: 0xffffff}, Rect: gridRect{0, 1, 24, 1}, Result: true},
+		"Box on the last free cells": {Taken: map[int]uint32{0: 0x7fffff}, Rect: gridRect{23, 0, 1, 1}, Result: true},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, c.Result, fits(c.Taken, c.Rect.box(0)))
+		})
+	}
+}
+
+func Test_gridBox_columnBits(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Rect   gridRect
+		Result uint32
+	}{
+		"First column":            {Rect: gridRect{0, 0, 1, 1}, Result: 0b1},
+		"Columns from the middle": {Rect: gridRect{4, 2, 3, 1}, Result: 0b1110000},
+		"Every column":            {Rect: gridRect{0, 0, 24, 1}, Result: 0xffffff},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, c.Result, c.Rect.box(0).columnBits())
 		})
 	}
 }

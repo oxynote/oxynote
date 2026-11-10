@@ -12,8 +12,9 @@ import (
 // _gridColumns is how many columns the widest grid has.
 const _gridColumns = 24
 
-// _gridMaxRows is the most rows a grid block spans.
-const _gridMaxRows = 24
+// _gridMaxRows is the most rows a grid block spans: the rows of the
+// tallest named height. A block that stores more gets the default height.
+var _gridMaxRows = slices.Max(slices.Collect(maps.Values(_gridItemSizes[document.AttrHeight])))
 
 // _gridDefaultSize names the width and height a block takes when it
 // stores no size the grid knows.
@@ -157,6 +158,11 @@ func layoutGrid(blocks []document.Block) []*gridBox {
 
 	dense := len(boxes) > 0
 	row, column := 0, 0
+	taken := map[int]uint32{}
+
+	for _, box := range boxes {
+		take(taken, box)
+	}
 
 	for _, box := range items {
 		if box.placed {
@@ -165,7 +171,7 @@ func layoutGrid(blocks []document.Block) []*gridBox {
 
 		box.x, box.y = column, row
 
-		for box.x+box.w > _gridColumns || slices.ContainsFunc(boxes, box.overlaps) {
+		for !fits(taken, box) {
 			box.x++
 
 			if box.x+box.w > _gridColumns {
@@ -175,6 +181,7 @@ func layoutGrid(blocks []document.Block) []*gridBox {
 		}
 
 		boxes = append(boxes, box)
+		take(taken, box)
 
 		if !dense {
 			row, column = box.y, box.x+box.w
@@ -305,4 +312,36 @@ func moveDownPast(box *gridBox, others []*gridBox) {
 // overlaps reports whether two boxes share a cell.
 func (b *gridBox) overlaps(other *gridBox) bool {
 	return b.x < other.x+other.w && other.x < b.x+b.w && b.y < other.y+other.h && other.y < b.y+b.h
+}
+
+// take marks the cells of a box as taken. taken holds one bit for each
+// column of a row, so testing a cell costs the same in a grid of any size.
+func take(taken map[int]uint32, box *gridBox) {
+	for y := box.y; y < box.y+box.h; y++ {
+		taken[y] |= box.columnBits()
+	}
+}
+
+// fits reports whether a box stays inside the columns and covers no
+// taken cell.
+func fits(taken map[int]uint32, box *gridBox) bool {
+	if box.x+box.w > _gridColumns {
+		return false
+	}
+
+	for y := box.y; y < box.y+box.h; y++ {
+		if taken[y]&box.columnBits() != 0 {
+			return false
+		}
+	}
+
+	return true
+}
+
+// columnBits returns a number with one bit for each column the box spans.
+// Bit 0 stands for the first column, bit 1 for the second, and so on. For
+// example, a box in columns 4, 5 and 6 sets bits 4, 5 and 6. In binary
+// that is 1110000, read from the right.
+func (b *gridBox) columnBits() uint32 {
+	return (uint32(1)<<b.w - 1) << b.x
 }

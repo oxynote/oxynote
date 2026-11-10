@@ -35,6 +35,7 @@
 		"check-knip": "knip --cache",
 		"test": "vitest run --coverage",
 		"test-watch": "vitest",
+		"bench": "vitest bench --run --passWithNoTests --reporter=default",
 		"lint": "pnpm dedupe && pnpm run check-types && pnpm run knip && pnpm run eslint && pnpm run fmt",
 		"check-lint": "pnpm dedupe --check && pnpm run check-types && pnpm run check-eslint && pnpm run check-fmt && pnpm run check-knip",
 		"qa": "pnpm run check-lint && pnpm run test",

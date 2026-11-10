@@ -181,11 +181,11 @@ describe("<MetricDiffDetails>", { concurrent: false }, () => {
 		])
 	})
 
-	it("shows a size the block menu has no name for by its columns and rows", async ({
+	it("shows a width the block menu has no name for by its columns", async ({
 		expect,
 	}) => {
 		const wrapper = await mountDetails(
-			{ width: 10, height: 3 },
+			{ width: 10, height: 2 },
 			{ width: 8, height: 1 },
 		)
 
@@ -197,7 +197,7 @@ describe("<MetricDiffDetails>", { concurrent: false }, () => {
 			],
 			[
 				t("editor.diff-change-marker.grid-item.height"),
-				t("editor.grid-item.height-options.rows", { count: 3 }, 3),
+				t("editor.grid-item.height-options.tall"),
 				t("editor.grid-item.height-options.standard"),
 			],
 		])

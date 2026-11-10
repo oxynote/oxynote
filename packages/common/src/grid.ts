@@ -53,10 +53,6 @@ interface Box extends GridRect {
 // the columns of the widest grid
 export const GRID_COLUMNS = 24
 
-// the most rows a block spans. A pasted block can claim any number, and
-// laying out thousands of rows would freeze the editor.
-const GRID_MAX_ROWS = 24
-
 // the columns of each named width, widest first
 export const GRID_WIDTH_COLUMNS: [GridItemWidth, number][] = [
 	[GridItemWidth.Wide, 24],
@@ -70,12 +66,23 @@ export const GRID_HEIGHT_ROWS: [GridItemHeight, number][] = [
 	[GridItemHeight.Tall, 2],
 ]
 
+// the most rows a block spans: the rows of the tallest named height. A
+// block that stores more, such as a pasted one, gets the default height.
+const GRID_MAX_ROWS = Math.max(...GRID_HEIGHT_ROWS.map(([, rows]) => rows))
+
 // the size of a block that stores none: a standard block
 export const GRID_DEFAULT_SIZE = { w: 12, h: 1 }
 
 // the attributes that place a block. A size stays with the block, but a
 // place belongs to its grid.
 export const GRID_PLACE_ATTRS = ["widePosX", "widePosY", "stackPos"] as const
+
+// the attributes that the layout reads from a block: its size and places
+export const GRID_LAYOUT_ATTRS = [
+	"width",
+	"height",
+	...GRID_PLACE_ATTRS,
+] as const
 
 // gridItemOf reads a block's place and size from its attributes. widePosX
 // and widePosY are its column and row in the wide layout. width and height
@@ -550,11 +557,18 @@ function compact(boxes: Box[]): void {
 // flowItems places the blocks without a stored place. When some blocks
 // have a place, each block takes the first free cells. When none do, each
 // block starts after the block before it and takes the first cells where
-// it fits. CSS grid auto-placement works the same way.
+// it fits. CSS grid auto-placement works the same way. The taken cells are
+// kept as one bit per column for each row. So testing a cell costs the
+// same in a grid of any size.
 function flowItems(items: GridItem[], boxes: Box[]): void {
 	const dense = boxes.length > 0
+	const taken = new Map<number, number>()
 	let row = 0
 	let column = 0
+
+	for (const box of boxes) {
+		take(taken, box)
+	}
 
 	items.forEach((item, id) => {
 		if (item.x !== null && item.y !== null) {
@@ -569,10 +583,7 @@ function flowItems(items: GridItem[], boxes: Box[]): void {
 			id: id,
 		}
 
-		while (
-			box.x + box.w > GRID_COLUMNS ||
-			boxes.some((other) => overlaps(other, box))
-		) {
+		while (!fits(taken, box)) {
 			box.x++
 
 			if (box.x + box.w > GRID_COLUMNS) {
@@ -582,12 +593,44 @@ function flowItems(items: GridItem[], boxes: Box[]): void {
 		}
 
 		boxes.push(box)
+		take(taken, box)
 
 		if (!dense) {
 			row = box.y
 			column = box.x + box.w
 		}
 	})
+}
+
+// take marks the cells of a box as taken
+function take(taken: Map<number, number>, box: GridRect): void {
+	for (let y = box.y; y < box.y + box.h; y++) {
+		taken.set(y, (taken.get(y) ?? 0) | columnBits(box))
+	}
+}
+
+// fits reports whether a box stays inside the columns and covers no taken
+// cell
+function fits(taken: Map<number, number>, box: GridRect): boolean {
+	if (box.x + box.w > GRID_COLUMNS) {
+		return false
+	}
+
+	for (let y = box.y; y < box.y + box.h; y++) {
+		if (((taken.get(y) ?? 0) & columnBits(box)) !== 0) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// columnBits returns a number with one bit for each column a box spans.
+// Bit 0 stands for the first column, bit 1 for the second, and so on. For
+// example, a box in columns 4, 5 and 6 sets bits 4, 5 and 6. In binary
+// that is 1110000, read from the right.
+function columnBits(box: GridRect): number {
+	return ((1 << box.w) - 1) << box.x
 }
 
 // moveDownPast moves a box down until it covers none of the others

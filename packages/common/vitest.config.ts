@@ -30,6 +30,8 @@ export default defineConfig({
 				// a constant has no code to run
 				"src/schema-version.ts",
 				"src/**/test-helpers.ts",
+				// a benchmark measures code, it is not code to cover
+				"src/**/*.bench.ts",
 			],
 			// set from the measured coverage. Raise them as the tests grow,
 			// but never lower them.
