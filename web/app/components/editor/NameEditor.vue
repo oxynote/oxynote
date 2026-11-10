@@ -251,7 +251,17 @@ const nameEditor = useTiptapEditor({
 	onContentError: ({ editor, disableCollaboration }) => {
 		editor.setEditable(false)
 		disableCollaboration()
-		showToastMessage("error", t("editor.errors.content-load-failed"))
+		showToastMessage(
+			"error",
+			t("editor.errors.content-load-failed"),
+			t("editor.readonly-error.title"),
+			{
+				label: t("editor.reload-page"),
+				onClick: () => {
+					reloadNuxtApp({ force: true })
+				},
+			},
+		)
 	},
 })
 

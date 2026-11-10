@@ -17,7 +17,10 @@ export default function () {
 	const editorStore = useEditorStore()
 
 	const isEditable = computed(
-		() => editablePreference.value && !editorStore.activeBranchProtected,
+		() =>
+			editablePreference.value &&
+			!editorStore.activeBranchProtected &&
+			!editorStore.activeBranchReadOnly,
 	)
 
 	function toggleIsEditable() {

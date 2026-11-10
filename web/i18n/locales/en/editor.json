@@ -1,6 +1,11 @@
 {
 	"editor": {
 		"unknown-user-caret": "Unknown",
+		"reload-page": "Reload page",
+		"readonly-error": {
+			"title": "This page is read-only",
+			"description": "Your editor may be out of date. Reload the page to get the latest version and try again"
+		},
 		"realtime-error": {
 			"title": "Your latest changes could not be saved",
 			"description": "Reload the page to keep editing"

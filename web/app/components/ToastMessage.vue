@@ -5,6 +5,7 @@ const props = defineProps<{
 	type: "success" | "error" | "info" | "warning"
 	title: string
 	description?: string
+	action?: { label: string; onClick: () => void }
 }>()
 const emit = defineEmits<{
 	(event: "close"): void
@@ -32,10 +33,15 @@ const typeToIcon = {
 function closeToast() {
 	emit("close")
 }
+
+function runAction() {
+	props.action?.onClick()
+	closeToast()
+}
 </script>
 <template>
 	<div
-		class="flex min-w-95 gap-1.75 rounded-lg border border-border bg-popover px-3 py-2.5 shadow-md"
+		class="flex w-full min-w-0 gap-1.75 rounded-lg border border-border bg-popover px-3 py-2.5 shadow-md sm:min-w-95"
 	>
 		<Icon
 			:name="typeToIcon[props.type].icon"
@@ -52,6 +58,15 @@ function closeToast() {
 			>
 				{{ props.description }}
 			</div>
+			<ShadcnUiButton
+				v-if="props.action"
+				variant="outline"
+				size="sm"
+				class="mt-1 self-start"
+				@click="runAction"
+			>
+				{{ props.action.label }}
+			</ShadcnUiButton>
 		</div>
 		<ShadcnUiButton
 			variant="ghost-plain"
