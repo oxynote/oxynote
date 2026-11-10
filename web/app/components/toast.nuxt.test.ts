@@ -72,6 +72,32 @@ describe("showToastMessage", { concurrent: false }, () => {
 		expect(action.onClick).not.toHaveBeenCalled()
 	})
 
+	it("keeps an actionable toast visible until it is dismissed", ({
+		expect,
+	}) => {
+		showToastMessage("warning", "Read-only", undefined, {
+			label: "Reload",
+			onClick: vi.fn(),
+		})
+
+		expect(toast.custom).toHaveBeenCalledExactlyOnceWith(expect.any(Function), {
+			duration: Number.POSITIVE_INFINITY,
+		})
+		expect(toast.dismiss).not.toHaveBeenCalled()
+	})
+
+	it("keeps the toaster's default duration for a message without an action", ({
+		expect,
+	}) => {
+		showToastMessage("success", "Saved")
+
+		expect(toast.custom).toHaveBeenCalledExactlyOnceWith(
+			expect.any(Function),
+			undefined,
+		)
+		expect(toast.dismiss).not.toHaveBeenCalled()
+	})
+
 	it("dismisses its own toast when the rendered message asks to close", ({
 		expect,
 	}) => {
