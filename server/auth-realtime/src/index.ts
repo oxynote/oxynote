@@ -22,11 +22,11 @@ import { bestEffort } from "./reporting.js"
 // needs, which is what makes the rest of the service testable without a
 // database, a redis, or a port.
 
-let log = createLogger("INFO", destination(1))
+let log = createLogger("INFO", destination({ dest: 1, sync: true }))
 
 async function main() {
 	const env = loadEnv(process.env)
-	log = createLogger(env.logLevel, destination(1))
+	log = createLogger(env.logLevel, destination({ dest: 1, sync: true }))
 
 	const database = createDatabase(env.databaseDSN)
 	const { store, dialect } = database
