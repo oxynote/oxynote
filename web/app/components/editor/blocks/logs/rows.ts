@@ -10,6 +10,13 @@ const MESSAGE_KEYS = ["msg", "message", "log"]
 // at white space.
 const LOGFMT_PAIR = /\s*([^\s="]+)=("(?:[^"\\]|\\.)*"|[^\s"]*)(?=\s|$)/y
 
+// JSON's source text API, which the TypeScript lib does not type yet. An
+// older engine has no isRawJSON and gives the reviver no source.
+const SOURCE_JSON = JSON as JSON & {
+	rawJSON: (text: string) => unknown
+	isRawJSON?: (value: unknown) => boolean
+}
+
 export type KeyValue = [key: string, value: string]
 
 // a key read from the line, or one the query's parser added
@@ -332,13 +339,6 @@ function parseJSONObject(text: string): Record<string, unknown> | null {
 	} catch {
 		return null
 	}
-}
-
-// JSON's source text API, which the TypeScript lib does not type yet. An
-// older engine has no isRawJSON and gives the reviver no source.
-const SOURCE_JSON = JSON as JSON & {
-	rawJSON: (text: string) => unknown
-	isRawJSON?: (value: unknown) => boolean
 }
 
 // keepNumberText keeps a number as written, because Loki compares that

@@ -2,6 +2,16 @@ import { describe, it } from "vitest"
 import { LineFormat, type LogFilter } from "./dialect"
 import { lokiDialect } from "./loki"
 
+// 25.0 as the line writes it
+const RAW_25 = (JSON as JSON & { rawJSON: (text: string) => unknown }).rawJSON(
+	"25.0",
+)
+
+// an integer past 2^53 as the line writes it
+const RAW_BIG = (JSON as JSON & { rawJSON: (text: string) => unknown }).rawJSON(
+	"9007199254740993",
+)
+
 describe("lokiDialect.withViewFilters", () => {
 	it.for([
 		{
@@ -267,11 +277,6 @@ describe("lokiDialect.lineKeyName", () => {
 	})
 })
 
-// 25.0 as the line writes it
-const RAW_25 = (JSON as JSON & { rawJSON: (text: string) => unknown }).rawJSON(
-	"25.0",
-)
-
 describe("lokiDialect.repeatsLineKey", () => {
 	it.for([
 		{
@@ -333,6 +338,48 @@ describe("lokiDialect.repeatsLineKey", () => {
 				nested: true,
 			},
 			expected: true,
+		},
+		{
+			name: "compares a large integer written another way exactly",
+			input: {
+				parsed: ["id", "0.9007199254740993e16"],
+				lineKey: "id",
+				lineValue: RAW_BIG,
+				nested: true,
+			},
+			expected: true,
+		},
+		{
+			name: "is false for a large integer the parser gave another value",
+			input: {
+				parsed: ["id", "9007199254740992"],
+				lineKey: "id",
+				lineValue: RAW_BIG,
+				nested: true,
+			},
+			expected: false,
+		},
+		{
+			name: "is false for a large decimal the parser gave another value",
+			input: {
+				parsed: ["id", "9007199254740992.0"],
+				lineKey: "id",
+				lineValue: RAW_BIG,
+				nested: true,
+			},
+			expected: false,
+		},
+		{
+			name: "is false for a large exponent the parser gave another value",
+			input: {
+				parsed: ["id", "1e9007199254740992"],
+				lineKey: "id",
+				lineValue: (
+					JSON as JSON & { rawJSON: (text: string) => unknown }
+				).rawJSON("1e9007199254740993"),
+				nested: true,
+			},
+			expected: false,
 		},
 		{
 			name: "is false for a key that only starts like a number key",
