@@ -330,7 +330,9 @@ function parseLogfmt(line: string): Record<string, string> | null {
 		}
 
 		const [, key = "", value = ""] = match
-		pairs.push([key, value.startsWith('"') ? unquote(value) : value])
+		if (!pairs.some(([k]) => k === key)) {
+			pairs.push([key, value.startsWith('"') ? unquote(value) : value])
+		}
 		at = LOGFMT_PAIR.lastIndex
 	}
 
