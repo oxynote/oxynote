@@ -314,6 +314,37 @@ describe("summarizeLog", () => {
 			},
 		},
 		{
+			name: "shows a JSON number as the line wrote it",
+			input: {
+				line: '{"msg":"order placed","duration_ms":25.0,"order_id":9007199254740993}',
+				labels: {},
+				fields: {},
+			},
+			expected: {
+				message: "order placed",
+				extracted: [
+					["duration_ms", "25.0"],
+					["order_id", "9007199254740993"],
+				],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "leaves out a metadata field a JSON number repeats as written",
+			input: {
+				line: '{"msg":"done","duration_ms":25.0}',
+				labels: {},
+				fields: { duration_ms: "25.0" },
+			},
+			expected: {
+				message: "done",
+				extracted: [["duration_ms", "25.0"]],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
 			name: "keeps a field whose value differs from the line",
 			input: {
 				line: '{"msg":"order placed","trace_id":"4bf9"}',
@@ -400,6 +431,38 @@ describe("extractedFields", () => {
 				value: "a b",
 				display: '"a b"',
 				format: LineFormat.Logfmt,
+				nested: false,
+				isNull: false,
+			},
+		])
+	})
+
+	// a filter sends the value on, and Loki compares it to the line as
+	// written, so a number has to reach it as the line wrote it
+	it("keeps a JSON number as the text the line wrote", ({ expect }) => {
+		expect(
+			extractedFields(
+				makeLog({
+					id: "l1",
+					line: '{"duration_ms":25.0,"order_id":9007199254740993}',
+					parsed: undefined,
+				}),
+				EXACT_DIALECT,
+			),
+		).toEqual([
+			{
+				key: "duration_ms",
+				value: "25.0",
+				display: "25.0",
+				format: LineFormat.JSON,
+				nested: false,
+				isNull: false,
+			},
+			{
+				key: "order_id",
+				value: "9007199254740993",
+				display: "9007199254740993",
+				format: LineFormat.JSON,
 				nested: false,
 				isNull: false,
 			},

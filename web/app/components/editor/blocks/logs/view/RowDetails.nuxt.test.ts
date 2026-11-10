@@ -128,6 +128,24 @@ describe("<RowDetails>", { concurrent: false }, () => {
 				format: LineFormat.JSON,
 			},
 		},
+		// the filter is compared to the line as written, so a number has to
+		// reach it as the line wrote it
+		{
+			name: "passes on a JSON number as the line wrote it",
+			input: {
+				key: "duration_ms",
+				log: {
+					line: '{"msg":"order placed","duration_ms":25.0}',
+					parsed: undefined,
+				},
+			},
+			expected: {
+				key: "duration_ms",
+				value: "25.0",
+				indexed: false,
+				format: LineFormat.JSON,
+			},
+		},
 	])("$name", async ({ input, expected }, { expect }) => {
 		const wrapper = await mountDetails(makeLog(input.log))
 

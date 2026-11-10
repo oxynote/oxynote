@@ -59,6 +59,10 @@ export interface TextPart {
 
 interface ReadLine {
 	record: Record<string, unknown>
+	// the record with every number as the line wrote it. JSON.parse reads
+	// a number as a JavaScript number, which does not keep its text, so
+	// the line is read a second time to hold it.
+	written: Record<string, unknown>
 	format: LineFormat
 }
 
@@ -251,12 +255,18 @@ function repeatsLine([key, value]: KeyValue, line: ReadLine | null): boolean {
 		return false
 	}
 
-	return lineText(line.record[key]) === value
+	return lineText(line.record[key], line.written[key]) === value
 }
 
-// lineText reads a value of a line as text. A nested value keeps the JSON it
-// was written as.
-function lineText(value: unknown): string {
+// lineText reads a value of a line as text. A nested value keeps the JSON
+// it was written as. A number keeps the text the line wrote, because
+// JSON.parse does not read one back as written: 25.0 reads as 25, and a
+// number past 2^53 rounds to the nearest double.
+function lineText(value: unknown, written: unknown): string {
+	if (typeof value === "number" && typeof written === "string") {
+		return written
+	}
+
 	return typeof value === "string" ? value : JSON.stringify(value)
 }
 
@@ -270,7 +280,7 @@ function extract(
 ): ExtractedField[] {
 	const fromLine = line
 		? Object.entries(line.record).map(([key, value]): ExtractedField => {
-				const text = lineText(value)
+				const text = lineText(value, line.written[key])
 
 				return {
 					key: key,
@@ -309,28 +319,107 @@ function extract(
 function readLine(line: string): ReadLine | null {
 	const json = parseJSONObject(line)
 	if (json) {
-		return { record: json, format: LineFormat.JSON }
+		return { ...json, format: LineFormat.JSON }
 	}
 
 	const logfmt = parseLogfmt(line)
 
-	return logfmt ? { record: logfmt, format: LineFormat.Logfmt } : null
+	return logfmt
+		? { record: logfmt, written: logfmt, format: LineFormat.Logfmt }
+		: null
 }
 
-function parseJSONObject(text: string): Record<string, unknown> | null {
+// parseJSONObject reads a JSON object, and hands back its numbers as the
+// line wrote them beside the object JSON.parse reads. A number has to keep
+// its text: the row shows it, its filter sends it on, and Loki compares
+// that to the line as written, while JSON.parse reads 25.0 as 25 and
+// rounds a number past 2^53 to the nearest double.
+function parseJSONObject(
+	text: string,
+): {
+	record: Record<string, unknown>
+	written: Record<string, unknown>
+} | null {
 	if (!text.trimStart().startsWith("{")) {
 		return null
 	}
 
+	let record: Record<string, unknown>
+	let written: Record<string, unknown>
+
 	try {
 		const parsed: unknown = JSON.parse(text)
 
-		return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-			? (parsed as Record<string, unknown>)
-			: null
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+			return null
+		}
+
+		record = parsed as Record<string, unknown>
+
+		// the rewrite only quotes the numbers it finds, so a line
+		// JSON.parse has read reads again. A line with no number needs
+		// no second read.
+		const rewritten = numbersAsText(text)
+
+		written =
+			rewritten === null
+				? record
+				: (JSON.parse(rewritten) as Record<string, unknown>)
 	} catch {
+		// the line is not a JSON object, or its rewrite does not read,
+		// and then the row keeps the line as its own message
 		return null
 	}
+
+	return { record, written }
+}
+
+// A JSON number, which a line writes as it likes. The grammar is JSON's,
+// so a number JSON refuses, such as one with a leading zero, is not it.
+const JSON_NUMBER = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y
+
+// numbersAsText rewrites every number of a JSON object as a string, so a
+// parse reads each one as the line wrote it. A number inside a string is
+// part of that string and stays where it is. It gives null when the object
+// holds no number, which is most lines.
+function numbersAsText(text: string): string | null {
+	let out = ""
+	let at = 0
+	let found = false
+	let inString = false
+
+	while (at < text.length) {
+		const char = text.charAt(at)
+
+		if (inString) {
+			// an escape takes the character after the backslash with it,
+			// so a quote inside one never ends the string
+			if (char === "\\") {
+				out += text.slice(at, at + 2)
+				at += 2
+				continue
+			}
+
+			inString = char !== '"'
+		} else if (char === '"') {
+			inString = true
+		} else if (char === "-" || (char >= "0" && char <= "9")) {
+			JSON_NUMBER.lastIndex = at
+			const match = JSON_NUMBER.exec(text)
+
+			if (match) {
+				out += `"${match[0]}"`
+				at += match[0].length
+				found = true
+				continue
+			}
+		}
+
+		out += char
+		at++
+	}
+
+	return found ? out : null
 }
 
 // parseLogfmt reads a line made only of logfmt pairs. A line with any other
