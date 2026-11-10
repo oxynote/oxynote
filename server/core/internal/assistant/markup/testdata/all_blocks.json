@@ -437,8 +437,11 @@
       "simulationPreset": "cpu_usage",
       "timeRange": "last_1_hour",
       "refreshInterval": "1m",
-      "width": "standard",
-      "title": null
+      "width": 12,
+      "title": null,
+      "height": 1,
+      "widePosX": 0,
+      "widePosY": 0
      }
     },
     {

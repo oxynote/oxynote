@@ -17,22 +17,14 @@ func paragraph() document.Block {
 	}
 }
 
-func Test_InsertAfter(t *testing.T) {
+func Test_Insert(t *testing.T) {
 	t.Parallel()
 
 	b := paragraph()
 
 	// the block ships as handed over, uids included, so what the caller
 	// reported is what lands.
-	assert.Equal(t, Operation{Kind: "insert", Position: "after", ReferenceUID: "ref", Block: &b}, InsertAfter("ref", paragraph()))
-}
-
-func Test_InsertBefore(t *testing.T) {
-	t.Parallel()
-
-	b := paragraph()
-
-	assert.Equal(t, Operation{Kind: "insert", Position: "before", ReferenceUID: "ref", Block: &b}, InsertBefore("ref", paragraph()))
+	assert.Equal(t, Operation{Kind: "insert", Position: "below", ReferenceUID: "ref", Block: &b}, Insert("below", "ref", paragraph()))
 }
 
 func Test_Append(t *testing.T) {
@@ -71,16 +63,16 @@ func Test_Delete(t *testing.T) {
 	assert.Equal(t, Operation{Kind: "delete", BlockUID: "target"}, Delete("target"))
 }
 
-func Test_MoveAfter(t *testing.T) {
+func Test_Move(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, Operation{Kind: "move", Position: "after", BlockUID: "target", ReferenceUID: "ref"}, MoveAfter("target", "ref"))
+	assert.Equal(t, Operation{Kind: "move", Position: "above", BlockUID: "target", ReferenceUID: "ref"}, Move("target", "above", "ref"))
 }
 
-func Test_MoveBefore(t *testing.T) {
+func Test_SetStackOrder(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, Operation{Kind: "move", Position: "before", BlockUID: "target", ReferenceUID: "ref"}, MoveBefore("target", "ref"))
+	assert.Equal(t, Operation{Kind: "set_stack_order", GridUID: "g", Order: []string{"b", "a"}}, SetStackOrder("g", []string{"b", "a"}))
 }
 
 func Test_SetName(t *testing.T) {

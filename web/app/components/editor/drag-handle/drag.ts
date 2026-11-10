@@ -1,17 +1,11 @@
-import { Extension } from "@tiptap/core"
+import { Extension, isiOS, isMacOS } from "@tiptap/core"
 import { type EditorState, Plugin, Selection } from "prosemirror-state"
-import {
-	Fragment,
-	type Node,
-	type ResolvedPos,
-	type Schema,
-	type Slice,
-} from "prosemirror-model"
+import { Fragment, type Node, type Schema, type Slice } from "prosemirror-model"
 import type { EditorView } from "@tiptap/pm/view"
 import { isDraggableNodeType } from "./node-detection"
 import {
 	getGapDropPosition,
-	findGapElementsByPos,
+	findGapElementByPos,
 	repositionGapZones,
 	clearRepositionCooldown,
 } from "./gap-decorations"
@@ -24,8 +18,14 @@ import {
 	DRAG_HANDLE_IGNORE_SELF_CLASS,
 	NODE_TO_WRAPPER_TYPE,
 } from "./config"
-import { deleteEmptyBlockGrids } from "../blocks/grid"
-import { BLOCK_GRID_NAMES, GRID_ITEM_NAMES } from "../blocks/grid/utils"
+import { deleteEmptyBlockGrids, withoutGridPlaces } from "../blocks/grid"
+import { BLOCK_GRID_NAMES } from "../blocks/grid/utils"
+import {
+	executeGridDrop,
+	findGridDrop,
+	type GridDrop,
+	gridDropLineStyle,
+} from "./grid-drop"
 
 // extra drag metadata that handleDragData in handle-plugin.ts stores on
 // view.dragging alongside ProseMirror's own slice/move fields. The extra
@@ -36,14 +36,6 @@ export interface DragHandleDragging {
 	move: boolean
 	parentListType?: string | null
 	sourceWrapperBounds?: { start: number; end: number } | null
-}
-
-// a grid item as the grid lays it out
-interface GridLayoutBlock {
-	pos: number
-	node: Node
-	dom: HTMLElement
-	rect: DOMRect
 }
 
 function getDragging(view: EditorView): DragHandleDragging | null {
@@ -103,255 +95,6 @@ function normalizeListBoundaryPosition(
 	return pos
 }
 
-/**
- * Check if we're dragging a grid item based on the current slice.
- */
-function isDraggingGridItem(view: EditorView): boolean {
-	const slice = getCurrentSlice(view)
-	if (!slice || slice.content.childCount === 0) {
-		return false
-	}
-	const firstChild = slice.content.firstChild
-	return !!firstChild && GRID_ITEM_NAMES.has(firstChild.type.name)
-}
-
-/**
- * Find the block grid element at the given coordinates.
- * Returns null if cursor is not within any block grid bounds.
- */
-function findBlockGridAtCoords(
-	view: EditorView,
-	clientX: number,
-	clientY: number,
-	options?: { includeMargins?: boolean },
-): { gridElement: HTMLElement; gridPos: number; inMargin?: boolean } | null {
-	const { doc } = view.state
-	const includeMargins = options?.includeMargins ?? false
-
-	// Find all block grid nodes in the document
-	const blockGrids: { pos: number; node: Node }[] = []
-	doc.descendants((node: Node, pos: number) => {
-		if (BLOCK_GRID_NAMES.has(node.type.name)) {
-			blockGrids.push({ pos, node })
-			return false // Don't descend into block grid
-		}
-		return true
-	})
-
-	// Check each grid's DOM bounds
-	for (const { pos } of blockGrids) {
-		const gridDOM = view.nodeDOM(pos)
-		if (!gridDOM || !(gridDOM instanceof HTMLElement)) {
-			continue
-		}
-
-		const rect = gridDOM.getBoundingClientRect()
-
-		// Check if cursor is within this grid's bounds
-		if (
-			clientX >= rect.left &&
-			clientX <= rect.right &&
-			clientY >= rect.top &&
-			clientY <= rect.bottom
-		) {
-			return { gridElement: gridDOM, gridPos: pos }
-		}
-
-		// When includeMargins is true, also match if cursor is within Y bounds
-		// but outside X bounds (in the side margins). This allows grid item
-		// drag to show cursor at row edges when hovering in margins.
-		if (includeMargins && clientY >= rect.top && clientY <= rect.bottom) {
-			return { gridElement: gridDOM, gridPos: pos, inMargin: true }
-		}
-	}
-
-	return null
-}
-
-/**
- * Find drop position within a block grid using X-axis midpoint logic.
- * A block grid uses a horizontal layout, so we compare clientX against each grid item's center.
- * For multi-row grids, first filters to the row containing clientY.
- *
- * Returns the document position where the drop should occur, or null if invalid.
- *
- * @param view - The editor view
- * @param clientX - Mouse X coordinate
- * @param clientY - Mouse Y coordinate (used to determine which row)
- * @param gridPos - Document position of the block grid
- * @param gridElement - The DOM element of the block grid
- */
-function findBlockGridDropPosition(
-	view: EditorView,
-	clientX: number,
-	clientY: number,
-	gridPos: number,
-	_gridElement: HTMLElement,
-): number | null {
-	const { doc } = view.state
-	const gridNode = doc.nodeAt(gridPos)
-
-	if (!gridNode || !BLOCK_GRID_NAMES.has(gridNode.type.name)) {
-		return null
-	}
-
-	const rows = blockGridRows(view, gridNode, gridPos)
-	const allBlocks = rows.flat()
-
-	if (allBlocks.length === 0) {
-		// Empty grid - return position at start of grid content
-		return gridPos + 1
-	}
-
-	// Find which row the cursor is in based on clientY
-	let targetRow: GridLayoutBlock[] | null = null
-
-	for (const row of rows) {
-		if (row.length === 0) continue
-
-		// Get row bounds (min top, max bottom across all blocks in row)
-		const rowTop = Math.min(...row.map((b) => b.rect.top))
-		const rowBottom = Math.max(...row.map((b) => b.rect.bottom))
-
-		if (clientY >= rowTop && clientY <= rowBottom) {
-			targetRow = row
-			break
-		}
-	}
-
-	// If cursor is not directly over any row, find the closest row
-	if (!targetRow) {
-		let minDistance = Infinity
-		for (const row of rows) {
-			if (row.length === 0) continue
-
-			const rowTop = Math.min(...row.map((b) => b.rect.top))
-			const rowBottom = Math.max(...row.map((b) => b.rect.bottom))
-			const rowCenterY = (rowTop + rowBottom) / 2
-			const distance = Math.abs(clientY - rowCenterY)
-
-			if (distance < minDistance) {
-				minDistance = distance
-				targetRow = row
-			}
-		}
-	}
-
-	if (!targetRow || targetRow.length === 0) {
-		// Fallback: use all blocks
-		targetRow = allBlocks
-	}
-
-	// Sort row blocks by X position (left to right)
-	targetRow.sort((a, b) => a.rect.left - b.rect.left)
-
-	const firstBlock = targetRow[0]
-	const lastBlock = targetRow[targetRow.length - 1]
-
-	// targetRow is never empty here (allBlocks is the non-empty fallback), so
-	// this only satisfies noUncheckedIndexedAccess
-	if (!firstBlock || !lastBlock) {
-		return null
-	}
-
-	// a stacked grid, as on a phone, lays its blocks out top to bottom, so
-	// the cursor's height picks before or after
-	if (isStackedBlockGrid(rows)) {
-		const midpointY = firstBlock.rect.top + firstBlock.rect.height / 2
-		return clientY < midpointY
-			? firstBlock.pos
-			: firstBlock.pos + firstBlock.node.nodeSize
-	}
-
-	// Check if cursor is in the left margin (before the first block of this row)
-	if (clientX < firstBlock.rect.left) {
-		return firstBlock.pos
-	}
-
-	// Check if cursor is in the trailing empty space (after the last block of this row)
-	if (clientX > lastBlock.rect.right) {
-		return lastBlock.pos + lastBlock.node.nodeSize
-	}
-
-	// Find which block the cursor is over or between using X-axis midpoint
-	for (const [i, block] of targetRow.entries()) {
-		const midpointX = block.rect.left + block.rect.width / 2
-
-		// Check if cursor is over this block
-		if (clientX >= block.rect.left && clientX <= block.rect.right) {
-			// Use X-axis midpoint to determine before or after
-			if (clientX < midpointX) {
-				return block.pos
-			} else {
-				return block.pos + block.node.nodeSize
-			}
-		}
-
-		// Check if cursor is in the gap between this block and the next
-		const nextBlock = targetRow[i + 1]
-		if (
-			nextBlock &&
-			clientX > block.rect.right &&
-			clientX < nextBlock.rect.left
-		) {
-			// In the gap - return position after this block (before next)
-			return block.pos + block.node.nodeSize
-		}
-	}
-
-	// Fallback: return position after the last block
-	return lastBlock.pos + lastBlock.node.nodeSize
-}
-
-// blockGridRows groups a grid's blocks into the rows they are laid out
-// in. Blocks share a row when their vertical centers are close.
-function blockGridRows(
-	view: EditorView,
-	gridNode: Node,
-	gridPos: number,
-): GridLayoutBlock[][] {
-	const ROW_TOLERANCE = 10
-	const rows: GridLayoutBlock[][] = []
-
-	gridNode.forEach((child: Node, childOffset: number) => {
-		const childPos = gridPos + 1 + childOffset // +1 for grid's opening tag
-		const childDOM = view.nodeDOM(childPos)
-		if (!(childDOM instanceof HTMLElement)) {
-			return
-		}
-
-		const block = {
-			pos: childPos,
-			node: child,
-			dom: childDOM,
-			rect: childDOM.getBoundingClientRect(),
-		}
-		const centerY = block.rect.top + block.rect.height / 2
-		const row = rows.find((candidate) => {
-			const first = candidate[0]
-
-			return (
-				!!first &&
-				Math.abs(centerY - (first.rect.top + first.rect.height / 2)) <
-					ROW_TOLERANCE
-			)
-		})
-
-		if (row) {
-			row.push(block)
-		} else {
-			rows.push([block])
-		}
-	})
-
-	return rows
-}
-
-// a grid too narrow for two blocks side by side stacks them one per row
-function isStackedBlockGrid(rows: GridLayoutBlock[][]): boolean {
-	return rows.length > 1 && rows.every((row) => row.length === 1)
-}
-
 // Find the appropriate insert position respecting nesting ("snaps" to either
 // before or after the nearest node at some depth).
 function findDropPosition(
@@ -361,53 +104,6 @@ function findDropPosition(
 ): number | null {
 	// Check if we're dragging a list item (for normalizing list boundaries)
 	const isDraggingListItem = lastParentListType !== null
-
-	// Special handling for grid item: if dragging a grid item and cursor is
-	// within a block grid (or in its side margins), use grid-specific drop logic.
-	// includeMargins allows showing cursor at row edges when hovering in editor margins.
-	if (isDraggingGridItem(view)) {
-		const blockGridInfo = findBlockGridAtCoords(view, clientX, clientY, {
-			includeMargins: true,
-		})
-
-		if (blockGridInfo) {
-			const { gridElement, gridPos } = blockGridInfo
-
-			// Check if this is the source grid (the grid we're dragging from)
-			// We still allow dropping within the same grid, just not at the exact source position
-			const sourceWrapperBounds = getSourceWrapperBounds(view)
-
-			// Get drop position within the grid
-			const dropPos = findBlockGridDropPosition(
-				view,
-				clientX,
-				clientY,
-				gridPos,
-				gridElement,
-			)
-
-			if (dropPos === null) {
-				return null
-			}
-
-			// If this is the source grid, exclude the immediate before/after positions of the dragged block
-			if (sourceWrapperBounds) {
-				// Get the current selection to find the dragged block's position
-				const { selection } = view.state
-				if (!selection.empty) {
-					const draggedBlockPos = selection.from
-					const draggedBlockEnd = selection.to
-
-					// Don't allow dropping at the exact source position (before or after the dragged block)
-					if (dropPos === draggedBlockPos || dropPos === draggedBlockEnd) {
-						return null
-					}
-				}
-			}
-
-			return dropPos
-		}
-	}
 
 	// First, check if we're hovering over a gap zone decoration
 	const elementAtPoint = document.elementFromPoint(clientX, clientY)
@@ -841,12 +537,26 @@ function canInsertAtWithWrapping(
 }
 
 let cursorEl: HTMLElement | null = null
-let lastMouse: { x: number; y: number } | null = null
+// the pointer, and whether a drop there moves the dragged content
+let lastMouse: { x: number; y: number; moves: boolean } | null = null
 let lastSlice: Slice | null = null
 let lastInsertPos: number | null = null
 let lastParentListType: string | null = null
 let lastSourceWrapperBounds: { start: number; end: number } | null = null
 let dropHandled = false
+// the inputs of the last grid drop search and the drop it found. Both
+// dragover handlers search on every event. The browser also repeats
+// dragover while the pointer rests. So a search with the same inputs
+// reuses the last drop.
+let lastGridQuery: {
+	doc: Node
+	slice: Slice | null
+	moving: boolean
+	x: number
+	y: number
+	top: number
+	drop: GridDrop | null | undefined
+} | null = null
 
 function ensureCursorElemExists(view: EditorView) {
 	if (!cursorEl) {
@@ -866,6 +576,17 @@ function ensureCursorElemExists(view: EditorView) {
 		const mount = (view.dom.parentNode as HTMLElement | null) ?? document.body
 		mount.appendChild(cursorEl)
 	}
+}
+
+// endDrag hides the cursor and clears the state kept during the drag
+function endDrag() {
+	hideCursor()
+	lastSlice = null
+	lastMouse = null
+	lastInsertPos = null
+	lastParentListType = null
+	lastSourceWrapperBounds = null
+	lastGridQuery = null
 }
 
 function hideCursor() {
@@ -911,23 +632,25 @@ function executeDrop(
 	// Ensure the insert position is at a proper block boundary
 	pos = ensureBlockBoundary(tr.doc, pos)
 
+	// a grid block dropped here does not keep its old cells, so it takes
+	// the first free cells where it lands
+	const content = withoutGridPlaces(
+		slice.content,
+		BLOCK_GRID_NAMES.has(tr.doc.resolve(pos).parent.type.name),
+	)
+
 	// Get the content to insert, wrapping list items if needed
 	let contentToInsert = wrapListItemsIfNeeded(
 		tr.doc,
 		state.schema,
 		pos,
-		slice.content,
+		content,
 		parentListType,
 	)
 
 	// If list wrapping didn't change anything, try node wrapping
-	if (contentToInsert === slice.content) {
-		contentToInsert = wrapNodesIfNeeded(
-			tr.doc,
-			state.schema,
-			pos,
-			slice.content,
-		)
+	if (contentToInsert === content) {
+		contentToInsert = wrapNodesIfNeeded(tr.doc, state.schema, pos, content)
 	}
 
 	const nodesToInsert: Node[] = []
@@ -953,15 +676,18 @@ function executeDrop(
 
 	dispatch(tr)
 
-	// Clean up after successful drop
-	hideCursor()
-	lastSlice = null
-	lastMouse = null
-	lastInsertPos = null
-	lastParentListType = null
-	lastSourceWrapperBounds = null
+	endDrag()
 
 	return true
+}
+
+// dragMoves tells whether a drop moves the dragged content or copies it.
+// Holding the copy key makes it copy. ProseMirror decides the same way on
+// drop.
+function dragMoves(view: EditorView, event: DragEvent): boolean {
+	const copies = isMacOS() || isiOS() ? event.altKey : event.ctrlKey
+
+	return !!view.dragging && !copies
 }
 
 // Shared dragover logic used by both ProseMirror and global handlers.
@@ -972,7 +698,13 @@ function updateDragCursor(
 	x: number,
 	y: number,
 	slice: Slice,
+	moves: boolean,
 ): boolean {
+	const drop = showGridDrop(view, x, y, slice, moves)
+	if (drop !== undefined) {
+		return drop !== null
+	}
+
 	const parentListType = getParentListType(view)
 	const sourceWrapperBounds = getSourceWrapperBounds(view)
 	const insertPos = findDropPosition(view, x, y)
@@ -1011,28 +743,95 @@ function updateDragCursor(
 	}
 
 	lastInsertPos = insertPos
-	showCursorAt(view, insertPos, y)
+	showCursorAt(view, insertPos)
 	return true
 }
 
-function showCursorAt(view: EditorView, pos: number, clientY?: number) {
+// showGridDrop shows the line of a grid drop at the point. It returns
+// undefined when the point is over no grid or no grid block is dragged,
+// so the caller looks for an ordinary drop position instead.
+function showGridDrop(
+	view: EditorView,
+	x: number,
+	y: number,
+	slice: Slice | null,
+	moving: boolean,
+): GridDrop | null | undefined {
+	// the editor's top moves when the page scrolls under a resting pointer
+	const top = view.dom.getBoundingClientRect().top
+	const query = lastGridQuery
+	const drop =
+		query?.doc === view.state.doc &&
+		query.slice === slice &&
+		query.moving === moving &&
+		query.x === x &&
+		query.y === y &&
+		query.top === top
+			? query.drop
+			: findGridDrop(view, x, y, slice, moving)
+
+	lastGridQuery = { doc: view.state.doc, slice, moving, x, y, top, drop }
+
+	if (drop === undefined) {
+		return undefined
+	}
+
+	lastInsertPos = null
+
+	if (!drop) {
+		hideCursor()
+
+		return null
+	}
+
+	ensureCursorElemExists(view)
+
+	if (cursorEl) {
+		Object.assign(
+			cursorEl.style,
+			gridDropLineStyle(drop.line, view.dom.getBoundingClientRect()),
+		)
+	}
+
+	return drop
+}
+
+// runGridDrop writes the grid drop at the point, once per drag. It returns
+// undefined when the point is over no grid or no grid block is dragged.
+function runGridDrop(
+	view: EditorView,
+	x: number,
+	y: number,
+	slice: Slice,
+	moved: boolean,
+	onBeforeDrop?: () => void,
+): boolean | undefined {
+	const drop = findGridDrop(view, x, y, slice, moved)
+
+	if (drop === undefined) {
+		return undefined
+	}
+
+	if (!drop || dropHandled) {
+		return false
+	}
+
+	dropHandled = true
+	onBeforeDrop?.()
+
+	const executed = executeGridDrop(view, drop, slice, moved)
+
+	endDrag()
+
+	return executed
+}
+
+function showCursorAt(view: EditorView, pos: number) {
 	ensureCursorElemExists(view)
 
 	const editorRect = view.dom.getBoundingClientRect()
 	const $pos = view.state.doc.resolve(pos)
 	const isAfterLastChild = $pos.index($pos.depth) === $pos.parent.childCount
-
-	// a position between side-by-side grid items takes a vertical cursor.
-	// A stacked grid drops above or below its blocks, like any other block.
-	const betweenSideBySideBlocks =
-		BLOCK_GRID_NAMES.has($pos.parent.type.name) &&
-		!isStackedBlockGrid(blockGridRows(view, $pos.parent, $pos.before()))
-
-	if (betweenSideBySideBlocks) {
-		// Render vertical cursor for block grid
-		showVerticalCursorAt(view, pos, $pos, editorRect, clientY)
-		return
-	}
 
 	// Find the adjacent node to determine the offset
 	let adjacentNodeType: string | null = null
@@ -1062,8 +861,7 @@ function showCursorAt(view: EditorView, pos: number, clientY?: number) {
 	let top: number
 
 	// Check if there's a gap zone at this position - use its siblings for positioning
-	const gapElements = findGapElementsByPos(view.state, pos)
-	const gapElement = gapElements[0] ?? null
+	const gapElement = findGapElementByPos(view.state, pos)
 
 	if (gapElement) {
 		// Use the gap element's wrapper's siblings to find adjacent nodes
@@ -1142,220 +940,6 @@ function showCursorAt(view: EditorView, pos: number, clientY?: number) {
 	})
 }
 
-/**
- * Show a vertical cursor for block grid drop positions.
- * The cursor is positioned between grid item children using X-axis positioning.
- * For multi-row grids, positions at the correct Y coordinate.
- * Height is determined by:
- * - Before first child: height of first child
- * - In the middle: height of tallest child (or adjacent block at row boundaries)
- * - After last child: height of last child
- *
- * @param clientY - Mouse Y position, used to determine which row to show cursor on at boundaries
- */
-function showVerticalCursorAt(
-	view: EditorView,
-	_pos: number,
-	$pos: ResolvedPos,
-	editorRect: DOMRect,
-	clientY?: number,
-) {
-	const childIndex = $pos.index($pos.depth)
-	const isAfterLastChild = childIndex === $pos.parent.childCount
-	const isBeforeFirstChild = childIndex === 0 && !isAfterLastChild
-	const gridNode = $pos.parent
-
-	// Find the grid DOM element
-	let gridDOM: HTMLElement | null = null
-	try {
-		const gridPos = $pos.before($pos.depth)
-		gridDOM = view.nodeDOM(gridPos) as HTMLElement | null
-	} catch {
-		// Ignore
-	}
-
-	const DEFAULT_HEIGHT = 0
-
-	// Calculate cursor height and top position based on position context
-	let cursorHeight: number = DEFAULT_HEIGHT
-	let cursorTop: number = gridDOM?.getBoundingClientRect().top ?? editorRect.top
-	// Track if we're at a row boundary and should show cursor on the previous row
-	let cursorOnPrevRow = false
-
-	if (gridDOM && gridNode.childCount > 0) {
-		if (isBeforeFirstChild) {
-			// Before first child: use height and position of first child
-			const firstChildPos = $pos.posAtIndex(0)
-			const firstChildDOM = view.nodeDOM(firstChildPos) as HTMLElement | null
-			if (firstChildDOM) {
-				const rect = firstChildDOM.getBoundingClientRect()
-				cursorHeight = rect.height
-				cursorTop = rect.top
-			}
-		} else if (isAfterLastChild) {
-			// After last child: use height and position of last child
-			const lastChildIndex = gridNode.childCount - 1
-			const lastChildPos = $pos.posAtIndex(lastChildIndex)
-			const lastChildDOM = view.nodeDOM(lastChildPos) as HTMLElement | null
-			if (lastChildDOM) {
-				const rect = lastChildDOM.getBoundingClientRect()
-				cursorHeight = rect.height
-				cursorTop = rect.top
-			}
-		} else {
-			// In the middle: check if this is a row boundary
-			const prevChildPos = $pos.posAtIndex(childIndex - 1)
-			const prevChildDOM = view.nodeDOM(prevChildPos) as HTMLElement | null
-			const nextChildPos = $pos.posAtIndex(childIndex)
-			const nextChildDOM = view.nodeDOM(nextChildPos) as HTMLElement | null
-
-			if (prevChildDOM && nextChildDOM) {
-				const prevRect = prevChildDOM.getBoundingClientRect()
-				const nextRect = nextChildDOM.getBoundingClientRect()
-
-				// Check if this is a row boundary (next is below prev)
-				const isRowBoundary = nextRect.top > prevRect.bottom - 10
-
-				if (isRowBoundary && clientY !== undefined) {
-					// At a row boundary - use clientY to decide which row
-					const rowGapMidpoint = (prevRect.bottom + nextRect.top) / 2
-
-					if (clientY < rowGapMidpoint) {
-						// Mouse is on the previous row - show cursor after prev child
-						cursorTop = prevRect.top
-						cursorHeight = prevRect.height
-						cursorOnPrevRow = true
-					} else {
-						// Mouse is on the next row - show cursor before next child
-						cursorTop = nextRect.top
-						// Use tallest child height for middle positions
-						let maxHeight = 0
-						for (let i = 0; i < gridNode.childCount; i++) {
-							const cPos = $pos.posAtIndex(i)
-							const cDOM = view.nodeDOM(cPos) as HTMLElement | null
-							if (cDOM) {
-								maxHeight = Math.max(
-									maxHeight,
-									cDOM.getBoundingClientRect().height,
-								)
-							}
-						}
-						cursorHeight = maxHeight > 0 ? maxHeight : DEFAULT_HEIGHT
-					}
-				} else {
-					// Not a row boundary or no clientY - position at next child's row
-					cursorTop = nextRect.top
-					let maxHeight = 0
-					for (let i = 0; i < gridNode.childCount; i++) {
-						const cPos = $pos.posAtIndex(i)
-						const cDOM = view.nodeDOM(cPos) as HTMLElement | null
-						if (cDOM) {
-							maxHeight = Math.max(
-								maxHeight,
-								cDOM.getBoundingClientRect().height,
-							)
-						}
-					}
-					cursorHeight = maxHeight > 0 ? maxHeight : DEFAULT_HEIGHT
-				}
-			} else if (nextChildDOM) {
-				cursorTop = nextChildDOM.getBoundingClientRect().top
-				let maxHeight = 0
-				for (let i = 0; i < gridNode.childCount; i++) {
-					const cPos = $pos.posAtIndex(i)
-					const cDOM = view.nodeDOM(cPos) as HTMLElement | null
-					if (cDOM) {
-						maxHeight = Math.max(maxHeight, cDOM.getBoundingClientRect().height)
-					}
-				}
-				cursorHeight = maxHeight > 0 ? maxHeight : DEFAULT_HEIGHT
-			}
-		}
-	}
-
-	let cursorLeft: number
-
-	// Try to use gap zone for positioning (maintains consistent offsets)
-	// For row boundaries, look for the secondary gap element
-	const gapElements = findGapElementsByPos(view.state, _pos)
-
-	let targetGapElement: HTMLElement | null = null
-	for (const gapEl of gapElements) {
-		if (gapEl.getAttribute("data-gap-orientation") !== "vertical") continue
-		if (gapEl.style.display === "none") continue
-
-		const isSecondary = gapEl.classList.contains("pm-gap-zone-secondary")
-
-		// For cursorOnPrevRow, prefer the secondary gap (end of prev row)
-		// Otherwise prefer the primary gap
-		if (cursorOnPrevRow && isSecondary) {
-			targetGapElement = gapEl
-			break
-		} else if (!cursorOnPrevRow && !isSecondary) {
-			targetGapElement = gapEl
-			break
-		}
-		// Fallback: use any gap we find
-		targetGapElement ??= gapEl
-	}
-
-	if (targetGapElement) {
-		// Use the gap element's center position
-		const gapRect = targetGapElement.getBoundingClientRect()
-		cursorLeft = gapRect.left + gapRect.width / 2 - 1.5 // Center the 3px cursor
-	} else {
-		// Fallback: Calculate position based on adjacent blocks
-		if (cursorOnPrevRow && childIndex > 0) {
-			// At row boundary, cursor should be after the previous child (end of row)
-			const prevChildPos = $pos.posAtIndex(childIndex - 1)
-			const prevChildDOM = view.nodeDOM(prevChildPos) as HTMLElement | null
-
-			if (prevChildDOM) {
-				const rect = prevChildDOM.getBoundingClientRect()
-				cursorLeft = rect.right + 6 - 1.5 // Center in the gap (12px gap, 3px cursor)
-			} else {
-				cursorLeft = editorRect.left
-			}
-		} else if (isAfterLastChild && gridNode.childCount > 0) {
-			// After last child - position after the last block
-			const lastChildIndex = gridNode.childCount - 1
-			const lastChildPos = $pos.posAtIndex(lastChildIndex)
-			const lastChildDOM = view.nodeDOM(lastChildPos) as HTMLElement | null
-
-			if (lastChildDOM) {
-				const rect = lastChildDOM.getBoundingClientRect()
-				cursorLeft = rect.right + 6 - 1.5 // Center in the gap (12px gap, 3px cursor)
-			} else {
-				cursorLeft = editorRect.left
-			}
-		} else if (childIndex < gridNode.childCount) {
-			// Before a child - position before the next block
-			const nextChildPos = $pos.posAtIndex(childIndex)
-			const nextChildDOM = view.nodeDOM(nextChildPos) as HTMLElement | null
-
-			if (nextChildDOM) {
-				const rect = nextChildDOM.getBoundingClientRect()
-				cursorLeft = rect.left - 6 - 1.5 // Center in the gap (12px gap, 3px cursor)
-			} else {
-				cursorLeft = editorRect.left
-			}
-		} else {
-			// Fallback
-			cursorLeft = editorRect.left
-		}
-	}
-
-	// Apply vertical cursor style
-	// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- showCursorAt calls ensureCursorElemExists before delegating here
-	Object.assign(cursorEl!.style, {
-		top: `${cursorTop - editorRect.top}px`,
-		left: `${cursorLeft - editorRect.left}px`,
-		width: "0.1875rem", // 3px width (same as horizontal height)
-		height: `${cursorHeight}px`,
-		display: "block",
-	})
-}
-
 // Helper to get the current drag slice from either lastSlice or view.dragging
 function getCurrentSlice(view: EditorView): Slice | null {
 	// First check view.dragging (set by drag handle)
@@ -1413,26 +997,30 @@ export const Drag = Extension.create<DragOptions>({
 								dropHandled = false
 							}
 
-							lastMouse = { x: e.clientX, y: e.clientY }
+							lastMouse = {
+								x: e.clientX,
+								y: e.clientY,
+								moves: dragMoves(view, e),
+							}
 
 							repositionGapZones()
 
 							const slice = getCurrentSlice(view)
 							if (slice) {
-								updateDragCursor(view, e.clientX, e.clientY, slice)
+								updateDragCursor(
+									view,
+									e.clientX,
+									e.clientY,
+									slice,
+									lastMouse.moves,
+								)
 							}
 
 							return false
 						},
 						dragend() {
-							hideCursor()
+							endDrag()
 							clearRepositionCooldown()
-
-							lastSlice = null
-							lastMouse = null
-							lastInsertPos = null
-							lastParentListType = null
-							lastSourceWrapperBounds = null
 							dropHandled = false
 
 							return false
@@ -1458,12 +1046,28 @@ export const Drag = Extension.create<DragOptions>({
 							if (!relatedTarget || !editorElement.contains(relatedTarget)) {
 								hideCursor()
 								lastInsertPos = null
+								lastGridQuery = null
 							}
 
 							return false
 						},
 					},
 					handleDrop(view, e, slice, moved) {
+						const gridDropped = runGridDrop(
+							view,
+							e.clientX,
+							e.clientY,
+							view.dragging?.slice ?? slice,
+							moved,
+							onBeforeDrop,
+						)
+
+						if (gridDropped !== undefined) {
+							e.preventDefault()
+
+							return true
+						}
+
 						let insertPos = lastInsertPos
 
 						insertPos ??= findDropPosition(view, e.clientX, e.clientY)
@@ -1523,12 +1127,7 @@ export const Drag = Extension.create<DragOptions>({
 
 					const handleGlobalMouseUp = () => {
 						if (cursorEl && cursorEl.style.display !== "none") {
-							hideCursor()
-							lastSlice = null
-							lastMouse = null
-							lastInsertPos = null
-							lastParentListType = null
-							lastSourceWrapperBounds = null
+							endDrag()
 							dropHandled = false
 						}
 					}
@@ -1562,7 +1161,11 @@ export const Drag = Extension.create<DragOptions>({
 						}
 
 						// Always track mouse position for accurate drop placement
-						lastMouse = { x: e.clientX, y: e.clientY }
+						lastMouse = {
+							x: e.clientX,
+							y: e.clientY,
+							moves: dragMoves(view, e),
+						}
 
 						// Check if there's an active drag with valid content
 						// view.dragging is set by ProseMirror when a drag starts from within the editor
@@ -1572,7 +1175,13 @@ export const Drag = Extension.create<DragOptions>({
 						// Ensure cursor element exists
 						ensureCursorElemExists(view)
 
-						const shown = updateDragCursor(view, e.clientX, e.clientY, slice)
+						const shown = updateDragCursor(
+							view,
+							e.clientX,
+							e.clientY,
+							slice,
+							lastMouse.moves,
+						)
 
 						// CRITICAL: Must preventDefault on dragover to allow global drop
 						// Without this, the browser rejects drop events on this element
@@ -1586,6 +1195,26 @@ export const Drag = Extension.create<DragOptions>({
 					// Uses the same executeDrop function as the ProseMirror handler, with a guard to
 					// prevent double execution if both handlers fire.
 					const handleGlobalDrop = (e: DragEvent) => {
+						const gridSlice = getCurrentSlice(view)
+
+						if (
+							lastGridQuery?.drop &&
+							gridSlice &&
+							cursorEl?.style.display !== "none"
+						) {
+							runGridDrop(
+								view,
+								e.clientX,
+								e.clientY,
+								gridSlice,
+								dragMoves(view, e) && !view.state.selection.empty,
+								onBeforeDrop,
+							)
+							e.preventDefault()
+
+							return
+						}
+
 						// Only handle if we have an active drag with a valid insert position
 						if (
 							lastInsertPos == null ||
@@ -1646,6 +1275,18 @@ export const Drag = Extension.create<DragOptions>({
 						update() {
 							if (lastMouse && cursorEl && cursorEl.style.display !== "none") {
 								const slice = getCurrentSlice(view)
+
+								if (
+									showGridDrop(
+										view,
+										lastMouse.x,
+										lastMouse.y,
+										slice,
+										lastMouse.moves,
+									) !== undefined
+								) {
+									return
+								}
 								const parentListType = getParentListType(view)
 								const sourceWrapperBounds = getSourceWrapperBounds(view)
 								const insertPos = findDropPosition(
@@ -1695,7 +1336,7 @@ export const Drag = Extension.create<DragOptions>({
 								}
 
 								lastInsertPos = insertPos
-								showCursorAt(view, insertPos, lastMouse.y)
+								showCursorAt(view, insertPos)
 							}
 						},
 						destroy() {

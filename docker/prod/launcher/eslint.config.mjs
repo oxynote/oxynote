@@ -3,6 +3,7 @@
 import eslintConfigPrettier from "eslint-config-prettier/flat"
 import eslint from "@eslint/js"
 import vitest from "@vitest/eslint-plugin"
+import { importX } from "eslint-plugin-import-x"
 import tseslint from "typescript-eslint"
 
 export default tseslint.config(
@@ -99,10 +100,29 @@ export default tseslint.config(
 
 	{
 		name: "oxynote/rules",
+		plugins: {
+			"import-x": importX,
+		},
 		rules: {
 			"no-tabs": "off",
 			indent: ["off"], // clashes with prettier
 			"@typescript-eslint/no-explicit-any": "off",
+			"@typescript-eslint/consistent-type-imports": [
+				"error",
+				{
+					prefer: "type-imports",
+					disallowTypeAnnotations: false,
+				},
+			],
+			"@typescript-eslint/no-import-type-side-effects":
+				"error",
+			// eslint-config-prettier turns this off, but without semicolons
+			// it catches a line that joins the one before it
+			"no-unexpected-multiline": "error",
+			"import-x/first": "error",
+			"import-x/no-duplicates": "error",
+			"import-x/no-mutable-exports": "error",
+			"import-x/no-named-default": "error",
 			// an assignment must be its own statement — no chaining
 			// and no assigning from inside an expression, e.g.
 			// `const g = (map[k] ??= {})`

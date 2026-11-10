@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, it } from "vitest"
 import LogDiffDetails from "./LogDiffDetails.vue"
 import { makeNode } from "../../test-helpers/node-view"
 import { LOG_BLOCK_NAME } from "../node-names"
-import { GridItemWidth } from "../grid/utils"
+import { GridItemWidth } from "@oxynote/common/grid"
 import { LogTimestampFormat } from "./utils"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 import { settleMutations, t } from "~/components/test-helpers"
@@ -117,11 +117,101 @@ describe("<LogDiffDetails>", { concurrent: false }, () => {
 				t("editor.logs.config.order-options.asc"),
 			],
 			[
-				t("editor.logs.diff.size"),
-				t("editor.drag-handle.options.grid-item.width-options.standard"),
-				t("editor.drag-handle.options.grid-item.width-options.wide"),
+				t("editor.diff-change-marker.grid-item.width"),
+				t("editor.grid-item.width-options.standard"),
+				t("editor.grid-item.width-options.wide"),
 			],
 		])
+	})
+
+	it("shows the width and height by the names the block menu uses", async ({
+		expect,
+	}) => {
+		const wrapper = await mountDetails(
+			{ width: GridItemWidth.Standard },
+			{ widePosX: 0, widePosY: 1, width: 24, height: 2 },
+		)
+
+		expect(rows(wrapper)).toEqual([
+			[
+				t("editor.diff-change-marker.grid-item.width"),
+				t("editor.grid-item.width-options.standard"),
+				t("editor.grid-item.width-options.wide"),
+			],
+			[
+				t("editor.diff-change-marker.grid-item.height"),
+				t("editor.grid-item.height-options.standard"),
+				t("editor.grid-item.height-options.tall"),
+			],
+		])
+	})
+
+	it("lists where the block shows in both layouts", async ({ expect }) => {
+		const wrapper = await mountDetails(
+			{ gridPlace: { row: 0, column: 12 }, stackPlace: 1 },
+			{ gridPlace: { row: 1, column: 0 }, stackPlace: 3 },
+		)
+
+		expect(rows(wrapper)).toEqual([
+			[
+				t("editor.diff-change-marker.grid-item.wide-layout"),
+				t("editor.diff-change-marker.grid-item.wide-place", {
+					row: 1,
+					column: 13,
+				}),
+				t("editor.diff-change-marker.grid-item.wide-place", {
+					row: 2,
+					column: 1,
+				}),
+			],
+			[
+				t("editor.diff-change-marker.grid-item.stacked-layout"),
+				t("editor.diff-change-marker.grid-item.stacked-place.two", {
+					place: 2,
+				}),
+				t("editor.diff-change-marker.grid-item.stacked-place.other", {
+					place: 4,
+				}),
+			],
+		])
+	})
+
+	it("shows a size the block menu has no name for by its columns and rows", async ({
+		expect,
+	}) => {
+		const wrapper = await mountDetails(
+			{ width: 10, height: 3 },
+			{ width: 8, height: 1 },
+		)
+
+		expect(rows(wrapper)).toEqual([
+			[
+				t("editor.diff-change-marker.grid-item.width"),
+				t("editor.grid-item.width-options.columns", { count: 10 }, 10),
+				t("editor.grid-item.width-options.compact"),
+			],
+			[
+				t("editor.diff-change-marker.grid-item.height"),
+				t("editor.grid-item.height-options.rows", { count: 3 }, 3),
+				t("editor.grid-item.height-options.standard"),
+			],
+		])
+	})
+
+	it("shows no change for a block that only gained its place and a numeric size", async ({
+		expect,
+	}) => {
+		const wrapper = await mountDetails(
+			{ width: GridItemWidth.Standard },
+			{
+				widePosX: 12,
+				widePosY: 3,
+				width: 12,
+				height: 1,
+			},
+		)
+
+		expect(rows(wrapper)).toEqual([])
 	})
 
 	it("names the built-in variable a setting follows", async ({ expect }) => {

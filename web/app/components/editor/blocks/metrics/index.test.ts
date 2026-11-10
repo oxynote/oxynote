@@ -19,7 +19,7 @@ import { runCommand } from "../../comments/test-helpers"
 import { nodeType as nodeTypeOf } from "~/components/editor/test-helpers"
 import { insertMetricBlock, MetricBlock } from "."
 import { BlockGrid } from "../grid"
-import { GridItemWidth } from "../grid/utils"
+import { GridItemWidth } from "@oxynote/common/grid"
 import {
 	METRIC_REFRESH_INTERVAL_REFERENCE,
 	METRIC_TIME_RANGE_REFERENCE,
@@ -111,41 +111,43 @@ describe("MetricBlock", () => {
 				axisBoundsMax: null,
 				simulationPreset: null,
 				simulationActive: false,
-				width: GridItemWidth.Standard,
+				width: 12,
+				height: 1,
+				widePosX: null,
+				widePosY: null,
+				stackPos: null,
 			})
 		})
 
 		it.for([
 			{
-				name: "the stored width",
+				name: "the name an older block wrote as columns",
 				attr: GridItemWidth.Wide,
-				expected: "wide",
+				expected: 24,
 			},
 			{
 				name: "the standard width when the attribute is missing",
 				attr: null,
-				expected: GridItemWidth.Standard,
+				expected: 12,
 			},
 			{
 				name: "the standard width when the attribute is empty",
 				attr: "",
-				expected: GridItemWidth.Standard,
+				expected: 12,
 			},
 		])("parses $name", ({ attr, expected }, { expect }) => {
 			const element = {
 				getAttribute: vi.fn(() => attr),
 			} as unknown as HTMLElement
 
-			expect(nodeType(METRIC_BLOCK_NAME).spec.attrs?.width?.default).toBe(
-				GridItemWidth.Standard,
-			)
+			expect(nodeType(METRIC_BLOCK_NAME).spec.attrs?.width?.default).toBe(12)
 			expect(widthAttribute().parseHTML?.(element)).toBe(expected)
 		})
 
 		it("renders the width as a data attribute", ({ expect }) => {
-			expect(
-				widthAttribute().renderHTML?.({ width: GridItemWidth.Compact }),
-			).toEqual({ "data-width": GridItemWidth.Compact })
+			expect(widthAttribute().renderHTML?.({ width: 8 })).toEqual({
+				"data-width": 8,
+			})
 		})
 
 		it("keeps the simulation flag out of the rendered HTML", ({ expect }) => {

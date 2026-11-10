@@ -8,8 +8,22 @@
  * operations to a live Y.Doc. A batch applies whole or not at all,
  * inside a single `Y.Doc.transact` so subscribers see one update.
  */
+import { isDeepStrictEqual } from "node:util"
 import * as Y from "yjs"
 import { nanoid } from "nanoid"
+import {
+	cellChanges,
+	dropInGrid,
+	GRID_PLACE_ATTRS,
+	type GridDropTarget,
+	gridItemOf,
+	type GridRect,
+	layoutGrid,
+	resizeInGrid,
+	stackOrder,
+	stackPosOf,
+	withoutPlaces,
+} from "@oxynote/common/grid"
 import { transformer, cloneXmlElement, cloneXmlFragment } from "./ydocument.js"
 import { checkBlock, checkChildren } from "./validate.js"
 
@@ -24,7 +38,13 @@ const END_ADVICE =
 	"Insert it before or after a block in a container that takes it."
 
 /** The sides an insert or move may name, as a widened list for validation. */
-const INSERT_POSITIONS: string[] = ["before", "after"]
+const INSERT_POSITIONS: string[] = ["before", "after", "above", "below"]
+
+// the sides only a block in a grid has
+const GRID_POSITIONS: string[] = ["above", "below"]
+
+// the nodes that hold grid blocks. metricGrid is the legacy name.
+const GRID_NAMES = new Set(["blockGrid", "metricGrid"])
 
 /**
  * One batched operation against a document. Shapes mirror the Go
@@ -41,14 +61,21 @@ export type Operation =
 	| UpdateAttrsOp
 	| DeleteOp
 	| MoveOp
+	| SetStackOrderOp
 	| SetNameOp
 	| SetIconOp
+
+// where an insert or move lands next to its reference block. In a grid,
+// before and after drop on the reference block's left and right edges,
+// and above and below drop on its top and bottom edges. Outside a grid
+// only before and after exist.
+export type Position = "before" | "after" | "above" | "below"
 
 /** Inserts a new block immediately before/after a referenced block. */
 export interface InsertOp {
 	kind: "insert"
 	/** Insertion side relative to the reference block. */
-	position: "before" | "after"
+	position: Position
 	/** Reference block's uid in the document. */
 	reference_uid: string
 	/** New block as ProseMirror JSON, including a uid attribute. */
@@ -99,9 +126,18 @@ export interface MoveOp {
 	/** Moved block's uid in the document. */
 	block_uid: string
 	/** Landing side relative to the reference block. */
-	position: "before" | "after"
+	position: Position
 	/** Reference block's uid in the document. */
 	reference_uid: string
+}
+
+// sets a grid's stacked order. order lists the uids of the grid's blocks
+// from first to last. A block the list leaves out goes after the block it
+// follows in the wide layout.
+export interface SetStackOrderOp {
+	kind: "set_stack_order"
+	grid_uid: string
+	order: string[]
 }
 
 /** Updates the document's display name. */
@@ -220,6 +256,9 @@ function applyOperation(doc: Y.Doc, op: Operation): void {
 		case "move":
 			opMove(doc, op)
 			return
+		case "set_stack_order":
+			opSetStackOrder(doc, op)
+			return
 		case "set_name":
 			opSetName(doc, op)
 			return
@@ -243,21 +282,35 @@ function applyOperation(doc: Y.Doc, op: Operation): void {
 /* ---------------- per-op handlers ---------------- */
 
 function opInsert(doc: Y.Doc, op: InsertOp): void {
-	// the position is whatever the JSON payload carried, so anything but
-	// the two sides is rejected rather than silently taken as "after".
-	// Checked against a list because comparing the declared union against
-	// its own members reads as dead code to the type checker.
-	if (!INSERT_POSITIONS.includes(op.position)) {
-		throw new Error(
-			`insert position must be "before" or "after", got: ${op.position}`,
-		)
-	}
+	// the position is whatever the JSON payload carried, so it may name
+	// no side at all
+	checkPosition("insert", op.position)
 
 	const found = blockByUid(doc, op.reference_uid, "reference_uid")
-	const insertAt =
-		op.position === "before" ? found.index : found.index + 1
+	const grid = gridOf(found.parent)
+	const insertAt = landsAfter(op.position) ? found.index + 1 : found.index
 
-	insertBlock(found.parent, insertAt, op.block, PLACE_ADVICE)
+	if (!grid) {
+		checkOutsideGrid(op.position)
+		insertBlock(found.parent, insertAt, op.block, PLACE_ADVICE)
+
+		return
+	}
+
+	const layout = gridLayout(grid)
+
+	insertBlock(
+		found.parent,
+		insertAt,
+		{ ...op.block, attrs: withoutPlaces(op.block.attrs ?? {}) },
+		PLACE_ADVICE,
+	)
+	placeInGrid(
+		layout,
+		found.parent.get(insertAt) as Y.XmlElement,
+		null,
+		targetBeside(layout, found.index, op.position),
+	)
 }
 
 function opAppend(doc: Y.Doc, op: AppendOp): void {
@@ -294,13 +347,64 @@ function opPrepend(doc: Y.Doc, op: PrependOp): void {
 
 function opReplace(doc: Y.Doc, op: ReplaceOp): void {
 	const found = blockByUid(doc, op.block_uid, "block_uid")
+	const grid = gridOf(found.parent)
+
+	if (!grid) {
+		found.parent.delete(found.index, 1)
+		insertBlock(found.parent, found.index, op.block)
+
+		return
+	}
+
+	const layout = gridLayout(grid)
+
+	// the same block changes in place. So a user's concurrent edit
+	// survives on every attribute that the replacement leaves unchanged.
+	if (
+		op.block.attrs?.[UID_ATTR] === op.block_uid &&
+		op.block.type === found.element.nodeName
+	) {
+		checkBlock(op.block)
+		updateInPlace(found.element, op.block.attrs)
+		resizeIfSized(layout, found.index)
+
+		return
+	}
+
+	const stackPos = stackPosOf(attrsOf(found.element))
 
 	found.parent.delete(found.index, 1)
-	insertBlock(found.parent, found.index, op.block)
+	insertBlock(found.parent, found.index, {
+		...op.block,
+		attrs: withoutPlaces(op.block.attrs ?? {}),
+	})
+
+	// another block takes the replaced one's places
+	const added = found.parent.get(found.index) as Y.XmlElement
+	layout.blocks[found.index] = added
+
+	if (stackPos !== null) {
+		setAttr(added, "stackPos", stackPos)
+	}
+
+	writeCells(
+		layout.blocks,
+		resizedLayout(layout, found.index) ?? layout.rects,
+	)
 }
 
 function opUpdateAttrs(doc: Y.Doc, op: UpdateAttrsOp): void {
 	const found = blockByUid(doc, op.block_uid, "block_uid")
+	const grid = gridOf(found.parent)
+	// only a new size moves the other blocks of a grid. The layout is
+	// read before the update, so it still holds the old size.
+	const layout =
+		grid &&
+		(Object.hasOwn(op.attrs, "width") ||
+			Object.hasOwn(op.attrs, "height"))
+			? gridLayout(grid)
+			: null
+	const current = attrsOf(found.element)
 
 	for (const [key, value] of Object.entries(op.attrs)) {
 		if (key === UID_ATTR) {
@@ -309,10 +413,17 @@ function opUpdateAttrs(doc: Y.Doc, op: UpdateAttrsOp): void {
 			continue
 		}
 
-		// the default attribute type is string, but attrs hold any JSON.
-		;(
-			found.element as Y.XmlElement<Record<string, any>>
-		).setAttribute(key, value)
+		// writing a value the block already holds would still overwrite
+		// a user's concurrent edit to it
+		if (isDeepStrictEqual(value, current[key])) {
+			continue
+		}
+
+		setAttr(found.element, key, value)
+	}
+
+	if (layout) {
+		resizeIfSized(layout, found.index)
 	}
 }
 
@@ -325,11 +436,7 @@ function opDelete(doc: Y.Doc, op: DeleteOp): void {
 
 function opMove(doc: Y.Doc, op: MoveOp): void {
 	// the position is unvalidated JSON, same as opInsert's.
-	if (!INSERT_POSITIONS.includes(op.position)) {
-		throw new Error(
-			`move position must be "before" or "after", got: ${op.position}`,
-		)
-	}
+	checkPosition("move", op.position)
 
 	if (op.block_uid === op.reference_uid) {
 		throw new Error(
@@ -348,6 +455,16 @@ function opMove(doc: Y.Doc, op: MoveOp): void {
 		)
 	}
 
+	const grid = gridOf(reference.parent)
+
+	if (grid) {
+		moveInGrid(grid, found, reference, op.position)
+
+		return
+	}
+
+	checkOutsideGrid(op.position)
+
 	// a removed Y.XmlElement cannot be reinserted, so the block is
 	// cloned first. CloneXmlElement keeps the uid and every non-string
 	// attribute, which is what keeps comments, hooks, and files
@@ -362,7 +479,7 @@ function opMove(doc: Y.Doc, op: MoveOp): void {
 		insertAt -= 1
 	}
 
-	if (op.position === "after") {
+	if (landsAfter(op.position)) {
 		insertAt += 1
 	}
 
@@ -374,6 +491,81 @@ function opMove(doc: Y.Doc, op: MoveOp): void {
 	}
 
 	checkChildrenOf(reference.parent, PLACE_ADVICE)
+}
+
+// moveInGrid moves a block next to a block of grid. Within the grid only
+// the cells change, so the block stays the same element. A block from
+// elsewhere joins the grid without the places it had there.
+function moveInGrid(
+	grid: Y.XmlElement,
+	found: Found,
+	reference: Found,
+	position: Position,
+): void {
+	const layout = gridLayout(grid)
+	const target = targetBeside(layout, reference.index, position)
+
+	if (found.parent === grid) {
+		placeInGrid(layout, found.element, found.index, target)
+
+		return
+	}
+
+	const clone = cloneXmlElement(found.element)
+
+	for (const key of GRID_PLACE_ATTRS) {
+		clone.removeAttribute(key)
+	}
+
+	found.parent.delete(found.index, 1)
+	grid.insert(
+		landsAfter(position) ? reference.index + 1 : reference.index,
+		[clone],
+	)
+	checkChildrenOf(found.parent)
+	checkChildrenOf(grid, PLACE_ADVICE)
+	placeInGrid(layout, clone, null, target)
+}
+
+function opSetStackOrder(doc: Y.Doc, op: SetStackOrderOp): void {
+	const found = blockByUid(doc, op.grid_uid, "grid_uid")
+
+	if (!GRID_NAMES.has(found.element.nodeName)) {
+		throw new Error(`grid_uid is not a grid: ${op.grid_uid}`)
+	}
+
+	// the list is unvalidated JSON
+	if (!Array.isArray(op.order)) {
+		throw new Error("order must be a list of block uids")
+	}
+
+	const { blocks, rects } = gridLayout(found.element)
+	const uids = blocks.map((block) => block.getAttribute(UID_ATTR))
+	const places: (number | null)[] = blocks.map(() => null)
+
+	op.order.forEach((uid, place) => {
+		const index = uids.indexOf(uid)
+
+		if (index < 0) {
+			throw new Error(
+				`order names a block outside the grid: ${uid}`,
+			)
+		}
+
+		if (places[index] !== null) {
+			throw new Error(`order names a block twice: ${uid}`)
+		}
+
+		places[index] = place
+	})
+
+	stackOrder(rects, places).forEach((index, place) => {
+		const block = blocks[index]
+
+		if (block && stackPosOf(attrsOf(block)) !== place) {
+			setAttr(block, "stackPos", place)
+		}
+	})
 }
 
 function opSetName(doc: Y.Doc, op: SetNameOp): void {
@@ -401,6 +593,215 @@ function opSetIcon(doc: Y.Doc, op: SetIconOp): void {
 }
 
 /* ---------------- helpers ---------------- */
+
+type Found = ReturnType<typeof blockByUid>
+
+// a grid's blocks and the cells where the editor puts them. rects[i]
+// belongs to blocks[i].
+interface GridLayout {
+	blocks: Y.XmlElement[]
+	rects: GridRect[]
+}
+
+// checkPosition refuses a position outside the four sides. kind names the
+// operation for the error. The position is checked against a list of
+// strings, because comparing the declared union against its own members
+// reads as dead code to the type checker.
+function checkPosition(kind: string, position: string): void {
+	if (!INSERT_POSITIONS.includes(position)) {
+		throw new Error(
+			`${kind} position must be "before", "after", "above" or "below", got: ${position}`,
+		)
+	}
+}
+
+// landsAfter reports whether a position puts the block after its
+// reference block
+function landsAfter(position: string): boolean {
+	return position === "after" || position === "below"
+}
+
+// gridOf returns parent when it is a grid
+function gridOf(parent: Y.XmlFragment): Y.XmlElement | null {
+	return parent instanceof Y.XmlElement && GRID_NAMES.has(parent.nodeName)
+		? parent
+		: null
+}
+
+// checkOutsideGrid refuses a position only a block in a grid has
+function checkOutsideGrid(position: string): void {
+	if (GRID_POSITIONS.includes(position)) {
+		throw new Error(
+			`position ${position} only places a block next to a block in a grid; use before or after here`,
+		)
+	}
+}
+
+// gridLayout returns a grid's blocks and the cells where the editor puts
+// them
+function gridLayout(grid: Y.XmlElement): GridLayout {
+	const blocks = grid
+		.toArray()
+		.filter(
+			(child): child is Y.XmlElement =>
+				child instanceof Y.XmlElement,
+		)
+
+	return {
+		blocks: blocks,
+		rects: layoutGrid(
+			blocks.map((block) => gridItemOf(attrsOf(block))),
+		),
+	}
+}
+
+// targetBeside returns the drop target beside the block at index. position
+// names the side of the block's cells: its left or right edge, or its top
+// or bottom edge.
+function targetBeside(
+	layout: GridLayout,
+	index: number,
+	position: string,
+): GridDropTarget {
+	const rect = layout.rects[index]
+	if (!rect) {
+		// NOCOV: index is a block of the grid, so the layout has its
+		// rect.
+		return { kind: "at", x: 0, y: 0 }
+	}
+
+	const { x, y, w, h } = rect
+
+	switch (position) {
+		case "before":
+			return { kind: "line", x: x, y: y }
+		case "after":
+			return { kind: "line", x: x + w, y: y }
+		case "above":
+			return { kind: "at", x: x, y: y }
+		default:
+			return { kind: "at", x: x, y: y + h }
+	}
+}
+
+// placeInGrid drops a block into a grid the way a drag does, and writes
+// the cells of every block that moves. draggedIndex is the block's index
+// in the layout, or null for a block that joins the grid.
+function placeInGrid(
+	layout: GridLayout,
+	dragged: Y.XmlElement,
+	draggedIndex: number | null,
+	target: GridDropTarget,
+): void {
+	const size = gridItemOf(attrsOf(dragged))
+	const rects = dropInGrid(
+		layout.rects,
+		{ index: draggedIndex, w: size.w, h: size.h },
+		target,
+	)
+
+	if (!rects) {
+		// NOCOV: only a run target can lack room, and targetBeside
+		// never makes one.
+		return
+	}
+
+	writeCells(
+		draggedIndex === null
+			? [...layout.blocks, dragged]
+			: layout.blocks,
+		rects,
+	)
+}
+
+// resizeIfSized lays the grid out again when the size that the block at
+// index stores differs from its cells in the layout
+function resizeIfSized(layout: GridLayout, index: number): void {
+	const rects = resizedLayout(layout, index)
+	if (rects) {
+		writeCells(layout.blocks, rects)
+	}
+}
+
+// resizedLayout returns the cells of every block after the block at index
+// takes the size it stores, as the editor's resize does. It returns null
+// when the stored size already matches the layout.
+function resizedLayout(
+	layout: GridLayout,
+	index: number,
+): readonly GridRect[] | null {
+	const block = layout.blocks[index]
+	const rect = layout.rects[index]
+
+	if (!block || !rect) {
+		// NOCOV: index is the block's own index in its grid, and the
+		// layout holds every block of the grid.
+		return null
+	}
+
+	const size = gridItemOf(attrsOf(block))
+
+	return size.w === rect.w && size.h === rect.h
+		? null
+		: resizeInGrid(layout.rects, index, size.w, size.h)
+}
+
+// writeCells writes each block's cells from rects. Only the attributes
+// whose value changes are written, so a user's concurrent edit to any
+// other attribute survives.
+function writeCells(blocks: Y.XmlElement[], rects: readonly GridRect[]): void {
+	blocks.forEach((block, i) => {
+		const rect = rects[i]
+		if (!rect) {
+			// NOCOV: a layout holds a rect for each of its blocks.
+			return
+		}
+
+		for (const [key, value] of Object.entries(
+			cellChanges(attrsOf(block), rect),
+		)) {
+			setAttr(block, key, value)
+		}
+	})
+}
+
+// updateInPlace writes the attributes of next that differ from the
+// element's. It removes the ones that next leaves out. It never writes the
+// block's places, so the block keeps its place in the live grid.
+function updateInPlace(
+	element: Y.XmlElement,
+	next: Record<string, unknown>,
+): void {
+	const current = attrsOf(element)
+
+	for (const key of new Set([
+		...Object.keys(current),
+		...Object.keys(next),
+	])) {
+		if (
+			key === UID_ATTR ||
+			GRID_PLACE_ATTRS.some((place) => place === key) ||
+			isDeepStrictEqual(next[key], current[key])
+		) {
+			continue
+		}
+
+		if (next[key] === undefined) {
+			element.removeAttribute(key)
+		} else {
+			setAttr(element, key, next[key])
+		}
+	}
+}
+
+// getAttributes is declared as a string map, but attrs hold any JSON
+function attrsOf(element: Y.XmlElement): Record<string, unknown> {
+	return element.getAttributes()
+}
+
+function setAttr(element: Y.XmlElement, key: string, value: unknown): void {
+	;(element as Y.XmlElement<Record<string, any>>).setAttribute(key, value)
+}
 
 // blockByUid returns the block carrying uid, with its parent and its
 // index there. field names the op field that held uid, for the error.

@@ -18,6 +18,7 @@ import {
 import SplitDocParameterListMenu from "./SplitDocParameterListMenu.vue"
 import SplitDocParameterListItemMenu from "./SplitDocParameterListItemMenu.vue"
 import { deleteEmptyBlockGrids } from "../../blocks/grid"
+import { stripNode } from "../../tiptap-utils/node"
 import { BLOCK_GRID_NAMES, GRID_ITEM_NAMES } from "../../blocks/grid/utils"
 import GridItemMenu from "./GridItemMenu.vue"
 import { isNodeOrDescendantsBeingEditedByOther } from "../../collaboration"
@@ -189,28 +190,6 @@ async function deleteBlock() {
 function copyLink() {
 	const url = createCurrentUrl({ hash: nodeUid.value })
 	void navigator.clipboard.writeText(url.toString())
-}
-
-function stripNode(node: JSONContent): JSONContent {
-	const nextNode: JSONContent = { ...node }
-
-	if (nextNode.attrs && "uid" in nextNode.attrs) {
-		nextNode.attrs = { ...nextNode.attrs, uid: null }
-	}
-
-	if (nextNode.attrs && "nodeCommentId" in nextNode.attrs) {
-		nextNode.attrs = { ...nextNode.attrs, nodeCommentId: null }
-	}
-
-	if (nextNode.marks) {
-		nextNode.marks = nextNode.marks.filter((mark) => mark.type !== "comment")
-	}
-
-	if (nextNode.content) {
-		nextNode.content = nextNode.content.map(stripNode)
-	}
-
-	return nextNode
 }
 
 function duplicateBlock() {

@@ -187,9 +187,7 @@ export function isSimulationPreset(
 ): value is MetricSimulationPreset {
 	return (
 		typeof value === "string" &&
-		Object.values(MetricSimulationPreset).includes(
-			value as MetricSimulationPreset,
-		)
+		(Object.values(MetricSimulationPreset) as string[]).includes(value)
 	)
 }
 

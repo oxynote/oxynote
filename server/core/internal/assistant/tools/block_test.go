@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/markup"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
@@ -394,6 +395,12 @@ func Test_insertBlocks_Exec(t *testing.T) {
 			CheckCalls: 1,
 			ApplyCalls: 1,
 		},
+		"Inserted below a block in a grid": {
+			Tool:       insertBlocks{docTarget: target, Position: positionBelow, ReferenceBlockUID: _stubMetricUID, Content: "<metrics>{}</metrics>"},
+			Ops:        []string{`"kind":"insert","position":"below","reference_uid":"m"`},
+			CheckCalls: 1,
+			ApplyCalls: 1,
+		},
 	}
 
 	for cn, c := range cc {
@@ -547,6 +554,18 @@ func Test_replaceBlocks_Exec(t *testing.T) {
 
 	target := docTarget{DocumentID: _testDocID, BranchID: _stubMainBranchID}
 
+	// readGrid stores a, b, c in that order, but its layout shows c, a,
+	// b. c and a sit side by side, and b sits below them.
+	readGrid := document.Block{
+		Type:  document.BlockNodeBlockGrid,
+		Attrs: document.Attributes{document.AttrUID: "g"},
+		Content: []document.Block{
+			testGridBlock("a", document.Attributes{document.AttrWidePosX: 12.0, document.AttrWidePosY: 0.0, document.AttrWidth: 12.0, document.AttrHeight: 1.0}),
+			testGridBlock("b", document.Attributes{document.AttrWidePosX: 0.0, document.AttrWidePosY: 1.0, document.AttrWidth: 24.0, document.AttrHeight: 1.0}),
+			testGridBlock("c", document.Attributes{document.AttrWidePosX: 0.0, document.AttrWidePosY: 0.0, document.AttrWidth: 12.0, document.AttrHeight: 1.0}),
+		},
+	}
+
 	cc := map[string]blockCase{
 		"Error returned by Input.FetchDocumentBlock": {
 			Tool:       replaceBlocks{docTarget: target, BlockUID: "a", Content: "<p>x</p>"},
@@ -618,6 +637,29 @@ func Test_replaceBlocks_Exec(t *testing.T) {
 			FetchCalls: 1,
 			CheckCalls: 1,
 			ApplyCalls: 1,
+		},
+		// the grid is not replaced, so users' edits to its blocks survive.
+		"Grid rewritten block by block": {
+			Tool:       replaceBlocks{docTarget: target, BlockUID: "g", Content: `<grid id="g"><metrics id="m">{"simulationPreset":"cpu_usage","title":"CPU"}</metrics><metrics>{}</metrics></grid>`},
+			Root:       stubSimulationRoot(),
+			Ops:        []string{`"kind":"update_attrs","block_uid":"m","attrs":{"title":"CPU"}`, `"kind":"insert","position":"after","reference_uid":"m"`},
+			FetchCalls: 1,
+			CheckCalls: 1,
+			ApplyCalls: 1,
+		},
+		"Grid sent back as it is writes nothing": {
+			Tool:       replaceBlocks{docTarget: target, BlockUID: "g", Content: `<grid id="g"><metrics id="m">{"simulationPreset":"cpu_usage"}</metrics></grid>`},
+			Root:       stubSimulationRoot(),
+			Content:    []string{`<grid id="g">`},
+			FetchCalls: 1,
+			CheckCalls: 1,
+		},
+		"Grid sent back as read in another order than stored writes nothing": {
+			Tool:       replaceBlocks{docTarget: target, BlockUID: "g", Content: markup.Render([]document.Block{readGrid})},
+			Root:       document.RootBlock{Content: []document.Block{readGrid}},
+			Content:    []string{`<grid id="g">`},
+			FetchCalls: 1,
+			CheckCalls: 1,
 		},
 	}
 
@@ -789,7 +831,7 @@ func Test_moveBlock_Validate(t *testing.T) {
 		// a move lands beside a block, never at an end of the document.
 		"Position at an end of the document": {
 			Tool: moveBlock{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Position: positionEnd, ReferenceBlockUID: "r"},
-			Err:  errors.New(`position must be "before" or "after" for a move, got "end"`),
+			Err:  errors.New(`position must be "before", "after", "above" or "below" for a move, got "end"`),
 		},
 		"Valid arguments": {
 			Tool: moveBlock{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Position: positionAfter, ReferenceBlockUID: "r"},
@@ -900,6 +942,13 @@ func Test_moveBlock_Exec(t *testing.T) {
 			FetchCalls: 1,
 			ApplyCalls: 1,
 		},
+		"Moved above": {
+			Tool:       tool("a", positionAbove),
+			Content:    []string{`<p id="a">hello</p>`},
+			Ops:        []string{`"kind":"move","position":"above","reference_uid":"c","block_uid":"a"`},
+			FetchCalls: 1,
+			ApplyCalls: 1,
+		},
 	}
 
 	for cn, c := range cc {
@@ -971,6 +1020,7 @@ func Test_position_UnmarshalText(t *testing.T) {
 		Err    error
 	}{
 		"Known position":   {Text: "before", Result: positionBefore},
+		"Grid position":    {Text: "below", Result: positionBelow},
 		"Unknown position": {Text: "sideways", Err: assert.AnError},
 	}
 
@@ -1001,6 +1051,8 @@ func Test_position_relative(t *testing.T) {
 	}{
 		"Before": {Position: positionBefore, Result: true},
 		"After":  {Position: positionAfter, Result: true},
+		"Above":  {Position: positionAbove, Result: true},
+		"Below":  {Position: positionBelow, Result: true},
 		"Start":  {Position: positionStart},
 		"End":    {Position: positionEnd},
 	}

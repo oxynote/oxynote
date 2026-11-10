@@ -108,6 +108,7 @@ lint:
 	@$(QUIET) "linting datagen" sh -c 'cd datagen && make lint'
 	@$(QUIET) "linting e2e" sh -c 'cd e2e && pnpm run lint'
 	@$(QUIET) "linting launcher" sh -c 'cd docker/prod/launcher && pnpm run lint'
+	@$(QUIET) "linting packages/common" sh -c 'cd packages/common && pnpm run lint'
 
 .PHONY: check-lint
 check-lint:
@@ -117,6 +118,7 @@ check-lint:
 	@$(QUIET) "lint-checking datagen" sh -c 'cd datagen && make check-lint'
 	@$(QUIET) "lint-checking e2e" sh -c 'cd e2e && pnpm run check-lint'
 	@$(QUIET) "lint-checking launcher" sh -c 'cd docker/prod/launcher && pnpm run check-lint'
+	@$(QUIET) "lint-checking packages/common" sh -c 'cd packages/common && pnpm run check-lint'
 	@$(QUIET) "checking icon lists" node scripts/check-icons.mjs
 
 # unit tests of every component, with the coverage gates CI applies.
@@ -127,6 +129,7 @@ test:
 	@$(QUIET) "testing core" sh -c 'cd server/core && make check-coverage'
 	@$(QUIET) "testing datagen" sh -c 'cd datagen && make check-coverage'
 	@$(QUIET) "testing launcher" sh -c 'cd docker/prod/launcher && pnpm run test'
+	@$(QUIET) "testing packages/common" sh -c 'cd packages/common && pnpm run test'
 
 # everything CI checks, to run before a commit. Nothing here modifies a
 # file.
@@ -141,6 +144,7 @@ setup:
 	cd web && pnpm run setup
 	cd server/auth-realtime && pnpm install
 	cd docker/prod/launcher && pnpm install
+	cd packages/common && pnpm install
 	cd e2e && pnpm run setup
 	cd server/core && go mod download
 	cd datagen && go mod download
@@ -161,6 +165,7 @@ deps:
 	cd web && pnpm run deps
 	cd server/auth-realtime && pnpm install
 	cd docker/prod/launcher && pnpm install
+	cd packages/common && pnpm install
 	cd e2e && pnpm install
 	cd server/core && go mod download
 	cd datagen && go mod download

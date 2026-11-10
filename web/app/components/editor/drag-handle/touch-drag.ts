@@ -29,8 +29,8 @@ export interface TouchDrag {
 // dragged by the start of its text and stays inside the editor's left
 // edge, so a finger drifting off it drops at the outermost level. The
 // preview, a copy of the block made once the drag is accepted, follows the
-// finger up and down, and a list item's across too. It returns null when a
-// dragstart listener refuses the drag, as read mode does.
+// finger. It returns null when a dragstart listener refuses the drag, as
+// read mode does.
 export function startTouchDrag(
 	handle: HTMLElement,
 	block: HTMLElement,
@@ -75,15 +75,11 @@ export function startTouchDrag(
 	function follow(event: PointerEvent) {
 		x = event.clientX
 		y = event.clientY
+		dragX = listItem
+			? Math.max(listItem.editorLeft + inset, startX + x - heldAt.x)
+			: x
 		dragY = startY + y - heldAt.y
 		preview.style.top = `${rect.top + y - heldAt.y}px`
-
-		if (!listItem) {
-			dragX = x
-			return
-		}
-
-		dragX = Math.max(listItem.editorLeft + inset, startX + x - heldAt.x)
 		// the preview may shift left past the screen, but not right, where
 		// it would widen the page
 		preview.style.left = `${Math.min(rect.left + x - heldAt.x, document.documentElement.clientWidth - rect.width)}px`

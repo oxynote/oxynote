@@ -8,13 +8,15 @@ import {
 } from "@tiptap/core"
 import { isChangeOrigin } from "@tiptap/extension-collaboration"
 import Paragraph from "@tiptap/extension-paragraph"
-import type { Node as PMNode } from "@tiptap/pm/model"
+import { Fragment, type Node as PMNode, Slice } from "@tiptap/pm/model"
 import {
 	type EditorState,
 	Plugin,
 	PluginKey,
 	type Transaction,
 } from "@tiptap/pm/state"
+import { Mapping, StepMap } from "@tiptap/pm/transform"
+import { Decoration, DecorationSet } from "@tiptap/pm/view"
 import { VueNodeViewRenderer } from "@tiptap/vue-3"
 import GridView from "./GridView.vue"
 import {
@@ -23,9 +25,16 @@ import {
 	LEGACY_METRIC_GRID_NAME,
 	ROOT_ONLY_BLOCK_GROUP,
 } from "../node-names"
-import { BLOCK_GRID_NAMES } from "./utils"
+import { BLOCK_GRID_NAMES, GRID_ITEM_NAMES } from "./utils"
+import { gridLayoutOf, gridStackOf } from "./layout"
+import {
+	GRID_PLACE_ATTRS,
+	stackPlaces,
+	withoutPlaces,
+} from "@oxynote/common/grid"
 
 const legacyGridMigrationKey = new PluginKey<boolean>("legacyGridMigration")
+const gridLayoutKey = new PluginKey<DecorationSet>("gridLayout")
 
 export const BlockGrid = Node.create({
 	name: BLOCK_GRID_NAME,
@@ -57,7 +66,7 @@ export const BlockGrid = Node.create({
 		return VueNodeViewRenderer(GridView)
 	},
 	addProseMirrorPlugins() {
-		return [legacyGridMigration(this.editor)]
+		return [legacyGridMigration(this.editor), gridLayout()]
 	},
 })
 
@@ -266,4 +275,164 @@ function holdsNewLegacyGrid(oldDoc: PMNode, newDoc: PMNode): boolean {
 	}
 
 	return false
+}
+
+// gridLayout hands every grid block its cells. A block gets them as CSS
+// variables on its node. The grid's style uses these variables to place
+// the block, so the blocks themselves hold no layout code.
+function gridLayout() {
+	return new Plugin<DecorationSet>({
+		key: gridLayoutKey,
+		state: {
+			init: (_, state) => {
+				const decorations: Decoration[] = []
+
+				state.doc.forEach((node, pos) => {
+					decorations.push(...gridDecorations(node, pos))
+				})
+
+				return DecorationSet.create(state.doc, decorations)
+			},
+			apply: (tr, set, oldState) =>
+				tr.docChanged ? relaidOut(set, oldState.doc, tr.doc) : set,
+		},
+		props: {
+			decorations: (state) => gridLayoutKey.getState(state),
+			transformPasted: (slice, view) => {
+				const intoGrid = BLOCK_GRID_NAMES.has(
+					view.state.selection.$from.parent.type.name,
+				)
+				const only =
+					slice.content.childCount === 1 ? slice.content.firstChild : null
+
+				// a whole grid pasted into a grid adds its blocks to that grid.
+				// Otherwise it would split the grid in three.
+				if (intoGrid && only && BLOCK_GRID_NAMES.has(only.type.name)) {
+					return new Slice(withoutGridPlaces(only.content, false), 0, 0)
+				}
+
+				const content = withoutGridPlaces(slice.content, intoGrid)
+
+				return content === slice.content
+					? slice
+					: new Slice(content, slice.openStart, slice.openEnd)
+			},
+		},
+	})
+}
+
+// relaidOut maps the decorations through a change and lays out again only
+// the root grids the change touches. y-tiptap hands a remote change over as
+// a document of all new nodes. So the change is found by comparing the two
+// documents, not the nodes' identity.
+function relaidOut(
+	set: DecorationSet,
+	oldDoc: PMNode,
+	newDoc: PMNode,
+): DecorationSet {
+	const start = oldDoc.content.findDiffStart(newDoc.content)
+	const end = oldDoc.content.findDiffEnd(newDoc.content)
+
+	if (start === null || !end) {
+		return set
+	}
+
+	let oldEnd = end.a
+	let newEnd = end.b
+
+	// findDiffEnd searches from the back. When content repeats around the
+	// change, the end it finds can lie before the start. Then the end moves
+	// forward, as prosemirror-view does in this case.
+	if (oldEnd < start && oldDoc.content.size < newDoc.content.size) {
+		newEnd = start + newEnd - oldEnd
+		oldEnd = start
+	} else if (newEnd < start) {
+		oldEnd = start + oldEnd - newEnd
+		newEnd = start
+	}
+
+	const mapped = set.map(
+		new Mapping([new StepMap([start, oldEnd - start, newEnd - start])]),
+		newDoc,
+	)
+	const stale: Decoration[] = []
+	const fresh: Decoration[] = []
+
+	newDoc.forEach((node, pos) => {
+		if (pos < newEnd && pos + node.nodeSize > start) {
+			stale.push(...mapped.find(pos, pos + node.nodeSize))
+			fresh.push(...gridDecorations(node, pos))
+		}
+	})
+
+	return mapped.remove(stale).add(newDoc, fresh)
+}
+
+// gridDecorations gives each block of a root grid its cells and its place
+// in the stacked layout. Any other node gets none.
+function gridDecorations(grid: PMNode, gridPos: number): Decoration[] {
+	if (!BLOCK_GRID_NAMES.has(grid.type.name)) {
+		return []
+	}
+
+	const rects = gridLayoutOf(grid)
+	const places = stackPlaces(gridStackOf(grid))
+	const decorations: Decoration[] = []
+
+	grid.forEach((child, offset, i) => {
+		const rect = rects[i]
+		const pos = gridPos + 1 + offset
+
+		if (!rect) {
+			return
+		}
+
+		decorations.push(
+			Decoration.node(pos, pos + child.nodeSize, {
+				"data-grid-cell": "",
+				style: [
+					`--grid-col:${rect.x + 1}`,
+					`--grid-row:${rect.y + 1}`,
+					`--grid-w:${rect.w}`,
+					`--grid-h:${rect.h}`,
+					`--grid-order:${places[i] ?? i}`,
+				].join(";"),
+			}),
+		)
+	})
+
+	return decorations
+}
+
+// withoutGridPlaces drops the places of the grid blocks in content. So
+// where a block lands, it takes the first free cells. In the stacked
+// layout, it goes right after the block before it in the wide layout. A
+// whole grid keeps the places of its blocks, unless it lands in another
+// grid.
+export function withoutGridPlaces(
+	content: Fragment,
+	intoGrid: boolean,
+): Fragment {
+	const nodes: PMNode[] = []
+
+	content.forEach((node) => {
+		if (
+			GRID_ITEM_NAMES.has(node.type.name) &&
+			GRID_PLACE_ATTRS.some((key) => node.attrs[key] != null)
+		) {
+			nodes.push(
+				node.type.create(withoutPlaces(node.attrs), node.content, node.marks),
+			)
+		} else if (intoGrid && BLOCK_GRID_NAMES.has(node.type.name)) {
+			const blocks = withoutGridPlaces(node.content, false)
+
+			nodes.push(blocks === node.content ? node : node.copy(blocks))
+		} else {
+			nodes.push(node)
+		}
+	})
+
+	return nodes.every((node, i) => node === content.child(i))
+		? content
+		: Fragment.fromArray(nodes)
 }

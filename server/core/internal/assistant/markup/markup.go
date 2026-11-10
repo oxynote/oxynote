@@ -9,6 +9,7 @@ package markup
 
 import (
 	"regexp"
+	"slices"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
 )
@@ -57,6 +58,10 @@ const (
 
 	// _attrHref is a link's target.
 	_attrHref = "href"
+
+	// _attrStack is a grid's stacked order: the ids of its blocks, first
+	// to last.
+	_attrStack = "stack"
 )
 
 // Inline tags, by the ProseMirror mark they write.
@@ -105,17 +110,34 @@ var _rawCloseTags = map[string]*regexp.Regexp{
 	_elemLogs:    regexp.MustCompile(`</((?i:` + _elemLogs + `))`),
 }
 
-// _hiddenAttrs are the attributes of a metric or log block the model
-// never sees: the uid, which is the id, the block comment, and a
-// metric's simulation flag, which core derives.
-var _hiddenAttrs = map[string]bool{
-	document.AttrUID:              true,
-	document.AttrCommentID:        true,
-	document.AttrSimulationActive: true,
-}
+// _gridPlaceAttrs are the attributes that say where a grid block sits:
+// its first column and row in the wide layout, and its place in the
+// stacked layout.
+var _gridPlaceAttrs = []string{document.AttrWidePosX, document.AttrWidePosY, document.AttrStackPos}
 
-// _gridItemWidths are the widths of a block inside a grid. They mirror
-// GridItemWidth in web/app/components/editor/blocks/grid/utils.ts. A
-// value added there has to be added here, or the assistant cannot write
-// it.
-var _gridItemWidths = []string{"compact", "standard", "wide"}
+// _hiddenAttrs are the attributes of a metric or log block the model
+// never sees. They are the uid, the block comment, a metric's simulation
+// flag and the block's places in its grid. The uid shows as the id, and
+// core derives the simulation flag. The editor lays out the places, so
+// the model orders a grid's blocks by element order and the grid's stack
+// attribute instead. The model sees the width and height as names.
+var _hiddenAttrs = slices.Concat([]string{document.AttrUID, document.AttrCommentID, document.AttrSimulationActive}, _gridPlaceAttrs)
+
+// _gridItemWidths are the named widths of a block inside a grid,
+// narrowest first.
+var _gridItemWidths = sizeNames(_gridItemSizes[document.AttrWidth])
+
+// _gridItemHeights are the named heights of a block inside a grid,
+// lowest first.
+var _gridItemHeights = sizeNames(_gridItemSizes[document.AttrHeight])
+
+// _gridItemSizes maps each named width to the columns it spans and each
+// named height to the rows it spans. They mirror GRID_WIDTH_COLUMNS and
+// GRID_HEIGHT_ROWS in packages/common/src/grid.ts. A size added there has
+// to be added here, or the assistant cannot write it.
+//
+//nolint:mnd // the sizes are the table, so naming each one would hide it
+var _gridItemSizes = map[string]map[string]int{
+	document.AttrWidth:  {"compact": 8, "standard": 12, "wide": 24},
+	document.AttrHeight: {"standard": 1, "tall": 2},
+}

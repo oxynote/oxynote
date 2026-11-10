@@ -77,9 +77,11 @@ function makeMenuEditor(
 	const { editor, commands } = makeEditor({
 		state: {
 			doc: {
+				content: { size: 100 },
 				nodeAt: () => node,
 				resolve: () => ({
 					depth: ancestors.length,
+					parent: { type: { name: ancestors.at(-1) ?? "doc" } },
 					node: (depth: number) => ({
 						type: { name: ancestors[depth - 1] ?? "doc" },
 					}),

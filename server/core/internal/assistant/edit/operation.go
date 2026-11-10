@@ -10,7 +10,7 @@
 //	Node opens the Y.Doc, changes it in one transaction, broadcasts
 //	the change and disconnects.
 //
-// Build operations with the constructors (InsertAfter, Append, Replace).
+// Build operations with the constructors (Insert, Append, Replace).
 // Client.Apply ships them, and Node applies the whole batch or none.
 package edit
 
@@ -27,8 +27,9 @@ type Operation struct {
 	// every op.
 	Kind string `json:"kind"`
 
-	// Position is "after" or "before" relative to ReferenceUID;
-	// insert and move only.
+	// Position is "before", "after", "above" or "below" relative to
+	// ReferenceUID. "above" and "below" apply only next to a block in a
+	// grid. Insert and move only.
 	Position string `json:"position,omitempty"`
 
 	// ReferenceUID identifies the block an insert or move is anchored
@@ -51,25 +52,23 @@ type Operation struct {
 
 	// Icon is the new document icon identifier; set_icon only.
 	Icon string `json:"icon,omitempty"`
+
+	// GridUID identifies the grid whose stacked order is set;
+	// set_stack_order only.
+	GridUID string `json:"grid_uid,omitempty"`
+
+	// Order lists the grid's blocks by uid in their stacked order, first
+	// to last; set_stack_order only.
+	Order []string `json:"order,omitempty"`
 }
 
-// InsertAfter builds an operation that inserts b immediately after
-// the block identified by referenceUID.
-func InsertAfter(referenceUID string, b document.Block) Operation {
+// Insert builds an operation that inserts b at position next to the
+// block identified by referenceUID. position is "before" or "after".
+// Next to a block in a grid, it can also be "above" or "below".
+func Insert(position, referenceUID string, b document.Block) Operation {
 	return Operation{
 		Kind:         "insert",
-		Position:     "after",
-		ReferenceUID: referenceUID,
-		Block:        &b,
-	}
-}
-
-// InsertBefore builds an operation that inserts b immediately
-// before the block identified by referenceUID.
-func InsertBefore(referenceUID string, b document.Block) Operation {
-	return Operation{
-		Kind:         "insert",
-		Position:     "before",
+		Position:     position,
 		ReferenceUID: referenceUID,
 		Block:        &b,
 	}
@@ -124,27 +123,28 @@ func Delete(blockUID string) Operation {
 	}
 }
 
-// MoveAfter builds an operation that repositions the block identified
-// by blockUID to immediately after the block identified by
-// referenceUID, keeping the block's uid, attrs, and nested content.
-func MoveAfter(blockUID, referenceUID string) Operation {
+// Move builds an operation that repositions the block identified by
+// blockUID at position next to the block identified by referenceUID.
+// The block keeps its uid, attrs and nested content. position takes the
+// same values as Insert's.
+func Move(blockUID, position, referenceUID string) Operation {
 	return Operation{
 		Kind:         "move",
-		Position:     "after",
+		Position:     position,
 		BlockUID:     blockUID,
 		ReferenceUID: referenceUID,
 	}
 }
 
-// MoveBefore builds an operation that repositions the block
-// identified by blockUID to immediately before the block identified
-// by referenceUID.
-func MoveBefore(blockUID, referenceUID string) Operation {
+// SetStackOrder builds an operation that sets the stacked order of the
+// grid identified by gridUID. order lists the uids of its blocks, first
+// to last. A block missing from order goes after the block it follows in
+// the grid's wide layout.
+func SetStackOrder(gridUID string, order []string) Operation {
 	return Operation{
-		Kind:         "move",
-		Position:     "before",
-		BlockUID:     blockUID,
-		ReferenceUID: referenceUID,
+		Kind:    "set_stack_order",
+		GridUID: gridUID,
+		Order:   order,
 	}
 }
 

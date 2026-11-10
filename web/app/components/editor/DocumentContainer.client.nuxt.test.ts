@@ -21,7 +21,7 @@ import {
 } from "~/components/test-helpers"
 import { stubThemeColorContext } from "./test-helpers/theme"
 import { MERMAID_BLOCK_NAME } from "./blocks/node-names"
-import { EDITOR_SCHEMA_VERSION } from "./schema-extensions"
+import { EDITOR_SCHEMA_VERSION } from "@oxynote/common/schema-version"
 import type WsState from "~/utils/websocket"
 import { makeWsHooksChangeTopic } from "~/utils"
 

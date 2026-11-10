@@ -56,6 +56,29 @@ func Test_Render(t *testing.T) {
 		})
 	}
 
+	// the editor places a grid's blocks by their cells. So people can see
+	// them in another order than the document holds them.
+	t.Run("Grid reads its blocks in the order people see them", func(t *testing.T) {
+		t.Parallel()
+
+		got := Render([]document.Block{placedTestGrid(t)})
+
+		assert.Regexp(t, `(?s)id="pc".*id="pa".*id="pb"`, got)
+	})
+
+	t.Run("Grid lists its stacked order once it was rearranged", func(t *testing.T) {
+		t.Parallel()
+
+		grid := placedTestGrid(t)
+		grid.Content[0].Attrs[document.AttrStackPos] = 2.0
+		grid.Content[1].Attrs[document.AttrStackPos] = 0.0
+		grid.Content[2].Attrs[document.AttrStackPos] = 1.0
+
+		got := Render([]document.Block{grid})
+
+		assert.Contains(t, got, `<grid id="pg" stack="pb pc pa">`)
+	})
+
 	// a grid keeps its former name until an editor touches it.
 	t.Run("Legacy grid reads as a block grid", func(t *testing.T) {
 		t.Parallel()
@@ -196,4 +219,64 @@ func Test_escapeRaw(t *testing.T) {
 			assert.Equal(t, c.Text, unescapeRaw(escaped, _elemCode))
 		})
 	}
+}
+
+func Test_stackAttr(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Blocks []document.Block
+		Result attr
+	}{
+		"Stacked layout never rearranged": {
+			Blocks: []document.Block{gridBlock("a", cells(0, 0, 12, 1)), gridBlock("b", cells(12, 0, 12, 1))},
+			Result: attr{key: _attrStack},
+		},
+		"Stacked layout rearranged into the wide order": {
+			Blocks: []document.Block{
+				gridBlock("a", document.Attributes{document.AttrStackPos: 0.0}),
+				gridBlock("b", document.Attributes{document.AttrStackPos: 1.0}),
+			},
+			Result: attr{key: _attrStack, value: "a b"},
+		},
+		"Stacked layout rearranged into another order": {
+			Blocks: []document.Block{
+				gridBlock("a", document.Attributes{document.AttrStackPos: 1.0}),
+				gridBlock("b", document.Attributes{document.AttrStackPos: 0.0}),
+			},
+			Result: attr{key: _attrStack, value: "b a"},
+		},
+		"Stacked layout with one block placed": {
+			Blocks: []document.Block{
+				gridBlock("a", document.Attributes{}),
+				gridBlock("b", document.Attributes{document.AttrStackPos: 0.0}),
+			},
+			Result: attr{key: _attrStack, value: "a b"},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, c.Result, stackAttr(c.Blocks))
+		})
+	}
+}
+
+func Test_uidsOf(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, []string{"a", ""}, uidsOf([]document.Block{gridBlock("a", document.Attributes{}), {}}))
+}
+
+func Test_containerTag(t *testing.T) {
+	t.Parallel()
+
+	grid := document.Block{Attrs: document.Attributes{document.AttrUID: "g"}, Content: []document.Block{
+		gridBlock("a", document.Attributes{document.AttrStackPos: 1.0}),
+		gridBlock("b", document.Attributes{document.AttrStackPos: 0.0}),
+	}}
+
+	assert.Equal(t, `<grid id="g" stack="b a">`, containerTag(_elemGrid, grid))
+	assert.Equal(t, `<blockquote id="g">`, containerTag(_elemBlockquote, grid))
 }

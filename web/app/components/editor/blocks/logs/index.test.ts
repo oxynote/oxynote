@@ -11,7 +11,6 @@ import { nodeType as nodeTypeOf } from "~/components/editor/test-helpers"
 import { insertLogBlock, LogBlock } from "."
 import { LogTimestampFormat } from "./utils"
 import { BlockGrid } from "../grid"
-import { GridItemWidth } from "../grid/utils"
 import {
 	METRIC_REFRESH_INTERVAL_REFERENCE,
 	METRIC_TIME_RANGE_REFERENCE,
@@ -71,20 +70,24 @@ describe("LogBlock", () => {
 				refreshInterval: METRIC_REFRESH_INTERVAL_REFERENCE,
 				timestampFormat: LogTimestampFormat.ReadableTime,
 				order: LogOrder.Desc,
-				width: GridItemWidth.Standard,
+				width: 12,
+				height: 1,
+				widePosX: null,
+				widePosY: null,
+				stackPos: null,
 			})
 		})
 
 		it.for([
 			{
 				name: "the stored width",
-				attr: GridItemWidth.Wide,
-				expected: GridItemWidth.Wide,
+				attr: "24",
+				expected: 24,
 			},
 			{
 				name: "the standard width when the attribute is missing",
 				attr: null,
-				expected: GridItemWidth.Standard,
+				expected: 12,
 			},
 		])("parses $name", ({ attr, expected }, { expect }) => {
 			const element = {
@@ -95,9 +98,9 @@ describe("LogBlock", () => {
 		})
 
 		it("renders the width as a data attribute", ({ expect }) => {
-			expect(
-				widthAttribute().renderHTML?.({ width: GridItemWidth.Compact }),
-			).toEqual({ "data-width": GridItemWidth.Compact })
+			expect(widthAttribute().renderHTML?.({ width: 8 })).toEqual({
+				"data-width": 8,
+			})
 		})
 	})
 

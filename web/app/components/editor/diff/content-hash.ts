@@ -2,6 +2,8 @@ import type { JSONContent } from "@tiptap/core"
 import { COMMENT_MARK_NAME } from "~/components/editor/mark-names"
 import { NODE_COMMENT_ID_ATTR } from "~/components/editor/attribute-names"
 import { SIMULATION_ACTIVE_ATTR } from "~/components/editor/blocks/metrics/simulation"
+import { GRID_PLACE_ATTRS, gridItemOf } from "@oxynote/common/grid"
+import { GRID_ITEM_NAMES } from "~/components/editor/blocks/grid/utils"
 
 export interface HashOptions {
 	/** mark types to strip before hashing (e.g. ['comment']) */
@@ -15,6 +17,22 @@ const DEFAULT_OPTIONS: HashOptions = {
 	excludeAttributes: [NODE_COMMENT_ID_ATTR, SIMULATION_ACTIVE_ATTR],
 }
 
+// comparableGridAttrs returns a grid block's attributes in the form that
+// the diff compares. It drops the places. It also gives the size in columns
+// and rows, because an older block stores its width as a name.
+export function comparableGridAttrs(
+	attrs: Record<string, unknown>,
+): Record<string, unknown> {
+	const { w, h } = gridItemOf(attrs)
+	const compared: Record<string, unknown> = { ...attrs, width: w, height: h }
+
+	for (const key of GRID_PLACE_ATTRS) {
+		delete compared[key]
+	}
+
+	return compared
+}
+
 /**
  * strip comment-related marks and attributes from a node tree so they
  * don't produce false positives in the diff. also merges adjacent text
@@ -24,9 +42,14 @@ function stripExcluded(node: JSONContent, options: HashOptions): JSONContent {
 	const { excludeMarks = [], excludeAttributes = [] } = options
 	const result: JSONContent = { ...node }
 
-	// strip excluded attributes
+	// strip excluded attributes. A grid block is compared by its size in
+	// columns and rows, not by its cells. The change count compares it the
+	// same way.
 	if (result.attrs) {
-		const attrs = { ...result.attrs }
+		const attrs =
+			result.type && GRID_ITEM_NAMES.has(result.type)
+				? comparableGridAttrs(result.attrs)
+				: { ...result.attrs }
 		for (const key of excludeAttributes) {
 			delete attrs[key]
 		}

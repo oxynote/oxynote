@@ -18,8 +18,8 @@
 		"check-fmt": "prettier --check .",
 		"knip": "knip --fix",
 		"check-knip": "knip",
-		"lint": "pnpm run check-types && pnpm run knip && pnpm run eslint && pnpm run fmt",
-		"check-lint": "pnpm run check-types && pnpm run check-eslint && pnpm run check-fmt && pnpm run check-knip",
+		"lint": "pnpm dedupe && pnpm run check-types && pnpm run knip && pnpm run eslint && pnpm run fmt",
+		"check-lint": "pnpm dedupe --check && pnpm run check-types && pnpm run check-eslint && pnpm run check-fmt && pnpm run check-knip",
 		"qa": "pnpm run check-lint && pnpm run test:dev",
 		"qa-fix": "pnpm run lint && pnpm run test:dev"
 	},

@@ -2,6 +2,7 @@ package markup
 
 import (
 	jsonv2 "encoding/json/v2"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -50,7 +51,7 @@ type renderer struct {
 // block renders one block and everything nested in it.
 func (r *renderer) block(b document.Block, depth int) {
 	if name, ok := _plainContainers[b.Type]; ok {
-		r.container(name, startTag(name, b), b.Content, depth)
+		r.container(name, containerTag(name, b), b.Content, depth)
 
 		return
 	}
@@ -141,6 +142,12 @@ func (r *renderer) line(depth int, s string) {
 func (r *renderer) container(name, openTag string, children []document.Block, depth int) {
 	r.line(depth, openTag)
 
+	// a grid places its blocks by their cells and not by their order in
+	// the document. So its blocks read in the order of its wide layout.
+	if name == _elemGrid {
+		children = GridReadingOrder(children)
+	}
+
 	for _, c := range children {
 		r.block(c, depth+1)
 	}
@@ -196,13 +203,20 @@ func (r *renderer) param(row document.Block, depth int) {
 }
 
 // attrsJSON returns a metric or log block's attributes as JSON, leaving
-// out the hidden ones and those without a value.
+// out the hidden ones and those without a value. The width and height
+// show as names.
 func attrsJSON(b document.Block) string {
 	attrs := make(map[string]any, len(b.Attrs))
 
 	for k, v := range b.Attrs {
-		if v != nil && !_hiddenAttrs[k] {
+		if v != nil && !slices.Contains(_hiddenAttrs, k) {
 			attrs[k] = v
+		}
+	}
+
+	for key := range _gridItemSizes {
+		if _, sized := attrs[key]; sized {
+			attrs[key] = gridSizeName(b.Attrs, key)
 		}
 	}
 
@@ -250,6 +264,45 @@ func (a attr) text() string {
 	}
 
 	return ""
+}
+
+// containerTag returns the start tag of a container that carries no
+// attribute but its id. A grid adds its stacked order.
+func containerTag(name string, b document.Block) string {
+	if name == _elemGrid {
+		return startTag(name, b, stackAttr(b.Content))
+	}
+
+	return startTag(name, b)
+}
+
+// stackAttr returns a grid's stacked order as its stack attribute: the
+// ids of its blocks, first to last. A grid gets one once a block has a
+// stacked place, because then its stacked layout was rearranged. It gets
+// one even when that order matches the wide reading order.
+func stackAttr(blocks []document.Block) attr {
+	rearranged := slices.ContainsFunc(blocks, func(b document.Block) bool {
+		_, placed := GridStackPos(b)
+
+		return placed
+	})
+	if !rearranged {
+		return attr{key: _attrStack}
+	}
+
+	return attr{key: _attrStack, value: strings.Join(uidsOf(GridStackOrder(blocks)), " ")}
+}
+
+// uidsOf returns the uids of blocks, in their order.
+func uidsOf(blocks []document.Block) []string {
+	uids := make([]string, 0, len(blocks))
+
+	for _, b := range blocks {
+		uid, _ := b.UID()
+		uids = append(uids, uid)
+	}
+
+	return uids
 }
 
 // blockAttr returns b's attribute key as a rendered attribute.

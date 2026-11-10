@@ -786,7 +786,8 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 
 			const wrapper = await mountContainer(
 				metricConfig({
-					simulationPreset: "pie_of_the_day" as MetricSimulationPreset,
+					simulationPreset:
+						"pie_of_the_day" as unknown as MetricSimulationPreset,
 					simulationActive: true,
 				}),
 			)

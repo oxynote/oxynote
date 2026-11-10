@@ -17,6 +17,10 @@ export const LogBlock = Node.create({
 			timestampFormat: {},
 			order: {},
 			width: {},
+			height: {},
+			widePosX: {},
+			widePosY: {},
+			stackPos: {},
 		}
 	},
 	parseHTML() {

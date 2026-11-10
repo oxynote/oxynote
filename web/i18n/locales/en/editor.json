@@ -335,13 +335,22 @@
 					}
 				},
 				"grid-item": {
-					"width": "Resize",
-					"width-options": {
-						"compact": "Compact",
-						"standard": "Standard",
-						"wide": "Wide"
-					}
+					"width": "Width",
+					"height": "Height"
 				}
+			}
+		},
+		"grid-item": {
+			"width-options": {
+				"compact": "Compact",
+				"standard": "Standard",
+				"wide": "Wide",
+				"columns": "{count} column | {count} columns"
+			},
+			"height-options": {
+				"standard": "Standard",
+				"tall": "Tall",
+				"rows": "{count} row | {count} rows"
 			}
 		},
 		"link": {
@@ -882,8 +891,7 @@
 				"visualization": "Visualization",
 				"legend": "Legend {index}",
 				"base-threshold-color": "Base threshold colour",
-				"custom-unit": "Custom unit",
-				"size": "Size"
+				"custom-unit": "Custom unit"
 			},
 			"simulation": {
 				"tooltip": "Showing simulated data until real data is available",
@@ -987,9 +995,6 @@
 				"delete-query-button": "Delete Query",
 				"data-source-empty-title": "No log data sources",
 				"data-source-empty-description": "Connect Loki in the settings to show its logs here."
-			},
-			"diff": {
-				"size": "Size"
 			},
 			"levels": {
 				"critical": "Crit",
@@ -1113,7 +1118,20 @@
 			"added": "+{count}",
 			"empty": "empty",
 			"auto": "auto",
-			"pixels": "{value} px"
+			"pixels": "{value} px",
+			"grid-item": {
+				"width": "Width",
+				"height": "Height",
+				"wide-layout": "Wide layout",
+				"stacked-layout": "Stacked layout",
+				"wide-place": "row {row}, column {column}",
+				"stacked-place": {
+					"one": "{place}st",
+					"two": "{place}nd",
+					"few": "{place}rd",
+					"other": "{place}th"
+				}
+			}
 		},
 		"tags": {
 			"label": "Tags",

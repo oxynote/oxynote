@@ -101,6 +101,9 @@ components:
   `*.local.env` the stack reads), `demo/` data configs.
 - `docker/prod/` — the production all-in-one image, its Caddyfile, the TS
   launcher and the example compose. [docker/prod/AGENTS.md](docker/prod/AGENTS.md).
+- `packages/common/` — `@oxynote/common`: plain TypeScript that web and
+  auth-realtime both run (grid layout, editor schema version). No DOM or
+  Node code; imported only through subpaths (`@oxynote/common/grid`).
 - `scripts/` — helpers the root Makefile calls.
 
 One `.gitignore`, at the repository root. Nested rules carry their path
@@ -150,11 +153,10 @@ Component commands are in the nested files.
   section of [server/AGENTS.md](server/AGENTS.md) before touching branch
   content.
 - **Editor schema version**: y-prosemirror deletes every node its schema
-  does not know, and the delete syncs to everyone. Adding or renaming a node
-  type raises `EDITOR_SCHEMA_VERSION` in both
-  `web/app/components/editor/schema-extensions.ts` and
-  `server/auth-realtime/src/schema/index.ts`; auth-realtime opens an older
-  client read-only.
+  does not know, and drops unknown attributes from every node it changes.
+  The loss syncs to everyone. Adding or renaming a node type or an
+  attribute raises `EDITOR_SCHEMA_VERSION` (`packages/common`);
+  auth-realtime opens an older client read-only.
 - **System writes**: a protected branch accepts only core's own persists,
   marked through `edit.Client.Apply`'s `system` argument and recognised by
   `onStoreDocument` only while every change came from core. Protection is
@@ -166,6 +168,13 @@ Component commands are in the nested files.
   `_DSN`; a plain address ends in `_URL` and any credential is its own
   variable (`CHANGEDETECTION_API_URL` + `_API_KEY`). The suffix says whether
   the value is a secret and never changes across the trust boundary.
+
+## Code style (all languages)
+
+- An `if` or `switch` follows the declaration of the value it checks
+  directly, with no blank line between them. This holds only when that
+  declaration stands alone. When it is grouped with other declarations,
+  a blank line separates the group from the `if`.
 
 ## Code style (TS/JS — web and auth-realtime)
 
@@ -179,8 +188,6 @@ Component commands are in the nested files.
   uppercase (`// strip the leading "; " that getCookie emits. Downstream
   code expects a bare pair.`), unless the first word is an identifier.
 - A blank line before and after each logical block (function, `if`/`else`,
-  loop, `try`/`catch`, `switch`), not between every statement. An `if` or
-  `switch` follows the declaration of the value it checks directly, with no
-  blank line between them.
+  loop, `try`/`catch`, `switch`), not between every statement.
 
 Go style and Vue conventions live in the nested files.

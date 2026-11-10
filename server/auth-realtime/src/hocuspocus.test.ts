@@ -9,7 +9,7 @@ import {
 	type AuthSession,
 } from "./hocuspocus.js"
 import { replaceYdocContent, transformer } from "./ydocument.js"
-import { EDITOR_SCHEMA_VERSION } from "./schema/index.js"
+import { EDITOR_SCHEMA_VERSION } from "@oxynote/common/schema-version"
 import {
 	fragmentXml,
 	stubCore,
