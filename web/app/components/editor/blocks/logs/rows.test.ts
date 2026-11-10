@@ -15,6 +15,11 @@ import {
 import { LineFormat, type LogDialect } from "./dialect"
 
 const NOON_MILLIS = BigInt(Date.UTC(2026, 0, 1, 12, 0, 0))
+const MULTILINE_LOGFMT = [
+	'level=error msg="charge failed" provider=cardsim duration_ms=3687',
+	"java.sql.SQLTransientConnectionException: timed out",
+	"\tat shop.payments.ChargeService.authorize(ChargeService.java:142)",
+].join("\n")
 // a source that names a parsed key as the line does, so these tests read
 // only the generic rules
 const EXACT_DIALECT: LogDialect = {
@@ -83,6 +88,34 @@ describe("summarizeLog", () => {
 				message: "value out of range",
 				extracted: [["value", "+Inf"]],
 				fields: [["trace_id", "abc"]],
+				labels: [],
+			},
+		},
+		{
+			name: "splits the logfmt header from its stack trace and parser fields",
+			input: {
+				level: LogLevel.Error,
+				line: MULTILINE_LOGFMT,
+				labels: {},
+				fields: {},
+				parsed: {
+					level: "error",
+					msg: "charge failed",
+					provider: "cardsim",
+					duration_ms: "3687",
+				},
+			},
+			expected: {
+				message: [
+					"charge failed",
+					"java.sql.SQLTransientConnectionException: timed out",
+					"\tat shop.payments.ChargeService.authorize(ChargeService.java:142)",
+				].join("\n"),
+				extracted: [
+					["provider", "cardsim"],
+					["duration_ms", "3687"],
+				],
+				fields: [],
 				labels: [],
 			},
 		},
@@ -415,6 +448,53 @@ describe("extractedFields", () => {
 				key: "msg",
 				value: "a b",
 				display: '"a b"',
+				format: LineFormat.Logfmt,
+				nested: false,
+				isNull: false,
+			},
+		])
+	})
+
+	it("reads logfmt fields before a multiline stack trace without a parser", ({
+		expect,
+	}) => {
+		expect(
+			extractedFields(
+				makeLog({
+					id: "l1",
+					line: MULTILINE_LOGFMT,
+				}),
+				EXACT_DIALECT,
+			),
+		).toEqual([
+			{
+				key: "level",
+				value: "error",
+				display: "error",
+				format: LineFormat.Logfmt,
+				nested: false,
+				isNull: false,
+			},
+			{
+				key: "msg",
+				value: "charge failed",
+				display: '"charge failed"',
+				format: LineFormat.Logfmt,
+				nested: false,
+				isNull: false,
+			},
+			{
+				key: "provider",
+				value: "cardsim",
+				display: "cardsim",
+				format: LineFormat.Logfmt,
+				nested: false,
+				isNull: false,
+			},
+			{
+				key: "duration_ms",
+				value: "3687",
+				display: "3687",
 				format: LineFormat.Logfmt,
 				nested: false,
 				isNull: false,

@@ -67,6 +67,7 @@ export interface TextPart {
 interface ReadLine {
 	record: Record<string, unknown>
 	format: LineFormat
+	continuation: string
 }
 
 // summarizeLog splits a log into what its row shows. A JSON or logfmt line
@@ -84,8 +85,10 @@ export function summarizeLog(log: Log, dialect: LogDialect): LogSummary {
 		: undefined
 	const message = line
 		? messageKey
-			? String(line.record[messageKey])
-			: ""
+			? [String(line.record[messageKey]), line.continuation]
+					.filter(Boolean)
+					.join("\n")
+			: line.continuation
 		: log.line
 
 	return {
@@ -317,12 +320,23 @@ function extract(
 function readLine(line: string): ReadLine | null {
 	const json = parseJSONObject(line)
 	if (json) {
-		return { record: json, format: LineFormat.JSON }
+		return { record: json, format: LineFormat.JSON, continuation: "" }
 	}
 
-	const logfmt = parseLogfmt(line)
+	const newline = line.indexOf("\n")
+	const firstLine = (newline < 0 ? line : line.slice(0, newline)).replace(
+		/\r$/,
+		"",
+	)
+	const logfmt = parseLogfmt(firstLine)
 
-	return logfmt ? { record: logfmt, format: LineFormat.Logfmt } : null
+	return logfmt
+		? {
+				record: logfmt,
+				format: LineFormat.Logfmt,
+				continuation: newline < 0 ? "" : line.slice(newline + 1),
+			}
+		: null
 }
 
 function parseJSONObject(text: string): Record<string, unknown> | null {
