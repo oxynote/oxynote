@@ -1,3 +1,4 @@
+
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { createNodeWebSocket } from "@hono/node-ws"
@@ -16,15 +17,14 @@ import { createLogger } from "./logging.js"
 import { createRoutes } from "./routes.js"
 import { bestEffort } from "./reporting.js"
 
-
+// The composition root: the only module that reads the environment, opens
+// connections, or listens. Everything below it is a factory taking what it
+// needs, which is what makes the rest of the service testable without a
+// database, a redis, or a port.
 
 let log = createLogger("INFO", destination(1))
 
-try {
-	// the composition root: the only module that reads the environment, opens
-	// connections, or listens. Everything below it is a factory taking what it
-	// needs, which is what makes the rest of the service testable without a
-	// database, a redis, or a port.
+async function main() {
 	const env = loadEnv(process.env)
 	log = createLogger(env.logLevel, destination(1))
 
@@ -32,12 +32,12 @@ try {
 	const { store, dialect } = database
 	const core = createCoreClient(env.coreUrl)
 
-	// valkey is optional: without it better-auth keeps no secondary storage,
+	// Valkey is optional: without it better-auth keeps no secondary storage,
 	// so nothing is dialed here either.
 	//
 	// RESP2: node-redis 6 defaults to RESP3, whose reply shapes better-auth's
-	// secondary storage does not read correctly
-	// the type is spelled out because the shutdown handler reads it from a
+	// secondary storage does not read correctly.
+	// The type is spelled out because the shutdown handler reads it from a
 	// closure, where an inferred evolving any does not survive.
 	let redis: ReturnType<typeof createClient> | undefined
 
@@ -66,7 +66,9 @@ try {
 					? err.message
 					: String(err)
 
-			log.error(`Valkey client error: ${message || "unknown error"}`)
+			log.error(
+				`Valkey client error: ${message || "unknown error"}`,
+			)
 		})
 
 		try {
@@ -79,7 +81,7 @@ try {
 	const auth = createAuth({ env, store, dialect, redis, core, log })
 	const authContext = await auth.$context
 
-	// before listening, so no signup can race the organization's creation.
+	// Before listening, so no signup can race the organization's creation.
 	await bootstrapSingleOrganization({
 		env,
 		store,
@@ -102,7 +104,8 @@ try {
 	})
 
 	const app = new Hono()
-	// kept as one object rather than destructured: both are methods bound to
+
+	// Kept as one object rather than destructured: both are methods bound to
 	// the adapter's own state.
 	const nodeWs = createNodeWebSocket({ app })
 
@@ -124,7 +127,7 @@ try {
 		}),
 	)
 
-	// the RFC 9728 protected-resource metadata for the MCP surface is served
+	// The RFC 9728 protected-resource metadata for the MCP surface is served
 	// by the mcp plugin's request hook, which matches root-anchored
 	// well-known paths — the request must reach better-auth with its
 	// original path, unlike the basePath'd /api/auth endpoints.
@@ -136,10 +139,11 @@ try {
 		],
 		(c) => auth.handler(c.req.raw),
 	)
+
 	app.get(
 		"/hocuspocus",
 		nodeWs.upgradeWebSocket((c) => {
-			// hocuspocus does not attach its own socket listeners here, so the
+			// Hocuspocus does not attach its own socket listeners here, so the
 			// frames hono receives have to be fed in. Without that the client's
 			// opening Sync message is dropped and the document never syncs.
 			let clientConnection:
@@ -190,18 +194,25 @@ try {
 			log.info("listening")
 		},
 	)
+
 	nodeWs.injectWebSocket(server)
 
-	// how long a graceful shutdown may take before the process force-exits.
+	// Handle asynchronous HTTP server errors, such as EADDRINUSE.
+	server.on("error", (error) => {
+		log.error(`HTTP server error: ${error.message}`)
+		log.flush(() => process.exit(1))
+	})
+
+	// How long a graceful shutdown may take before the process force-exits.
 	const shutdownDeadlineMs = 15_000
 
-	// graceful shutdown: stop accepting HTTP, then drain hocuspocus before
+	// Graceful shutdown: stop accepting HTTP, then drain hocuspocus before
 	// exiting — its onStoreDocument persists are debounced for up to ten
 	// seconds, so exiting on the signal alone would drop that window of edits.
 	async function shutdown() {
 		const deadline = setTimeout(() => {
 			log.error("shutdown deadline exceeded")
-			process.exit(1)
+			log.flush(() => process.exit(1))
 		}, shutdownDeadlineMs)
 		deadline.unref()
 
@@ -211,7 +222,7 @@ try {
 			})
 		})
 
-		// the drain hocuspocus's own standalone server performs in destroy():
+		// The drain hocuspocus's own standalone server performs in destroy():
 		// a document unloads only after its pending store completed, so once
 		// every document is gone the debounced persists have run. The
 		// extension is registered before connections close so no unload can
@@ -239,7 +250,7 @@ try {
 		await hocuspocus.hooks("onDestroy", { instance: hocuspocus })
 		await httpClosed
 
-		// redis is absent on a deployment running without valkey.
+		// Redis is absent on a deployment running without Valkey.
 		await bestEffort(() => redis?.close())
 		await bestEffort(() => database.close())
 
@@ -248,8 +259,15 @@ try {
 
 	process.once("SIGINT", () => void shutdown())
 	process.once("SIGTERM", () => void shutdown())
-} catch (error) {
-	log.error(error instanceof Error ? error.message : String(error))
-    log.flush(() => process.exit(1))
 }
 
+// Handle rejected startup operations in one place.
+main().catch((error: unknown) => {
+	const message =
+		error instanceof Error && error.message
+			? error.message
+			: String(error)
+
+	log.error(message)
+	log.flush(() => process.exit(1))
+})
