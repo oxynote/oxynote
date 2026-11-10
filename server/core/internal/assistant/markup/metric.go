@@ -76,11 +76,10 @@ func MetricReference() string {
 		sb.WriteString(", " + key + " (" + strings.Join(enumValues(_metricEnums, key), "|") + ")")
 	}
 
-	sb.WriteString(", and optionally title, unitCustom (the label when unitType is custom), decimals, thresholds ([{value, label, color}]), baseThresholdColor, axisBoundsMin, axisBoundsMax. " +
+	sb.WriteString(". It may also hold title, unitCustom (the label when unitType is custom), decimals, thresholds ([{value, label, color}]), baseThresholdColor, axisBoundsMin and axisBoundsMax. " +
 		"A threshold colour and baseThresholdColor are one of " + strings.Join(tagCore.ColorNames(), "|") + ". " +
 		"timeRange and refreshInterval default to " + _windowReferences[document.AttrTimeRange] + " and " + _windowReferences[document.AttrRefreshInterval] +
-		", the built-in variables each user sets; give a preset only to pin one chart, and the reference to unpin it. " +
-		"A <grid> row fits 3 compact, 2 standard or 1 wide, never a standard beside a compact: fill every row, with the text about the charts before the <grid>")
+		", the built-in variables each user sets. Give a preset only to pin one chart, and the reference to unpin it")
 
 	return sb.String()
 }

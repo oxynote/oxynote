@@ -24,7 +24,7 @@ func Test_LogReference(t *testing.T) {
 	}
 
 	assert.Contains(t, got, "dataSourceId, queries ([{name, query}]), timeRange, refreshInterval and width as a metric block's")
-	assert.Contains(t, got, "and optionally title. order sorts the logs by time, desc showing the newest first")
+	assert.Contains(t, got, ". It may also hold title. order sorts the logs by time, and desc shows the newest first")
 }
 
 func Test_decodeLogAttrs(t *testing.T) {

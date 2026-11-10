@@ -80,9 +80,10 @@ server picks it up for free.
   and annotations.
 
 Tool descriptions stand alone (an MCP client may never show the prompt):
-what it does and returns, when to use it and which sibling instead, the
-failure it can hit, and each argument's meaning, optionality and default.
-Nothing about confirmation. Plain language, no caps, no em dashes, British
+what it does and returns, when to use it and which sibling instead, and the
+failure it hits. Each argument gets one sentence. Optionality, fixed
+defaults and ranges are schema keywords, not prose. Nothing about
+confirmation. Plain sentences, no semicolons, caps or em dashes, British
 spelling. `tools/testdata/tool_schemas.golden` pins them; regenerate with
 `UPDATE_GOLDEN=1 go test -run Test_Info_toEino ./internal/assistant/tools/`
-and review the diff as the change.
+and review its diff.

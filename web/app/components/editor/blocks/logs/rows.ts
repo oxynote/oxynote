@@ -67,10 +67,11 @@ interface ReadLine {
 }
 
 // summarizeLog splits a log into what its row shows. A JSON or logfmt line
-// gives its message, and its other keys join the extracted fields. Any
-// other line is its own message. A known level shows in the pill, so its
-// keys stay out. An unknown one keeps them, so no part of the log goes
-// missing.
+// gives its message, and its other keys join the extracted fields. A field
+// carried beside the line, such as structured metadata, stays out when the
+// line holds that key with the same value. Any other line is its own
+// message. A known level shows in the pill, so its keys stay out. An
+// unknown one keeps them, so no part of the log goes missing.
 export function summarizeLog(log: Log, dialect: LogDialect): LogSummary {
 	const shown = (key: string) =>
 		log.level === LogLevel.Unknown || !LEVEL_KEYS.has(key)
@@ -92,7 +93,7 @@ export function summarizeLog(log: Log, dialect: LogDialect): LogSummary {
 			.filter((f) => !(f.format && f.key === messageKey) && shown(f.key))
 			.map((f): KeyValue => [f.key, f.display]),
 		fields: sortedEntries(log.fields)
-			.filter(([k]) => shown(k))
+			.filter((pair) => shown(pair[0]) && !repeatsLine(pair, line))
 			.map(displayPair),
 		labels: sortedEntries(log.labels).map(displayPair),
 	}
@@ -247,6 +248,26 @@ function displayPair([key, value]: KeyValue): KeyValue {
 	return [key, displayValue(value)]
 }
 
+// repeatsLine tells whether a field carried beside the line holds a key of
+// the line with the same text. The row shows the pair once, from the line.
+function repeatsLine([key, value]: KeyValue, line: ReadLine | null): boolean {
+	if (!line || !Object.hasOwn(line.record, key)) {
+		return false
+	}
+
+	return lineText(line, key) === value
+}
+
+// lineText reads a value of a line as text. A nested value keeps the JSON it
+// was written as.
+function lineText(line: ReadLine, key: string): string {
+	const value = line.record[key]
+
+	return typeof value === "string"
+		? value
+		: (line.text?.get(key) ?? JSON.stringify(value))
+}
+
 // extract leaves out the keys the source made from a nested value only when
 // nestedRepeats is true
 function extract(
@@ -257,10 +278,7 @@ function extract(
 ): ExtractedField[] {
 	const fromLine = line
 		? Object.entries(line.record).map(([key, value]): ExtractedField => {
-				const text =
-					typeof value === "string"
-						? value
-						: (line.text?.get(key) ?? JSON.stringify(value))
+				const text = lineText(line, key)
 
 				return {
 					key: key,
@@ -281,7 +299,7 @@ function extract(
 						dialect.repeatsLineKey(
 							pair,
 							k,
-							typeof v === "number" ? line.text?.get(k) : v,
+							typeof v === "number" ? lineText(line, k) : v,
 							nestedRepeats,
 						),
 					)

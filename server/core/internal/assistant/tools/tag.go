@@ -18,7 +18,7 @@ func (listTags) Info() Info {
 	return Info{
 		Name:        NameListTags,
 		Traits:      Traits{Group: GroupTags},
-		Description: "List the organisation's tags in sidebar order as [{id, name, color, documents}]. Documents are the documents whose default branch carries the tag; a tag on another branch shows only on get_document for that branch.",
+		Description: "List the organisation's tags in sidebar order as [{id, name, color, documents}]. documents are the documents whose default branch carries the tag. A tag on another branch shows only in get_document for that branch.",
 		Properties:  map[string]any{},
 	}
 }
@@ -108,7 +108,7 @@ func (createTag) Info() Info {
 	return Info{
 		Name:        NameCreateTag,
 		Traits:      Traits{Group: GroupTags, Write: true},
-		Description: "Create a tag and return {tag_id}. The name has to be unused in the organisation. The tag lands last in the sidebar order; update_tag moves it and set_tag_assignment puts it on a document.",
+		Description: "Create a tag and return {tag_id}. The tag goes last in the sidebar order. update_tag moves it and set_tag_assignment puts it on a document. The name must be unused in the organisation.",
 		Properties: map[string]any{
 			"name":  map[string]any{"type": "string", "description": "The display name."},
 			"color": map[string]any{"type": "string", "enum": tag.ColorNames(), "description": "The colour."},
@@ -185,12 +185,12 @@ func (updateTag) Info() Info {
 	return Info{
 		Name:        NameUpdateTag,
 		Traits:      Traits{Group: GroupTags, Write: true, Idempotent: true},
-		Description: "Rename, recolour or move a tag in the sidebar order; give only what changes, and a call changing nothing is refused. A new name has to be unused in the organisation. Returns {tag_id} with what changed. set_tag_assignment changes which documents carry it.",
+		Description: "Rename, recolour or move a tag in the sidebar order, giving only what changes. Returns {tag_id} with what changed. A new name must be unused, and a call that changes nothing is refused. set_tag_assignment changes which documents carry it.",
 		Properties: map[string]any{
 			"tag_id":     map[string]any{"type": "string", "description": _tagIDDescription},
-			"name":       map[string]any{"type": "string", "description": "Optional. The new display name."},
-			"color":      map[string]any{"type": "string", "enum": tag.ColorNames(), "description": "Optional. The new colour."},
-			"sort_index": map[string]any{"type": "integer", "description": "Optional. The 0-based position in list_tags order; 0 is first."},
+			"name":       map[string]any{"type": "string", "description": "The new display name."},
+			"color":      map[string]any{"type": "string", "enum": tag.ColorNames(), "description": "The new colour."},
+			"sort_index": map[string]any{"type": "integer", "minimum": 0, "description": "The 0-based position in list_tags order."},
 		},
 		Required: []string{"tag_id"},
 	}
@@ -331,7 +331,7 @@ func (deleteTag) Info() Info {
 	return Info{
 		Name:        NameDeleteTag,
 		Traits:      Traits{Group: GroupTags, Write: true, Destructive: true},
-		Description: "Delete a tag. Every document loses it, on every branch, and it cannot be restored; set_tag_assignment takes it off one document instead. Returns {tag_id, deleted}.",
+		Description: "Delete a tag from every document and branch. Returns {tag_id, deleted}. It cannot be restored. set_tag_assignment takes it off one document instead.",
 		Properties: map[string]any{
 			"tag_id": map[string]any{"type": "string", "description": _tagIDDescription},
 		},
@@ -406,7 +406,7 @@ func (setTagAssignment) Info() Info {
 	return Info{
 		Name:        NameSetTagAssignment,
 		Traits:      Traits{Group: GroupTags, Write: true, Idempotent: true},
-		Description: "Put a tag on one branch of a document, or take it off. The document is listed under the tag in the sidebar while its default branch carries it. Setting what is already the case succeeds and changes nothing; delete_tag removes a tag everywhere. Returns {document_id, branch_id, tag_id, assigned}.",
+		Description: "Put a tag on one branch of a document, or take it off. Returns {document_id, branch_id, tag_id, assigned}. The sidebar lists the document under the tag while its default branch carries it. Setting what is already the case changes nothing. delete_tag removes a tag everywhere.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
 			"branch_id":   map[string]any{"type": "string", "description": _writeBranchIDDescription},

@@ -27,6 +27,34 @@ const EXACT_DIALECT: LogDialect = {
 }
 
 describe("summarizeLog", () => {
+	it.for([
+		{ number: "25.0", metadata: "25.0", expected: [] },
+		{ number: "25.0", metadata: "25", expected: [["n", "25"]] },
+		{ number: "9007199254740993", metadata: "9007199254740993", expected: [] },
+		{
+			number: "9007199254740993",
+			metadata: "9007199254740992",
+			expected: [["n", "9007199254740992"]],
+		},
+	])(
+		"compares JSON number $number with metadata $metadata by its exact text",
+		({ number, metadata, expected }, { expect }) => {
+			const log = makeLog({
+				id: "l1",
+				line: `{"msg":"done","n":${number}}`,
+				fields: { n: metadata },
+				parsed: { n: number },
+			})
+
+			expect(summarizeLog(log, lokiDialect)).toEqual({
+				message: "done",
+				extracted: [["n", number]],
+				fields: expected,
+				labels: [],
+			})
+		},
+	)
+
 	it("preserves JSON number text in the summary without repeating parsed fields", ({
 		expect,
 	}) => {
@@ -294,6 +322,62 @@ describe("summarizeLog", () => {
 				message: '["a"]',
 				extracted: [],
 				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "leaves out a field the line repeats",
+			input: {
+				line: '{"msg":"order placed","trace_id":"4bf9"}',
+				labels: {},
+				fields: { trace_id: "4bf9" },
+			},
+			expected: {
+				message: "order placed",
+				extracted: [["trace_id", "4bf9"]],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "leaves out a field a logfmt line repeats",
+			input: {
+				line: "msg=ready trace_id=4bf9",
+				labels: {},
+				fields: { trace_id: "4bf9" },
+			},
+			expected: {
+				message: "ready",
+				extracted: [["trace_id", "4bf9"]],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "leaves out a field a JSON number repeats",
+			input: {
+				line: '{"msg":"done","attempt":25}',
+				labels: {},
+				fields: { attempt: "25" },
+			},
+			expected: {
+				message: "done",
+				extracted: [["attempt", "25"]],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "keeps a field whose value differs from the line",
+			input: {
+				line: '{"msg":"order placed","trace_id":"4bf9"}',
+				labels: {},
+				fields: { trace_id: "other" },
+			},
+			expected: {
+				message: "order placed",
+				extracted: [["trace_id", "4bf9"]],
+				fields: [["trace_id", "other"]],
 				labels: [],
 			},
 		},
