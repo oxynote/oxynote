@@ -6,16 +6,20 @@ export function showToastMessage(
 	type: "success" | "error" | "info" | "warning",
 	title: string,
 	description?: string,
+	action?: { label: string; onClick: () => void },
 ) {
-	const toastId = toast.custom(() =>
-		h(markRaw(ToastMessage), {
-			type: type,
-			title: title,
-			description: description,
-			onClose: () => {
-				toast.dismiss(toastId)
-			},
-		}),
+	const toastId = toast.custom(
+		() =>
+			h(markRaw(ToastMessage), {
+				type: type,
+				title: title,
+				description: description,
+				action: action,
+				onClose: () => {
+					toast.dismiss(toastId)
+				},
+			}),
+		action ? { duration: Number.POSITIVE_INFINITY } : undefined,
 	)
 }
 

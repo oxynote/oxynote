@@ -1,9 +1,27 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
-import { describe, it } from "vitest"
+import { describe, it, vi } from "vitest"
 import ToastMessage from "./ToastMessage.vue"
-import { renderedIconNames } from "./test-helpers"
+import { findButtonByText, renderedIconNames, t } from "./test-helpers"
 
 describe("<ToastMessage>", () => {
+	it("runs the optional action and closes the toast when its button is pressed", async ({
+		expect,
+	}) => {
+		const onClick = vi.fn()
+		const wrapper = await mountSuspended(ToastMessage, {
+			props: {
+				type: "warning",
+				title: "Read-only",
+				action: { label: t("editor.reload-page"), onClick },
+			},
+		})
+
+		await findButtonByText(wrapper, t("editor.reload-page")).trigger("click")
+
+		expect(onClick).toHaveBeenCalledExactlyOnceWith()
+		expect(wrapper.emitted("close")).toHaveLength(1)
+	})
+
 	it("shows the title", async ({ expect }) => {
 		const wrapper = await mountSuspended(ToastMessage, {
 			props: { type: "success", title: "Workspace saved" },

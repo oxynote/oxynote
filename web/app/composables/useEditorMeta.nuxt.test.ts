@@ -8,6 +8,7 @@ import useEditorMeta from "./useEditorMeta"
 describe("useEditorMeta", { concurrent: false }, () => {
 	beforeEach(() => {
 		useEditorStore().setActiveBranchProtected(false)
+		useEditorStore().setActiveBranchReadOnly(false)
 		useEditorStore().updateMainAreaWidth(1400)
 		useEditorStore().setReviewableDiffActive(false)
 	})
@@ -37,6 +38,33 @@ describe("useEditorMeta", { concurrent: false }, () => {
 
 		expect(meta.isEditable.value).toBe(false)
 		expect(meta.isBranchProtected.value).toBe(true)
+	})
+
+	it("keeps a read-only connection locked without changing the reader's preference", ({
+		expect,
+	}) => {
+		const meta = useEditorMeta()
+		meta.setEditable(true)
+		useEditorStore().setActiveBranchReadOnly(true)
+
+		meta.setEditable(true)
+
+		expect(meta.isEditable.value).toBe(false)
+		expect(meta.isBranchProtected.value).toBe(false)
+		useEditorStore().setActiveBranchReadOnly(false)
+		expect(meta.isEditable.value).toBe(true)
+	})
+
+	it("preserves the reader's read-only preference when write access returns", ({
+		expect,
+	}) => {
+		const meta = useEditorMeta()
+		meta.setEditable(false)
+		useEditorStore().setActiveBranchReadOnly(true)
+
+		useEditorStore().setActiveBranchReadOnly(false)
+
+		expect(meta.isEditable.value).toBe(false)
 	})
 
 	it("restores the reader's choice once the branch is unprotected", ({

@@ -17,6 +17,7 @@ interface BranchProviderEntry {
 	provider: HocuspocusProvider
 	ydoc: Y.Doc
 	synced: Ref<boolean>
+	readOnly: Ref<boolean>
 }
 
 let unsubWsHooksChange: (() => void) | null | undefined = null
@@ -88,6 +89,15 @@ const activeBranchProvider = computed<BranchProviderEntry | null>(() => {
 	const bid = editorStore.activeBranchId
 	return bid ? (branchProviders.get(bid) ?? null) : null
 })
+const activeBranchReadOnly = computed(
+	() => activeBranchProvider.value?.readOnly.value ?? false,
+)
+const unexpectedReadOnly = computed(
+	() =>
+		!!activeBranch.value &&
+		!activeBranch.value.protected &&
+		activeBranchReadOnly.value,
+)
 const targetBranchProvider = computed<BranchProviderEntry | null>(() => {
 	const bid = editorStore.targetBranchId
 	return bid ? (branchProviders.get(bid) ?? null) : null
@@ -278,6 +288,29 @@ watchImmediate(activeBranch, (branch) => {
 	editorStore.setActiveBranchProtected(branch ? branch.protected : true)
 })
 
+watchImmediate(
+	[() => editorStore.activeBranchId, activeBranchReadOnly],
+	([, readOnly]) => {
+		editorStore.setActiveBranchReadOnly(readOnly)
+	},
+)
+
+watch(unexpectedReadOnly, (readOnly) => {
+	if (readOnly) {
+		showToastMessage(
+			"warning",
+			t("editor.readonly-error.title"),
+			t("editor.readonly-error.description"),
+			{
+				label: t("editor.reload-page"),
+				onClick: () => {
+					reloadNuxtApp({ force: true })
+				},
+			},
+		)
+	}
+})
+
 watchImmediate([isEditable, nameEditor, contentEditor], () => {
 	if (nameEditor.value) {
 		nameEditor.value.setEditable(isEditable.value)
@@ -294,6 +327,7 @@ function destroyBranchProviders(): void {
 	}
 
 	branchProviders.clear()
+	editorStore.setActiveBranchReadOnly(false)
 }
 
 function createBranchProvider(
@@ -302,13 +336,14 @@ function createBranchProvider(
 ): BranchProviderEntry {
 	const ydoc = new Y.Doc()
 	const synced = ref(false)
+	const readOnly = ref(false)
 	const provider = new HocuspocusProvider({
 		url: `${config.public.authRealtimeAPIBaseWsURL}?schemaVersion=${EDITOR_SCHEMA_VERSION}`,
 		name: streamName,
 		document: ydoc,
 		token: "notoken",
-		onAuthenticated() {
-			// TODO handle edit permissions properly?
+		onAuthenticated({ scope }) {
+			readOnly.value = scope === "readonly"
 		},
 		onAuthenticationFailed() {
 			void redirectToLogin(route.fullPath, true, nuxtApp)
@@ -321,6 +356,12 @@ function createBranchProvider(
 					"error",
 					t("editor.realtime-error.title"),
 					t("editor.realtime-error.description"),
+					{
+						label: t("editor.reload-page"),
+						onClick: () => {
+							reloadNuxtApp({ force: true })
+						},
+					},
 				)
 			}
 		},
@@ -341,7 +382,7 @@ function createBranchProvider(
 		},
 	})
 
-	return { provider, ydoc, synced }
+	return { provider, ydoc, synced, readOnly }
 }
 
 function updateEditor(editor: Editor) {

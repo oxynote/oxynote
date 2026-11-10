@@ -1,4 +1,5 @@
-import { registerEndpoint } from "@nuxt/test-utils/runtime"
+import { mockNuxtImport, registerEndpoint } from "@nuxt/test-utils/runtime"
+import type { Editor } from "@tiptap/core"
 import type { HocuspocusProvider } from "@hocuspocus/provider"
 import {
 	type DOMWrapper,
@@ -42,6 +43,10 @@ import {
 vi.mock("vue-sonner", () => ({
 	toast: { custom: vi.fn(), dismiss: vi.fn() },
 }))
+
+const reloadPage = vi.hoisted(() => vi.fn())
+
+mockNuxtImport("reloadNuxtApp", () => reloadPage)
 
 const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("brancha")
@@ -391,6 +396,37 @@ describe("<NameEditor>", { concurrent: false }, () => {
 		await vi.waitFor(() => {
 			expect(emittedFrom(wrapper, "editor-ready")).toHaveLength(1)
 		}, WAIT_FOR_OPTIONS)
+	})
+
+	it("offers a reload after a content error disables editing and collaboration", async ({
+		expect,
+	}) => {
+		const wrapper = await mountEditor()
+		await vi.waitFor(() => {
+			expect(emittedFrom(wrapper, "editor-ready")).toHaveLength(1)
+		}, WAIT_FOR_OPTIONS)
+		const editor = emittedFrom(wrapper, "editor-ready")[0]?.[0] as Editor
+		const disableCollaboration = vi.fn()
+		reloadPage.mockReset()
+
+		editor.emit("contentError", {
+			editor,
+			error: new Error("invalid content"),
+			disableCollaboration,
+		})
+
+		expect(editor.isEditable).toBe(false)
+		expect(disableCollaboration).toHaveBeenCalledExactlyOnceWith()
+		expect(toast.custom).toHaveBeenCalledTimes(1)
+		const render = vi.mocked(toast.custom).mock.calls[0]?.[0] as () => VNode
+		const action = render().props?.action as {
+			label: string
+			onClick: () => void
+		}
+		expect(action.label).toBe(t("editor.reload-page"))
+		expect(reloadPage).not.toHaveBeenCalled()
+		action.onClick()
+		expect(reloadPage).toHaveBeenCalledExactlyOnceWith({ force: true })
 	})
 
 	it("shows the name the branch carries", async ({ expect }) => {
