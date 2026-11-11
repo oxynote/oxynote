@@ -123,6 +123,23 @@ describe("summarizeLog", () => {
 			},
 		},
 		{
+			name: "skips an empty value of a repeated logfmt key, as Loki does",
+			input: {
+					line: 'component= component=billing attempt="" attempt=1',
+					labels: {},
+					fields: {},
+			},
+			expected: {
+					message: "",
+					extracted: [
+							["component", "billing"],
+							["attempt", "1"],
+					],
+					fields: [],
+					labels: [],
+			},
+		},
+		{
 			name: "keeps the first value of a repeated logfmt key, as Loki does",
 			input: {
 				line: "component=billing component=stripe-client attempt=1 attempt=2",

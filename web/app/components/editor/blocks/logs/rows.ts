@@ -319,24 +319,27 @@ function parseJSONObject(text: string): Record<string, unknown> | null {
 // parseLogfmt reads a line made only of logfmt pairs. A line with any other
 // word is plain text, so it gives null.
 function parseLogfmt(line: string): Record<string, string> | null {
-	const pairs: KeyValue[] = []
+	const values = new Map<string, string>()
 	let at = 0
 
 	while (/\S/.test(line.slice(at))) {
-		LOGFMT_PAIR.lastIndex = at
-		const match = LOGFMT_PAIR.exec(line)
-		if (!match) {
-			return null
-		}
+			LOGFMT_PAIR.lastIndex = at
+			const match = LOGFMT_PAIR.exec(line)
+			if (!match) {
+					return null
+			}
 
-		const [, key = "", value = ""] = match
-		if (!pairs.some(([k]) => k === key)) {
-			pairs.push([key, value.startsWith('"') ? unquote(value) : value])
-		}
-		at = LOGFMT_PAIR.lastIndex
+			const [, key = "", value = ""] = match
+			// Loki keeps the first value of a repeated key, but it skips an
+			// empty one.
+			if (!values.get(key)) {
+					values.set(key, value.startsWith('"') ? unquote(value) : value)
+			}
+
+			at = LOGFMT_PAIR.lastIndex
 	}
 
-	return pairs.length ? Object.fromEntries(pairs) : null
+	return values.size ? Object.fromEntries(values) : null
 }
 
 // unquote reads a quoted logfmt value. An escape JSON does not know, such
