@@ -22,11 +22,32 @@ import { bestEffort } from "./reporting.js"
 // needs, which is what makes the rest of the service testable without a
 // database, a redis, or a port.
 
-let log = createLogger("INFO", destination({ dest: 1, sync: true }))
+let log = createLogger("INFO", destination(1))
+
+function formatError(error: unknown): string {
+	if (error instanceof AggregateError) {
+		const causes = error.errors.map((cause: unknown) =>
+			formatError(cause),
+		)
+
+		return [
+			error.message,
+			...causes,
+		]
+			.filter(Boolean)
+			.join("; ")
+	}
+
+	if (error instanceof Error) {
+		return error.message || error.name
+	}
+
+	return String(error)
+}
 
 async function main() {
 	const env = loadEnv(process.env)
-	log = createLogger(env.logLevel, destination({ dest: 1, sync: true }))
+	log = createLogger(env.logLevel, destination(1))
 
 	const database = createDatabase(env.databaseDSN)
 	const { store, dialect } = database
@@ -198,9 +219,9 @@ async function main() {
 	nodeWs.injectWebSocket(server)
 
 	// Handle asynchronous HTTP server errors, such as EADDRINUSE.
-	server.on("error", (error) => {
-		log.error(`HTTP server error: ${error.message}`)
-		log.flush(() => process.exit(1))
+	server.on("error", (error: unknown) => {
+		log.error(`HTTP server error: ${formatError(error)}`)
+		process.exitCode = 1
 	})
 
 	// How long a graceful shutdown may take before the process force-exits.
@@ -263,11 +284,6 @@ async function main() {
 
 // Handle rejected startup operations in one place.
 main().catch((error: unknown) => {
-	const message =
-		error instanceof Error && error.message
-			? error.message
-			: String(error)
-
-	log.error(message)
-	log.flush(() => process.exit(1))
+	log.error(formatError(error))
+	process.exitCode = 1
 })
