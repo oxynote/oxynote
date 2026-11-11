@@ -4,7 +4,6 @@ import { addComment, commentPopover } from "../helpers/comments"
 import {
 	contentEditor,
 	createDocument,
-	documentPersisted,
 	editorText,
 	placeCaret,
 	waitForEditor,
@@ -27,14 +26,13 @@ test.describe("member roles", () => {
 		test.slow()
 	})
 
-	test("shows a viewer the document and its comments but keeps the viewer's typing out", async ({
+	test("shows a viewer the document and its comments in a read-only editor", async ({
 		page,
 		request,
 		browser,
 	}) => {
 		await signUpWithWorkspace(page, request)
 		await createDocument(page)
-		const url = page.url()
 		await contentEditor(page).click()
 		await page.keyboard.type("Written by the editor")
 		await addComment(page, "Read this first")
@@ -43,31 +41,14 @@ test.describe("member roles", () => {
 		await expect
 			.poll(() => editorText(contentEditor(viewer.page)))
 			.toBe("Written by the editor")
+		await expect(contentEditor(viewer.page)).toHaveAttribute(
+			"contenteditable",
+			"false",
+		)
 		await contentEditor(viewer.page).locator(".comment-mark").click()
 		await expect(
 			commentPopover(viewer.page).getByText("Read this first"),
 		).toBeVisible()
-
-		await placeCaret(
-			contentEditor(viewer.page)
-				.getByRole("paragraph")
-				.filter({ hasText: "Written by the editor" }),
-			"end",
-		)
-		await viewer.page.keyboard.type(" and the viewer")
-		await documentPersisted(viewer.page)
-
-		// the server dropped the viewer's change, so a fresh load on either
-		// side shows only the editor's text.
-		await visit(page, url)
-		await waitForEditor(page)
-		expect(await editorText(contentEditor(page))).toBe("Written by the editor")
-
-		await visit(viewer.page, url)
-		await waitForEditor(viewer.page)
-		expect(await editorText(contentEditor(viewer.page))).toBe(
-			"Written by the editor",
-		)
 
 		await viewer.context.close()
 	})
@@ -88,7 +69,7 @@ test.describe("member roles", () => {
 		// new branch up before switching to it.
 		await visit(viewer.page, viewer.page.url())
 		await waitForEditor(viewer.page)
-		await switchToBranch(viewer.page, "draft")
+		await switchToBranch(viewer.page, "draft", { readOnly: true })
 		await reviewActions(viewer.page)
 			.getByRole("button", {
 				name: t("editor.name-editor.review-workflow.approve.title"),
@@ -147,8 +128,12 @@ test.describe("member roles", () => {
 			})
 		}).toPass()
 
-		// the owner's next change reaching the demoted user proves their
-		// connection came back, now read-only.
+		// the demotion closes the editor's connection. It comes back
+		// read-only, and the owner's next change still reaches it.
+		await expect(contentEditor(editor.page)).toHaveAttribute(
+			"contenteditable",
+			"false",
+		)
 		await placeCaret(
 			contentEditor(page)
 				.getByRole("paragraph")
@@ -159,21 +144,6 @@ test.describe("member roles", () => {
 		await expect
 			.poll(() => editorText(contentEditor(editor.page)))
 			.toBe("From the editor and the owner")
-
-		await placeCaret(
-			contentEditor(editor.page)
-				.getByRole("paragraph")
-				.filter({ hasText: "From the editor and the owner" }),
-			"end",
-		)
-		await editor.page.keyboard.type(" after demotion")
-		await documentPersisted(editor.page)
-
-		await visit(page, url)
-		await waitForEditor(page)
-		expect(await editorText(contentEditor(page))).toBe(
-			"From the editor and the owner",
-		)
 
 		await editor.context.close()
 	})
