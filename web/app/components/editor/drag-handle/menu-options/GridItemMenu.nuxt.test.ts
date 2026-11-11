@@ -137,7 +137,7 @@ describe("<GridItemMenu>", { concurrent: false }, () => {
 		expect(dispatch).toHaveBeenCalledTimes(1)
 		expect(cells(applied(state, dispatch).child(0))).toEqual([
 			"a 0,0 24x1",
-			"b 12,1 12x1",
+			"b 0,1 12x1",
 		])
 	})
 
@@ -172,7 +172,7 @@ describe("<GridItemMenu>", { concurrent: false }, () => {
 
 		expect(cells(applied(state, dispatch).child(0))).toEqual([
 			"a 0,0 24x2",
-			"b 12,2 12x1",
+			"b 0,2 12x1",
 		])
 	})
 

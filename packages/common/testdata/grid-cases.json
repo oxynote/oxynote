@@ -153,7 +153,7 @@
 					"h": 1
 				},
 				{
-					"x": 6,
+					"x": 0,
 					"y": 1,
 					"w": 12,
 					"h": 1
@@ -211,7 +211,7 @@
 			],
 			"rects": [
 				{
-					"x": 12,
+					"x": 8,
 					"y": 0,
 					"w": 12,
 					"h": 1
@@ -233,8 +233,13 @@
 			"stackOrder": [1, 0, 2]
 		},
 		{
-			"name": "a block past the right edge moves left",
+			"name": "a block past the right edge moves left, then down past the block it covers",
 			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 0,
+					"width": 16
+				},
 				{
 					"widePosX": 20,
 					"widePosY": 0,
@@ -243,14 +248,20 @@
 			],
 			"rects": [
 				{
-					"x": 12,
+					"x": 0,
 					"y": 0,
+					"w": 16,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 1,
 					"w": 12,
 					"h": 1
 				}
 			],
-			"readingOrder": [0],
-			"stackOrder": [0]
+			"readingOrder": [0, 1],
+			"stackOrder": [0, 1]
 		},
 		{
 			"name": "invalid values fall back",
@@ -431,6 +442,217 @@
 					"x": 0,
 					"y": 2,
 					"w": 24,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1, 2, 3],
+			"stackOrder": [0, 1, 2, 3]
+		},
+		{
+			"name": "a gap on the left of a block closes",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 0,
+					"width": 8
+				},
+				{
+					"widePosX": 16,
+					"widePosY": 0,
+					"width": 8
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 8,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1],
+			"stackOrder": [0, 1]
+		},
+		{
+			"name": "a block floats up before it slides left",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 0,
+					"width": 8
+				},
+				{
+					"widePosX": 16,
+					"widePosY": 1,
+					"width": 8
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 8,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1],
+			"stackOrder": [0, 1]
+		},
+		{
+			"name": "a tall block stops a slide in its second row",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 0,
+					"width": 12,
+					"height": 2
+				},
+				{
+					"widePosX": 12,
+					"widePosY": 0,
+					"width": 12
+				},
+				{
+					"widePosX": 16,
+					"widePosY": 1,
+					"width": 8
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 12,
+					"h": 2
+				},
+				{
+					"x": 12,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				},
+				{
+					"x": 12,
+					"y": 1,
+					"w": 8,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1, 2],
+			"stackOrder": [0, 1, 2]
+		},
+		{
+			"name": "a block that slides left lets the block under it float up",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 0,
+					"width": 8
+				},
+				{
+					"widePosX": 16,
+					"widePosY": 0,
+					"width": 8
+				},
+				{
+					"widePosX": 16,
+					"widePosY": 1,
+					"width": 8
+				},
+				{
+					"widePosX": 0,
+					"widePosY": 1,
+					"width": 16
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 8,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 16,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 1,
+					"w": 16,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1, 2, 3],
+			"stackOrder": [0, 1, 2, 3]
+		},
+		{
+			"name": "a block that floats up slides left again",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 0,
+					"width": 8
+				},
+				{
+					"widePosX": 12,
+					"widePosY": 0,
+					"width": 4
+				},
+				{
+					"widePosX": 14,
+					"widePosY": 1,
+					"width": 8
+				},
+				{
+					"widePosX": 0,
+					"widePosY": 1,
+					"width": 14
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 8,
+					"y": 0,
+					"w": 4,
+					"h": 1
+				},
+				{
+					"x": 12,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 1,
+					"w": 14,
 					"h": 1
 				}
 			],

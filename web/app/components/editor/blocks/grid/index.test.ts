@@ -270,9 +270,7 @@ describe("gridLayout", () => {
 			plugins: plugin ? [plugin] : [],
 		})
 		const kept = state.apply(state.tr.setMeta("other", true))
-		const edited = state.apply(
-			state.tr.setNodeMarkup(1, null, { widePosX: 12, widePosY: 0 }),
-		)
+		const edited = state.apply(state.tr.setNodeMarkup(1, null, { width: 8 }))
 
 		expect(plugin?.getState(kept) as unknown).toBe(plugin?.getState(state))
 		expect(
@@ -282,8 +280,7 @@ describe("gridLayout", () => {
 		).toEqual([
 			{
 				from: 1,
-				style:
-					"--grid-col:13;--grid-row:1;--grid-w:12;--grid-h:1;--grid-order:0",
+				style: "--grid-col:1;--grid-row:1;--grid-w:8;--grid-h:1;--grid-order:0",
 			},
 		])
 	})

@@ -131,7 +131,8 @@ func pickBlocks(blocks []document.Block, indexes []int) []document.Block {
 // with a stored place keeps it, but it moves down until it covers no
 // block placed before it. A block without one takes the first free
 // cells, row by row. When no block has a place, the search starts after
-// the block before it. Then every block floats up as far as it can. It
+// the block before it. Then every block floats up and slides left as far
+// as it can. It
 // mirrors layoutGrid in packages/common/src/grid.ts. A change there has
 // to be made here, or the assistant reads a grid in another order than
 // people see it.
@@ -269,32 +270,86 @@ func wholeAtLeast(attrs document.Attributes, name string, floor int) (int, bool)
 	return int(min(v, math.MaxInt32)), true
 }
 
-// compactGrid floats every block up as far as it can, top to bottom. A
-// block rises to the bottom of the lowest block above it in its
-// columns, or to the first row.
+// compactGrid floats every block up as far as it can. Then it slides every
+// block left as far as it can. A block that slides left can find free
+// cells above it, so the two steps take turns until no block moves. Both
+// steps only move blocks up or left, so the turns always end. It mirrors
+// compact in packages/common/src/grid.ts.
 func compactGrid(boxes []*gridBox) {
+	floatUp(boxes)
+
+	for slideLeft(boxes) {
+		if !floatUp(boxes) {
+			return
+		}
+	}
+}
+
+// floatUp floats every block up as far as it can, top to bottom. A block
+// rises to the bottom of the lowest block above it in its columns, or to
+// the first row. The blocks must not overlap. It reports whether a block
+// moved.
+func floatUp(boxes []*gridBox) bool {
 	sorted := slices.Clone(boxes)
 
 	slices.SortStableFunc(sorted, func(a, b *gridBox) int {
-		return cmp.Or(a.y-b.y, a.x-b.x, a.id-b.id)
+		return cmp.Or(a.y-b.y, a.x-b.x)
 	})
 
-	settled := make([]*gridBox, 0, len(sorted))
+	// bottoms holds the bottom edge of the blocks placed so far, for each
+	// column.
+	bottoms := make([]int, _gridColumns)
+	moved := false
 
 	for _, box := range sorted {
-		moveDownPast(box, settled)
-
 		top := 0
 
-		for _, other := range settled {
-			if other.x < box.x+box.w && box.x < other.x+other.w && other.y+other.h <= box.y {
-				top = max(top, other.y+other.h)
-			}
+		for x := box.x; x < box.x+box.w; x++ {
+			top = max(top, bottoms[x])
 		}
 
+		moved = moved || top != box.y
 		box.y = top
-		settled = append(settled, box)
+
+		for x := box.x; x < box.x+box.w; x++ {
+			bottoms[x] = top + box.h
+		}
 	}
+
+	return moved
+}
+
+// slideLeft slides every block left as far as it can, left to right. A
+// block stops at the right edge of the nearest block left of it in its
+// rows, or at the first column. The blocks must not overlap. It reports
+// whether a block moved.
+func slideLeft(boxes []*gridBox) bool {
+	sorted := slices.Clone(boxes)
+
+	slices.SortStableFunc(sorted, func(a, b *gridBox) int {
+		return cmp.Or(a.x-b.x, a.y-b.y)
+	})
+
+	// edges holds the right edge of the blocks placed so far, for each row.
+	edges := map[int]int{}
+	moved := false
+
+	for _, box := range sorted {
+		left := 0
+
+		for y := box.y; y < box.y+box.h; y++ {
+			left = max(left, edges[y])
+		}
+
+		moved = moved || left != box.x
+		box.x = left
+
+		for y := box.y; y < box.y+box.h; y++ {
+			edges[y] = left + box.w
+		}
+	}
+
+	return moved
 }
 
 // moveDownPast moves a box down until it covers none of the others.

@@ -1454,7 +1454,7 @@ describe("applyOperations", () => {
 				input: { position: "after", reference: "a" },
 				expected: [
 					"a 0,0 12x1",
-					"b 12,1 12x1",
+					"b 0,1 12x1",
 					"n 12,0 12x1",
 				],
 			},
@@ -1463,7 +1463,7 @@ describe("applyOperations", () => {
 				input: { position: "before", reference: "b" },
 				expected: [
 					"a 0,0 12x1",
-					"b 12,1 12x1",
+					"b 0,1 12x1",
 					"n 12,0 12x1",
 				],
 			},
@@ -1481,7 +1481,7 @@ describe("applyOperations", () => {
 				input: { position: "above", reference: "b" },
 				expected: [
 					"a 0,0 12x1",
-					"b 12,1 12x1",
+					"b 0,1 12x1",
 					"n 12,0 12x1",
 				],
 			},
@@ -1585,7 +1585,7 @@ describe("applyOperations", () => {
 			expect(placesIn(doc, "g")).toEqual([
 				"a 0,0 12x1",
 				"b 12,0 12x1",
-				"m 12,1 8x1",
+				"m 0,1 8x1",
 			])
 			expect(
 				attrsOf(blockByUid(doc, "m")).stackPos,
@@ -1597,7 +1597,7 @@ describe("applyOperations", () => {
 			{
 				name: "makes room for a block that an update makes wider",
 				input: { width: 24 },
-				expected: ["a 0,0 24x1", "b 12,1 12x1"],
+				expected: ["a 0,0 24x1", "b 0,1 12x1"],
 			},
 			{
 				name: "makes room below a block an update makes taller",
@@ -1868,8 +1868,8 @@ describe("applyOperations", () => {
 					attrsOf(blockByUid(doc, "a")).title,
 				).toBe("Renamed")
 				expect(placesIn(doc, "g")).toEqual([
-					"a 12,1 12x1",
-					"b 12,0 12x1",
+					"a 0,1 12x1",
+					"b 0,0 12x1",
 				])
 			}
 		})

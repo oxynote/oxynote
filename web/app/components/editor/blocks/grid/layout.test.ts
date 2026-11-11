@@ -29,7 +29,7 @@ describe("gridLayoutOf", () => {
 				width: GridItemWidth.Compact,
 			}),
 			nodeType(schema, METRIC_BLOCK_NAME).create({
-				widePosX: 12,
+				widePosX: 8,
 				widePosY: 0,
 				width: 12,
 				height: 2,
@@ -38,7 +38,7 @@ describe("gridLayoutOf", () => {
 
 		expect(gridLayoutOf(grid)).toEqual([
 			{ x: 0, y: 0, w: 8, h: 1 },
-			{ x: 12, y: 0, w: 12, h: 2 },
+			{ x: 8, y: 0, w: 12, h: 2 },
 		])
 	})
 

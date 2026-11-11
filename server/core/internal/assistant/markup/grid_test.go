@@ -239,11 +239,14 @@ func Test_layoutGrid(t *testing.T) {
 				cells(4, 0, 12, 1),
 				cells(0, 0, 12, 1),
 			},
-			Result: []gridRect{{4, 1, 12, 1}, {0, 0, 12, 1}},
+			Result: []gridRect{{0, 1, 12, 1}, {0, 0, 12, 1}},
 		},
-		"Block past the last column is pulled in": {
-			Attrs:  []document.Attributes{cells(20, 0, 12, 1)},
-			Result: []gridRect{{12, 0, 12, 1}},
+		"Block past the last column is pulled in before it moves down": {
+			Attrs: []document.Attributes{
+				cells(0, 0, 16, 1),
+				cells(20, 0, 12, 1),
+			},
+			Result: []gridRect{{0, 0, 16, 1}, {0, 1, 12, 1}},
 		},
 		"Blocks float up": {
 			Attrs: []document.Attributes{
@@ -257,7 +260,7 @@ func Test_layoutGrid(t *testing.T) {
 				cells(0, 0, 24, 1),
 				cells(6, 4, 12, 1),
 			},
-			Result: []gridRect{{0, 0, 24, 1}, {6, 1, 12, 1}},
+			Result: []gridRect{{0, 0, 24, 1}, {0, 1, 12, 1}},
 		},
 	}
 
@@ -418,21 +421,21 @@ func Test_compactGrid(t *testing.T) {
 		Rects  []gridRect
 		Result []gridRect
 	}{
-		"Block floats up to the first row": {
-			Rects:  []gridRect{{0, 3, 12, 1}},
-			Result: []gridRect{{0, 0, 12, 1}},
+		"Block floats up before it slides left": {
+			Rects:  []gridRect{{0, 0, 8, 1}, {16, 1, 8, 1}},
+			Result: []gridRect{{0, 0, 8, 1}, {8, 0, 8, 1}},
 		},
-		"Block rises to the bottom of the block above it": {
-			Rects:  []gridRect{{0, 0, 12, 2}, {6, 5, 12, 1}},
-			Result: []gridRect{{0, 0, 12, 2}, {6, 2, 12, 1}},
+		"Block that slides left lets the block under it float up": {
+			Rects:  []gridRect{{0, 0, 8, 1}, {16, 0, 8, 1}, {16, 1, 8, 1}, {0, 1, 16, 1}},
+			Result: []gridRect{{0, 0, 8, 1}, {8, 0, 8, 1}, {16, 0, 8, 1}, {0, 1, 16, 1}},
 		},
-		"Block rises past a block beside it": {
-			Rects:  []gridRect{{0, 0, 12, 4}, {12, 3, 12, 1}},
-			Result: []gridRect{{0, 0, 12, 4}, {12, 0, 12, 1}},
+		"Block that floats up slides left again": {
+			Rects:  []gridRect{{0, 0, 8, 1}, {12, 0, 4, 1}, {14, 1, 8, 1}, {0, 1, 14, 1}},
+			Result: []gridRect{{0, 0, 8, 1}, {8, 0, 4, 1}, {12, 0, 8, 1}, {0, 1, 14, 1}},
 		},
-		"Block on the cells of an earlier one moves below it": {
-			Rects:  []gridRect{{0, 0, 12, 1}, {0, 0, 12, 1}},
-			Result: []gridRect{{0, 0, 12, 1}, {0, 1, 12, 1}},
+		"Compact grid stays": {
+			Rects:  []gridRect{{0, 0, 12, 2}, {12, 0, 12, 1}, {12, 1, 8, 1}},
+			Result: []gridRect{{0, 0, 12, 2}, {12, 0, 12, 1}, {12, 1, 8, 1}},
 		},
 	}
 
@@ -440,21 +443,102 @@ func Test_compactGrid(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			boxes := make([]*gridBox, 0, len(c.Rects))
-
-			for i, r := range c.Rects {
-				boxes = append(boxes, r.box(i))
-			}
+			boxes := boxesOf(c.Rects)
 
 			compactGrid(boxes)
 
-			got := make([]gridRect, 0, len(boxes))
+			assert.Equal(t, c.Result, rectsOf(boxes))
+		})
+	}
+}
 
-			for _, box := range boxes {
-				got = append(got, rectOf(box))
-			}
+func Test_floatUp(t *testing.T) {
+	t.Parallel()
 
-			assert.Equal(t, c.Result, got)
+	cc := map[string]struct {
+		Rects  []gridRect
+		Result []gridRect
+		Moved  bool
+	}{
+		"Block floats up to the first row": {
+			Rects:  []gridRect{{0, 3, 12, 1}},
+			Result: []gridRect{{0, 0, 12, 1}},
+			Moved:  true,
+		},
+		"Block rises to the bottom of the block above it": {
+			Rects:  []gridRect{{0, 0, 12, 2}, {6, 5, 12, 1}},
+			Result: []gridRect{{0, 0, 12, 2}, {6, 2, 12, 1}},
+			Moved:  true,
+		},
+		"Block rises past a block beside it": {
+			Rects:  []gridRect{{0, 0, 12, 4}, {12, 3, 12, 1}},
+			Result: []gridRect{{0, 0, 12, 4}, {12, 0, 12, 1}},
+			Moved:  true,
+		},
+		"Block that cannot rise stays": {
+			Rects:  []gridRect{{0, 0, 12, 1}, {6, 1, 12, 1}},
+			Result: []gridRect{{0, 0, 12, 1}, {6, 1, 12, 1}},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			boxes := boxesOf(c.Rects)
+
+			moved := floatUp(boxes)
+
+			assert.Equal(t, c.Result, rectsOf(boxes))
+			assert.Equal(t, c.Moved, moved)
+		})
+	}
+}
+
+func Test_slideLeft(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Rects  []gridRect
+		Result []gridRect
+		Moved  bool
+	}{
+		"Block slides to the first column": {
+			Rects:  []gridRect{{6, 0, 12, 1}},
+			Result: []gridRect{{0, 0, 12, 1}},
+			Moved:  true,
+		},
+		"Block slides to the block before it in its row": {
+			Rects:  []gridRect{{0, 0, 8, 1}, {16, 0, 8, 1}},
+			Result: []gridRect{{0, 0, 8, 1}, {8, 0, 8, 1}},
+			Moved:  true,
+		},
+		"Block passes a block in another row": {
+			Rects:  []gridRect{{0, 0, 12, 1}, {16, 1, 8, 1}},
+			Result: []gridRect{{0, 0, 12, 1}, {0, 1, 8, 1}},
+			Moved:  true,
+		},
+		"Tall block stops at a block in its second row": {
+			Rects:  []gridRect{{0, 1, 12, 1}, {16, 0, 8, 2}},
+			Result: []gridRect{{0, 1, 12, 1}, {12, 0, 8, 2}},
+			Moved:  true,
+		},
+		"Blocks that touch stay": {
+			Rects:  []gridRect{{0, 0, 12, 1}, {12, 0, 12, 1}},
+			Result: []gridRect{{0, 0, 12, 1}, {12, 0, 12, 1}},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			boxes := boxesOf(c.Rects)
+
+			moved := slideLeft(boxes)
+
+			assert.Equal(t, c.Result, rectsOf(boxes))
+			assert.Equal(t, c.Moved, moved)
 		})
 	}
 }
@@ -721,4 +805,26 @@ func (r gridRect) box(id int) *gridBox {
 // rectOf returns a box's cells.
 func rectOf(box *gridBox) gridRect {
 	return gridRect{box.x, box.y, box.w, box.h}
+}
+
+// boxesOf returns the rects as boxes, each with its index as its id.
+func boxesOf(rects []gridRect) []*gridBox {
+	boxes := make([]*gridBox, 0, len(rects))
+
+	for i, r := range rects {
+		boxes = append(boxes, r.box(i))
+	}
+
+	return boxes
+}
+
+// rectsOf returns the cells of each box.
+func rectsOf(boxes []*gridBox) []gridRect {
+	rects := make([]gridRect, 0, len(boxes))
+
+	for _, box := range boxes {
+		rects = append(rects, rectOf(box))
+	}
+
+	return rects
 }

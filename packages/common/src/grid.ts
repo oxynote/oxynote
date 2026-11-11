@@ -30,19 +30,12 @@ export interface GridItem {
 
 // where a drop puts a block, in cells. A line target puts it at the line
 // at x in row y (see placeAtLine). An at target puts it at x, y and pushes
-// what it covers down. A run target puts it into the free cells from x, w
-// wide. The block lines up with the run's left or right edge, as side
-// says. The drop line shows on that edge.
+// what it covers down. A run target puts it at the left end of the free
+// cells from x, w wide.
 export type GridDropTarget =
 	| { kind: "line"; x: number; y: number }
 	| { kind: "at"; x: number; y: number }
-	| {
-			kind: "run"
-			x: number
-			y: number
-			w: number
-			side: "left" | "right"
-	  }
+	| { kind: "run"; x: number; y: number; w: number }
 
 // a block of the grid while an operation moves it. Its id is its index
 // among the grid's children.
@@ -156,7 +149,8 @@ export function stackPosOf(attrs: Record<string, unknown>): number | null {
 // takes the first free cells, row by row. But when no block in the grid
 // has a place yet, each block goes after the one before it. So a grid
 // saved before blocks stored a place keeps its look. Then every block
-// floats up as far as it can. The assistant reads grids in this order, so
+// floats up and slides left as far as it can (see compact). The
+// assistant reads grids in this order, so
 // server/core/internal/assistant/markup/grid.go repeats it. A change here
 // has to be made there too.
 export function layoutGrid(items: GridItem[]): GridRect[] {
@@ -213,7 +207,7 @@ export function dropInGrid(
 			pushDown([...boxes, box], [box])
 			break
 		case "run":
-			if (!fillRun(boxes, box, target.x, target.w, target.side)) {
+			if (!fillRun(boxes, box, target.x, target.w)) {
 				return null
 			}
 	}
@@ -298,7 +292,7 @@ export function stackPlaces(order: readonly number[]): number[] {
 
 // resizeInGrid returns the layout after a block changes its columns or
 // rows. The block keeps its left edge, as if it were dropped at the line
-// there (see placeAtLine). Then every block floats up.
+// there (see placeAtLine). Then every block floats up and slides left.
 export function resizeInGrid(
 	rects: readonly GridRect[],
 	index: number,
@@ -423,18 +417,12 @@ function placeAtLine(boxes: Box[], box: Box, x: number): void {
 	pushDown([...boxes, box], fixed)
 }
 
-// fillRun puts the box into the free cells from x, w wide. A box that is
-// too wide takes the widest named width that fits. When even the narrowest
-// width does not fit, the blocks on either side of the run shrink to make
-// room. As few blocks as possible shrink, by as few steps as possible. It
-// returns false when nothing makes room.
-function fillRun(
-	boxes: Box[],
-	box: Box,
-	x: number,
-	w: number,
-	side: "left" | "right",
-): boolean {
+// fillRun puts the box at the left end of the free cells from x, w wide.
+// A box that is too wide takes the widest named width that fits. When even
+// the narrowest width does not fit, the blocks on either side of the run
+// shrink to make room. As few blocks as possible shrink, by as few steps
+// as possible. It returns false when nothing makes room.
+function fillRun(boxes: Box[], box: Box, x: number, w: number): boolean {
 	const narrowest = GRID_WIDTH_COLUMNS.at(-1)?.[1] ?? 1
 	const row = box.y
 	let start = Math.min(Math.max(x, 0), GRID_COLUMNS - 1)
@@ -471,7 +459,7 @@ function fillRun(
 			GRID_WIDTH_COLUMNS.find(([, columns]) => columns <= width)?.[1] ?? width
 	}
 
-	box.x = side === "right" ? start + width - box.w : start
+	box.x = start
 	pushDown([...boxes, box], [box])
 
 	return true
@@ -528,30 +516,72 @@ function pushDown(all: Box[], fixed: Box[]): void {
 	}
 }
 
-// compact floats every block up as far as it can, from top to bottom. A
-// block rises to the bottom of the lowest block above it in its columns,
-// or to the first row.
+// compact floats every block up as far as it can. Then it slides every
+// block left as far as it can. A block that slides left can find free
+// cells above it, so the two steps take turns until no block moves. Both
+// steps only move blocks up or left, so the turns always end.
 function compact(boxes: Box[]): void {
-	const placed: Box[] = []
+	floatUp(boxes)
 
-	for (const box of [...boxes].sort(
-		(a, b) => a.y - b.y || a.x - b.x || a.id - b.id,
-	)) {
-		moveDownPast(box, placed)
-
-		box.y = Math.max(
-			0,
-			...placed
-				.filter(
-					(other) =>
-						other.x < box.x + box.w &&
-						box.x < other.x + other.w &&
-						other.y + other.h <= box.y,
-				)
-				.map((other) => other.y + other.h),
-		)
-		placed.push(box)
+	while (slideLeft(boxes)) {
+		if (!floatUp(boxes)) {
+			return
+		}
 	}
+}
+
+// floatUp floats every block up as far as it can, from top to bottom. A
+// block rises to the bottom of the lowest block above it in its columns,
+// or to the first row. The blocks must not overlap. It reports whether a
+// block moved.
+function floatUp(boxes: Box[]): boolean {
+	// the bottom edge of the blocks placed so far, for each column
+	const bottoms: number[] = []
+	let moved = false
+
+	for (const box of [...boxes].sort((a, b) => a.y - b.y || a.x - b.x)) {
+		let y = 0
+
+		for (let x = box.x; x < box.x + box.w; x++) {
+			y = Math.max(y, bottoms[x] ?? 0)
+		}
+
+		moved ||= y !== box.y
+		box.y = y
+
+		for (let x = box.x; x < box.x + box.w; x++) {
+			bottoms[x] = y + box.h
+		}
+	}
+
+	return moved
+}
+
+// slideLeft slides every block left as far as it can, from left to right.
+// A block stops at the right edge of the nearest block left of it in its
+// rows, or at the first column. The blocks must not overlap. It reports
+// whether a block moved.
+function slideLeft(boxes: Box[]): boolean {
+	// the right edge of the blocks placed so far, for each row
+	const edges = new Map<number, number>()
+	let moved = false
+
+	for (const box of [...boxes].sort((a, b) => a.x - b.x || a.y - b.y)) {
+		let x = 0
+
+		for (let y = box.y; y < box.y + box.h; y++) {
+			x = Math.max(x, edges.get(y) ?? 0)
+		}
+
+		moved ||= x !== box.x
+		box.x = x
+
+		for (let y = box.y; y < box.y + box.h; y++) {
+			edges.set(y, x + box.w)
+		}
+	}
+
+	return moved
 }
 
 // flowItems places the blocks without a stored place. When some blocks

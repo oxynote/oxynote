@@ -113,7 +113,7 @@ describe("findGridDrop", { concurrent: false }, () => {
 		expect.soft(drop?.draggedIndex).toBeNull()
 		expect
 			.soft(drop?.layout)
-			.toEqual([rect(0, 0, 12), rect(12, 0, 12), rect(12, 1, 12)])
+			.toEqual([rect(0, 0, 12), rect(12, 0, 12), rect(0, 1, 12)])
 	})
 
 	it("finds no grid beside the editor at a grid's height", ({ expect }) => {
@@ -136,15 +136,15 @@ describe("findGridDrop", { concurrent: false }, () => {
 				input: { u: 0.1, v: 0.5 },
 				expected: {
 					line: "left",
-					layout: [rect(0, 0, 12), rect(12, 1, 12), rect(12, 0, 12)],
+					layout: [rect(0, 0, 12), rect(0, 1, 12), rect(12, 0, 12)],
 				},
 			},
 			{
-				name: "under a full row from the line on its last block's right side",
+				name: "at the start of the next row from the line on a full row's right end",
 				input: { u: 0.9, v: 0.5 },
 				expected: {
-					line: "bottom",
-					layout: [rect(0, 0, 12), rect(12, 0, 12), rect(12, 1, 12)],
+					line: "next row",
+					layout: [rect(0, 0, 12), rect(12, 0, 12), rect(0, 1, 12)],
 				},
 			},
 			{
@@ -152,15 +152,15 @@ describe("findGridDrop", { concurrent: false }, () => {
 				input: { u: 0.5, v: 0.1 },
 				expected: {
 					line: "top",
-					layout: [rect(0, 0, 12), rect(12, 1, 12), rect(12, 0, 12)],
+					layout: [rect(0, 0, 12), rect(0, 1, 12), rect(12, 0, 12)],
 				},
 			},
 			{
-				name: "below a block from its bottom side",
+				name: "at the start of the next row from a block's bottom side",
 				input: { u: 0.5, v: 0.9 },
 				expected: {
-					line: "bottom",
-					layout: [rect(0, 0, 12), rect(12, 0, 12), rect(12, 1, 12)],
+					line: "next row",
+					layout: [rect(0, 0, 12), rect(12, 0, 12), rect(0, 1, 12)],
 				},
 			},
 		] as const)("puts a block $name", ({ input, expected }, { expect }) => {
@@ -171,6 +171,7 @@ describe("findGridDrop", { concurrent: false }, () => {
 				],
 				"wide-grid",
 			)
+			const first = blockElement(editor, "a").getBoundingClientRect()
 			const box = blockElement(editor, "b").getBoundingClientRect()
 
 			const drop = dropAt(
@@ -182,7 +183,18 @@ describe("findGridDrop", { concurrent: false }, () => {
 			expect.soft(drop?.layout).toEqual(expected.layout)
 			expect.soft(drop?.stack).toBeNull()
 			expect.soft(drop?.draggedIndex).toBeNull()
-			expect.soft(drop?.line).toEqual(sideLine(box, expected.line))
+			// the line below the row spans the whole row, since the block
+			// lands at its start
+			expect.soft(drop?.line).toEqual(
+				expected.line === "next row"
+					? {
+							vertical: false,
+							y: box.bottom + 2,
+							left: first.left,
+							right: box.right,
+						}
+					: sideLine(box, expected.line),
+			)
 		})
 
 		it("draws the line where a block lands when a tall block is in its way", ({
@@ -209,85 +221,166 @@ describe("findGridDrop", { concurrent: false }, () => {
 				pointIn(blockElement(editor, "c"), 0.9, 0.5),
 			)
 
+			// the block has no room right of c, so it lands in the next row.
+			// It slides to the row's start, under both c and t.
 			expect
 				.soft(drop?.layout)
 				.toEqual([
 					rect(0, 0, 12),
 					rect(12, 0, 12, 2),
 					rect(0, 1, 12),
-					rect(12, 2, 12),
+					rect(0, 2, 12),
 				])
 			expect.soft(drop?.line).toEqual({
 				vertical: false,
 				y: left.bottom + 2,
-				left: tall.left,
+				left: left.left,
 				right: tall.right,
 			})
 		})
 
-		it("fills the free cells under the point and draws the line where the block floats up to", ({
+		it("fills the free cells beside a tall block and draws the line along that block", ({
 			expect,
 		}) => {
-			// x is tall and on the left, and a is on the right. The cells
-			// between them are free.
+			// t is tall and on the left, and a is right of its first row. The
+			// cells right of its second row are free.
 			const editor = mountEditor(
 				[
 					blockGrid(
-						metricBlock("x", { widePosX: 0, widePosY: 0, width: 8, height: 2 }),
-						metricBlock("a", { widePosX: 16, widePosY: 0, width: 8 }),
+						metricBlock("t", { widePosX: 0, widePosY: 0, height: 2 }),
+						metricBlock("a", { widePosX: 12, widePosY: 0 }),
 					),
 					blockGrid(metricBlock("n", { width: GridItemWidth.Compact })),
 				],
 				"wide-grid",
 			)
-			const tall = blockElement(editor, "x").getBoundingClientRect()
-			const right = blockElement(editor, "a").getBoundingClientRect()
+			const tall = blockElement(editor, "t").getBoundingClientRect()
 
-			// the point is under a, in the second row
+			// the point is right of t, in its second row
 			const drop = dropAt(editor, "n", {
-				x: right.left + 20,
-				y: tall.bottom - 10,
+				x: tall.right + 40,
+				y: tall.bottom - 20,
 			})
 
 			expect
 				.soft(drop?.layout)
-				.toEqual([rect(0, 0, 8, 2), rect(16, 0, 8), rect(8, 0, 8)])
+				.toEqual([rect(0, 0, 12, 2), rect(12, 0, 12), rect(12, 1, 8)])
 			expect.soft(drop?.line).toEqual({
 				vertical: true,
 				x: tall.right + 2,
-				top: tall.top,
-				bottom: tall.top + 40,
+				top: tall.bottom - 40,
+				bottom: tall.bottom,
 			})
 		})
 
+		it("draws the line below a tall block only as wide as the block", ({
+			expect,
+		}) => {
+			// t is tall and on the left, and a is right of its first row. The
+			// cells right of its second row are free.
+			const editor = mountEditor(
+				[
+					blockGrid(
+						metricBlock("t", { widePosX: 0, widePosY: 0, height: 2 }),
+						metricBlock("a", { widePosX: 12, widePosY: 0 }),
+					),
+					blockGrid(metricBlock("x")),
+				],
+				"wide-grid",
+			)
+			const tall = blockElement(editor, "t").getBoundingClientRect()
+
+			const drop = dropAt(
+				editor,
+				"x",
+				pointIn(blockElement(editor, "t"), 0.5, 0.95),
+			)
+
+			// the cells right of the line have no block right above them
+			expect
+				.soft(drop?.layout)
+				.toEqual([rect(0, 0, 12, 2), rect(12, 0, 12), rect(0, 2, 12)])
+			expect.soft(drop?.line).toEqual({
+				vertical: false,
+				y: tall.bottom + 2,
+				left: tall.left,
+				right: tall.right,
+			})
+		})
+
+		it.for([
+			{
+				name: "free cells",
+				input: (editor: Editor) => {
+					const box = blockElement(editor, "a").getBoundingClientRect()
+
+					return { x: box.left + 20, y: box.bottom + 24 }
+				},
+			},
+			{
+				name: "the left side of the tall block beside them",
+				input: (editor: Editor) =>
+					pointIn(blockElement(editor, "t"), 0.05, 0.75),
+			},
+		])(
+			"puts a block at the grid's left edge from $name and draws the line along the block above",
+			({ input }, { expect }) => {
+				// a is on the left, and t is tall and right of it. The cells
+				// left of t's second row are free.
+				const editor = mountEditor(
+					[
+						blockGrid(
+							metricBlock("a", { widePosX: 0, widePosY: 0 }),
+							metricBlock("t", { widePosX: 12, widePosY: 0, height: 2 }),
+						),
+						blockGrid(metricBlock("n", { width: GridItemWidth.Compact })),
+					],
+					"wide-grid",
+				)
+				const above = blockElement(editor, "a").getBoundingClientRect()
+
+				const drop = dropAt(editor, "n", input(editor))
+
+				expect
+					.soft(drop?.layout)
+					.toEqual([rect(0, 0, 12), rect(12, 0, 12, 2), rect(0, 1, 8)])
+				expect.soft(drop?.line).toEqual({
+					vertical: false,
+					y: above.bottom + 2,
+					left: above.left,
+					right: above.right,
+				})
+			},
+		)
+
 		it("counts the dragged block's own cells as free", ({ expect }) => {
-			// a and d leave four columns free between them
+			// d sits left of t's second row, and four free columns are
+			// between them
 			const editor = mountEditor(
 				[
 					blockGrid(
 						metricBlock("a", { widePosX: 0, widePosY: 0 }),
-						metricBlock("d", { widePosX: 16, widePosY: 0, width: 8 }),
+						metricBlock("t", { widePosX: 12, widePosY: 0, height: 2 }),
+						metricBlock("d", { widePosX: 0, widePosY: 1, width: 8 }),
 					),
 				],
 				"wide-grid",
 			)
-			const left = blockElement(editor, "a").getBoundingClientRect()
+			const box = blockElement(editor, "d").getBoundingClientRect()
 
+			// the point is in the free columns. With d's cells free, d fits
+			// there again and nothing changes. Otherwise t would shrink.
 			const drop = dropAt(editor, "d", {
-				x: left.right + 20,
-				y: left.top + 20,
+				x: box.right + 20,
+				y: box.top + 20,
 			})
 
-			// d moves next to a, and nothing has to shrink
-			expect(drop?.layout).toEqual([rect(0, 0, 12), rect(12, 0, 8)])
+			expect(drop).toBeNull()
 		})
 
-		it.for([
-			{ name: "at the point's column", input: 14, expected: 14 },
-			{ name: "as far right as it fits", input: 22, expected: 16 },
-		])(
-			"puts a block alone in its row $name",
-			({ input, expected }, { expect }) => {
+		it.for([14, 22])(
+			"finds nothing for a block alone in its row at column %i of that row",
+			(column, { expect }) => {
 				const editor = mountEditor(
 					[
 						blockGrid(
@@ -301,19 +394,11 @@ describe("findGridDrop", { concurrent: false }, () => {
 
 				// a column is 12px wide, with 4px between columns
 				const drop = dropAt(editor, "a", {
-					x: box.left + input * 16 + 6,
+					x: box.left + column * 16 + 6,
 					y: box.top + 20,
 				})
 
-				expect
-					.soft(drop?.layout)
-					.toEqual([rect(expected, 0, 8), rect(0, 1, 24)])
-				expect.soft(drop?.line).toEqual({
-					vertical: false,
-					y: box.top - 2,
-					left: box.left + expected * 16,
-					right: box.left + (expected + 7) * 16 + 12,
-				})
+				expect(drop).toBeNull()
 			},
 		)
 
@@ -444,7 +529,7 @@ describe("findGridDrop", { concurrent: false }, () => {
 				expect.soft(drop?.stack).toEqual([0, 2, 1])
 				expect
 					.soft(drop?.layout)
-					.toEqual([rect(0, 0, 12), rect(12, 1, 12), rect(12, 0, 12)])
+					.toEqual([rect(0, 0, 12), rect(0, 1, 12), rect(12, 0, 12)])
 				expect.soft(drop?.line).toEqual({
 					vertical: false,
 					y: input.v < 0.5 ? box.top - 2 : box.bottom + 2,
@@ -558,7 +643,7 @@ describe("executeGridDrop", { concurrent: false }, () => {
 				className: "wide-grid",
 			},
 			expected: {
-				cells: ["a 0,0 12x1", "b 12,1 12x1", "x 12,0 12x1"],
+				cells: ["a 0,0 12x1", "b 0,1 12x1", "x 12,0 12x1"],
 				stack: ["a null", "b null", "x null"],
 			},
 		},
@@ -582,17 +667,18 @@ describe("executeGridDrop", { concurrent: false }, () => {
 			input: {
 				content: () => [
 					blockGrid(
-						metricBlock("a", { widePosX: 0, widePosY: 0 }),
-						metricBlock("d", { widePosX: 16, widePosY: 0, width: 8 }),
+						metricBlock("t", { widePosX: 0, widePosY: 0, height: 2 }),
+						metricBlock("a", { widePosX: 12, widePosY: 0 }),
 					),
+					blockGrid(metricBlock("x")),
 				],
-				dragged: "d",
-				target: { title: "a", u: 1.1, v: 0.5 },
+				dragged: "x",
+				target: { title: "t", u: 1.2, v: 0.75 },
 				className: "wide-grid",
 			},
 			expected: {
-				cells: ["a 0,0 12x1", "d 12,0 8x1"],
-				stack: ["a null", "d null"],
+				cells: ["t 0,0 12x2", "a 12,0 12x1", "x 12,1 12x1"],
+				stack: ["t null", "a null", "x null"],
 			},
 		},
 		{
@@ -607,7 +693,7 @@ describe("executeGridDrop", { concurrent: false }, () => {
 				className: "narrow-grid",
 			},
 			expected: {
-				cells: ["a 0,0 12x1", "b 12,1 12x1", "x 12,0 12x1"],
+				cells: ["a 0,0 12x1", "b 0,1 12x1", "x 12,0 12x1"],
 				stack: ["a 0", "b 2", "x 1"],
 			},
 		},
@@ -639,12 +725,14 @@ describe("executeGridDrop", { concurrent: false }, () => {
 	})
 
 	it("leaves the blocks whose cells stay the same untouched", ({ expect }) => {
+		// c moves from the left of d to its right, in the second row
 		const editor = mountEditor(
 			[
 				blockGrid(
 					metricBlock("a", { widePosX: 0, widePosY: 0 }),
 					metricBlock("b", { widePosX: 12, widePosY: 0 }),
-					metricBlock("c", { widePosX: 0, widePosY: 1 }),
+					metricBlock("c", { widePosX: 0, widePosY: 1, width: 8 }),
+					metricBlock("d", { widePosX: 8, widePosY: 1, width: 8 }),
 				),
 			],
 			"wide-grid",
@@ -653,7 +741,7 @@ describe("executeGridDrop", { concurrent: false }, () => {
 		const drop = dropAt(
 			editor,
 			"c",
-			pointIn(blockElement(editor, "b"), 0.5, 0.9),
+			pointIn(blockElement(editor, "d"), 0.9, 0.5),
 		)
 
 		if (!drop) {
@@ -666,7 +754,7 @@ describe("executeGridDrop", { concurrent: false }, () => {
 		const grid = editor.state.doc.child(0)
 		expect
 			.soft(storedCells(editor))
-			.toEqual(["a 0,0 12x1", "b 12,0 12x1", "c 12,1 12x1"])
+			.toEqual(["a 0,0 12x1", "b 12,0 12x1", "c 8,1 8x1", "d 0,1 8x1"])
 		expect.soft(grid.child(0)).toBe(a)
 		expect.soft(grid.child(1)).toBe(b)
 	})
@@ -869,30 +957,10 @@ function dropAt(
 
 // the line that a drop at a side of the box draws. It sits half a gap away
 // from the box.
-function sideLine(box: DOMRect, side: "left" | "top" | "bottom") {
-	switch (side) {
-		case "left":
-			return {
-				vertical: true,
-				x: box.left - 2,
-				top: box.top,
-				bottom: box.bottom,
-			}
-		case "top":
-			return {
-				vertical: false,
-				y: box.top - 2,
-				left: box.left,
-				right: box.right,
-			}
-		default:
-			return {
-				vertical: false,
-				y: box.bottom + 2,
-				left: box.left,
-				right: box.right,
-			}
-	}
+function sideLine(box: DOMRect, side: "left" | "top") {
+	return side === "left"
+		? { vertical: true, x: box.left - 2, top: box.top, bottom: box.bottom }
+		: { vertical: false, y: box.top - 2, left: box.left, right: box.right }
 }
 
 function rect(x: number, y: number, w: number, h = 1) {

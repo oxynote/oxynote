@@ -57,11 +57,6 @@ interface GridGeometry {
 
 type GridDropPlan = Pick<GridDrop, "layout" | "stack" | "line">
 
-interface FoundTarget {
-	target: GridDropTarget
-	line: GridDropLine
-}
-
 // the dragged block and the columns and rows it spans. Its index is null
 // when the block comes from outside the grid.
 interface DraggedBlock {
@@ -112,9 +107,11 @@ export function findGridDrop(
 	const block = { index: index, w: size.w, h: size.h }
 	const point = { x: x, y: y }
 	const plan =
-		geometry || cells.length === 0
-			? wideDrop(view, grid.pos, cells, geometry, rects, block, point)
-			: stackedDrop(grid.node, cells, rects, block, point, content)
+		cells.length === 0
+			? emptyGridDrop(view, grid.pos, block)
+			: geometry
+				? wideDrop(cells, geometry, rects, block, point)
+				: stackedDrop(grid.node, cells, rects, block, point, content)
 
 	return (
 		plan && {
@@ -204,37 +201,58 @@ export function gridDropLineStyle(
 			}
 }
 
-// wideDrop finds where a block lands in the widest grid, or in a grid with
-// no blocks
+// wideDrop finds where a block lands in the widest grid
 function wideDrop(
-	view: EditorView,
-	gridPos: number,
 	cells: GridCell[],
-	geometry: GridGeometry | null,
+	geometry: GridGeometry,
 	rects: readonly GridRect[],
 	dragged: DraggedBlock,
 	point: { x: number; y: number },
 ): GridDropPlan | null {
-	const found =
-		cells.length === 0
-			? emptyGridTarget(view, gridPos)
-			: geometry && wideTarget(cells, geometry, rects, dragged, point)
-	const layout = found && dropInGrid(rects, dragged, found.target)
+	const id = dragged.index ?? rects.length
+	const target = wideTarget(cells, geometry, rects, dragged, point)
+	const layout = target && dropInGrid(rects, dragged, target)
+	const landed = layout?.[id]
 
 	if (
-		!found ||
+		!target ||
 		!layout ||
+		!landed ||
 		(dragged.index !== null && sameLayout(layout, rects))
 	) {
 		return null
 	}
 
-	const landed = layout[dragged.index ?? rects.length]
-
 	return {
 		layout: layout,
 		stack: null,
-		line: geometry && landed ? landedLine(geometry, found, landed) : found.line,
+		line: dropLine(
+			geometry,
+			target,
+			landed,
+			layout.filter((_rect, i) => i !== id),
+		),
+	}
+}
+
+// emptyGridDrop puts a block into a grid with no blocks, at its first
+// cell. The line runs along the grid's top edge.
+function emptyGridDrop(
+	view: EditorView,
+	gridPos: number,
+	dragged: DraggedBlock,
+): GridDropPlan | null {
+	const dom = view.nodeDOM(gridPos)
+	if (!(dom instanceof HTMLElement)) {
+		return null
+	}
+
+	const box = dom.getBoundingClientRect()
+
+	return {
+		layout: dropInGrid([], dragged, { kind: "at", x: 0, y: 0 }),
+		stack: null,
+		line: horizontal(box.top, box),
 	}
 }
 
@@ -274,33 +292,47 @@ function stackedDrop(
 	return { layout: layout, stack: stack, line: found.line }
 }
 
-// landedLine is the line that shows where the block lands. A block in free
-// cells can float up past its target row. A block at a line can move down
-// when it has no room there or a block is in its way. Either way the line
-// follows it.
-function landedLine(
+// dropLine is the line that shows where a block lands. A drop above or
+// below a block shows the free cells the block lands in. A drop at a
+// block's side shows that side, while the block lands right at it. Any
+// other drop shows the left edge of the landed block, where it touches
+// the block before it. At the grid's left edge no block is before it, so
+// the line shows the free cells instead.
+function dropLine(
 	geometry: GridGeometry,
-	found: FoundTarget,
+	target: GridDropTarget,
 	landed: GridRect,
+	others: readonly GridRect[],
 ): GridDropLine {
-	if (found.target.kind === "run") {
-		return runLine(geometry, landed, found.target.side)
+	if (target.kind === "at") {
+		return freeCellsLine(geometry, landed, others)
 	}
 
-	return landed.y === found.target.y ? found.line : topLine(geometry, landed)
+	if (
+		target.kind === "line" &&
+		landed.y === target.y &&
+		(landed.x === target.x || landed.x + landed.w === target.x)
+	) {
+		return sideLine(geometry, target.x, target.y, 1)
+	}
+
+	return landed.x > 0
+		? sideLine(geometry, landed.x, landed.y, landed.h)
+		: freeCellsLine(geometry, landed, others)
 }
 
 // wideTarget finds the target in the widest grid. Over a block, the point
 // picks the nearest side, so the drop goes above, below, left or right of
 // the block. A left or right drop takes the block's row at the point's
-// height. Over free cells, the drop fills them.
+// height. Over free cells, the drop fills them. Anywhere else, such as in
+// the gap between two blocks, the nearest block counts.
 function wideTarget(
 	cells: GridCell[],
 	geometry: GridGeometry,
 	rects: readonly GridRect[],
 	dragged: DraggedBlock,
 	point: { x: number; y: number },
-): FoundTarget | null {
+): GridDropTarget | null {
 	const under = cells.find((cell) => contains(cell.box, point))
 	if (under?.index === dragged.index) {
 		return null
@@ -324,48 +356,16 @@ function wideTarget(
 		rect.h - 1,
 		Math.max(0, Math.floor((point.y - box.top + geometry.rowGap / 2) / step)),
 	)
-	const rowTop = box.top + row * step
-	const rowBottom = Math.min(box.bottom, rowTop + geometry.rowHeight)
 
 	switch (sideOf(box, point)) {
 		case "top":
-			return {
-				target: { kind: "at", x: rect.x, y: rect.y },
-				line: horizontal(box.top - geometry.rowGap / 2, box),
-			}
+			return { kind: "at", x: rect.x, y: rect.y }
 		case "bottom":
-			return {
-				target: { kind: "at", x: rect.x, y: rect.y + rect.h },
-				line: horizontal(box.bottom + geometry.rowGap / 2, box),
-			}
+			return { kind: "at", x: rect.x, y: rect.y + rect.h }
 		case "left":
-			return {
-				target: { kind: "line", x: rect.x, y: rect.y + row },
-				line: vertical(box.left - geometry.columnGap / 2, rowTop, rowBottom),
-			}
+			return { kind: "line", x: rect.x, y: rect.y + row }
 		default:
-			return {
-				target: { kind: "line", x: rect.x + rect.w, y: rect.y + row },
-				line: vertical(box.right + geometry.columnGap / 2, rowTop, rowBottom),
-			}
-	}
-}
-
-// emptyGridTarget targets the first cell of a grid with no blocks
-function emptyGridTarget(
-	view: EditorView,
-	gridPos: number,
-): FoundTarget | null {
-	const dom = view.nodeDOM(gridPos)
-	if (!(dom instanceof HTMLElement)) {
-		return null
-	}
-
-	const box = dom.getBoundingClientRect()
-
-	return {
-		target: { kind: "at", x: 0, y: 0 },
-		line: horizontal(box.top, box),
+			return { kind: "line", x: rect.x + rect.w, y: rect.y + row }
 	}
 }
 
@@ -411,32 +411,22 @@ function stackedTarget(
 	}
 }
 
-// freeRun finds the free cells under the point and the line that shows a
-// drop into them. From the point's row, the run moves up while the cell
-// above in the point's column is free. So the block does not float away
-// from the line. The run spans the free cells of that row, and the line
-// runs along the block the run touches. A run that touches no block puts
-// the block at the point's column instead, or further left when it would
-// not fit there.
+// freeRun finds the free cells under the point. From the point's row, the
+// run moves up while the cell above in the point's column is free. So the
+// block does not float away from the point. The run spans the free cells
+// of that row.
 function freeRun(
 	geometry: GridGeometry,
 	rects: readonly GridRect[],
 	dragged: DraggedBlock,
 	point: { x: number; y: number },
-): FoundTarget | null {
+): GridDropTarget | null {
 	const step = geometry.rowHeight + geometry.rowGap
 	const column = columnAt(geometry, point.x)
 	let row = Math.floor((point.y - geometry.top + geometry.rowGap / 2) / step)
 	// the dragged block leaves its cells, so they count as free
 	const taken = (r: number, c: number) =>
-		rects.some(
-			(rect, i) =>
-				i !== dragged.index &&
-				rect.x <= c &&
-				c < rect.x + rect.w &&
-				rect.y <= r &&
-				r < rect.y + rect.h,
-		)
+		rects.some((rect, i) => i !== dragged.index && covers(rect, r, c))
 
 	if (row < 0 || taken(row, column)) {
 		return null
@@ -457,60 +447,57 @@ function freeRun(
 		stop++
 	}
 
-	const touchesLeft = start > 0
-	const touchesRight = stop < geometry.lefts.length
-
-	if (!touchesLeft && !touchesRight) {
-		const x = Math.max(start, Math.min(column, stop - dragged.w))
-
-		return {
-			target: { kind: "at", x: x, y: row },
-			line: topLine(geometry, { x: x, y: row, w: dragged.w, h: 1 }),
-		}
-	}
-
-	const side = touchesRight && !touchesLeft ? "right" : "left"
-	const target: GridDropTarget = {
-		kind: "run",
-		x: start,
-		y: row,
-		w: stop - start,
-		side: side,
-	}
-
-	return {
-		target: target,
-		line: runLine(geometry, { x: start, y: row, w: stop - start, h: 1 }, side),
-	}
+	return { kind: "run", x: start, y: row, w: stop - start }
 }
 
-// runLine is the line along the side of a block in free cells where it
-// touches another block. The line is as tall as the block.
-function runLine(
+// sideLine is the line along the left edge of a column, as tall as rows.
+// Past the last column, it runs along the grid's right edge.
+function sideLine(
 	geometry: GridGeometry,
-	rect: GridRect,
-	side: "left" | "right",
+	column: number,
+	row: number,
+	rows: number,
 ): GridDropLine {
 	const step = geometry.rowHeight + geometry.rowGap
-	const top = geometry.top + rect.y * step
+	const top = geometry.top + row * step
 	const x =
-		side === "right"
-			? (geometry.rights[rect.x + rect.w - 1] ?? 0) + geometry.columnGap / 2
-			: (geometry.lefts[rect.x] ?? 0) - geometry.columnGap / 2
+		column < geometry.lefts.length
+			? (geometry.lefts[column] ?? 0) - geometry.columnGap / 2
+			: (geometry.rights.at(-1) ?? 0) + geometry.columnGap / 2
 
-	return vertical(x, top, top + rect.h * step - geometry.rowGap)
+	return vertical(x, top, top + rows * step - geometry.rowGap)
 }
 
-// topLine is the line along the top edge of a block's cells. It is as wide
-// as the block.
-function topLine(geometry: GridGeometry, rect: GridRect): GridDropLine {
+// freeCellsLine is the line along the top of the free cells a block lands
+// in. It spans the block and the free cells beside it in its first row,
+// as far as a block or the grid's top edge is right above them. So the
+// line always runs along the bottom of a block or the top of the grid.
+function freeCellsLine(
+	geometry: GridGeometry,
+	landed: GridRect,
+	others: readonly GridRect[],
+): GridDropLine {
+	const taken = (row: number, column: number) =>
+		others.some((rect) => covers(rect, row, column))
+	const joins = (column: number) =>
+		!taken(landed.y, column) && (landed.y === 0 || taken(landed.y - 1, column))
 	const step = geometry.rowHeight + geometry.rowGap
+	let start = landed.x
+	let stop = landed.x + landed.w
+
+	while (start > 0 && joins(start - 1)) {
+		start--
+	}
+
+	while (stop < geometry.lefts.length && joins(stop)) {
+		stop++
+	}
 
 	return {
 		vertical: false,
-		y: geometry.top + rect.y * step - geometry.rowGap / 2,
-		left: geometry.lefts[rect.x] ?? 0,
-		right: geometry.rights[rect.x + rect.w - 1] ?? 0,
+		y: geometry.top + landed.y * step - geometry.rowGap / 2,
+		left: geometry.lefts[start] ?? 0,
+		right: geometry.rights[stop - 1] ?? 0,
 	}
 }
 
@@ -686,6 +673,16 @@ function nearest(
 	}
 
 	return best
+}
+
+// covers reports whether a rect holds the cell in row and column
+function covers(rect: GridRect, row: number, column: number): boolean {
+	return (
+		rect.x <= column &&
+		column < rect.x + rect.w &&
+		rect.y <= row &&
+		row < rect.y + rect.h
+	)
 }
 
 function contains(box: DOMRect, point: { x: number; y: number }): boolean {

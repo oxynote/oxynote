@@ -1092,7 +1092,7 @@ describe("Drag", { concurrent: false }, () => {
 			expect(editor.state.doc.childCount).toBe(1)
 			expect(storedCells(editor)).toEqual([
 				"a 0,0 12x1",
-				"b 12,1 12x1",
+				"b 0,1 12x1",
 				"x 12,0 12x1",
 			])
 		})
@@ -1113,7 +1113,7 @@ describe("Drag", { concurrent: false }, () => {
 			expect(storedCells(editor)).toEqual([
 				"a 0,0 12x1",
 				"b 12,0 12x1",
-				"a 12,1 12x1",
+				"a 0,1 12x1",
 			])
 		})
 
@@ -1126,13 +1126,16 @@ describe("Drag", { concurrent: false }, () => {
 			)
 			startDrag(editor, posOfMetricBlock(editor, "a"))
 			const box = blockElement(editor, "a").getBoundingClientRect()
+			const next = blockElement(editor, "b").getBoundingClientRect()
 
 			dragOver(editor, pointIn(blockElement(editor, "a"), 0.5, 0.9), COPY_KEYS)
 
+			// the copy lands at the start of the next row, which is free under
+			// both blocks
 			expect(lineOf()).toEqual({
 				y: box.bottom + 2,
 				left: box.left,
-				right: box.right,
+				right: next.right,
 			})
 		})
 
