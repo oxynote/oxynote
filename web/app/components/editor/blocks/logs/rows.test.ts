@@ -157,6 +157,37 @@ describe("summarizeLog", () => {
 			},
 		},
 		{
+			name: "skips an invalid bare value of a logfmt key, as Loki does",
+			input: {
+					line: "component=bad=value component=billing retry=a=b",
+					labels: {},
+					fields: {},
+			},
+			expected: {
+					message: "",
+					extracted: [["component", "billing"]],
+					fields: [],
+					labels: [],
+			},
+		},
+		{
+			name: "reads an escaped quote mark in a quoted logfmt value, as Loki does",
+			input: {
+					line: `user="bob\\'s" path="a\\\\'b"`,
+					labels: {},
+					fields: {},
+			},
+			expected: {
+					message: "",
+					extracted: [
+							["user", "bob's"],
+							["path", "a\\'b"],
+					],
+					fields: [],
+					labels: [],
+			},
+		},
+		{
 			name: "keeps a line with a word outside logfmt pairs as plain text",
 			input: { line: "user=bob logged in", labels: {}, fields: {} },
 			expected: {

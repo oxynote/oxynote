@@ -330,9 +330,10 @@ function parseLogfmt(line: string): Record<string, string> | null {
 			}
 
 			const [, key = "", value = ""] = match
-			// Loki keeps the first value of a repeated key, but it skips an
-			// empty one.
-			if (!values.get(key)) {
+			const quoted = value.startsWith('"')
+			// Loki keeps the first value of a repeated key. But it skips an
+			// empty value, and it drops a bare value that holds "=".
+			if (!values.get(key) && (quoted || !value.includes("="))) {
 					values.set(key, value.startsWith('"') ? unquote(value) : value)
 			}
 
@@ -342,11 +343,16 @@ function parseLogfmt(line: string): Record<string, string> | null {
 	return values.size ? Object.fromEntries(values) : null
 }
 
-// unquote reads a quoted logfmt value. An escape JSON does not know, such
-// as Go's \x, leaves the text between the quotes as written.
+// unquote reads a quoted logfmt value. Loki also reads \' as a quote mark,
+// but JSON does not know it. Any other escape JSON does not know, such as
+// Go's \x, leaves the text between the quotes as written.
 function unquote(quoted: string): string {
+	const json = quoted.replace(/\\(.)/g, (escape, char: string) =>
+			char === "'" ? char : escape,
+	)
+
 	try {
-		return String(JSON.parse(quoted))
+		return String(JSON.parse(json))
 	} catch {
 		return quoted.slice(1, -1)
 	}
