@@ -28,14 +28,21 @@ export interface GridItem {
 	h: number
 }
 
-// where a drop puts a block, in cells. A line target puts it at the line
-// at x in row y (see placeAtLine). An at target puts it at x, y and pushes
-// what it covers down. A run target puts it at the left end of the free
-// cells from x, w wide.
+// where a drop puts a block, next to the block at index. Beside puts it at
+// that block's left or right side, in the row of the block given by row
+// (see placeAtLine). Free puts it into the free cells on that side, in the
+// same row (see fillRun). Above and below put it over or under the block
+// and push down what it covers. Start puts it at the grid's first cell.
 export type GridDropTarget =
-	| { kind: "line"; x: number; y: number }
-	| { kind: "at"; x: number; y: number }
-	| { kind: "run"; x: number; y: number; w: number }
+	| {
+			kind: "beside" | "free"
+			index: number
+			side: "left" | "right"
+			row: number
+	  }
+	| { kind: "above"; index: number }
+	| { kind: "below"; index: number }
+	| { kind: "start" }
 
 // a block of the grid while an operation moves it. Its id is its index
 // among the grid's children.
@@ -179,9 +186,9 @@ export function layoutGrid(items: GridItem[]): GridRect[] {
 	return toRects(boxes, items.length)
 }
 
-// dropInGrid returns the layout after a drop, or null when the target has
-// no room. When the dragged block comes from this grid, it leaves its
-// place first.
+// dropInGrid returns the layout after a drop. It returns null when the
+// target has no room, or names a block that is not in the grid. A dragged
+// block that comes from this grid leaves its place first.
 export function dropInGrid(
 	rects: readonly GridRect[],
 	dragged: { index: number | null; w: number; h: number },
@@ -192,24 +199,18 @@ export function dropInGrid(
 		.filter((box) => box.id !== dragged.index)
 	const box: Box = {
 		x: 0,
-		y: target.y,
+		y: 0,
 		w: dragged.w,
 		h: dragged.h,
 		id: dragged.index ?? rects.length,
 	}
 
-	switch (target.kind) {
-		case "line":
-			placeAtLine(boxes, box, target.x)
-			break
-		case "at":
-			box.x = Math.min(Math.max(target.x, 0), GRID_COLUMNS - box.w)
-			pushDown([...boxes, box], [box])
-			break
-		case "run":
-			if (!fillRun(boxes, box, target.x, target.w)) {
-				return null
-			}
+	// the dragged block leaves first, so the others settle into its cells.
+	// Then the target block's new place decides where the block goes.
+	compact(boxes)
+
+	if (!placeAtTarget(boxes, box, target)) {
+		return null
 	}
 
 	const all = [...boxes, box]
@@ -415,6 +416,79 @@ function placeAtLine(boxes: Box[], box: Box, x: number): void {
 	}
 
 	pushDown([...boxes, box], fixed)
+}
+
+// placeAtTarget puts the box where the target says, next to the target
+// block. It reports false when the target has no room or names no block.
+function placeAtTarget(
+	boxes: Box[],
+	box: Box,
+	target: GridDropTarget,
+): boolean {
+	if (target.kind === "start") {
+		placeAtLine(boxes, box, 0)
+
+		return true
+	}
+
+	const anchor = boxes.find((b) => b.id === target.index)
+	if (!anchor) {
+		return false
+	}
+
+	if (target.kind === "above" || target.kind === "below") {
+		box.x = Math.min(anchor.x, GRID_COLUMNS - box.w)
+		box.y = target.kind === "above" ? anchor.y : anchor.y + anchor.h
+		pushDown([...boxes, box], [box])
+
+		return true
+	}
+
+	box.y = anchor.y + target.row
+
+	if (target.kind === "beside") {
+		placeAtLine(
+			boxes,
+			box,
+			target.side === "left" ? anchor.x : anchor.x + anchor.w,
+		)
+
+		return true
+	}
+
+	const run = freeCellsBeside(boxes, anchor, target.side, box.y)
+
+	return fillRun(boxes, box, run.x, run.w)
+}
+
+// freeCellsBeside returns the free cells in row on the anchor's side, up
+// to the next block or the grid's edge
+function freeCellsBeside(
+	boxes: Box[],
+	anchor: Box,
+	side: "left" | "right",
+	row: number,
+): { x: number; w: number } {
+	const inRow = boxes.filter(
+		(b) => b !== anchor && b.y <= row && row < b.y + b.h,
+	)
+
+	if (side === "right") {
+		const x = anchor.x + anchor.w
+		const end = Math.min(
+			GRID_COLUMNS,
+			...inRow.filter((b) => b.x >= x).map((b) => b.x),
+		)
+
+		return { x: x, w: end - x }
+	}
+
+	const start = Math.max(
+		0,
+		...inRow.filter((b) => b.x + b.w <= anchor.x).map((b) => b.x + b.w),
+	)
+
+	return { x: start, w: anchor.x - start }
 }
 
 // fillRun puts the box at the left end of the free cells from x, w wide.

@@ -309,7 +309,7 @@ function opInsert(doc: Y.Doc, op: InsertOp): void {
 		layout,
 		found.parent.get(insertAt) as Y.XmlElement,
 		null,
-		targetBeside(layout, found.index, op.position),
+		targetBeside(found.index, op.position),
 	)
 }
 
@@ -505,7 +505,7 @@ function moveInGrid(
 	position: Position,
 ): void {
 	const layout = gridLayout(grid)
-	const target = targetBeside(layout, reference.index, position)
+	const target = targetBeside(reference.index, position)
 
 	if (found.parent === grid) {
 		placeInGrid(layout, found.element, found.index, target)
@@ -678,31 +678,28 @@ function gridLayout(grid: Y.XmlElement): GridLayout {
 }
 
 // targetBeside returns the drop target beside the block at index. position
-// names the side of the block's cells: its left or right edge, or its top
-// or bottom edge.
-function targetBeside(
-	layout: GridLayout,
-	index: number,
-	position: string,
-): GridDropTarget {
-	const rect = layout.rects[index]
-	if (!rect) {
-		// NOCOV: index is a block of the grid, so the layout has its
-		// rect.
-		return { kind: "at", x: 0, y: 0 }
-	}
-
-	const { x, y, w, h } = rect
-
+// names the side of the block: its left or right side, or its top or
+// bottom side.
+function targetBeside(index: number, position: string): GridDropTarget {
 	switch (position) {
 		case "before":
-			return { kind: "line", x: x, y: y }
+			return {
+				kind: "beside",
+				index: index,
+				side: "left",
+				row: 0,
+			}
 		case "after":
-			return { kind: "line", x: x + w, y: y }
+			return {
+				kind: "beside",
+				index: index,
+				side: "right",
+				row: 0,
+			}
 		case "above":
-			return { kind: "at", x: x, y: y }
+			return { kind: "above", index: index }
 		default:
-			return { kind: "at", x: x, y: y + h }
+			return { kind: "below", index: index }
 	}
 }
 
@@ -723,8 +720,9 @@ function placeInGrid(
 	)
 
 	if (!rects) {
-		// NOCOV: only a run target can lack room, and targetBeside
-		// never makes one.
+		// NOCOV: only a free target can lack room, and targetBeside
+		// never makes one. Its block is never the moved block, since a
+		// move relative to itself is refused.
 		return
 	}
 

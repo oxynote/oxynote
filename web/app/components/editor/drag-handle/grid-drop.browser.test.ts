@@ -197,6 +197,66 @@ describe("findGridDrop", { concurrent: false }, () => {
 			)
 		})
 
+		it.for([
+			{
+				name: "above the other block from that block's top side",
+				input: { u: 0.5, v: 0.1 },
+				expected: {
+					layout: [rect(0, 0, 12), rect(0, 1, 12)],
+					line: (first: DOMRect, box: DOMRect) => ({
+						vertical: false,
+						y: box.top - 2,
+						left: first.left,
+						right: box.right,
+					}),
+				},
+			},
+			{
+				name: "right of the other block from that block's right side, so the two swap",
+				input: { u: 0.9, v: 0.5 },
+				expected: {
+					layout: [rect(12, 0, 12), rect(0, 0, 12)],
+					line: (_first: DOMRect, box: DOMRect) => ({
+						vertical: true,
+						x: box.right + 2,
+						top: box.top,
+						bottom: box.bottom,
+					}),
+				},
+			},
+			{
+				name: "under the other block from that block's bottom side",
+				input: { u: 0.5, v: 0.9 },
+				expected: {
+					layout: [rect(0, 1, 12), rect(0, 0, 12)],
+					line: (first: DOMRect, box: DOMRect) => ({
+						vertical: false,
+						y: box.bottom + 2,
+						left: first.left,
+						right: box.right,
+					}),
+				},
+			},
+		])("moves a block of a row $name", ({ input, expected }, { expect }) => {
+			const editor = mountEditor(
+				[blockGrid(metricBlock("a"), metricBlock("b"))],
+				"wide-grid",
+			)
+			const first = blockElement(editor, "a").getBoundingClientRect()
+			const box = blockElement(editor, "b").getBoundingClientRect()
+
+			const drop = dropAt(
+				editor,
+				"a",
+				pointIn(blockElement(editor, "b"), input.u, input.v),
+			)
+
+			// a leaves its cells first, so b slides left into them. The
+			// line still sits at b, where it shows during the drag.
+			expect.soft(drop?.layout).toEqual(expected.layout)
+			expect.soft(drop?.line).toEqual(expected.line(first, box))
+		})
+
 		it("draws the line where a block lands when a tall block is in its way", ({
 			expect,
 		}) => {
@@ -645,6 +705,19 @@ describe("executeGridDrop", { concurrent: false }, () => {
 			expected: {
 				cells: ["a 0,0 12x1", "b 0,1 12x1", "x 12,0 12x1"],
 				stack: ["a null", "b null", "x null"],
+			},
+		},
+		{
+			name: "the right side of the other block of its row",
+			input: {
+				content: () => [blockGrid(metricBlock("a"), metricBlock("b"))],
+				dragged: "a",
+				target: { title: "b", u: 0.9, v: 0.5 },
+				className: "wide-grid",
+			},
+			expected: {
+				cells: ["a 12,0 12x1", "b 0,0 12x1"],
+				stack: ["a null", "b null"],
 			},
 		},
 		{

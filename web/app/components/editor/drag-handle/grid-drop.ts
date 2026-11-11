@@ -57,6 +57,10 @@ interface GridGeometry {
 
 type GridDropPlan = Pick<GridDrop, "layout" | "stack" | "line">
 
+// a target that a point over the widest grid can pick. It always names a
+// block of the grid.
+type WideTarget = Exclude<GridDropTarget, { kind: "start" }>
+
 // the dragged block and the columns and rows it spans. Its index is null
 // when the block comes from outside the grid.
 interface DraggedBlock {
@@ -209,10 +213,9 @@ function wideDrop(
 	dragged: DraggedBlock,
 	point: { x: number; y: number },
 ): GridDropPlan | null {
-	const id = dragged.index ?? rects.length
 	const target = wideTarget(cells, geometry, rects, dragged, point)
 	const layout = target && dropInGrid(rects, dragged, target)
-	const landed = layout?.[id]
+	const landed = layout?.[dragged.index ?? rects.length]
 
 	if (
 		!target ||
@@ -226,12 +229,7 @@ function wideDrop(
 	return {
 		layout: layout,
 		stack: null,
-		line: dropLine(
-			geometry,
-			target,
-			landed,
-			layout.filter((_rect, i) => i !== id),
-		),
+		line: dropLine(geometry, rects, dragged, target, layout, landed),
 	}
 }
 
@@ -250,7 +248,7 @@ function emptyGridDrop(
 	const box = dom.getBoundingClientRect()
 
 	return {
-		layout: dropInGrid([], dragged, { kind: "at", x: 0, y: 0 }),
+		layout: dropInGrid([], dragged, { kind: "start" }),
 		stack: null,
 		line: horizontal(box.top, box),
 	}
@@ -282,43 +280,103 @@ function stackedDrop(
 
 	// a block from outside the grid also needs cells in the wide layout.
 	// It goes right of the block it follows in the stack.
-	const previous = rects[stack[stack.indexOf(id) - 1] ?? -1]
-	const layout = dropInGrid(rects, dragged, {
-		kind: "line",
-		x: previous ? previous.x + previous.w : 0,
-		y: previous?.y ?? 0,
-	})
+	const previous = stack[stack.indexOf(id) - 1]
+	const layout = dropInGrid(
+		rects,
+		dragged,
+		previous === undefined
+			? { kind: "start" }
+			: { kind: "beside", index: previous, side: "right", row: 0 },
+	)
 
 	return { layout: layout, stack: stack, line: found.line }
 }
 
-// dropLine is the line that shows where a block lands. A drop above or
-// below a block shows the free cells the block lands in. A drop at a
-// block's side shows that side, while the block lands right at it. Any
-// other drop shows the left edge of the landed block, where it touches
-// the block before it. At the grid's left edge no block is before it, so
-// the line shows the free cells instead.
+// dropLine is the line that shows where a block lands. It sits at the
+// target block, where the grid shows it during the drag. A drop beside a
+// block, or into the free cells right of it, shows that side. A drop above
+// or below a block shows the free cells there. Free cells at the grid's
+// left edge show their top. A block that cannot land at its target, such
+// as one with no room there, gets the line where it lands instead.
 function dropLine(
 	geometry: GridGeometry,
-	target: GridDropTarget,
+	rects: readonly GridRect[],
+	dragged: DraggedBlock,
+	target: WideTarget,
+	layout: readonly GridRect[],
 	landed: GridRect,
-	others: readonly GridRect[],
 ): GridDropLine {
-	if (target.kind === "at") {
-		return freeCellsLine(geometry, landed, others)
-	}
+	const shown = rects[target.index]
+	const moved = layout[target.index]
 
-	if (
-		target.kind === "line" &&
-		landed.y === target.y &&
-		(landed.x === target.x || landed.x + landed.w === target.x)
-	) {
-		return sideLine(geometry, target.x, target.y, 1)
+	if (shown && moved && landsAtTarget(target, landed, moved)) {
+		switch (target.kind) {
+			case "above":
+				return zoneLine(geometry, rects, dragged.index, shown.y, shown)
+			case "below":
+				return zoneLine(
+					geometry,
+					rects,
+					dragged.index,
+					shown.y + shown.h,
+					shown,
+				)
+		}
+
+		const row = shown.y + target.row
+
+		if (target.side === "right") {
+			return sideLine(geometry, shown.x + shown.w, row, 1)
+		}
+
+		// free cells on the left end at the block, so their line grows
+		// from the cell right before it
+		return target.kind === "beside"
+			? sideLine(geometry, shown.x, row, 1)
+			: zoneLine(geometry, rects, dragged.index, row, {
+					x: shown.x - 1,
+					w: 1,
+				})
 	}
 
 	return landed.x > 0
 		? sideLine(geometry, landed.x, landed.y, landed.h)
-		: freeCellsLine(geometry, landed, others)
+		: zoneLine(
+				geometry,
+				layout,
+				dragged.index ?? rects.length,
+				landed.y,
+				landed,
+			)
+}
+
+// landsAtTarget reports whether a block lands where its target says, next
+// to the target block in that block's new place
+function landsAtTarget(
+	target: WideTarget,
+	landed: GridRect,
+	block: GridRect,
+): boolean {
+	const sharesRows =
+		landed.y < block.y + block.h && block.y < landed.y + landed.h
+
+	switch (target.kind) {
+		case "above":
+			return landed.y + landed.h === block.y
+		case "below":
+			return landed.y === block.y + block.h
+	}
+
+	if (target.side === "right") {
+		return sharesRows && landed.x === block.x + block.w
+	}
+
+	return (
+		sharesRows &&
+		(target.kind === "beside"
+			? landed.x + landed.w === block.x
+			: landed.x + landed.w <= block.x)
+	)
 }
 
 // wideTarget finds the target in the widest grid. Over a block, the point
@@ -332,16 +390,16 @@ function wideTarget(
 	rects: readonly GridRect[],
 	dragged: DraggedBlock,
 	point: { x: number; y: number },
-): GridDropTarget | null {
+): WideTarget | null {
 	const under = cells.find((cell) => contains(cell.box, point))
 	if (under?.index === dragged.index) {
 		return null
 	}
 
 	if (!under) {
-		const run = freeRun(geometry, rects, dragged, point)
-		if (run) {
-			return run
+		const free = freeTarget(geometry, rects, dragged, point)
+		if (free) {
+			return free
 		}
 	}
 
@@ -350,22 +408,21 @@ function wideTarget(
 		return null
 	}
 
-	const { rect, box } = cell
+	const { index, rect, box } = cell
 	const step = geometry.rowHeight + geometry.rowGap
 	const row = Math.min(
 		rect.h - 1,
 		Math.max(0, Math.floor((point.y - box.top + geometry.rowGap / 2) / step)),
 	)
+	const side = sideOf(box, point)
 
-	switch (sideOf(box, point)) {
+	switch (side) {
 		case "top":
-			return { kind: "at", x: rect.x, y: rect.y }
+			return { kind: "above", index: index }
 		case "bottom":
-			return { kind: "at", x: rect.x, y: rect.y + rect.h }
-		case "left":
-			return { kind: "line", x: rect.x, y: rect.y + row }
+			return { kind: "below", index: index }
 		default:
-			return { kind: "line", x: rect.x + rect.w, y: rect.y + row }
+			return { kind: "beside", index: index, side: side, row: row }
 	}
 }
 
@@ -411,43 +468,57 @@ function stackedTarget(
 	}
 }
 
-// freeRun finds the free cells under the point. From the point's row, the
-// run moves up while the cell above in the point's column is free. So the
-// block does not float away from the point. The run spans the free cells
-// of that row.
-function freeRun(
+// freeTarget finds the free cells under the point. From the point's row,
+// the run moves up while the cell above in the point's column is free. So
+// the block does not float away from the point. The run spans the free
+// cells of that row. The block on the run's left anchors it, or else the
+// block on its right. A run that touches no block gives no target.
+function freeTarget(
 	geometry: GridGeometry,
 	rects: readonly GridRect[],
 	dragged: DraggedBlock,
 	point: { x: number; y: number },
-): GridDropTarget | null {
+): WideTarget | null {
 	const step = geometry.rowHeight + geometry.rowGap
 	const column = columnAt(geometry, point.x)
 	let row = Math.floor((point.y - geometry.top + geometry.rowGap / 2) / step)
 	// the dragged block leaves its cells, so they count as free
-	const taken = (r: number, c: number) =>
-		rects.some((rect, i) => i !== dragged.index && covers(rect, r, c))
+	const blockAt = (r: number, c: number) =>
+		rects.findIndex((rect, i) => i !== dragged.index && covers(rect, r, c))
 
-	if (row < 0 || taken(row, column)) {
+	if (row < 0 || blockAt(row, column) >= 0) {
 		return null
 	}
 
-	while (row > 0 && !taken(row - 1, column)) {
+	while (row > 0 && blockAt(row - 1, column) < 0) {
 		row--
 	}
 
 	let start = column
 	let stop = column + 1
 
-	while (start > 0 && !taken(row, start - 1)) {
+	while (start > 0 && blockAt(row, start - 1) < 0) {
 		start--
 	}
 
-	while (stop < geometry.lefts.length && !taken(row, stop)) {
+	while (stop < geometry.lefts.length && blockAt(row, stop) < 0) {
 		stop++
 	}
 
-	return { kind: "run", x: start, y: row, w: stop - start }
+	const left = blockAt(row, start - 1)
+	const index = left >= 0 ? left : blockAt(row, stop)
+	const anchor = rects[index]
+
+	if (!anchor) {
+		return null
+	}
+
+	return {
+		kind: "free",
+		index: index,
+		side: left >= 0 ? "right" : "left",
+		row: row - anchor.y,
+	}
 }
 
 // sideLine is the line along the left edge of a column, as tall as rows.
@@ -468,34 +539,37 @@ function sideLine(
 	return vertical(x, top, top + rows * step - geometry.rowGap)
 }
 
-// freeCellsLine is the line along the top of the free cells a block lands
-// in. It spans the block and the free cells beside it in its first row,
-// as far as a block or the grid's top edge is right above them. So the
-// line always runs along the bottom of a block or the top of the grid.
-function freeCellsLine(
+// zoneLine is the line along the top of row. It spans the columns of span
+// and the open cells on either side of them. A cell is open when it is
+// free and a block or the grid's top edge is right above it. The block at
+// skip counts as free in row, since a dragged block leaves its cells. But
+// above row it still shows, so there it counts as a block.
+function zoneLine(
 	geometry: GridGeometry,
-	landed: GridRect,
-	others: readonly GridRect[],
+	rects: readonly GridRect[],
+	skip: number | null,
+	row: number,
+	span: { x: number; w: number },
 ): GridDropLine {
-	const taken = (row: number, column: number) =>
-		others.some((rect) => covers(rect, row, column))
-	const joins = (column: number) =>
-		!taken(landed.y, column) && (landed.y === 0 || taken(landed.y - 1, column))
+	const taken = (r: number, c: number, skipped: boolean) =>
+		rects.some((rect, i) => (!skipped || i !== skip) && covers(rect, r, c))
+	const open = (c: number) =>
+		!taken(row, c, true) && (row === 0 || taken(row - 1, c, false))
 	const step = geometry.rowHeight + geometry.rowGap
-	let start = landed.x
-	let stop = landed.x + landed.w
+	let start = span.x
+	let stop = span.x + span.w
 
-	while (start > 0 && joins(start - 1)) {
+	while (start > 0 && open(start - 1)) {
 		start--
 	}
 
-	while (stop < geometry.lefts.length && joins(stop)) {
+	while (stop < geometry.lefts.length && open(stop)) {
 		stop++
 	}
 
 	return {
 		vertical: false,
-		y: geometry.top + landed.y * step - geometry.rowGap / 2,
+		y: geometry.top + row * step - geometry.rowGap / 2,
 		left: geometry.lefts[start] ?? 0,
 		right: geometry.rights[stop - 1] ?? 0,
 	}

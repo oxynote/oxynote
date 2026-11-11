@@ -1868,7 +1868,7 @@ describe("applyOperations", () => {
 					attrsOf(blockByUid(doc, "a")).title,
 				).toBe("Renamed")
 				expect(placesIn(doc, "g")).toEqual([
-					"a 0,1 12x1",
+					"a 12,0 12x1",
 					"b 0,0 12x1",
 				])
 			}

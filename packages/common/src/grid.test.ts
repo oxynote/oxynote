@@ -241,20 +241,20 @@ describe("layoutGrid", () => {
 describe("dropInGrid", () => {
 	it.for([
 		{
-			name: "puts a block at the line in free cells of the row",
+			name: "puts a block at the right side of a block with free cells after it",
 			input: {
 				rects: [rect(0, 0, 12)],
 				dragged: outside(12),
-				target: line(12, 0),
+				target: beside(0, "right"),
 			},
 			expected: [rect(0, 0, 12), rect(12, 0, 12)],
 		},
 		{
-			name: "puts a block at a line with free cells before it at their left end",
+			name: "puts a block at a tall block's left side at the left end of the free cells there",
 			input: {
 				rects: [rect(0, 0, 12), rect(12, 0, 12, 2)],
 				dragged: outside(8),
-				target: line(12, 1),
+				target: beside(1, "left", 1),
 			},
 			expected: [rect(0, 0, 12), rect(12, 0, 12, 2), rect(0, 1, 8)],
 		},
@@ -263,7 +263,7 @@ describe("dropInGrid", () => {
 			input: {
 				rects: [rect(0, 0, 8), rect(8, 0, 8)],
 				dragged: outside(8),
-				target: line(8, 0),
+				target: beside(1, "left"),
 			},
 			expected: [rect(0, 0, 8), rect(16, 0, 8), rect(8, 0, 8)],
 		},
@@ -272,43 +272,82 @@ describe("dropInGrid", () => {
 			input: {
 				rects: [rect(0, 0, 8), rect(8, 0, 8), rect(16, 0, 8)],
 				dragged: outside(8),
-				target: line(16, 0),
+				target: beside(1, "right"),
 			},
 			expected: [rect(0, 0, 8), rect(8, 0, 8), rect(0, 1, 8), rect(16, 0, 8)],
 		},
 		{
-			name: "moves the dropped block to the next row when the row has no room after the line",
+			name: "moves the dropped block to the next row when a full row has no room after the line",
 			input: {
 				rects: [rect(0, 0, 12), rect(12, 0, 12)],
 				dragged: outside(12),
-				target: line(24, 0),
+				target: beside(1, "right"),
 			},
 			expected: [rect(0, 0, 12), rect(12, 0, 12), rect(0, 1, 12)],
 		},
 		{
-			name: "moves a block to the next row from the line at the end of its own row",
+			name: "swaps two blocks of a row from the right side of the other",
 			input: {
 				rects: [rect(0, 0, 12), rect(12, 0, 12)],
 				dragged: inside(0, 12),
-				target: line(24, 0),
+				target: beside(1, "right"),
 			},
-			expected: [rect(0, 1, 12), rect(0, 0, 12)],
+			expected: [rect(12, 0, 12), rect(0, 0, 12)],
 		},
 		{
 			name: "swaps two blocks of a row from the left side of the other",
 			input: {
 				rects: [rect(0, 0, 12), rect(12, 0, 12)],
 				dragged: inside(1, 12),
-				target: line(0, 0),
+				target: beside(0, "left"),
 			},
 			expected: [rect(12, 0, 12), rect(0, 0, 12)],
+		},
+		{
+			name: "puts a block of a row above the other block, which moves to the next row",
+			input: {
+				rects: [rect(0, 0, 12), rect(12, 0, 12)],
+				dragged: inside(0, 12),
+				target: above(1),
+			},
+			expected: [rect(0, 0, 12), rect(0, 1, 12)],
+		},
+		{
+			name: "puts a block of a row under the other block",
+			input: {
+				rects: [rect(0, 0, 12), rect(12, 0, 12)],
+				dragged: inside(0, 12),
+				target: below(1),
+			},
+			expected: [rect(0, 1, 12), rect(0, 0, 12)],
+		},
+		{
+			// a leaves the first row, so c floats up into its cells. Then a
+			// goes right of c, and b moves down.
+			name: "lets the other blocks settle into the dragged block's cells first",
+			input: {
+				rects: [
+					rect(0, 0, 12),
+					rect(12, 0, 12),
+					rect(0, 1, 12),
+					rect(12, 1, 12),
+				],
+				dragged: inside(0, 12),
+				target: beside(2, "right"),
+			},
+			expected: [
+				rect(12, 0, 12),
+				rect(12, 1, 12),
+				rect(0, 0, 12),
+				rect(0, 1, 12),
+			],
 		},
 		{
 			name: "puts a block above another and pushes that one to the start of the next row",
 			input: {
 				rects: [rect(0, 0, 12), rect(12, 0, 12)],
 				dragged: outside(12),
-				target: at(12, 0),
+				target: above(1),
 			},
 			expected: [rect(0, 0, 12), rect(0, 1, 12), rect(12, 0, 12)],
 		},
@@ -317,7 +356,7 @@ describe("dropInGrid", () => {
 			input: {
 				rects: [rect(0, 0, 12), rect(12, 0, 12)],
 				dragged: outside(24),
-				target: at(12, 0),
+				target: above(1),
 			},
 			expected: [rect(0, 1, 12), rect(12, 1, 12), rect(0, 0, 24)],
 		},
@@ -326,7 +365,7 @@ describe("dropInGrid", () => {
 			input: {
 				rects: [rect(0, 0, 12), rect(12, 0, 12, 2)],
 				dragged: outside(8),
-				target: run(0, 1, 12),
+				target: free(1, "left", 1),
 			},
 			expected: [rect(0, 0, 12), rect(12, 0, 12, 2), rect(0, 1, 8)],
 		},
@@ -335,7 +374,7 @@ describe("dropInGrid", () => {
 			input: {
 				rects: [rect(0, 0, 12, 2), rect(12, 0, 12)],
 				dragged: outside(12),
-				target: run(12, 1, 12),
+				target: free(0, "right", 1),
 			},
 			expected: [rect(0, 0, 12, 2), rect(12, 0, 12), rect(12, 1, 12)],
 		},
@@ -344,7 +383,7 @@ describe("dropInGrid", () => {
 			input: {
 				rects: [rect(0, 0, 12, 2), rect(12, 0, 12), rect(0, 2, 24)],
 				dragged: inside(2, 24),
-				target: run(12, 1, 12),
+				target: free(0, "right", 1),
 			},
 			expected: [rect(0, 0, 12, 2), rect(12, 0, 12), rect(12, 1, 12)],
 		},
@@ -353,7 +392,7 @@ describe("dropInGrid", () => {
 			input: {
 				rects: [rect(0, 0, 8), rect(8, 0, 12), rect(0, 1, 8)],
 				dragged: inside(2, 8),
-				target: run(20, 0, 4),
+				target: free(1, "right"),
 			},
 			expected: [rect(0, 0, 8), rect(8, 0, 8), rect(16, 0, 8)],
 		},
@@ -362,7 +401,7 @@ describe("dropInGrid", () => {
 			input: {
 				rects: [rect(0, 0, 12), rect(12, 0, 12, 2), rect(0, 1, 12)],
 				dragged: outside(12),
-				target: line(12, 1),
+				target: beside(2, "right"),
 			},
 			expected: [
 				rect(0, 0, 12),
@@ -372,13 +411,26 @@ describe("dropInGrid", () => {
 			],
 		},
 		{
+			// t is held by d in the second row, so the first row has free
+			// cells before t
 			name: "leaves the blocks after free columns where they are",
 			input: {
-				rects: [rect(0, 0, 8), rect(8, 0, 4), rect(20, 0, 4)],
+				rects: [
+					rect(0, 0, 8),
+					rect(8, 0, 4),
+					rect(20, 0, 4, 2),
+					rect(0, 1, 20),
+				],
 				dragged: outside(8),
-				target: line(8, 0),
+				target: beside(0, "right"),
 			},
-			expected: [rect(0, 0, 8), rect(16, 0, 4), rect(20, 0, 4), rect(8, 0, 8)],
+			expected: [
+				rect(0, 0, 8),
+				rect(16, 0, 4),
+				rect(20, 0, 4, 2),
+				rect(0, 1, 20),
+				rect(8, 0, 8),
+			],
 		},
 		{
 			name: "moves a block down when a block from above stops its slide",
@@ -391,7 +443,7 @@ describe("dropInGrid", () => {
 					rect(8, 1, 8),
 				],
 				dragged: outside(8),
-				target: line(0, 1),
+				target: beside(3, "left"),
 			},
 			expected: [
 				rect(0, 0, 8),
@@ -405,20 +457,31 @@ describe("dropInGrid", () => {
 		{
 			name: "shrinks a neighbour only as far as a block narrower than any named width needs",
 			input: {
-				rects: [rect(0, 0, 12), rect(14, 0, 10)],
+				rects: [rect(0, 0, 12), rect(12, 0, 10)],
 				dragged: outside(4),
-				target: run(12, 0, 2),
+				target: free(1, "right"),
 			},
-			expected: [rect(0, 0, 12), rect(16, 0, 8), rect(12, 0, 4)],
+			expected: [rect(0, 0, 12), rect(12, 0, 8), rect(20, 0, 4)],
 		},
 		{
+			// t is held by a in its first row, so its second row has four
+			// free columns before it
 			name: "shrinks the block after free cells too narrow for the narrowest width",
 			input: {
-				rects: [rect(4, 0, 12)],
+				rects: [rect(0, 0, 4), rect(4, 0, 12, 2)],
 				dragged: outside(8),
-				target: run(0, 0, 4),
+				target: free(1, "left", 1),
 			},
-			expected: [rect(8, 0, 8), rect(0, 0, 8)],
+			expected: [rect(0, 0, 4), rect(8, 0, 8, 2), rect(0, 1, 8)],
+		},
+		{
+			name: "puts a block at the grid's first cell",
+			input: {
+				rects: [rect(0, 0, 12), rect(12, 0, 12)],
+				dragged: outside(12),
+				target: start(),
+			},
+			expected: [rect(12, 0, 12), rect(0, 1, 12), rect(0, 0, 12)],
 		},
 	])("$name", ({ input, expected }, { expect }) => {
 		expect(dropInGrid(input.rects, input.dragged, input.target)).toEqual(
@@ -426,10 +489,33 @@ describe("dropInGrid", () => {
 		)
 	})
 
-	it("refuses free cells nothing can widen enough", ({ expect }) => {
-		const rects = [rect(0, 0, 8), rect(8, 0, 8), rect(16, 0, 4)]
-
-		expect(dropInGrid(rects, outside(8), run(20, 0, 4))).toBeNull()
+	it.for([
+		{
+			name: "free cells nothing can widen enough",
+			input: {
+				rects: [rect(0, 0, 8), rect(8, 0, 8), rect(16, 0, 4)],
+				dragged: outside(8),
+				target: free(2, "right"),
+			},
+		},
+		{
+			name: "a target block the grid does not hold",
+			input: {
+				rects: [rect(0, 0, 12)],
+				dragged: outside(12),
+				target: above(3),
+			},
+		},
+		{
+			name: "the dragged block itself as the target",
+			input: {
+				rects: [rect(0, 0, 12), rect(12, 0, 12)],
+				dragged: inside(0, 12),
+				target: beside(0, "right"),
+			},
+		},
+	])("refuses $name", ({ input }, { expect }) => {
+		expect(dropInGrid(input.rects, input.dragged, input.target)).toBeNull()
 	})
 
 	it("keeps every block inside the grid, apart, floated up and slid left after any drop", ({
@@ -446,17 +532,18 @@ describe("dropInGrid", () => {
 			const h = index === null ? pick(seed + 1, [1, 2]) : (rects[index]?.h ?? 1)
 			const result = dropInGrid(rects, { index: index, w: w, h: h }, target)
 
-			// only the blocks of the line's row may slide right. Any block may
-			// slide left.
+			// a drop beside a block, into free cells or at the first cell can
+			// slide blocks right. Any block may slide left.
 			problems.push(
 				...layoutProblems(result ?? rects).map((p) => `seed ${seed}: ${p}`),
 				...movedRight(
 					rects,
 					result ?? rects,
-					(rect, i) =>
+					(_rect, i) =>
 						i === index ||
-						target.kind === "run" ||
-						(target.kind === "line" && rect.y === target.y),
+						target.kind === "beside" ||
+						target.kind === "free" ||
+						target.kind === "start",
 				).map((p) => `seed ${seed}: ${p}`),
 			)
 		}
@@ -698,16 +785,28 @@ function inside(index: number, w: number, h = 1) {
 	return { index: index, w: w, h: h }
 }
 
-function line(x: number, y: number): GridDropTarget {
-	return { kind: "line", x: x, y: y }
+function beside(
+	index: number,
+	side: "left" | "right",
+	row = 0,
+): GridDropTarget {
+	return { kind: "beside", index: index, side: side, row: row }
 }
 
-function at(x: number, y: number): GridDropTarget {
-	return { kind: "at", x: x, y: y }
+function free(index: number, side: "left" | "right", row = 0): GridDropTarget {
+	return { kind: "free", index: index, side: side, row: row }
 }
 
-function run(x: number, y: number, w: number): GridDropTarget {
-	return { kind: "run", x: x, y: y, w: w }
+function above(index: number): GridDropTarget {
+	return { kind: "above", index: index }
+}
+
+function below(index: number): GridDropTarget {
+	return { kind: "below", index: index }
+}
+
+function start(): GridDropTarget {
+	return { kind: "start" }
 }
 
 // a seeded pick, so a failing run repeats
@@ -736,17 +835,21 @@ function randomLayout(seed: number): GridRect[] {
 }
 
 function randomTarget(seed: number, rects: GridRect[]): GridDropTarget {
-	const anchor = rects[seed % rects.length] ?? rect(0, 0, 12)
+	const index = seed % rects.length
+	const side = pick(seed + 3, ["left", "right"] as const)
+	const row = seed % (rects[index]?.h ?? 1)
 
-	switch (seed % 4) {
+	switch (seed % 5) {
 		case 0:
-			return line(anchor.x, anchor.y)
+			return beside(index, side, row)
 		case 1:
-			return line(anchor.x + anchor.w, anchor.y)
+			return free(index, side, row)
 		case 2:
-			return at(anchor.x, anchor.y + (seed % 2 ? anchor.h : 0))
+			return above(index)
+		case 3:
+			return below(index)
 		default:
-			return run(anchor.x, anchor.y + anchor.h, pick(seed, [4, 8, 12]))
+			return start()
 	}
 }
 
