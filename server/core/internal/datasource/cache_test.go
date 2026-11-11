@@ -197,7 +197,7 @@ func Test_cachedPrometheus_QueryRange(t *testing.T) {
 	}
 
 	m, _ := prepCacheManager(t, stubCache(nil, nil, nil))
-	cp := cachedPrometheus{Prometheus: inner, r: &runner{m: m, ds: DataSource{ID: xid.New()}}}
+	cp := cachedPrometheus{Prometheus: inner, m: m, ds: DataSource{ID: xid.New()}}
 
 	tr := processor.TimeRange{From: _testCacheFrom, To: _testCacheFrom.Add(time.Hour)}
 
@@ -244,7 +244,7 @@ func Test_cachedPostgreSQL_Query(t *testing.T) {
 	inner := &recordingPostgreSQL{res: &res}
 
 	m, _ := prepCacheManager(t, stubCache(nil, nil, nil))
-	cp := cachedPostgreSQL{PostgreSQL: inner, r: &runner{m: m, ds: DataSource{ID: xid.New()}}}
+	cp := cachedPostgreSQL{PostgreSQL: inner, m: m, ds: DataSource{ID: xid.New()}}
 
 	tr := processor.TimeRange{From: _testCacheFrom, To: _testCacheFrom.Add(time.Hour)}
 
@@ -298,7 +298,7 @@ func Test_cachedMySQL_Query(t *testing.T) {
 	inner := &recordingMySQL{res: &res}
 
 	m, _ := prepCacheManager(t, stubCache(nil, nil, nil))
-	cm := cachedMySQL{MySQL: inner, r: &runner{m: m, ds: DataSource{ID: xid.New()}}}
+	cm := cachedMySQL{MySQL: inner, m: m, ds: DataSource{ID: xid.New()}}
 
 	tr := processor.TimeRange{From: _testCacheFrom, To: _testCacheFrom.Add(time.Hour)}
 
@@ -373,7 +373,7 @@ func Test_cachedLogs_Logs(t *testing.T) {
 	}
 
 	m, _ := prepCacheManager(t, stubCache(nil, nil, nil))
-	cl := cachedLogs{client: inner, r: &runner{m: m, ds: DataSource{ID: xid.New()}}}
+	cl := cachedLogs{client: inner, m: m, ds: DataSource{ID: xid.New()}}
 
 	tr := processor.TimeRange{From: _testCacheFrom, To: _testCacheFrom.Add(time.Hour)}
 
@@ -422,7 +422,7 @@ func Test_cachedLogs_LogsVolume(t *testing.T) {
 	}
 
 	m, _ := prepCacheManager(t, stubCache(nil, nil, nil))
-	cl := cachedLogs{client: inner, r: &runner{m: m, ds: DataSource{ID: xid.New()}}}
+	cl := cachedLogs{client: inner, m: m, ds: DataSource{ID: xid.New()}}
 
 	tr := processor.TimeRange{From: _testCacheFrom, To: _testCacheFrom.Add(time.Hour)}
 
@@ -462,7 +462,7 @@ func Test_cachedLogs_LogFields(t *testing.T) {
 	}
 
 	m, _ := prepCacheManager(t, stubCache(nil, nil, nil))
-	cl := cachedLogs{client: inner, r: &runner{m: m, ds: DataSource{ID: xid.New()}}}
+	cl := cachedLogs{client: inner, m: m, ds: DataSource{ID: xid.New()}}
 
 	tr := processor.TimeRange{From: _testCacheFrom, To: _testCacheFrom.Add(time.Hour)}
 
@@ -493,7 +493,7 @@ func Test_cachedLogs_LogFieldValues(t *testing.T) {
 	}
 
 	m, _ := prepCacheManager(t, stubCache(nil, nil, nil))
-	cl := cachedLogs{client: inner, r: &runner{m: m, ds: DataSource{ID: xid.New()}}}
+	cl := cachedLogs{client: inner, m: m, ds: DataSource{ID: xid.New()}}
 
 	tr := processor.TimeRange{From: _testCacheFrom, To: _testCacheFrom.Add(time.Hour)}
 
@@ -755,7 +755,7 @@ func Test_cachedQuery(t *testing.T) {
 
 				for i := range c.Callers {
 					supv.Go(func(context.Context) {
-						results[i], errs[i] = cachedQuery(ctx, r, "key", call)
+						results[i], errs[i] = cachedQuery(ctx, m, r.ds.ID, "key", call)
 
 						mu.Lock()
 						done++

@@ -608,7 +608,7 @@ func Test_Manager_renew(t *testing.T) {
 	}
 }
 
-func Test_Manager_forgetTest(t *testing.T) {
+func Test_Manager_expireConnectionStatus(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
@@ -617,10 +617,6 @@ func Test_Manager_forgetTest(t *testing.T) {
 
 		// Found is what the runner's last test found.
 		Found processor.ConnectionStatus
-
-		// Replaced puts another runner of the same data source, with a
-		// passing test, in the runner's place.
-		Replaced bool
 
 		Forgotten bool
 	}{
@@ -655,13 +651,6 @@ func Test_Manager_forgetTest(t *testing.T) {
 			Err:   processor.ConnectionStatusUnreachable.Error(),
 			Found: processor.ConnectionStatusSuccess,
 		},
-		// the client of a runner that was let go answers the queries still
-		// on it while it closes.
-		"A runner another one replaced": {
-			Err:      processor.ConnectionStatusUnreachable.Error(),
-			Found:    processor.ConnectionStatusSuccess,
-			Replaced: true,
-		},
 	}
 
 	for cn, c := range cc {
@@ -677,20 +666,8 @@ func Test_Manager_forgetTest(t *testing.T) {
 				delete(m.runners, r.ds.ID)
 			}
 
-			nr := &runner{
-				m:        m,
-				ds:       r.ds,
-				testedAt: timeutil.Now(),
-				tested:   processor.ConnectionStatusSuccess,
-			}
+			m.expireConnectionStatus(context.Background(), r.ds.ID, c.Err)
 
-			if c.Replaced {
-				m.runners[r.ds.ID] = nr
-			}
-
-			m.forgetTest(context.Background(), r, c.Err)
-
-			assert.False(t, nr.testedAt.IsZero())
 			assert.Equal(t, c.Forgotten, r.testedAt.IsZero())
 
 			if c.Forgotten {
@@ -1567,13 +1544,13 @@ func Test_connect(t *testing.T) {
 				rival, ok := r.m.Runner(r.ds).(*runner)
 				require.True(t, ok)
 
-				_, _, rerr := connect[Prometheus](context.Background(), rival, c.Allowed...)
+				_, rerr := connect[Prometheus](context.Background(), rival, c.Allowed...)
 				require.NoError(t, rerr)
 
 				kept = rival
 			}
 
-			client, got, err := connect[Prometheus](context.Background(), r, c.Allowed...)
+			client, err := connect[Prometheus](context.Background(), r, c.Allowed...)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			ff := store.UpdateDataSourceStatusCalls()
@@ -1590,7 +1567,6 @@ func Test_connect(t *testing.T) {
 			}
 
 			assert.NotNil(t, client)
-			assert.Same(t, kept, got)
 			assert.Same(t, kept, r.m.runners[r.ds.ID])
 		})
 	}

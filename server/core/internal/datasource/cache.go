@@ -15,6 +15,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/rs/xid"
 )
 
 const (
@@ -39,7 +40,8 @@ const (
 type cachedPrometheus struct {
 	Prometheus
 
-	r *runner
+	m  *Manager
+	ds DataSource
 }
 
 // QueryRange performs the range query unless the same one was answered a
@@ -47,7 +49,7 @@ type cachedPrometheus struct {
 // key does the same and the client is given the range as asked: aligning
 // twice can widen the window.
 func (cp cachedPrometheus) QueryRange(ctx context.Context, q string, tr processor.TimeRange) (*processor.PrometheusQueryResult, error) {
-	return cachedQuery(ctx, cp.r, cacheKey(cp.r.ds, "query_range", tr.Normalize(), q), func(ctx context.Context) (*processor.PrometheusQueryResult, error) {
+	return cachedQuery(ctx, cp.m, cp.ds.ID, cacheKey(cp.ds, "query_range", tr.Normalize(), q), func(ctx context.Context) (*processor.PrometheusQueryResult, error) {
 		return cp.Prometheus.QueryRange(ctx, q, tr)
 	})
 }
@@ -56,14 +58,15 @@ func (cp cachedPrometheus) QueryRange(ctx context.Context, q string, tr processo
 type cachedPostgreSQL struct {
 	PostgreSQL
 
-	r *runner
+	m  *Manager
+	ds DataSource
 }
 
 // Query executes the query unless the same one was answered a moment ago.
 func (cp cachedPostgreSQL) Query(ctx context.Context, q string, tr processor.TimeRange, vars map[string]string) (*processor.PostgreSQLQueryResult, error) {
 	gtr := tr.AlignTo(_cacheGrid)
 
-	return cachedQuery(ctx, cp.r, cacheKey(cp.r.ds, "postgresql_query", gtr, append([]string{q}, variableArgs(q, vars)...)...), func(ctx context.Context) (*processor.PostgreSQLQueryResult, error) {
+	return cachedQuery(ctx, cp.m, cp.ds.ID, cacheKey(cp.ds, "postgresql_query", gtr, append([]string{q}, variableArgs(q, vars)...)...), func(ctx context.Context) (*processor.PostgreSQLQueryResult, error) {
 		return cp.PostgreSQL.Query(ctx, q, gtr, vars)
 	})
 }
@@ -72,14 +75,15 @@ func (cp cachedPostgreSQL) Query(ctx context.Context, q string, tr processor.Tim
 type cachedMySQL struct {
 	MySQL
 
-	r *runner
+	m  *Manager
+	ds DataSource
 }
 
 // Query executes the query unless the same one was answered a moment ago.
 func (cm cachedMySQL) Query(ctx context.Context, q string, tr processor.TimeRange, vars map[string]string) (*processor.MySQLQueryResult, error) {
 	gtr := tr.AlignTo(_cacheGrid)
 
-	return cachedQuery(ctx, cm.r, cacheKey(cm.r.ds, "mysql_query", gtr, append([]string{q}, variableArgs(q, vars)...)...), func(ctx context.Context) (*processor.MySQLQueryResult, error) {
+	return cachedQuery(ctx, cm.m, cm.ds.ID, cacheKey(cm.ds, "mysql_query", gtr, append([]string{q}, variableArgs(q, vars)...)...), func(ctx context.Context) (*processor.MySQLQueryResult, error) {
 		return cm.MySQL.Query(ctx, q, gtr, vars)
 	})
 }
@@ -90,7 +94,8 @@ func (cm cachedMySQL) Query(ctx context.Context, q string, tr processor.TimeRang
 type cachedLogs struct {
 	client Logs
 
-	r *runner
+	m  *Manager
+	ds DataSource
 }
 
 // TestConnection tests the connection through the client.
@@ -117,9 +122,9 @@ func (cl cachedLogs) Logs(
 	}
 
 	gtr := tr.AlignTo(_cacheGrid)
-	key := cacheKey(cl.r.ds, "logs", gtr, q, strconv.Itoa(page.Limit), string(cursor), string(page.Order))
+	key := cacheKey(cl.ds, "logs", gtr, q, strconv.Itoa(page.Limit), string(cursor), string(page.Order))
 
-	return cachedQuery(ctx, cl.r, key, func(ctx context.Context) (*processor.LogsResult, error) {
+	return cachedQuery(ctx, cl.m, cl.ds.ID, key, func(ctx context.Context) (*processor.LogsResult, error) {
 		return cl.client.Logs(ctx, q, gtr, page)
 	})
 }
@@ -128,7 +133,7 @@ func (cl cachedLogs) Logs(
 func (cl cachedLogs) LogsVolume(ctx context.Context, q string, tr processor.TimeRange) (*processor.QueryResult, error) {
 	gtr := tr.AlignTo(_cacheGrid)
 
-	return cachedQuery(ctx, cl.r, cacheKey(cl.r.ds, "logs_volume", gtr, q), func(ctx context.Context) (*processor.QueryResult, error) {
+	return cachedQuery(ctx, cl.m, cl.ds.ID, cacheKey(cl.ds, "logs_volume", gtr, q), func(ctx context.Context) (*processor.QueryResult, error) {
 		return cl.client.LogsVolume(ctx, q, gtr)
 	})
 }
@@ -138,7 +143,7 @@ func (cl cachedLogs) LogsVolume(ctx context.Context, q string, tr processor.Time
 func (cl cachedLogs) LogFields(ctx context.Context, q string, tr processor.TimeRange) (*processor.LogFieldsResult, error) {
 	gtr := tr.AlignTo(_cacheGrid)
 
-	return cachedQuery(ctx, cl.r, cacheKey(cl.r.ds, "log_fields", gtr, q), func(ctx context.Context) (*processor.LogFieldsResult, error) {
+	return cachedQuery(ctx, cl.m, cl.ds.ID, cacheKey(cl.ds, "log_fields", gtr, q), func(ctx context.Context) (*processor.LogFieldsResult, error) {
 		return cl.client.LogFields(ctx, q, gtr)
 	})
 }
@@ -148,24 +153,23 @@ func (cl cachedLogs) LogFields(ctx context.Context, q string, tr processor.TimeR
 func (cl cachedLogs) LogFieldValues(ctx context.Context, field, q string, tr processor.TimeRange) (*processor.LogFieldValuesResult, error) {
 	gtr := tr.AlignTo(_cacheGrid)
 
-	return cachedQuery(ctx, cl.r, cacheKey(cl.r.ds, "log_field_values", gtr, field, q), func(ctx context.Context) (*processor.LogFieldValuesResult, error) {
+	return cachedQuery(ctx, cl.m, cl.ds.ID, cacheKey(cl.ds, "log_field_values", gtr, field, q), func(ctx context.Context) (*processor.LogFieldValuesResult, error) {
 		return cl.client.LogFieldValues(ctx, field, q, gtr)
 	})
 }
 
-// cachedQuery answers a query run by r out of the manager's cache, or
-// runs call and keeps its answer for _cacheTTL. Identical calls arriving
-// while one runs wait for it and share its answer. A cache that cannot be
-// read or written is logged and treated as empty: the query still runs.
+// cachedQuery answers a query out of the manager's cache, or runs call and
+// keeps its answer for _cacheTTL. Identical calls arriving while one runs
+// wait for it and share its answer. A cache that cannot be read or written
+// is logged and treated as empty: the query still runs.
 func cachedQuery[T cacheable](
 	ctx context.Context,
-	r *runner,
+	m *Manager,
+	id xid.ID,
 	key string,
 	call func(context.Context) (T, error),
 ) (T, error) {
 	var zero T
-
-	m := r.m
 
 	data, err := m.cache.Get(ctx, key)
 	if err != nil && !errors.Is(err, errutil.ErrNotFound) {
@@ -198,12 +202,8 @@ func cachedQuery[T cacheable](
 		shared := context.WithoutCancel(ctx)
 
 		ans, cerr := call(shared)
-		if cerr != nil {
+		if cerr != nil || !ans.HasData() {
 			return ans, cerr
-		}
-
-		if !ans.HasData() {
-			return ans, nil
 		}
 
 		enc, merr := json.Marshal(ans)
@@ -223,10 +223,10 @@ func cachedQuery[T cacheable](
 	if led {
 		m.metrics.recordLookup(_lookupMiss)
 
-		// forgetting waits on the connection test, which only the caller
+		// expiring waits on the connection test, which only the caller
 		// that ran the query has to do. The ones sharing its answer go on.
 		if err != nil {
-			m.forgetTest(context.WithoutCancel(ctx), r, err)
+			m.expireConnectionStatus(context.WithoutCancel(ctx), id, err)
 		}
 	} else {
 		m.metrics.recordLookup(_lookupShared)
