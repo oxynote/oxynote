@@ -1099,7 +1099,7 @@ describe("<DataView>", { concurrent: false }, () => {
 			expect(calls[1]?.query.to).toBe("2026-01-01T12:00:06.000Z")
 		})
 
-		it("clears a changed interval's deadline once the ids arrive", async ({
+		it("reschedules a changed interval's deadline once the ids arrive", async ({
 			expect,
 		}) => {
 			mockEndpoint("GET", LINES_URL, () => logsResult([]))
@@ -1110,7 +1110,7 @@ describe("<DataView>", { concurrent: false }, () => {
 			// the branch id leaves with the route while the next document loads
 			useEditorStore().activeBranchId = null
 
-			// the interval changes before the id comes back, so the clear has
+			// the interval changes before the id comes back, so the reset has
 			// to wait for it instead of throwing
 			await wrapper.setProps({
 				config: { ...config, refreshInterval: RefreshInterval.S5 },
@@ -1119,8 +1119,14 @@ describe("<DataView>", { concurrent: false }, () => {
 			useEditorStore().activeBranchId = BRANCH_ID
 			await flushPromises()
 
-			// the saved ten seconds are gone, so the five second interval is
-			// due now
+			// the five second deadline starts from when the ids arrived
+			const resumedAt = Date.now()
+			expect(useEditorStore().isLogBlockDueForRefresh(UID)).toBe(false)
+
+			vi.setSystemTime(resumedAt + 4_999)
+			expect(useEditorStore().isLogBlockDueForRefresh(UID)).toBe(false)
+
+			vi.setSystemTime(resumedAt + 5_001)
 			expect(useEditorStore().isLogBlockDueForRefresh(UID)).toBe(true)
 		})
 

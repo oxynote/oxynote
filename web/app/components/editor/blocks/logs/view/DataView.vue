@@ -113,34 +113,10 @@ const refreshIntervalMs = computed(() =>
 	),
 )
 
-// the timer restarts when the interval changes, but the saved next
-// refresh still holds the old interval. Clear it so a shorter interval
-// does not wait for the old one. The ids arrive with the route, often
-// after the block has mounted, so a change that arrives first is cleared
-// when they do.
+// set when the interval changes before the route's ids exist, so the
+// deadline is moved once they do
 const intervalChangedBeforeIds = ref(false)
 
-watch(refreshIntervalMs, () => {
-	if (!editorStore.activeDocumentId || !editorStore.activeBranchId) {
-		intervalChangedBeforeIds.value = true
-
-		return
-	}
-
-	editorStore.clearLogBlockNextRefreshTimestamp(props.uid)
-})
-
-watch(
-	[() => editorStore.activeDocumentId, () => editorStore.activeBranchId],
-	([docId, branchId]) => {
-		if (!intervalChangedBeforeIds.value || !docId || !branchId) {
-			return
-		}
-
-		intervalChangedBeforeIds.value = false
-		editorStore.clearLogBlockNextRefreshTimestamp(props.uid)
-	},
-)
 const fetchLogs = useLogs(
 	() => props.config.dataSourceId,
 	() => {
@@ -254,6 +230,39 @@ useIntervalFn(() => void refreshData(), refreshIntervalMs, {
 onMounted(() => {
 	void refreshData()
 })
+
+// the timer restarts when the interval changes. Move the saved deadline to
+// the new interval without making the block due, so changing the variable
+// quickly does not fire a request for each change.
+watch(refreshIntervalMs, () => {
+	if (!editorStore.activeDocumentId || !editorStore.activeBranchId) {
+		intervalChangedBeforeIds.value = true
+
+		return
+	}
+
+	editorStore.setLogBlockNextRefreshTimestamp(
+		props.uid,
+		refreshIntervalMs.value,
+	)
+})
+
+// the ids arrive with the route, often after the block has mounted, so a
+// change that arrives first is applied when they do
+watch(
+	[() => editorStore.activeDocumentId, () => editorStore.activeBranchId],
+	([docId, branchId]) => {
+		if (!intervalChangedBeforeIds.value || !docId || !branchId) {
+			return
+		}
+
+		intervalChangedBeforeIds.value = false
+		editorStore.setLogBlockNextRefreshTimestamp(
+			props.uid,
+			refreshIntervalMs.value,
+		)
+	},
+)
 
 watch(near, (isNear) => {
 	if (isNear && refreshWhenNear.value) {

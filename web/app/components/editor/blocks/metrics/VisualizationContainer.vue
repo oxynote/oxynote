@@ -59,34 +59,9 @@ const refreshIntervalMs = computed(() =>
 	),
 )
 
-// the timer restarts when the interval changes, but the saved next
-// refresh still holds the old interval. Clear it so a shorter interval
-// does not wait for the old one. The ids arrive with the route, often
-// after the block has mounted, so a change that arrives first is cleared
-// when they do.
+// set when the interval changes before the route's ids exist, so the
+// deadline is moved once they do
 const intervalChangedBeforeIds = ref(false)
-
-watch(refreshIntervalMs, () => {
-	if (!editorStore.activeDocumentId || !editorStore.activeBranchId) {
-		intervalChangedBeforeIds.value = true
-
-		return
-	}
-
-	editorStore.clearMetricBlockNextRefreshTimestamp(props.uid)
-})
-
-watch(
-	[() => editorStore.activeDocumentId, () => editorStore.activeBranchId],
-	([docId, branchId]) => {
-		if (!intervalChangedBeforeIds.value || !docId || !branchId) {
-			return
-		}
-
-		intervalChangedBeforeIds.value = false
-		editorStore.clearMetricBlockNextRefreshTimestamp(props.uid)
-	},
-)
 
 // a simulation stands in for a metric that has not arrived yet. A source
 // that cannot be reached is a different problem, and drawing a plausible
@@ -379,6 +354,39 @@ onMounted(async () => {
 		canUseDebouncedConfigInParams.value = true
 	}, 3000)
 })
+
+// the timer restarts when the interval changes. Move the saved deadline to
+// the new interval without making the block due, so changing the variable
+// quickly does not fire a request for each change.
+watch(refreshIntervalMs, () => {
+	if (!editorStore.activeDocumentId || !editorStore.activeBranchId) {
+		intervalChangedBeforeIds.value = true
+
+		return
+	}
+
+	editorStore.setMetricBlockNextRefreshTimestamp(
+		props.uid,
+		refreshIntervalMs.value,
+	)
+})
+
+// the ids arrive with the route, often after the block has mounted, so a
+// change that arrives first is applied when they do
+watch(
+	[() => editorStore.activeDocumentId, () => editorStore.activeBranchId],
+	([docId, branchId]) => {
+		if (!intervalChangedBeforeIds.value || !docId || !branchId) {
+			return
+		}
+
+		intervalChangedBeforeIds.value = false
+		editorStore.setMetricBlockNextRefreshTimestamp(
+			props.uid,
+			refreshIntervalMs.value,
+		)
+	},
+)
 
 watch(simulationPreset, (preset, previous) => {
 	if (preset) {

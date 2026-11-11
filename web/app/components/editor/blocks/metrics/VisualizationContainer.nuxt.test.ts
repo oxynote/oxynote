@@ -1251,19 +1251,22 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 			vi.setSystemTime(start + 60_000)
 			expect(useEditorStore().isMetricBlockDueForRefresh(uid)).toBe(false)
 
-			// changing the variable to one minute clears it, so the block is
-			// due now instead of waiting for the old five minutes
+			// changing the variable to one minute moves the deadline to one
+			// minute from the change instead of leaving the old five minutes
 			const nextTree = variableTree()
 			const nextRefresh = at(at(nextTree, 0).variables, 1)
 			nextRefresh.value = at(nextRefresh.options, 1).id
 			seedQueryData(VARIABLE_QUERY_KEYS.tree, nextTree)
+			await flushPromises()
 
-			await vi.waitFor(() => {
-				expect(useEditorStore().isMetricBlockDueForRefresh(uid)).toBe(true)
-			}, WAIT_FOR_OPTIONS)
+			vi.setSystemTime(start + 60_000 + 59_000)
+			expect(useEditorStore().isMetricBlockDueForRefresh(uid)).toBe(false)
+
+			vi.setSystemTime(start + 60_000 + 61_000)
+			expect(useEditorStore().isMetricBlockDueForRefresh(uid)).toBe(true)
 		})
 
-		it("clears a changed interval's deadline once the ids arrive", async ({
+		it("reschedules a changed interval's deadline once the ids arrive", async ({
 			expect,
 		}) => {
 			vi.useFakeTimers({ toFake: ["Date"] })
@@ -1287,7 +1290,7 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 			// the branch id leaves with the route while the next document loads
 			store.activeBranchId = null
 
-			// the interval changes before the id comes back, so the clear has
+			// the interval changes before the id comes back, so the reset has
 			// to wait for it instead of throwing
 			const nextTree = variableTree()
 			const nextRefresh = at(at(nextTree, 0).variables, 1)
@@ -1299,8 +1302,14 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 			store.activeBranchId = BRANCH_ID
 			await flushPromises()
 
-			// the saved five minutes are gone, so the one minute interval is
-			// due now
+			// the one minute deadline starts from when the ids arrived
+			const resumedAt = Date.now()
+			expect(store.isMetricBlockDueForRefresh(uid)).toBe(false)
+
+			vi.setSystemTime(resumedAt + 59_000)
+			expect(store.isMetricBlockDueForRefresh(uid)).toBe(false)
+
+			vi.setSystemTime(resumedAt + 61_000)
 			expect(store.isMetricBlockDueForRefresh(uid)).toBe(true)
 		})
 
