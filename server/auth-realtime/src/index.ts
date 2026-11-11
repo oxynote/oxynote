@@ -1,4 +1,3 @@
-
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { createNodeWebSocket } from "@hono/node-ws"
@@ -17,22 +16,15 @@ import { createLogger } from "./logging.js"
 import { createRoutes } from "./routes.js"
 import { bestEffort } from "./reporting.js"
 
-// The composition root: the only module that reads the environment, opens
-// connections, or listens. Everything below it is a factory taking what it
-// needs, which is what makes the rest of the service testable without a
-// database, a redis, or a port.
-
 let log = createLogger("INFO", destination(1))
 
 function formatError(error: unknown): string {
 	if (error instanceof AggregateError) {
-		const causes = error.errors.map((cause: unknown) =>
-			formatError(cause),
-		)
-
 		return [
 			error.message,
-			...causes,
+			...error.errors.map((cause: unknown) =>
+				formatError(cause),
+			),
 		]
 			.filter(Boolean)
 			.join("; ")
@@ -49,240 +41,287 @@ async function main() {
 	const env = loadEnv(process.env)
 	log = createLogger(env.logLevel, destination(1))
 
+	// Resources are optional because startup can fail at any point.
 	const database = createDatabase(env.databaseDSN)
-	const { store, dialect } = database
-	const core = createCoreClient(env.coreUrl)
-
-	// Valkey is optional: without it better-auth keeps no secondary storage,
-	// so nothing is dialed here either.
-	//
-	// RESP2: node-redis 6 defaults to RESP3, whose reply shapes better-auth's
-	// secondary storage does not read correctly.
-	// The type is spelled out because the shutdown handler reads it from a
-	// closure, where an inferred evolving any does not survive.
 	let redis: ReturnType<typeof createClient> | undefined
+	let hocuspocus:
+		ReturnType<typeof createHocuspocus>["instance"] | undefined
+	let server: ReturnType<typeof serve> | undefined
 
-	if (env.valkeyDsn) {
-		let connecting = true
+	let shutdownPromise: Promise<void> | undefined
+	let exitCode = 0
 
-		redis = createClient({
-			url: env.valkeyDsn,
-			RESP: 2,
-			socket: {
-				reconnectStrategy: (retries) => {
-					if (connecting) {
-						return false
-					}
+	// Close whichever resources were successfully initialized.
+	async function cleanup() {
+		const currentServer = server
 
-					return Math.min(2 ** retries * 50, 3000)
-				},
-			},
-		})
-
-		redis.on("error", (err) => {
-			if (connecting) return
-
-			const message =
-				err instanceof Error && err.message
-					? err.message
-					: String(err)
-
-			log.error(
-				`Valkey client error: ${message || "unknown error"}`,
-			)
-		})
-
-		try {
-			await redis.connect()
-		} finally {
-			connecting = false
+		if (currentServer?.listening) {
+			await new Promise<void>((resolve) => {
+				currentServer.close(() => {
+					resolve()
+				})
+			})
 		}
-	}
 
-	const auth = createAuth({ env, store, dialect, redis, core, log })
-	const authContext = await auth.$context
+		const currentHocuspocus = hocuspocus
 
-	// Before listening, so no signup can race the organization's creation.
-	await bootstrapSingleOrganization({
-		env,
-		store,
-		log,
-		accounts: authContext.internalAdapter,
-		hashPassword: (password) => authContext.password.hash(password),
-		createOrganization: (organization) =>
-			auth.api.createOrganization({ body: organization }),
-		random: Math.random,
-	})
+		if (currentHocuspocus) {
+			await bestEffort(async () => {
+				if (currentHocuspocus.getDocumentsCount() > 0) {
+					await new Promise<void>((resolve) => {
+						currentHocuspocus.configuration.extensions.push(
+							{
+								afterUnloadDocument({
+									instance,
+								}) {
+									if (
+										instance.getDocumentsCount() ===
+										0
+									) {
+										resolve()
+									}
 
-	const {
-		instance: hocuspocus,
-		flushDocument,
-		resetConnections,
-	} = createHocuspocus({
-		auth: { getSession: (input) => auth.api.getSession(input) },
-		core,
-		log,
-	})
+									return Promise.resolve()
+								},
+							},
+						)
 
-	const app = new Hono()
-
-	// Kept as one object rather than destructured: both are methods bound to
-	// the adapter's own state.
-	const nodeWs = createNodeWebSocket({ app })
-
-	app.route(
-		"/api",
-		createRoutes({
-			env,
-			auth,
-			store,
-			hocuspocus,
-			flushDocument,
-			resetConnections,
-			findDefaultAdmin: createDefaultAdminLookup({
-				store,
-				verifyPassword: (data) =>
-					authContext.password.verify(data),
-			}),
-			core,
-		}),
-	)
-
-	// The RFC 9728 protected-resource metadata for the MCP surface is served
-	// by the mcp plugin's request hook, which matches root-anchored
-	// well-known paths — the request must reach better-auth with its
-	// original path, unlike the basePath'd /api/auth endpoints.
-	app.on(
-		["GET", "HEAD"],
-		[
-			"/.well-known/oauth-protected-resource",
-			"/.well-known/oauth-protected-resource/*",
-		],
-		(c) => auth.handler(c.req.raw),
-	)
-
-	app.get(
-		"/hocuspocus",
-		nodeWs.upgradeWebSocket((c) => {
-			// Hocuspocus does not attach its own socket listeners here, so the
-			// frames hono receives have to be fed in. Without that the client's
-			// opening Sync message is dropped and the document never syncs.
-			let clientConnection:
-				| ReturnType<typeof hocuspocus.handleConnection>
-				| undefined
-
-			return {
-				onOpen(_evt, ws) {
-					if (!ws.raw) {
-						return
-					}
-
-					ws.raw.binaryType = "arraybuffer"
-					clientConnection = hocuspocus.handleConnection(
-						ws.raw,
-						c.req.raw,
-					)
-				},
-				onMessage(evt) {
-					if (!(evt.data instanceof ArrayBuffer)) {
-						return
-					}
-
-					clientConnection?.handleMessage(
-						new Uint8Array(evt.data),
-					)
-				},
-				onClose() {
-					clientConnection?.handleClose()
-				},
-			}
-		}),
-	)
-
-	const server = serve(
-		{
-			fetch: app.fetch,
-			hostname: env.listenHost,
-			port: env.listenPort,
-		},
-		(info) => {
-			void hocuspocus.hooks("onListen", {
-				instance: hocuspocus,
-				configuration: hocuspocus.configuration,
-				port: info.port,
+						currentHocuspocus.closeConnections()
+						currentHocuspocus.flushPendingStores()
+					})
+				}
 			})
 
-			log.info("listening")
-		},
-	)
+			await bestEffort(() =>
+				currentHocuspocus.hooks("onDestroy", {
+					instance: currentHocuspocus,
+				}),
+			)
+		}
 
-	nodeWs.injectWebSocket(server)
+		const currentRedis = redis
 
-	// Handle asynchronous HTTP server errors, such as EADDRINUSE.
-	server.on("error", (error: unknown) => {
-		log.error(`HTTP server error: ${formatError(error)}`)
-		process.exitCode = 1
-	})
+		if (currentRedis) {
+			await bestEffort(() => currentRedis.close())
+		}
 
-	// How long a graceful shutdown may take before the process force-exits.
-	const shutdownDeadlineMs = 15_000
+		await bestEffort(() => database.close())
+	}
 
-	// Graceful shutdown: stop accepting HTTP, then drain hocuspocus before
-	// exiting — its onStoreDocument persists are debounced for up to ten
-	// seconds, so exiting on the signal alone would drop that window of edits.
-	async function shutdown() {
+	// The same shutdown path handles signals and HTTP server failures.
+	function shutdown(code: number): Promise<void> {
+		if (code !== 0) {
+			exitCode = code
+		}
+
+		process.exitCode = exitCode
+
+		if (shutdownPromise) {
+			return shutdownPromise
+		}
+
 		const deadline = setTimeout(() => {
 			log.error("shutdown deadline exceeded")
-			log.flush(() => process.exit(1))
-		}, shutdownDeadlineMs)
-		deadline.unref()
+			process.exit(exitCode || 1)
+		}, 15_000)
 
-		const httpClosed = new Promise<void>((resolve) => {
-			server.close(() => {
-				resolve()
-			})
-		})
-
-		// The drain hocuspocus's own standalone server performs in destroy():
-		// a document unloads only after its pending store completed, so once
-		// every document is gone the debounced persists have run. The
-		// extension is registered before connections close so no unload can
-		// slip past it.
-		await new Promise<void>((resolve) => {
-			if (hocuspocus.getDocumentsCount() === 0) {
-				resolve()
-				return
+		shutdownPromise = (async () => {
+			try {
+				await cleanup()
+			} catch (error: unknown) {
+				log.error(
+					`Shutdown error: ${formatError(error)}`,
+				)
+				exitCode = 1
+			} finally {
+				clearTimeout(deadline)
+				process.exitCode = exitCode
 			}
+		})()
 
-			hocuspocus.configuration.extensions.push({
-				afterUnloadDocument({ instance }) {
-					if (instance.getDocumentsCount() === 0) {
-						resolve()
-					}
+		return shutdownPromise
+	}
 
-					return Promise.resolve()
+	try {
+		const { store, dialect } = database
+		const core = createCoreClient(env.coreUrl)
+
+		if (env.valkeyDsn) {
+			let connecting = true
+
+			redis = createClient({
+				url: env.valkeyDsn,
+				RESP: 2,
+				socket: {
+					reconnectStrategy: (retries) => {
+						if (connecting) return false
+						return Math.min(
+							2 ** retries * 50,
+							3000,
+						)
+					},
 				},
 			})
 
-			hocuspocus.closeConnections()
-			hocuspocus.flushPendingStores()
+			redis.on("error", (error) => {
+				if (connecting) return
+				log.error(
+					`Valkey client error: ${formatError(error)}`,
+				)
+			})
+
+			try {
+				await redis.connect()
+			} finally {
+				connecting = false
+			}
+		}
+
+		const auth = createAuth({
+			env,
+			store,
+			dialect,
+			redis,
+			core,
+			log,
+		})
+		const authContext = await auth.$context
+
+		await bootstrapSingleOrganization({
+			env,
+			store,
+			log,
+			accounts: authContext.internalAdapter,
+			hashPassword: (password) =>
+				authContext.password.hash(password),
+			createOrganization: (organization) =>
+				auth.api.createOrganization({
+					body: organization,
+				}),
+			random: Math.random,
 		})
 
-		await hocuspocus.hooks("onDestroy", { instance: hocuspocus })
-		await httpClosed
+		const hocuspocusResult = createHocuspocus({
+			auth: {
+				getSession: (input) =>
+					auth.api.getSession(input),
+			},
+			core,
+			log,
+		})
 
-		// Redis is absent on a deployment running without Valkey.
-		await bestEffort(() => redis?.close())
-		await bestEffort(() => database.close())
+		const currentHocuspocus = hocuspocusResult.instance
+		hocuspocus = currentHocuspocus
 
-		process.exit(0)
+		const { flushDocument, resetConnections } = hocuspocusResult
+
+		const app = new Hono()
+		const nodeWs = createNodeWebSocket({ app })
+
+		app.route(
+			"/api",
+			createRoutes({
+				env,
+				auth,
+				store,
+				hocuspocus: currentHocuspocus,
+				flushDocument,
+				resetConnections,
+				findDefaultAdmin: createDefaultAdminLookup({
+					store,
+					verifyPassword: (data) =>
+						authContext.password.verify(
+							data,
+						),
+				}),
+				core,
+			}),
+		)
+
+		app.on(
+			["GET", "HEAD"],
+			[
+				"/.well-known/oauth-protected-resource",
+				"/.well-known/oauth-protected-resource/*",
+			],
+			(c) => auth.handler(c.req.raw),
+		)
+
+		app.get(
+			"/hocuspocus",
+			nodeWs.upgradeWebSocket((c) => {
+				let clientConnection:
+					| ReturnType<
+							typeof currentHocuspocus.handleConnection
+					  >
+					| undefined
+
+				return {
+					onOpen(_evt, ws) {
+						if (!ws.raw) return
+
+						ws.raw.binaryType =
+							"arraybuffer"
+						clientConnection =
+							currentHocuspocus.handleConnection(
+								ws.raw,
+								c.req.raw,
+							)
+					},
+					onMessage(evt) {
+						if (
+							!(
+								evt.data instanceof
+								ArrayBuffer
+							)
+						)
+							return
+						clientConnection?.handleMessage(
+							new Uint8Array(
+								evt.data,
+							),
+						)
+					},
+					onClose() {
+						clientConnection?.handleClose()
+					},
+				}
+			}),
+		)
+
+		server = serve(
+			{
+				fetch: app.fetch,
+				hostname: env.listenHost,
+				port: env.listenPort,
+			},
+			(info) => {
+				void currentHocuspocus.hooks("onListen", {
+					instance: currentHocuspocus,
+					configuration:
+						currentHocuspocus.configuration,
+					port: info.port,
+				})
+
+				log.info("listening")
+			},
+		)
+
+		nodeWs.injectWebSocket(server)
+
+		server.on("error", (error: unknown) => {
+			log.error(`HTTP server error: ${formatError(error)}`)
+			void shutdown(1)
+		})
+
+		process.once("SIGINT", () => void shutdown(0))
+		process.once("SIGTERM", () => void shutdown(0))
+	} catch (error: unknown) {
+		log.error(formatError(error))
+		await shutdown(1)
 	}
-
-	process.once("SIGINT", () => void shutdown())
-	process.once("SIGTERM", () => void shutdown())
 }
 
-// Handle rejected startup operations in one place.
 main().catch((error: unknown) => {
 	log.error(formatError(error))
 	process.exitCode = 1
