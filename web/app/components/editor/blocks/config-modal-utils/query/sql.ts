@@ -8,7 +8,7 @@ import {
 	keywordCompletionSource,
 } from "@codemirror/lang-sql"
 import { EditorView } from "@codemirror/view"
-import { resolveTimeRange, type TimeRangePreset } from "~/utils/time-range"
+import { resolveTimeRange, type TimeRange } from "~/utils/time-range"
 import type {
 	Completion,
 	CompletionContext,
@@ -477,7 +477,7 @@ export function useSQLQueryExtension(
 	t: (key: string) => string,
 	dataSourceId: MaybeRefOrGetter<string | null | undefined>,
 	dataSourceType: MaybeRefOrGetter<DataSourceType | null | undefined>,
-	_timeRange: MaybeRefOrGetter<TimeRangePreset | null | undefined>,
+	_timeRange: MaybeRefOrGetter<TimeRange | null | undefined>,
 	enable: MaybeRefOrGetter<boolean>,
 	variables: MaybeRefOrGetter<VariableTreeResponse>,
 ) {
@@ -576,7 +576,7 @@ export function useSQLQueryExtension(
 export function useSQLLegendExtension(
 	query: MaybeRefOrGetter<string | null | undefined>,
 	dataSourceId: MaybeRefOrGetter<string | null | undefined>,
-	timeRange: MaybeRefOrGetter<TimeRangePreset | null | undefined>,
+	timeRange: MaybeRefOrGetter<TimeRange | null | undefined>,
 	enable: MaybeRefOrGetter<boolean>,
 	variables: MaybeRefOrGetter<VariableTreeResponse>,
 ) {

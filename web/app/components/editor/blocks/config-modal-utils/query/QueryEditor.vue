@@ -17,7 +17,7 @@ import {
 	trimEditorWhitespace,
 	useQueryEditorExtension,
 } from "./codemirror"
-import type { TimeRangePreset } from "~/utils/time-range"
+import type { TimeRange } from "~/utils/time-range"
 import { indentWithTab } from "@codemirror/commands"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 
@@ -26,7 +26,7 @@ let wasFocusedAtLeastOnce = false
 const props = defineProps<{
 	diffStatus?: DiffStatus | null
 	dataSourceId: string | null | undefined // null disables the editor (it affects the autocompletions)
-	timeRange: TimeRangePreset | null | undefined
+	timeRange: TimeRange | null | undefined
 }>()
 const emit = defineEmits<{
 	(event: "focus-change", focused: boolean): void

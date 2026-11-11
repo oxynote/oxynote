@@ -8,7 +8,11 @@ import {
 	type CompletionResult,
 } from "@codemirror/autocomplete"
 import type { EditorState } from "@codemirror/state"
-import { resolveTimeRange, TimeRangePreset } from "~/utils/time-range"
+import {
+	resolveTimeRange,
+	TimeRangePreset,
+	type TimeRange,
+} from "~/utils/time-range"
 import type { VariableTreeResponse } from "~/utils"
 import { referencedVariableValues } from "~/utils/variable"
 import {
@@ -282,7 +286,7 @@ function variableSlot(ctx: CompletionContext, inString: boolean) {
 export function useLogQLQueryExtension(
 	t: (key: string) => string,
 	dataSourceId: MaybeRefOrGetter<string | null | undefined>,
-	timeRange: MaybeRefOrGetter<TimeRangePreset | null | undefined>,
+	timeRange: MaybeRefOrGetter<TimeRange | null | undefined>,
 	enable: MaybeRefOrGetter<boolean>,
 	variables: MaybeRefOrGetter<VariableTreeResponse>,
 ) {

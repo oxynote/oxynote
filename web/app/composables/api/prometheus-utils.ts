@@ -2,11 +2,11 @@ import type { PrometheusClient } from "@prometheus-io/codemirror-promql"
 import type { MetricMetadata } from "@prometheus-io/codemirror-promql/dist/esm/client/prometheus"
 import type { Matcher } from "@prometheus-io/codemirror-promql/dist/esm/types"
 import { EqlRegex, EqlSingle, Neq, NeqRegex } from "@prometheus-io/lezer-promql"
-import { resolveTimeRange, type TimeRangePreset } from "~/utils/time-range"
+import { resolveTimeRange, type TimeRange } from "~/utils/time-range"
 
 // based on: https://github.com/prometheus/prometheus/blob/main/web/ui/module/codemirror-promql/src/client/prometheus.ts#L83
 export class PrometheusDataSourceClient implements PrometheusClient {
-	private readonly timeRangeFn: () => Promise<TimeRangePreset> // in milliseconds
+	private readonly timeRangeFn: () => Promise<TimeRange> // in milliseconds
 	private readonly metricMetadataFn: () => Promise<PrometheusMetadataResult>
 	private readonly labelNamesFn: (
 		params: PrometheusLabelParams,
@@ -19,7 +19,7 @@ export class PrometheusDataSourceClient implements PrometheusClient {
 	) => Promise<PrometheusSeriesResult>
 
 	constructor(options: {
-		timeRangeFn: () => Promise<TimeRangePreset>
+		timeRangeFn: () => Promise<TimeRange>
 		metricMetadataFn: () => Promise<PrometheusMetadataResult>
 		labelNamesFn: (
 			params: PrometheusLabelParams,

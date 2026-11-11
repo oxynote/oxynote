@@ -51,6 +51,10 @@ export enum TimeRangePreset {
 	PreviousYear = "previous_year",
 }
 
+// absolute windows stay fixed when a chart refreshes or a document reloads
+export type CustomTimeRange = `custom:${string}/${string}`
+export type TimeRange = TimeRangePreset | CustomTimeRange
+
 // the intervals a metric chart refreshes at, shortest first
 export enum RefreshInterval {
 	S5 = "5s",
@@ -68,9 +72,14 @@ export enum RefreshInterval {
 const WEEK_OPTIONS = { weekStartsOn: 1 as const }
 
 export function resolveTimeRange(
-	preset: TimeRangePreset,
+	preset: TimeRange,
 	now: Date = new Date(),
 ): { from: Date; to: Date } {
+	const custom = parseCustomTimeRange(preset)
+	if (custom) {
+		return custom
+	}
+
 	switch (preset) {
 		// ────────────────
 		// Quick / relative
@@ -177,7 +186,48 @@ export function resolveTimeRange(
 				to: endOfYear(prev),
 			}
 		}
+		default:
+			throw new RangeError("Invalid time range")
 	}
+}
+
+export function parseCustomTimeRange(
+	value: string,
+): { from: Date; to: Date } | null {
+	if (!value.startsWith("custom:")) {
+		return null
+	}
+
+	const [start, end, extra] = value.slice("custom:".length).split("/")
+	if (!start || !end || extra !== undefined) {
+		return null
+	}
+
+	const from = new Date(start)
+	const to = new Date(end)
+	if (
+		!Number.isFinite(from.getTime()) ||
+		!Number.isFinite(to.getTime()) ||
+		from >= to ||
+		from.toISOString() !== start ||
+		to.toISOString() !== end
+	) {
+		return null
+	}
+
+	return { from, to }
+}
+
+export function serializeCustomTimeRange(
+	from: Date,
+	to: Date,
+): CustomTimeRange {
+	const value: CustomTimeRange = `custom:${from.toISOString()}/${to.toISOString()}`
+	if (!parseCustomTimeRange(value)) {
+		throw new RangeError("Invalid time range")
+	}
+
+	return value
 }
 
 export function refreshIntervalToMs(interval: RefreshInterval): number {

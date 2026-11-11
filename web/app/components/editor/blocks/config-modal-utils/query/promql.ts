@@ -10,7 +10,11 @@ import type {
 } from "@codemirror/autocomplete"
 import { parser } from "@prometheus-io/lezer-promql"
 import type { EditorState } from "@codemirror/state"
-import { resolveTimeRange, TimeRangePreset } from "~/utils/time-range"
+import {
+	resolveTimeRange,
+	TimeRangePreset,
+	type TimeRange,
+} from "~/utils/time-range"
 import type { VariableTreeResponse } from "~/utils"
 import { referencedVariableValues } from "~/utils/variable"
 import {
@@ -186,7 +190,7 @@ function makeWrappedCompleteStrategy(
 export function usePromQLQueryExtension(
 	t: (key: string) => string,
 	dataSourceId: MaybeRefOrGetter<string | null | undefined>,
-	timeRange: MaybeRefOrGetter<TimeRangePreset | null | undefined>,
+	timeRange: MaybeRefOrGetter<TimeRange | null | undefined>,
 	enable: MaybeRefOrGetter<boolean>,
 	variables: MaybeRefOrGetter<VariableTreeResponse>,
 ) {
@@ -297,7 +301,7 @@ export function usePromQLQueryExtension(
 export function usePromQLLegendExtension(
 	query: MaybeRefOrGetter<string | null | undefined>,
 	dataSourceId: MaybeRefOrGetter<string | null | undefined>,
-	timeRange: MaybeRefOrGetter<TimeRangePreset | null | undefined>,
+	timeRange: MaybeRefOrGetter<TimeRange | null | undefined>,
 	enable: MaybeRefOrGetter<boolean>,
 	variables: MaybeRefOrGetter<VariableTreeResponse>,
 ) {

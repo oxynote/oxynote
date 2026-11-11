@@ -8,10 +8,7 @@ import {
 	type FieldChange,
 } from "~/components/editor/diff/change-count"
 import DiffFieldChanges from "~/components/editor/diff/DiffFieldChanges.vue"
-import {
-	METRIC_REFRESH_INTERVAL_REFERENCE,
-	METRIC_TIME_RANGE_REFERENCE,
-} from "~/utils/variable"
+import { METRIC_REFRESH_INTERVAL_REFERENCE } from "~/utils/variable"
 
 // matches the per-field units of queries, such as "queries.1.query"
 const QUERY_FIELD_RE = /^queries\.(\d+)\.query$/
@@ -22,6 +19,7 @@ const props = defineProps<{
 
 const { t } = useI18n({ useScope: "global" })
 const { fetchDataSources } = useDataSourceAPI()
+const timeRangeLabel = useTimeRangeLabel()
 
 const rows = computed<FieldChange[]>(() =>
 	collectAttributeChanges(props.node).map(toRow),
@@ -50,10 +48,7 @@ function toRow(change: AttributeChange): FieldChange {
 			return row(
 				t("editor.config-modal-utils.time-range-label"),
 				change,
-				(value) =>
-					value === METRIC_TIME_RANGE_REFERENCE
-						? t("editor.config-modal-utils.variable-time-range")
-						: t(`general.time-range-options.${displayValue(value)}`),
+				timeRangeLabel,
 			)
 		case "refreshInterval":
 			return row(

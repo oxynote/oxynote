@@ -9,7 +9,11 @@ import {
 	MetricSimulationPreset,
 	type MetricConfig,
 } from "./utils"
-import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
+import {
+	RefreshInterval,
+	TimeRangePreset,
+	serializeCustomTimeRange,
+} from "~/utils/time-range"
 import {
 	clearQueryCache,
 	disposeMockEndpoints,
@@ -129,6 +133,27 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 		document.documentElement.style.removeProperty("--selectable-color-1")
 		document.documentElement.style.removeProperty("--selectable-color-6")
 		disposeMockEndpoints()
+	})
+
+	it("queries the exact saved dates of a custom time window", async ({
+		expect,
+	}) => {
+		const from = new Date("2026-03-28T09:30:15.123Z")
+		const to = new Date("2026-03-29T18:45:30.456Z")
+		const calls = mockEndpoint("GET", QUERY_URL, () => seriesResult())
+		await mountContainer(
+			metricConfig({ timeRange: serializeCustomTimeRange(from, to) }),
+		)
+
+		// the query starts after the container's initial config debounce
+		await vi.waitFor(() => {
+			expect(calls.length).toBeGreaterThan(0)
+		}, WAIT_FOR_OPTIONS)
+
+		expect(calls[0]?.query).toMatchObject({
+			from: from.toISOString(),
+			to: to.toISOString(),
+		})
 	})
 
 	it("asks for a data source before anything else", async ({ expect }) => {

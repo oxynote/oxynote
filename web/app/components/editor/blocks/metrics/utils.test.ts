@@ -7,7 +7,11 @@ import {
 	VisualizationDataUnit,
 	VisualizationTimeUnit,
 } from "./utils"
-import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
+import {
+	RefreshInterval,
+	TimeRangePreset,
+	serializeCustomTimeRange,
+} from "~/utils/time-range"
 import {
 	METRIC_REFRESH_INTERVAL_REFERENCE,
 	METRIC_TIME_RANGE_REFERENCE,
@@ -46,6 +50,21 @@ describe("defaultMetricConfig", () => {
 })
 
 describe("buildConfigFromNodeAttrs", () => {
+	it("restores a custom range from serialized document attributes", ({
+		expect,
+	}) => {
+		const range = serializeCustomTimeRange(
+			new Date("2026-03-28T09:30:15.123Z"),
+			new Date("2026-03-29T18:45:30.456Z"),
+		)
+		const attrs = JSON.parse(JSON.stringify({ timeRange: range })) as Record<
+			string,
+			unknown
+		>
+
+		expect(buildConfigFromNodeAttrs(attrs).timeRange).toBe(range)
+	})
+
 	it("maps a legacy config blob, translating the old type field", ({
 		expect,
 	}) => {

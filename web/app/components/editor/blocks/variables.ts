@@ -1,4 +1,8 @@
-import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
+import {
+	RefreshInterval,
+	TimeRangePreset,
+	type TimeRange,
+} from "~/utils/time-range"
 import {
 	METRIC_REFRESH_INTERVAL_REFERENCE,
 	METRIC_TIME_RANGE_REFERENCE,
@@ -34,7 +38,7 @@ export function useBlockVariables() {
 		return variable ? resolvedVariableValue(variable) : null
 	}
 
-	function timeRange(value: TimeRangeSetting | null): TimeRangePreset | null {
+	function timeRange(value: TimeRangeSetting | null): TimeRange | null {
 		if (value !== METRIC_TIME_RANGE_REFERENCE) {
 			return value
 		}

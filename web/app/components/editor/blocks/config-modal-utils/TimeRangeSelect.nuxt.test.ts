@@ -62,7 +62,34 @@ describe("<TimeRangeSelect>", { concurrent: false }, () => {
 			...Object.values(TimeRangePreset).map((preset) =>
 				t(`general.time-range-options.${preset}`),
 			),
+			t("general.custom-time-range.title"),
 		])
+	})
+
+	it("opens a custom window without changing the stored range", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSelect({ modelValue: TimeRangePreset.Last1Hour })
+		await openList(wrapper)
+		pickOption(t("general.custom-time-range.title"))
+		await flushPromises()
+
+		expect(
+			document.body.querySelector("[role='dialog']")?.textContent,
+		).toContain(t("general.custom-time-range.title"))
+		expect(wrapper.emitted("update:modelValue")).toBeUndefined()
+	})
+
+	it("reopens a saved custom window for editing", async ({ expect }) => {
+		const wrapper = await mountSelect({
+			modelValue: "custom:2026-03-28T09:30:15.123Z/2026-03-29T18:45:30.456Z",
+		})
+		await openList(wrapper)
+		pickOption(t("general.custom-time-range.title"))
+		await flushPromises()
+
+		expect(document.body.querySelector("[role='dialog']")).not.toBeNull()
+		expect(wrapper.emitted("update:modelValue")).toBeUndefined()
 	})
 
 	it("stores the time range once one is picked", async ({ expect }) => {

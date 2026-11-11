@@ -1,7 +1,7 @@
 import { EditorView } from "codemirror"
 import { EditorState } from "@codemirror/state"
 import { usePromQLLegendExtension, usePromQLQueryExtension } from "./promql"
-import type { TimeRangePreset } from "~/utils/time-range"
+import type { TimeRange } from "~/utils/time-range"
 import { useSQLLegendExtension, useSQLQueryExtension } from "./sql"
 import { useLogQLQueryExtension } from "./logql"
 import type { VariableTreeResponse } from "~/utils"
@@ -181,7 +181,7 @@ export function trimEditorWhitespace(view: EditorView) {
 export function useQueryEditorExtension(
 	t: (key: string) => string,
 	dataSourceId: MaybeRefOrGetter<string | null | undefined>,
-	timeRange: MaybeRefOrGetter<TimeRangePreset | null | undefined>,
+	timeRange: MaybeRefOrGetter<TimeRange | null | undefined>,
 	isEditingEnabled: MaybeRefOrGetter<boolean | null | undefined>,
 	variables: MaybeRefOrGetter<VariableTreeResponse>,
 ) {
@@ -245,7 +245,7 @@ export function useQueryEditorExtension(
 export function useLegendEditorExtension(
 	query: MaybeRefOrGetter<string | null | undefined>,
 	dataSourceId: MaybeRefOrGetter<string | null | undefined>,
-	timeRange: MaybeRefOrGetter<TimeRangePreset | null | undefined>,
+	timeRange: MaybeRefOrGetter<TimeRange | null | undefined>,
 	variables: MaybeRefOrGetter<VariableTreeResponse>,
 ) {
 	const { fetchDataSources } = useDataSourceAPI()

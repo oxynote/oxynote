@@ -4,7 +4,11 @@ import MetricDiffDetails from "./MetricDiffDetails.vue"
 import { makeNode } from "../../test-helpers/node-view"
 import { METRIC_BLOCK_NAME } from "../node-names"
 import { VisualizationTimeUnit } from "./utils"
-import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
+import {
+	RefreshInterval,
+	TimeRangePreset,
+	serializeCustomTimeRange,
+} from "~/utils/time-range"
 import {
 	METRIC_REFRESH_INTERVAL_REFERENCE,
 	METRIC_TIME_RANGE_REFERENCE,
@@ -150,6 +154,32 @@ describe("<MetricDiffDetails>", { concurrent: false }, () => {
 				t("editor.config-modal-utils.refresh-interval-label"),
 				t("editor.config-modal-utils.variable-refresh-interval"),
 				t("general.refresh-interval-options.5m"),
+			],
+		])
+	})
+
+	it("shows the exact dates of a custom range in the review diff", async ({
+		expect,
+	}) => {
+		const from = new Date("2026-03-28T09:30:15.123Z")
+		const to = new Date("2026-03-29T18:45:30.456Z")
+		const wrapper = await mountDetails(
+			{ timeRange: TimeRangePreset.Last1Hour },
+			{ timeRange: serializeCustomTimeRange(from, to) },
+		)
+		const { d } = useNuxtApp().$i18n
+
+		expect(rows(wrapper)).toEqual([
+			[
+				t("editor.config-modal-utils.time-range-label"),
+				t("general.time-range-options.last_1_hour"),
+				t("general.custom-time-range.label", {
+					from: d(from, {
+						key: "short-with-full-time",
+						fractionalSecondDigits: 3,
+					}),
+					to: d(to, { key: "short-with-full-time", fractionalSecondDigits: 3 }),
+				}),
 			],
 		])
 	})

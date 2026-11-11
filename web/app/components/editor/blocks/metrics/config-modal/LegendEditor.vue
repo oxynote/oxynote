@@ -24,7 +24,7 @@ import {
 } from "@codemirror/autocomplete"
 import { tags } from "@lezer/highlight"
 import { cn } from "#layers/ui/app/lib/utils"
-import type { TimeRangePreset } from "~/utils/time-range"
+import type { TimeRange } from "~/utils/time-range"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 import { useBlockVariables } from "../../variables"
 
@@ -71,7 +71,7 @@ let wasFocusedAtLeastOnce = false
 const props = defineProps<{
 	diffStatus?: DiffStatus | null
 	dataSourceId: string | null | undefined // null disables the editor (it affects the autocompletions)
-	timeRange: TimeRangePreset | null | undefined
+	timeRange: TimeRange | null | undefined
 	query: string | null | undefined
 }>()
 const legend = defineModel<string>({ default: "" })

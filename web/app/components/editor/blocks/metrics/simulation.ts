@@ -1,5 +1,9 @@
 import { MetricSimulationPreset } from "./utils"
-import { resolveTimeRange, TimeRangePreset } from "~/utils/time-range"
+import {
+	resolveTimeRange,
+	TimeRangePreset,
+	type TimeRange,
+} from "~/utils/time-range"
 
 // the preset a block starts simulating with when the user presses the
 // "simulate data" button
@@ -241,7 +245,7 @@ export function generateSimulatedResult(
 // real labels to interpolate.
 export function generateSimulatedQueryResults(
 	preset: MetricSimulationPreset,
-	timeRange: TimeRangePreset | null,
+	timeRange: TimeRange | null,
 	now: Date = new Date(),
 ): { name: string; legendFormat: string; result: GenericQueryResult }[] {
 	const { from, to } = resolveTimeRange(

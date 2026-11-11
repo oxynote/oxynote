@@ -4,14 +4,34 @@ import {
 	refreshIntervalToMs,
 	resolveTimeRange,
 	TimeRangePreset,
+	parseCustomTimeRange,
+	serializeCustomTimeRange,
 } from "./time-range"
 
 // a wednesday in the middle of a month, with sub-second precision so
 // boundary presets prove they snap to exact instants. Local-time
 // components keep the expectations timezone-independent.
 const NOW = new Date(2026, 7, 19, 15, 30, 45, 123)
+const CUSTOM_FROM = new Date("2026-03-28T22:30:01.123Z")
+const CUSTOM_TO = new Date("2026-03-29T04:45:02.456Z")
+const CUSTOM_RANGE = "custom:2026-03-28T22:30:01.123Z/2026-03-29T04:45:02.456Z"
 
 describe("resolveTimeRange", () => {
+	it("keeps an absolute window fixed when the clock moves", ({ expect }) => {
+		expect(resolveTimeRange(CUSTOM_RANGE, NOW)).toEqual({
+			from: CUSTOM_FROM,
+			to: CUSTOM_TO,
+		})
+		expect(resolveTimeRange(CUSTOM_RANGE, new Date(2030, 0, 1))).toEqual({
+			from: CUSTOM_FROM,
+			to: CUSTOM_TO,
+		})
+	})
+
+	it("rejects an invalid custom window", ({ expect }) => {
+		expect(() => resolveTimeRange("custom:invalid/invalid")).toThrow(RangeError)
+	})
+
 	it.for([
 		{
 			preset: TimeRangePreset.Last5Minutes,
@@ -213,6 +233,47 @@ describe("resolveTimeRange", () => {
 				to: NOW,
 			})
 		})
+	})
+})
+
+describe("parseCustomTimeRange", () => {
+	it("restores both UTC instants with millisecond precision", ({ expect }) => {
+		expect(parseCustomTimeRange(CUSTOM_RANGE)).toEqual({
+			from: CUSTOM_FROM,
+			to: CUSTOM_TO,
+		})
+	})
+
+	it.for([
+		TimeRangePreset.Last1Hour,
+		"custom:",
+		"custom:/2026-03-29T04:45:02.456Z",
+		"custom:2026-03-28T22:30:01.123Z/",
+		`${CUSTOM_RANGE}/extra`,
+		"custom:not-a-date/2026-03-29T04:45:02.456Z",
+		"custom:2026-03-28T22:30:01.123Z/not-a-date",
+		"custom:2026-03-29T04:45:02.456Z/2026-03-28T22:30:01.123Z",
+		"custom:2026-03-28T22:30:01.123Z/2026-03-28T22:30:01.123Z",
+		"custom:2026-03-28/2026-03-29",
+		"custom:2026-02-30T00:00:00.000Z/2026-03-29T04:45:02.456Z",
+	])("rejects %s", (input, { expect }) => {
+		expect(parseCustomTimeRange(input)).toBeNull()
+	})
+})
+
+describe("serializeCustomTimeRange", () => {
+	it("serializes absolute instants for document storage and query keys", ({
+		expect,
+	}) => {
+		expect(serializeCustomTimeRange(CUSTOM_FROM, CUSTOM_TO)).toBe(CUSTOM_RANGE)
+	})
+
+	it.for([
+		{ name: "inverted", from: CUSTOM_TO, to: CUSTOM_FROM },
+		{ name: "empty", from: CUSTOM_FROM, to: CUSTOM_FROM },
+		{ name: "invalid", from: new Date(NaN), to: CUSTOM_TO },
+	])("rejects an $name window", ({ from, to }, { expect }) => {
+		expect(() => serializeCustomTimeRange(from, to)).toThrow(RangeError)
 	})
 })
 

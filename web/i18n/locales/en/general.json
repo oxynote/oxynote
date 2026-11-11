@@ -38,6 +38,16 @@
 			"text": "Text",
 			"time-range": "Time range"
 		},
+		"custom-time-range": {
+			"title": "Custom time range",
+			"description": "Choose a fixed start and end time in {timeZone}.",
+			"from": "From",
+			"to": "To",
+			"apply": "Apply time range",
+			"cancel": "Cancel",
+			"invalid": "Enter a valid start and end time. The end must be after the start.",
+			"label": "{from} – {to}"
+		},
 		"time-range-options": {
 			"last_5_minutes": "Last 5 minutes",
 			"last_15_minutes": "Last 15 minutes",
