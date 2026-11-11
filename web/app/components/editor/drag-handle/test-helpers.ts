@@ -58,7 +58,6 @@ export const GRID_STYLES = `
 	.narrow-grid [data-grid-cell] {
 		order: var(--grid-order);
 		grid-column: 1 / -1;
-		grid-row: span var(--grid-h);
 		width: auto;
 		height: auto;
 	}

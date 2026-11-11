@@ -203,10 +203,10 @@ describe("findGridDrop", { concurrent: false }, () => {
 				input: { u: 0.5, v: 0.1 },
 				expected: {
 					layout: [rect(0, 0, 12), rect(0, 1, 12)],
-					line: (first: DOMRect, box: DOMRect) => ({
+					line: (_first: DOMRect, box: DOMRect) => ({
 						vertical: false,
 						y: box.top - 2,
-						left: first.left,
+						left: box.left,
 						right: box.right,
 					}),
 				},
@@ -255,6 +255,231 @@ describe("findGridDrop", { concurrent: false }, () => {
 			// line still sits at b, where it shows during the drag.
 			expect.soft(drop?.layout).toEqual(expected.layout)
 			expect.soft(drop?.line).toEqual(expected.line(first, box))
+		})
+
+		describe("in a grid of three columns with a tall block", () => {
+			it.for([
+				{ name: "the top of b, right under c", input: ["b", 0.5, 0.1] },
+				{ name: "the right side of a, beside c", input: ["a", 0.95, 0.25] },
+				{ name: "the left side of d, beside c", input: ["d", 0.05, 0.5] },
+				{
+					name: "the left side of b, where c would land in its own place",
+					input: ["b", 0.05, 0.5],
+				},
+			] as const)("finds nothing for c at $name", ({ input }, { expect }) => {
+				const editor = mountEditor(tallGrid(), "wide-grid")
+				const [title, u, v] = input
+
+				expect(
+					dropAt(editor, "c", pointIn(blockElement(editor, title), u, v)),
+				).toBeNull()
+			})
+
+			it.for([
+				{
+					// b rises into c's place and e slides into b's, so d drops
+					// into e's place
+					name: "c above d, which moves down",
+					input: { dragged: "c", point: ["d", 0.5, 0.1] },
+					expected: {
+						layout: [
+							rect(0, 0, 8, 2),
+							rect(16, 0, 8),
+							rect(16, 1, 8),
+							rect(8, 0, 8),
+							rect(8, 1, 8),
+						],
+						line: (box: BoxOf) => ({
+							vertical: false,
+							y: box("d").top - 2,
+							left: box("d").left,
+							right: box("d").right,
+						}),
+					},
+				},
+				{
+					// c drops into the place b leaves, so e stays
+					name: "b above c, which drops into b's place",
+					input: { dragged: "b", point: ["c", 0.5, 0.1] },
+					expected: {
+						layout: [
+							rect(0, 0, 8, 2),
+							rect(8, 1, 8),
+							rect(16, 0, 8),
+							rect(8, 0, 8),
+							rect(16, 1, 8),
+						],
+						line: (box: BoxOf) => ({
+							vertical: false,
+							y: box("c").top - 2,
+							left: box("c").left,
+							right: box("c").right,
+						}),
+					},
+				},
+				{
+					// a takes its lower half along, so b slides right too, and e
+					// ends under c
+					name: "c left of the tall block from low on its side",
+					input: { dragged: "c", point: ["a", 0.05, 0.75] },
+					expected: {
+						layout: [
+							rect(8, 0, 8, 2),
+							rect(0, 0, 8),
+							rect(16, 0, 8),
+							rect(16, 1, 8),
+							rect(0, 1, 8),
+						],
+						line: (box: BoxOf) => ({
+							vertical: true,
+							x: box("a").left - 2,
+							top: box("a").top,
+							bottom: box("a").bottom,
+						}),
+					},
+				},
+				{
+					name: "c right of e after the gap c leaves fills",
+					input: { dragged: "c", point: ["e", 0.95, 0.5] },
+					expected: {
+						layout: [
+							rect(0, 0, 8, 2),
+							rect(16, 1, 8),
+							rect(16, 0, 8),
+							rect(8, 0, 8),
+							rect(8, 1, 8),
+						],
+						line: (box: BoxOf) => ({
+							vertical: true,
+							x: box("e").right + 2,
+							top: box("e").top,
+							bottom: box("e").bottom,
+						}),
+					},
+				},
+				{
+					// the line runs along the edge under c and d. It stops at a,
+					// which crosses that edge.
+					name: "e under c and moves b to the next row",
+					input: { dragged: "e", point: ["c", 0.5, 0.9] },
+					expected: {
+						layout: [
+							rect(0, 0, 8, 2),
+							rect(8, 0, 8),
+							rect(16, 0, 8),
+							rect(0, 2, 8),
+							rect(8, 1, 8),
+						],
+						line: (box: BoxOf) => ({
+							vertical: false,
+							y: box("c").bottom + 2,
+							left: box("c").left,
+							right: box("d").right,
+						}),
+					},
+				},
+			] as const)("puts $name", ({ input, expected }, { expect }) => {
+				const editor = mountEditor(tallGrid(), "wide-grid")
+				const box = (title: string) =>
+					blockElement(editor, title).getBoundingClientRect()
+				const [title, u, v] = input.point
+
+				const drop = dropAt(
+					editor,
+					input.dragged,
+					pointIn(blockElement(editor, title), u, v),
+				)
+
+				expect.soft(drop?.layout).toEqual(expected.layout)
+				expect.soft(drop?.line).toEqual(expected.line(box))
+			})
+
+			it.for([
+				{
+					name: "b into the tall block's place from its top",
+					input: { dragged: "b", point: ["a", 0.5, 0.05], line: "a" },
+					expected: [rect(0, 1, 8, 2), rect(8, 0, 8), rect(0, 0, 8)],
+				},
+				{
+					name: "b into c's place from c's top",
+					input: { dragged: "b", point: ["c", 0.5, 0.1], line: "c" },
+					expected: [rect(0, 0, 8, 2), rect(8, 1, 8), rect(8, 0, 8)],
+				},
+				{
+					name: "the tall block under c from c's bottom",
+					input: { dragged: "a", point: ["c", 0.5, 0.9], line: "c" },
+					expected: [rect(0, 1, 8, 2), rect(0, 0, 8), rect(0, 3, 8)],
+				},
+				{
+					name: "the tall block above b from b's top",
+					input: { dragged: "a", point: ["b", 0.5, 0.1], line: "b" },
+					expected: [rect(0, 1, 8, 2), rect(0, 0, 8), rect(0, 3, 8)],
+				},
+			] as const)(
+				"puts $name and draws the line along that block only",
+				({ input, expected }, { expect }) => {
+					const editor = mountEditor(tallBesidePair(), "wide-grid")
+					const [title, u, v] = input.point
+					const lined = blockElement(editor, input.line).getBoundingClientRect()
+					const top = v < 0.5
+
+					const drop = dropAt(
+						editor,
+						input.dragged,
+						pointIn(blockElement(editor, title), u, v),
+					)
+
+					// the line never crosses the tall block while it is dragged
+					expect.soft(drop?.layout).toEqual(expected)
+					expect.soft(drop?.line).toEqual({
+						vertical: false,
+						y: top ? lined.top - 2 : lined.bottom + 2,
+						left: lined.left,
+						right: lined.right,
+					})
+				},
+			)
+
+			it.for([
+				{
+					name: "c's top while b is dragged",
+					input: {
+						content: tallBesidePair,
+						dragged: "b",
+						target: "c",
+						points: [0.4, 0.5, 0.6].flatMap((u) =>
+							[0.02, 0.08, 0.14, 0.2, 0.26].map((v) => [u, v] as const),
+						),
+					},
+				},
+				{
+					name: "the tall block's left side while c is dragged",
+					input: {
+						content: tallGrid,
+						dragged: "c",
+						target: "a",
+						points: [0.02, 0.06].flatMap((u) =>
+							[0.15, 0.3, 0.5, 0.7, 0.85].map((v) => [u, v] as const),
+						),
+					},
+				},
+			])("draws one line anywhere over $name", ({ input }, { expect }) => {
+				const editor = mountEditor(input.content(), "wide-grid")
+				const lines = new Set(
+					input.points.map(([u, v]) =>
+						JSON.stringify(
+							dropAt(
+								editor,
+								input.dragged,
+								pointIn(blockElement(editor, input.target), u, v),
+							)?.line,
+						),
+					),
+				)
+
+				expect([...lines]).toHaveLength(1)
+				expect(lines.has(JSON.stringify(undefined))).toBe(false)
+			})
 		})
 
 		it("draws the line where a block lands when a tall block is in its way", ({
@@ -368,50 +593,73 @@ describe("findGridDrop", { concurrent: false }, () => {
 			})
 		})
 
-		it.for([
-			{
-				name: "free cells",
-				input: (editor: Editor) => {
-					const box = blockElement(editor, "a").getBoundingClientRect()
+		it("puts a block into free cells at the grid's left edge and draws the line along the block above", ({
+			expect,
+		}) => {
+			// a is on the left, and t is tall and right of it. The cells left
+			// of t's second row are free.
+			const editor = mountEditor(
+				[
+					blockGrid(
+						metricBlock("a", { widePosX: 0, widePosY: 0 }),
+						metricBlock("t", { widePosX: 12, widePosY: 0, height: 2 }),
+					),
+					blockGrid(metricBlock("n", { width: GridItemWidth.Compact })),
+				],
+				"wide-grid",
+			)
+			const above = blockElement(editor, "a").getBoundingClientRect()
 
-					return { x: box.left + 20, y: box.bottom + 24 }
-				},
-			},
-			{
-				name: "the left side of the tall block beside them",
-				input: (editor: Editor) =>
-					pointIn(blockElement(editor, "t"), 0.05, 0.75),
-			},
-		])(
-			"puts a block at the grid's left edge from $name and draws the line along the block above",
-			({ input }, { expect }) => {
-				// a is on the left, and t is tall and right of it. The cells
-				// left of t's second row are free.
-				const editor = mountEditor(
-					[
-						blockGrid(
-							metricBlock("a", { widePosX: 0, widePosY: 0 }),
-							metricBlock("t", { widePosX: 12, widePosY: 0, height: 2 }),
-						),
-						blockGrid(metricBlock("n", { width: GridItemWidth.Compact })),
-					],
-					"wide-grid",
-				)
-				const above = blockElement(editor, "a").getBoundingClientRect()
+			const drop = dropAt(editor, "n", {
+				x: above.left + 20,
+				y: above.bottom + 24,
+			})
 
-				const drop = dropAt(editor, "n", input(editor))
+			expect
+				.soft(drop?.layout)
+				.toEqual([rect(0, 0, 12), rect(12, 0, 12, 2), rect(0, 1, 8)])
+			expect.soft(drop?.line).toEqual({
+				vertical: false,
+				y: above.bottom + 2,
+				left: above.left,
+				right: above.right,
+			})
+		})
 
-				expect
-					.soft(drop?.layout)
-					.toEqual([rect(0, 0, 12), rect(12, 0, 12, 2), rect(0, 1, 8)])
-				expect.soft(drop?.line).toEqual({
-					vertical: false,
-					y: above.bottom + 2,
-					left: above.left,
-					right: above.right,
-				})
-			},
-		)
+		it("puts a block at a tall block's side into that block's first row", ({
+			expect,
+		}) => {
+			// a is on the left, and t is tall and right of it
+			const editor = mountEditor(
+				[
+					blockGrid(
+						metricBlock("a", { widePosX: 0, widePosY: 0 }),
+						metricBlock("t", { widePosX: 12, widePosY: 0, height: 2 }),
+					),
+					blockGrid(metricBlock("n", { width: GridItemWidth.Compact })),
+				],
+				"wide-grid",
+			)
+			const left = blockElement(editor, "a").getBoundingClientRect()
+
+			// the point is on t's left side, level with its second row
+			const drop = dropAt(
+				editor,
+				"n",
+				pointIn(blockElement(editor, "t"), 0.05, 0.75),
+			)
+
+			// t has no room right of n, so it moves down. The line follows n.
+			expect
+				.soft(drop?.layout)
+				.toEqual([rect(0, 0, 12), rect(0, 1, 12, 2), rect(12, 0, 8)])
+			expect.soft(drop?.line).toEqual({
+				vertical: true,
+				x: left.right + 2,
+				top: left.top,
+				bottom: left.bottom,
+			})
+		})
 
 		it("counts the dragged block's own cells as free", ({ expect }) => {
 			// d sits left of t's second row, and four free columns are
@@ -953,6 +1201,34 @@ describe("gridDropLineStyle", () => {
 		)
 	})
 })
+
+type BoxOf = (title: string) => DOMRect
+
+// a grid of three columns: a is tall on the left, c and d sit right of it,
+// and b and e sit under c and d
+function tallGrid(): JSONContent[] {
+	return [
+		blockGrid(
+			metricBlock("a", { widePosX: 0, widePosY: 0, width: 8, height: 2 }),
+			metricBlock("c", { widePosX: 8, widePosY: 0, width: 8 }),
+			metricBlock("d", { widePosX: 16, widePosY: 0, width: 8 }),
+			metricBlock("b", { widePosX: 8, widePosY: 1, width: 8 }),
+			metricBlock("e", { widePosX: 16, widePosY: 1, width: 8 }),
+		),
+	]
+}
+
+// a grid of three columns: a is tall on the left, c sits right of it and b
+// under c. The third column is free.
+function tallBesidePair(): JSONContent[] {
+	return [
+		blockGrid(
+			metricBlock("a", { widePosX: 0, widePosY: 0, width: 8, height: 2 }),
+			metricBlock("c", { widePosX: 8, widePosY: 0, width: 8 }),
+			metricBlock("b", { widePosX: 8, widePosY: 1, width: 8 }),
+		),
+	]
+}
 
 // mounts an editor in a container of the given class and width, so the
 // grid styles lay it out

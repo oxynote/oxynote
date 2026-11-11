@@ -59,6 +59,52 @@ test.describe("grid layout", () => {
 		})
 	}
 
+	test("shows a tall block as tall as a standard one once the grid stacks", async ({
+		page,
+		request,
+	}) => {
+		await signUpWithWorkspace(page, request)
+		const grid = await openLogGrid(page, request, ["a", "b"])
+		const [a = "", b = ""] = grid.blockIds
+		const heights = async () => {
+			const [boxA, boxB] = await Promise.all(
+				[a, b].map((id) => gridBlock(page, id).boundingBox()),
+			)
+
+			return { a: boxA?.height ?? 0, b: boxB?.height ?? 0 }
+		}
+
+		await page.setViewportSize({ width: WIDE, height: 900 })
+		await openBlockMenu(page, contentPane(page), gridBlock(page, b))
+		await page
+			.getByRole("menuitem", {
+				name: t("editor.drag-handle.options.grid-item.height"),
+			})
+			.click()
+		await page
+			.getByRole("menuitem", {
+				name: t("editor.grid-item.height-options.tall"),
+			})
+			.click()
+		await expect
+			.poll(async () => {
+				const box = await heights()
+
+				return box.b > box.a * 1.5
+			})
+			.toBe(true)
+
+		await page.setViewportSize({ width: NARROW, height: 900 })
+
+		await expect
+			.poll(async () => {
+				const box = await heights()
+
+				return box.b === box.a
+			})
+			.toBe(true)
+	})
+
 	test("keeps the stacked order rearranged in a narrow window when the wide layout changes", async ({
 		page,
 		request,

@@ -76,8 +76,9 @@ function screenBlocks(grid: HTMLElement): HTMLElement[] {
 		in the stacked layout as CSS variables. ProseMirror renders the blocks,
 		so the grid styles them through its children (*:). A wide grid places
 		each block in its cells. A narrower one stacks the blocks one per row
-		in their stacked order. A row is as tall as a standard block (h-80),
-		so the block stretches to its rows. -->
+		in their stacked order. There every block takes one row, whatever its
+		height, since its size can only be set in the wide grid. A row is as
+		tall as a standard block (h-80), so the block stretches to its rows. -->
 		<NodeViewContent
 			ref="content"
 			:class="
@@ -85,7 +86,7 @@ function screenBlocks(grid: HTMLElement): HTMLElement[] {
 					'block-grid-content grid [grid-auto-flow:row] auto-rows-[--spacing(80)] gap-3 [reading-flow:grid-rows]',
 					'grid-cols-1',
 					'*:data-grid-cell:order-(--grid-order) *:data-grid-cell:col-span-full',
-					'*:data-grid-cell:row-span-(--grid-h) *:data-grid-cell:h-auto',
+					'*:data-grid-cell:h-auto',
 					'@5xl:grid-cols-[repeat(24,minmax(0,1fr))]',
 					'@5xl:*:data-grid-cell:order-none',
 					'@5xl:*:data-grid-cell:col-[var(--grid-col)/span_var(--grid-w)]',

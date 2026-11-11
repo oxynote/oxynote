@@ -17,7 +17,6 @@ import {
 	readingOrder,
 	restack,
 	resizeInGrid,
-	sameLayout,
 	stackOrder,
 	stackPlaces,
 	stackPosOf,
@@ -230,7 +229,9 @@ describe("layoutGrid", () => {
 
 			problems.push(
 				...layoutProblems(rects).map((p) => `seed ${seed}: ${p}`),
-				...(sameLayout(again, rects) ? [] : [`seed ${seed}: lays out again`]),
+				...(JSON.stringify(again) === JSON.stringify(rects)
+					? []
+					: [`seed ${seed}: lays out again`]),
 			)
 		}
 
@@ -250,13 +251,15 @@ describe("dropInGrid", () => {
 			expected: [rect(0, 0, 12), rect(12, 0, 12)],
 		},
 		{
-			name: "puts a block at a tall block's left side at the left end of the free cells there",
+			// t has no room right of the new block, so it moves down and
+			// slides left
+			name: "puts a block at a tall block's side into that block's first row",
 			input: {
 				rects: [rect(0, 0, 12), rect(12, 0, 12, 2)],
 				dragged: outside(8),
-				target: beside(1, "left", 1),
+				target: beside(1, "left"),
 			},
-			expected: [rect(0, 0, 12), rect(12, 0, 12, 2), rect(0, 1, 8)],
+			expected: [rect(0, 0, 12), rect(0, 1, 12, 2), rect(12, 0, 8)],
 		},
 		{
 			name: "slides the blocks after the line right into free columns",
@@ -379,6 +382,39 @@ describe("dropInGrid", () => {
 			expected: [rect(0, 0, 12, 2), rect(12, 0, 12), rect(12, 1, 12)],
 		},
 		{
+			// filling a's gap first lifts c next to b, so no cells beside c's
+			// first row are free. Making room first puts a into the free cells,
+			// and then c rises.
+			name: "makes room first when filling the gap first leaves none",
+			input: {
+				rects: [rect(0, 0, 8), rect(8, 0, 8), rect(0, 1, 8, 2)],
+				dragged: inside(0, 8),
+				target: free(2, "right"),
+			},
+			expected: [rect(8, 1, 8), rect(8, 0, 8), rect(0, 0, 8, 2)],
+		},
+		{
+			// filling the gap first lets d rise next to a. Then a and d would
+			// both narrow to make room for c.
+			name: "narrows no other block when making room first fits the block",
+			input: {
+				rects: [
+					rect(0, 0, 12),
+					rect(0, 3, 12),
+					rect(0, 1, 24, 2),
+					rect(12, 3, 12),
+				],
+				dragged: inside(2, 24, 2),
+				target: free(0, "right"),
+			},
+			expected: [
+				rect(0, 0, 12),
+				rect(0, 1, 12),
+				rect(12, 0, 12, 2),
+				rect(0, 2, 12),
+			],
+		},
+		{
 			name: "shrinks a wide block to the widest width that fits free cells",
 			input: {
 				rects: [rect(0, 0, 12, 2), rect(12, 0, 12), rect(0, 2, 24)],
@@ -455,6 +491,84 @@ describe("dropInGrid", () => {
 			],
 		},
 		{
+			// s slides right and takes its lower half onto b. u reaches into
+			// b's row, so b cannot slide right past s. It moves down instead and
+			// then slides left under the new block.
+			name: "moves a block in a tall block's lower row down when a block from above stops its slide",
+			input: {
+				rects: [
+					rect(0, 0, 8, 2),
+					rect(8, 0, 8),
+					rect(16, 0, 8, 2),
+					rect(8, 1, 8),
+				],
+				dragged: outside(8),
+				target: beside(0, "left"),
+			},
+			expected: [
+				rect(8, 0, 8, 2),
+				rect(16, 0, 8),
+				rect(16, 1, 8, 2),
+				rect(0, 1, 8),
+				rect(0, 0, 8),
+			],
+		},
+		{
+			// d rises into b's place and c moves down. Making room first
+			// would move c and d down instead, just as far.
+			name: "lets the gap fill first when making room first moves the others as far",
+			input: {
+				rects: [rect(0, 0, 8), rect(8, 0, 12), rect(0, 1, 8), rect(8, 1, 8)],
+				dragged: inside(1, 12),
+				target: below(0),
+			},
+			expected: [rect(0, 0, 8), rect(0, 1, 12), rect(0, 2, 8), rect(8, 0, 8)],
+		},
+		{
+			// d stays in its row and slides four columns left. Making room
+			// first would lift it a row, next to b, which is farther on screen.
+			name: "moves a block a few columns rather than a row",
+			input: {
+				rects: [rect(0, 0, 8), rect(8, 0, 12), rect(0, 1, 12), rect(12, 1, 8)],
+				dragged: inside(1, 12),
+				target: above(0),
+			},
+			expected: [rect(0, 1, 8), rect(0, 0, 12), rect(0, 2, 12), rect(8, 1, 8)],
+		},
+		{
+			// b and c slide into a's place, and a takes the free cells under
+			// c. Only a itself would move less far if it went under b, but
+			// then d would move down.
+			name: "puts a block below another into free cells rather than move a block down",
+			input: {
+				rects: [rect(0, 0, 8), rect(8, 0, 8), rect(16, 0, 8), rect(0, 1, 12)],
+				dragged: inside(0, 8),
+				target: below(2),
+			},
+			expected: [rect(12, 1, 8), rect(0, 0, 8), rect(8, 0, 8), rect(0, 1, 12)],
+		},
+		{
+			// making room first would move the others less, but d would end
+			// up beside b's second row
+			name: "keeps a block dropped beside a lower block in that block's first row",
+			input: {
+				rects: [
+					rect(0, 3, 12),
+					rect(0, 0, 12, 2),
+					rect(12, 0, 8),
+					rect(0, 2, 12),
+				],
+				dragged: inside(1, 12, 2),
+				target: beside(3, "left"),
+			},
+			expected: [
+				rect(0, 2, 12),
+				rect(0, 0, 12, 2),
+				rect(12, 1, 8),
+				rect(12, 0, 12),
+			],
+		},
+		{
 			name: "shrinks a neighbour only as far as a block narrower than any named width needs",
 			input: {
 				rects: [rect(0, 0, 12), rect(12, 0, 10)],
@@ -486,6 +600,129 @@ describe("dropInGrid", () => {
 	])("$name", ({ input, expected }, { expect }) => {
 		expect(dropInGrid(input.rects, input.dragged, input.target)).toEqual(
 			expected,
+		)
+	})
+
+	// three columns: a is tall, c and d sit right of it, and b and e sit
+	// under c and d
+	describe("in a grid of three columns with a tall block", () => {
+		it.for([
+			{
+				// b rises into c's place and e slides into b's, so d drops
+				// into e's place
+				name: "puts c above d, which moves down",
+				input: { dragged: 1, target: above(2) },
+				expected: [
+					rect(0, 0, 8, 2),
+					rect(16, 0, 8),
+					rect(16, 1, 8),
+					rect(8, 0, 8),
+					rect(8, 1, 8),
+				],
+			},
+			{
+				// e could slide into b's place first, but c would then push it
+				// to a new row. So c drops into b's place and e stays.
+				name: "puts b above c, which drops into b's place",
+				input: { dragged: 3, target: above(1) },
+				expected: [
+					rect(0, 0, 8, 2),
+					rect(8, 1, 8),
+					rect(16, 0, 8),
+					rect(8, 0, 8),
+					rect(16, 1, 8),
+				],
+			},
+			{
+				name: "puts c under b, which rises into c's place",
+				input: { dragged: 1, target: below(3) },
+				expected: [
+					rect(0, 0, 8, 2),
+					rect(8, 1, 8),
+					rect(16, 0, 8),
+					rect(8, 0, 8),
+					rect(16, 1, 8),
+				],
+			},
+			{
+				// a slides right and takes its lower half along, so b slides
+				// right too. e has no room and ends under c.
+				name: "puts c left of the tall block, which slides right with its lower half",
+				input: { dragged: 1, target: beside(0, "left") },
+				expected: [
+					rect(8, 0, 8, 2),
+					rect(0, 0, 8),
+					rect(16, 0, 8),
+					rect(16, 1, 8),
+					rect(0, 1, 8),
+				],
+			},
+			{
+				name: "puts c right of e after the gap c leaves fills",
+				input: { dragged: 1, target: beside(4, "right") },
+				expected: [
+					rect(0, 0, 8, 2),
+					rect(16, 1, 8),
+					rect(16, 0, 8),
+					rect(8, 0, 8),
+					rect(8, 1, 8),
+				],
+			},
+			{
+				name: "swaps c and d from d's right side",
+				input: { dragged: 1, target: beside(2, "right") },
+				expected: [
+					rect(0, 0, 8, 2),
+					rect(16, 0, 8),
+					rect(8, 0, 8),
+					rect(8, 1, 8),
+					rect(16, 1, 8),
+				],
+			},
+			{
+				name: "puts e under c and moves b to the next row",
+				input: { dragged: 4, target: below(1) },
+				expected: [
+					rect(0, 0, 8, 2),
+					rect(8, 0, 8),
+					rect(16, 0, 8),
+					rect(0, 2, 8),
+					rect(8, 1, 8),
+				],
+			},
+		])("$name", ({ input, expected }, { expect }) => {
+			const rects = [
+				rect(0, 0, 8, 2),
+				rect(8, 0, 8),
+				rect(16, 0, 8),
+				rect(8, 1, 8),
+				rect(16, 1, 8),
+			]
+
+			expect(dropInGrid(rects, inside(input.dragged, 8), input.target)).toEqual(
+				expected,
+			)
+		})
+
+		it.for([
+			{
+				name: "the tall block's top, which moves the tall block down",
+				input: above(0),
+				expected: [rect(0, 1, 8, 2), rect(8, 0, 8), rect(0, 0, 8)],
+			},
+			{
+				name: "c's top, which moves c down",
+				input: above(1),
+				expected: [rect(0, 0, 8, 2), rect(8, 1, 8), rect(8, 0, 8)],
+			},
+		])(
+			"puts b, under c, into the spot of $name",
+			({ input, expected }, { expect }) => {
+				// a is tall, c sits right of it and b under c
+				const rects = [rect(0, 0, 8, 2), rect(8, 0, 8), rect(8, 1, 8)]
+
+				expect(dropInGrid(rects, inside(2, 8), input)).toEqual(expected)
+			},
 		)
 	})
 
@@ -742,29 +979,6 @@ describe("resizeInGrid", () => {
 	})
 })
 
-describe("sameLayout", () => {
-	it.for([
-		{
-			name: "the same cells",
-			input: [rect(0, 0, 12)],
-			expected: true,
-		},
-		{
-			name: "another column",
-			input: [rect(1, 0, 12)],
-			expected: false,
-		},
-		{
-			name: "another row count",
-			input: [rect(0, 0, 12, 2)],
-			expected: false,
-		},
-		{ name: "another block count", input: [], expected: false },
-	])("tells $name apart", ({ input, expected }, { expect }) => {
-		expect(sameLayout([rect(0, 0, 12)], input)).toBe(expected)
-	})
-})
-
 function rect(x: number, y: number, w: number, h = 1): GridRect {
 	return { x: x, y: y, w: w, h: h }
 }
@@ -785,12 +999,8 @@ function inside(index: number, w: number, h = 1) {
 	return { index: index, w: w, h: h }
 }
 
-function beside(
-	index: number,
-	side: "left" | "right",
-	row = 0,
-): GridDropTarget {
-	return { kind: "beside", index: index, side: side, row: row }
+function beside(index: number, side: "left" | "right"): GridDropTarget {
+	return { kind: "beside", index: index, side: side }
 }
 
 function free(index: number, side: "left" | "right", row = 0): GridDropTarget {
@@ -841,7 +1051,7 @@ function randomTarget(seed: number, rects: GridRect[]): GridDropTarget {
 
 	switch (seed % 5) {
 		case 0:
-			return beside(index, side, row)
+			return beside(index, side)
 		case 1:
 			return free(index, side, row)
 		case 2:

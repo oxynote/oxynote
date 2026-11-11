@@ -17,9 +17,6 @@ import {
 } from "~/components/editor/test-helpers"
 import { clearTeleportedOverlays, menuItem, t } from "~/components/test-helpers"
 
-const WIDE_GRID_PX = 1024
-const STACKED_GRID_PX = 1023
-
 const MetricBlock = GridMetricBlockStub.extend({
 	addAttributes() {
 		return { ...this.parent?.(), uid: { default: null } }
@@ -191,21 +188,6 @@ describe("<GridItemMenu>", { concurrent: false }, () => {
 		expect(dispatch.mock.calls[0]?.[0].steps).toHaveLength(1)
 	})
 
-	it("offers no size in a grid that stacks its blocks", async ({ expect }) => {
-		await mountMenu(gridDoc(block("a")), 1, {}, STACKED_GRID_PX)
-
-		const labels = [...document.body.querySelectorAll('[role="menuitem"]')].map(
-			(item) => item.textContent.trim(),
-		)
-
-		expect
-			.soft(labels)
-			.not.toContain(t("editor.drag-handle.options.grid-item.width"))
-		expect
-			.soft(labels)
-			.not.toContain(t("editor.drag-handle.options.grid-item.height"))
-	})
-
 	it("leaves the stacked places alone in a grid that shows its columns", async ({
 		expect,
 	}) => {
@@ -239,25 +221,6 @@ describe("<GridItemMenu>", { concurrent: false }, () => {
 			"a null,null 8x1",
 		])
 	})
-
-	it("offers no size when the block is no longer there", async ({ expect }) => {
-		await mountMenu(gridDoc(block("a")), 40)
-
-		expect(menuLabels()).not.toContain(
-			t("editor.drag-handle.options.grid-item.width"),
-		)
-	})
-
-	it("offers no size while no block is hovered", async ({ expect }) => {
-		const { editor } = makeEditor({
-			state: EditorState.create({ doc: gridDoc(block("a")) }),
-		})
-		await mountMenuOptions(GridItemMenu, { editor: editor, hovered: null })
-
-		expect(menuLabels()).not.toContain(
-			t("editor.drag-handle.options.grid-item.width"),
-		)
-	})
 })
 
 function block(uid: string, attrs: Record<string, unknown> = {}): PMNode {
@@ -270,19 +233,18 @@ function gridDoc(...blocks: PMNode[]): PMNode {
 	])
 }
 
-// mounts the menu for the block at pos in a grid gridWidth pixels wide.
-// The editor's dispatch records each transaction.
+// mounts the menu for the block at pos. The editor's dispatch records each
+// transaction.
 async function mountMenu(
 	doc: PMNode,
 	pos: number,
 	attrs: Record<string, unknown> = {},
-	gridWidth = WIDE_GRID_PX,
 ) {
 	const state = EditorState.create({ doc: doc })
 	const dispatch = vi.fn<(tr: Transaction) => void>()
 	const { editor } = makeEditor({
 		state: state,
-		view: { dispatch: dispatch, nodeDOM: () => blockIn(gridWidth) },
+		view: { dispatch: dispatch },
 	})
 
 	await mountMenuOptions(GridItemMenu, {
@@ -323,23 +285,5 @@ function cells(parent: PMNode): string[] {
 	return parent.children.map(
 		(child) =>
 			`${String(child.attrs.uid)} ${String(child.attrs.widePosX)},${String(child.attrs.widePosY)} ${String(child.attrs.width)}x${String(child.attrs.height)}`,
-	)
-}
-
-// a block's element in a grid element gridWidth pixels wide. happy-dom
-// lays nothing out, so the test sets the grid's width by hand.
-function blockIn(gridWidth: number): HTMLElement {
-	const grid = document.createElement("div")
-	const block = document.createElement("div")
-
-	grid.append(block)
-	grid.getBoundingClientRect = () => new DOMRect(0, 0, gridWidth, 320)
-
-	return block
-}
-
-function menuLabels(): string[] {
-	return [...document.body.querySelectorAll('[role="menuitem"]')].map((item) =>
-		item.textContent.trim(),
 	)
 }

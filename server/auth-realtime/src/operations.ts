@@ -687,14 +687,12 @@ function targetBeside(index: number, position: string): GridDropTarget {
 				kind: "beside",
 				index: index,
 				side: "left",
-				row: 0,
 			}
 		case "after":
 			return {
 				kind: "beside",
 				index: index,
 				side: "right",
-				row: 0,
 			}
 		case "above":
 			return { kind: "above", index: index }

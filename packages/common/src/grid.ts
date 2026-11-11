@@ -29,17 +29,14 @@ export interface GridItem {
 }
 
 // where a drop puts a block, next to the block at index. Beside puts it at
-// that block's left or right side, in the row of the block given by row
-// (see placeAtLine). Free puts it into the free cells on that side, in the
-// same row (see fillRun). Above and below put it over or under the block
-// and push down what it covers. Start puts it at the grid's first cell.
+// that block's left or right side, in the block's first row (see
+// placeAtLine). Free puts it into the free cells on that side, in the row
+// of the block given by row (see fillRun). Above and below put it over or
+// under the block and push down what it covers. Start puts it at the
+// grid's first cell.
 export type GridDropTarget =
-	| {
-			kind: "beside" | "free"
-			index: number
-			side: "left" | "right"
-			row: number
-	  }
+	| { kind: "beside"; index: number; side: "left" | "right" }
+	| { kind: "free"; index: number; side: "left" | "right"; row: number }
 	| { kind: "above"; index: number }
 	| { kind: "below"; index: number }
 	| { kind: "start" }
@@ -194,6 +191,40 @@ export function dropInGrid(
 	dragged: { index: number | null; w: number; h: number },
 	target: GridDropTarget,
 ): GridRect[] | null {
+	// a block that moves along its own row leaves a gap, which the row
+	// closes sideways
+	if (movesAlongItsRow(rects, dragged.index, target)) {
+		return dropAfter(rects, dragged, target, slideLeft).layout
+	}
+
+	// any other drop can fill the gap first. The blocks below float up and
+	// the blocks after it slide left. Or it can make room at the target
+	// first, so the blocks it pushes down can move into the gap. The drop
+	// takes the way that moves the other blocks less far. On a tie, the gap
+	// fills first. When filling the gap first leaves no room, the drop makes
+	// room first.
+	const gapFirst = dropAfter(rects, dragged, target, compact)
+	const roomFirst = dropAfter(rects, dragged, target)
+
+	return !gapFirst.layout || roomFirst.distance < gapFirst.distance
+		? roomFirst.layout
+		: gapFirst.layout
+}
+
+// dropAfter drops the block. When settle is given, it first moves the
+// other blocks into the gap the block leaves. Then every block floats up
+// and slides left. The layout is null when the target has no room, or
+// names a block that is not in the grid. The distance is how far the other
+// blocks move in all. A step of one row counts as eight columns, which
+// looks about as far on screen. A block that narrows to make room moves by
+// the columns it loses. A drop that fails, or misses its target, has an
+// infinite distance (see reachesTarget).
+function dropAfter(
+	rects: readonly GridRect[],
+	dragged: { index: number | null; w: number; h: number },
+	target: GridDropTarget,
+	settle?: (boxes: Box[]) => void,
+): { layout: GridRect[] | null; distance: number } {
 	const boxes = rects
 		.map((rect, id) => ({ ...rect, id: id }))
 		.filter((box) => box.id !== dragged.index)
@@ -204,20 +235,39 @@ export function dropInGrid(
 		h: dragged.h,
 		id: dragged.index ?? rects.length,
 	}
+	const anchor = boxes.find(
+		(b) => target.kind !== "start" && b.id === target.index,
+	)
 
-	// the dragged block leaves first, so the others settle into its cells.
-	// Then the target block's new place decides where the block goes.
-	compact(boxes)
+	settle?.(boxes)
 
 	if (!placeAtTarget(boxes, box, target)) {
-		return null
+		return { layout: null, distance: Infinity }
 	}
 
 	const all = [...boxes, box]
 
 	compact(all)
 
-	return toRects(all, Math.max(rects.length, box.id + 1))
+	const layout = toRects(all, Math.max(rects.length, box.id + 1))
+
+	if (!reachesTarget(target, box, anchor)) {
+		return { layout: layout, distance: Infinity }
+	}
+
+	let distance = 0
+
+	layout.forEach((moved, i) => {
+		const from = rects[i]
+		if (from && i !== box.id) {
+			distance +=
+				Math.abs(moved.x - from.x) +
+				Math.abs(moved.w - from.w) +
+				8 * Math.abs(moved.y - from.y)
+		}
+	})
+
+	return { layout: layout, distance: distance }
 }
 
 // readingOrder lists the indexes of a layout's blocks row by row, left to
@@ -324,27 +374,6 @@ export function resizeInGrid(
 	return toRects(all, rects.length)
 }
 
-// sameLayout reports whether two layouts put every block in the same cells
-export function sameLayout(
-	a: readonly GridRect[],
-	b: readonly GridRect[],
-): boolean {
-	return (
-		a.length === b.length &&
-		a.every((rect, i) => {
-			const other = b[i]
-
-			return (
-				!!other &&
-				rect.x === other.x &&
-				rect.y === other.y &&
-				rect.w === other.w &&
-				rect.h === other.h
-			)
-		})
-	)
-}
-
 // overlaps reports whether two rects share a cell
 function overlaps(a: GridRect, b: GridRect): boolean {
 	return (
@@ -355,7 +384,8 @@ function overlaps(a: GridRect, b: GridRect): boolean {
 // placeAtLine puts the box at the line at x in its row. When the free
 // cells around the line are wide enough, the box goes there. Otherwise it
 // starts at the line, and the blocks after it in the row slide right into
-// free columns. A block that still does not fit keeps its columns and
+// free columns. A tall block that slides takes its lower rows along (see
+// slideBelow). A block that still does not fit keeps its columns and
 // moves down. But when the box itself does not fit between the line and
 // the right edge, the box moves down instead.
 function placeAtLine(boxes: Box[], box: Box, x: number): void {
@@ -415,7 +445,51 @@ function placeAtLine(boxes: Box[], box: Box, x: number): void {
 		}
 	}
 
-	pushDown([...boxes, box], fixed)
+	pushDown([...boxes, box], [box, ...slideBelow(boxes, fixed.slice(1))])
+}
+
+// slideBelow handles the lower rows of tall blocks that slid right. The
+// blocks there that a slid block now covers slide right past it and keep
+// their order, as in the slid block's first row. A block with no room, or
+// with a block from above in the way, stays, and pushDown moves it down.
+// It returns the slid blocks and every block that slid after them.
+function slideBelow(boxes: Box[], slid: Box[]): Box[] {
+	const moved = [...slid]
+
+	for (
+		let row = Math.min(...slid.map((b) => b.y)) + 1;
+		row < Math.max(...moved.map((b) => b.y + b.h));
+		row++
+	) {
+		// blocks reaching into the row from above stay where they are
+		const above = boxes.filter(
+			(b) => b.y < row && row < b.y + b.h && !moved.includes(b),
+		)
+		const starting = boxes
+			.filter((b) => b.y === row && !moved.includes(b))
+			.sort((a, c) => a.x - c.x)
+
+		for (const b of starting) {
+			const slidRight = { ...b }
+			let hit = moved.find((m) => overlaps(m, slidRight))
+
+			while (hit) {
+				slidRight.x = hit.x + hit.w
+				hit = moved.find((m) => overlaps(m, slidRight))
+			}
+
+			if (
+				slidRight.x !== b.x &&
+				slidRight.x + slidRight.w <= GRID_COLUMNS &&
+				!above.some((other) => overlaps(other, slidRight))
+			) {
+				b.x = slidRight.x
+				moved.push(b)
+			}
+		}
+	}
+
+	return moved
 }
 
 // placeAtTarget puts the box where the target says, next to the target
@@ -444,9 +518,8 @@ function placeAtTarget(
 		return true
 	}
 
-	box.y = anchor.y + target.row
-
 	if (target.kind === "beside") {
+		box.y = anchor.y
 		placeAtLine(
 			boxes,
 			box,
@@ -456,9 +529,64 @@ function placeAtTarget(
 		return true
 	}
 
+	box.y = anchor.y + target.row
+
 	const run = freeCellsBeside(boxes, anchor, target.side, box.y)
 
 	return fillRun(boxes, box, run.x, run.w)
+}
+
+// reachesTarget reports whether a dropped box ends up where its target
+// says, next to the target block in that block's new place. Above or
+// below, the box touches the block. Beside it or in its free cells, the box
+// starts in the block's row that the target names, on the target's side.
+function reachesTarget(
+	target: GridDropTarget,
+	box: GridRect,
+	block: GridRect | undefined,
+): boolean {
+	if (target.kind === "start" || !block) {
+		return true
+	}
+
+	switch (target.kind) {
+		case "above":
+			return box.y + box.h === block.y
+		case "below":
+			return box.y === block.y + block.h
+	}
+
+	const row = block.y + (target.kind === "free" ? target.row : 0)
+	const onSide =
+		target.side === "right"
+			? box.x === block.x + block.w
+			: target.kind === "free"
+				? box.x + box.w <= block.x
+				: box.x + box.w === block.x
+
+	return box.y === row && onSide
+}
+
+// movesAlongItsRow reports whether a drop beside a block, or into free
+// cells, keeps the dragged block in a row it spans now
+function movesAlongItsRow(
+	rects: readonly GridRect[],
+	index: number | null,
+	target: GridDropTarget,
+): boolean {
+	const from = index === null ? undefined : rects[index]
+	const anchor =
+		target.kind === "beside" || target.kind === "free"
+			? rects[target.index]
+			: undefined
+
+	if (!from || !anchor) {
+		return false
+	}
+
+	const row = anchor.y + (target.kind === "free" ? target.row : 0)
+
+	return from.y <= row && row < from.y + from.h
 }
 
 // freeCellsBeside returns the free cells in row on the anchor's side, up

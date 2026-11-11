@@ -8,7 +8,6 @@ import {
 	gridItemOf,
 	type GridRect,
 	restack,
-	sameLayout,
 } from "@oxynote/common/grid"
 import {
 	gridLayoutOf,
@@ -221,7 +220,7 @@ function wideDrop(
 		!target ||
 		!layout ||
 		!landed ||
-		(dragged.index !== null && sameLayout(layout, rects))
+		changesNothing(rects, dragged, target, landed)
 	) {
 		return null
 	}
@@ -229,7 +228,7 @@ function wideDrop(
 	return {
 		layout: layout,
 		stack: null,
-		line: dropLine(geometry, rects, dragged, target, layout, landed),
+		line: dropLine(geometry, rects, target, layout, landed),
 	}
 }
 
@@ -286,7 +285,7 @@ function stackedDrop(
 		dragged,
 		previous === undefined
 			? { kind: "start" }
-			: { kind: "beside", index: previous, side: "right", row: 0 },
+			: { kind: "beside", index: previous, side: "right" },
 	)
 
 	return { layout: layout, stack: stack, line: found.line }
@@ -294,14 +293,15 @@ function stackedDrop(
 
 // dropLine is the line that shows where a block lands. It sits at the
 // target block, where the grid shows it during the drag. A drop beside a
-// block, or into the free cells right of it, shows that side. A drop above
-// or below a block shows the free cells there. Free cells at the grid's
-// left edge show their top. A block that cannot land at its target, such
-// as one with no room there, gets the line where it lands instead.
+// block shows that side, as tall as the block. A drop above a block shows
+// that block's top. A drop below a block shows the row edge under it. A
+// drop into free cells shows the side of the block they start at, or the
+// row edge above them at the grid's left edge. A block that cannot land
+// at its target, such as one with no room there, gets the line where it
+// lands instead.
 function dropLine(
 	geometry: GridGeometry,
 	rects: readonly GridRect[],
-	dragged: DraggedBlock,
 	target: WideTarget,
 	layout: readonly GridRect[],
 	landed: GridRect,
@@ -312,46 +312,74 @@ function dropLine(
 	if (shown && moved && landsAtTarget(target, landed, moved)) {
 		switch (target.kind) {
 			case "above":
-				return zoneLine(geometry, rects, dragged.index, shown.y, shown)
+				return topLine(geometry, shown)
 			case "below":
-				return zoneLine(
+				return rowEdgeLine(geometry, rects, shown.y + shown.h, shown)
+			case "beside":
+				return sideLine(
 					geometry,
-					rects,
-					dragged.index,
-					shown.y + shown.h,
-					shown,
+					target.side === "left" ? shown.x : shown.x + shown.w,
+					shown.y,
+					shown.h,
 				)
 		}
 
 		const row = shown.y + target.row
 
-		if (target.side === "right") {
-			return sideLine(geometry, shown.x + shown.w, row, 1)
-		}
-
 		// free cells on the left end at the block, so their line grows
 		// from the cell right before it
-		return target.kind === "beside"
-			? sideLine(geometry, shown.x, row, 1)
-			: zoneLine(geometry, rects, dragged.index, row, {
-					x: shown.x - 1,
-					w: 1,
-				})
+		return target.side === "right"
+			? sideLine(geometry, shown.x + shown.w, row, 1)
+			: rowEdgeLine(geometry, rects, row, { x: shown.x - 1, w: 1 })
 	}
 
 	return landed.x > 0
 		? sideLine(geometry, landed.x, landed.y, landed.h)
-		: zoneLine(
-				geometry,
-				layout,
-				dragged.index ?? rects.length,
-				landed.y,
-				landed,
-			)
+		: rowEdgeLine(geometry, layout, landed.y, landed)
+}
+
+// changesNothing reports whether a drop only puts a block of the grid back
+// where it is. That is so when the side the point picks already touches
+// the dragged block. It is also so when a drop beside a block lands the
+// block in its own cells, even if the blocks around it would shuffle. A
+// drop above or below a block can land the dragged block in place and
+// still move the target block, so it counts.
+function changesNothing(
+	rects: readonly GridRect[],
+	dragged: DraggedBlock,
+	target: WideTarget,
+	landed: GridRect,
+): boolean {
+	const from = dragged.index === null ? undefined : rects[dragged.index]
+	const block = rects[target.index]
+
+	if (!from || !block) {
+		return false
+	}
+
+	const sharesColumns = from.x < block.x + block.w && block.x < from.x + from.w
+	const sharesRows = from.y < block.y + block.h && block.y < from.y + from.h
+
+	switch (target.kind) {
+		case "above":
+			return sharesColumns && from.y + from.h === block.y
+		case "below":
+			return sharesColumns && block.y + block.h === from.y
+	}
+
+	const touches =
+		target.side === "left"
+			? from.x + from.w === block.x
+			: block.x + block.w === from.x
+
+	return (sharesRows && touches) || sameCells(landed, from)
 }
 
 // landsAtTarget reports whether a block lands where its target says, next
-// to the target block in that block's new place
+// to the target block in that block's new place. Beside the block or in its
+// free cells, any row the two share counts. Blocks that float up after the
+// drop can shift the rows, and the line at the target block still shows
+// where the block goes.
 function landsAtTarget(
 	target: WideTarget,
 	landed: GridRect,
@@ -381,9 +409,9 @@ function landsAtTarget(
 
 // wideTarget finds the target in the widest grid. Over a block, the point
 // picks the nearest side, so the drop goes above, below, left or right of
-// the block. A left or right drop takes the block's row at the point's
-// height. Over free cells, the drop fills them. Anywhere else, such as in
-// the gap between two blocks, the nearest block counts.
+// the block. A left or right drop goes into the block's first row. Over
+// free cells, the drop fills them. Anywhere else, such as in the gap
+// between two blocks, the nearest block counts.
 function wideTarget(
 	cells: GridCell[],
 	geometry: GridGeometry,
@@ -408,21 +436,15 @@ function wideTarget(
 		return null
 	}
 
-	const { index, rect, box } = cell
-	const step = geometry.rowHeight + geometry.rowGap
-	const row = Math.min(
-		rect.h - 1,
-		Math.max(0, Math.floor((point.y - box.top + geometry.rowGap / 2) / step)),
-	)
-	const side = sideOf(box, point)
+	const side = sideOf(cell.box, point)
 
 	switch (side) {
 		case "top":
-			return { kind: "above", index: index }
+			return { kind: "above", index: cell.index }
 		case "bottom":
-			return { kind: "below", index: index }
+			return { kind: "below", index: cell.index }
 		default:
-			return { kind: "beside", index: index, side: side, row: row }
+			return { kind: "beside", index: cell.index, side: side }
 	}
 }
 
@@ -539,31 +561,44 @@ function sideLine(
 	return vertical(x, top, top + rows * step - geometry.rowGap)
 }
 
-// zoneLine is the line along the top of row. It spans the columns of span
-// and the open cells on either side of them. A cell is open when it is
-// free and a block or the grid's top edge is right above it. The block at
-// skip counts as free in row, since a dragged block leaves its cells. But
-// above row it still shows, so there it counts as a block.
-function zoneLine(
+// topLine is the line along the top of a block, as wide as the block
+function topLine(geometry: GridGeometry, rect: GridRect): GridDropLine {
+	const step = geometry.rowHeight + geometry.rowGap
+
+	return {
+		vertical: false,
+		y: geometry.top + rect.y * step - geometry.rowGap / 2,
+		left: geometry.lefts[rect.x] ?? 0,
+		right: geometry.rights[rect.x + rect.w - 1] ?? 0,
+	}
+}
+
+// rowEdgeLine is the line along the top of row. It spans the columns of
+// span and the columns on either side where a block's edge lies on that
+// line: a block above it ends there, or a block below it starts there. A
+// block that crosses the line, or a column free on both sides of it, ends
+// the line. The dragged block still shows, so it counts like any block.
+function rowEdgeLine(
 	geometry: GridGeometry,
 	rects: readonly GridRect[],
-	skip: number | null,
 	row: number,
 	span: { x: number; w: number },
 ): GridDropLine {
-	const taken = (r: number, c: number, skipped: boolean) =>
-		rects.some((rect, i) => (!skipped || i !== skip) && covers(rect, r, c))
-	const open = (c: number) =>
-		!taken(row, c, true) && (row === 0 || taken(row - 1, c, false))
+	const onEdge = (c: number) =>
+		rects.some(
+			(rect) =>
+				(rect.y + rect.h === row && covers(rect, row - 1, c)) ||
+				(rect.y === row && covers(rect, row, c)),
+		)
 	const step = geometry.rowHeight + geometry.rowGap
 	let start = span.x
 	let stop = span.x + span.w
 
-	while (start > 0 && open(start - 1)) {
+	while (start > 0 && onEdge(start - 1)) {
 		start--
 	}
 
-	while (stop < geometry.lefts.length && open(stop)) {
+	while (stop < geometry.lefts.length && onEdge(stop)) {
 		stop++
 	}
 
@@ -747,6 +782,11 @@ function nearest(
 	}
 
 	return best
+}
+
+// sameCells reports whether two rects hold the same cells
+function sameCells(a: GridRect, b: GridRect): boolean {
+	return a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h
 }
 
 // covers reports whether a rect holds the cell in row and column
