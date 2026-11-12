@@ -50,11 +50,9 @@
 			"choose-offset": "Choose UTC offset",
 			"utc": "UTC",
 			"zone-label": "{label} · {zone}",
-			"description": "Choose a fixed start and end time in {timeZone}.",
 			"from": "From",
 			"to": "To",
 			"apply": "Apply time range",
-			"cancel": "Cancel",
 			"invalid": "Enter a valid start and end time. The end must be after the start.",
 			"label": "{from} – {to}"
 		},
