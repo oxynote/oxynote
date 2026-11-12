@@ -3,22 +3,23 @@ package markup
 import (
 	"cmp"
 	"maps"
-	"math"
 	"slices"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
 )
 
-// _gridColumns is how many columns the widest grid has.
-const _gridColumns = 24
+const (
+	// _gridColumns is how many columns the widest grid has.
+	_gridColumns = 24
+
+	// _gridDefaultSize names the width and height a block takes when it
+	// stores no size the grid knows.
+	_gridDefaultSize = "standard"
+)
 
 // _gridMaxRows is the most rows a grid block spans: the rows of the
 // tallest named height. A block that stores more gets the default height.
 var _gridMaxRows = slices.Max(slices.Collect(maps.Values(_gridItemSizes[document.AttrHeight])))
-
-// _gridDefaultSize names the width and height a block takes when it
-// stores no size the grid knows.
-const _gridDefaultSize = "standard"
 
 // gridBox holds a grid block's cells while the layout places it.
 // Columns and rows count from zero.
@@ -40,148 +41,21 @@ type gridBox struct {
 
 	// h is how many rows it spans.
 	h int
+
+	// stack is the block's place in the stacked layout, once
+	// setStackPlaces has set it.
+	stack int
 }
 
-// readingBoxes lays out a grid's blocks and returns their boxes in the
-// order the wide layout shows them: row by row, left to right.
-func readingBoxes(blocks []document.Block) []*gridBox {
-	boxes := layoutGrid(blocks)
-
-	slices.SortStableFunc(boxes, func(a, b *gridBox) int {
-		return cmp.Or(a.y-b.y, a.x-b.x, a.id-b.id)
-	})
-
-	return boxes
-}
-
-// stackPlaces returns each grid block's place in the stacked layout, by
-// the block's index. boxes are the blocks' boxes in the wide layout's
-// reading order. Blocks sort by their stored place, and blocks with the
-// same place keep the reading order. A block without one goes right after
-// the block it follows in the wide layout. It mirrors stackOrder in
-// packages/common/src/grid.ts. A change there has to be made here, or the
-// assistant reads another order than people see.
-func stackPlaces(blocks []document.Block, boxes []*gridBox) []int {
-	order := make([]int, 0, len(boxes))
-
-	for _, box := range boxes {
-		if _, placed := stackPos(blocks[box.id]); placed {
-			order = append(order, box.id)
-		}
-	}
-
-	slices.SortStableFunc(order, func(a, b int) int {
-		pa, _ := stackPos(blocks[a])
-		pb, _ := stackPos(blocks[b])
-
-		return pa - pb
-	})
-
-	for at, box := range boxes {
-		if _, placed := stackPos(blocks[box.id]); placed {
-			continue
-		}
-
-		next := 0
-		if at > 0 {
-			next = slices.Index(order, boxes[at-1].id) + 1
-		}
-
-		order = slices.Insert(order, next, box.id)
-	}
-
-	places := make([]int, len(blocks))
-
-	for place, i := range order {
-		places[i] = place
-	}
-
-	return places
-}
-
-// stackPos returns a grid block's stored place in the stacked layout, and
-// whether it has one. Only a whole number from zero up is a place.
-func stackPos(b document.Block) (int, bool) {
-	return wholeAtLeast(b.Attrs, document.AttrStackPos, 0)
-}
-
-// layoutGrid places a grid's blocks the way the editor does. A block
-// with a stored place keeps it, but it moves down until it covers no
-// block placed before it. A block without one takes the first free
-// cells, row by row. When no block has a place, the search starts after
-// the block before it. Then every block floats up and slides left as far
-// as it can. It
-// mirrors layoutGrid in packages/common/src/grid.ts. A change there has
-// to be made here, or the assistant reads a grid in another order than
-// people see it.
-func layoutGrid(blocks []document.Block) []*gridBox {
-	items := make([]*gridBox, 0, len(blocks))
-
-	for i, b := range blocks {
-		items = append(items, gridItemOf(i, b.Attrs))
-	}
-
-	placed := slices.DeleteFunc(slices.Clone(items), func(box *gridBox) bool { return !box.placed })
-
-	slices.SortStableFunc(placed, func(a, b *gridBox) int {
-		return cmp.Or(a.y-b.y, a.x-b.x)
-	})
-
-	var boxes []*gridBox
-
-	for _, box := range placed {
-		box.x = min(box.x, _gridColumns-box.w)
-		moveDownPast(box, boxes)
-		boxes = append(boxes, box)
-	}
-
-	dense := len(boxes) > 0
-	row, column := 0, 0
-	taken := map[int]uint32{}
-
-	for _, box := range boxes {
-		take(taken, box)
-	}
-
-	for _, box := range items {
-		if box.placed {
-			continue
-		}
-
-		box.x, box.y = column, row
-
-		for !fits(taken, box) {
-			box.x++
-
-			if box.x+box.w > _gridColumns {
-				box.x = 0
-				box.y++
-			}
-		}
-
-		boxes = append(boxes, box)
-		take(taken, box)
-
-		if !dense {
-			row, column = box.y, box.x+box.w
-		}
-	}
-
-	compactGrid(boxes)
-
-	return items
-}
-
-// gridItemOf reads a grid block's place and size from its attributes.
-// widePosX and widePosY hold its column and row in the wide layout.
-// width and height hold the columns and rows it spans. An older block
-// stores only a width, and that width is a size name. It mirrors
-// gridItemOf in packages/common/src/grid.ts.
-func gridItemOf(id int, attrs document.Attributes) *gridBox {
-	x, hasX := wholeAtLeast(attrs, document.AttrWidePosX, 0)
-	y, hasY := wholeAtLeast(attrs, document.AttrWidePosY, 0)
-	w, hasW := wholeAtLeast(attrs, document.AttrWidth, 1)
-	h, hasH := wholeAtLeast(attrs, document.AttrHeight, 1)
+// newGridBox reads a grid block's place and size from its attributes, as
+// the editor reads them. widePosX and widePosY hold its column and row in
+// the wide layout. width and height hold the columns and rows it spans.
+// An older block stores only a width, and that width is a size name.
+func newGridBox(id int, attrs document.Attributes) *gridBox {
+	x, hasX := attrs.Get(document.AttrWidePosX).WholeAtLeast(0)
+	y, hasY := attrs.Get(document.AttrWidePosY).WholeAtLeast(0)
+	w, hasW := attrs.Get(document.AttrWidth).WholeAtLeast(1)
+	h, hasH := attrs.Get(document.AttrHeight).WholeAtLeast(1)
 
 	widths := _gridItemSizes[document.AttrWidth]
 
@@ -196,11 +70,172 @@ func gridItemOf(id int, attrs document.Attributes) *gridBox {
 	return &gridBox{id: id, placed: hasX && hasY, x: x, y: y, w: w, h: h}
 }
 
+// overlaps reports whether two boxes share a cell.
+func (b *gridBox) overlaps(other *gridBox) bool {
+	return b.x < other.x+other.w && other.x < b.x+b.w && b.y < other.y+other.h && other.y < b.y+b.h
+}
+
+// columnBits returns a number with one bit for each column the box spans.
+// Bit 0 stands for the first column, bit 1 for the second, and so on. For
+// example, a box in columns 4, 5 and 6 sets bits 4, 5 and 6. In binary
+// that is 1110000, read from the right.
+func (b *gridBox) columnBits() uint32 {
+	return (uint32(1)<<b.w - 1) << b.x
+}
+
+// takenCells marks the cells that placed boxes cover. It holds one bit for
+// each column of a row, so testing a cell costs the same in a grid of any
+// size.
+type takenCells map[int]uint32
+
+// take marks the cells of a box as taken.
+func (t takenCells) take(box *gridBox) {
+	for y := box.y; y < box.y+box.h; y++ {
+		t[y] |= box.columnBits()
+	}
+}
+
+// fits reports whether a box stays inside the columns and covers no
+// taken cell.
+func (t takenCells) fits(box *gridBox) bool {
+	if box.x+box.w > _gridColumns {
+		return false
+	}
+
+	for y := box.y; y < box.y+box.h; y++ {
+		if t[y]&box.columnBits() != 0 {
+			return false
+		}
+	}
+
+	return true
+}
+
+// readingBoxes lays out a grid's blocks and returns their boxes in the
+// order the wide layout shows them: row by row, left to right.
+func readingBoxes(blocks []document.Block) []*gridBox {
+	boxes := layoutGrid(blocks)
+
+	slices.SortStableFunc(boxes, func(a, b *gridBox) int {
+		return cmp.Or(a.y-b.y, a.x-b.x, a.id-b.id)
+	})
+
+	return boxes
+}
+
+// setStackPlaces gives each box its place in the stacked layout, as the
+// editor orders it. boxes are in the wide layout's reading order. Blocks
+// sort by their stored place, and blocks with the same place keep the
+// reading order. A block without one goes right after the block it
+// follows in the wide layout.
+func setStackPlaces(blocks []document.Block, boxes []*gridBox) {
+	stored := map[*gridBox]int{}
+	order := make([]*gridBox, 0, len(boxes))
+
+	for _, box := range boxes {
+		if place, placed := blocks[box.id].Attrs.Get(document.AttrStackPos).WholeAtLeast(0); placed {
+			stored[box] = place
+			order = append(order, box)
+		}
+	}
+
+	slices.SortStableFunc(order, func(a, b *gridBox) int {
+		return stored[a] - stored[b]
+	})
+
+	for at, box := range boxes {
+		if _, placed := stored[box]; placed {
+			continue
+		}
+
+		next := 0
+		if at > 0 {
+			next = slices.Index(order, boxes[at-1]) + 1
+		}
+
+		order = slices.Insert(order, next, box)
+	}
+
+	for place, box := range order {
+		box.stack = place
+	}
+}
+
+// layoutGrid places a grid's blocks the way the editor does. A block with
+// a stored place keeps it, but it moves down until it covers no block
+// placed before it. A block without one takes the first free cells, row by
+// row. When no block has a place, the search starts after the block before
+// it. Then every block floats up and slides left as far as it can. The
+// editor lays grids out with the same steps. A change to one has to be made
+// to the other, or the assistant reads a grid in another order than people
+// see it.
+func layoutGrid(blocks []document.Block) []*gridBox {
+	items := make([]*gridBox, 0, len(blocks))
+
+	for i, b := range blocks {
+		items = append(items, newGridBox(i, b.Attrs))
+	}
+
+	placed := slices.DeleteFunc(slices.Clone(items), func(box *gridBox) bool { return !box.placed })
+
+	slices.SortStableFunc(placed, func(a, b *gridBox) int {
+		return cmp.Or(a.y-b.y, a.x-b.x)
+	})
+
+	var boxes []*gridBox
+
+	for _, box := range placed {
+		box.x = min(box.x, _gridColumns-box.w)
+
+		for i := slices.IndexFunc(boxes, box.overlaps); i >= 0; i = slices.IndexFunc(boxes, box.overlaps) {
+			box.y = boxes[i].y + boxes[i].h
+		}
+
+		boxes = append(boxes, box)
+	}
+
+	dense := len(boxes) > 0
+	row, column := 0, 0
+	taken := takenCells{}
+
+	for _, box := range boxes {
+		taken.take(box)
+	}
+
+	for _, box := range items {
+		if box.placed {
+			continue
+		}
+
+		box.x, box.y = column, row
+
+		for !taken.fits(box) {
+			box.x++
+
+			if box.x+box.w > _gridColumns {
+				box.x = 0
+				box.y++
+			}
+		}
+
+		boxes = append(boxes, box)
+		taken.take(box)
+
+		if !dense {
+			row, column = box.y, box.x+box.w
+		}
+	}
+
+	compactGrid(boxes)
+
+	return items
+}
+
 // gridSizeName returns the size name the model sees for a grid block's
 // width or height, as key says. It is the name of the block's span, or
 // the nearest name when the span has none. A tie goes to the larger size.
 func gridSizeName(attrs document.Attributes, key string) string {
-	box := gridItemOf(0, attrs)
+	box := newGridBox(0, attrs)
 	span := box.w
 
 	if key == document.AttrHeight {
@@ -208,10 +243,12 @@ func gridSizeName(attrs document.Attributes, key string) string {
 	}
 
 	sizes := _gridItemSizes[key]
-	distance := func(name string) int { return max(sizes[name]-span, span-sizes[name]) }
 
 	return slices.MinFunc(sizeNames(sizes), func(a, b string) int {
-		return cmp.Or(cmp.Compare(distance(a), distance(b)), cmp.Compare(sizes[b], sizes[a]))
+		return cmp.Or(
+			cmp.Compare(max(sizes[a]-span, span-sizes[a]), max(sizes[b]-span, span-sizes[b])),
+			cmp.Compare(sizes[b], sizes[a]),
+		)
 	})
 }
 
@@ -224,35 +261,10 @@ func sizeNames(sizes map[string]int) []string {
 	return names
 }
 
-// wholeAtLeast returns the named attribute when it is a whole number no
-// smaller than floor. JSON numbers arrive as float64, so it refuses a
-// fraction such as 2.5.
-func wholeAtLeast(attrs document.Attributes, name string, floor int) (int, bool) {
-	var v float64
-
-	switch n := attrs[name].(type) {
-	case int:
-		v = float64(n)
-	case int64:
-		v = float64(n)
-	case float64:
-		v = n
-	default:
-		return 0, false
-	}
-
-	if v != math.Trunc(v) || v < float64(floor) {
-		return 0, false
-	}
-
-	return int(min(v, math.MaxInt32)), true
-}
-
 // compactGrid floats every block up as far as it can. Then it slides every
 // block left as far as it can. A block that slides left can find free
 // cells above it, so the two steps take turns until no block moves. Both
-// steps only move blocks up or left, so the turns always end. It mirrors
-// compact in packages/common/src/grid.ts.
+// steps only move blocks up or left, so the turns always end.
 func compactGrid(boxes []*gridBox) {
 	floatUp(boxes)
 
@@ -328,53 +340,4 @@ func slideLeft(boxes []*gridBox) bool {
 	}
 
 	return moved
-}
-
-// moveDownPast moves a box down until it covers none of the others.
-func moveDownPast(box *gridBox, others []*gridBox) {
-	for {
-		i := slices.IndexFunc(others, box.overlaps)
-		if i < 0 {
-			return
-		}
-
-		box.y = others[i].y + others[i].h
-	}
-}
-
-// overlaps reports whether two boxes share a cell.
-func (b *gridBox) overlaps(other *gridBox) bool {
-	return b.x < other.x+other.w && other.x < b.x+b.w && b.y < other.y+other.h && other.y < b.y+b.h
-}
-
-// take marks the cells of a box as taken. taken holds one bit for each
-// column of a row, so testing a cell costs the same in a grid of any size.
-func take(taken map[int]uint32, box *gridBox) {
-	for y := box.y; y < box.y+box.h; y++ {
-		taken[y] |= box.columnBits()
-	}
-}
-
-// fits reports whether a box stays inside the columns and covers no
-// taken cell.
-func fits(taken map[int]uint32, box *gridBox) bool {
-	if box.x+box.w > _gridColumns {
-		return false
-	}
-
-	for y := box.y; y < box.y+box.h; y++ {
-		if taken[y]&box.columnBits() != 0 {
-			return false
-		}
-	}
-
-	return true
-}
-
-// columnBits returns a number with one bit for each column the box spans.
-// Bit 0 stands for the first column, bit 1 for the second, and so on. For
-// example, a box in columns 4, 5 and 6 sets bits 4, 5 and 6. In binary
-// that is 1110000, read from the right.
-func (b *gridBox) columnBits() uint32 {
-	return (uint32(1)<<b.w - 1) << b.x
 }

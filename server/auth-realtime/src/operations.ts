@@ -44,8 +44,7 @@ const INSERT_POSITIONS: string[] = ["before", "after", "above", "below"]
 // the sides only a block in a grid has
 const GRID_POSITIONS: string[] = ["above", "below"]
 
-// the layouts of a grid a move can change. The wide layout places blocks
-// on columns. The stacked layout shows them one per row.
+// the layouts a move can name, as a widened list for validation
 const MOVE_LAYOUTS: string[] = ["wide", "stacked"]
 
 // the nodes that hold grid blocks. metricGrid is the legacy name.
@@ -74,6 +73,10 @@ export type Operation =
 // and above and below drop on its top and bottom edges. Outside a grid
 // only before and after exist.
 export type Position = "before" | "after" | "above" | "below"
+
+// the layout of a grid a move changes. The wide layout places blocks on
+// columns. The stacked layout shows them one per row.
+export type MoveLayout = "wide" | "stacked"
 
 /** Inserts a new block immediately before/after a referenced block. */
 export interface InsertOp {
@@ -136,7 +139,7 @@ export interface MoveOp {
 	// the layout of a grid the move changes. It is wide when left out.
 	// stacked moves the block in the order narrow pages show, and needs
 	// both blocks in the same grid.
-	layout?: "wide" | "stacked"
+	layout?: MoveLayout
 }
 
 /** Updates the document's display name. */

@@ -442,7 +442,7 @@ func buildMetrics(n node, stored document.Block) (document.Block, error) {
 		return document.Block{}, fmt.Errorf("line %d: %w", n.line, err)
 	}
 
-	for _, k := range _hiddenAttrs {
+	for k := range _hiddenAttrs {
 		delete(attrs, k)
 	}
 
@@ -463,7 +463,7 @@ func buildLog(n node, stored document.Block) (document.Block, error) {
 		return document.Block{}, fmt.Errorf("line %d: %w", n.line, err)
 	}
 
-	for _, k := range _hiddenAttrs {
+	for k := range _hiddenAttrs {
 		delete(attrs, k)
 	}
 

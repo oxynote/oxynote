@@ -2,7 +2,6 @@ package markup
 
 import (
 	jsonv2 "encoding/json/v2"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -50,10 +49,6 @@ type renderer struct {
 	// cell holds the cells of the grid block being written, or nil
 	// outside a grid.
 	cell *gridBox
-
-	// place holds the place of the grid block being written in the
-	// stacked layout.
-	place int
 }
 
 // block renders one block and everything nested in it.
@@ -157,10 +152,10 @@ func (r *renderer) container(name, openTag string, children []document.Block, de
 		// wide layout, each with the row and column it starts at and its
 		// place in the stacked layout.
 		boxes := readingBoxes(children)
-		places := stackPlaces(children, boxes)
+		setStackPlaces(children, boxes)
 
 		for _, box := range boxes {
-			r.cell, r.place = box, places[box.id]
+			r.cell = box
 			r.block(children[box.id], depth+1)
 		}
 
@@ -228,7 +223,7 @@ func attrsJSON(b document.Block) string {
 	attrs := make(map[string]any, len(b.Attrs))
 
 	for k, v := range b.Attrs {
-		if v != nil && !slices.Contains(_hiddenAttrs, k) {
+		if v != nil && !_hiddenAttrs[k] {
 			attrs[k] = v
 		}
 	}
@@ -297,7 +292,7 @@ func (r *renderer) cellAttrs() []attr {
 	return []attr{
 		{key: _attrRow, value: strconv.Itoa(r.cell.y)},
 		{key: _attrColumn, value: strconv.Itoa(r.cell.x)},
-		{key: _attrStack, value: strconv.Itoa(r.place)},
+		{key: _attrStack, value: strconv.Itoa(r.cell.stack)},
 	}
 }
 

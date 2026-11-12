@@ -67,7 +67,9 @@ func Test_readingBoxes(t *testing.T) {
 			got := []string{}
 
 			for _, box := range readingBoxes(c.Blocks) {
-				uid, _ := c.Blocks[box.id].UID()
+				uid, ok := c.Blocks[box.id].UID()
+				require.True(t, ok)
+
 				got = append(got, uid)
 			}
 
@@ -76,7 +78,7 @@ func Test_readingBoxes(t *testing.T) {
 	}
 }
 
-func Test_stackPlaces(t *testing.T) {
+func Test_setStackPlaces(t *testing.T) {
 	t.Parallel()
 
 	// the wide layout reads c, a, b.
@@ -124,38 +126,19 @@ func Test_stackPlaces(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			places := stackPlaces(c.Blocks, readingBoxes(c.Blocks))
-			got := make([]string, len(places))
+			boxes := readingBoxes(c.Blocks)
+			setStackPlaces(c.Blocks, boxes)
 
-			for i, place := range places {
-				got[place], _ = c.Blocks[i].UID()
+			got := make([]string, len(boxes))
+
+			for _, box := range boxes {
+				uid, ok := c.Blocks[box.id].UID()
+				require.True(t, ok)
+
+				got[box.stack] = uid
 			}
 
 			assert.Equal(t, c.Result, got)
-		})
-	}
-}
-
-func Test_stackPos(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		Attrs  document.Attributes
-		Result int
-		Placed bool
-	}{
-		"Place":          {Attrs: document.Attributes{document.AttrStackPos: 2.0}, Result: 2, Placed: true},
-		"No place":       {Attrs: document.Attributes{}},
-		"Negative place": {Attrs: document.Attributes{document.AttrStackPos: -1.0}},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			got, placed := stackPos(document.Block{Attrs: c.Attrs})
-			assert.Equal(t, c.Result, got)
-			assert.Equal(t, c.Placed, placed)
 		})
 	}
 }
@@ -203,6 +186,14 @@ func Test_layoutGrid(t *testing.T) {
 				cells(12, 0, 12, 1),
 			},
 			Result: []gridRect{{0, 0, 12, 1}, {12, 0, 12, 1}},
+		},
+		"Block moves past each block it covers in turn": {
+			Attrs: []document.Attributes{
+				cells(0, 0, 24, 1),
+				cells(6, 1, 12, 2),
+				cells(0, 0, 12, 1),
+			},
+			Result: []gridRect{{0, 0, 24, 1}, {0, 2, 12, 2}, {0, 1, 12, 1}},
 		},
 		"Overlapping block moves down past the one placed first": {
 			Attrs: []document.Attributes{
@@ -259,7 +250,7 @@ func Test_layoutGrid(t *testing.T) {
 	}
 }
 
-func Test_gridItemOf(t *testing.T) {
+func Test_newGridBox(t *testing.T) {
 	t.Parallel()
 
 	sizes := loadGridCases(t).Sizes
@@ -317,7 +308,7 @@ func Test_gridItemOf(t *testing.T) {
 			t.Parallel()
 
 			c.Result.id = 7
-			assert.Equal(t, &c.Result, gridItemOf(7, c.Attrs))
+			assert.Equal(t, &c.Result, newGridBox(7, c.Attrs))
 		})
 	}
 }
@@ -351,37 +342,6 @@ func Test_sizeNames(t *testing.T) {
 	t.Parallel()
 
 	assert.Equal(t, []string{"compact", "standard", "wide"}, sizeNames(map[string]int{"wide": 24, "compact": 8, "standard": 12}))
-}
-
-func Test_wholeAtLeast(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		Value  any
-		Floor  int
-		Result int
-		Count  bool
-	}{
-		"Missing":            {Value: nil},
-		"String":             {Value: "3"},
-		"Float":              {Value: 3.0, Result: 3, Count: true},
-		"Int":                {Value: 3, Result: 3, Count: true},
-		"Int64":              {Value: int64(3), Result: 3, Count: true},
-		"Fraction":           {Value: 2.5},
-		"Below the floor":    {Value: 0.0, Floor: 1},
-		"At the floor":       {Value: 1.0, Floor: 1, Result: 1, Count: true},
-		"Huge value is kept": {Value: 1e300, Result: 2147483647, Count: true},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			got, ok := wholeAtLeast(document.Attributes{"n": c.Value}, "n", c.Floor)
-			assert.Equal(t, c.Result, got)
-			assert.Equal(t, c.Count, ok)
-		})
-	}
 }
 
 func Test_compactGrid(t *testing.T) {
@@ -513,48 +473,6 @@ func Test_slideLeft(t *testing.T) {
 	}
 }
 
-func Test_moveDownPast(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		Rect   gridRect
-		Others []gridRect
-		Result gridRect
-	}{
-		"Box covering nothing stays": {
-			Rect:   gridRect{0, 0, 12, 1},
-			Others: []gridRect{{12, 0, 12, 1}},
-			Result: gridRect{0, 0, 12, 1},
-		},
-		"Box moves below the block it covers": {
-			Rect:   gridRect{0, 0, 12, 1},
-			Others: []gridRect{{6, 0, 12, 2}},
-			Result: gridRect{0, 2, 12, 1},
-		},
-		"Box moves past each block it covers in turn": {
-			Rect:   gridRect{0, 0, 12, 1},
-			Others: []gridRect{{0, 0, 24, 1}, {6, 1, 12, 2}},
-			Result: gridRect{0, 3, 12, 1},
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			box := c.Rect.box(0)
-			others := make([]*gridBox, 0, len(c.Others))
-
-			for i, r := range c.Others {
-				others = append(others, r.box(i+1))
-			}
-
-			moveDownPast(box, others)
-			assert.Equal(t, c.Result, rectOf(box))
-		})
-	}
-}
-
 func Test_gridBox_overlaps(t *testing.T) {
 	t.Parallel()
 
@@ -577,23 +495,23 @@ func Test_gridBox_overlaps(t *testing.T) {
 	}
 }
 
-func Test_take(t *testing.T) {
+func Test_takenCells_take(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Taken  map[int]uint32
+		Taken  takenCells
 		Rect   gridRect
-		Result map[int]uint32
+		Result takenCells
 	}{
 		"Box marks each row it spans": {
-			Taken:  map[int]uint32{},
+			Taken:  takenCells{},
 			Rect:   gridRect{2, 1, 3, 2},
-			Result: map[int]uint32{1: 0b11100, 2: 0b11100},
+			Result: takenCells{1: 0b11100, 2: 0b11100},
 		},
 		"Box keeps the cells already taken": {
-			Taken:  map[int]uint32{0: 0b1},
+			Taken:  takenCells{0: 0b1},
 			Rect:   gridRect{4, 0, 2, 1},
-			Result: map[int]uint32{0: 0b110001},
+			Result: takenCells{0: 0b110001},
 		},
 	}
 
@@ -601,31 +519,31 @@ func Test_take(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			take(c.Taken, c.Rect.box(0))
+			c.Taken.take(c.Rect.box(0))
 			assert.Equal(t, c.Result, c.Taken)
 		})
 	}
 }
 
-func Test_fits(t *testing.T) {
+func Test_takenCells_fits(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Taken  map[int]uint32
+		Taken  takenCells
 		Rect   gridRect
 		Result bool
 	}{
-		"Box on free cells":          {Taken: map[int]uint32{0: 0xfff}, Rect: gridRect{12, 0, 12, 1}, Result: true},
-		"Box covering a taken cell":  {Taken: map[int]uint32{1: 1 << 5}, Rect: gridRect{0, 0, 12, 2}},
-		"Box past the right edge":    {Taken: map[int]uint32{}, Rect: gridRect{20, 0, 8, 1}},
-		"Box below the taken cells":  {Taken: map[int]uint32{0: 0xffffff}, Rect: gridRect{0, 1, 24, 1}, Result: true},
-		"Box on the last free cells": {Taken: map[int]uint32{0: 0x7fffff}, Rect: gridRect{23, 0, 1, 1}, Result: true},
+		"Box on free cells":          {Taken: takenCells{0: 0xfff}, Rect: gridRect{12, 0, 12, 1}, Result: true},
+		"Box covering a taken cell":  {Taken: takenCells{1: 1 << 5}, Rect: gridRect{0, 0, 12, 2}},
+		"Box past the right edge":    {Taken: takenCells{}, Rect: gridRect{20, 0, 8, 1}},
+		"Box below the taken cells":  {Taken: takenCells{0: 0xffffff}, Rect: gridRect{0, 1, 24, 1}, Result: true},
+		"Box on the last free cells": {Taken: takenCells{0: 0x7fffff}, Rect: gridRect{23, 0, 1, 1}, Result: true},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, c.Result, fits(c.Taken, c.Rect.box(0)))
+			assert.Equal(t, c.Result, c.Taken.fits(c.Rect.box(0)))
 		})
 	}
 }
@@ -697,9 +615,8 @@ func cells(x, y, w, h int) document.Attributes {
 	}
 }
 
-// gridCases are the grid cases in packages/common/testdata/grid-cases.json.
-// The editor's grid engine runs them too, so both lay a grid out the same
-// way.
+// gridCases are the grid cases the editor's tests share. Both run them,
+// so both lay a grid out the same way.
 type gridCases struct {
 	Sizes struct {
 		Width   map[string]int `json:"width"`

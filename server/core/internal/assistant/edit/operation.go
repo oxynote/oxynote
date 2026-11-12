@@ -18,6 +18,28 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 )
 
+const (
+	// PositionBefore lands ahead of the reference block. In a grid it lands
+	// on the reference block's left.
+	PositionBefore Position = "before"
+
+	// PositionAfter lands behind the reference block. In a grid it lands
+	// on the reference block's right.
+	PositionAfter Position = "after"
+
+	// PositionAbove lands above the reference block. It applies only next
+	// to a block in a grid.
+	PositionAbove Position = "above"
+
+	// PositionBelow lands below the reference block. It applies only next
+	// to a block in a grid.
+	PositionBelow Position = "below"
+)
+
+// LayoutStacked moves a block only in the one-column order narrow pages
+// show its grid in.
+const LayoutStacked Layout = "stacked"
+
 // Operation is one edit of a live document, in the JSON the Node
 // endpoint expects. Only the fields its kind uses are set. A block
 // carries the expanded editor tree with its uids resolved, so the caller
@@ -27,10 +49,9 @@ type Operation struct {
 	// every op.
 	Kind string `json:"kind"`
 
-	// Position is "before", "after", "above" or "below" relative to
-	// ReferenceUID. "above" and "below" apply only next to a block in a
-	// grid. Insert and move only.
-	Position string `json:"position,omitempty"`
+	// Position is where the block lands next to ReferenceUID; insert
+	// and move only.
+	Position Position `json:"position,omitempty"`
 
 	// ReferenceUID identifies the block an insert or move is anchored
 	// to; insert and move only.
@@ -53,15 +74,21 @@ type Operation struct {
 	// Icon is the new document icon identifier; set_icon only.
 	Icon string `json:"icon,omitempty"`
 
-	// Layout is "stacked" for a move in the order narrow pages show a
-	// grid's blocks in. It is empty for every other move; move only.
-	Layout string `json:"layout,omitempty"`
+	// Layout is the grid layout a move changes. It is empty for a move in
+	// the wide layout; move only.
+	Layout Layout `json:"layout,omitempty"`
 }
 
+// Position is where an insert or move lands next to its reference block.
+type Position string
+
+// Layout is the grid layout a move changes. The zero value is the wide
+// layout.
+type Layout string
+
 // Insert builds an operation that inserts b at position next to the
-// block identified by referenceUID. position is "before" or "after".
-// Next to a block in a grid, it can also be "above" or "below".
-func Insert(position, referenceUID string, b document.Block) Operation {
+// block identified by referenceUID.
+func Insert(position Position, referenceUID string, b document.Block) Operation {
 	return Operation{
 		Kind:         "insert",
 		Position:     position,
@@ -123,7 +150,7 @@ func Delete(blockUID string) Operation {
 // blockUID at position next to the block identified by referenceUID.
 // The block keeps its uid, attrs and nested content. position takes the
 // same values as Insert's.
-func Move(blockUID, position, referenceUID string) Operation {
+func Move(blockUID string, position Position, referenceUID string) Operation {
 	return Operation{
 		Kind:         "move",
 		Position:     position,
@@ -135,10 +162,11 @@ func Move(blockUID, position, referenceUID string) Operation {
 // MoveStacked builds an operation that moves the block identified by
 // blockUID in its grid's stacked layout, before or after the block
 // identified by referenceUID. The grid's columns stay as they are.
-// "above" lands as "before" does, and "below" as "after".
-func MoveStacked(blockUID, position, referenceUID string) Operation {
+// PositionAbove lands as PositionBefore does, and PositionBelow as
+// PositionAfter.
+func MoveStacked(blockUID string, position Position, referenceUID string) Operation {
 	op := Move(blockUID, position, referenceUID)
-	op.Layout = "stacked"
+	op.Layout = LayoutStacked
 
 	return op
 }

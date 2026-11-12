@@ -30,6 +30,15 @@ const (
 	positionEnd position = "end"
 )
 
+const (
+	// layoutWide places a block on the columns of its grid.
+	layoutWide layout = "wide"
+
+	// layoutStacked places a block in the one-column order narrow pages
+	// show a grid in.
+	layoutStacked layout = "stacked"
+)
+
 // _contentDescription describes the XML a block write takes. Only
 // insert_blocks carries it, and the others refer to it there.
 var _contentDescription = "The blocks as XML, one element per block, with all text inside an element such as <p>.\n" +
@@ -179,7 +188,7 @@ func (ib insertBlocks) insertOps(blocks []document.Block) []edit.Operation {
 
 	switch {
 	case ib.Position.relative():
-		first = edit.Insert(string(ib.Position), ib.ReferenceBlockUID, blocks[0])
+		first = edit.Insert(edit.Position(ib.Position), ib.ReferenceBlockUID, blocks[0])
 	case ib.Position == positionStart:
 		first = edit.Prepend(blocks[0])
 	default:
@@ -247,7 +256,7 @@ func (rb replaceBlocks) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, fmt.Errorf("block %s: %w", rb.BlockUID, _errUnknownBlock)
 	}
 
-	if target.Type == document.BlockNodeBlockGrid || target.Type == document.BlockNodeMetricGrid {
+	if target.Type.IsGrid() {
 		return ActionSummary{}, _errGridReplaced
 	}
 
@@ -271,7 +280,7 @@ func (rb replaceBlocks) Exec(inp Input) (any, error) {
 		return nil, err
 	}
 
-	if target.Type == document.BlockNodeBlockGrid || target.Type == document.BlockNodeMetricGrid {
+	if target.Type.IsGrid() {
 		return nil, _errGridReplaced
 	}
 
@@ -440,11 +449,16 @@ func (mb moveBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, fmt.Errorf("fetching document: %w", err)
 	}
 
+	summary := fmt.Sprintf("Move a block %s another block in %s", mb.Position, doc.Title())
+	if mb.Layout == layoutStacked {
+		summary += " on narrow pages"
+	}
+
 	return ActionSummary{
 		Tool:         NameMoveBlock,
 		DocumentID:   doc.ID,
 		DocumentName: doc.DocumentName,
-		Summary:      fmt.Sprintf("Move a block %s another block in %s%s", mb.Position, doc.Title(), mb.Layout.onPages()),
+		Summary:      summary,
 	}, nil
 }
 
@@ -454,10 +468,10 @@ func (mb moveBlock) Exec(inp Input) (any, error) {
 
 	switch mb.Layout {
 	case layoutStacked:
-		op = edit.MoveStacked(mb.BlockUID, string(mb.Position), mb.ReferenceBlockUID)
+		op = edit.MoveStacked(mb.BlockUID, edit.Position(mb.Position), mb.ReferenceBlockUID)
 	default:
 		// an omitted layout is the wide one
-		op = edit.Move(mb.BlockUID, string(mb.Position), mb.ReferenceBlockUID)
+		op = edit.Move(mb.BlockUID, edit.Position(mb.Position), mb.ReferenceBlockUID)
 	}
 
 	b, err := inp.FetchDocumentBlock(mb.DocumentID, mb.BranchID, mb.BlockUID)
@@ -488,7 +502,7 @@ func insertAfterPrevious(first edit.Operation, blocks []document.Block) []edit.O
 
 	for i := 1; i < len(blocks); i++ {
 		prev, _ := blocks[i-1].UID()
-		ops = append(ops, edit.Insert(string(positionAfter), prev, blocks[i]))
+		ops = append(ops, edit.Insert(edit.PositionAfter, prev, blocks[i]))
 	}
 
 	return ops
@@ -543,16 +557,6 @@ func (p position) relative() bool {
 	return p != positionStart && p != positionEnd
 }
 
-// All available layout constants.
-const (
-	// layoutWide places a block on the columns of its grid.
-	layoutWide layout = "wide"
-
-	// layoutStacked places a block in the one-column order narrow pages
-	// show a grid in.
-	layoutStacked layout = "stacked"
-)
-
 // layout is the grid layout a move changes. The zero value is wide.
 type layout string
 
@@ -567,14 +571,4 @@ func (l *layout) UnmarshalText(text []byte) error {
 	default:
 		return fmt.Errorf("layout must be %q or %q, got %q", layoutWide, layoutStacked, text)
 	}
-}
-
-// onPages returns the words a summary adds for the layout: nothing for
-// the wide layout.
-func (l layout) onPages() string {
-	if l == layoutStacked {
-		return " on narrow pages"
-	}
-
-	return ""
 }

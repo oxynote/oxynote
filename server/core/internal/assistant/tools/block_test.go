@@ -438,7 +438,7 @@ func Test_insertBlocks_insertOps(t *testing.T) {
 			kinds := make([]string, 0, len(ops))
 
 			for _, op := range ops {
-				kinds = append(kinds, op.Kind+" "+op.Position+" "+op.ReferenceUID)
+				kinds = append(kinds, op.Kind+" "+string(op.Position)+" "+op.ReferenceUID)
 			}
 
 			assert.Equal(t, c.Result, kinds)
@@ -1093,14 +1093,6 @@ func Test_layout_UnmarshalText(t *testing.T) {
 			assert.Equal(t, c.Result, l)
 		})
 	}
-}
-
-func Test_layout_onPages(t *testing.T) {
-	t.Parallel()
-
-	assert.Empty(t, layoutWide.onPages())
-	assert.Empty(t, layout("").onPages())
-	assert.Equal(t, " on narrow pages", layoutStacked.onPages())
 }
 
 func Test_position_relative(t *testing.T) {
