@@ -48,7 +48,7 @@ describe("<TimeRangeSelect>", { concurrent: false }, () => {
 		expect(at(buttons(wrapper), 0).text()).toBe(expected())
 	})
 
-	it("lists the built-in reference first, then every preset", async ({
+	it("lists custom time first, then the built-in reference and presets", async ({
 		expect,
 	}) => {
 		const wrapper = await mountSelect({
@@ -58,13 +58,42 @@ describe("<TimeRangeSelect>", { concurrent: false }, () => {
 		await openList(wrapper)
 
 		expect(optionLabels()).toEqual([
+			t("general.custom-time-range.title"),
 			t("editor.config-modal-utils.variable-time-range"),
 			...Object.values(TimeRangePreset).map((preset) =>
 				t(`general.time-range-options.${preset}`),
 			),
-			t("general.custom-time-range.title"),
 		])
 	})
+
+	it.for([
+		{
+			name: "same day",
+			from: new Date(2026, 10, 11, 5, 38),
+			to: new Date(2026, 10, 11, 5, 42),
+			expected: "Nov 11 5:38 – 5:42",
+		},
+		{
+			name: "different days",
+			from: new Date(2026, 10, 11, 5, 38),
+			to: new Date(2026, 10, 23, 4, 2),
+			expected: "Nov 11 5:38 – Nov 23 4:02",
+		},
+		{
+			name: "different years",
+			from: new Date(2026, 11, 31, 23, 58),
+			to: new Date(2027, 0, 1, 0, 2),
+			expected: "Dec 31, 2026 23:58 – Jan 1, 2027 0:02",
+		},
+	])(
+		"uses a compact label for $name",
+		async ({ from, to, expected }, { expect }) => {
+			const wrapper = await mountSelect({
+				modelValue: `custom:${from.toISOString()}/${to.toISOString()}`,
+			})
+			expect(at(buttons(wrapper), 0).text()).toBe(expected)
+		},
+	)
 
 	it("opens a custom window without changing the stored range", async ({
 		expect,

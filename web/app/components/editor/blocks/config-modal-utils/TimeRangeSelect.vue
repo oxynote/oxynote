@@ -61,6 +61,10 @@ const isModified = computed(() => props.oldValue !== undefined)
 				</ShadcnUiButton>
 			</ShadcnUiSelectTrigger>
 			<ShadcnUiSelectContent class="max-h-[40dvh]" inside-modal>
+				<ShadcnUiSelectItem :value="CUSTOM_VALUE" class="text-2sm">
+					{{ t("general.custom-time-range.title") }}
+				</ShadcnUiSelectItem>
+				<ShadcnUiSelectSeparator />
 				<ShadcnUiSelectItem :value="METRIC_TIME_RANGE_REFERENCE">
 					<span class="text-2sm text-popover-foreground">
 						{{ $t("editor.config-modal-utils.variable-time-range") }}
@@ -75,9 +79,6 @@ const isModified = computed(() => props.oldValue !== undefined)
 					<span class="text-2sm text-popover-foreground">
 						{{ $t(`general.time-range-options.${timeRange}`) }}
 					</span>
-				</ShadcnUiSelectItem>
-				<ShadcnUiSelectItem :value="CUSTOM_VALUE" class="text-2sm">
-					{{ t("general.custom-time-range.title") }}
 				</ShadcnUiSelectItem>
 			</ShadcnUiSelectContent>
 		</ShadcnUiSelect>

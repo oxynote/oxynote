@@ -174,11 +174,8 @@ describe("<MetricDiffDetails>", { concurrent: false }, () => {
 				t("editor.config-modal-utils.time-range-label"),
 				t("general.time-range-options.last_1_hour"),
 				t("general.custom-time-range.label", {
-					from: d(from, {
-						key: "short-with-full-time",
-						fractionalSecondDigits: 3,
-					}),
-					to: d(to, { key: "short-with-full-time", fractionalSecondDigits: 3 }),
+					from: `${d(from, { month: "short", day: "numeric" })} ${from.getHours()}:30`,
+					to: `${d(to, { month: "short", day: "numeric" })} ${to.getHours()}:45`,
 				}),
 			],
 		])

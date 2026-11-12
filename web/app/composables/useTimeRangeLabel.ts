@@ -1,3 +1,4 @@
+import { format, isSameDay, isSameYear } from "date-fns"
 import { parseCustomTimeRange } from "~/utils/time-range"
 import { METRIC_TIME_RANGE_REFERENCE } from "~/utils/variable"
 
@@ -15,16 +16,17 @@ export function useTimeRangeLabel() {
 
 		const range = parseCustomTimeRange(value)
 		if (range) {
-			return t("general.custom-time-range.label", {
-				from: d(range.from, {
-					key: "short-with-full-time",
-					fractionalSecondDigits: 3,
-				}),
-				to: d(range.to, {
-					key: "short-with-full-time",
-					fractionalSecondDigits: 3,
-				}),
-			})
+			const dateOptions = {
+				month: "short",
+				day: "numeric",
+				...(!isSameYear(range.from, range.to) ? { year: "numeric" } : {}),
+			} as const
+			const from = `${d(range.from, dateOptions)} ${format(range.from, "H:mm")}`
+			const to = isSameDay(range.from, range.to)
+				? format(range.to, "H:mm")
+				: `${d(range.to, dateOptions)} ${format(range.to, "H:mm")}`
+
+			return t("general.custom-time-range.label", { from, to })
 		}
 
 		return t(`general.time-range-options.${value}`)
