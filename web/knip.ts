@@ -24,11 +24,8 @@ const config: KnipConfig = {
 				"app/composables/**/*.ts",
 				// module convention loaded by name (@pinia/colada-nuxt)
 				"colada.options.ts",
-				// electron main/preload world, built by forge + vite
-				"electron/main.ts",
-				"electron/preload.ts",
-				"forge.config.ts",
-				"vite.electron.config.ts",
+				// nuxt module the vitest config loads by path
+				"vitest.nuxt-module.ts",
 			],
 
 			ignoreDependencies: [
@@ -39,14 +36,6 @@ const config: KnipConfig = {
 				// provides the individually-imported @tiptap/extension-*
 				// packages (see rules.unlisted above)
 				"@tiptap/starter-kit",
-				// loaded by electron-forge at package time via the string
-				// names in forge.config.ts
-				"@electron-forge/maker-deb",
-				"@electron-forge/maker-rpm",
-				"@electron-forge/maker-squirrel",
-				"@electron-forge/maker-zip",
-				"@electron-forge/plugin-auto-unpack-natives",
-				"@electron-forge/plugin-vite",
 				// spawned by `nuxt typecheck` (check-types), not imported
 				"vue-tsc",
 			],

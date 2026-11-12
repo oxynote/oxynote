@@ -198,7 +198,6 @@ export const MermaidBlock = Node.create({
 		return [mermaidHighlightPlugin(this.name)]
 	},
 	addNodeView() {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(MainBlock)
 	},
 })

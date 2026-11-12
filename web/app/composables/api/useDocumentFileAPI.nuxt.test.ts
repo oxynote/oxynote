@@ -1,5 +1,5 @@
 import { registerEndpoint } from "@nuxt/test-utils/runtime"
-import { getQuery, type H3Event } from "h3"
+import { getQuery, readFormData, type H3Event } from "h3"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import {
 	clearQueryCache,
@@ -44,12 +44,12 @@ function mockUploadEndpoint(
 
 	const dispose = registerEndpoint(url, {
 		method: "POST",
-		handler: (event: H3Event) => {
-			const req = (event.node.req as { body?: unknown }).body
+		handler: async (event: H3Event) => {
+			const form = await readFormData(event)
 
 			calls.push({
 				query: getQuery(event),
-				fieldNames: req instanceof FormData ? [...req.keys()] : [],
+				fieldNames: [...form.keys()],
 			})
 
 			return body
