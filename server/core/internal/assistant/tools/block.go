@@ -406,7 +406,7 @@ func (moveBlock) Info() Info {
 				"type":        "string",
 				"enum":        []string{string(layoutWide), string(layoutStacked)},
 				"default":     string(layoutWide),
-				"description": "Which layout of a <grid> the move changes. wide moves the block on the columns. stacked moves it only in the one-column order of narrow pages, where above means before and below means after.",
+				"description": "Which layout of a <grid> the move changes. wide moves the block on the columns, and narrow pages follow until a stacked move gives them their own one-column order. stacked moves it only in that order, where above means before and below means after.",
 			},
 		},
 		Required: []string{"document_id", "branch_id", "block_uid", "position", "reference_block_uid"},
