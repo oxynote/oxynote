@@ -7,6 +7,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/markup"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/rs/xid"
 )
 
@@ -87,7 +88,7 @@ type insertBlocks struct {
 func (insertBlocks) Info() Info {
 	return Info{
 		Name:        NameInsertBlocks,
-		Traits:      Traits{Write: true},
+		Traits:      Traits{Write: true, Role: org.RoleEditor},
 		Description: "Insert new blocks, written as XML, at a document's start or end or beside the block reference_block_uid names. Returns the written blocks as XML with their ids. Every element is a new block, so leave out id, and use replace_blocks to change existing ones. A <metrics> or <logs> goes in a <grid>, beside one of its blocks or as a new grid. A block not allowed where it lands is refused, naming what that place takes.",
 		Properties: map[string]any{
 			"document_id":         map[string]any{"type": "string", "description": _documentIDDescription},
@@ -212,7 +213,7 @@ type replaceBlocks struct {
 func (replaceBlocks) Info() Info {
 	return Info{
 		Name:        NameReplaceBlocks,
-		Traits:      Traits{Write: true, Overwrites: true},
+		Traits:      Traits{Write: true, Overwrites: true, Role: org.RoleEditor},
 		Description: "Replace one block with the blocks in content, in the XML insert_blocks describes. Returns the written blocks as XML. Read the block with get_document first, with block_uid to narrow the read, then edit the XML and send it back. Keep the id of every element that stays, so it keeps its comments, hooks and files, and unchanged content stays as stored. An element without an id is new. An id from outside the replaced block is refused, and so is a <grid>.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
@@ -314,7 +315,7 @@ type deleteBlock struct {
 func (deleteBlock) Info() Info {
 	return Info{
 		Name:        NameDeleteBlock,
-		Traits:      Traits{Write: true, Destructive: true},
+		Traits:      Traits{Write: true, Destructive: true, Role: org.RoleEditor},
 		Description: "Delete one block by id, with everything nested inside it. Returns {deleted: id}. Its comments, hooks and files go with it and cannot be restored. So to reorder blocks, use move_block instead, and to give a block new content, use replace_blocks.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
@@ -390,7 +391,7 @@ type moveBlock struct {
 func (moveBlock) Info() Info {
 	return Info{
 		Name:        NameMoveBlock,
-		Traits:      Traits{Write: true},
+		Traits:      Traits{Write: true, Role: org.RoleEditor},
 		Description: "Move a block beside another block of the same document. Returns the moved block as XML. It keeps its id and nested content, and with them its comments, hooks and files, which a delete and insert would lose. A block not allowed where it lands is refused.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},

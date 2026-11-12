@@ -24,6 +24,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/persist"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/memkit"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
@@ -205,8 +206,9 @@ func (m *Manager) SetTagNotifier(tags tools.TagNotifier) {
 
 // ToolSet builds the tool registry for one (organization, user) pair
 // from the manager's shared wiring. The MCP surface uses it to serve
-// the same tools the assistant's sessions get, scoped the same way.
-func (m *Manager) ToolSet(orgID, userID string) *tools.Set {
+// the same tools the assistant's sessions get, scoped the same way. The
+// registry holds only the tools the given role may call.
+func (m *Manager) ToolSet(orgID, userID string, role org.Role) *tools.Set {
 	return tools.New(tools.NewDeps(
 		m.log,
 		m.db,
@@ -223,7 +225,7 @@ func (m *Manager) ToolSet(orgID, userID string) *tools.Set {
 		m.offload,
 		orgID,
 		userID,
-	))
+	), role)
 }
 
 // claimTurn claims the conversation key for one turn, reporting whether
@@ -253,9 +255,10 @@ func (m *Manager) releaseTurn(key string) {
 // Chat runs an assistant chat over the connection for the organisation
 // and user. It reads messages until the connection closes: io.EOF
 // returns nil, any other failure is returned. The client names the open
-// document with set_active_document right after connecting.
-func (m *Manager) Chat(ctx context.Context, orgID, userID string, conn protocol.SessionConn) error {
-	s, err := m.newSession(ctx, orgID, userID, conn)
+// document with set_active_document right after connecting. The chat
+// gets only the tools the given role may call.
+func (m *Manager) Chat(ctx context.Context, orgID, userID string, role org.Role, conn protocol.SessionConn) error {
+	s, err := m.newSession(ctx, orgID, userID, role, conn)
 	if err != nil {
 		return err
 	}
@@ -270,6 +273,17 @@ func (m *Manager) Chat(ctx context.Context, orgID, userID string, conn protocol.
 			}
 
 			return fmt.Errorf("reading client message: %w", err)
+		}
+
+		// a member removed while the chat is open must stop reading, so
+		// the membership is checked again before each message.
+		member, err := m.db.CheckOrganizationMember(ctx, orgID, userID)
+		if err != nil {
+			return fmt.Errorf("checking the membership: %w", err)
+		}
+
+		if !member {
+			return org.ErrForbidden
 		}
 
 		s.Process(ctx, msg)

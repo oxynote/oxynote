@@ -16,6 +16,7 @@ import type { CoreClient, EmailTemplate } from "./core.js"
 import type { Env, SocialProviderName } from "./env.js"
 import type { Logger, LogLevel } from "./logging.js"
 import { reported } from "./reporting.js"
+import { ac, ADMIN_ROLE, isRole, roles } from "./roles.js"
 
 export type AuthMethod = "email-password" | "google" | "github" | "slack"
 
@@ -44,6 +45,9 @@ export interface AuthDeps {
 	redis?: SecondaryStorageClient
 	core: CoreClient
 	log: Logger
+	// drops every document connection the user holds, so each one
+	// reconnects under the user's new role.
+	closeUserConnections: (userId: string) => void
 }
 
 // better-auth resolves its extra "success" level to info before calling out.
@@ -190,10 +194,14 @@ export function createOrganizationHooks({
 	env,
 	store,
 	core,
+	closeUserConnections,
+	revokeUserSessions,
 }: {
 	env: Env
 	store: Store
 	core: CoreClient
+	closeUserConnections: (userId: string) => void
+	revokeUserSessions: (userId: string) => Promise<void>
 }) {
 	return {
 		canCreateOrganization: () =>
@@ -228,6 +236,43 @@ export function createOrganizationHooks({
 			)
 		},
 
+		// better-auth always accepts its own owner, admin and member
+		// roles next to the configured ones, so the list is enforced
+		// here.
+		beforeCreateInvitation: ({
+			invitation,
+		}: {
+			invitation: { role: string }
+		}) => {
+			refuseUnknownRole(invitation.role)
+
+			return Promise.resolve()
+		},
+
+		beforeUpdateMemberRole: ({ newRole }: { newRole: string }) => {
+			refuseUnknownRole(newRole)
+
+			return Promise.resolve()
+		},
+
+		afterUpdateMemberRole: ({ user }: { user: { id: string } }) => {
+			closeUserConnections(user.id)
+
+			return Promise.resolve()
+		},
+
+		// a removed member's session still names the organization, and
+		// core trusts that name. So the sessions go before the sockets,
+		// and the reconnect finds no session.
+		afterRemoveMember: async ({
+			user,
+		}: {
+			user: { id: string }
+		}) => {
+			await reported(() => revokeUserSessions(user.id))
+			closeUserConnections(user.id)
+		},
+
 		sendInvitationEmail: async (data: InvitationData) => {
 			await reported(() =>
 				core.sendEmail("organization_invitation", {
@@ -238,6 +283,17 @@ export function createOrganizationHooks({
 			)
 		},
 	}
+}
+
+function refuseUnknownRole(role: string): void {
+	if (isRole(role)) {
+		return
+	}
+
+	throw APIError.from("BAD_REQUEST", {
+		code: "ROLE_NOT_FOUND",
+		message: `ROLE_NOT_FOUND: ${role}`,
+	})
 }
 
 // the part of better-auth's endpoint context confirmWithPassword reads.
@@ -370,19 +426,18 @@ export async function checkSignUpAllowed(
 	})
 }
 
-// a single-organization deployment keeps at least one member, because
-// nobody can sign up to take over an empty organization. The callback is
-// checked too, since members may leave between the request and the link.
-export async function refuseLastMemberDeletion(
+// an organization with other members keeps at least one admin, because
+// only an admin can manage them. A single-organization deployment also
+// keeps at least one member, because nobody can sign up to take over an
+// empty organization. The callback is checked too, since members may
+// leave or change roles between the request and the link.
+export async function refuseLastMemberOrAdminDeletion(
 	env: Env,
 	store: Store,
 	path: string,
 	currentUser: () => Promise<SessionUser | undefined>,
 ): Promise<void> {
-	if (
-		env.maxOrganizations !== 1 ||
-		(path !== "/delete-user" && path !== "/delete-user/callback")
-	) {
+	if (path !== "/delete-user" && path !== "/delete-user/callback") {
 		return
 	}
 
@@ -392,23 +447,44 @@ export async function refuseLastMemberDeletion(
 		return
 	}
 
-	const last = await reported(async () => {
+	const refusal = await reported(async () => {
 		const organizationId = await store.userOrganizationId(user.id)
+		if (organizationId === null) {
+			return null
+		}
 
-		return (
-			organizationId !== null &&
-			(await store.organizationMemberCount(organizationId)) <=
-				1
+		const members =
+			await store.organizationMemberCount(organizationId)
+		if (members <= 1) {
+			return env.maxOrganizations === 1 ? "last-member" : null
+		}
+
+		const role = await store.memberRole(user.id, organizationId)
+		if (role !== ADMIN_ROLE) {
+			return null
+		}
+
+		const admins = await store.organizationMemberCount(
+			organizationId,
+			ADMIN_ROLE,
 		)
+
+		return admins <= 1 ? "last-admin" : null
 	})
-	if (!last) {
-		return
+
+	if (refusal === "last-member") {
+		throw APIError.from("FORBIDDEN", {
+			code: "LAST_ORGANIZATION_MEMBER",
+			message: "The last member of the organization cannot be deleted",
+		})
 	}
 
-	throw APIError.from("FORBIDDEN", {
-		code: "LAST_ORGANIZATION_MEMBER",
-		message: "The last member of the organization cannot be deleted",
-	})
+	if (refusal === "last-admin") {
+		throw APIError.from("FORBIDDEN", {
+			code: "LAST_ORGANIZATION_ADMIN",
+			message: "The last admin of the organization cannot be deleted",
+		})
+	}
 }
 
 // the first step of a change of address: the current address approves it,
@@ -494,8 +570,18 @@ export function createAuth({
 	redis,
 	core,
 	log,
+	closeUserConnections,
 }: AuthDeps) {
-	const organizationHooks = createOrganizationHooks({ env, store, core })
+	const organizationHooks = createOrganizationHooks({
+		env,
+		store,
+		core,
+		closeUserConnections,
+		revokeUserSessions: async (userId) => {
+			const context = await auth.$context
+			await context.internalAdapter.deleteUserSessions(userId)
+		},
+	})
 
 	function socialProvider(name: SocialProviderName) {
 		const credentials = env.socialProviders[name]
@@ -509,7 +595,7 @@ export function createAuth({
 		}
 	}
 
-	return betterAuth({
+	const auth = betterAuth({
 		// the public base URL carries the reverse proxy's
 		// /auth-realtime prefix, but a path inside baseURL becomes
 		// better-auth's basePath — and the proxy strips that prefix
@@ -749,6 +835,14 @@ export function createAuth({
 				allowUserToCreateOrganization:
 					organizationHooks.canCreateOrganization,
 				disableOrganizationDeletion: true, // prevent clients from deleting the org
+				// a resend keeps the pending invitation's role, so a
+				// re-invite replaces the invitation instead.
+				cancelPendingInvitationsOnReInvite: true,
+				ac,
+				roles,
+				// better-auth keeps at least one member with the
+				// creator role, so this protects the last admin.
+				creatorRole: ADMIN_ROLE,
 				organizationLimit: 1,
 				// better-auth also passes the limit to the database
 				// as the page size of a member list, which cannot be
@@ -796,6 +890,14 @@ export function createAuth({
 						organizationHooks.afterCreateOrganization,
 					beforeDeleteOrganization:
 						organizationHooks.beforeDeleteOrganization,
+					beforeCreateInvitation:
+						organizationHooks.beforeCreateInvitation,
+					beforeUpdateMemberRole:
+						organizationHooks.beforeUpdateMemberRole,
+					afterUpdateMemberRole:
+						organizationHooks.afterUpdateMemberRole,
+					afterRemoveMember:
+						organizationHooks.afterRemoveMember,
 				},
 				sendInvitationEmail:
 					organizationHooks.sendInvitationEmail,
@@ -993,7 +1095,7 @@ export function createAuth({
 				const currentUser = async () =>
 					(await getSessionFromCtx(ctx))?.user
 
-				await refuseLastMemberDeletion(
+				await refuseLastMemberOrAdminDeletion(
 					env,
 					store,
 					ctx.path,
@@ -1083,4 +1185,6 @@ export function createAuth({
 			},
 		},
 	})
+
+	return auth
 }

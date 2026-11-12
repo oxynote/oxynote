@@ -15,6 +15,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/persist"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/logutil"
 	"github.com/tidwall/gjson"
 )
@@ -27,6 +28,10 @@ type session struct {
 
 	// key addresses this conversation's history and checkpoint.
 	key string
+
+	// role specifies the role the user holds. It picks the tools the
+	// session holds and the prompt.
+	role org.Role
 
 	supv *xync.Supervisor
 
@@ -52,15 +57,17 @@ type session struct {
 func (m *Manager) newSession(
 	ctx context.Context,
 	orgID, userID string,
+	role org.Role,
 	writer protocol.SessionWriter,
 ) (*session, error) {
 	key := persist.SessionKey(orgID, userID)
-	toolSet := m.ToolSet(orgID, userID)
+	toolSet := m.ToolSet(orgID, userID, role)
 
 	s := &session{
 		man:    m,
 		writer: writer,
 		key:    key,
+		role:   role,
 		supv:   xync.NewSupervisor(),
 	}
 
@@ -412,6 +419,7 @@ func (s *session) runOptions(extra map[string]any) []adk.AgentRunOption {
 	values := map[string]any{
 		_sessionKeyActiveDocument: activeDocumentID,
 		_sessionKeyActiveBranch:   activeBranchID,
+		_sessionKeyRole:           string(s.role),
 	}
 
 	maps.Copy(values, extra)

@@ -1,5 +1,5 @@
 import { flushPromises } from "@vue/test-utils"
-import { setResponseHeader } from "h3"
+import { setResponseHeader, setResponseStatus } from "h3"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
 import {
@@ -16,6 +16,7 @@ import {
 	mockAuthEndpoint,
 	mockAuthOrganization,
 	mountUnderTooltipProvider,
+	openSubMenu,
 	raisedToasts,
 	seedAuthConfig,
 	seedAuthSession,
@@ -28,12 +29,12 @@ vi.mock("vue-sonner", () => ({
 	toast: { custom: vi.fn(), dismiss: vi.fn() },
 }))
 
-function member(id: string, name: string) {
+function member(id: string, name: string, role = "editor") {
 	return {
 		id: `member-${id}`,
 		organizationId: "org-1",
 		userId: id,
-		role: "member",
+		role: role,
 		createdAt: "2026-01-01T00:00:00Z",
 		user: { name: name, email: `${name}@oxynote.test`, image: "" },
 	}
@@ -45,7 +46,7 @@ function invitation(inviterId: string) {
 		organizationId: "org-1",
 		status: "pending",
 		email: "grace@oxynote.test",
-		role: "owner",
+		role: "viewer",
 		inviterId: inviterId,
 	}
 }
@@ -437,6 +438,110 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			expect(wrapper.find("[data-slot='dropdown-menu-trigger']").exists()).toBe(
 				false,
 			)
+		})
+
+		it("labels each member and pending invitation with their role", async ({
+			expect,
+		}) => {
+			seedWorkspace({
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
+				invitations: [invitation("u2")],
+			})
+
+			const { wrapper } = await mountSection()
+
+			const rows = wrapper.findAll("tr").map((row) => row.text())
+			expect(rows).toHaveLength(3)
+			expect(rows[0]).toContain(t("general.member-roles.admin"))
+			expect(rows[1]).toContain(t("general.member-roles.editor"))
+			expect(rows[2]).toContain(t("general.member-roles.viewer"))
+		})
+
+		it("changes the role picked from a member's options menu", async ({
+			expect,
+		}) => {
+			seedWorkspace({ members: [member("u1", "ada"), member("u2", "linus")] })
+			const calls = mockAuthEndpoint("organization/update-member-role", () => ({
+				id: "member-u2",
+			}))
+			// the cache keeps the editor, so only a refetch shows the viewer.
+			mockAuthEndpoint(
+				"organization/get-full-organization",
+				() => ({
+					id: "org-1",
+					name: "Acme",
+					slug: "acme-corp",
+					logo: "",
+					members: [member("u1", "ada"), member("u2", "linus", "viewer")],
+					invitations: [],
+				}),
+				"GET",
+			)
+			const { wrapper } = await mountSection()
+			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
+			await openSubMenu(t("settings.workspace.member-options.role.title"))
+
+			menuItem(t("general.member-roles.viewer")).click()
+			await settleMutations()
+
+			expect(calls).toHaveLength(1)
+			expect(calls[0]?.body).toEqual({ memberId: "member-u2", role: "viewer" })
+			expect(at(wrapper.findAll("tr"), 1).text()).toContain(
+				t("general.member-roles.viewer"),
+			)
+			expect(raisedToasts()).toEqual([])
+		})
+
+		it("leaves the role alone when the member's own role is picked", async ({
+			expect,
+		}) => {
+			seedWorkspace({ members: [member("u1", "ada"), member("u2", "linus")] })
+			const calls = mockAuthEndpoint("organization/update-member-role", () => ({
+				id: "member-u2",
+			}))
+			const { wrapper } = await mountSection()
+			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
+			await openSubMenu(t("settings.workspace.member-options.role.title"))
+
+			menuItem(t("general.member-roles.editor")).click()
+			await settleMutations()
+
+			expect(calls).toHaveLength(0)
+		})
+
+		it("tells the admin why a role change failed", async ({ expect }) => {
+			seedWorkspace({ members: [member("u1", "ada"), member("u2", "linus")] })
+			mockAuthEndpoint("organization/update-member-role", (_, event) => {
+				setResponseStatus(event, 400)
+
+				return {
+					code: "ROLE_NOT_FOUND",
+					message: "ROLE_NOT_FOUND: viewer",
+				}
+			})
+			const { wrapper } = await mountSection()
+			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
+			await openSubMenu(t("settings.workspace.member-options.role.title"))
+
+			menuItem(t("general.member-roles.viewer")).click()
+			await settleMutations()
+
+			expect(raisedToasts()).toMatchObject([
+				{
+					type: "error",
+					title: t("settings.workspace.errors.toasts.role.title"),
+				},
+			])
+		})
+
+		it("offers no role change for a pending invitation", async ({ expect }) => {
+			seedWorkspace({ invitations: [invitation("u1")] })
+			const { wrapper } = await mountSection()
+			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
+
+			expect(() =>
+				menuItem(t("settings.workspace.member-options.role.title")),
+			).toThrow()
 		})
 
 		it("asks to remove the member picked from their options menu", async ({

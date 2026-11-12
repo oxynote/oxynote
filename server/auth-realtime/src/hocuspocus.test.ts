@@ -4,6 +4,7 @@ import {
 	createDocumentHooks,
 	createHocuspocus,
 	parseDocumentName,
+	closeUserConnections,
 	resetConnections,
 	resolveBranchId,
 	type AuthSession,
@@ -14,12 +15,16 @@ import {
 	fragmentXml,
 	stubCore,
 	stubLog,
+	stubStore,
 	type StubCore,
 } from "./test-helpers.js"
 
 type ConnectedDocument = Y.Doc & { broadcastStateless: Mock }
 
-const SESSION: AuthSession = { user: { id: "user-1" } }
+const SESSION: AuthSession = {
+	user: { id: "user-1" },
+	session: { activeOrganizationId: "org-1" },
+}
 
 function stubAuth(session: AuthSession | null = SESSION) {
 	return { getSession: vi.fn().mockResolvedValue(session) }
@@ -69,6 +74,7 @@ function currentClient(): URLSearchParams {
 
 function hooksWith(core: StubCore, session: AuthSession | null = SESSION) {
 	return createDocumentHooks({
+		store: stubStore(),
 		auth: stubAuth(session),
 		core,
 		log: stubLog(),
@@ -182,6 +188,7 @@ describe("createDocumentHooks", () => {
 			const core = stubCore()
 			const auth = stubAuth()
 			const hooks = createDocumentHooks({
+				store: stubStore(),
 				auth,
 				core,
 				log: stubLog(),
@@ -198,6 +205,75 @@ describe("createDocumentHooks", () => {
 
 			expect(result).toEqual({ session: SESSION })
 			expect(auth.getSession).toHaveBeenCalledTimes(1)
+		})
+
+		it.for([
+			{ name: "an admin", input: "admin", expected: false },
+			{ name: "an editor", input: "editor", expected: false },
+			{ name: "a viewer", input: "viewer", expected: true },
+			{
+				name: "an unknown role",
+				input: "owner",
+				expected: true,
+			},
+			{ name: "no membership", input: null, expected: true },
+		])(
+			"sets read-only to $expected for $name",
+			async ({ input, expected }, { expect }) => {
+				const store = stubStore()
+				store.memberRole.mockResolvedValue(input)
+				const hooks = createDocumentHooks({
+					auth: stubAuth(),
+					store,
+					core: stubCore(),
+					log: stubLog(),
+				})
+				const connectionConfig = { readOnly: false }
+
+				await hooks.onAuthenticate({
+					connectionConfig,
+					documentName: "doc1-branch1",
+					request: {},
+					requestHeaders: {
+						cookie: "auth.session=abc",
+					},
+					requestParameters: currentClient(),
+					token: "",
+				})
+
+				expect(connectionConfig.readOnly).toBe(expected)
+				expect.soft(
+					store.memberRole.mock.calls,
+				).toEqual([["user-1", "org-1"]])
+			},
+		)
+
+		it("rejects the connection when the role lookup fails", async ({
+			expect,
+		}) => {
+			const store = stubStore()
+			store.memberRole.mockRejectedValue(new Error("db down"))
+			const hooks = createDocumentHooks({
+				auth: stubAuth(),
+				store,
+				core: stubCore(),
+				log: stubLog(),
+			})
+			const connectionConfig = { readOnly: false }
+
+			await expect(
+				hooks.onAuthenticate({
+					connectionConfig,
+					documentName: "doc1-branch1",
+					request: {},
+					requestHeaders: {
+						cookie: "auth.session=abc",
+					},
+					requestParameters: currentClient(),
+					token: "",
+				}),
+			).rejects.toThrow("db down")
+			expect(connectionConfig.readOnly).toBe(false)
 		})
 
 		// keeping an edit out of the document is the only way to keep it
@@ -550,7 +626,13 @@ describe("createDocumentHooks", () => {
 			})
 			await hooks.onChange({
 				context: {
-					session: { user: { id: "user-2" } },
+					session: {
+						user: { id: "user-2" },
+						session: {
+							activeOrganizationId:
+								"org-1",
+						},
+					},
 				},
 				documentName: "doc1-branch1",
 			})
@@ -575,7 +657,13 @@ describe("createDocumentHooks", () => {
 			})
 			await hooks.onChange({
 				context: {
-					session: { user: { id: "user-2" } },
+					session: {
+						user: { id: "user-2" },
+						session: {
+							activeOrganizationId:
+								"org-1",
+						},
+					},
 				},
 				documentName: "doc1-branch1",
 			})
@@ -1095,6 +1183,7 @@ describe("createDocumentHooks", () => {
 			)
 			const log = stubLog()
 			const hooks = createDocumentHooks({
+				store: stubStore(),
 				auth: stubAuth(),
 				core,
 				log,
@@ -1131,6 +1220,7 @@ describe("createDocumentHooks", () => {
 			core.storeBranchContent.mockRejectedValue("core gone")
 			const log = stubLog()
 			const hooks = createDocumentHooks({
+				store: stubStore(),
 				auth: stubAuth(),
 				core,
 				log,
@@ -1369,6 +1459,7 @@ describe("resetConnections", () => {
 		const connection = {
 			readOnly: false,
 			readOnlyAtClose: undefined as boolean | undefined,
+			context: undefined,
 			webSocket: {
 				close: vi.fn(() => {
 					connection.readOnlyAtClose =
@@ -1431,12 +1522,104 @@ describe("resetConnections", () => {
 	})
 })
 
+describe("closeUserConnections", () => {
+	// socket builds a writable connection held by the given user, whose
+	// close records whether it was already read-only when closed.
+	function socket(userId: string) {
+		const connection = {
+			readOnly: false,
+			readOnlyAtClose: undefined as boolean | undefined,
+			context: {
+				session: {
+					user: { id: userId },
+					session: {
+						activeOrganizationId: "org-1",
+					},
+				},
+			} as { session?: AuthSession } | undefined,
+			webSocket: {
+				close: vi.fn(() => {
+					connection.readOnlyAtClose =
+						connection.readOnly
+				}),
+			},
+		}
+
+		return connection
+	}
+
+	it("closes the user's sockets on every document with the reset code", ({
+		expect,
+	}) => {
+		const first = socket("user-1")
+		const second = socket("user-1")
+		const other = socket("user-2")
+		const server = {
+			documents: new Map([
+				[
+					"doc1-branch1",
+					{
+						connections: new Map([
+							[first, {}],
+							[other, {}],
+						]),
+					},
+				],
+				[
+					"doc2-default",
+					{
+						connections: new Map([
+							[second, {}],
+						]),
+					},
+				],
+			]),
+		}
+
+		closeUserConnections(server, "user-1")
+
+		for (const connection of [first, second]) {
+			expect(connection.webSocket.close.mock.calls).toEqual([
+				[4205, "Reset Connection"],
+			])
+			expect(connection.readOnlyAtClose).toBe(true)
+		}
+
+		expect.soft(other.webSocket.close).toHaveBeenCalledTimes(0)
+		expect.soft(other.readOnly).toBe(false)
+	})
+
+	// a direct connection, like core's own edits, carries no session.
+	it("skips a connection without a session", ({ expect }) => {
+		const direct = socket("user-1")
+		direct.context = undefined
+		const server = {
+			documents: new Map([
+				[
+					"doc1-branch1",
+					{
+						connections: new Map([
+							[direct, {}],
+						]),
+					},
+				],
+			]),
+		}
+
+		closeUserConnections(server, "user-1")
+
+		expect(direct.webSocket.close).toHaveBeenCalledTimes(0)
+		expect(direct.readOnly).toBe(false)
+	})
+})
+
 describe("createHocuspocus", () => {
 	it("sends the hocuspocus logger's per-connection lines out at DEBUG", ({
 		expect,
 	}) => {
 		const log = stubLog()
 		const { instance } = createHocuspocus({
+			store: stubStore(),
 			auth: stubAuth(),
 			core: stubCore(),
 			log,
@@ -1457,6 +1640,7 @@ describe("createHocuspocus", () => {
 
 	it("wires the document hooks onto the server", ({ expect }) => {
 		const { instance } = createHocuspocus({
+			store: stubStore(),
 			auth: stubAuth(),
 			core: stubCore(),
 			log: stubLog(),
@@ -1478,6 +1662,7 @@ describe("createHocuspocus", () => {
 	it("flushes against its own server", async ({ expect }) => {
 		const core = stubCore()
 		const { flushDocument } = createHocuspocus({
+			store: stubStore(),
 			auth: stubAuth(),
 			core,
 			log: stubLog(),
@@ -1489,6 +1674,7 @@ describe("createHocuspocus", () => {
 	})
 	it("resets against its own server", ({ expect }) => {
 		const { resetConnections } = createHocuspocus({
+			store: stubStore(),
 			auth: stubAuth(),
 			core: stubCore(),
 			log: stubLog(),
@@ -1496,6 +1682,19 @@ describe("createHocuspocus", () => {
 
 		expect(() => {
 			resetConnections("doc1-branch1")
+		}).not.toThrow()
+	})
+
+	it("closes user connections against its own server", ({ expect }) => {
+		const { closeUserConnections } = createHocuspocus({
+			auth: stubAuth(),
+			store: stubStore(),
+			core: stubCore(),
+			log: stubLog(),
+		})
+
+		expect(() => {
+			closeUserConnections("user-1")
 		}).not.toThrow()
 	})
 })

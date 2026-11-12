@@ -21,6 +21,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
@@ -107,7 +108,7 @@ func testDeps(db *DBMock, applier *EditApplierMock, tree *TreeNotifierMock) *Dep
 func requiredArgs(t *testing.T, name Name) string {
 	t.Helper()
 
-	e, ok := New(testDeps(nil, nil, nil)).Entry(name)
+	e, ok := New(testDeps(nil, nil, nil), org.RoleAdmin).Entry(name)
 	require.True(t, ok, "%s is not in the registry", name)
 
 	vals := map[string]any{}
@@ -168,6 +169,12 @@ func requiredArgs(t *testing.T, name Name) string {
 		vals["name"] = "x"
 	}
 
+	// set_variable_value needs a value unless it resets one, which a
+	// schema's required list cannot say. A reset is the smallest call.
+	if name == NameSetVariableValue {
+		vals["default"] = true
+	}
+
 	raw, err := json.Marshal(vals)
 	require.NoError(t, err)
 
@@ -198,6 +205,10 @@ const _stubDocumentName = "Runbook"
 // document, so a tool can name its target.
 func stubDocumentDB() *DBMock {
 	return &DBMock{
+		// the session's user may edit, so a confirmed write runs.
+		FetchOrganizationMemberRoleFunc: func(context.Context, string, string) (org.Role, error) {
+			return org.RoleEditor, nil
+		},
 		FetchDocumentFunc: func(_ context.Context, id xid.ID, orgID, branchName string) (*document.Document, error) {
 			return stubBranchDocument(id, orgID, _stubMainBranchID, branchName), nil
 		},
@@ -436,6 +447,49 @@ func Test_Deps_newInput(t *testing.T) {
 	assert.Equal(t, ctx, i.Context())
 	assert.Equal(t, "org", i.orgID)
 	assert.Equal(t, "user", i.userID)
+}
+
+func Test_input_HasRole(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Role    org.Role
+		RoleErr error
+		Least   org.Role
+		Result  bool
+		Err     error
+	}{
+		"Error returned by DB.FetchOrganizationMemberRole": {RoleErr: assert.AnError, Least: org.RoleViewer, Err: assert.AnError},
+		"User is no longer a member":                       {RoleErr: sql.ErrNoRows, Least: org.RoleViewer},
+		"Role below the least":                             {Role: org.RoleViewer, Least: org.RoleEditor},
+		"Role at the least":                                {Role: org.RoleEditor, Least: org.RoleEditor, Result: true},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := &DBMock{
+				FetchOrganizationMemberRoleFunc: func(context.Context, string, string) (org.Role, error) {
+					return c.Role, c.RoleErr
+				},
+			}
+
+			res, err := testDeps(db, nil, nil).newInput(context.Background(), NameSetVariableValue).HasRole(c.Least)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			calls := db.FetchOrganizationMemberRoleCalls()
+			require.Len(t, calls, 1)
+			assert.Equal(t, "org", calls[0].OrganizationID)
+			assert.Equal(t, "user", calls[0].UserID)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
 }
 
 func Test_input_Context(t *testing.T) {
@@ -2503,6 +2557,50 @@ func Test_input_SetVariableDefault(t *testing.T) {
 			assert.Equal(t, _testVariableID, ff[0].ID)
 			assert.Equal(t, "x", ff[0].Value)
 			assert.Equal(t, "org", ff[0].OrganizationID)
+		})
+	}
+}
+
+func Test_input_ResetVariableValue(t *testing.T) {
+	t.Parallel()
+
+	stub := func(err error) *VariableManagerMock {
+		return &VariableManagerMock{
+			ResetValueFunc: func(context.Context, xid.ID, string, string) error {
+				return err
+			},
+		}
+	}
+
+	cc := map[string]struct {
+		Man *VariableManagerMock
+		Err error
+	}{
+		"Error returned by VariableManager.ResetValue": {
+			Man: stub(assert.AnError),
+			Err: assert.AnError,
+		},
+		"Not found": {
+			Man: stub(errutil.ErrNotFound),
+			Err: fmt.Errorf("variable %s: %w", _testVariableID, ErrUnknownVariable),
+		},
+		"Successful call": {
+			Man: stub(nil),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			err := variableDeps(c.Man).newInput(context.Background(), NameSetVariableValue).ResetVariableValue(_testVariableID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			ff := c.Man.ResetValueCalls()
+			require.Len(t, ff, 1)
+			assert.Equal(t, _testVariableID, ff[0].ID)
+			assert.Equal(t, "org", ff[0].OrganizationID)
+			assert.Equal(t, "user", ff[0].UserID)
 		})
 	}
 }

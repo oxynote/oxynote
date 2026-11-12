@@ -37,6 +37,7 @@ const { authClientStub, createAuthClientMock, allStubFns } = vi.hoisted(() => {
 			inviteMember: vi.fn(),
 			cancelInvitation: vi.fn(),
 			removeMember: vi.fn(),
+			updateMemberRole: vi.fn(),
 		},
 	}
 
@@ -63,6 +64,7 @@ const { authClientStub, createAuthClientMock, allStubFns } = vi.hoisted(() => {
 		authClientStub.organization.inviteMember,
 		authClientStub.organization.cancelInvitation,
 		authClientStub.organization.removeMember,
+		authClientStub.organization.updateMemberRole,
 	]
 
 	return {
@@ -195,9 +197,9 @@ const DELEGATION_CASES: {
 	{
 		name: "inviteOrganizationMember",
 		invoke: (auth) =>
-			auth.inviteOrganizationMember({ email: "a@b.co", role: "member" }),
+			auth.inviteOrganizationMember({ email: "a@b.co", role: "editor" }),
 		mock: () => authClientStub.organization.inviteMember,
-		expectedArgs: [{ email: "a@b.co", role: "member" }],
+		expectedArgs: [{ email: "a@b.co", role: "editor" }],
 	},
 	{
 		name: "cancelOrganizationInvitation",
@@ -211,6 +213,13 @@ const DELEGATION_CASES: {
 			auth.removeOrganizationMember({ memberIdOrEmail: "a@b.co" }),
 		mock: () => authClientStub.organization.removeMember,
 		expectedArgs: [{ memberIdOrEmail: "a@b.co" }],
+	},
+	{
+		name: "updateOrganizationMemberRole",
+		invoke: (auth) =>
+			auth.updateOrganizationMemberRole({ memberId: "m1", role: "viewer" }),
+		mock: () => authClientStub.organization.updateMemberRole,
+		expectedArgs: [{ memberId: "m1", role: "viewer" }],
 	},
 ]
 

@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/wetsocks/wsserver"
@@ -136,6 +137,49 @@ func RequireSession(log *slog.Logger, w http.ResponseWriter, r *http.Request) (S
 	return session, true
 }
 
+// RequireRole is a middleware that lets a request through only when the
+// session's user holds at least the given role in the active organization.
+// It reads the role on every request, so a role change applies at once.
+func RequireRole(log *slog.Logger, db DB, least org.Role) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			session, ok := RequireSession(log, w, r)
+			if !ok {
+				return
+			}
+
+			role, err := FetchRole(r.Context(), db, session)
+			if err != nil {
+				httpserver.RespondError(log, w, err)
+				return
+			}
+
+			if err := role.Allows(least); err != nil {
+				httpserver.RespondError(log, w, err)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// FetchRole returns the role the session's user holds in the active
+// organization. A user who is no longer a member is refused with
+// org.ErrForbidden, like a role that is too low.
+func FetchRole(ctx context.Context, db DB, session Session) (org.Role, error) {
+	role, err := db.FetchOrganizationMemberRole(ctx, session.ActiveOrganizationID, session.UserID)
+	if err != nil {
+		if errutil.IsNotFound(err) {
+			return "", org.ErrForbidden
+		}
+
+		return "", err
+	}
+
+	return role, nil
+}
+
 // HasActiveOrganization reports whether a validated identity may reach
 // the handlers: a user together with the organization their work is
 // scoped to. A session without an active organization (e.g. right after
@@ -199,4 +243,13 @@ func getSession(ctx context.Context, client *http.Client, url string, cookies []
 	}
 
 	return payload.Session, nil
+}
+
+// DB is the database the role check reads.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal DB db
+type DB interface {
+	// FetchOrganizationMemberRole should retrieve the role a user holds
+	// in an organization.
+	FetchOrganizationMemberRole(ctx context.Context, organizationID, userID string) (org.Role, error)
 }

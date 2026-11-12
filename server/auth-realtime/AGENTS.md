@@ -35,7 +35,8 @@ organization and admin, created before listening),
 `organization-names.ts` (the names that organization can start with),
 `reporting.ts`,
 `logging.ts`, `headers.ts`, `auth.ts` (`createAuth` + better-auth
-callbacks), `hocuspocus.ts` (`createHocuspocus`, `createDocumentHooks`,
+callbacks), `roles.ts` (the member roles, mirrored by web),
+`hocuspocus.ts` (`createHocuspocus`, `createDocumentHooks`,
 `flushDocument`), `routes.ts` (`createRoutes` → Hono app), `operations.ts`
 (pure: assistant edit ops on a Y.Doc), `validate.ts` (pure: checks those ops
 against the editor schema), `ydocument.ts` (pure: replacing Y.Doc

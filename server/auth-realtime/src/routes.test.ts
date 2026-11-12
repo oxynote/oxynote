@@ -191,7 +191,7 @@ async function mcpToken(
 // left the organization the token names
 function memberlessStore() {
 	const store = stubStore()
-	store.isOrganizationMember.mockResolvedValue(false)
+	store.memberRole.mockResolvedValue(null)
 
 	return store
 }
@@ -1374,8 +1374,58 @@ describe("createRoutes", () => {
 			expect(await res.json()).toMatchObject({
 				userId: "user-1",
 				organizationId: "org-1",
+				role: "editor",
 				clientId: "client-1",
 				scopes: ["documents:read", "documents:write"],
+			})
+		})
+
+		// the role is read per request, so a change applies to the next
+		// tool call rather than to the next token.
+		it("reports the member's current role", async ({ expect }) => {
+			const { privateKey, jwks } = await mcpKeys()
+			const auth = stubAuth()
+			auth.api.getJwks.mockResolvedValue(jwks)
+			const store = stubStore()
+			store.memberRole.mockResolvedValue("viewer")
+			const { app } = build({ auth, store })
+			const token = await mcpToken(privateKey)
+
+			const res = await app.request(
+				"/internal/mcp/session",
+				bearer(token),
+			)
+
+			expect(res.status).toBe(200)
+			expect(await res.json()).toMatchObject({
+				role: "viewer",
+			})
+			expect.soft(store.memberRole.mock.calls).toEqual([
+				["user-1", "org-1"],
+			])
+		})
+
+		it("answers 500 when the role lookup fails", async ({
+			expect,
+		}) => {
+			const { privateKey, jwks } = await mcpKeys()
+			const auth = stubAuth()
+			auth.api.getJwks.mockResolvedValue(jwks)
+			const store = stubStore()
+			store.memberRole.mockRejectedValue(
+				new Error("connection terminated"),
+			)
+			const { app } = build({ auth, store })
+			const token = await mcpToken(privateKey)
+
+			const res = await app.request(
+				"/internal/mcp/session",
+				bearer(token),
+			)
+
+			expect(res.status).toBe(500)
+			expect(await res.json()).toEqual({
+				error: "token validation failed",
 			})
 		})
 

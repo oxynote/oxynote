@@ -9,9 +9,10 @@ export type StubStore = {
 	[K in keyof Store]: Mock<Store[K]>
 }
 
-// the store as its callers see it: four questions with answers. Defaults
-// describe a user who belongs to an organization and a client whose
-// consent still stands, so a test states only the condition it is about.
+// the store as its callers see it: questions with answers. Defaults
+// describe an editor who belongs to an organization with another admin,
+// and a client whose consent still stands, so a test states only the
+// condition it is about.
 export function stubStore(): StubStore {
 	return {
 		totalOrganizationCount: vi.fn().mockResolvedValue(0),
@@ -20,7 +21,7 @@ export function stubStore(): StubStore {
 		credentialPasswordHash: vi.fn().mockResolvedValue(null),
 		userOrganizationId: vi.fn().mockResolvedValue("org-1"),
 		hasOAuthConsent: vi.fn().mockResolvedValue(true),
-		isOrganizationMember: vi.fn().mockResolvedValue(true),
+		memberRole: vi.fn().mockResolvedValue("editor"),
 	}
 }
 

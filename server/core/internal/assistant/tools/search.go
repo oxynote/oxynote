@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/rs/xid"
 )
@@ -33,6 +34,7 @@ type searchDocuments struct {
 func (searchDocuments) Info() Info {
 	return Info{
 		Name:        NameSearchDocuments,
+		Traits:      Traits{Role: org.RoleViewer},
 		Description: "Search document titles and block text across every branch of every document. Returns {documents: [{document_id, document_name, branch_id, branch_name, default, protected, title_match, hits: [{block_uid, text}]}]}, best match first. A title or block matches when it holds all but one of the query's words, and typos are allowed. So search for a title or a phrase, not both, and check document_name. title_match says the title matched. Each hit is the innermost block holding the text, and get_document with its block_uid reads the element that holds it. A block a fork copied unchanged is found on every branch that holds it.",
 		Properties: map[string]any{
 			"query": map[string]any{

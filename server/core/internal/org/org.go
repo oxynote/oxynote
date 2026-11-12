@@ -1,5 +1,5 @@
-// Package org defines what an organization owns outside of Postgres: the
-// storage layout of its logo and the URL the logo is served under.
+// Package org defines organization-wide rules: the roles a member may hold,
+// the storage layout of the logo and the URL the logo is served under.
 package org
 
 import "fmt"

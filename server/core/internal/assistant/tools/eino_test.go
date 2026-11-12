@@ -12,6 +12,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,7 +25,7 @@ func Test_readToolOutput_Info(t *testing.T) {
 
 	// the paths it takes only exist inside a conversation, so it must
 	// never be offered to a client that has none.
-	assert.Equal(t, Traits{Internal: true}, info.Traits)
+	assert.Equal(t, Traits{Internal: true, Role: org.RoleViewer}, info.Traits)
 
 	// the tool is named for tool output, not files: sitting next to
 	// get_document, a generic read_file would invite the wrong call.
@@ -390,7 +391,7 @@ func Test_Info_toEino(t *testing.T) {
 	want, err := os.ReadFile("testdata/tool_schemas.golden")
 	require.NoError(t, err)
 
-	s := New(testDeps(nil, nil, nil))
+	s := New(testDeps(nil, nil, nil), org.RoleAdmin)
 
 	got := map[string]any{}
 

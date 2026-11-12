@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 )
 
 // Ensure, that ManagerMock does implement Manager.
@@ -19,7 +20,7 @@ var _ Manager = &ManagerMock{}
 //
 //		// make and configure a mocked Manager
 //		mockedManager := &ManagerMock{
-//			ToolSetFunc: func(orgID string, userID string) *tools.Set {
+//			ToolSetFunc: func(orgID string, userID string, role org.Role) *tools.Set {
 //				panic("mock out the ToolSet method")
 //			},
 //		}
@@ -30,7 +31,7 @@ var _ Manager = &ManagerMock{}
 //	}
 type ManagerMock struct {
 	// ToolSetFunc mocks the ToolSet method.
-	ToolSetFunc func(orgID string, userID string) *tools.Set
+	ToolSetFunc func(orgID string, userID string, role org.Role) *tools.Set
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -40,19 +41,23 @@ type ManagerMock struct {
 			OrgID string
 			// UserID is the userID argument value.
 			UserID string
+			// Role is the role argument value.
+			Role org.Role
 		}
 	}
 	lockToolSet sync.RWMutex
 }
 
 // ToolSet calls ToolSetFunc.
-func (mock *ManagerMock) ToolSet(orgID string, userID string) *tools.Set {
+func (mock *ManagerMock) ToolSet(orgID string, userID string, role org.Role) *tools.Set {
 	callInfo := struct {
 		OrgID  string
 		UserID string
+		Role   org.Role
 	}{
 		OrgID:  orgID,
 		UserID: userID,
+		Role:   role,
 	}
 	mock.lockToolSet.Lock()
 	mock.calls.ToolSet = append(mock.calls.ToolSet, callInfo)
@@ -63,7 +68,7 @@ func (mock *ManagerMock) ToolSet(orgID string, userID string) *tools.Set {
 		)
 		return setOut
 	}
-	return mock.ToolSetFunc(orgID, userID)
+	return mock.ToolSetFunc(orgID, userID, role)
 }
 
 // ToolSetCalls gets all the calls that were made to ToolSet.
@@ -73,10 +78,12 @@ func (mock *ManagerMock) ToolSet(orgID string, userID string) *tools.Set {
 func (mock *ManagerMock) ToolSetCalls() []struct {
 	OrgID  string
 	UserID string
+	Role   org.Role
 } {
 	var calls []struct {
 		OrgID  string
 		UserID string
+		Role   org.Role
 	}
 	mock.lockToolSet.RLock()
 	calls = mock.calls.ToolSet
