@@ -66,12 +66,30 @@ async function main() {
 			url: env.valkeyDsn,
 			RESP: 2,
 			socket: {
-				reconnectStrategy: (retries) => {
+				reconnectStrategy: (retries, cause) => {
 					if (connecting) {
 						return false
 					}
 
-					return Math.min(2 ** retries * 50, 3000)
+					// Match node-redis 6.3.1's default strategy.
+					// It does not reconnect after a socket timeout.
+					if (
+						cause.name ===
+						"SocketTimeoutError"
+					) {
+						return false
+					}
+
+					// Exponential backoff with 0–199 ms of random jitter.
+					const jitter = Math.floor(
+						Math.random() * 200,
+					)
+					const delay = Math.min(
+						2 ** retries * 50,
+						2000,
+					)
+
+					return delay + jitter
 				},
 			},
 		})
