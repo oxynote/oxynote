@@ -1,7 +1,6 @@
 <script lang="ts" setup>
 import {
 	fromDate,
-	getLocalTimeZone,
 	parseDateTime,
 	toCalendarDateTime,
 } from "@internationalized/date"
@@ -19,17 +18,15 @@ import {
 
 const props = defineProps<{ timeRange: TimeRange | null }>()
 const emit = defineEmits<{ apply: [value: TimeRangeSetting] }>()
-const { t } = useI18n({ useScope: "global" })
+const { t, locale } = useI18n({ useScope: "global" })
 const id = useId()
-const browserZone = getLocalTimeZone()
-const zone = usePersistentState<string>({
-	key: "custom-time-range-zone",
-	defaultValue: browserZone,
-	storage: { web: "local-storage", desktop: "local-storage" },
-})
+const { choice: zoneChoice, zone } = useTimeRangeZone()
 const label = useTimeRangeLabel(zone)
 const from = ref("")
 const to = ref("")
+const edited = ref(false)
+const fromOccurrence = ref<string>()
+const toOccurrence = ref<string>()
 const history = usePersistentState<string[]>({
 	key: "custom-time-range-history",
 	defaultValue: [],
@@ -40,39 +37,83 @@ const recent = computed(() =>
 		.filter((value) => typeof value === "string" && parseCustomTimeRange(value))
 		.slice(0, 4),
 )
+const fromCandidates = computed(() => candidates(from.value))
+const toCandidates = computed(() => candidates(to.value))
 const range = computed(() => {
-	try {
-		const start = parseDateTime(from.value).toDate(zone.value, "reject")
-		const end = parseDateTime(to.value).toDate(zone.value, "reject")
+	const start = boundary(fromCandidates.value, fromOccurrence.value)
+	const end = boundary(toCandidates.value, toOccurrence.value)
 
-		return start < end ? { from: start, to: end } : null
-	} catch {
-		return null
-	}
+	return start && end && start < end ? { from: start, to: end } : null
 })
 
 watchImmediate(
 	() => props.timeRange,
 	(value) => {
-		setDraft(resolveTimeRange(value ?? TimeRangePreset.Last24Hours))
+		if (!edited.value) {
+			setDraft(resolveTimeRange(value ?? TimeRangePreset.Last24Hours))
+		}
 	},
 )
+
+function candidates(value: string): Date[] {
+	try {
+		const local = parseDateTime(value)
+		const earlier = local.toDate(zone.value, "earlier")
+		const later = local.toDate(zone.value, "later")
+		if (
+			local.compare(toCalendarDateTime(fromDate(earlier, zone.value))) !== 0
+		) {
+			return []
+		}
+
+		return earlier.getTime() === later.getTime() ? [earlier] : [earlier, later]
+	} catch {
+		return []
+	}
+}
+
+function boundary(values: Date[], occurrence?: string): Date | undefined {
+	return values.length === 1
+		? values[0]
+		: values.find((value) => String(value.getTime()) === occurrence)
+}
+
+function editBoundary(which: "from" | "to") {
+	edited.value = true
+	if (which === "from") {
+		fromOccurrence.value = undefined
+	} else {
+		toOccurrence.value = undefined
+	}
+}
+
+function offsetLabel(value: Date) {
+	return (
+		new Intl.DateTimeFormat(locale.value, {
+			timeZone: zone.value,
+			timeZoneName: "longOffset",
+		})
+			.formatToParts(value)
+			.find((part) => part.type === "timeZoneName")?.value ??
+		value.toISOString()
+	)
+}
 
 function setDraft(value: { from: Date; to: Date }) {
 	from.value = toCalendarDateTime(fromDate(value.from, zone.value)).toString()
 	to.value = toCalendarDateTime(fromDate(value.to, zone.value)).toString()
+	fromOccurrence.value = String(value.from.getTime())
+	toOccurrence.value = String(value.to.getTime())
 }
 
 function changeZone(value: unknown) {
-	if (typeof value !== "string") {
+	if ((value !== "browser" && value !== "UTC") || !range.value) {
 		return
 	}
 
 	const current = range.value
-	zone.value = value
-	if (current) {
-		setDraft(current)
-	}
+	zoneChoice.value = value
+	setDraft(current)
 }
 
 function apply() {
@@ -113,7 +154,35 @@ function apply() {
 							step="0.001"
 							required
 							class="min-w-0 text-xs md:text-xs dark:scheme-dark"
+							@update:model-value="editBoundary('from')"
 						/>
+						<ShadcnUiSelect
+							v-if="fromCandidates.length > 1"
+							v-model="fromOccurrence"
+							@update:model-value="edited = true"
+						>
+							<ShadcnUiSelectTrigger
+								class="h-8 text-xs"
+								:aria-label="
+									t('general.custom-time-range.offset-label', {
+										boundary: t('general.custom-time-range.from'),
+									})
+								"
+							>
+								<ShadcnUiSelectValue
+									:placeholder="t('general.custom-time-range.choose-offset')"
+								/>
+							</ShadcnUiSelectTrigger>
+							<ShadcnUiSelectContent inside-modal>
+								<ShadcnUiSelectItem
+									v-for="candidate in fromCandidates"
+									:key="candidate.getTime()"
+									:value="String(candidate.getTime())"
+								>
+									{{ offsetLabel(candidate) }}
+								</ShadcnUiSelectItem>
+							</ShadcnUiSelectContent>
+						</ShadcnUiSelect>
 					</div>
 					<div class="flex flex-col gap-1.5">
 						<ShadcnUiLabel :for="`${id}-to`" class="text-xs">
@@ -126,7 +195,35 @@ function apply() {
 							step="0.001"
 							required
 							class="min-w-0 text-xs md:text-xs dark:scheme-dark"
+							@update:model-value="editBoundary('to')"
 						/>
+						<ShadcnUiSelect
+							v-if="toCandidates.length > 1"
+							v-model="toOccurrence"
+							@update:model-value="edited = true"
+						>
+							<ShadcnUiSelectTrigger
+								class="h-8 text-xs"
+								:aria-label="
+									t('general.custom-time-range.offset-label', {
+										boundary: t('general.custom-time-range.to'),
+									})
+								"
+							>
+								<ShadcnUiSelectValue
+									:placeholder="t('general.custom-time-range.choose-offset')"
+								/>
+							</ShadcnUiSelectTrigger>
+							<ShadcnUiSelectContent inside-modal>
+								<ShadcnUiSelectItem
+									v-for="candidate in toCandidates"
+									:key="candidate.getTime()"
+									:value="String(candidate.getTime())"
+								>
+									{{ offsetLabel(candidate) }}
+								</ShadcnUiSelectItem>
+							</ShadcnUiSelectContent>
+						</ShadcnUiSelect>
 					</div>
 					<p
 						v-if="!range"
@@ -193,7 +290,7 @@ function apply() {
 		>
 			<span class="min-w-0 truncate text-xs text-muted-foreground">
 				{{
-					zone === "UTC"
+					zoneChoice === "UTC"
 						? t("general.custom-time-range.utc")
 						: t("general.custom-time-range.zone-label", {
 								label: t("general.custom-time-range.browser-time"),
@@ -201,7 +298,11 @@ function apply() {
 							})
 				}}
 			</span>
-			<ShadcnUiSelect :model-value="zone" @update:model-value="changeZone">
+			<ShadcnUiSelect
+				:model-value="zoneChoice"
+				:disabled="!range"
+				@update:model-value="changeZone"
+			>
 				<ShadcnUiSelectTrigger
 					class="h-7 w-auto gap-2 text-xs"
 					:aria-label="t('general.custom-time-range.time-zone')"
@@ -209,10 +310,10 @@ function apply() {
 					<ShadcnUiSelectValue />
 				</ShadcnUiSelectTrigger>
 				<ShadcnUiSelectContent inside-modal>
-					<ShadcnUiSelectItem :value="browserZone">
+					<ShadcnUiSelectItem value="browser">
 						{{ t("general.custom-time-range.browser-time") }}
 					</ShadcnUiSelectItem>
-					<ShadcnUiSelectItem v-if="browserZone !== 'UTC'" value="UTC">
+					<ShadcnUiSelectItem value="UTC">
 						{{ t("general.custom-time-range.utc") }}
 					</ShadcnUiSelectItem>
 				</ShadcnUiSelectContent>

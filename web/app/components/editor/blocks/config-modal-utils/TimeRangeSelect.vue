@@ -7,10 +7,12 @@ import { useBlockVariables } from "../variables"
 const props = defineProps<{
 	disabled: boolean
 	oldValue?: TimeRangeSetting | null
+	anchor?: HTMLElement | null
 }>()
 const model = defineModel<TimeRangeSetting | null>({ required: true })
 const { t } = useI18n({ useScope: "global" })
-const label = useTimeRangeLabel()
+const { zone } = useTimeRangeZone()
+const label = useTimeRangeLabel(zone)
 const open = ref(false)
 const blockVariables = useBlockVariables()
 
@@ -25,6 +27,7 @@ const isModified = computed(() => props.oldValue !== undefined)
 <template>
 	<div class="flex flex-col items-end gap-0.5">
 		<ShadcnUiPopover v-model:open="open">
+			<ShadcnUiPopoverAnchor v-if="props.anchor" :reference="props.anchor" />
 			<ShadcnUiPopoverTrigger as-child :disabled="props.disabled">
 				<ShadcnUiButton
 					variant="ghost-plain"
@@ -45,7 +48,7 @@ const isModified = computed(() => props.oldValue !== undefined)
 				</ShadcnUiButton>
 			</ShadcnUiPopoverTrigger>
 			<ShadcnUiPopoverContent
-				align="end"
+				align="center"
 				inside-modal
 				class="w-[min(40rem,calc(100dvw-2rem))] overflow-hidden p-0"
 				:aria-label="t('general.custom-time-range.title')"

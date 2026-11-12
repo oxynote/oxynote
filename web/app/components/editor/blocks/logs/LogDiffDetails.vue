@@ -19,7 +19,7 @@ const props = defineProps<{
 
 const { t } = useI18n({ useScope: "global" })
 const { fetchDataSources } = useDataSourceAPI()
-const timeRangeLabel = useTimeRangeLabel()
+const timeRangeLabel = useTimeRangeLabel(undefined, true)
 
 const rows = computed<FieldChange[]>(() =>
 	collectAttributeChanges(props.node).map(toRow),

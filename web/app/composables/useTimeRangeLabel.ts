@@ -3,7 +3,10 @@ import { toValue, type MaybeRefOrGetter } from "vue"
 import { parseCustomTimeRange } from "~/utils/time-range"
 import { METRIC_TIME_RANGE_REFERENCE } from "~/utils/variable"
 
-export function useTimeRangeLabel(timeZone?: MaybeRefOrGetter<string>) {
+export function useTimeRangeLabel(
+	timeZone?: MaybeRefOrGetter<string>,
+	precise = false,
+) {
 	const { t, d } = useI18n({ useScope: "global" })
 
 	return (value: unknown): string => {
@@ -18,6 +21,20 @@ export function useTimeRangeLabel(timeZone?: MaybeRefOrGetter<string>) {
 		const range = parseCustomTimeRange(value)
 		if (range) {
 			const zone = toValue(timeZone) ?? getLocalTimeZone()
+			if (precise) {
+				const options = {
+					key: "short-with-full-time",
+					timeZone: zone,
+					fractionalSecondDigits: 3 as const,
+					timeZoneName: "longOffset" as const,
+				}
+
+				return t("general.custom-time-range.label", {
+					from: d(range.from, options),
+					to: d(range.to, options),
+				})
+			}
+
 			const start = fromDate(range.from, zone)
 			const end = fromDate(range.to, zone)
 			const sameDay =

@@ -16,6 +16,7 @@ const emit = defineEmits<{
 	(e: "open-settings"): void
 }>()
 
+const timeRangeAnchor = useTemplateRef<HTMLSpanElement>("time-range-anchor")
 const editorStore = useEditorStore()
 const isMinWidth1024px = useMediaQuery("(min-width: 1024px)")
 const { isEditable } = useEditorMeta()
@@ -160,8 +161,13 @@ function openSettings() {
 				</ShadcnUiDialogHeader>
 				<div
 					v-if="config"
-					class="flex flex-col rounded-md border bg-muted/50 lg:h-126 lg:flex-row"
+					class="relative flex flex-col rounded-md border bg-muted/50 lg:h-126 lg:flex-row"
 				>
+					<span
+						ref="time-range-anchor"
+						aria-hidden="true"
+						class="pointer-events-none absolute top-8 left-1/2 size-0"
+					/>
 					<div class="flex min-w-0 flex-1 flex-col self-stretch">
 						<div class="relative h-70 min-w-0 shrink-0 border-b">
 							<div
@@ -186,6 +192,7 @@ function openSettings() {
 								</ShadcnUiTooltip>
 								<TimeRangeSelect
 									v-model="config.timeRange"
+									:anchor="timeRangeAnchor"
 									:disabled="isEditingDisabled"
 									:old-value="
 										isTimeRangeModified ? oldConfig?.timeRange : undefined

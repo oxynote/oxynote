@@ -46,6 +46,8 @@
 			"empty-recent": "Applied ranges will appear here.",
 			"browser-time": "Browser time",
 			"time-zone": "Time zone",
+			"offset-label": "{boundary} UTC offset",
+			"choose-offset": "Choose UTC offset",
 			"utc": "UTC",
 			"zone-label": "{label} · {zone}",
 			"description": "Choose a fixed start and end time in {timeZone}.",

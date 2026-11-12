@@ -132,6 +132,38 @@ describe("<MetricDiffDetails>", { concurrent: false }, () => {
 		])
 	})
 
+	it.for([
+		{
+			name: "different years",
+			oldStart: "2025-11-11T05:38:00.000Z",
+			oldEnd: "2025-11-11T05:42:00.000Z",
+			start: "2026-11-11T05:38:00.000Z",
+			end: "2026-11-11T05:42:00.000Z",
+		},
+		{
+			name: "different milliseconds",
+			oldStart: "2026-11-11T05:38:00.123Z",
+			oldEnd: "2026-11-11T05:42:00.000Z",
+			start: "2026-11-11T05:38:00.124Z",
+			end: "2026-11-11T05:42:00.000Z",
+		},
+	])(
+		"distinguishes ranges with $name in a review",
+		async ({ oldStart, oldEnd, start, end }, { expect }) => {
+			const wrapper = await mountDetails(
+				{
+					timeRange: serializeCustomTimeRange(
+						new Date(oldStart),
+						new Date(oldEnd),
+					),
+				},
+				{ timeRange: serializeCustomTimeRange(new Date(start), new Date(end)) },
+			)
+			const result = rows(wrapper)[0]
+			expect(result?.[1]).not.toBe(result?.[2])
+		},
+	)
+
 	it("names the built-in variable a setting follows", async ({ expect }) => {
 		const wrapper = await mountDetails(
 			{
@@ -174,8 +206,16 @@ describe("<MetricDiffDetails>", { concurrent: false }, () => {
 				t("editor.config-modal-utils.time-range-label"),
 				t("general.time-range-options.last_1_hour"),
 				t("general.custom-time-range.label", {
-					from: `${d(from, { month: "short", day: "numeric" })} ${from.getHours()}:30`,
-					to: `${d(to, { month: "short", day: "numeric" })} ${to.getHours()}:45`,
+					from: d(from, {
+						key: "short-with-full-time",
+						fractionalSecondDigits: 3,
+						timeZoneName: "longOffset",
+					}),
+					to: d(to, {
+						key: "short-with-full-time",
+						fractionalSecondDigits: 3,
+						timeZoneName: "longOffset",
+					}),
 				}),
 			],
 		])
