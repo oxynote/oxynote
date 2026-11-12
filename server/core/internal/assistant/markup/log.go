@@ -42,7 +42,7 @@ func LogReference() string {
 		fmt.Fprintf(&sb, ", %s (%s)", key, strings.Join(_logOnlyEnums[key], "|"))
 	}
 
-	sb.WriteString(", and optionally title. order sorts the logs by time, desc showing the newest first")
+	sb.WriteString(". It may also hold title. order sorts the logs by time, and desc shows the newest first")
 
 	return sb.String()
 }

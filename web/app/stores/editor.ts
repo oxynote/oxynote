@@ -13,6 +13,7 @@ export const EDITOR_COMPACT_MAX_WIDTH_PX = 1280
 export const useEditorStore = defineStore("editor", () => {
 	const locked = ref(false)
 	const activeBranchProtected = ref(false) // the active branch refuses edits from everyone; the container sets it from the branch metadata
+	const activeBranchReadOnly = ref(false)
 	const preloadedBranchIds = ref<BranchId[]>([]) // used to track branches that have been preloaded (e.g. for diffing) to avoid refetching data when switching between them
 	const activeDocumentId = ref<DocumentId | null>(null)
 	const activeBranchId = ref<BranchId | null>(null)
@@ -54,12 +55,17 @@ export const useEditorStore = defineStore("editor", () => {
 		activeBranchProtected.value = v
 	}
 
+	function setActiveBranchReadOnly(v: boolean) {
+		activeBranchReadOnly.value = v
+	}
+
 	function updatePreloadedBranchIds(branchIds: BranchId[]) {
 		preloadedBranchIds.value = branchIds
 	}
 
 	function updateActiveDocumentId(id: string | null) {
 		if (activeDocumentId.value !== id) {
+			activeBranchReadOnly.value = false
 			clearBlockData()
 			setReviewableDiffActive(false)
 			// reset the branch ids, the new document load renews them
@@ -74,6 +80,7 @@ export const useEditorStore = defineStore("editor", () => {
 
 	function updateActiveBranchId(id: string | null) {
 		if (activeBranchId.value !== id) {
+			activeBranchReadOnly.value = false
 			// don't clear the metrics here (since we want to keep them
 			// when switching between branches), but do clear the diff data
 			// since that is specific to the active branch
@@ -453,6 +460,8 @@ export const useEditorStore = defineStore("editor", () => {
 		updateLock,
 		activeBranchProtected,
 		setActiveBranchProtected,
+		activeBranchReadOnly,
+		setActiveBranchReadOnly,
 		preloadedBranchIds,
 		updatePreloadedBranchIds,
 		activeDocumentId,

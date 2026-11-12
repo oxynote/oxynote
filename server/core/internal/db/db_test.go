@@ -22,6 +22,7 @@ import (
 	"github.com/lann/builder"
 	"github.com/orlangure/gnomock"
 	pgDocker "github.com/orlangure/gnomock/preset/postgres"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
@@ -30,6 +31,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 	migr "github.com/rubenv/sql-migrate"
 	"github.com/stretchr/testify/assert"
@@ -284,6 +286,39 @@ func Test_DB_migrateUp(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	// the member roles migration (012) turns every owner into an admin and
+	// leaves every other role alone.
+	users := prepUsers(t, db, 2)
+
+	for i, role := range []string{"owner", "editor"} {
+		q, args := db.builder.Insert("organization_members").
+			SetMap(map[string]any{
+				"id":                 xid.New().String(),
+				"fk_organization_id": organizationID,
+				"fk_user_id":         users[i],
+				"role":               role,
+				"created_at":         timeutil.Now().Truncate(time.Second),
+			}).MustSql()
+
+		_, err = db.sql.Exec(q, args...)
+		require.NoError(t, err)
+	}
+
+	q, args := db.builder.Insert("organization_invitations").
+		SetMap(map[string]any{
+			"id":                 "inv-1",
+			"fk_organization_id": organizationID,
+			"email":              "a@b.c",
+			"role":               "owner",
+			"status":             "pending",
+			"expires_at":         timeutil.Now().Add(time.Hour).Truncate(time.Second),
+			"created_at":         timeutil.Now().Truncate(time.Second),
+			"fk_inviter_id":      users[0],
+		}).MustSql()
+
+	_, err = db.sql.Exec(q, args...)
+	require.NoError(t, err)
+
 	hexes := []string{"#f54a00", "#e7010c", "#155DFC", "rgb(1, 2, 3)"}
 
 	prepTags(t, db, len(hexes), func(i int, tg *tag.Tag) {
@@ -321,6 +356,17 @@ func Test_DB_migrateUp(t *testing.T) {
 	}
 
 	testutil.AssertFilterEqual(t, exp, tree[0], xid.ID{}, time.Time{})
+
+	for i, role := range []org.Role{org.RoleAdmin, org.RoleEditor} {
+		res, err := db.FetchOrganizationMemberRole(context.Background(), organizationID, users[i])
+		require.NoError(t, err)
+		assert.Equal(t, role, res)
+	}
+
+	var invitationRole string
+
+	require.NoError(t, db.sql.Get(&invitationRole, "SELECT role FROM organization_invitations WHERE id = 'inv-1'"))
+	assert.Equal(t, "admin", invitationRole)
 }
 
 func Test_DB_BeginTx(t *testing.T) {

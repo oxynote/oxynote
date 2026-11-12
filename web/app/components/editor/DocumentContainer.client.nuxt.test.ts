@@ -1,4 +1,5 @@
-import { mountSuspended } from "@nuxt/test-utils/runtime"
+import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime"
+import type { onAuthenticatedParameters } from "@hocuspocus/provider"
 import { enableAutoUnmount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import DocumentContainer from "./DocumentContainer.client.vue"
@@ -15,6 +16,7 @@ import {
 	seedAuthSession,
 	seedPersistentState,
 	settleMutations,
+	t,
 	WAIT_FOR_OPTIONS,
 } from "~/components/test-helpers"
 import { stubThemeColorContext } from "./test-helpers/theme"
@@ -32,6 +34,7 @@ interface ProviderOptions {
 	onSynced: () => void
 	onConnect: () => void
 	onAuthenticationFailed: () => void
+	onAuthenticated: (data: onAuthenticatedParameters) => void
 	onStateless: (message: { payload: string }) => void
 }
 
@@ -76,6 +79,9 @@ vi.mock("@hocuspocus/provider", () => {
 })
 
 const redirectToLogin = vi.hoisted(() => vi.fn())
+const reloadPage = vi.hoisted(() => vi.fn())
+
+mockNuxtImport("reloadNuxtApp", () => reloadPage)
 
 vi.mock("~/plugins/03.api-fetch", async (importOriginal) => ({
 	...(await importOriginal<Record<string, unknown>>()),
@@ -186,6 +192,8 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 		stubThemeColorContext()
 		providers.created.splice(0)
 		redirectToLogin.mockReset()
+		reloadPage.mockReset()
+		showToastMessageMock.mockReset()
 		clearQueryCache()
 		useEditorMeta().setEditable(true)
 		seedPersistentState("editor-compact-view", true)
@@ -516,6 +524,166 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 		expect(consoleError).toHaveBeenCalledTimes(1)
 		expect(showToastMessageMock).toHaveBeenCalledTimes(1)
 		expect(showToastMessageMock.mock.calls[0]?.[0]).toBe("error")
+		const action = showToastMessageMock.mock.calls[0]?.[3] as {
+			label: string
+			onClick: () => void
+		}
+		expect(action.label).toBe(t("editor.reload-page"))
+		expect(reloadPage).not.toHaveBeenCalled()
+		action.onClick()
+		expect(reloadPage).toHaveBeenCalledExactlyOnceWith({ force: true })
+	})
+
+	it("offers a page reload when the server makes an unprotected branch read-only", async ({
+		expect,
+	}) => {
+		await mountContainer()
+
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+
+		expect(useEditorMeta().isEditable.value).toBe(false)
+		expect(showToastMessageMock).toHaveBeenCalledExactlyOnceWith(
+			"warning",
+			t("editor.readonly-error.title"),
+			t("editor.readonly-error.description"),
+			{
+				label: t("editor.reload-page"),
+				onClick: expect.any(Function) as () => void,
+			},
+		)
+		const action = showToastMessageMock.mock.calls[0]?.[3] as {
+			onClick: () => void
+		}
+		expect(reloadPage).not.toHaveBeenCalled()
+		action.onClick()
+		expect(reloadPage).toHaveBeenCalledExactlyOnceWith({ force: true })
+	})
+
+	it("does not warn for the expected read-only scope of a protected branch", async ({
+		expect,
+	}) => {
+		seedBranches({ branchId: BRANCH_ID, protected: true })
+		await mountContainer()
+
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+
+		expect(useEditorMeta().isEditable.value).toBe(false)
+		expect(showToastMessageMock).not.toHaveBeenCalled()
+	})
+
+	it("waits for branch metadata before warning about a read-only connection", async ({
+		expect,
+	}) => {
+		seedBranches()
+		await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+		expect(showToastMessageMock).not.toHaveBeenCalled()
+
+		seedBranches({ branchId: BRANCH_ID, protected: false })
+		await nextTick()
+
+		expect(showToastMessageMock).toHaveBeenCalledTimes(1)
+	})
+
+	it("does not repeat the warning on reconnection or metadata refresh", async ({
+		expect,
+	}) => {
+		await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		seedBranches({ branchId: BRANCH_ID, protected: false })
+		await nextTick()
+
+		expect(showToastMessageMock).toHaveBeenCalledTimes(1)
+	})
+
+	it("keeps preloaded read-only branches from locking the active writable branch", async ({
+		expect,
+	}) => {
+		useEditorStore().updatePreloadedBranchIds([TARGET_BRANCH_ID])
+		await mountContainer()
+
+		providerFor(TARGET_BRANCH_ID).options.onAuthenticated({
+			scope: "readonly",
+		})
+		await nextTick()
+
+		expect(useEditorMeta().isEditable.value).toBe(true)
+		expect(showToastMessageMock).not.toHaveBeenCalled()
+	})
+
+	it("restores editing when the active connection regains write access", async ({
+		expect,
+	}) => {
+		await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+		expect(useEditorMeta().isEditable.value).toBe(false)
+
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "read-write" })
+		await nextTick()
+
+		expect(useEditorMeta().isEditable.value).toBe(true)
+		expect(showToastMessageMock).toHaveBeenCalledTimes(1)
+	})
+
+	it("warns when a previously preloaded read-only branch becomes active", async ({
+		expect,
+	}) => {
+		seedBranches(
+			{ branchId: BRANCH_ID, protected: false },
+			{ branchId: TARGET_BRANCH_ID, protected: false },
+		)
+		useEditorStore().updatePreloadedBranchIds([TARGET_BRANCH_ID])
+		await mountContainer()
+		providerFor(TARGET_BRANCH_ID).options.onAuthenticated({
+			scope: "readonly",
+		})
+		await nextTick()
+		expect(showToastMessageMock).not.toHaveBeenCalled()
+
+		useEditorStore().updateActiveBranchId(TARGET_BRANCH_ID)
+		await nextTick()
+
+		expect(useEditorMeta().isEditable.value).toBe(false)
+		expect(showToastMessageMock).toHaveBeenCalledTimes(1)
+	})
+
+	it("clears the connection's read-only state when the container unmounts", async ({
+		expect,
+	}) => {
+		const wrapper = await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+
+		wrapper.unmount()
+
+		expect(useEditorMeta().isEditable.value).toBe(true)
+	})
+
+	it("keeps editing disabled when switching between two read-only connections", async ({
+		expect,
+	}) => {
+		seedBranches(
+			{ branchId: BRANCH_ID, protected: false },
+			{ branchId: TARGET_BRANCH_ID, protected: false },
+		)
+		useEditorStore().updatePreloadedBranchIds([TARGET_BRANCH_ID])
+		await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		providerFor(TARGET_BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+
+		useEditorStore().updateActiveBranchId(TARGET_BRANCH_ID)
+		await nextTick()
+
+		expect(useEditorMeta().isEditable.value).toBe(false)
+		expect(showToastMessageMock).toHaveBeenCalledTimes(1)
 	})
 
 	it("stays quiet for any other realtime message", async ({ expect }) => {

@@ -30,6 +30,7 @@ const { leaves } = vi.hoisted(() => {
 		"auth:inviteOrganizationMember": vi.fn(),
 		"auth:cancelOrganizationInvitation": vi.fn(),
 		"auth:removeOrganizationMember": vi.fn(),
+		"auth:updateOrganizationMemberRole": vi.fn(),
 	}
 
 	return { leaves }
@@ -56,6 +57,7 @@ vi.mock("./auth-client", () => ({
 			inviteMember: leaves["auth:inviteOrganizationMember"],
 			cancelInvitation: leaves["auth:cancelOrganizationInvitation"],
 			removeMember: leaves["auth:removeOrganizationMember"],
+			updateMemberRole: leaves["auth:updateOrganizationMemberRole"],
 		},
 	},
 }))

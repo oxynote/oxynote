@@ -16,6 +16,11 @@ import (
 // model can acknowledge the refusal and carry on.
 const _declinedResult = `{"approved":false,"reason":"user declined"}`
 
+// _notAllowedResult is the tool result reported to the model when the
+// user's role no longer allows a write. Like a refusal, it lets the model
+// tell the user and carry on.
+const _notAllowedResult = `{"approved":false,"reason":"your role does not allow this"}`
+
 // SessionKeyAutoApprove marks a turn in which the user answered a
 // confirmation with "approve all". It lives in the agent session so it
 // survives the checkpoint written when the turn is interrupted.
@@ -102,7 +107,7 @@ func (c *confirming) InvokableRun(
 		// later write, but never a destructive one: approving a batch
 		// of text edits is not consent to delete.
 		if autoApproved(ctx) && !c.destructive {
-			return c.einoTool.InvokableRun(ctx, argumentsInJSON, opts...)
+			return c.run(ctx, argumentsInJSON, opts...)
 		}
 
 		return c.interrupt(ctx, args)
@@ -117,6 +122,25 @@ func (c *confirming) InvokableRun(
 
 	if !hasDecision || !decision.Approved {
 		return _declinedResult, nil
+	}
+
+	return c.run(ctx, argumentsInJSON, opts...)
+}
+
+// run runs the wrapped tool while the user may still edit. A chat outlives
+// a role change, so the role is read again before every write.
+func (c *confirming) run(
+	ctx context.Context,
+	argumentsInJSON string,
+	opts ...tool.Option,
+) (string, error) {
+	allowed, err := c.deps.newInput(ctx, c.info.Name).HasRole(c.info.Traits.Role)
+	if err != nil {
+		return "", err
+	}
+
+	if !allowed {
+		return _notAllowedResult, nil
 	}
 
 	return c.einoTool.InvokableRun(ctx, argumentsInJSON, opts...)

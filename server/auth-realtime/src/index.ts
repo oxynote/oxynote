@@ -55,8 +55,6 @@ async function main() {
 	//
 	// RESP2: node-redis 6 defaults to RESP3, whose reply shapes better-auth's
 	// secondary storage does not read correctly.
-	// The type is spelled out because the shutdown handler reads it from a
-	// closure, where an inferred evolving any does not survive.
 	let redis: ReturnType<typeof createClient> | undefined
 
 	if (env.valkeyDsn) {
@@ -72,7 +70,6 @@ async function main() {
 					}
 
 					// Match node-redis 6.3.1's default strategy.
-					// It does not reconnect after a socket timeout.
 					if (
 						cause.name ===
 						"SocketTimeoutError"
@@ -80,7 +77,6 @@ async function main() {
 						return false
 					}
 
-					// Exponential backoff with 0–199 ms of random jitter.
 					const jitter = Math.floor(
 						Math.random() * 200,
 					)
@@ -114,7 +110,48 @@ async function main() {
 		}
 	}
 
-	const auth = createAuth({ env, store, dialect, redis, core, log })
+	// Hocuspocus comes first, so auth can drop a user's connections when
+	// their role changes. Its session lookup only runs once a client connects.
+	//
+	// The callback is invoked after auth has been initialized below.
+	const authRef: { current?: ReturnType<typeof createAuth> } = {}
+
+	const {
+		instance: hocuspocus,
+		flushDocument,
+		resetConnections,
+		closeUserConnections,
+	} = createHocuspocus({
+		auth: {
+			getSession: (input) => {
+				const auth = authRef.current
+
+				if (!auth) {
+					throw new Error(
+						"Auth is not initialized",
+					)
+				}
+
+				return auth.api.getSession(input)
+			},
+		},
+		store,
+		core,
+		log,
+	})
+
+	const auth = createAuth({
+		env,
+		store,
+		dialect,
+		redis,
+		core,
+		log,
+		closeUserConnections,
+	})
+
+	authRef.current = auth
+
 	const authContext = await auth.$context
 
 	// Before listening, so no signup can race the organization's creation.
@@ -127,16 +164,6 @@ async function main() {
 		createOrganization: (organization) =>
 			auth.api.createOrganization({ body: organization }),
 		random: Math.random,
-	})
-
-	const {
-		instance: hocuspocus,
-		flushDocument,
-		resetConnections,
-	} = createHocuspocus({
-		auth: { getSession: (input) => auth.api.getSession(input) },
-		core,
-		log,
 	})
 
 	const app = new Hono()

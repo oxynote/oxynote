@@ -15,6 +15,11 @@ import {
 import { LineFormat, type LogDialect } from "./dialect"
 
 const NOON_MILLIS = BigInt(Date.UTC(2026, 0, 1, 12, 0, 0))
+const MULTILINE_LOGFMT = [
+	'level=error msg="charge failed" provider=cardsim duration_ms=3687',
+	"java.sql.SQLTransientConnectionException: timed out",
+	"\tat shop.payments.ChargeService.authorize(ChargeService.java:142)",
+].join("\n")
 // a source that names a parsed key as the line does, so these tests read
 // only the generic rules
 const EXACT_DIALECT: LogDialect = {
@@ -83,6 +88,34 @@ describe("summarizeLog", () => {
 				message: "value out of range",
 				extracted: [["value", "+Inf"]],
 				fields: [["trace_id", "abc"]],
+				labels: [],
+			},
+		},
+		{
+			name: "splits the logfmt header from its stack trace and parser fields",
+			input: {
+				level: LogLevel.Error,
+				line: MULTILINE_LOGFMT,
+				labels: {},
+				fields: {},
+				parsed: {
+					level: "error",
+					msg: "charge failed",
+					provider: "cardsim",
+					duration_ms: "3687",
+				},
+			},
+			expected: {
+				message: [
+					"charge failed",
+					"java.sql.SQLTransientConnectionException: timed out",
+					"\tat shop.payments.ChargeService.authorize(ChargeService.java:142)",
+				].join("\n"),
+				extracted: [
+					["provider", "cardsim"],
+					["duration_ms", "3687"],
+				],
+				fields: [],
 				labels: [],
 			},
 		},
@@ -271,6 +304,62 @@ describe("summarizeLog", () => {
 				labels: [],
 			},
 		},
+		{
+			name: "leaves out a field the line repeats",
+			input: {
+				line: '{"msg":"order placed","trace_id":"4bf9"}',
+				labels: {},
+				fields: { trace_id: "4bf9" },
+			},
+			expected: {
+				message: "order placed",
+				extracted: [["trace_id", "4bf9"]],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "leaves out a field a logfmt line repeats",
+			input: {
+				line: "msg=ready trace_id=4bf9",
+				labels: {},
+				fields: { trace_id: "4bf9" },
+			},
+			expected: {
+				message: "ready",
+				extracted: [["trace_id", "4bf9"]],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "leaves out a field a JSON number repeats",
+			input: {
+				line: '{"msg":"done","attempt":25}',
+				labels: {},
+				fields: { attempt: "25" },
+			},
+			expected: {
+				message: "done",
+				extracted: [["attempt", "25"]],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "keeps a field whose value differs from the line",
+			input: {
+				line: '{"msg":"order placed","trace_id":"4bf9"}',
+				labels: {},
+				fields: { trace_id: "other" },
+			},
+			expected: {
+				message: "order placed",
+				extracted: [["trace_id", "4bf9"]],
+				fields: [["trace_id", "other"]],
+				labels: [],
+			},
+		},
 	])("$name", ({ input, expected }, { expect }) => {
 		expect(
 			summarizeLog(makeLog({ id: "l1", ...input }), EXACT_DIALECT),
@@ -335,6 +424,22 @@ describe("extractedFields", () => {
 		])
 	})
 
+	it("keeps a JSON number as the line writes it", ({ expect }) => {
+		expect(
+			extractedFields(
+				makeLog({
+					id: "l1",
+					line: '{"ms":25.0,"id":9007199254740993,"n":{"x":1.50}}',
+				}),
+				EXACT_DIALECT,
+			).map((f) => [f.key, f.value, f.display, f.nested]),
+		).toEqual([
+			["ms", "25.0", "25.0", false],
+			["id", "9007199254740993", "9007199254740993", false],
+			["n", '{"x":1.50}', '{"x":1.50}', true],
+		])
+	})
+
 	it("reads a logfmt line in its own format", ({ expect }) => {
 		expect(
 			extractedFields(makeLog({ id: "l1", line: 'msg="a b"' }), EXACT_DIALECT),
@@ -343,6 +448,53 @@ describe("extractedFields", () => {
 				key: "msg",
 				value: "a b",
 				display: '"a b"',
+				format: LineFormat.Logfmt,
+				nested: false,
+				isNull: false,
+			},
+		])
+	})
+
+	it("reads logfmt fields before a multiline stack trace without a parser", ({
+		expect,
+	}) => {
+		expect(
+			extractedFields(
+				makeLog({
+					id: "l1",
+					line: MULTILINE_LOGFMT,
+				}),
+				EXACT_DIALECT,
+			),
+		).toEqual([
+			{
+				key: "level",
+				value: "error",
+				display: "error",
+				format: LineFormat.Logfmt,
+				nested: false,
+				isNull: false,
+			},
+			{
+				key: "msg",
+				value: "charge failed",
+				display: '"charge failed"',
+				format: LineFormat.Logfmt,
+				nested: false,
+				isNull: false,
+			},
+			{
+				key: "provider",
+				value: "cardsim",
+				display: "cardsim",
+				format: LineFormat.Logfmt,
+				nested: false,
+				isNull: false,
+			},
+			{
+				key: "duration_ms",
+				value: "3687",
+				display: "3687",
 				format: LineFormat.Logfmt,
 				nested: false,
 				isNull: false,

@@ -6,8 +6,10 @@ import { Logger } from "@hocuspocus/extension-logger"
 // aliased because the extension above already claims the name Logger.
 import type { Logger as ServiceLogger } from "./logging.js"
 import type { CoreClient } from "./core.js"
+import type { Store } from "./db.js"
 import { toAxiosHeaders, toHeaders } from "./headers.js"
 import { bestEffort, reportedAsMessage } from "./reporting.js"
+import { canEdit } from "./roles.js"
 import { EDITOR_SCHEMA_VERSION } from "./schema/index.js"
 import {
 	isSystemContext,
@@ -17,6 +19,7 @@ import {
 
 export interface AuthSession {
 	user: { id: string }
+	session: { activeOrganizationId?: string | null }
 }
 
 // the one thing the document hooks ask of better-auth. Narrowing it here
@@ -28,6 +31,7 @@ export interface SessionResolver {
 
 export interface DocumentHookDeps {
 	auth: SessionResolver
+	store: Pick<Store, "memberRole">
 	core: CoreClient
 	log: ServiceLogger
 }
@@ -49,41 +53,40 @@ interface FlushableServer {
 	}
 }
 
-// the part a reset reaches into: each of a document's client connections
-// and the socket behind it.
-interface ResettableServer {
-	documents: {
-		get(documentName: string):
-			| {
-					connections: Map<
-						{
-							readOnly: boolean
-							webSocket: {
-								close(
-									code?: number,
-									reason?: string,
-								): void
-							}
-						},
-						unknown
-					>
-			  }
-			| undefined
+// a client connection: the session onAuthenticate put on its context,
+// and the socket behind it. A direct connection has no session.
+interface ClientConnection {
+	readOnly: boolean
+	context: { session?: AuthSession } | undefined
+	webSocket: {
+		close(code?: number, reason?: string): void
 	}
+}
+
+// the part a reset reaches into: every open document and its client
+// connections.
+interface ResettableServer {
+	documents: Map<string, { connections: Map<ClientConnection, unknown> }>
 }
 
 // the close code hocuspocus itself uses when it resets a connection.
 const resetConnection = { code: 4205, reason: "Reset Connection" }
 
-// resetConnections drops the socket of every client on a document, so each
-// reconnects and authenticates again. Hocuspocus's own closeConnections
-// only tells the provider the document is closed, and the provider leaves
-// it closed: it reopens a document after losing its socket, not after that
-// message. Direct connections have no socket and are unaffected.
+// dropConnection drops a client's socket, so it reconnects and
+// authenticates again. Hocuspocus's own closeConnections only tells the
+// provider the document is closed, and the provider leaves it closed: it
+// reopens a document after losing its socket, not after that message.
 //
-// each connection turns read-only first. It stays on the document until
+// the connection turns read-only first. It stays on the document until
 // its socket reports the close, and until then hocuspocus still applies
 // its updates.
+function dropConnection(connection: ClientConnection): void {
+	connection.readOnly = true
+	connection.webSocket.close(resetConnection.code, resetConnection.reason)
+}
+
+// resetConnections drops the socket of every client on a document. Direct
+// connections have no socket and are unaffected.
 export function resetConnections(
 	server: ResettableServer,
 	documentName: string,
@@ -94,11 +97,22 @@ export function resetConnections(
 	}
 
 	for (const [connection] of document.connections) {
-		connection.readOnly = true
-		connection.webSocket.close(
-			resetConnection.code,
-			resetConnection.reason,
-		)
+		dropConnection(connection)
+	}
+}
+
+// closeUserConnections drops every socket the user holds, on every open
+// document, so a new role applies at once.
+export function closeUserConnections(
+	server: ResettableServer,
+	userId: string,
+): void {
+	for (const document of server.documents.values()) {
+		for (const [connection] of document.connections) {
+			if (connection.context?.session?.user.id === userId) {
+				dropConnection(connection)
+			}
+		}
 	}
 }
 
@@ -224,7 +238,12 @@ function encodeState(doc: Y.Doc): string {
 	return Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64")
 }
 
-export function createDocumentHooks({ auth, core, log }: DocumentHookDeps) {
+export function createDocumentHooks({
+	auth,
+	store,
+	core,
+	log,
+}: DocumentHookDeps) {
 	// who edited each open document since its last persist. Held per
 	// hooks instance so nothing carries over between servers — or, in a
 	// test, between cases.
@@ -278,7 +297,18 @@ export function createDocumentHooks({ auth, core, log }: DocumentHookDeps) {
 				}),
 			)
 
+			// core has already refused a session without an active
+			// organization. A role that cannot edit only reads.
+			const role = await reportedAsMessage(() =>
+				store.memberRole(
+					session.user.id,
+					session.session.activeOrganizationId ??
+						"",
+				),
+			)
+
 			connectionConfig.readOnly =
+				!canEdit(role) ||
 				!knowsEditorSchema(requestParameters) ||
 				(await reportedAsMessage(() =>
 					branchIsProtected(
@@ -538,6 +568,7 @@ interface HocuspocusServer {
 	instance: Hocuspocus
 	flushDocument: (documentName: string) => Promise<void>
 	resetConnections: (documentName: string) => void
+	closeUserConnections: (userId: string) => void
 }
 
 export function createHocuspocus(deps: DocumentHookDeps): HocuspocusServer {
@@ -569,6 +600,9 @@ export function createHocuspocus(deps: DocumentHookDeps): HocuspocusServer {
 			flushDocument(instance, documentName),
 		resetConnections: (documentName) => {
 			resetConnections(instance, documentName)
+		},
+		closeUserConnections: (userId) => {
+			closeUserConnections(instance, userId)
 		},
 	}
 }

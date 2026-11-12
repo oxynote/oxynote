@@ -311,6 +311,15 @@ export default function () {
 		return $authClient.organization.removeMember(...args)
 	}
 
+	function updateOrganizationMemberRole(
+		...args: Parameters<typeof $authClient.organization.updateMemberRole>
+	) {
+		if (__DESKTOP_BUILD__) {
+			return getHost().auth.updateOrganizationMemberRole(args[0]) as never
+		}
+		return $authClient.organization.updateMemberRole(...args)
+	}
+
 	return {
 		fetchAuthSession,
 		fetchOrganization,
@@ -336,5 +345,6 @@ export default function () {
 		inviteOrganizationMember,
 		cancelOrganizationInvitation,
 		removeOrganizationMember,
+		updateOrganizationMemberRole,
 	}
 }

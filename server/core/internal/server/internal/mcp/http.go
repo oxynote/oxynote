@@ -16,6 +16,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 )
 
 // OAuth scopes the MCP surface understands. auth-realtime advertises
@@ -147,8 +148,9 @@ func resourceMetadataURL(resource string) (string, error) {
 //go:generate ../../../../scripts/codegen/mock -t internal Manager
 type Manager interface {
 	// ToolSet should build the tool registry scoped to the given
-	// (organization, user) pair.
-	ToolSet(orgID, userID string) *tools.Set
+	// (organization, user) pair, holding only the tools the given
+	// role may call.
+	ToolSet(orgID, userID string, role org.Role) *tools.Set
 }
 
 // DB is the persistence surface the MCP resources require. The db

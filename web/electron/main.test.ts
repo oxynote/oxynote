@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => {
 	const registerAuthIpcHandlersMock = vi.fn()
 	const registerFileDownloadIpcHandlerMock = vi.fn()
 	const existsSyncMock = vi.fn(() => false)
+	const readFileSyncMock = vi.fn(() => "")
 
 	class BrowserWindowMock {
 		static getAllWindows = getAllWindowsMock
@@ -81,6 +82,7 @@ const mocks = vi.hoisted(() => {
 		registerAuthIpcHandlersMock,
 		registerFileDownloadIpcHandlerMock,
 		existsSyncMock,
+		readFileSyncMock,
 		BrowserWindowMock,
 	}
 })
@@ -138,12 +140,25 @@ vi.mock("./file-download", () => ({
 
 vi.mock("node:fs", () => ({
 	existsSync: mocks.existsSyncMock,
+	readFileSync: mocks.readFileSyncMock,
 }))
 
 // main resolves both paths from its own directory, which this test file
 // shares
 const electronDir = path.dirname(fileURLToPath(import.meta.url))
 const rendererDist = path.join(electronDir, "..", "..", ".output", "public")
+
+// the shape nuxt generates: an import map and a config script inline, the
+// entry as a file, and the payload as a json data block
+const bundledIndexHtml = [
+	"<!DOCTYPE html><html><head>",
+	'<script type="importmap">{"imports":{"#entry":"/_nuxt/entry.js"}}</script>',
+	'<script type="module" src="/_nuxt/entry.js" crossorigin></script>',
+	'</head><body><div id="__nuxt"></div>',
+	"<script>window.__NUXT__={}</script>",
+	'<script type="application/json" id="__NUXT_DATA__">[{"serverRendered":1},false]</script>',
+	"</body></html>",
+].join("")
 
 // evaluating the module is the unit's act. Resolving the whenReady mock
 // promise afterwards runs the ready phase; one microtask tick is enough
@@ -345,9 +360,29 @@ describe("main", { concurrent: false }, () => {
 			expect(response.responseHeaders["Content-Security-Policy"]).toEqual([
 				"default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://test.local ws://test.local https:; img-src 'self' http://test.local user-image: data: https:; font-src 'self' data:; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'",
 			])
+			expect(mocks.readFileSyncMock).toHaveBeenCalledTimes(0)
 		})
 
-		it("locks script-src down when packaged", async () => {
+		it("allows the inline scripts of the bundled index.html by hash when packaged", async () => {
+			mocks.readFileSyncMock.mockReturnValue(bundledIndexHtml)
+			await importMain({ packaged: true })
+
+			const response = receivedHeaders({})
+
+			expect(response.responseHeaders["Content-Security-Policy"]).toEqual([
+				"default-src 'self'; script-src 'self' 'sha256-YwFLm10551Y8yg/xFi7mxyOQBFPn8NO8Zfzs2vMQ52g=' 'sha256-9t9kOTpBXQ6UK6UoTUcY2ezm5KT7oB5pbv8ZFsTUBAU=' 'sha256-GAEC3f0op7pbJ5anSVv7BSBa9Ijv4F7nRba+UT2wnfQ='; style-src 'self' 'unsafe-inline'; connect-src 'self' http://test.local ws://test.local https:; img-src 'self' http://test.local user-image: data: https:; font-src 'self' data:; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'",
+			])
+			expect(mocks.readFileSyncMock).toHaveBeenCalledTimes(1)
+			expect(mocks.readFileSyncMock).toHaveBeenCalledWith(
+				path.join(rendererDist, "index.html"),
+				"utf8",
+			)
+		})
+
+		it("locks script-src to files when the bundled index.html has no inline script", async () => {
+			mocks.readFileSyncMock.mockReturnValue(
+				'<html><head><script type="module" src="/_nuxt/entry.js"></script></head></html>',
+			)
 			await importMain({ packaged: true })
 
 			const response = receivedHeaders({})
@@ -355,6 +390,7 @@ describe("main", { concurrent: false }, () => {
 			expect(response.responseHeaders["Content-Security-Policy"]).toEqual([
 				"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://test.local ws://test.local https:; img-src 'self' http://test.local user-image: data: https:; font-src 'self' data:; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'",
 			])
+			expect(mocks.readFileSyncMock).toHaveBeenCalledTimes(1)
 		})
 	})
 

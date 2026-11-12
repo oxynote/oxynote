@@ -7,6 +7,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -63,12 +64,14 @@ func Test_Handler_server(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
+		Role                   org.Role
 		Scopes                 []string
 		Names                  []string
 		Check                  func(t *testing.T, defs map[string]map[string]any)
 		FetchDocumentTreeCalls int
 	}{
 		"No scopes lists nothing": {
+			Role:   org.RoleEditor,
 			Scopes: []string{},
 			Names:  []string{},
 		},
@@ -76,6 +79,7 @@ func Test_Handler_server(t *testing.T) {
 		// tool's prose, the tool's argument schema, and the annotations a
 		// client gates calls on.
 		"Read scope lists the read tools": {
+			Role:   org.RoleEditor,
 			Scopes: []string{ScopeDocumentRead},
 			Names:  _readToolNames,
 			Check: func(t *testing.T, defs map[string]map[string]any) {
@@ -111,10 +115,12 @@ func Test_Handler_server(t *testing.T) {
 			FetchDocumentTreeCalls: _serverBuilds,
 		},
 		"Write scope lists the write tools": {
+			Role:   org.RoleEditor,
 			Scopes: []string{ScopeDocumentWrite},
 			Names:  _writeToolNames,
 		},
 		"Both document scopes list every document and tag tool and no data-source tool": {
+			Role:                   org.RoleEditor,
 			Scopes:                 []string{ScopeDocumentRead, ScopeDocumentWrite},
 			Names:                  slices.Concat(_readToolNames, _writeToolNames),
 			FetchDocumentTreeCalls: _serverBuilds,
@@ -122,6 +128,7 @@ func Test_Handler_server(t *testing.T) {
 		// a data-source tool reaches the wire as a read that reaches
 		// outside Oxynote.
 		"Data-source scope lists only the data-source tools": {
+			Role:   org.RoleEditor,
 			Scopes: []string{ScopeDataSourceRead},
 			Names:  _dataSourceToolNames,
 			Check: func(t *testing.T, defs map[string]map[string]any) {
@@ -146,7 +153,22 @@ func Test_Handler_server(t *testing.T) {
 				assert.Equal(t, true, ann["openWorldHint"])
 			},
 		},
+		// a viewer's token may carry the write scope, but the role
+		// decides: only the write to their own variable values is
+		// offered, so a call to any other fails as an unknown tool.
+		"Viewer with every scope lists only the viewer's write": {
+			Role:                   org.RoleViewer,
+			Scopes:                 []string{ScopeDocumentRead, ScopeDocumentWrite, ScopeDataSourceRead},
+			Names:                  slices.Concat(_readToolNames, _dataSourceToolNames, []string{"set_variable_value"}),
+			FetchDocumentTreeCalls: _serverBuilds,
+		},
+		"Unknown role lists no tools": {
+			Role:   "owner",
+			Scopes: []string{ScopeDocumentWrite},
+			Names:  []string{},
+		},
 		"Read and data-source scopes list both groups": {
+			Role:                   org.RoleEditor,
 			Scopes:                 []string{ScopeDocumentRead, ScopeDataSourceRead},
 			Names:                  slices.Concat(_readToolNames, _dataSourceToolNames),
 			FetchDocumentTreeCalls: _serverBuilds,
@@ -158,12 +180,12 @@ func Test_Handler_server(t *testing.T) {
 			t.Parallel()
 
 			man := &ManagerMock{
-				ToolSetFunc: func(string, string) *tools.Set {
-					return stubSet(&toolsMock.DB{})
+				ToolSetFunc: func(_, _ string, role org.Role) *tools.Set {
+					return stubSet(&toolsMock.DB{}, role)
 				},
 			}
 			db := &DBMock{}
-			hdl, _ := prepHandler(t, stubSession(t, c.Scopes), man, db)
+			hdl := prepHandler(t, stubRoleSession(t, c.Scopes, c.Role), man, db)
 
 			code, payload := rpc(t, hdl, `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
 			require.Equal(t, http.StatusOK, code)
@@ -204,6 +226,7 @@ func Test_Handler_server(t *testing.T) {
 			for _, call := range toolSetCalls {
 				assert.Equal(t, "org1", call.OrgID)
 				assert.Equal(t, "user1", call.UserID)
+				assert.Equal(t, c.Role, call.Role)
 			}
 
 			calls := db.FetchDocumentTreeCalls()

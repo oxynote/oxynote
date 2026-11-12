@@ -1,5 +1,6 @@
 import { mockNuxtImport } from "@nuxt/test-utils/runtime"
 import { beforeEach, describe, it, vi } from "vitest"
+import { t } from "~/components/test-helpers"
 import plugin, {
 	redirectToDocId,
 	redirectToFirst,
@@ -7,13 +8,19 @@ import plugin, {
 	redirectToOrgRoot,
 } from "./03.api-fetch"
 
-const { navigateToMock, useRouteMock, fetchMock } = vi.hoisted(() => {
-	return {
-		navigateToMock: vi.fn(),
-		useRouteMock: vi.fn(() => ({ fullPath: "/" })),
-		fetchMock: { create: vi.fn() },
-	}
-})
+const { navigateToMock, useRouteMock, fetchMock, showToastMessageMock } =
+	vi.hoisted(() => {
+		return {
+			navigateToMock: vi.fn(),
+			useRouteMock: vi.fn(() => ({ fullPath: "/" })),
+			fetchMock: { create: vi.fn() },
+			showToastMessageMock: vi.fn(),
+		}
+	})
+
+vi.mock("~/components/toast", () => ({
+	showToastMessage: showToastMessageMock,
+}))
 
 mockNuxtImport("navigateTo", () => navigateToMock)
 mockNuxtImport("useRoute", () => useRouteMock)
@@ -27,6 +34,7 @@ function resetSharedMocks() {
 	navigateToMock.mockReset()
 	useRouteMock.mockReset()
 	fetchMock.create.mockReset()
+	showToastMessageMock.mockReset()
 }
 
 const DOC_ID_A = "aaaaaaaaaaaaaaaaaaaa" // xid length
@@ -37,6 +45,11 @@ interface CreatedClientOptions {
 	credentials?: RequestCredentials
 	onRequest?: (ctx: { options: { headers?: unknown } }) => void
 	onResponseError?: (ctx: { response: Response }) => Promise<void>
+}
+
+// a 403 the way ofetch hands it over, with the parsed body on _data.
+function refusal(data: unknown): Response {
+	return Object.assign(new Response(null, { status: 403 }), { _data: data })
 }
 
 function arrangeFetch() {
@@ -165,6 +178,40 @@ describe("03.api-fetch", { concurrent: false }, () => {
 		})
 
 		expect(navigateToMock).toHaveBeenCalledTimes(0)
+		expect(showToastMessageMock).toHaveBeenCalledTimes(0)
+	})
+
+	it.for([
+		{ name: "the core api client", index: 0 },
+		{ name: "the auth-realtime api client", index: 1 },
+	])(
+		"$name shows a role refusal as an error toast",
+		async ({ index }, { expect }) => {
+			const { created } = arrangeFetch()
+			void plugin(useNuxtApp())
+
+			await created[index]?.onResponseError?.({
+				response: refusal({ code: "member.forbidden" }),
+			})
+
+			expect(showToastMessageMock).toHaveBeenCalledExactlyOnceWith(
+				"error",
+				t("general.errors.role-not-allowed"),
+			)
+			expect(navigateToMock).toHaveBeenCalledTimes(0)
+		},
+	)
+
+	// other 403s, like a protected branch, are each caller's to explain.
+	it("leaves another 403 to its caller", async ({ expect }) => {
+		const { created } = arrangeFetch()
+		void plugin(useNuxtApp())
+
+		await created[0]?.onResponseError?.({
+			response: refusal({ code: "document.branch_protected" }),
+		})
+
+		expect(showToastMessageMock).toHaveBeenCalledTimes(0)
 	})
 })
 

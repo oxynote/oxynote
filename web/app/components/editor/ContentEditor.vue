@@ -227,7 +227,17 @@ const contentEditor = useEditor({
 	onContentError: ({ editor, disableCollaboration }) => {
 		editor.setEditable(false)
 		disableCollaboration()
-		showToastMessage("error", t("editor.errors.content-load-failed"))
+		showToastMessage(
+			"error",
+			t("editor.errors.content-load-failed"),
+			t("editor.readonly-error.title"),
+			{
+				label: t("editor.reload-page"),
+				onClick: () => {
+					reloadNuxtApp({ force: true })
+				},
+			},
+		)
 	},
 	onSelectionUpdate: ({ editor }) => {
 		// don't override awareness if a block config modal is open

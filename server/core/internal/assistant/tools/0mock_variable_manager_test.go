@@ -36,6 +36,9 @@ var _ VariableManager = &VariableManagerMock{}
 //			FetchTreeFunc: func(ctx context.Context, organizationID string, userID string) (variable.Tree, error) {
 //				panic("mock out the FetchTree method")
 //			},
+//			ResetValueFunc: func(ctx context.Context, id xid.ID, organizationID string, userID string) error {
+//				panic("mock out the ResetValue method")
+//			},
 //			SetDefaultValueFunc: func(ctx context.Context, id xid.ID, value string, organizationID string) error {
 //				panic("mock out the SetDefaultValue method")
 //			},
@@ -69,6 +72,9 @@ type VariableManagerMock struct {
 
 	// FetchTreeFunc mocks the FetchTree method.
 	FetchTreeFunc func(ctx context.Context, organizationID string, userID string) (variable.Tree, error)
+
+	// ResetValueFunc mocks the ResetValue method.
+	ResetValueFunc func(ctx context.Context, id xid.ID, organizationID string, userID string) error
 
 	// SetDefaultValueFunc mocks the SetDefaultValue method.
 	SetDefaultValueFunc func(ctx context.Context, id xid.ID, value string, organizationID string) error
@@ -133,6 +139,17 @@ type VariableManagerMock struct {
 			// UserID is the userID argument value.
 			UserID string
 		}
+		// ResetValue holds details about calls to the ResetValue method.
+		ResetValue []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// ID is the id argument value.
+			ID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// UserID is the userID argument value.
+			UserID string
+		}
 		// SetDefaultValue holds details about calls to the SetDefaultValue method.
 		SetDefaultValue []struct {
 			// Ctx is the ctx argument value.
@@ -185,6 +202,7 @@ type VariableManagerMock struct {
 	lockDeleteGroup     sync.RWMutex
 	lockDeleteVariable  sync.RWMutex
 	lockFetchTree       sync.RWMutex
+	lockResetValue      sync.RWMutex
 	lockSetDefaultValue sync.RWMutex
 	lockSetValue        sync.RWMutex
 	lockUpdateGroup     sync.RWMutex
@@ -414,6 +432,53 @@ func (mock *VariableManagerMock) FetchTreeCalls() []struct {
 	mock.lockFetchTree.RLock()
 	calls = mock.calls.FetchTree
 	mock.lockFetchTree.RUnlock()
+	return calls
+}
+
+// ResetValue calls ResetValueFunc.
+func (mock *VariableManagerMock) ResetValue(ctx context.Context, id xid.ID, organizationID string, userID string) error {
+	callInfo := struct {
+		Ctx            context.Context
+		ID             xid.ID
+		OrganizationID string
+		UserID         string
+	}{
+		Ctx:            ctx,
+		ID:             id,
+		OrganizationID: organizationID,
+		UserID:         userID,
+	}
+	mock.lockResetValue.Lock()
+	mock.calls.ResetValue = append(mock.calls.ResetValue, callInfo)
+	mock.lockResetValue.Unlock()
+	if mock.ResetValueFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.ResetValueFunc(ctx, id, organizationID, userID)
+}
+
+// ResetValueCalls gets all the calls that were made to ResetValue.
+// Check the length with:
+//
+//	len(mockedVariableManager.ResetValueCalls())
+func (mock *VariableManagerMock) ResetValueCalls() []struct {
+	Ctx            context.Context
+	ID             xid.ID
+	OrganizationID string
+	UserID         string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		ID             xid.ID
+		OrganizationID string
+		UserID         string
+	}
+	mock.lockResetValue.RLock()
+	calls = mock.calls.ResetValue
+	mock.lockResetValue.RUnlock()
 	return calls
 }
 

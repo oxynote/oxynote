@@ -1,9 +1,8 @@
 # AGENTS.md — Go standards
 
 Mandatory for all Go code in `server/core` and `datagen`; this file wins
-over surrounding code for new and modified code. Supervisors come from
-`github.com/jellydator/xync`. Where this file names an exemplar file, copy
-its shape.
+over surrounding code for new and modified code. Where this file names an
+exemplar file, copy its shape.
 
 ```sh
 make build          # goreleaser snapshot -> bin/ + ghcr.io/oxynote/core:dev
@@ -27,10 +26,10 @@ make lint           # golangci-lint run --fix;  check-lint = verify only
 ## Style
 
 **Comments.** Every comment ends with a period (godot). Doc comments on
-everything, unexported included: `// <Name> <indicative verb phrase>.`;
+everything, unexported too: `// <Name> <indicative verb phrase>.`;
 interface methods use `should`, implementations indicative. `// NOCOV:
-<lowercase reason>.` heads a branch that genuinely cannot be reproduced; it
-never excuses a testable path. `// NOTE: <why>.` for design rationale.
+<lowercase reason>.` heads a branch that cannot be reproduced; it never
+excuses a testable path. `// NOTE: <why>.` for design rationale.
 `//nolint:<linter> // <lowercase reason>`, reason mandatory (deferred
 Rollback/Close: `errcheck // error provides no meaningful info`). Comments
 never narrate the next line, justify a diff, or point at design docs or
@@ -98,7 +97,8 @@ embedded fields first. Tiny stateless embeds are the mixin mechanism.
   Sentinel handling nests inside a single `if err != nil`; `errors.Is` never
   runs on the success path.
 - Never discard `json.Unmarshal` errors. Permission checks are methods
-  returning `error` (`AllowsX() error`).
+  returning `error` (`AllowsX() error`); a check that only gates what is
+  offered may add a bool form (`CanEdit()`).
 - Wrap with `fmt.Errorf("<gerund phrase>: %w", err)` at every hop that adds
   context.
 - At trust boundaries classify once in `error.go`: 4xx pass through,

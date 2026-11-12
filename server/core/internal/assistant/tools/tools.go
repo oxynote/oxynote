@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/rs/xid"
 )
 
@@ -108,8 +109,10 @@ type Set struct {
 	writes []string
 }
 
-// New creates a fresh instance of Set.
-func New(deps *Deps) *Set {
+// New creates a fresh instance of Set. The set keeps only the tools the
+// given role may call, so neither the model nor an MCP client is offered
+// the rest.
+func New(deps *Deps, role org.Role) *Set {
 	all := []registration{
 		register[listDocuments](),
 		register[getDocument](),
@@ -154,6 +157,10 @@ func New(deps *Deps) *Set {
 	for _, reg := range all {
 		et := newEinoTool(reg, deps)
 		tr := et.info.Traits
+
+		if !role.AtLeast(tr.Role) {
+			continue
+		}
 
 		s.entries = append(s.entries, Entry{
 			Info: et.info,

@@ -16,6 +16,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -296,7 +297,7 @@ func Test_listDataSources_Info(t *testing.T) {
 
 	info := listDataSources{}.Info()
 
-	assert.Equal(t, Traits{DataSource: true, Group: GroupDataSources}, info.Traits)
+	assert.Equal(t, Traits{DataSource: true, Group: GroupDataSources, Role: org.RoleViewer}, info.Traits)
 
 	assert.Equal(t, NameListDataSources, info.Name)
 	assert.Empty(t, info.Required)
@@ -366,7 +367,7 @@ func Test_getDataSourceMetadata_Info(t *testing.T) {
 
 	info := getDataSourceMetadata{}.Info()
 
-	assert.Equal(t, Traits{DataSource: true, Group: GroupDataSources}, info.Traits)
+	assert.Equal(t, Traits{DataSource: true, Group: GroupDataSources, Role: org.RoleViewer}, info.Traits)
 
 	assert.Equal(t, NameGetDataSourceMetadata, info.Name)
 	assert.Equal(t, []string{"data_source_id"}, info.Required)
@@ -552,7 +553,7 @@ func Test_listPrometheusLabels_Info(t *testing.T) {
 
 	info := listPrometheusLabels{}.Info()
 
-	assert.Equal(t, Traits{DataSource: true, Group: GroupDataSources}, info.Traits)
+	assert.Equal(t, Traits{DataSource: true, Group: GroupDataSources, Role: org.RoleViewer}, info.Traits)
 
 	assert.Equal(t, NameListPrometheusLabels, info.Name)
 	assert.Equal(t, []string{"data_source_id"}, info.Required)
@@ -736,7 +737,7 @@ func Test_listPrometheusSeries_Info(t *testing.T) {
 
 	info := listPrometheusSeries{}.Info()
 
-	assert.Equal(t, Traits{DataSource: true, Group: GroupDataSources}, info.Traits)
+	assert.Equal(t, Traits{DataSource: true, Group: GroupDataSources, Role: org.RoleViewer}, info.Traits)
 
 	assert.Equal(t, NameListPrometheusSeries, info.Name)
 	assert.Equal(t, []string{"data_source_id", "matchers"}, info.Required)
@@ -890,7 +891,7 @@ func Test_listLogFields_Info(t *testing.T) {
 
 	info := listLogFields{}.Info()
 
-	assert.Equal(t, Traits{DataSource: true, Group: GroupDataSources}, info.Traits)
+	assert.Equal(t, Traits{DataSource: true, Group: GroupDataSources, Role: org.RoleViewer}, info.Traits)
 
 	assert.Equal(t, NameListLogFields, info.Name)
 	assert.Equal(t, []string{"data_source_id"}, info.Required)
@@ -1103,7 +1104,7 @@ func Test_queryDataSource_Info(t *testing.T) {
 
 	info := queryDataSource{}.Info()
 
-	assert.Equal(t, Traits{DataSource: true, Group: GroupDataSources}, info.Traits)
+	assert.Equal(t, Traits{DataSource: true, Group: GroupDataSources, Role: org.RoleViewer}, info.Traits)
 
 	assert.Equal(t, NameQueryDataSource, info.Name)
 	assert.Equal(t, []string{"data_source_id", "query"}, info.Required)
