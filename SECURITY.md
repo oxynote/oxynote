@@ -76,10 +76,14 @@ These are out of scope:
   open a normal issue or pull request here to update the dependency.
 - Attacks that need a compromised host, a malicious operator, physical
   access or someone already privileged in the target workspace.
-- Requests to an address that someone entered as a data source, and the
-  queries they run there.
+- Requests to an address that you entered as a data source in your own
+  workspace, and the queries you run there.
 - Misconfiguration, such as exposing core without the front door, keeping
-  the example secrets or the default password, or serving without TLS.
+  the example secrets or the default password, or serving without TLS. If
+  people outside your organization can create workspaces on your
+  instance, limit which addresses the server can reach with firewall
+  rules. Some features, such as data sources and freshness hooks, connect
+  to addresses that workspace members enter.
 - Denial of service, load testing and automated scanning of anything that
   isn't yours.
 - Social engineering, spam and email spoofing.

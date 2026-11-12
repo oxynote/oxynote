@@ -250,9 +250,6 @@ We close a pull request when it:
   ([Discuss First](#discuss-first))
 - targets an issue labeled `maintainers only` and isn't from a maintainer
   ([Claiming an Issue](#claiming-an-issue))
-- is from a returning contributor and targets a good first issue that a
-  first-time contributor also opened a pull request for
-  ([Good First Issues](#good-first-issues))
 - targets the same issue as a pull request with higher priority
   ([Duplicate Pull Requests](#duplicate-pull-requests))
 - changes more than its issue asks for, such as by reformatting or
