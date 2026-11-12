@@ -80,6 +80,7 @@ export default defineNuxtConfig({
 	],
 
 	devtools: { enabled: false },
+	devServer: { host: "localhost" },
 
 	eslint: {
 		config: {
