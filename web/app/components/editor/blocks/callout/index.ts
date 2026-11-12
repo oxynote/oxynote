@@ -4,6 +4,7 @@ import {
 	type Range,
 	type SingleCommands,
 } from "@tiptap/core"
+import { Plugin } from "@tiptap/pm/state"
 import { VueNodeViewRenderer } from "@tiptap/vue-3"
 import Paragraph from "@tiptap/extension-paragraph"
 import { TaskList, BulletList, OrderedList } from "@tiptap/extension-list"
@@ -77,6 +78,44 @@ export const CalloutBlock = Node.create({
 				return false
 			},
 		}
+	},
+	addProseMirrorPlugins() {
+		return [
+			new Plugin({
+				props: {
+					handleDOMEvents: {
+						contextmenu: (_view, event) => {
+							const target = event.target as HTMLElement | null
+							const wrapper = target?.closest<HTMLElement>(
+								"[data-node-view-wrapper]",
+							)
+							if (!wrapper) {
+								return false
+							}
+
+							event.preventDefault()
+
+							const rect = wrapper.getBoundingClientRect()
+							wrapper.dispatchEvent(
+								new MouseEvent("mousemove", {
+									bubbles: true,
+									clientX: rect.left + rect.width / 2,
+									clientY: rect.top + rect.height / 2,
+								}),
+							)
+
+							const handle = document.querySelector<HTMLElement>(
+								"[data-drag-handle], .drag-handle",
+							)
+							const button = handle?.querySelector<HTMLElement>("button") ?? handle
+							button?.click()
+
+							return true
+						},
+					},
+				},
+			}),
+		]
 	},
 	renderHTML({ HTMLAttributes }) {
 		return [
