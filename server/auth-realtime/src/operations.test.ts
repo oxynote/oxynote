@@ -1981,20 +1981,11 @@ describe("applyOperations", () => {
 		})
 	})
 
-	describe("set_stack_order", () => {
-		it.for([
-			{
-				name: "gives every block its place in the list",
-				input: ["b", "c", "a"],
-				expected: { a: 2, b: 0, c: 1 },
-			},
-			{
-				name: "puts a block the list leaves out after the block it follows in the wide layout",
-				input: ["c", "a"],
-				expected: { a: 1, b: 2, c: 0 },
-			},
-		])("$name", ({ input, expected }, { expect }) => {
-			const doc = docWith([
+	describe("move in the stacked layout", () => {
+		// a, b and c sit in one row, so they also stack as a, b, c
+		const rowGrid = () =>
+			docWith([
+				textParagraph("intro", "Intro"),
 				grid(
 					"g",
 					gridBlock("a", {
@@ -2018,21 +2009,89 @@ describe("applyOperations", () => {
 				),
 			])
 
-			const result = applyOperations(doc, [
-				{
-					kind: "set_stack_order",
-					grid_uid: "g",
-					order: input,
+		it.for([
+			{
+				name: "puts a block before another",
+				input: {
+					block: "c",
+					position: "before",
+					reference: "a",
 				},
-			])
+				expected: { a: 1, b: 2, c: 0 },
+			},
+			{
+				name: "puts a block above another, as before it",
+				input: {
+					block: "c",
+					position: "above",
+					reference: "a",
+				},
+				expected: { a: 1, b: 2, c: 0 },
+			},
+			{
+				name: "puts a block after another",
+				input: {
+					block: "a",
+					position: "after",
+					reference: "c",
+				},
+				expected: { a: 2, b: 0, c: 1 },
+			},
+			{
+				name: "puts a block below another, as after it",
+				input: {
+					block: "a",
+					position: "below",
+					reference: "b",
+				},
+				expected: { a: 1, b: 0, c: 2 },
+			},
+		] as const)(
+			"$name and leaves the wide layout alone",
+			({ input, expected }, { expect }) => {
+				const doc = rowGrid()
+				const wide = () =>
+					["a", "b", "c"].map((uid) => {
+						const {
+							widePosX,
+							widePosY,
+							width,
+							height,
+						} = attrsOf(
+							blockByUid(doc, uid),
+						)
 
-			expect(result).toEqual({ errors: [] })
-			expect({
-				a: attrsOf(blockByUid(doc, "a")).stackPos,
-				b: attrsOf(blockByUid(doc, "b")).stackPos,
-				c: attrsOf(blockByUid(doc, "c")).stackPos,
-			}).toEqual(expected)
-		})
+						return [
+							widePosX,
+							widePosY,
+							width,
+							height,
+						]
+					})
+				const before = wide()
+
+				const result = applyOperations(doc, [
+					{
+						kind: "move",
+						block_uid: input.block,
+						position: input.position,
+						reference_uid: input.reference,
+						layout: "stacked",
+					},
+				])
+
+				expect(result).toEqual({ errors: [] })
+				expect({
+					a: attrsOf(blockByUid(doc, "a"))
+						.stackPos,
+					b: attrsOf(blockByUid(doc, "b"))
+						.stackPos,
+					c: attrsOf(blockByUid(doc, "c"))
+						.stackPos,
+				}).toEqual(expected)
+				expect(wide()).toEqual(before)
+			},
+		)
 
 		it("writes only the places that change", ({ expect }) => {
 			const doc = docWith([
@@ -2040,6 +2099,7 @@ describe("applyOperations", () => {
 					"g",
 					gridBlock("a", { stackPos: 0 }),
 					gridBlock("b", { stackPos: 1 }),
+					gridBlock("c", { stackPos: 2 }),
 				),
 			])
 			const changes: string[] = []
@@ -2050,51 +2110,58 @@ describe("applyOperations", () => {
 
 			const result = applyOperations(doc, [
 				{
-					kind: "set_stack_order",
-					grid_uid: "g",
-					order: ["a", "b"],
+					kind: "move",
+					block_uid: "c",
+					position: "before",
+					reference_uid: "b",
+					layout: "stacked",
 				},
 			])
 
 			expect(result).toEqual({ errors: [] })
 			expect(changes).toEqual([])
+			expect(attrsOf(blockByUid(doc, "c")).stackPos).toBe(1)
+			expect(attrsOf(blockByUid(doc, "b")).stackPos).toBe(2)
 		})
 
 		it.for([
 			{
-				name: "a block outside the grid",
-				input: { grid: "g", order: ["a", "intro"] },
-				expected: "order names a block outside the grid: intro",
-			},
-			{
-				name: "a block twice",
-				input: { grid: "g", order: ["a", "a"] },
-				expected: "order names a block twice: a",
-			},
-			{
-				name: "a block that is no grid",
-				input: { grid: "intro", order: [] },
-				expected: "grid_uid is not a grid: intro",
-			},
-			{
-				name: "an order that is no list",
+				name: "a block from outside the grid",
 				input: {
-					grid: "g",
-					order: "a" as unknown as string[],
+					block: "intro",
+					reference: "a",
+					layout: "stacked",
 				},
-				expected: "order must be a list of block uids",
+				expected: "a stacked move needs both blocks in the same grid; move the block into the grid first",
+			},
+			{
+				name: "a reference outside a grid",
+				input: {
+					block: "a",
+					reference: "intro",
+					layout: "stacked",
+				},
+				expected: "a stacked move needs both blocks in the same grid; move the block into the grid first",
+			},
+			{
+				name: "a layout it does not know",
+				input: {
+					block: "a",
+					reference: "b",
+					layout: "narrow",
+				},
+				expected: 'move layout must be "wide" or "stacked", got: narrow',
 			},
 		])("refuses $name", ({ input, expected }, { expect }) => {
-			const doc = docWith([
-				textParagraph("intro", "Intro"),
-				pairGrid(),
-			])
+			const doc = rowGrid()
 
 			const result = applyOperations(doc, [
 				{
-					kind: "set_stack_order",
-					grid_uid: input.grid,
-					order: input.order,
+					kind: "move",
+					block_uid: input.block,
+					position: "before",
+					reference_uid: input.reference,
+					layout: input.layout as "stacked",
 				},
 			])
 

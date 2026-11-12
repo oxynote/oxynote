@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
-	"github.com/oxynote/oxynote/server/core/internal/assistant/markup"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
@@ -524,6 +523,19 @@ func Test_replaceBlocks_Summary(t *testing.T) {
 			Tool: replaceBlocks{docTarget: target, BlockUID: "a", Content: "<p>x</p>"},
 			Err:  assert.AnError,
 		},
+		// the user is not asked to approve a write that is then refused.
+		"Grid refused": {
+			Input: &InputMock{
+				FetchBranchFunc: func(documentID, branchID xid.ID) (*document.Document, error) {
+					doc := stubBranchDocument(documentID, "org", branchID, document.DefaultBranch)
+					doc.Content = stubSimulationRoot()
+
+					return doc, nil
+				},
+			},
+			Tool: replaceBlocks{docTarget: target, BlockUID: "g", Content: `<grid id="g"><metrics id="m">{}</metrics></grid>`},
+			Err:  _errGridReplaced,
+		},
 	}
 
 	for cn, c := range cc {
@@ -553,18 +565,6 @@ func Test_replaceBlocks_Exec(t *testing.T) {
 	t.Parallel()
 
 	target := docTarget{DocumentID: _testDocID, BranchID: _stubMainBranchID}
-
-	// readGrid stores a, b, c in that order, but its layout shows c, a,
-	// b. c and a sit side by side, and b sits below them.
-	readGrid := document.Block{
-		Type:  document.BlockNodeBlockGrid,
-		Attrs: document.Attributes{document.AttrUID: "g"},
-		Content: []document.Block{
-			testGridBlock("a", document.Attributes{document.AttrWidePosX: 12.0, document.AttrWidePosY: 0.0, document.AttrWidth: 12.0, document.AttrHeight: 1.0}),
-			testGridBlock("b", document.Attributes{document.AttrWidePosX: 0.0, document.AttrWidePosY: 1.0, document.AttrWidth: 24.0, document.AttrHeight: 1.0}),
-			testGridBlock("c", document.Attributes{document.AttrWidePosX: 0.0, document.AttrWidePosY: 0.0, document.AttrWidth: 12.0, document.AttrHeight: 1.0}),
-		},
-	}
 
 	cc := map[string]blockCase{
 		"Error returned by Input.FetchDocumentBlock": {
@@ -638,28 +638,22 @@ func Test_replaceBlocks_Exec(t *testing.T) {
 			CheckCalls: 1,
 			ApplyCalls: 1,
 		},
-		// the grid is not replaced, so users' edits to its blocks survive.
-		"Grid rewritten block by block": {
-			Tool:       replaceBlocks{docTarget: target, BlockUID: "g", Content: `<grid id="g"><metrics id="m">{"simulationPreset":"cpu_usage","title":"CPU"}</metrics><metrics>{}</metrics></grid>`},
-			Root:       stubSimulationRoot(),
-			Ops:        []string{`"kind":"update_attrs","block_uid":"m","attrs":{"title":"CPU"}`, `"kind":"insert","position":"after","reference_uid":"m"`},
+		// a list cannot say whether a block sits beside or below another.
+		"Grid refused": {
+			Tool: replaceBlocks{docTarget: target, BlockUID: "g", Content: `<grid id="g"><metrics id="m">{}</metrics></grid>`},
+			Root: document.RootBlock{Content: []document.Block{{
+				Type:    document.BlockNodeBlockGrid,
+				Attrs:   document.Attributes{document.AttrUID: "g"},
+				Content: []document.Block{{Type: document.BlockNodeMetricBlock, Attrs: document.Attributes{document.AttrUID: "m"}}},
+			}}},
 			FetchCalls: 1,
-			CheckCalls: 1,
-			ApplyCalls: 1,
+			Err:        _errGridReplaced,
 		},
-		"Grid sent back as it is writes nothing": {
-			Tool:       replaceBlocks{docTarget: target, BlockUID: "g", Content: `<grid id="g"><metrics id="m">{"simulationPreset":"cpu_usage"}</metrics></grid>`},
+		"Grid under its former name refused": {
+			Tool:       replaceBlocks{docTarget: target, BlockUID: "g", Content: `<grid id="g"><metrics id="m">{}</metrics></grid>`},
 			Root:       stubSimulationRoot(),
-			Content:    []string{`<grid id="g">`},
 			FetchCalls: 1,
-			CheckCalls: 1,
-		},
-		"Grid sent back as read in another order than stored writes nothing": {
-			Tool:       replaceBlocks{docTarget: target, BlockUID: "g", Content: markup.Render([]document.Block{readGrid})},
-			Root:       document.RootBlock{Content: []document.Block{readGrid}},
-			Content:    []string{`<grid id="g">`},
-			FetchCalls: 1,
-			CheckCalls: 1,
+			Err:        _errGridReplaced,
 		},
 	}
 
@@ -797,6 +791,7 @@ func Test_moveBlock_Info(t *testing.T) {
 
 	assert.Equal(t, NameMoveBlock, info.Name)
 	assert.Contains(t, info.Description, "keeps its id")
+	assert.Contains(t, info.Properties, "layout")
 	assert.Equal(t, []string{"document_id", "branch_id", "block_uid", "position", "reference_block_uid"}, info.Required)
 }
 
@@ -859,6 +854,7 @@ func Test_moveBlock_Summary(t *testing.T) {
 
 	cc := map[string]struct {
 		Input  *InputMock
+		Layout layout
 		Result ActionSummary
 		Err    error
 	}{
@@ -869,6 +865,16 @@ func Test_moveBlock_Summary(t *testing.T) {
 				DocumentID:   _testDocID,
 				DocumentName: _stubDocumentName,
 				Summary:      "Move a block after another block in Runbook",
+			},
+		},
+		"Successful summary of a stacked move": {
+			Input:  stubDocumentInput(),
+			Layout: layoutStacked,
+			Result: ActionSummary{
+				Tool:         NameMoveBlock,
+				DocumentID:   _testDocID,
+				DocumentName: _stubDocumentName,
+				Summary:      "Move a block after another block in Runbook on narrow pages",
 			},
 		},
 		"Error returned by Input.FetchBranch": {
@@ -882,6 +888,9 @@ func Test_moveBlock_Summary(t *testing.T) {
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
+
+			tool := tool
+			tool.Layout = c.Layout
 
 			got, err := tool.Summary(c.Input)
 			testutil.AssertEqualError(t, c.Err, err)
@@ -946,6 +955,19 @@ func Test_moveBlock_Exec(t *testing.T) {
 			Tool:       tool("a", positionAbove),
 			Content:    []string{`<p id="a">hello</p>`},
 			Ops:        []string{`"kind":"move","position":"above","reference_uid":"c","block_uid":"a"`},
+			FetchCalls: 1,
+			ApplyCalls: 1,
+		},
+		"Moved in the stacked layout": {
+			Tool: moveBlock{
+				DocumentID: _testDocID, BranchID: _stubMainBranchID,
+				BlockUID:          "a",
+				Position:          positionBefore,
+				ReferenceBlockUID: "c",
+				Layout:            layoutStacked,
+			},
+			Content:    []string{`<p id="a">hello</p>`},
+			Ops:        []string{`"kind":"move","position":"before","reference_uid":"c","block_uid":"a","layout":"stacked"`},
 			FetchCalls: 1,
 			ApplyCalls: 1,
 		},
@@ -1040,6 +1062,45 @@ func Test_position_UnmarshalText(t *testing.T) {
 			assert.Equal(t, c.Result, p)
 		})
 	}
+}
+
+func Test_layout_UnmarshalText(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Text   string
+		Result layout
+		Err    error
+	}{
+		"Wide layout":    {Text: "wide", Result: layoutWide},
+		"Stacked layout": {Text: "stacked", Result: layoutStacked},
+		"Unknown layout": {Text: "narrow", Err: errors.New(`layout must be "wide" or "stacked", got "narrow"`)},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var l layout
+
+			err := l.UnmarshalText([]byte(c.Text))
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, l)
+		})
+	}
+}
+
+func Test_layout_onPages(t *testing.T) {
+	t.Parallel()
+
+	assert.Empty(t, layoutWide.onPages())
+	assert.Empty(t, layout("").onPages())
+	assert.Equal(t, " on narrow pages", layoutStacked.onPages())
 }
 
 func Test_position_relative(t *testing.T) {

@@ -42,89 +42,67 @@ type gridBox struct {
 	h int
 }
 
-// GridReadingOrder returns a grid's blocks in the order its wide layout
-// shows them: row by row, left to right.
-func GridReadingOrder(blocks []document.Block) []document.Block {
-	return pickBlocks(blocks, readingIndexes(blocks))
-}
-
-// GridStackOrder returns a grid's blocks in the order its stacked layout
-// shows them. Blocks sort by their place in that layout. Blocks with the
-// same place keep the wide layout's reading order. A block without a
-// place goes right after the block it follows in the wide layout. It
-// mirrors stackOrder in packages/common/src/grid.ts. A change there has
-// to be made here, or the assistant reads a grid in another order than
-// people see it.
-func GridStackOrder(blocks []document.Block) []document.Block {
-	wide := readingIndexes(blocks)
-	order := slices.DeleteFunc(slices.Clone(wide), func(i int) bool {
-		_, placed := GridStackPos(blocks[i])
-
-		return !placed
-	})
-
-	slices.SortStableFunc(order, func(a, b int) int {
-		pa, _ := GridStackPos(blocks[a])
-		pb, _ := GridStackPos(blocks[b])
-
-		return pa - pb
-	})
-
-	for at, i := range wide {
-		if _, placed := GridStackPos(blocks[i]); placed {
-			continue
-		}
-
-		next := 0
-		if at > 0 {
-			next = slices.Index(order, wide[at-1]) + 1
-		}
-
-		order = slices.Insert(order, next, i)
-	}
-
-	return pickBlocks(blocks, order)
-}
-
-// IsGridPlace reports whether the attribute says where a grid block
-// sits.
-func IsGridPlace(key string) bool {
-	return slices.Contains(_gridPlaceAttrs, key)
-}
-
-// GridStackPos returns a grid block's place in the stacked layout, and
-// whether it has one. Only a whole number from zero up is a place.
-func GridStackPos(b document.Block) (int, bool) {
-	return wholeAtLeast(b.Attrs, document.AttrStackPos, 0)
-}
-
-// readingIndexes returns the indexes of a grid's blocks in the wide
-// layout's reading order.
-func readingIndexes(blocks []document.Block) []int {
+// readingBoxes lays out a grid's blocks and returns their boxes in the
+// order the wide layout shows them: row by row, left to right.
+func readingBoxes(blocks []document.Block) []*gridBox {
 	boxes := layoutGrid(blocks)
 
 	slices.SortStableFunc(boxes, func(a, b *gridBox) int {
 		return cmp.Or(a.y-b.y, a.x-b.x, a.id-b.id)
 	})
 
-	indexes := make([]int, 0, len(boxes))
-
-	for _, box := range boxes {
-		indexes = append(indexes, box.id)
-	}
-
-	return indexes
+	return boxes
 }
 
-// pickBlocks returns the blocks at the indexes, in the indexes' order.
-func pickBlocks(blocks []document.Block, indexes []int) []document.Block {
-	picked := make([]document.Block, 0, len(indexes))
+// stackPlaces returns each grid block's place in the stacked layout, by
+// the block's index. boxes are the blocks' boxes in the wide layout's
+// reading order. Blocks sort by their stored place, and blocks with the
+// same place keep the reading order. A block without one goes right after
+// the block it follows in the wide layout. It mirrors stackOrder in
+// packages/common/src/grid.ts. A change there has to be made here, or the
+// assistant reads another order than people see.
+func stackPlaces(blocks []document.Block, boxes []*gridBox) []int {
+	order := make([]int, 0, len(boxes))
 
-	for _, i := range indexes {
-		picked = append(picked, blocks[i])
+	for _, box := range boxes {
+		if _, placed := stackPos(blocks[box.id]); placed {
+			order = append(order, box.id)
+		}
 	}
 
-	return picked
+	slices.SortStableFunc(order, func(a, b int) int {
+		pa, _ := stackPos(blocks[a])
+		pb, _ := stackPos(blocks[b])
+
+		return pa - pb
+	})
+
+	for at, box := range boxes {
+		if _, placed := stackPos(blocks[box.id]); placed {
+			continue
+		}
+
+		next := 0
+		if at > 0 {
+			next = slices.Index(order, boxes[at-1].id) + 1
+		}
+
+		order = slices.Insert(order, next, box.id)
+	}
+
+	places := make([]int, len(blocks))
+
+	for place, i := range order {
+		places[i] = place
+	}
+
+	return places
+}
+
+// stackPos returns a grid block's stored place in the stacked layout, and
+// whether it has one. Only a whole number from zero up is a place.
+func stackPos(b document.Block) (int, bool) {
+	return wholeAtLeast(b.Attrs, document.AttrStackPos, 0)
 }
 
 // layoutGrid places a grid's blocks the way the editor does. A block

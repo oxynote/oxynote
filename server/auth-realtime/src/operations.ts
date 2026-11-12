@@ -21,6 +21,7 @@ import {
 	layoutGrid,
 	resizeInGrid,
 	stackOrder,
+	stackPlaces,
 	stackPosOf,
 	withoutPlaces,
 } from "@oxynote/common/grid"
@@ -43,6 +44,10 @@ const INSERT_POSITIONS: string[] = ["before", "after", "above", "below"]
 // the sides only a block in a grid has
 const GRID_POSITIONS: string[] = ["above", "below"]
 
+// the layouts of a grid a move can change. The wide layout places blocks
+// on columns. The stacked layout shows them one per row.
+const MOVE_LAYOUTS: string[] = ["wide", "stacked"]
+
 // the nodes that hold grid blocks. metricGrid is the legacy name.
 const GRID_NAMES = new Set(["blockGrid", "metricGrid"])
 
@@ -61,7 +66,6 @@ export type Operation =
 	| UpdateAttrsOp
 	| DeleteOp
 	| MoveOp
-	| SetStackOrderOp
 	| SetNameOp
 	| SetIconOp
 
@@ -129,15 +133,10 @@ export interface MoveOp {
 	position: Position
 	/** Reference block's uid in the document. */
 	reference_uid: string
-}
-
-// sets a grid's stacked order. order lists the uids of the grid's blocks
-// from first to last. A block the list leaves out goes after the block it
-// follows in the wide layout.
-export interface SetStackOrderOp {
-	kind: "set_stack_order"
-	grid_uid: string
-	order: string[]
+	// the layout of a grid the move changes. It is wide when left out.
+	// stacked moves the block in the order narrow pages show, and needs
+	// both blocks in the same grid.
+	layout?: "wide" | "stacked"
 }
 
 /** Updates the document's display name. */
@@ -255,9 +254,6 @@ function applyOperation(doc: Y.Doc, op: Operation): void {
 			return
 		case "move":
 			opMove(doc, op)
-			return
-		case "set_stack_order":
-			opSetStackOrder(doc, op)
 			return
 		case "set_name":
 			opSetName(doc, op)
@@ -456,7 +452,20 @@ function opMove(doc: Y.Doc, op: MoveOp): void {
 		)
 	}
 
+	// the layout is unvalidated JSON too
+	if (op.layout !== undefined && !MOVE_LAYOUTS.includes(op.layout)) {
+		throw new Error(
+			`move layout must be "wide" or "stacked", got: ${op.layout}`,
+		)
+	}
+
 	const grid = gridOf(reference.parent)
+
+	if (op.layout === "stacked") {
+		moveInStack(grid, found, reference, op.position)
+
+		return
+	}
 
 	if (grid) {
 		moveInGrid(grid, found, reference, op.position)
@@ -530,39 +539,32 @@ function moveInGrid(
 	deleteEmptyGrid(found.parent)
 }
 
-function opSetStackOrder(doc: Y.Doc, op: SetStackOrderOp): void {
-	const found = blockByUid(doc, op.grid_uid, "grid_uid")
-
-	if (!GRID_NAMES.has(found.element.nodeName)) {
-		throw new Error(`grid_uid is not a grid: ${op.grid_uid}`)
+// moveInStack moves a block of grid in the stacked layout, as a drag on a
+// narrow page does. The cells of the wide layout stay. Every block gets
+// its place in the new order, but only a changed place is written.
+function moveInStack(
+	grid: Y.XmlElement | null,
+	found: Found,
+	reference: Found,
+	position: Position,
+): void {
+	if (!grid || found.parent !== grid) {
+		throw new Error(
+			"a stacked move needs both blocks in the same grid; move the block into the grid first",
+		)
 	}
 
-	// the list is unvalidated JSON
-	if (!Array.isArray(op.order)) {
-		throw new Error("order must be a list of block uids")
-	}
+	const { blocks, rects } = gridLayout(grid)
+	const order = stackOrder(
+		rects,
+		blocks.map((block) => stackPosOf(attrsOf(block))),
+	).filter((index) => index !== found.index)
+	const at =
+		order.indexOf(reference.index) + (landsAfter(position) ? 1 : 0)
 
-	const { blocks, rects } = gridLayout(found.element)
-	const uids = blocks.map((block) => block.getAttribute(UID_ATTR))
-	const places: (number | null)[] = blocks.map(() => null)
+	order.splice(at, 0, found.index)
 
-	op.order.forEach((uid, place) => {
-		const index = uids.indexOf(uid)
-
-		if (index < 0) {
-			throw new Error(
-				`order names a block outside the grid: ${uid}`,
-			)
-		}
-
-		if (places[index] !== null) {
-			throw new Error(`order names a block twice: ${uid}`)
-		}
-
-		places[index] = place
-	})
-
-	stackOrder(rects, places).forEach((index, place) => {
+	stackPlaces(order).forEach((place, index) => {
 		const block = blocks[index]
 
 		if (block && stackPosOf(attrsOf(block)) !== place) {

@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_GridReadingOrder(t *testing.T) {
+func Test_readingBoxes(t *testing.T) {
 	t.Parallel()
 
 	type tcase struct {
@@ -66,8 +66,8 @@ func Test_GridReadingOrder(t *testing.T) {
 
 			got := []string{}
 
-			for _, b := range GridReadingOrder(c.Blocks) {
-				uid, _ := b.UID()
+			for _, box := range readingBoxes(c.Blocks) {
+				uid, _ := c.Blocks[box.id].UID()
 				got = append(got, uid)
 			}
 
@@ -76,7 +76,7 @@ func Test_GridReadingOrder(t *testing.T) {
 	}
 }
 
-func Test_GridStackOrder(t *testing.T) {
+func Test_stackPlaces(t *testing.T) {
 	t.Parallel()
 
 	// the wide layout reads c, a, b.
@@ -123,34 +123,20 @@ func Test_GridStackOrder(t *testing.T) {
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, c.Result, uidsOf(GridStackOrder(c.Blocks)))
+
+			places := stackPlaces(c.Blocks, readingBoxes(c.Blocks))
+			got := make([]string, len(places))
+
+			for i, place := range places {
+				got[place], _ = c.Blocks[i].UID()
+			}
+
+			assert.Equal(t, c.Result, got)
 		})
 	}
 }
 
-func Test_IsGridPlace(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		Key    string
-		Result bool
-	}{
-		"Column":        {Key: document.AttrWidePosX, Result: true},
-		"Row":           {Key: document.AttrWidePosY, Result: true},
-		"Stacked place": {Key: document.AttrStackPos, Result: true},
-		"Width":         {Key: document.AttrWidth},
-		"Height":        {Key: document.AttrHeight},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, c.Result, IsGridPlace(c.Key))
-		})
-	}
-}
-
-func Test_GridStackPos(t *testing.T) {
+func Test_stackPos(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
@@ -167,27 +153,11 @@ func Test_GridStackPos(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, placed := GridStackPos(document.Block{Attrs: c.Attrs})
+			got, placed := stackPos(document.Block{Attrs: c.Attrs})
 			assert.Equal(t, c.Result, got)
 			assert.Equal(t, c.Placed, placed)
 		})
 	}
-}
-
-func Test_readingIndexes(t *testing.T) {
-	t.Parallel()
-
-	blocks := []document.Block{gridBlock("a", cells(12, 0, 12, 1)), gridBlock("b", cells(0, 0, 12, 1))}
-
-	assert.Equal(t, []int{1, 0}, readingIndexes(blocks))
-}
-
-func Test_pickBlocks(t *testing.T) {
-	t.Parallel()
-
-	blocks := []document.Block{gridBlock("a", document.Attributes{}), gridBlock("b", document.Attributes{})}
-
-	assert.Equal(t, []string{"b", "a"}, uidsOf(pickBlocks(blocks, []int{1, 0})))
 }
 
 func Test_layoutGrid(t *testing.T) {

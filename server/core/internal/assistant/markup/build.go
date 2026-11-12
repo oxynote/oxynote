@@ -241,13 +241,6 @@ func (b *builder) buildContainer(n node, typ document.BlockNodeType, children []
 		return document.Block{}, err
 	}
 
-	if typ == document.BlockNodeBlockGrid {
-		content, err = gridPlaces(n, stored, content)
-		if err != nil {
-			return document.Block{}, err
-		}
-	}
-
 	blk := newBlock(typ, stored, content)
 
 	switch typ {
@@ -512,59 +505,6 @@ func setGridCells(attrs document.Attributes, stored document.Block) {
 	}
 }
 
-// gridPlaces settles the places of a grid's built blocks. The model
-// never sees these places. stored is the grid the element's id names, or
-// the zero block. A block from outside that grid drops the places it had
-// elsewhere. When the stack attribute is given, it lists the blocks in
-// their stacked order. A block it leaves out then loses its stacked
-// place. Without the attribute, every block keeps its stacked place.
-//
-// NOTE: the model writes the stacked order as one list on the grid. It
-// does not write a place on each block. So moving one block means
-// editing one list. With a place per block, the model would have to
-// renumber every block that shifts.
-func gridPlaces(n node, stored document.Block, blocks []document.Block) ([]document.Block, error) {
-	uids := uidsOf(blocks)
-	list, given := n.attrs[_attrStack]
-	places := map[string]int{}
-
-	for place, id := range strings.Fields(list) {
-		if !slices.Contains(uids, id) {
-			return nil, fmt.Errorf("line %d: stack names %q, which is no block of this <grid>; list the ids of its blocks", n.line, id)
-		}
-
-		if _, twice := places[id]; twice {
-			return nil, fmt.Errorf("line %d: stack names %q twice; list each block once", n.line, id)
-		}
-
-		places[id] = place
-	}
-
-	storedUIDs := uidsOf(stored.Content)
-	out := make([]document.Block, 0, len(blocks))
-
-	for i, blk := range blocks {
-		attrs := maps.Clone(blk.Attrs)
-
-		if !slices.Contains(storedUIDs, uids[i]) {
-			for _, key := range _gridPlaceAttrs {
-				delete(attrs, key)
-			}
-		}
-
-		if place, listed := places[uids[i]]; listed {
-			attrs[document.AttrStackPos] = place
-		} else if given {
-			delete(attrs, document.AttrStackPos)
-		}
-
-		blk.Attrs = attrs
-		out = append(out, blk)
-	}
-
-	return out, nil
-}
-
 // buildAtom builds an element that holds nothing but attributes.
 func buildAtom(n node, typ document.BlockNodeType, strs, ints []string, stored document.Block) (document.Block, error) {
 	blk := newBlock(typ, stored, nil)
@@ -643,22 +583,13 @@ func titleBlock(typ document.BlockNodeType, text string, parent document.Block) 
 
 // keepIfUnchanged returns stored when built renders the same, and built
 // otherwise. The markup shows everything a writer can change, so the same
-// markup means the stored block is still right, hidden parts and all. A
-// grid renders its blocks in the order its layout shows them, but may
-// store them in another order. So a grid is kept only when its blocks
-// were written in their stored order. Then the result always lists them
-// in the order they were written. A rewrite of the grid relies on that
-// order.
+// markup means the stored block is still right, hidden parts and all.
 func keepIfUnchanged(stored, built document.Block) document.Block {
-	if stored.Type != built.Type || Render([]document.Block{stored}) != Render([]document.Block{built}) {
-		return built
+	if stored.Type == built.Type && Render([]document.Block{stored}) == Render([]document.Block{built}) {
+		return stored
 	}
 
-	if built.Type == document.BlockNodeBlockGrid && !slices.Equal(uidsOf(built.Content), uidsOf(stored.Content)) {
-		return built
-	}
-
-	return stored
+	return built
 }
 
 // findDuplicateUID returns a uid that blocks and their nested blocks

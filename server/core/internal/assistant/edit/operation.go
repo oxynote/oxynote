@@ -53,13 +53,9 @@ type Operation struct {
 	// Icon is the new document icon identifier; set_icon only.
 	Icon string `json:"icon,omitempty"`
 
-	// GridUID identifies the grid whose stacked order is set;
-	// set_stack_order only.
-	GridUID string `json:"grid_uid,omitempty"`
-
-	// Order lists the grid's blocks by uid in their stacked order, first
-	// to last; set_stack_order only.
-	Order []string `json:"order,omitempty"`
+	// Layout is "stacked" for a move in the order narrow pages show a
+	// grid's blocks in. It is empty for every other move; move only.
+	Layout string `json:"layout,omitempty"`
 }
 
 // Insert builds an operation that inserts b at position next to the
@@ -136,16 +132,15 @@ func Move(blockUID, position, referenceUID string) Operation {
 	}
 }
 
-// SetStackOrder builds an operation that sets the stacked order of the
-// grid identified by gridUID. order lists the uids of its blocks, first
-// to last. A block missing from order goes after the block it follows in
-// the grid's wide layout.
-func SetStackOrder(gridUID string, order []string) Operation {
-	return Operation{
-		Kind:    "set_stack_order",
-		GridUID: gridUID,
-		Order:   order,
-	}
+// MoveStacked builds an operation that moves the block identified by
+// blockUID in its grid's stacked layout, before or after the block
+// identified by referenceUID. The grid's columns stay as they are.
+// "above" lands as "before" does, and "below" as "after".
+func MoveStacked(blockUID, position, referenceUID string) Operation {
+	op := Move(blockUID, position, referenceUID)
+	op.Layout = "stacked"
+
+	return op
 }
 
 // SetName builds an operation that updates the document's display

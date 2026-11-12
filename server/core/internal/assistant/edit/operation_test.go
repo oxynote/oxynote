@@ -69,10 +69,10 @@ func Test_Move(t *testing.T) {
 	assert.Equal(t, Operation{Kind: "move", Position: "above", BlockUID: "target", ReferenceUID: "ref"}, Move("target", "above", "ref"))
 }
 
-func Test_SetStackOrder(t *testing.T) {
+func Test_MoveStacked(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, Operation{Kind: "set_stack_order", GridUID: "g", Order: []string{"b", "a"}}, SetStackOrder("g", []string{"b", "a"}))
+	assert.Equal(t, Operation{Kind: "move", Position: "below", BlockUID: "target", ReferenceUID: "ref", Layout: "stacked"}, MoveStacked("target", "below", "ref"))
 }
 
 func Test_SetName(t *testing.T) {

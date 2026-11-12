@@ -59,8 +59,16 @@ const (
 	// _attrHref is a link's target.
 	_attrHref = "href"
 
-	// _attrStack is a grid's stacked order: the ids of its blocks, first
-	// to last.
+	// _attrRow is the first row of a grid block in the wide layout. The
+	// model reads it and never writes it.
+	_attrRow = "row"
+
+	// _attrColumn is the first column of a grid block in the wide layout.
+	// The model reads it and never writes it.
+	_attrColumn = "column"
+
+	// _attrStack is a grid block's place in the stacked layout. The model
+	// reads it and never writes it.
 	_attrStack = "stack"
 )
 
@@ -119,8 +127,9 @@ var _gridPlaceAttrs = []string{document.AttrWidePosX, document.AttrWidePosY, doc
 // never sees. They are the uid, the block comment, a metric's simulation
 // flag and the block's places in its grid. The uid shows as the id, and
 // core derives the simulation flag. The editor lays out the places, so
-// the model orders a grid's blocks by element order and the grid's stack
-// attribute instead. The model sees the width and height as names.
+// the model sees a block's row, column and stacked place in the laid out
+// grid instead.
+// The model sees the width and height as names.
 var _hiddenAttrs = slices.Concat([]string{document.AttrUID, document.AttrCommentID, document.AttrSimulationActive}, _gridPlaceAttrs)
 
 // _gridItemWidths are the named widths of a block inside a grid,

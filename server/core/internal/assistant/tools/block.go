@@ -39,7 +39,7 @@ var _contentDescription = "The blocks as XML, one element per block, with all te
 	"- <pre language> holds raw code. It takes a title only in a split_doc's <right>.\n" +
 	"- <mermaid> holds raw source. Mermaid ends a gantt task name or timeline period at its first colon, so write a colon inside one as #58;, never as &#58;.\n" +
 	"- <hr/>, <img src alt title width/> and <figma src width height/> are empty.\n" +
-	"- <grid stack> sits at the top level and holds <metrics> (a chart) and <logs> in the order the grid shows them, each a JSON object of attributes. A row fits 3 compact, 2 standard or 1 wide, never a standard beside a compact. Fill every row. A tall block spans two rows, and the blocks after it fill the space beside it. stack lists their ids in the order narrow pages stack them, once someone has rearranged that order. Leaving stack out keeps the order as it is. A <grid> holds no text, so text about the charts, when there is some, goes in a block before it.\n" +
+	"- <grid> sits at the top level and holds <metrics> (a chart) and <logs> in the order the grid shows them, each a JSON object of attributes. A row fits 3 compact, 2 standard or 1 wide, never a standard beside a compact. Fill every row. A tall block spans two rows, and the blocks after it fill the space beside it. get_document shows three read-only attributes on each block: row and column, counted from 0 on 24 columns, and stack, its place in the one-column order of narrow pages. A <grid> holds no text, so text about the charts, when there is some, goes in a block before it.\n" +
 	"- <split_doc inversed> holds <left> then <right>. <left> has an <h1>, then <p>, lists or <callout>, then any <params header> of <param name type>description</param>. " +
 	"<right> holds a titled <pre>, a <metrics> or a <mermaid>.\n" +
 	"Inline text takes <b>, <i>, <u>, <s>, <code> and <a href>. " +
@@ -51,6 +51,11 @@ var _contentDescription = "The blocks as XML, one element per block, with all te
 // _gridPositionDescription says what the positions mean beside a block in
 // a grid. insert_blocks and move_block share it.
 var _gridPositionDescription = "above and below need a reference block in a <grid>, where before and after are its left and right."
+
+// _errGridReplaced is what replace_blocks reports for a grid. A list of
+// blocks cannot say whether a block sits beside or below another, so a
+// grid changes one block at a time. The message names the tools that do.
+var _errGridReplaced = errors.New("a <grid> is not replaced whole; change one of its blocks with replace_blocks on that block, add one with insert_blocks, move one with move_block or remove one with delete_block")
 
 // insertBlocks places new blocks in a document: beside a referenced
 // block, or at either end of the document.
@@ -74,7 +79,7 @@ func (insertBlocks) Info() Info {
 	return Info{
 		Name:        NameInsertBlocks,
 		Traits:      Traits{Write: true},
-		Description: "Insert new blocks, written as XML, at a document's start or end or beside the block reference_block_uid names. Returns the written blocks as XML with their ids. Every element is a new block, so leave out id, and use replace_blocks to change existing ones. A <metrics> or <logs> always sits in a <grid>, apart from a <metrics> in a split_doc's <right>. A block not allowed where it lands is refused, naming what that place takes.",
+		Description: "Insert new blocks, written as XML, at a document's start or end or beside the block reference_block_uid names. Returns the written blocks as XML with their ids. Every element is a new block, so leave out id, and use replace_blocks to change existing ones. A <metrics> or <logs> goes in a <grid>, beside one of its blocks or as a new grid. A block not allowed where it lands is refused, naming what that place takes.",
 		Properties: map[string]any{
 			"document_id":         map[string]any{"type": "string", "description": _documentIDDescription},
 			"branch_id":           map[string]any{"type": "string", "description": _writeBranchIDDescription},
@@ -199,7 +204,7 @@ func (replaceBlocks) Info() Info {
 	return Info{
 		Name:        NameReplaceBlocks,
 		Traits:      Traits{Write: true, Overwrites: true},
-		Description: "Replace one block with the blocks in content, in the XML insert_blocks describes. Returns the written blocks as XML. Read the block with get_document first, with block_uid to narrow the read, then edit the XML and send it back. Keep the id of every element that stays, so it keeps its comments, hooks and files, and unchanged content stays as stored. An element without an id is new. An id from outside the replaced block is refused.",
+		Description: "Replace one block with the blocks in content, in the XML insert_blocks describes. Returns the written blocks as XML. Read the block with get_document first, with block_uid to narrow the read, then edit the XML and send it back. Keep the id of every element that stays, so it keeps its comments, hooks and files, and unchanged content stays as stored. An element without an id is new. An id from outside the replaced block is refused, and so is a <grid>.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
 			"branch_id":   map[string]any{"type": "string", "description": _writeBranchIDDescription},
@@ -242,6 +247,10 @@ func (rb replaceBlocks) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, fmt.Errorf("block %s: %w", rb.BlockUID, _errUnknownBlock)
 	}
 
+	if target.Type == document.BlockNodeBlockGrid || target.Type == document.BlockNodeMetricGrid {
+		return ActionSummary{}, _errGridReplaced
+	}
+
 	blocks, err := markup.Build(rb.Content, document.RootBlock{Content: []document.Block{target}})
 	if err != nil {
 		return ActionSummary{}, err
@@ -262,6 +271,10 @@ func (rb replaceBlocks) Exec(inp Input) (any, error) {
 		return nil, err
 	}
 
+	if target.Type == document.BlockNodeBlockGrid || target.Type == document.BlockNodeMetricGrid {
+		return nil, _errGridReplaced
+	}
+
 	// only the replaced block's ids can be kept. Another block stays
 	// where it is, so keeping its id would put it in the document twice.
 	blocks, err := markup.Build(rb.Content, document.RootBlock{Content: []document.Block{target}})
@@ -273,16 +286,8 @@ func (rb replaceBlocks) Exec(inp Input) (any, error) {
 		return nil, err
 	}
 
-	ops := insertAfterPrevious(edit.Replace(rb.BlockUID, blocks[0]), blocks)
-
-	if isGrid(target) && len(blocks) == 1 && isGrid(blocks[0]) && sameUID(target, blocks[0]) {
-		ops = gridOps(target, blocks[0])
-	}
-
-	if len(ops) > 0 {
-		if err := inp.ApplyEdit(rb.DocumentID, rb.BranchID, ops); err != nil {
-			return nil, err
-		}
+	if err := inp.ApplyEdit(rb.DocumentID, rb.BranchID, insertAfterPrevious(edit.Replace(rb.BlockUID, blocks[0]), blocks)); err != nil {
+		return nil, err
 	}
 
 	return blockWriteResult{Content: markup.Render(blocks)}, nil
@@ -367,6 +372,9 @@ type moveBlock struct {
 	// ReferenceBlockUID is the block the move is positioned against.
 	// Required.
 	ReferenceBlockUID string `json:"reference_block_uid"`
+
+	// Layout is the grid layout the move changes. Wide when left out.
+	Layout layout `json:"layout"`
 }
 
 // Info returns the tool's model-facing description.
@@ -385,6 +393,12 @@ func (moveBlock) Info() Info {
 				"description": "Which side of the reference block it lands on. " + _gridPositionDescription,
 			},
 			"reference_block_uid": map[string]any{"type": "string", "description": "The id of the block it lands beside."},
+			"layout": map[string]any{
+				"type":        "string",
+				"enum":        []string{string(layoutWide), string(layoutStacked)},
+				"default":     string(layoutWide),
+				"description": "Which layout of a <grid> the move changes. wide moves the block on the columns. stacked moves it only in the one-column order of narrow pages, where above means before and below means after.",
+			},
 		},
 		Required: []string{"document_id", "branch_id", "block_uid", "position", "reference_block_uid"},
 	}
@@ -430,13 +444,21 @@ func (mb moveBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 		Tool:         NameMoveBlock,
 		DocumentID:   doc.ID,
 		DocumentName: doc.DocumentName,
-		Summary:      fmt.Sprintf("Move a block %s another block in %s", mb.Position, doc.Title()),
+		Summary:      fmt.Sprintf("Move a block %s another block in %s%s", mb.Position, doc.Title(), mb.Layout.onPages()),
 	}, nil
 }
 
 // Exec applies the move.
 func (mb moveBlock) Exec(inp Input) (any, error) {
-	op := edit.Move(mb.BlockUID, string(mb.Position), mb.ReferenceBlockUID)
+	var op edit.Operation
+
+	switch mb.Layout {
+	case layoutStacked:
+		op = edit.MoveStacked(mb.BlockUID, string(mb.Position), mb.ReferenceBlockUID)
+	default:
+		// an omitted layout is the wide one
+		op = edit.Move(mb.BlockUID, string(mb.Position), mb.ReferenceBlockUID)
+	}
 
 	b, err := inp.FetchDocumentBlock(mb.DocumentID, mb.BranchID, mb.BlockUID)
 	if err != nil {
@@ -519,4 +541,40 @@ func (p *position) UnmarshalText(text []byte) error {
 // block rather than an end of the document.
 func (p position) relative() bool {
 	return p != positionStart && p != positionEnd
+}
+
+// All available layout constants.
+const (
+	// layoutWide places a block on the columns of its grid.
+	layoutWide layout = "wide"
+
+	// layoutStacked places a block in the one-column order narrow pages
+	// show a grid in.
+	layoutStacked layout = "stacked"
+)
+
+// layout is the grid layout a move changes. The zero value is wide.
+type layout string
+
+// UnmarshalText parses the layout, refusing anything but the two
+// values.
+func (l *layout) UnmarshalText(text []byte) error {
+	switch v := layout(text); v {
+	case layoutWide, layoutStacked:
+		*l = v
+
+		return nil
+	default:
+		return fmt.Errorf("layout must be %q or %q, got %q", layoutWide, layoutStacked, text)
+	}
+}
+
+// onPages returns the words a summary adds for the layout: nothing for
+// the wide layout.
+func (l layout) onPages() string {
+	if l == layoutStacked {
+		return " on narrow pages"
+	}
+
+	return ""
 }

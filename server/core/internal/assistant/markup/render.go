@@ -46,12 +46,20 @@ func Render(blocks []document.Block) string {
 type renderer struct {
 	// sb holds the markup written so far.
 	sb strings.Builder
+
+	// cell holds the cells of the grid block being written, or nil
+	// outside a grid.
+	cell *gridBox
+
+	// place holds the place of the grid block being written in the
+	// stacked layout.
+	place int
 }
 
 // block renders one block and everything nested in it.
 func (r *renderer) block(b document.Block, depth int) {
 	if name, ok := _plainContainers[b.Type]; ok {
-		r.container(name, containerTag(name, b), b.Content, depth)
+		r.container(name, startTag(name, b), b.Content, depth)
 
 		return
 	}
@@ -109,9 +117,9 @@ func (r *renderer) block(b document.Block, depth int) {
 			blockAttr(b, document.AttrSize),
 		))
 	case document.BlockNodeMetricBlock:
-		r.raw(depth, startTag(_elemMetrics, b), _elemMetrics, attrsJSON(b))
+		r.raw(depth, startTag(_elemMetrics, b, r.cellAttrs()...), _elemMetrics, attrsJSON(b))
 	case document.BlockNodeLogBlock:
-		r.raw(depth, startTag(_elemLogs, b), _elemLogs, attrsJSON(b))
+		r.raw(depth, startTag(_elemLogs, b, r.cellAttrs()...), _elemLogs, attrsJSON(b))
 	case document.BlockNodeSplitDoc:
 		r.container(_elemSplitDoc, startTag(_elemSplitDoc, b, blockAttr(b, document.AttrInversed)), b.Content, depth)
 	case document.BlockNodeSplitDocLeft:
@@ -142,14 +150,25 @@ func (r *renderer) line(depth int, s string) {
 func (r *renderer) container(name, openTag string, children []document.Block, depth int) {
 	r.line(depth, openTag)
 
-	// a grid places its blocks by their cells and not by their order in
-	// the document. So its blocks read in the order of its wide layout.
-	if name == _elemGrid {
-		children = GridReadingOrder(children)
-	}
+	switch name {
+	case _elemGrid:
+		// a grid places its blocks by their cells and not by their
+		// order in the document. So its blocks read in the order of its
+		// wide layout, each with the row and column it starts at and its
+		// place in the stacked layout.
+		boxes := readingBoxes(children)
+		places := stackPlaces(children, boxes)
 
-	for _, c := range children {
-		r.block(c, depth+1)
+		for _, box := range boxes {
+			r.cell, r.place = box, places[box.id]
+			r.block(children[box.id], depth+1)
+		}
+
+		r.cell = nil
+	default:
+		for _, c := range children {
+			r.block(c, depth+1)
+		}
 	}
 
 	r.line(depth, endTag(name))
@@ -266,43 +285,20 @@ func (a attr) text() string {
 	return ""
 }
 
-// containerTag returns the start tag of a container that carries no
-// attribute but its id. A grid adds its stacked order.
-func containerTag(name string, b document.Block) string {
-	if name == _elemGrid {
-		return startTag(name, b, stackAttr(b.Content))
+// cellAttrs returns the row and column that the grid block being
+// written starts at and its place in the stacked layout, or nothing
+// outside a grid. The values are strings, because an attribute leaves out
+// a number that is zero.
+func (r *renderer) cellAttrs() []attr {
+	if r.cell == nil {
+		return nil
 	}
 
-	return startTag(name, b)
-}
-
-// stackAttr returns a grid's stacked order as its stack attribute: the
-// ids of its blocks, first to last. A grid gets one once a block has a
-// stacked place, because then its stacked layout was rearranged. It gets
-// one even when that order matches the wide reading order.
-func stackAttr(blocks []document.Block) attr {
-	rearranged := slices.ContainsFunc(blocks, func(b document.Block) bool {
-		_, placed := GridStackPos(b)
-
-		return placed
-	})
-	if !rearranged {
-		return attr{key: _attrStack}
+	return []attr{
+		{key: _attrRow, value: strconv.Itoa(r.cell.y)},
+		{key: _attrColumn, value: strconv.Itoa(r.cell.x)},
+		{key: _attrStack, value: strconv.Itoa(r.place)},
 	}
-
-	return attr{key: _attrStack, value: strings.Join(uidsOf(GridStackOrder(blocks)), " ")}
-}
-
-// uidsOf returns the uids of blocks, in their order.
-func uidsOf(blocks []document.Block) []string {
-	uids := make([]string, 0, len(blocks))
-
-	for _, b := range blocks {
-		uid, _ := b.UID()
-		uids = append(uids, uid)
-	}
-
-	return uids
 }
 
 // blockAttr returns b's attribute key as a rendered attribute.
