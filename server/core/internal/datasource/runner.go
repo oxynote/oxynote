@@ -246,9 +246,7 @@ func (m *Manager) renew(r *runner) {
 // again and records what it finds, instead of waiting out _statusTTL. A
 // test that failed is kept, as it already says so.
 func (m *Manager) expireConnectionStatus(ctx context.Context, id xid.ID, err error) {
-	switch errutil.InternalCode(err) {
-	case "data_source.unauthorized", "data_source.unreachable":
-	default:
+	if !processor.IsConnectionFailure(err) {
 		return
 	}
 

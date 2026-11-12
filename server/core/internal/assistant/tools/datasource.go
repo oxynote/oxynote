@@ -9,7 +9,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
-	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/prometheus/common/model"
 	"github.com/rs/xid"
@@ -687,8 +686,7 @@ func queryLogs(inp Input, runner datasource.Runner, q string, tr processor.TimeR
 
 	res, err := logs.Logs(inp.Context(), q, tr, page)
 	if err != nil {
-		switch errutil.InternalCode(err) {
-		case "data_source.unauthorized", "data_source.unreachable", "data_source.rate_limited":
+		if processor.IsOutage(err) {
 			// an outage or a rate limit is not fixed by a different query.
 			return nil, err
 		}
@@ -707,7 +705,7 @@ func queryLogs(inp Input, runner datasource.Runner, q string, tr processor.TimeR
 // when the data source rejected it. Any other failure, such as an outage or
 // a rate limit, is returned as it is: a different query does not fix it.
 func queryError(err error) error {
-	if errutil.InternalCode(err) != "query.error" {
+	if !processor.IsInvalidQuery(err) {
 		return err
 	}
 
