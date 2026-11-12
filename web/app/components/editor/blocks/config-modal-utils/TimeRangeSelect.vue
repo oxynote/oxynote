@@ -1,6 +1,9 @@
 <script lang="ts" setup>
 import { cn } from "#layers/ui/app/lib/utils"
-import type { TimeRangeSetting } from "~/utils/variable"
+import {
+	METRIC_TIME_RANGE_REFERENCE,
+	type TimeRangeSetting,
+} from "~/utils/variable"
 import TimeRangePicker from "./TimeRangePicker.vue"
 import { useBlockVariables } from "../variables"
 
@@ -15,6 +18,12 @@ const { zone } = useTimeRangeZone()
 const label = useTimeRangeLabel(zone)
 const open = ref(false)
 const blockVariables = useBlockVariables()
+const resolvedTimeRange = computed(() => blockVariables.timeRange(model.value))
+const pending = computed(
+	() =>
+		model.value === METRIC_TIME_RANGE_REFERENCE &&
+		resolvedTimeRange.value === null,
+)
 
 function select(value: TimeRangeSetting) {
 	model.value = value
@@ -55,7 +64,8 @@ const isModified = computed(() => props.oldValue !== undefined)
 			>
 				<TimeRangePicker
 					v-if="open"
-					:time-range="blockVariables.timeRange(model)"
+					:time-range="resolvedTimeRange"
+					:pending="pending"
 					@apply="select"
 				/>
 			</ShadcnUiPopoverContent>

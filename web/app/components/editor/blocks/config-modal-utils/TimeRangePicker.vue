@@ -16,7 +16,7 @@ import {
 	type TimeRangeSetting,
 } from "~/utils/variable"
 
-const props = defineProps<{ timeRange: TimeRange | null }>()
+const props = defineProps<{ timeRange: TimeRange | null; pending?: boolean }>()
 const emit = defineEmits<{ apply: [value: TimeRangeSetting] }>()
 const { t, locale } = useI18n({ useScope: "global" })
 const id = useId()
@@ -117,7 +117,7 @@ function changeZone(value: unknown) {
 }
 
 function apply() {
-	if (!range.value) {
+	if (!range.value || props.pending) {
 		return
 	}
 
@@ -235,7 +235,7 @@ function apply() {
 					<ShadcnUiButton
 						type="submit"
 						size="sm"
-						:disabled="!range"
+						:disabled="!range || props.pending"
 						class="self-start"
 					>
 						{{ t("general.custom-time-range.apply") }}

@@ -1,6 +1,8 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { enableAutoUnmount, flushPromises } from "@vue/test-utils"
-import { afterEach, beforeEach, describe, it } from "vitest"
+import { afterEach, beforeEach, describe, it, vi } from "vitest"
+import * as blockVariables from "../variables"
+import type { TimeRange } from "~/utils/time-range"
 import TimeRangeSelect from "./TimeRangeSelect.vue"
 import { getLocalTimeZone } from "@internationalized/date"
 import { differenceInCalendarDays } from "date-fns"
@@ -20,6 +22,7 @@ import { variableTree } from "../metrics/test-helpers"
 // popovers and variable queries share app-wide state
 describe("<TimeRangeSelect>", { concurrent: false }, () => {
 	enableAutoUnmount(afterEach)
+	afterEach(() => vi.restoreAllMocks())
 	beforeEach(() => {
 		clearTeleportedOverlays()
 		clearQueryCache()
@@ -82,6 +85,42 @@ describe("<TimeRangeSelect>", { concurrent: false }, () => {
 		})
 		await wrapper.get("button").trigger("click")
 		await flushPromises()
+		const inputs = Array.from(
+			document.body.querySelectorAll<HTMLInputElement>(
+				'input[type="datetime-local"]',
+			),
+		)
+		expect(
+			differenceInCalendarDays(
+				new Date(at(inputs, 1).value),
+				new Date(at(inputs, 0).value),
+			),
+		).toBe(7)
+	})
+
+	it("blocks applying a global range until its reference resolves", async ({
+		expect,
+	}) => {
+		const resolved = ref<TimeRange | null>(null)
+		vi.spyOn(blockVariables, "useBlockVariables").mockReturnValueOnce({
+			variables: computed(() => []),
+			timeRange: () => resolved.value,
+			refreshInterval: () => null,
+			queryValues: () => null,
+		})
+		const wrapper = await mountSuspended(TimeRangeSelect, {
+			props: { modelValue: METRIC_TIME_RANGE_REFERENCE, disabled: false },
+		})
+		await wrapper.get("button").trigger("click")
+		await flushPromises()
+		const apply = teleportedButton(t("general.custom-time-range.apply"))
+		expect(apply.disabled).toBe(true)
+		apply.click()
+		await flushPromises()
+		expect(wrapper.emitted("update:modelValue")).toBeUndefined()
+		resolved.value = TimeRangePreset.Last7Days
+		await flushPromises()
+		expect(apply.disabled).toBe(false)
 		const inputs = Array.from(
 			document.body.querySelectorAll<HTMLInputElement>(
 				'input[type="datetime-local"]',

@@ -1,4 +1,8 @@
-import { fromDate, getLocalTimeZone } from "@internationalized/date"
+import {
+	fromDate,
+	getLocalTimeZone,
+	toCalendarDateTime,
+} from "@internationalized/date"
 import { toValue, type MaybeRefOrGetter } from "vue"
 import { parseCustomTimeRange } from "~/utils/time-range"
 import { METRIC_TIME_RANGE_REFERENCE } from "~/utils/variable"
@@ -7,7 +11,7 @@ export function useTimeRangeLabel(
 	timeZone?: MaybeRefOrGetter<string>,
 	precise = false,
 ) {
-	const { t, d } = useI18n({ useScope: "global" })
+	const { t, d, locale } = useI18n({ useScope: "global" })
 
 	return (value: unknown): string => {
 		if (typeof value !== "string" || !value) {
@@ -47,8 +51,28 @@ export function useTimeRangeLabel(
 				timeZone: zone,
 				...(start.year !== end.year ? { year: "numeric" as const } : {}),
 			} as const
-			const from = `${d(range.from, dateOptions)} ${start.hour}:${String(start.minute).padStart(2, "0")}`
-			const endTime = `${end.hour}:${String(end.minute).padStart(2, "0")}`
+			const time = (date: Date) => {
+				const local = fromDate(date, zone)
+				const wallTime = toCalendarDateTime(local)
+				const repeated =
+					wallTime.toDate(zone, "earlier").getTime() !==
+					wallTime.toDate(zone, "later").getTime()
+				const clock = `${local.hour}:${String(local.minute).padStart(2, "0")}`
+				if (!repeated) {
+					return clock
+				}
+
+				const offset = new Intl.DateTimeFormat(locale.value, {
+					timeZone: zone,
+					timeZoneName: "longOffset",
+				})
+					.formatToParts(date)
+					.find((part) => part.type === "timeZoneName")?.value
+
+				return offset ? `${clock} ${offset}` : clock
+			}
+			const from = `${d(range.from, dateOptions)} ${time(range.from)}`
+			const endTime = time(range.to)
 			const to = sameDay ? endTime : `${d(range.to, dateOptions)} ${endTime}`
 
 			return t("general.custom-time-range.label", { from, to })

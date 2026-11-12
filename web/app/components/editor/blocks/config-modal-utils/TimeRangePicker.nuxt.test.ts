@@ -15,7 +15,10 @@ import {
 	emitFrom,
 	emitFromNth,
 } from "~/components/test-helpers"
-import { serializeCustomTimeRange } from "~/utils/time-range"
+import {
+	parseCustomTimeRange,
+	serializeCustomTimeRange,
+} from "~/utils/time-range"
 
 const FROM = new Date("2026-11-11T05:38:15.123Z")
 const TO = new Date("2026-11-11T05:42:30.456Z")
@@ -29,6 +32,34 @@ describe("<TimeRangePicker>", { concurrent: false }, () => {
 		seedPersistentState("custom-time-range-history", [])
 		seedPersistentState("custom-time-range-zone", getLocalTimeZone())
 	})
+	it("rejects form submission while the referenced range is pending", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSuspended(TimeRangePicker, {
+			props: { timeRange: null, pending: true },
+		})
+		await wrapper.get("form").trigger("submit")
+		expect(wrapper.emitted("apply")).toBeUndefined()
+	})
+	it("allows the default 24-hour range for an unset model", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSuspended(TimeRangePicker, {
+			props: { timeRange: null },
+		})
+		expect(
+			wrapper.get('button[type="submit"]').attributes("disabled"),
+		).toBeUndefined()
+		await wrapper.get("form").trigger("submit")
+		const value = wrapper.emitted("apply")?.[0]?.[0]
+		if (typeof value !== "string") throw new Error("Applied range missing")
+		const range = parseCustomTimeRange(value)
+		expect(range).not.toBeNull()
+		expect(range && range.to.getTime() - range.from.getTime()).toBe(
+			24 * 60 * 60 * 1000,
+		)
+	})
+
 	it("restores the selected absolute window", async ({ expect }) => {
 		const wrapper = await mountSuspended(TimeRangePicker, {
 			props: { timeRange: RANGE },
