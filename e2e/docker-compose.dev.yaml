@@ -24,7 +24,7 @@ name: oxynote-e2e-dev
 
 services:
   caddy:
-    image: caddy:2.11.7-alpine
+    image: caddy:2.11.9-alpine
     volumes:
       - ../docker/Caddyfile:/etc/caddy/Caddyfile
     ports:
@@ -147,7 +147,7 @@ services:
   # the tests read verification links out of mailpit's REST API, so its
   # http port is published rather than proxied through caddy.
   mailpit:
-    image: axllent/mailpit:v1.33.0
+    image: axllent/mailpit:v1.33.1
     environment:
       - MP_QUIET=true
     ports:
