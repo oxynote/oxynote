@@ -9,7 +9,19 @@ import (
 func Test_BlockNodeType_IsGrid(t *testing.T) {
 	t.Parallel()
 
-	assert.True(t, BlockNodeBlockGrid.IsGrid())
-	assert.True(t, BlockNodeMetricGrid.IsGrid())
-	assert.False(t, BlockNodeMetricBlock.IsGrid())
+	cc := map[string]struct {
+		Type   BlockNodeType
+		Result bool
+	}{
+		"Block grid":                 {Type: BlockNodeBlockGrid, Result: true},
+		"Grid under its former name": {Type: BlockNodeMetricGrid, Result: true},
+		"Block that is no grid":      {Type: BlockNodeMetricBlock},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, c.Result, c.Type.IsGrid())
+		})
+	}
 }

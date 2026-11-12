@@ -56,66 +56,78 @@ func Test_Render(t *testing.T) {
 		})
 	}
 
-	// the editor places a grid's blocks by their cells. So people can see
-	// them in another order than the document holds them.
-	t.Run("Grid reads its blocks in the order people see them", func(t *testing.T) {
-		t.Parallel()
+	// rearranged holds the blocks of placedTestGrid in a stacked order a
+	// person set: pb, pc, pa.
+	rearranged := placedTestGrid(t)
+	rearranged.Content[0].Attrs[document.AttrStackPos] = 2.0
+	rearranged.Content[1].Attrs[document.AttrStackPos] = 0.0
+	rearranged.Content[2].Attrs[document.AttrStackPos] = 1.0
 
-		got := Render([]document.Block{placedTestGrid(t)})
+	grid, ok := loadFixture(t, "all_blocks").FindByUID("g1")
+	require.True(t, ok)
+	require.Equal(t, document.BlockNodeBlockGrid, grid.Type)
 
-		assert.Regexp(t, `(?s)id="pc".*id="pa".*id="pb"`, got)
-	})
+	legacy := grid
+	legacy.Type = document.BlockNodeMetricGrid
 
-	// a list cannot say whether a block sits beside or below another. So
-	// each block of a grid shows where it starts in both layouts.
-	t.Run("Grid gives each block its row, column and stacked place", func(t *testing.T) {
-		t.Parallel()
+	cc := map[string]struct {
+		Blocks []document.Block
+		Check  func(t *testing.T, got string)
+	}{
+		// the editor places a grid's blocks by their cells. So people can
+		// see them in another order than the document holds them.
+		"Grid reads its blocks in the order people see them": {
+			Blocks: []document.Block{placedTestGrid(t)},
+			Check: func(t *testing.T, got string) {
+				t.Helper()
+				assert.Regexp(t, `(?s)id="pc".*id="pa".*id="pb"`, got)
+			},
+		},
+		// a list cannot say whether a block sits beside or below another.
+		// So each block of a grid shows where it starts in both layouts.
+		"Grid gives each block its row, column and stacked place": {
+			Blocks: []document.Block{placedTestGrid(t)},
+			Check: func(t *testing.T, got string) {
+				t.Helper()
+				assert.Contains(t, got, `<metrics id="pc" row="0" column="0" stack="0">`)
+				assert.Contains(t, got, `<metrics id="pa" row="0" column="12" stack="1">`)
+				assert.Contains(t, got, `<metrics id="pb" row="1" column="0" stack="2">`)
+			},
+		},
+		"Grid shows a stacked order a person rearranged": {
+			Blocks: []document.Block{rearranged},
+			Check: func(t *testing.T, got string) {
+				t.Helper()
+				assert.Contains(t, got, `<metrics id="pc" row="0" column="0" stack="1">`)
+				assert.Contains(t, got, `<metrics id="pa" row="0" column="12" stack="2">`)
+				assert.Contains(t, got, `<metrics id="pb" row="1" column="0" stack="0">`)
+			},
+		},
+		"Block outside a grid has no row or column": {
+			Blocks: []document.Block{placedTestGrid(t).Content[0]},
+			Check: func(t *testing.T, got string) {
+				t.Helper()
+				assert.NotContains(t, got, "row=")
+				assert.NotContains(t, got, "column=")
+				assert.NotContains(t, got, "stack=")
+			},
+		},
+		// a grid keeps its former name until an editor touches it.
+		"Legacy grid reads as a block grid": {
+			Blocks: []document.Block{legacy},
+			Check: func(t *testing.T, got string) {
+				t.Helper()
+				assert.Equal(t, Render([]document.Block{grid}), got)
+			},
+		},
+	}
 
-		got := Render([]document.Block{placedTestGrid(t)})
-
-		assert.Contains(t, got, `<metrics id="pc" row="0" column="0" stack="0">`)
-		assert.Contains(t, got, `<metrics id="pa" row="0" column="12" stack="1">`)
-		assert.Contains(t, got, `<metrics id="pb" row="1" column="0" stack="2">`)
-	})
-
-	t.Run("Grid shows a stacked order a person rearranged", func(t *testing.T) {
-		t.Parallel()
-
-		grid := placedTestGrid(t)
-		grid.Content[0].Attrs[document.AttrStackPos] = 2.0
-		grid.Content[1].Attrs[document.AttrStackPos] = 0.0
-		grid.Content[2].Attrs[document.AttrStackPos] = 1.0
-
-		got := Render([]document.Block{grid})
-
-		assert.Contains(t, got, `<metrics id="pc" row="0" column="0" stack="1">`)
-		assert.Contains(t, got, `<metrics id="pa" row="0" column="12" stack="2">`)
-		assert.Contains(t, got, `<metrics id="pb" row="1" column="0" stack="0">`)
-	})
-
-	t.Run("Block outside a grid has no row or column", func(t *testing.T) {
-		t.Parallel()
-
-		got := Render([]document.Block{placedTestGrid(t).Content[0]})
-
-		assert.NotContains(t, got, "row=")
-		assert.NotContains(t, got, "column=")
-		assert.NotContains(t, got, "stack=")
-	})
-
-	// a grid keeps its former name until an editor touches it.
-	t.Run("Legacy grid reads as a block grid", func(t *testing.T) {
-		t.Parallel()
-
-		grid, ok := loadFixture(t, "all_blocks").FindByUID("g1")
-		require.True(t, ok)
-		require.Equal(t, document.BlockNodeBlockGrid, grid.Type)
-
-		legacy := grid
-		legacy.Type = document.BlockNodeMetricGrid
-
-		assert.Equal(t, Render([]document.Block{grid}), Render([]document.Block{legacy}))
-	})
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+			c.Check(t, Render(c.Blocks))
+		})
+	}
 }
 
 func Test_renderer_entry(t *testing.T) {
