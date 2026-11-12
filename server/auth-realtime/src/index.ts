@@ -41,7 +41,29 @@ if (env.valkeyDsn) {
 	await redis.connect()
 }
 
-const auth = createAuth({ env, store, dialect, redis, core, log })
+// hocuspocus comes first, so auth can drop a user's connections when their
+// role changes. Its session lookup only runs once a client connects.
+const {
+	instance: hocuspocus,
+	flushDocument,
+	resetConnections,
+	closeUserConnections,
+} = createHocuspocus({
+	auth: { getSession: (input) => auth.api.getSession(input) },
+	store,
+	core,
+	log,
+})
+
+const auth = createAuth({
+	env,
+	store,
+	dialect,
+	redis,
+	core,
+	log,
+	closeUserConnections,
+})
 const authContext = await auth.$context
 
 // before listening, so no signup can race the organization's creation.
@@ -54,16 +76,6 @@ await bootstrapSingleOrganization({
 	createOrganization: (organization) =>
 		auth.api.createOrganization({ body: organization }),
 	random: Math.random,
-})
-
-const {
-	instance: hocuspocus,
-	flushDocument,
-	resetConnections,
-} = createHocuspocus({
-	auth: { getSession: (input) => auth.api.getSession(input) },
-	core,
-	log,
 })
 
 const app = new Hono()

@@ -7,6 +7,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
 	"github.com/rs/xid"
@@ -92,6 +93,11 @@ type Traits struct {
 	// request. Empty is a tool every conversation starts with. Other
 	// surfaces offer every tool either way.
 	Group Group
+
+	// Role specifies the least role that may call the tool. Every tool
+	// names one, and a tool without one is offered to nobody. A write a
+	// viewer may make changes only the caller's own settings.
+	Role org.Role
 }
 
 // Tool is a tool the model can call. Its fields are the call's

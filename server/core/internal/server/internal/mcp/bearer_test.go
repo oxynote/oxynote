@@ -10,6 +10,7 @@ import (
 
 	"github.com/jarcoal/httpmock"
 	sdkauth "github.com/modelcontextprotocol/go-sdk/auth"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
@@ -21,6 +22,7 @@ import (
 const _stubSessionJSON = `{
 	"userId": "user1",
 	"organizationId": "org1",
+	"role": " Viewer ",
 	"clientId": "client1",
 	"scopes": ["documents:read", "documents:write"],
 	"expiresAt": 1755772800
@@ -52,6 +54,7 @@ func Test_newVerifier(t *testing.T) {
 	assert.Equal(t, Session{
 		UserID:         "user1",
 		OrganizationID: "org1",
+		Role:           org.RoleViewer,
 		ClientID:       "client1",
 		Scopes:         []string{"documents:read", "documents:write"},
 		ExpiresAt:      1755772800,
@@ -188,6 +191,7 @@ func Test_fetchSession(t *testing.T) {
 			Result: Session{
 				UserID:         "user1",
 				OrganizationID: "org1",
+				Role:           org.RoleViewer,
 				ClientID:       "client1",
 				Scopes:         []string{"documents:read", "documents:write"},
 				ExpiresAt:      1755772800,

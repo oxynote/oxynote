@@ -14,10 +14,12 @@ const emit = defineEmits<{
 const formSchema = toTypedSchema(
 	z.object({
 		email: z.string().trim().email(),
+		role: z.enum(ROLES),
 	}),
 )
 const form = useForm({
 	validationSchema: formSchema,
+	initialValues: { role: "editor" },
 })
 const { fetchAuthSession, fetchOrganization, inviteOrganizationMember } =
 	useAuthSession()
@@ -52,8 +54,7 @@ const onSubmit = form.handleSubmit(async (values) => {
 
 	const { error } = (await inviteOrganizationMember({
 		email: values.email,
-		role: "owner", // in the future we will allow selecting roles
-		resend: true,
+		role: values.role,
 	})) as AuthResponse
 	if (error) {
 		form.setErrors({ email: error.message })
@@ -134,6 +135,40 @@ const onSubmit = form.handleSubmit(async (values) => {
 						/>
 					</ShadcnUiFormControl>
 					<ShadcnUiFormMessage class="text-2xs" />
+				</ShadcnUiFormItem>
+			</ShadcnUiFormField>
+			<ShadcnUiFormField
+				v-if="!isMaxMembersReached"
+				v-slot="{ componentField }"
+				name="role"
+				class="w-full"
+			>
+				<ShadcnUiFormItem class="w-full">
+					<ShadcnUiFormLabel disable-destructive-effect class="text-2sm">
+						{{ $t("settings.action-modals.workspace-invitation.role-label") }}
+					</ShadcnUiFormLabel>
+					<ShadcnUiSelect v-bind="componentField">
+						<ShadcnUiFormControl>
+							<ShadcnUiSelectTrigger
+								size="custom"
+								:class="
+									cn('h-8 w-full text-2sm', loading && 'pointer-events-none')
+								"
+							>
+								<ShadcnUiSelectValue />
+							</ShadcnUiSelectTrigger>
+						</ShadcnUiFormControl>
+						<ShadcnUiSelectContent inside-modal>
+							<ShadcnUiSelectItem
+								v-for="role in ROLES"
+								:key="role"
+								:value="role"
+								class="text-2sm"
+							>
+								{{ $t(`general.member-roles.${role}`) }}
+							</ShadcnUiSelectItem>
+						</ShadcnUiSelectContent>
+					</ShadcnUiSelect>
 				</ShadcnUiFormItem>
 			</ShadcnUiFormField>
 			<div class="flex w-full gap-2">

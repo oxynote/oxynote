@@ -97,5 +97,8 @@ contextBridge.exposeInMainWorld("__host", {
 			"auth:cancelOrganizationInvitation",
 		),
 		removeOrganizationMember: invokeAuth("auth:removeOrganizationMember"),
+		updateOrganizationMemberRole: invokeAuth(
+			"auth:updateOrganizationMemberRole",
+		),
 	},
 })

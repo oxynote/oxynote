@@ -109,6 +109,9 @@ type Server struct {
 	fc     metricutil.Factory
 	client *http.Client
 
+	// db is the database the per-route role checks read.
+	db auth.DB
+
 	ws wsserver.Pool
 
 	// capabilities is the deployment's optional-service availability,
@@ -169,6 +172,7 @@ func NewServer(
 		opts:   opts,
 		fc:     fc,
 		client: client,
+		db:     db,
 		capabilities: Capabilities{
 			GitHub:          githubMan.Configured(),
 			Slack:           slackMan.Configured(),
@@ -232,6 +236,7 @@ func NewServer(
 	}
 	srv.handlers.ai = assistant.NewHandler(
 		log,
+		db,
 		assistantMan,
 		wsAcceptOpts,
 	)
@@ -367,6 +372,8 @@ func (s *Server) bindVersionPing(tpc wsserver.Topic) {
 //go:generate ../../scripts/codegen/mock -t internal DB db
 //nolint:interfacebloat // facade composed of the handlers' interfaces
 type DB interface {
+	auth.DB
+	assistant.DB
 	document.DB
 	comment.DB
 	files.DB

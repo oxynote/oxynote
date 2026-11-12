@@ -99,6 +99,18 @@ const onSubmit = form.handleSubmit(async (values) => {
 			return
 		}
 
+		if (error.code === "LAST_ORGANIZATION_ADMIN") {
+			showToastMessage(
+				"error",
+				t("settings.action-modals.account-deletion.errors.last-admin.title"),
+				t(
+					"settings.action-modals.account-deletion.errors.last-admin.description",
+				),
+			)
+
+			return
+		}
+
 		if (error.code === "CREDENTIAL_ACCOUNT_NOT_FOUND") {
 			showToastMessage(
 				"error",

@@ -9,6 +9,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -223,7 +224,7 @@ func Test_insertBlocks_Info(t *testing.T) {
 
 	info := insertBlocks{}.Info()
 
-	assert.Equal(t, Traits{Write: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Role: org.RoleEditor}, info.Traits)
 
 	assert.Equal(t, NameInsertBlocks, info.Name)
 	assert.Equal(t, []string{"document_id", "branch_id", "position", "content"}, info.Required)
@@ -445,7 +446,7 @@ func Test_replaceBlocks_Info(t *testing.T) {
 
 	info := replaceBlocks{}.Info()
 
-	assert.Equal(t, Traits{Write: true, Overwrites: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Overwrites: true, Role: org.RoleEditor}, info.Traits)
 
 	assert.Equal(t, NameReplaceBlocks, info.Name)
 	assert.Equal(t, []string{"document_id", "branch_id", "block_uid", "content"}, info.Required)
@@ -636,7 +637,7 @@ func Test_deleteBlock_Info(t *testing.T) {
 	info := deleteBlock{}.Info()
 
 	// a delete stays outside any "approve all" answer.
-	assert.Equal(t, Traits{Write: true, Destructive: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Destructive: true, Role: org.RoleEditor}, info.Traits)
 
 	assert.Equal(t, NameDeleteBlock, info.Name)
 	assert.Contains(t, info.Description, "cannot be restored")
@@ -751,7 +752,7 @@ func Test_moveBlock_Info(t *testing.T) {
 
 	info := moveBlock{}.Info()
 
-	assert.Equal(t, Traits{Write: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Role: org.RoleEditor}, info.Traits)
 
 	assert.Equal(t, NameMoveBlock, info.Name)
 	assert.Contains(t, info.Description, "keeps its id")

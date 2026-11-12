@@ -16,16 +16,21 @@ import { t } from "./i18n"
 import { fetchInviteLink } from "./mailpit"
 import { visit } from "./page"
 
+// MemberRole is a role a workspace member can hold.
+export type MemberRole = "admin" | "editor" | "viewer"
+
 // inviteTeamMember sends a workspace invitation from settings and hands
-// back the accept link the invitee is emailed. The owner's page is left
-// with every dialog closed, on whatever it was showing before.
+// back the accept link the invitee is emailed. The admin's page is left
+// with every dialog closed, on whatever it was showing before. The
+// invitation carries the given role, editor when none is given.
 export async function inviteTeamMember(
 	page: Page,
 	request: APIRequestContext,
 	email: string,
+	role: MemberRole = "editor",
 ): Promise<string> {
-	// the sidebar's next-steps entry is only offered while the owner is
-	// alone in the workspace, which every fresh workspace's owner is
+	// the sidebar's next-steps entry is only offered while the admin is
+	// alone in the workspace, which every fresh workspace's admin is
 	await page
 		.getByText(t("sidebar.sections.next-steps.items.invite-team-members"))
 		.click()
@@ -37,6 +42,19 @@ export async function inviteTeamMember(
 			t("settings.action-modals.workspace-invitation.email-placeholder"),
 		)
 		.fill(email)
+
+	// the dialog preselects editor.
+	if (role !== "editor") {
+		await page
+			.getByRole("combobox", {
+				name: t("settings.action-modals.workspace-invitation.role-label"),
+			})
+			.click()
+		await page
+			.getByRole("option", { name: t(`general.member-roles.${role}`) })
+			.click()
+	}
+
 	await page
 		.getByRole("button", {
 			name: t("settings.action-modals.workspace-invitation.submit-button"),
@@ -63,21 +81,28 @@ export async function inviteTeamMember(
 
 // joinAsSecondUser brings a second, distinct user into the first user's
 // workspace and opens the same document in a fresh browser context: the
-// owner sends an invitation from settings, and the invitee signs up,
+// admin sends an invitation from settings, and the invitee signs up,
 // verifies, logs in and accepts it — the whole journey a real teammate
 // takes, nothing granted behind the product's back.
 //
-// The owner's page ends up back on the document it was on, dialogs
-// closed, so a test can continue driving it immediately.
+// The admin's page ends up back on the document it was on, dialogs
+// closed, so a test can continue driving it immediately. The second user
+// joins with the given role, editor when none is given.
 export async function joinAsSecondUser(
 	browser: Browser,
 	page: Page,
 	request: APIRequestContext,
+	role: MemberRole = "editor",
 ): Promise<{ context: BrowserContext; page: Page; credentials: Credentials }> {
 	const credentials = newCredentials()
 	const documentUrl = page.url()
 
-	const inviteLink = await inviteTeamMember(page, request, credentials.email)
+	const inviteLink = await inviteTeamMember(
+		page,
+		request,
+		credentials.email,
+		role,
+	)
 
 	const context = await browser.newContext()
 	const invitee = await context.newPage()

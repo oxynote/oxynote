@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/middleware"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,7 +42,7 @@ func Test_Manager_newAgent(t *testing.T) {
 
 			m.loadToolsOnRequest = c.LoadToolsOnRequest
 
-			toolSet := m.ToolSet("org", "user")
+			toolSet := m.ToolSet("org", "user", org.RoleAdmin)
 
 			agent, err := m.newAgent(
 				context.Background(),

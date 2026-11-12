@@ -8,6 +8,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/prometheus/common/model"
@@ -70,7 +71,7 @@ type listDataSources struct{}
 func (listDataSources) Info() Info {
 	return Info{
 		Name:        NameListDataSources,
-		Traits:      Traits{Group: GroupDataSources, DataSource: true},
+		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
 		Description: "List the organisation's data sources as {id, name, type, status}. type is prometheus, loki, postgresql, supabase, mariadb or mysql. It decides the query language and which tools serve it, and loki holds logs. Start here, since the other data source tools take an id from this list.",
 		Properties:  map[string]any{},
 	}
@@ -139,7 +140,7 @@ type getDataSourceMetadata struct {
 func (getDataSourceMetadata) Info() Info {
 	return Info{
 		Name:        NameGetDataSourceMetadata,
-		Traits:      Traits{Group: GroupDataSources, DataSource: true},
+		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
 		Description: "Describe what a data source holds. Prometheus gives each metric with its type, help and unit. Loki gives the labels its logs carried over the last hour, and list_log_fields with a query finds their other fields. SQL gives {default_schema, tables: {table: [columns]}}. Read it before writing a query, so the names in it are real.",
 		Properties:  map[string]any{"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription}},
 		Required:    []string{"data_source_id"},
@@ -262,7 +263,7 @@ type listPrometheusLabels struct {
 func (listPrometheusLabels) Info() Info {
 	return Info{
 		Name:        NameListPrometheusLabels,
-		Traits:      Traits{Group: GroupDataSources, DataSource: true},
+		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
 		Description: "List the label names of a Prometheus data source or, with label, that label's values. matchers narrows either list to the series they select. Use it to find what a query should filter on.",
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
@@ -353,7 +354,7 @@ type listPrometheusSeries struct {
 func (listPrometheusSeries) Info() Info {
 	return Info{
 		Name:        NameListPrometheusSeries,
-		Traits:      Traits{Group: GroupDataSources, DataSource: true},
+		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
 		Description: "List the series that matchers select in a Prometheus data source, each as its full label set. Use it to see which label combinations a metric has before querying it.",
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
@@ -438,7 +439,7 @@ type listLogFields struct {
 func (listLogFields) Info() Info {
 	return Info{
 		Name:        NameListLogFields,
-		Traits:      Traits{Group: GroupDataSources, DataSource: true},
+		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
 		Description: "List the field names the logs of a Loki data source carry. With field, it lists that field's values instead, counted when the source counts them. Without query only labels and their values come back. A LogQL query narrows either list to the logs it matches and adds their other fields. Use it to find what a log query should filter on. A filter on a field parsed from a log needs a parser stage first: | json for JSON logs, | logfmt for key=value logs. detected_level and other structured metadata need no parser, but they are not labels, so filter them after the selector, as in | detected_level=\"error\".",
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
@@ -534,7 +535,7 @@ type queryDataSource struct {
 func (queryDataSource) Info() Info {
 	return Info{
 		Name:        NameQueryDataSource,
-		Traits:      Traits{Group: GroupDataSources, DataSource: true},
+		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
 		Description: fmt.Sprintf("Run a query over a time range. Use PromQL for Prometheus, a LogQL log query for Loki and read-only SQL for the others. In SQL, $__ macros such as $__timeFilter expand against the range. Without chart_type it returns the raw answer: at most %d series of %d points, %d rows, or the newest %d logs. Each log has its time, level, message, labels and fields. has_more says older logs matched, so narrow the query or the range to see them. With chart_type it returns what a metric block would draw: status, series count, and each series' labels, point count and endpoints. Check a query that way before you put it in a block.", _maxRawSeries, _maxRawPoints, _maxRawRows, _maxRawLogs),
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},

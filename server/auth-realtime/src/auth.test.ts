@@ -9,7 +9,7 @@ import {
 	electronCallbackOverride,
 	invitationLink,
 	organizationClaims,
-	refuseLastMemberDeletion,
+	refuseLastMemberOrAdminDeletion,
 	sendChangeEmailConfirmation,
 	toPublicAuthUrl,
 	verificationTemplate,
@@ -22,6 +22,7 @@ import {
 	stubStore,
 	testEnv,
 	type StubCore,
+	type StubStore,
 } from "./test-helpers.js"
 
 function stubRedis() {
@@ -63,6 +64,7 @@ function buildAuth(
 	const core = overrides.core ?? stubCore()
 	const log = stubLog()
 	const auth = createAuth({
+		closeUserConnections: vi.fn(),
 		env: overrides.env ?? testEnv(),
 		store: overrides.store ?? stubStore(),
 		dialect: real.dialect,
@@ -300,6 +302,21 @@ describe("organizationClaims", () => {
 	})
 })
 
+// the organization hooks over stubs that let everything pass. A test
+// passes only the dependency it is about.
+function stubHooks(
+	deps: Partial<Parameters<typeof createOrganizationHooks>[0]> = {},
+) {
+	return createOrganizationHooks({
+		env: testEnv(),
+		store: stubStore(),
+		core: stubCore(),
+		closeUserConnections: vi.fn(),
+		revokeUserSessions: vi.fn().mockResolvedValue(undefined),
+		...deps,
+	})
+}
+
 describe("createOrganizationHooks", () => {
 	describe("canCreateOrganization", () => {
 		it.for([
@@ -313,10 +330,9 @@ describe("createOrganizationHooks", () => {
 				store.totalOrganizationCount.mockResolvedValue(
 					input,
 				)
-				const hooks = createOrganizationHooks({
+				const hooks = stubHooks({
 					env: testEnv({ maxOrganizations: 100 }),
 					store,
-					core: stubCore(),
 				})
 
 				expect(
@@ -331,9 +347,7 @@ describe("createOrganizationHooks", () => {
 			expect,
 		}) => {
 			const core = stubCore()
-			const hooks = createOrganizationHooks({
-				env: testEnv(),
-				store: stubStore(),
+			const hooks = stubHooks({
 				core,
 			})
 
@@ -352,9 +366,7 @@ describe("createOrganizationHooks", () => {
 			expect,
 		}) => {
 			const core = stubCore()
-			const hooks = createOrganizationHooks({
-				env: testEnv(),
-				store: stubStore(),
+			const hooks = stubHooks({
 				core,
 			})
 
@@ -376,9 +388,7 @@ describe("createOrganizationHooks", () => {
 			const failure = new Error("core unreachable")
 			const core = stubCore()
 			core.teardownOrganization.mockRejectedValue(failure)
-			const hooks = createOrganizationHooks({
-				env: testEnv(),
-				store: stubStore(),
+			const hooks = stubHooks({
 				core,
 			})
 
@@ -390,14 +400,155 @@ describe("createOrganizationHooks", () => {
 		})
 	})
 
+	describe("beforeCreateInvitation", () => {
+		it.for(["admin", "editor", "viewer"])(
+			"accepts an invitation as %s",
+			async (role, { expect }) => {
+				const hooks = stubHooks()
+
+				await expect(
+					hooks.beforeCreateInvitation({
+						invitation: { role },
+					}),
+				).resolves.toBeUndefined()
+			},
+		)
+
+		// better-auth accepts its built-in roles next to the
+		// configured ones.
+		it.for(["owner", "member", "editor,viewer", ""])(
+			"refuses an invitation as %j",
+			(role, { expect }) => {
+				const hooks = stubHooks()
+
+				expect(() =>
+					hooks.beforeCreateInvitation({
+						invitation: { role },
+					}),
+				).toThrow(
+					expect.objectContaining({
+						statusCode: 400,
+						message: `ROLE_NOT_FOUND: ${role}`,
+					}),
+				)
+			},
+		)
+	})
+
+	describe("beforeUpdateMemberRole", () => {
+		it("accepts a configured role", async ({ expect }) => {
+			const hooks = stubHooks()
+
+			await expect(
+				hooks.beforeUpdateMemberRole({
+					newRole: "viewer",
+				}),
+			).resolves.toBeUndefined()
+		})
+
+		it.for(["owner", "member"])(
+			"refuses the built-in role %s",
+			(role, { expect }) => {
+				const hooks = stubHooks()
+
+				expect(() =>
+					hooks.beforeUpdateMemberRole({
+						newRole: role,
+					}),
+				).toThrow(
+					expect.objectContaining({
+						statusCode: 400,
+						message: `ROLE_NOT_FOUND: ${role}`,
+					}),
+				)
+			},
+		)
+	})
+
+	describe("afterUpdateMemberRole", () => {
+		it("closes the affected user's document connections", async ({
+			expect,
+		}) => {
+			const closeUserConnections = vi.fn()
+			const revokeUserSessions = vi
+				.fn()
+				.mockResolvedValue(undefined)
+			const hooks = stubHooks({
+				closeUserConnections,
+				revokeUserSessions,
+			})
+
+			await hooks.afterUpdateMemberRole({
+				user: { id: "user-2" },
+			})
+
+			expect(closeUserConnections.mock.calls).toEqual([
+				["user-2"],
+			])
+			expect.soft(revokeUserSessions).not.toHaveBeenCalled()
+		})
+	})
+
+	describe("afterRemoveMember", () => {
+		// the session goes first, so the reconnect the closed socket
+		// starts finds no session.
+		it("revokes the removed user's sessions before closing their connections", async ({
+			expect,
+		}) => {
+			const order: string[] = []
+			const closeUserConnections = vi.fn(() => {
+				order.push("close")
+			})
+			const revokeUserSessions = vi.fn(() => {
+				order.push("revoke")
+
+				return Promise.resolve()
+			})
+			const hooks = stubHooks({
+				closeUserConnections,
+				revokeUserSessions,
+			})
+
+			await hooks.afterRemoveMember({
+				user: { id: "user-2" },
+			})
+
+			expect(order).toEqual(["revoke", "close"])
+			expect.soft(revokeUserSessions.mock.calls).toEqual([
+				["user-2"],
+			])
+			expect.soft(closeUserConnections.mock.calls).toEqual([
+				["user-2"],
+			])
+		})
+
+		it("propagates a failed revocation and keeps the connections", async ({
+			expect,
+		}) => {
+			const failure = new Error("connection terminated")
+			const closeUserConnections = vi.fn()
+			const hooks = stubHooks({
+				closeUserConnections,
+				revokeUserSessions: vi
+					.fn()
+					.mockRejectedValue(failure),
+			})
+
+			await expect(
+				hooks.afterRemoveMember({
+					user: { id: "user-2" },
+				}),
+			).rejects.toBe(failure)
+			expect.soft(closeUserConnections).not.toHaveBeenCalled()
+		})
+	})
+
 	describe("sendInvitationEmail", () => {
 		it("emails the invitee a link to the organization's invite page", async ({
 			expect,
 		}) => {
 			const core = stubCore()
-			const hooks = createOrganizationHooks({
-				env: testEnv(),
-				store: stubStore(),
+			const hooks = stubHooks({
 				core,
 			})
 
@@ -716,8 +867,22 @@ describe("checkSignUpAllowed", () => {
 	})
 })
 
-describe("refuseLastMemberDeletion", () => {
+describe("refuseLastMemberOrAdminDeletion", () => {
 	const signedIn = () => Promise.resolve({ id: "u1", email: "a@b.c" })
+
+	// the member count answers with members, and with admins once it is
+	// asked for admins only.
+	const stubCounts = (
+		store: StubStore,
+		members: number,
+		admins: number,
+	) =>
+		store.organizationMemberCount.mockImplementation(
+			(_organizationId, role) =>
+				Promise.resolve(
+					role === undefined ? members : admins,
+				),
+		)
 
 	it.for([
 		{ name: "the deletion request", input: "/delete-user" },
@@ -726,13 +891,13 @@ describe("refuseLastMemberDeletion", () => {
 			input: "/delete-user/callback",
 		},
 	])(
-		"refuses $name from the only member",
+		"refuses $name from the only member of a single organization",
 		async ({ input }, { expect }) => {
 			const store = stubStore()
 			store.organizationMemberCount.mockResolvedValue(1)
 
 			await expect(
-				refuseLastMemberDeletion(
+				refuseLastMemberOrAdminDeletion(
 					testEnv({ maxOrganizations: 1 }),
 					store,
 					input,
@@ -748,21 +913,97 @@ describe("refuseLastMemberDeletion", () => {
 			expect.soft(
 				store.organizationMemberCount,
 			).toHaveBeenCalledWith("org-1")
+			expect.soft(store.memberRole).not.toHaveBeenCalled()
 		},
 	)
 
-	it("lets a member go while others remain", async ({ expect }) => {
+	it.for([
+		{ name: "the deletion request", input: "/delete-user" },
+		{
+			name: "the emailed callback",
+			input: "/delete-user/callback",
+		},
+	])(
+		"refuses $name from the last admin while others remain",
+		async ({ input }, { expect }) => {
+			const store = stubStore()
+			store.memberRole.mockResolvedValue("admin")
+			stubCounts(store, 2, 1)
+
+			await expect(
+				refuseLastMemberOrAdminDeletion(
+					testEnv({ maxOrganizations: 100 }),
+					store,
+					input,
+					signedIn,
+				),
+			).rejects.toMatchObject({
+				statusCode: 403,
+				body: { code: "LAST_ORGANIZATION_ADMIN" },
+			})
+			expect.soft(store.memberRole).toHaveBeenCalledWith(
+				"u1",
+				"org-1",
+			)
+			expect.soft(
+				store.organizationMemberCount.mock.calls,
+			).toEqual([["org-1"], ["org-1", "admin"]])
+		},
+	)
+
+	it.for([
+		{
+			name: "the only member when more organizations are allowed",
+			input: {
+				maxOrganizations: 100,
+				members: 1,
+				role: "admin",
+			},
+			expected: { roleCalls: 0, counts: [["org-1"]] },
+		},
+		{
+			name: "an admin while another admin remains",
+			input: {
+				maxOrganizations: 1,
+				members: 2,
+				role: "admin",
+			},
+			expected: {
+				roleCalls: 1,
+				counts: [["org-1"], ["org-1", "admin"]],
+			},
+		},
+		{
+			name: "a non-admin member while others remain",
+			input: {
+				maxOrganizations: 1,
+				members: 2,
+				role: "editor",
+			},
+			expected: { roleCalls: 1, counts: [["org-1"]] },
+		},
+	])("lets $name go", async ({ input, expected }, { expect }) => {
 		const store = stubStore()
-		store.organizationMemberCount.mockResolvedValue(2)
+		store.memberRole.mockResolvedValue(input.role)
+		stubCounts(store, input.members, 2)
 
 		await expect(
-			refuseLastMemberDeletion(
-				testEnv({ maxOrganizations: 1 }),
+			refuseLastMemberOrAdminDeletion(
+				testEnv({
+					maxOrganizations:
+						input.maxOrganizations,
+				}),
 				store,
 				"/delete-user",
 				signedIn,
 			),
 		).resolves.toBeUndefined()
+		expect.soft(store.memberRole).toHaveBeenCalledTimes(
+			expected.roleCalls,
+		)
+		expect.soft(store.organizationMemberCount.mock.calls).toEqual(
+			expected.counts,
+		)
 	})
 
 	it("lets a user without an organization go", async ({ expect }) => {
@@ -770,7 +1011,7 @@ describe("refuseLastMemberDeletion", () => {
 		store.userOrganizationId.mockResolvedValue(null)
 
 		await expect(
-			refuseLastMemberDeletion(
+			refuseLastMemberOrAdminDeletion(
 				testEnv({ maxOrganizations: 1 }),
 				store,
 				"/delete-user",
@@ -788,7 +1029,7 @@ describe("refuseLastMemberDeletion", () => {
 		const store = stubStore()
 
 		await expect(
-			refuseLastMemberDeletion(
+			refuseLastMemberOrAdminDeletion(
 				testEnv({ maxOrganizations: 1 }),
 				store,
 				"/delete-user",
@@ -798,27 +1039,15 @@ describe("refuseLastMemberDeletion", () => {
 		expect.soft(store.userOrganizationId).not.toHaveBeenCalled()
 	})
 
-	it.for([
-		{
-			name: "with more than one organization allowed",
-			input: { maxOrganizations: 100, path: "/delete-user" },
-		},
-		{
-			name: "on every other endpoint",
-			input: { maxOrganizations: 1, path: "/change-email" },
-		},
-	])("checks nothing $name", async ({ input }, { expect }) => {
+	it("checks nothing on every other endpoint", async ({ expect }) => {
 		const store = stubStore()
 		const currentUser = vi.fn(signedIn)
 
 		await expect(
-			refuseLastMemberDeletion(
-				testEnv({
-					maxOrganizations:
-						input.maxOrganizations,
-				}),
+			refuseLastMemberOrAdminDeletion(
+				testEnv({ maxOrganizations: 1 }),
 				store,
-				input.path,
+				"/change-email",
 				currentUser,
 			),
 		).resolves.toBeUndefined()
@@ -826,20 +1055,50 @@ describe("refuseLastMemberDeletion", () => {
 		expect.soft(store.userOrganizationId).not.toHaveBeenCalled()
 	})
 
-	it("propagates a failed lookup", async ({ expect }) => {
-		const failure = new Error("connection terminated")
-		const store = stubStore()
-		store.organizationMemberCount.mockRejectedValue(failure)
+	// each row fails one lookup with the given error.
+	const failing: {
+		name: string
+		input: (store: StubStore, failure: Error) => unknown
+	}[] = [
+		{
+			name: "member count",
+			input: (store, failure) =>
+				store.organizationMemberCount.mockRejectedValue(
+					failure,
+				),
+		},
+		{
+			name: "role",
+			input: (store, failure) =>
+				store.memberRole.mockRejectedValue(failure),
+		},
+		{
+			name: "admin count",
+			input: (store, failure) =>
+				store.organizationMemberCount
+					.mockResolvedValueOnce(2)
+					.mockRejectedValueOnce(failure),
+		},
+	]
 
-		await expect(
-			refuseLastMemberDeletion(
-				testEnv({ maxOrganizations: 1 }),
-				store,
-				"/delete-user",
-				signedIn,
-			),
-		).rejects.toBe(failure)
-	})
+	it.for(failing)(
+		"propagates a failed $name lookup",
+		async ({ input }, { expect }) => {
+			const failure = new Error("connection terminated")
+			const store = stubStore()
+			store.memberRole.mockResolvedValue("admin")
+			input(store, failure)
+
+			await expect(
+				refuseLastMemberOrAdminDeletion(
+					testEnv({ maxOrganizations: 1 }),
+					store,
+					"/delete-user",
+					signedIn,
+				),
+			).rejects.toBe(failure)
+		},
+	)
 })
 
 describe("sendChangeEmailConfirmation", () => {
@@ -1073,6 +1332,7 @@ describe("createAuth", () => {
 	}) => {
 		const real = createDatabase("postgresql://u:p@localhost/d")
 		const auth = createAuth({
+			closeUserConnections: vi.fn(),
 			env: testEnv(),
 			store: stubStore(),
 			dialect: real.dialect,
@@ -1161,6 +1421,78 @@ describe("createAuth", () => {
 			).toBe(expected)
 		},
 	)
+
+	// better-auth keeps at least one member holding the creator role, so
+	// the creator role is what protects the last admin.
+	it("makes the creator an admin and knows only the three roles", ({
+		expect,
+	}) => {
+		const { auth } = buildAuth()
+
+		const organization = auth.options.plugins.find(
+			(p) => p.id === "organization",
+		) as unknown as {
+			options: {
+				creatorRole: string
+				cancelPendingInvitationsOnReInvite: boolean
+				roles: Record<string, unknown>
+				organizationHooks: Record<string, unknown>
+			}
+		}
+
+		expect(organization.options.creatorRole).toBe("admin")
+		// a resend keeps the old role, so a re-invite replaces the
+		// pending invitation.
+		expect(
+			organization.options.cancelPendingInvitationsOnReInvite,
+		).toBe(true)
+		expect(Object.keys(organization.options.roles)).toEqual([
+			"admin",
+			"editor",
+			"viewer",
+		])
+		expect(
+			Object.keys(
+				organization.options.organizationHooks,
+			).sort(),
+		).toEqual([
+			"afterCreateOrganization",
+			"afterRemoveMember",
+			"afterUpdateMemberRole",
+			"beforeCreateInvitation",
+			"beforeDeleteOrganization",
+			"beforeUpdateMemberRole",
+		])
+	})
+
+	it("revokes a removed member's sessions through better-auth's own adapter", async ({
+		expect,
+	}) => {
+		const { auth } = buildAuth()
+		const deleteUserSessions = vi.fn().mockResolvedValue(undefined)
+		Object.defineProperty(auth, "$context", {
+			value: Promise.resolve({
+				internalAdapter: { deleteUserSessions },
+			}),
+		})
+		const organization = auth.options.plugins.find(
+			(p) => p.id === "organization",
+		) as unknown as {
+			options: {
+				organizationHooks: {
+					afterRemoveMember(data: {
+						user: { id: string }
+					}): Promise<void>
+				}
+			}
+		}
+
+		await organization.options.organizationHooks.afterRemoveMember({
+			user: { id: "user-2" },
+		})
+
+		expect(deleteUserSessions.mock.calls).toEqual([["user-2"]])
+	})
 
 	describe("email callbacks", () => {
 		it("sends a password reset on the public link", async ({
