@@ -1,6 +1,6 @@
 services:
   caddy:
-    image: caddy:2.11.7-alpine
+    image: caddy:2.11.9-alpine
     container_name: caddy
     volumes:
       - caddy_data:/data
@@ -160,7 +160,7 @@ services:
         max-file: "3"
   mailpit:
     container_name: mailpit
-    image: axllent/mailpit:v1.33.0
+    image: axllent/mailpit:v1.33.1
     environment:
       - MP_QUIET=true
     restart: unless-stopped
@@ -190,7 +190,7 @@ services:
         max-file: "3"
   changedetection:
     container_name: changedetection
-    image: dgtlmoon/changedetection.io:0.60.10
+    image: dgtlmoon/changedetection.io:0.70.2
     volumes:
       - changedetection_data:/datastore
     environment:
