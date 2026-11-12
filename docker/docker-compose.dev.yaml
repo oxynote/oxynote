@@ -33,6 +33,8 @@ services:
     build:
       context: ../web
       dockerfile: Dockerfile.dev
+      additional_contexts:
+        common: ../packages/common
     env_file:
       - ./env/web.local.env
     restart: unless-stopped
@@ -48,6 +50,8 @@ services:
     build:
       context: ../server/auth-realtime
       dockerfile: Dockerfile.dev
+      additional_contexts:
+        common: ../packages/common
     env_file:
       - ./env/auth-realtime.local.env
     depends_on:

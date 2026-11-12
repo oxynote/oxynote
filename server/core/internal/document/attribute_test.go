@@ -70,6 +70,37 @@ func Test_Attribute_Int(t *testing.T) {
 	}
 }
 
+func Test_Attribute_WholeAtLeast(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Value  any
+		Floor  int
+		Result int
+		Whole  bool
+	}{
+		"Missing":            {Value: nil},
+		"String":             {Value: "3"},
+		"Float":              {Value: 3.0, Result: 3, Whole: true},
+		"Int":                {Value: 3, Result: 3, Whole: true},
+		"Int64":              {Value: int64(3), Result: 3, Whole: true},
+		"Fraction":           {Value: 2.5},
+		"Below the floor":    {Value: 0.0, Floor: 1},
+		"At the floor":       {Value: 1.0, Floor: 1, Result: 1, Whole: true},
+		"Huge value is kept": {Value: 1e300, Result: 2147483647, Whole: true},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			got, whole := Attributes{"n": c.Value}.Get("n").WholeAtLeast(c.Floor)
+			assert.Equal(t, c.Result, got)
+			assert.Equal(t, c.Whole, whole)
+		})
+	}
+}
+
 func Test_Attribute_String(t *testing.T) {
 	cc := map[string]struct {
 		Value  any

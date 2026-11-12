@@ -42,6 +42,8 @@ services:
     build:
       context: ../web
       dockerfile: Dockerfile.dev
+      additional_contexts:
+        common: ../packages/common
     environment:
       - NUXT_PUBLIC_APP_BASE_URL=http://localhost:18080
       - NUXT_PUBLIC_AUTH_REALTIME_API_BASE_HTTP_URL=http://localhost:18080/auth-realtime
@@ -65,6 +67,8 @@ services:
     build:
       context: ../server/auth-realtime
       dockerfile: Dockerfile.dev
+      additional_contexts:
+        common: ../packages/common
     environment:
       - OXYNOTE_AUTH_REALTIME_BACKEND_URL=http://core:8080
       - OXYNOTE_AUTH_REALTIME_DB_DSN=postgresql://devuser:devpass@postgres/devdb?sslmode=disable

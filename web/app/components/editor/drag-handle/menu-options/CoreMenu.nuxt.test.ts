@@ -11,7 +11,7 @@ import {
 	commandNames,
 	makeEditor,
 } from "../../test-helpers/node-view"
-import { METRIC_BLOCK_NAME } from "../../blocks/node-names"
+import { BLOCK_GRID_NAME, METRIC_BLOCK_NAME } from "../../blocks/node-names"
 import { SUPPRESS_SCROLL_TO_SELECTION_META } from "../../scroll-control"
 import {
 	clearTeleportedOverlays,
@@ -32,6 +32,9 @@ const DUPLICATE = "editor.drag-handle.options.default.duplicate-block"
 const ADD_COMMENT = "editor.drag-handle.options.add-node-comment"
 const OPEN_COMMENT = "editor.drag-handle.options.open-node-comment"
 const DELETE = "editor.drag-handle.options.delete-block"
+const WIDTH = "editor.drag-handle.options.grid-item.width"
+const WIDE_GRID_PX = 1024
+const STACKED_GRID_PX = 1023
 
 // the editor the menu reads the document through, plus the transaction
 // and view calls a deletion goes through
@@ -45,6 +48,7 @@ function makeMenuEditor(
 		} | null
 		ancestorTypeNames?: string[]
 		hasNodeComment?: boolean
+		gridWidth?: number
 	} = {},
 ) {
 	const node =
@@ -77,9 +81,11 @@ function makeMenuEditor(
 	const { editor, commands } = makeEditor({
 		state: {
 			doc: {
+				content: { size: 100 },
 				nodeAt: () => node,
 				resolve: () => ({
 					depth: ancestors.length,
+					parent: { type: { name: ancestors.at(-1) ?? "doc" } },
 					node: (depth: number) => ({
 						type: { name: ancestors[depth - 1] ?? "doc" },
 					}),
@@ -89,12 +95,27 @@ function makeMenuEditor(
 			tr: transaction,
 			schema: { nodes: {} },
 		},
-		view: { dispatch: dispatch },
+		view: {
+			dispatch: dispatch,
+			nodeDOM: () => blockIn(options.gridWidth ?? WIDE_GRID_PX),
+		},
 		commands: { focus: focus },
 		can: () => ({ hasNodeComment: hasNodeComment }),
 	})
 
 	return { editor, commands, dispatch, focus, deletedRanges, hasNodeComment }
+}
+
+// a block's element in a grid element gridWidth pixels wide. happy-dom
+// lays nothing out, so the test sets the grid's width by hand.
+function blockIn(gridWidth: number): HTMLElement {
+	const grid = document.createElement("div")
+	const block = document.createElement("div")
+
+	grid.append(block)
+	grid.getBoundingClientRect = () => new DOMRect(0, 0, gridWidth, 320)
+
+	return block
 }
 
 function mountCoreMenu(
@@ -244,6 +265,70 @@ describe("<CoreMenu>", { concurrent: false }, () => {
 		expect(menuLabels()).toContain(
 			t("editor.drag-handle.options.default.add-above-block"),
 		)
+	})
+
+	it("draws a single line after the size actions of a metric block", async ({
+		expect,
+	}) => {
+		const { editor } = makeMenuEditor()
+
+		await mountCoreMenu(editor, block(METRIC_BLOCK_NAME))
+
+		const separators = [...document.body.querySelectorAll('[role="separator"]')]
+
+		expect(
+			separators.filter(
+				(line) => line.nextElementSibling?.getAttribute("role") === "separator",
+			),
+		).toEqual([])
+	})
+
+	it("offers the resize action for a block in a grid that shows its columns", async ({
+		expect,
+	}) => {
+		const { editor } = makeMenuEditor({
+			nodeAtPos: { typeName: METRIC_BLOCK_NAME },
+			ancestorTypeNames: [BLOCK_GRID_NAME],
+		})
+
+		await mountCoreMenu(editor, block(METRIC_BLOCK_NAME))
+
+		expect(menuLabels()).toContain(t(WIDTH))
+	})
+
+	it("offers no size and leaves no empty row for a block in a grid that stacks its blocks", async ({
+		expect,
+	}) => {
+		const { editor } = makeMenuEditor({
+			nodeAtPos: { typeName: METRIC_BLOCK_NAME },
+			ancestorTypeNames: [BLOCK_GRID_NAME],
+			gridWidth: STACKED_GRID_PX,
+		})
+
+		await mountCoreMenu(editor, block(METRIC_BLOCK_NAME))
+
+		const separators = [...document.body.querySelectorAll('[role="separator"]')]
+
+		expect.soft(menuLabels()).not.toContain(t(WIDTH))
+		expect
+			.soft(menuLabels())
+			.not.toContain(t("editor.drag-handle.options.grid-item.height"))
+		expect
+			.soft(menuLabels())
+			.toContain(t("editor.drag-handle.options.default.add-above-block"))
+		expect
+			.soft(separators.filter((line) => !line.previousElementSibling))
+			.toEqual([])
+	})
+
+	it("offers no size for a block that is no longer there", async ({
+		expect,
+	}) => {
+		const { editor } = makeMenuEditor({ nodeAtPos: null })
+
+		await mountCoreMenu(editor, block(METRIC_BLOCK_NAME))
+
+		expect(menuLabels()).not.toContain(t(WIDTH))
 	})
 
 	it("offers no link for a block without an id", async ({ expect }) => {

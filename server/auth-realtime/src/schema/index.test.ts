@@ -97,7 +97,11 @@ function logBlock(uid: string): PMNode {
 			refreshInterval: "1m",
 			timestampFormat: "relative",
 			order: "desc",
-			width: "wide",
+			width: 24,
+			height: 2,
+			widePosX: 0,
+			widePosY: 1,
+			stackPos: 0,
 		},
 	}
 }
@@ -352,6 +356,26 @@ describe("editor schema", () => {
 			const input = logBlock("l1")
 
 			expect(roundTrip(input)).toEqual(input)
+		})
+
+		it("keeps a metric block's size and places in its grid", ({
+			expect,
+		}) => {
+			const input: PMNode = {
+				type: "metricBlock",
+				attrs: {
+					uid: "m1",
+					width: 8,
+					height: 1,
+					widePosX: 16,
+					widePosY: 0,
+					stackPos: 2,
+				},
+			}
+
+			expect(roundTrip(input).attrs).toMatchObject(
+				input.attrs ?? {},
+			)
 		})
 
 		it("keeps metric and log blocks side by side in a block grid", ({

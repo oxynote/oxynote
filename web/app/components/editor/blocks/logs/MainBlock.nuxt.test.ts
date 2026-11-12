@@ -3,7 +3,6 @@ import { enableAutoUnmount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import MainBlock from "./MainBlock.vue"
 import { LogTimestampFormat, type LogConfig } from "./utils"
-import { GridItemWidth } from "../grid/utils"
 import {
 	makeEditor,
 	makeNode,
@@ -82,23 +81,6 @@ describe("<LogMainBlock>", { concurrent: false }, () => {
 
 		expect(root.attributes("data-node-comment-id")).toBe("comment-1")
 		expect(root.attributes("data-diff-status")).toBe("added")
-	})
-
-	it.for([GridItemWidth.Compact, GridItemWidth.Standard, GridItemWidth.Wide])(
-		"gives a %s block its own grid span",
-		async (width, { expect }) => {
-			const wrapper = await mountBlock({ attrs: { width: width } })
-
-			expect(wrapperClasses(wrapper)).toContain(`grid-item-${width}`)
-		},
-	)
-
-	it("spans a block with no stored width like a standard one", async ({
-		expect,
-	}) => {
-		const wrapper = await mountBlock()
-
-		expect(wrapperClasses(wrapper)).toContain("grid-item-standard")
 	})
 
 	it("publishes the block's config for the config modal to read", async ({

@@ -2,7 +2,6 @@
 import { nodeViewProps, NodeViewWrapper } from "@tiptap/vue-3"
 import type { JSONContent } from "@tiptap/core"
 import { cn } from "#layers/ui/app/lib/utils"
-import { GridItemWidth } from "../grid/utils"
 import { buildLogConfigFromNodeAttrs, type LogConfig } from "./utils"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 import DiffChangeMarker from "~/components/editor/diff/DiffChangeMarker.vue"
@@ -15,11 +14,6 @@ const { isEditable } = useEditorMeta()
 const editorStore = useEditorStore()
 const { editingUsersRef } = useCollaborationAwareness(() => props.editor)
 
-const size = computed(
-	() =>
-		(props.node.attrs.width as GridItemWidth | null) ?? GridItemWidth.Standard,
-)
-const sizeClass = computed(() => `grid-item-${size.value}`)
 const isEditingDisabled = computed(() => {
 	return !isEditable.value || editorStore.reviewableDiffActive
 })
@@ -132,7 +126,6 @@ function openModal() {
 		:class="
 			cn(
 				'not-prose relative h-80 rounded-md border border-border caret-transparent select-none',
-				sizeClass,
 				lastOtherEditingUser && 'rounded-tl-none',
 			)
 		"

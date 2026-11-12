@@ -5,7 +5,7 @@ import Paragraph from "@tiptap/extension-paragraph"
 import Text from "@tiptap/extension-text"
 import type { Node } from "@tiptap/pm/model"
 import { describe, it } from "vitest"
-import { deleteNode } from "./node"
+import { deleteNode, stripNode } from "./node"
 import { childCountShape } from "./test-helpers"
 import { MetricBlockStub, BlockGridStub, paragraph } from "../test-helpers"
 
@@ -109,5 +109,48 @@ describe("deleteNode", () => {
 
 		expect(result).toBe(true)
 		expect(childCountShape(editor.state.doc)).toEqual(["paragraph:1"])
+	})
+})
+
+describe("stripNode", () => {
+	it("drops the uid and the comment of the node and of every node inside it", ({
+		expect,
+	}) => {
+		const stripped = stripNode({
+			type: "callout",
+			attrs: { uid: "c-1", nodeCommentId: "t-1", tone: "info" },
+			content: [
+				{
+					type: "paragraph",
+					attrs: { uid: "p-1" },
+					content: [
+						{
+							type: "text",
+							text: "hi",
+							marks: [{ type: "comment" }, { type: "bold" }],
+						},
+					],
+				},
+			],
+		})
+
+		expect(stripped).toEqual({
+			type: "callout",
+			attrs: { uid: null, nodeCommentId: null, tone: "info" },
+			content: [
+				{
+					type: "paragraph",
+					attrs: { uid: null },
+					content: [{ type: "text", text: "hi", marks: [{ type: "bold" }] }],
+				},
+			],
+		})
+	})
+
+	it("leaves a node without a uid or a comment as it is", ({ expect }) => {
+		expect(stripNode({ type: "paragraph", attrs: { level: 1 } })).toEqual({
+			type: "paragraph",
+			attrs: { level: 1 },
+		})
 	})
 })

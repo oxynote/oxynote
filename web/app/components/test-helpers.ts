@@ -391,9 +391,18 @@ export function mockAuthOrganization(organization: Record<string, unknown>) {
 // resolves a message through the same i18n instance the components
 // render with, so an assertion never carries a second copy of the
 // english text. Named placeholders take their values here, exactly as
-// the component passes them: t("sidebar.search.no-results", { query })
-export function t(key: string, params: Record<string, unknown> = {}): string {
-	const message = runInApp(() => useNuxtApp().$i18n.t(key, params))
+// the component passes them: t("sidebar.search.no-results", { query }).
+// A plural message also takes the count that picks its form.
+export function t(
+	key: string,
+	params: Record<string, unknown> = {},
+	plural?: number,
+): string {
+	const message = runInApp(() =>
+		plural === undefined
+			? useNuxtApp().$i18n.t(key, params)
+			: useNuxtApp().$i18n.t(key, params, plural),
+	)
 
 	// vue-i18n answers a miss with the key itself, which would leave an
 	// assertion comparing two identical key strings and passing

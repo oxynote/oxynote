@@ -50,7 +50,7 @@ describe("<DataSourceStatusIcon>", () => {
 	}) => {
 		const wrapper = await mountSuspended(DataSourceStatusIcon, {
 			props: {
-				dataSource: makeDataSource("clickhouse" as DataSourceType),
+				dataSource: makeDataSource("clickhouse" as unknown as DataSourceType),
 			},
 		})
 

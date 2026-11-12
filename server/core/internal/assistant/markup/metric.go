@@ -48,6 +48,7 @@ var (
 		document.AttrRefreshInterval:   document.MetricRefreshIntervals(),
 		document.AttrUnitType:          _metricUnitTypes,
 		document.AttrWidth:             _gridItemWidths,
+		document.AttrHeight:            _gridItemHeights,
 		document.AttrSimulationPreset:  _metricSimulationPresets,
 	}
 )

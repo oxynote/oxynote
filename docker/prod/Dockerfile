@@ -35,9 +35,13 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 # and neither has its sources yet.
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 COPY web/layers/ui/package.json ./layers/ui/
+# web links @oxynote/common from ../packages/common, which is
+# /packages/common here.
+COPY packages/common/package.json /packages/common/
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY web/ .
+COPY packages/common/src /packages/common/src
 
 # the second install only runs the previously skipped scripts. The find
 # guard fails the build if a native addon ever lands in the output — the
@@ -57,6 +61,10 @@ WORKDIR /server
 
 COPY server/auth-realtime/package.json server/auth-realtime/pnpm-lock.yaml server/auth-realtime/pnpm-workspace.yaml server/auth-realtime/tsconfig.json server/auth-realtime/tsconfig.build.json ./
 COPY server/auth-realtime/src ./src
+# auth-realtime links @oxynote/common from ../../packages/common, which is
+# /packages/common here.
+COPY packages/common/package.json /packages/common/
+COPY packages/common/src /packages/common/src
 
 # check-types gates (esbuild does not look at types); the import proves
 # the bundle loads — with no environment set it must reject with its own

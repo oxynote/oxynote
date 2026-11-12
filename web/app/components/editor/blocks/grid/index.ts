@@ -8,13 +8,15 @@ import {
 } from "@tiptap/core"
 import { isChangeOrigin } from "@tiptap/extension-collaboration"
 import Paragraph from "@tiptap/extension-paragraph"
-import type { Node as PMNode } from "@tiptap/pm/model"
+import { Fragment, type Node as PMNode, Slice } from "@tiptap/pm/model"
 import {
 	type EditorState,
 	Plugin,
 	PluginKey,
 	type Transaction,
 } from "@tiptap/pm/state"
+import { Mapping, StepMap } from "@tiptap/pm/transform"
+import { Decoration, DecorationSet } from "@tiptap/pm/view"
 import { VueNodeViewRenderer } from "@tiptap/vue-3"
 import GridView from "./GridView.vue"
 import {
@@ -23,9 +25,17 @@ import {
 	LEGACY_METRIC_GRID_NAME,
 	ROOT_ONLY_BLOCK_GROUP,
 } from "../node-names"
-import { BLOCK_GRID_NAMES } from "./utils"
+import { BLOCK_GRID_NAMES, GRID_ITEM_NAMES } from "./utils"
+import { gridLayoutOf, gridStackOf } from "./layout"
+import {
+	GRID_LAYOUT_ATTRS,
+	GRID_PLACE_ATTRS,
+	stackPlaces,
+	withoutPlaces,
+} from "@oxynote/common/grid"
 
 const legacyGridMigrationKey = new PluginKey<boolean>("legacyGridMigration")
+const gridLayoutKey = new PluginKey<DecorationSet>("gridLayout")
 
 export const BlockGrid = Node.create({
 	name: BLOCK_GRID_NAME,
@@ -57,7 +67,7 @@ export const BlockGrid = Node.create({
 		return VueNodeViewRenderer(GridView)
 	},
 	addProseMirrorPlugins() {
-		return [legacyGridMigration(this.editor)]
+		return [legacyGridMigration(this.editor), gridLayout()]
 	},
 })
 
@@ -176,20 +186,14 @@ function legacyGridMigration(editor: Editor) {
 		// merge or an undo, can bring one in.
 		state: {
 			init: (_, state) => holdsLegacyGrid(state.doc),
-			apply(tr, holds, oldState, newState) {
+			apply(tr, holds, _oldState, newState) {
 				if (!tr.docChanged) {
 					return holds
 				}
 
-				if (holds) {
-					return holdsLegacyGrid(newState.doc)
-				}
-
-				if (isChangeOrigin(tr)) {
-					return holdsNewLegacyGrid(oldState.doc, newState.doc)
-				}
-
-				return false
+				return holds || isChangeOrigin(tr)
+					? holdsLegacyGrid(newState.doc)
+					: false
 			},
 		},
 		appendTransaction(transactions, oldState, newState) {
@@ -249,21 +253,244 @@ function holdsLegacyGrid(doc: PMNode): boolean {
 	return false
 }
 
-// holdsNewLegacyGrid reports whether a remote change brought a legacy grid
-// to the root. y-prosemirror rebuilds the whole document on a remote change
-// but reuses the nodes that stay the same, so only new nodes are checked.
-function holdsNewLegacyGrid(oldDoc: PMNode, newDoc: PMNode): boolean {
-	const kept = new Set<PMNode>()
+// gridLayout hands every grid block its cells. A block gets them as CSS
+// variables on its node. The grid's style uses these variables to place
+// the block, so the blocks themselves hold no layout code.
+function gridLayout() {
+	return new Plugin<DecorationSet>({
+		key: gridLayoutKey,
+		state: {
+			init: (_, state) => {
+				const decorations: Decoration[] = []
 
-	oldDoc.forEach((child) => kept.add(child))
+				state.doc.forEach((node, pos) => {
+					decorations.push(...gridDecorations(node, pos))
+				})
 
-	for (let i = 0; i < newDoc.childCount; i++) {
-		const child = newDoc.child(i)
+				return DecorationSet.create(state.doc, decorations)
+			},
+			apply: (tr, set, oldState) =>
+				tr.docChanged ? relaidOut(set, oldState.doc, tr.doc) : set,
+		},
+		props: {
+			decorations: (state) => gridLayoutKey.getState(state),
+			transformPasted: (slice, view) => {
+				const intoGrid = BLOCK_GRID_NAMES.has(
+					view.state.selection.$from.parent.type.name,
+				)
+				const only =
+					slice.content.childCount === 1 ? slice.content.firstChild : null
 
-		if (!kept.has(child) && child.type.name === LEGACY_METRIC_GRID_NAME) {
-			return true
+				// a whole grid pasted into a grid adds its blocks to that grid.
+				// Otherwise it would split the grid in three.
+				if (intoGrid && only && BLOCK_GRID_NAMES.has(only.type.name)) {
+					return new Slice(withoutGridPlaces(only.content, false), 0, 0)
+				}
+
+				const content = withoutGridPlaces(
+					withoutOpenGridPlaces(slice.content, slice.openStart, slice.openEnd),
+					intoGrid,
+				)
+
+				return content === slice.content
+					? slice
+					: new Slice(content, slice.openStart, slice.openEnd)
+			},
+		},
+	})
+}
+
+// relaidOut maps the decorations through a change and lays out again only
+// the root nodes the change touches. y-tiptap hands a remote change over as
+// a document of all new nodes. So the root nodes are compared from both
+// ends by what the layout reads (see sameDecorations). A deep comparison
+// would read all the text of the document on each remote keystroke. A
+// change ends at the edge of a root node, so mapping drops the decorations
+// of every grid in it.
+function relaidOut(
+	set: DecorationSet,
+	oldDoc: PMNode,
+	newDoc: PMNode,
+): DecorationSet {
+	const before = oldDoc.content
+	const after = newDoc.content
+	let start = 0
+	let from = 0
+
+	while (
+		start < before.childCount &&
+		start < after.childCount &&
+		sameDecorations(before.child(start), after.child(start))
+	) {
+		from += before.child(start).nodeSize
+		start++
+	}
+
+	let oldEnd = before.childCount
+	let newEnd = after.childCount
+	let oldTo = before.size
+	let newTo = after.size
+
+	while (
+		oldEnd > start &&
+		newEnd > start &&
+		sameDecorations(before.child(oldEnd - 1), after.child(newEnd - 1))
+	) {
+		oldEnd--
+		newEnd--
+		oldTo -= before.child(oldEnd).nodeSize
+		newTo -= after.child(newEnd).nodeSize
+	}
+
+	if (oldEnd === start && newEnd === start) {
+		return set
+	}
+
+	const mapped = set.map(
+		new Mapping([new StepMap([from, oldTo - from, newTo - from])]),
+		newDoc,
+	)
+	const fresh: Decoration[] = []
+
+	for (let i = start, pos = from; i < newEnd; i++) {
+		const node = after.child(i)
+
+		fresh.push(...gridDecorations(node, pos))
+		pos += node.nodeSize
+	}
+
+	return mapped.add(newDoc, fresh)
+}
+
+// sameDecorations reports whether two root nodes get the same decorations
+// at the same place. That holds when they have the same size and are both
+// grids or both something else. Two grids also need blocks of the same
+// sizes with the same layout attributes.
+function sameDecorations(a: PMNode, b: PMNode): boolean {
+	if (a === b) {
+		return true
+	}
+
+	const grid = BLOCK_GRID_NAMES.has(a.type.name)
+	if (a.nodeSize !== b.nodeSize || grid !== BLOCK_GRID_NAMES.has(b.type.name)) {
+		return false
+	}
+
+	if (!grid) {
+		return true
+	}
+
+	if (a.childCount !== b.childCount) {
+		return false
+	}
+
+	for (let i = 0; i < a.childCount; i++) {
+		const blockA = a.child(i)
+		const blockB = b.child(i)
+
+		if (
+			blockA.nodeSize !== blockB.nodeSize ||
+			GRID_LAYOUT_ATTRS.some((key) => blockA.attrs[key] !== blockB.attrs[key])
+		) {
+			return false
 		}
 	}
 
-	return false
+	return true
+}
+
+// gridDecorations gives each block of a root grid its cells and its place
+// in the stacked layout. Any other node gets none.
+function gridDecorations(grid: PMNode, gridPos: number): Decoration[] {
+	if (!BLOCK_GRID_NAMES.has(grid.type.name)) {
+		return []
+	}
+
+	const rects = gridLayoutOf(grid)
+	const places = stackPlaces(gridStackOf(grid))
+	const decorations: Decoration[] = []
+
+	grid.forEach((child, offset, i) => {
+		const rect = rects[i]
+		const pos = gridPos + 1 + offset
+
+		if (!rect) {
+			return
+		}
+
+		decorations.push(
+			Decoration.node(pos, pos + child.nodeSize, {
+				"data-grid-cell": "",
+				style: [
+					`--grid-col:${rect.x + 1}`,
+					`--grid-row:${rect.y + 1}`,
+					`--grid-w:${rect.w}`,
+					`--grid-h:${rect.h}`,
+					`--grid-order:${places[i] ?? i}`,
+				].join(";"),
+			}),
+		)
+	})
+
+	return decorations
+}
+
+// withoutOpenGridPlaces drops the places of the blocks in a grid at an open
+// edge of a slice. Only part of that grid was copied, so its blocks land
+// like loose blocks.
+function withoutOpenGridPlaces(
+	content: Fragment,
+	openStart: number,
+	openEnd: number,
+): Fragment {
+	let result = content
+	const edges = [
+		{ index: 0, open: openStart },
+		{ index: content.childCount - 1, open: openEnd },
+	]
+
+	for (const { index, open } of edges) {
+		const node = result.maybeChild(index)
+		if (open > 0 && node && BLOCK_GRID_NAMES.has(node.type.name)) {
+			const blocks = withoutGridPlaces(node.content, false)
+			if (blocks !== node.content) {
+				result = result.replaceChild(index, node.copy(blocks))
+			}
+		}
+	}
+
+	return result
+}
+
+// withoutGridPlaces drops the places of the grid blocks in content. So
+// where a block lands, it takes the first free cells. In the stacked
+// layout, it goes right after the block before it in the wide layout. A
+// whole grid keeps the places of its blocks, unless it lands in another
+// grid.
+export function withoutGridPlaces(
+	content: Fragment,
+	intoGrid: boolean,
+): Fragment {
+	const nodes: PMNode[] = []
+
+	content.forEach((node) => {
+		if (
+			GRID_ITEM_NAMES.has(node.type.name) &&
+			GRID_PLACE_ATTRS.some((key) => node.attrs[key] != null)
+		) {
+			nodes.push(
+				node.type.create(withoutPlaces(node.attrs), node.content, node.marks),
+			)
+		} else if (intoGrid && BLOCK_GRID_NAMES.has(node.type.name)) {
+			const blocks = withoutGridPlaces(node.content, false)
+
+			nodes.push(blocks === node.content ? node : node.copy(blocks))
+		} else {
+			nodes.push(node)
+		}
+	})
+
+	return nodes.every((node, i) => node === content.child(i))
+		? content
+		: Fragment.fromArray(nodes)
 }

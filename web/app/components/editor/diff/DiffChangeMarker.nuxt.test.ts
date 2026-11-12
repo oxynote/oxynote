@@ -59,7 +59,7 @@ describe("DiffChangeMarker", () => {
 		expect(wrapper.html()).toBe("<!--v-if-->")
 	})
 
-	it.for([DiffStatus.Added, DiffStatus.Removed, DiffStatus.Unchanged])(
+	it.for([DiffStatus.Added, DiffStatus.Unchanged])(
 		"renders nothing for a %s node",
 		async (status, { expect }) => {
 			const wrapper = await mountMarker({
@@ -71,6 +71,34 @@ describe("DiffChangeMarker", () => {
 			expect(wrapper.html()).toBe("<!--v-if-->")
 		},
 	)
+
+	it("renders nothing for a removed node with no old places", async ({
+		expect,
+	}) => {
+		const wrapper = await mountMarker({
+			src: "a.png",
+			diffStatus: DiffStatus.Removed,
+		})
+
+		expect(wrapper.html()).toBe("<!--v-if-->")
+	})
+
+	// a removed grid block shows after its grid. Its old node keeps the
+	// places where it was.
+	it("counts the old places of a removed grid block as removed", async ({
+		expect,
+	}) => {
+		const wrapper = await mountMarker({
+			diffStatus: DiffStatus.Removed,
+			oldNode: {
+				attrs: { gridPlace: { row: 1, column: 12 }, stackPlace: 2 },
+			},
+		})
+
+		expect(
+			wrapper.findAll("[aria-hidden='true']").map((s) => s.text()),
+		).toEqual([t("editor.diff-change-marker.removed", { count: 2 })])
+	})
 
 	// the card lands in <body>, which every test in the file shares
 	describe("when clicked", { concurrent: false }, () => {

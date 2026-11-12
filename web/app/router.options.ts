@@ -4,6 +4,7 @@ const SCROLL_MAX_WAIT_MS = 4000
 const SCROLL_OFFSET_PX = 150 // approx height of document header + some padding
 
 export default {
+	// eslint-disable-next-line @typescript-eslint/no-deprecated -- the replacement, ScrollRestoration, exists only in vue-router/experimental
 	scrollBehavior: async (to, from, savedPosition) => {
 		if (savedPosition) {
 			return savedPosition

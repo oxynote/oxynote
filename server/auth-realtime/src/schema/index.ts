@@ -55,12 +55,6 @@ const ContentDocument = Document.extend({
 	content: "(block | rootOnlyBlock)+",
 })
 
-// the editor schema version a client needs to write. An older client opens
-// in read-only mode, because its editor would delete every node it does not
-// know. Raise it together with the web client's when a node type is added or
-// renamed.
-export const EDITOR_SCHEMA_VERSION = 2
-
 const contentExtensionsWithIDs: Extensions = [
 	Paragraph,
 	Heading.configure({ levels: [1, 2, 3] }).extend({

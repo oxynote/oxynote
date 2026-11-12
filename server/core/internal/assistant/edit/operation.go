@@ -10,13 +10,35 @@
 //	Node opens the Y.Doc, changes it in one transaction, broadcasts
 //	the change and disconnects.
 //
-// Build operations with the constructors (InsertAfter, Append, Replace).
+// Build operations with the constructors (Insert, Append, Replace).
 // Client.Apply ships them, and Node applies the whole batch or none.
 package edit
 
 import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 )
+
+const (
+	// PositionBefore lands ahead of the reference block. In a grid it lands
+	// on the reference block's left.
+	PositionBefore Position = "before"
+
+	// PositionAfter lands behind the reference block. In a grid it lands
+	// on the reference block's right.
+	PositionAfter Position = "after"
+
+	// PositionAbove lands above the reference block. It applies only next
+	// to a block in a grid.
+	PositionAbove Position = "above"
+
+	// PositionBelow lands below the reference block. It applies only next
+	// to a block in a grid.
+	PositionBelow Position = "below"
+)
+
+// LayoutStacked moves a block only in the one-column order narrow pages
+// show its grid in.
+const LayoutStacked Layout = "stacked"
 
 // Operation is one edit of a live document, in the JSON the Node
 // endpoint expects. Only the fields its kind uses are set. A block
@@ -27,9 +49,9 @@ type Operation struct {
 	// every op.
 	Kind string `json:"kind"`
 
-	// Position is "after" or "before" relative to ReferenceUID;
-	// insert and move only.
-	Position string `json:"position,omitempty"`
+	// Position is where the block lands next to ReferenceUID; insert
+	// and move only.
+	Position Position `json:"position,omitempty"`
 
 	// ReferenceUID identifies the block an insert or move is anchored
 	// to; insert and move only.
@@ -51,25 +73,25 @@ type Operation struct {
 
 	// Icon is the new document icon identifier; set_icon only.
 	Icon string `json:"icon,omitempty"`
+
+	// Layout is the grid layout a move changes. It is empty for a move in
+	// the wide layout; move only.
+	Layout Layout `json:"layout,omitempty"`
 }
 
-// InsertAfter builds an operation that inserts b immediately after
-// the block identified by referenceUID.
-func InsertAfter(referenceUID string, b document.Block) Operation {
-	return Operation{
-		Kind:         "insert",
-		Position:     "after",
-		ReferenceUID: referenceUID,
-		Block:        &b,
-	}
-}
+// Position is where an insert or move lands next to its reference block.
+type Position string
 
-// InsertBefore builds an operation that inserts b immediately
-// before the block identified by referenceUID.
-func InsertBefore(referenceUID string, b document.Block) Operation {
+// Layout is the grid layout a move changes. The zero value is the wide
+// layout.
+type Layout string
+
+// Insert builds an operation that inserts b at position next to the
+// block identified by referenceUID.
+func Insert(position Position, referenceUID string, b document.Block) Operation {
 	return Operation{
 		Kind:         "insert",
-		Position:     "before",
+		Position:     position,
 		ReferenceUID: referenceUID,
 		Block:        &b,
 	}
@@ -124,28 +146,29 @@ func Delete(blockUID string) Operation {
 	}
 }
 
-// MoveAfter builds an operation that repositions the block identified
-// by blockUID to immediately after the block identified by
-// referenceUID, keeping the block's uid, attrs, and nested content.
-func MoveAfter(blockUID, referenceUID string) Operation {
+// Move builds an operation that repositions the block identified by
+// blockUID at position next to the block identified by referenceUID.
+// The block keeps its uid, attrs and nested content. position takes the
+// same values as Insert's.
+func Move(blockUID string, position Position, referenceUID string) Operation {
 	return Operation{
 		Kind:         "move",
-		Position:     "after",
+		Position:     position,
 		BlockUID:     blockUID,
 		ReferenceUID: referenceUID,
 	}
 }
 
-// MoveBefore builds an operation that repositions the block
-// identified by blockUID to immediately before the block identified
-// by referenceUID.
-func MoveBefore(blockUID, referenceUID string) Operation {
-	return Operation{
-		Kind:         "move",
-		Position:     "before",
-		BlockUID:     blockUID,
-		ReferenceUID: referenceUID,
-	}
+// MoveStacked builds an operation that moves the block identified by
+// blockUID in its grid's stacked layout, before or after the block
+// identified by referenceUID. The grid's columns stay as they are.
+// PositionAbove lands as PositionBefore does, and PositionBelow as
+// PositionAfter.
+func MoveStacked(blockUID string, position Position, referenceUID string) Operation {
+	op := Move(blockUID, position, referenceUID)
+	op.Layout = LayoutStacked
+
+	return op
 }
 
 // SetName builds an operation that updates the document's display

@@ -26,6 +26,10 @@ export const MetricBlock = Node.create({
 			simulationPreset: {},
 			simulationActive: { default: false },
 			width: {},
+			height: {},
+			widePosX: {},
+			widePosY: {},
+			stackPos: {},
 		}
 	},
 	parseHTML() {

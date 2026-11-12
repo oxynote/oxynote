@@ -8,6 +8,7 @@ import {
 	type FieldChange,
 } from "~/components/editor/diff/change-count"
 import DiffFieldChanges from "~/components/editor/diff/DiffFieldChanges.vue"
+import { gridItemRow } from "~/components/editor/diff/grid-place"
 import {
 	METRIC_REFRESH_INTERVAL_REFERENCE,
 	METRIC_TIME_RANGE_REFERENCE,
@@ -20,7 +21,7 @@ const props = defineProps<{
 	node: PMNode
 }>()
 
-const { t } = useI18n({ useScope: "global" })
+const { t, locale } = useI18n({ useScope: "global" })
 const { fetchDataSources } = useDataSourceAPI()
 
 const rows = computed<FieldChange[]>(() =>
@@ -28,6 +29,11 @@ const rows = computed<FieldChange[]>(() =>
 )
 
 function toRow(change: AttributeChange): FieldChange {
+	const gridRow = gridItemRow(change, t, locale.value)
+	if (gridRow) {
+		return gridRow
+	}
+
 	const queryField = QUERY_FIELD_RE.exec(change.name)
 	if (queryField) {
 		const label = t("editor.logs.config.query-name-default-format", {
@@ -76,12 +82,6 @@ function toRow(change: AttributeChange): FieldChange {
 		case "order":
 			return row(t("editor.logs.config.order-label"), change, (value) =>
 				t(`editor.logs.config.order-options.${displayValue(value)}`),
-			)
-		case "width":
-			return row(t("editor.logs.diff.size"), change, (value) =>
-				t(
-					`editor.drag-handle.options.grid-item.width-options.${displayValue(value)}`,
-				),
 			)
 		default:
 			// an attribute this card has no label for still shows, so the

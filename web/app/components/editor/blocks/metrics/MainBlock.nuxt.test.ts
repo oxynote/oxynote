@@ -1,10 +1,8 @@
-import type { VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import MainBlock from "./MainBlock.vue"
 import VisualizationContainer from "./VisualizationContainer.vue"
 import { stubChartColorContext } from "./test-helpers"
 import { MetricSimulationPreset, type MetricConfig } from "./utils"
-import { GridItemWidth } from "../grid/utils"
 import { TimeRangePreset } from "~/utils/time-range"
 import {
 	makeEditor,
@@ -123,10 +121,6 @@ function storedConfig(uid: string): MetricConfig | undefined {
 	return useEditorStore().metricBlockConfigs[DOCUMENT_ID]?.[BRANCH_ID]?.[uid]
 }
 
-function wrapperClasses(wrapper: VueWrapper): string[] {
-	return wrapper.get("[data-node-view-wrapper]").classes()
-}
-
 // the editor store and the editable flag are shared app-wide, so these
 // tests cannot interleave
 describe("<MetricMainBlock>", { concurrent: false }, () => {
@@ -164,23 +158,6 @@ describe("<MetricMainBlock>", { concurrent: false }, () => {
 
 		expect(root.attributes("data-node-comment-id")).toBe("comment-1")
 		expect(root.attributes("data-diff-status")).toBe("added")
-	})
-
-	it.for([GridItemWidth.Compact, GridItemWidth.Standard, GridItemWidth.Wide])(
-		"gives a %s block its own grid span",
-		async (width, { expect }) => {
-			const wrapper = await mountBlock({ attrs: { width: width } })
-
-			expect(wrapperClasses(wrapper)).toContain(`grid-item-${width}`)
-		},
-	)
-
-	it("spans a block with no stored width like a standard one", async ({
-		expect,
-	}) => {
-		const wrapper = await mountBlock()
-
-		expect(wrapperClasses(wrapper)).toContain("grid-item-standard")
 	})
 
 	it("publishes the block's config for the config modal to read", async ({
