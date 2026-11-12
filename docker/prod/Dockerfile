@@ -133,7 +133,7 @@ RUN case "${TARGETARCH}" in \
 # system libraries, roughly half the size of the official node binary.
 # The base is digest-pinned; nodejs then tracks alpine 3.24's package
 # repo, which only ships security bumps within the branch.
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
 # the exact pins make the build fail — instead of silently shifting —
 # when alpine's branch rotates a package (they keep only the newest build
