@@ -19,7 +19,9 @@ export function useTimeRangeLabel() {
 			const dateOptions = {
 				month: "short",
 				day: "numeric",
-				...(!isSameYear(range.from, range.to) ? { year: "numeric" } : {}),
+				...(!isSameYear(range.from, range.to)
+					? { year: "numeric" as const }
+					: {}),
 			} as const
 			const from = `${d(range.from, dateOptions)} ${format(range.from, "H:mm")}`
 			const to = isSameDay(range.from, range.to)
