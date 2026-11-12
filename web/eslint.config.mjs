@@ -151,6 +151,7 @@ export default withNuxt([
 						"/^editor\\.metrics\\.config\\.modal-title-diff-/",
 						"/^editor\\.config-modal-utils\\.query-placeholder\\./",
 						"/^editor\\.diff-change-marker\\.grid-item\\.stacked-place\\./",
+						"/^editor\\.grid-item\\.(width|height)-options\\./",
 						"/^editor\\.logs\\.config\\.modal-title-diff-/",
 						"/^editor\\.logs\\.config\\.timestamp-format-options\\./",
 						"/^editor\\.logs\\.config\\.order-options\\./",

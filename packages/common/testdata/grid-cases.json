@@ -658,6 +658,38 @@
 			],
 			"readingOrder": [0, 1, 2, 3],
 			"stackOrder": [0, 1, 2, 3]
+		},
+		{
+			"name": "a block stored too far down to count rows still floats up",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 9007199254740992,
+					"width": 12,
+					"height": 2
+				},
+				{
+					"widePosX": 12,
+					"widePosY": 0,
+					"width": 12
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 12,
+					"h": 2
+				},
+				{
+					"x": 12,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1],
+			"stackOrder": [0, 1]
 		}
 	]
 }

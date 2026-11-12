@@ -67,6 +67,11 @@ export const GRID_HEIGHT_ROWS: [GridItemHeight, number][] = [
 // block that stores more, such as a pasted one, gets the default height.
 const GRID_MAX_ROWS = Math.max(...GRID_HEIGHT_ROWS.map(([, rows]) => rows))
 
+// the largest place a block keeps, the largest 32-bit integer, as core
+// reads it too. A larger stored place is cut down to it. Past 2^53 adding
+// one row no longer changes a number, so the layout would never finish.
+const GRID_MAX_PLACE = 2 ** 31 - 1
+
 // the size of a block that stores none: a standard block
 export const GRID_DEFAULT_SIZE = { w: 12, h: 1 }
 
@@ -89,8 +94,8 @@ export function gridItemOf(attrs: Record<string, unknown>): GridItem {
 	const named = GRID_WIDTH_COLUMNS.find(([name]) => name === attrs.width)
 
 	return {
-		x: isWholeAtLeast(attrs.widePosX, 0) ? attrs.widePosX : null,
-		y: isWholeAtLeast(attrs.widePosY, 0) ? attrs.widePosY : null,
+		x: placeOf(attrs.widePosX),
+		y: placeOf(attrs.widePosY),
 		w:
 			isWholeAtLeast(attrs.width, 1) && attrs.width <= GRID_COLUMNS
 				? attrs.width
@@ -145,7 +150,7 @@ export function withoutPlaces(
 // stackPosOf reads a block's place in the stacked layout. It returns null
 // when the block has none, so the block follows the wide layout.
 export function stackPosOf(attrs: Record<string, unknown>): number | null {
-	return isWholeAtLeast(attrs.stackPos, 0) ? attrs.stackPos : null
+	return placeOf(attrs.stackPos)
 }
 
 // layoutGrid places every block. A block with a stored place keeps it,
@@ -890,6 +895,12 @@ function toRects(boxes: Box[], length: number): GridRect[] {
 	}
 
 	return rects
+}
+
+// placeOf reads a stored place: a whole number from 0, cut down to
+// GRID_MAX_PLACE. It returns null when the value is no place.
+function placeOf(value: unknown): number | null {
+	return isWholeAtLeast(value, 0) ? Math.min(value, GRID_MAX_PLACE) : null
 }
 
 function isWholeAtLeast(value: unknown, min: number): value is number {

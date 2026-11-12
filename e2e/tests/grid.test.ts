@@ -335,19 +335,35 @@ test.describe("grid layout", () => {
 
 // tabOrder focuses the first element of the block with the given id and
 // presses Tab until focus leaves the grid. It returns the ids of the
-// blocks that held focus, in order.
+// blocks that held focus, in order. A Tab that leaves focus where it was
+// fails at once, so the test does not hang until its timeout.
 async function tabOrder(page: Page, first: string): Promise<string[]> {
-	const blockOf = () =>
-		page.evaluate(
-			() => document.activeElement?.closest("[data-grid-cell]")?.id ?? null,
-		)
+	// the block that holds focus, and whether focus moved since the last
+	// call
+	const focus = () =>
+		page.evaluate(() => {
+			const seen = window as unknown as { tabOrderLast?: Element | null }
+			const active = document.activeElement
+			const moved = seen.tabOrderLast !== active
+
+			seen.tabOrderLast = active
+
+			return {
+				block: active?.closest("[data-grid-cell]")?.id ?? null,
+				moved: moved,
+			}
+		})
 	const visited: string[] = []
 
 	await gridBlock(page, first).locator("button, input").first().focus()
 
-	for (let block = await blockOf(); block !== null; block = await blockOf()) {
-		if (visited.at(-1) !== block) {
-			visited.push(block)
+	for (let at = await focus(); at.block !== null; at = await focus()) {
+		if (!at.moved) {
+			throw new Error(`Tab kept focus in block ${at.block}`)
+		}
+
+		if (visited.at(-1) !== at.block) {
+			visited.push(at.block)
 		}
 
 		await page.keyboard.press("Tab")
