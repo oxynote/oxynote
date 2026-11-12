@@ -1,9 +1,10 @@
 # Contributing
 
 This guide takes you from a fresh clone to a running dev stack, then covers
-what a pull request needs before it can merge. Oxynote is a web app built
-with Nuxt and Vue, a Go API server and a Node service for sign-in and
-real-time editing, all driven from the repository root with `make`.
+how to claim an issue and what a pull request needs before it can merge.
+Oxynote is a web app built with Nuxt and Vue, a Go API server and a Node
+service for sign-in and real-time editing, all driven from the repository
+root with `make`.
 
 - [Quick Start](#quick-start)
 - [Repository Layout](#repository-layout)
@@ -11,6 +12,11 @@ real-time editing, all driven from the repository root with `make`.
 - [Tests and Lints](#tests-and-lints)
 - [Code Standards and AGENTS.md](#code-standards-and-agentsmd)
 - [Pull Requests](#pull-requests)
+  - [Discuss First](#discuss-first)
+  - [Claiming an Issue](#claiming-an-issue)
+  - [Good First Issues](#good-first-issues)
+  - [Duplicate Pull Requests](#duplicate-pull-requests)
+  - [When We Close a Pull Request](#when-we-close-a-pull-request)
 - [Naming Commits and Pull Requests](#naming-commits-and-pull-requests)
 - [Adding a Data Source](#adding-a-data-source)
 - [Adding a Freshness Hook](#adding-a-freshness-hook)
@@ -137,23 +143,132 @@ follows the same pattern.
 
 ## Pull Requests
 
-- Bug fixes and small changes can go straight to a pull request.
+- Bug fixes and small changes with no open issue can go straight to a pull
+  request.
 - New features and UI changes start with an issue. Agree on the approach
   there first, with design mockups or screenshots for anything visual, so
   you don't build something that can't be merged.
-- A pull request that changes the UI should show the result in screenshots or a
-  short video.
+- A pull request that changes the UI should show the app before and after,
+  in screenshots or a short video. For a new UI feature, screenshots are
+  required.
 - Keep to one issue per pull request, and fill in the template.
 - Report a security vulnerability privately, as [SECURITY.md](SECURITY.md)
   describes.
 
+### Discuss First
+
+Some issues need a decision before anyone writes code. It's easier to make
+that decision together in the issue than to rework a finished pull
+request. So if an issue has the type or one of the labels below, wait until
+a maintainer assigns it to you before you start:
+
+- `Feature` issue type: features are usually big changes, so agree in the
+  comments on what the feature does and how to build it. Show any new UI as
+  design artboards or mockups.
+- `needs design alignment`: propose a design in the comments, with design
+  artboards, mockups or annotated screenshots of the app. A description in
+  words alone isn't enough.
+- `needs more information`: we can't act on the issue until someone adds
+  what's missing, such as the steps to reproduce a bug.
+- `brainstorm`: we haven't decided yet whether Oxynote should do this at
+  all. Share your ideas and use cases in the comments to help us decide.
+
+A pull request opened before the assignment can't be merged, because
+the decision it depends on is still open. We usually close it and move the
+discussion back to the issue.
+
+Not every good idea fits Oxynote. We prefer good defaults to extra
+settings, and one clear way to do each job to several, as
+[Simple on Purpose](README.md#simple-on-purpose) in the README explains.
+If a better default would make a new setting unnecessary, we'll usually
+suggest the default instead.
+
+To discuss an idea before you open an issue, or to get help choosing what
+to work on, join our [Discord](https://discord.gg/mNJd5zJkvC). What we
+agree on there still goes into the issue, where everyone can see it.
+
+### Claiming an Issue
+
+To work on an open issue, comment that you're interested and wait until a
+maintainer assigns it to you. Add a few lines on how you plan to solve it,
+so we can see you've read the issue and help early if the plan needs a
+change. The assignment tells everyone else that the issue is taken, so if
+someone is already assigned, pick another issue. If you start before
+you're assigned and someone else gets the issue, we merge their pull
+request instead of yours.
+
+If an assigned issue has no update for 10 days, such as a comment or a
+draft pull request, we may unassign it so someone else can pick it up. If
+you need more time, say so in the issue.
+
+Issues labeled `maintainers only` are reserved for maintainers, because
+they involve complex changes or need internal knowledge that is hard to
+pass on in an issue. Your ideas and feedback in the comments are still
+welcome.
+
+### Good First Issues
+
+Issues labeled `good first issue` are for first-time contributors, meaning
+people who haven't had a pull request merged into Oxynote yet. Each one is
+small and usually comes with step-by-step instructions. We set these
+issues aside so someone new can learn the codebase and our review process
+on an easy change. We help as much as we can with that first pull request,
+even when Go or Vue is new to you.
+
+We prefer that each first-time contributor works on only one good first
+issue. After that, you can still work on one, but newcomers get priority. If a
+first-time contributor also opens a pull request for it, we merge theirs
+instead of yours. We have plenty of other
+[bug](https://github.com/oxynote/oxynote/issues?q=is%3Aissue+state%3Aopen+type%3ABug)
+and
+[improvement](https://github.com/oxynote/oxynote/issues?q=is%3Aissue+state%3Aopen+type%3AImprovement)
+issues you can work on.
+
+### Duplicate Pull Requests
+
+Before you open a pull request, search the open pull requests for one that
+fixes the same issue. If you find one, open yours only if it does something
+better. Then link the existing pull request in your description and explain
+what yours improves.
+
+When several pull requests address the same issue anyway, we merge one and
+close the others. We review them in the order of this list, from highest
+priority to lowest, and merge the first one that meets our requirements:
+
+1. The pull request from the person assigned to the issue.
+2. On a good first issue, pull requests from first-time contributors, in
+   the order they were opened. They take priority over pull requests from
+   returning contributors, even ones opened earlier.
+3. All other pull requests, in the order they were opened.
+
+### When We Close a Pull Request
+
+We close a pull request when it:
+
+- builds a feature or a UI change that nobody agreed on in an issue, or
+  works on an issue that isn't ready for code
+  ([Discuss First](#discuss-first))
+- targets an issue labeled `maintainers only` and isn't from a maintainer
+  ([Claiming an Issue](#claiming-an-issue))
+- is from a returning contributor and targets a good first issue that a
+  first-time contributor also opened a pull request for
+  ([Good First Issues](#good-first-issues))
+- targets the same issue as a pull request with higher priority
+  ([Duplicate Pull Requests](#duplicate-pull-requests))
+- changes more than its issue asks for, such as by reformatting or
+  refactoring other code
+- contains code its author can't explain in review
+  ([Code Standards and AGENTS.md](#code-standards-and-agentsmd))
+- doesn't fit Oxynote's direction, even when the code is good
+
 ## Naming Commits and Pull Requests
 
-A commit subject starts with a type and the component it touches, such as
-`feat(web): add tag name and color editing` or
-`fix(core): fix mysql timestamp parsing`. After the colon comes a short
-sentence in the imperative, lowercase and without a trailing period. A
-pull request title follows the same format.
+Commit subjects and pull request titles should both start with a type and the
+component they touch, such as `feat(web): add tag name and color editing`
+or `fix(core): fix mysql timestamp parsing`. After the colon comes a short
+sentence in the imperative, lowercase and without a trailing period. The
+title matters most, because we often squash a pull request when we merge
+it, and then its title becomes the commit subject on `main`.
 
 | Type | Used for |
 | --- | --- |

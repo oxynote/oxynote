@@ -1,0 +1,18 @@
+name: Improvement
+description: Suggest a change to something Oxynote already does.
+type: Improvement
+body:
+  - type: textarea
+    id: current
+    attributes:
+      label: What works today, and what gets in the way?
+      description: Name the feature and describe what you are trying to do with it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you change?
+      description: Add sketches or screenshots if it helps.
+    validations:
+      required: true

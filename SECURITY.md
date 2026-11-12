@@ -61,10 +61,12 @@ alarming but works as intended:
   in `docker/prod/` is in scope.
 - The production image shows its default admin login on the login page
   until the admin changes the password.
-- A workspace's members can query the data sources connected to it.
-  Reaching another workspace's data source, getting more access than you
-  were granted, or making the server send requests to arbitrary internal
-  hosts is a finding.
+- A workspace's members can query the data sources connected to it. A
+  data source connects to whatever address the person who adds it enters,
+  including private network addresses and the server itself. That is how
+  Oxynote reaches your databases, so it works as intended.
+  Reaching another workspace's data source, or getting more access than
+  your role grants, is a finding.
 - Official images contain Sentry DSNs. A DSN only lets the image send
   crash reports, so it isn't a leaked secret.
 
@@ -74,6 +76,8 @@ These are out of scope:
   open a normal issue or pull request here to update the dependency.
 - Attacks that need a compromised host, a malicious operator, physical
   access or someone already privileged in the target workspace.
+- Requests to an address that someone entered as a data source, and the
+  queries they run there.
 - Misconfiguration, such as exposing core without the front door, keeping
   the example secrets or the default password, or serving without TLS.
 - Denial of service, load testing and automated scanning of anything that
