@@ -177,6 +177,105 @@ describe("computeMergedDocument", () => {
 		])
 	})
 
+	describe("when blocks sit in a grid", () => {
+		it("marks a block a drop pushed down as modified", () => {
+			const result = computeMergedDocument(
+				doc(grid(block("a", 0, 0, 12), block("b", 12, 0, 12))),
+				doc(
+					grid(
+						block("a", 0, 0, 12),
+						block("x", 12, 0, 12),
+						block("b", 12, 1, 12),
+					),
+				),
+			)
+
+			expect(gridShape(result.doc.content?.[0])).toEqual([
+				[DiffStatus.Unchanged, "a"],
+				[DiffStatus.Added, "x"],
+				[DiffStatus.Modified, "b"],
+			])
+		})
+
+		it("marks blocks that show in the same places as unchanged however they store them", () => {
+			const result = computeMergedDocument(
+				doc(grid(legacy("a"), legacy("b"))),
+				doc(grid(block("a", 0, 0, 12), block("b", 12, 0, 12))),
+			)
+
+			expect(gridShape(result.doc.content?.[0])).toEqual([
+				[DiffStatus.Unchanged, "a"],
+				[DiffStatus.Unchanged, "b"],
+			])
+		})
+
+		it("marks blocks whose only change is their stacked place as modified", () => {
+			const result = computeMergedDocument(
+				doc(grid(block("a", 0, 0, 12), block("b", 12, 0, 12))),
+				doc(
+					grid(
+						block("a", 0, 0, 12, { stackPos: 1 }),
+						block("b", 12, 0, 12, { stackPos: 0 }),
+					),
+				),
+			)
+
+			expect(gridShape(result.doc.content?.[0])).toEqual([
+				[DiffStatus.Modified, "a"],
+				[DiffStatus.Modified, "b"],
+			])
+		})
+
+		it("keeps a block that only moved in the document as unchanged instead of removed and added", () => {
+			const result = computeMergedDocument(
+				doc(grid(block("a", 0, 0, 12), block("b", 12, 0, 12))),
+				doc(grid(block("b", 12, 0, 12), block("a", 0, 0, 12))),
+			)
+
+			expect(gridShape(result.doc.content?.[0])).toEqual([
+				[DiffStatus.Unchanged, "b"],
+				[DiffStatus.Unchanged, "a"],
+			])
+		})
+
+		it("gives a block whose only change is its size the same places on both sides", () => {
+			const result = computeMergedDocument(
+				doc(grid(block("a", 0, 0, 8))),
+				doc(grid(block("a", 0, 0, 12))),
+			)
+			const merged = result.doc.content?.[0]?.content?.[0]
+			const oldNode = merged?.attrs?.oldNode as JSONContent | undefined
+
+			expect(merged?.attrs?.diffStatus).toBe(DiffStatus.Modified)
+			expect(merged?.attrs?.gridPlace).toEqual(oldNode?.attrs?.gridPlace)
+			expect(merged?.attrs?.stackPlace).toBe(oldNode?.attrs?.stackPlace)
+		})
+
+		it("moves a removed block into a copy of its grid right after it", () => {
+			const result = computeMergedDocument(
+				doc(grid(block("a", 0, 0, 12), block("b", 12, 0, 12))),
+				doc(grid(block("a", 0, 0, 12))),
+			)
+			const removed = result.doc.content?.[1]?.content?.[0]
+
+			expect(result.doc.content?.map(gridShape)).toEqual([
+				[[DiffStatus.Unchanged, "a"]],
+				[[DiffStatus.Removed, "b"]],
+			])
+			expect(result.doc.content?.[1]?.attrs?.uid).toBe("g1-removed")
+			expect(removed?.attrs).toMatchObject({
+				widePosX: null,
+				widePosY: null,
+				stackPos: null,
+				gridPlace: null,
+				stackPlace: null,
+			})
+			expect(
+				(removed?.attrs?.oldNode as JSONContent | undefined)?.attrs,
+			).toMatchObject({ gridPlace: { row: 0, column: 12 }, stackPlace: 1 })
+		})
+	})
+
 	it("produces the golden merged document for a mixed change set", ({
 		expect,
 	}) => {
@@ -194,3 +293,34 @@ describe("computeMergedDocument", () => {
 		expect(computeMergedDocument(original, modified).doc).toMatchSnapshot()
 	})
 })
+
+// a grid of metric blocks. The diff places them by their cells.
+function grid(...blocks: JSONContent[]): JSONContent {
+	return { type: "blockGrid", attrs: { uid: "g1" }, content: blocks }
+}
+
+function block(
+	uid: string,
+	x: number,
+	y: number,
+	w: number,
+	attrs: Record<string, unknown> = {},
+): JSONContent {
+	return {
+		type: "metricBlock",
+		attrs: { uid, widePosX: x, widePosY: y, width: w, height: 1, ...attrs },
+	}
+}
+
+// a block saved before blocks stored their cells
+function legacy(uid: string): JSONContent {
+	return { type: "metricBlock", attrs: { uid, width: "standard" } }
+}
+
+// the status and uid of each block of a merged grid
+function gridShape(grid: JSONContent | undefined): [unknown, unknown][] {
+	return (grid?.content ?? []).map((child) => [
+		child.attrs?.diffStatus,
+		child.attrs?.uid,
+	])
+}

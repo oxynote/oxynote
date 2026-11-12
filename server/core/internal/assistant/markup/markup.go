@@ -57,6 +57,18 @@ const (
 
 	// _attrHref is a link's target.
 	_attrHref = "href"
+
+	// _attrRow is the first row of a grid block in the wide layout. The
+	// model reads it and never writes it.
+	_attrRow = "row"
+
+	// _attrColumn is the first column of a grid block in the wide layout.
+	// The model reads it and never writes it.
+	_attrColumn = "column"
+
+	// _attrStack is a grid block's place in the stacked layout. The model
+	// reads it and never writes it.
+	_attrStack = "stack"
 )
 
 // Inline tags, by the ProseMirror mark they write.
@@ -105,17 +117,39 @@ var _rawCloseTags = map[string]*regexp.Regexp{
 	_elemLogs:    regexp.MustCompile(`</((?i:` + _elemLogs + `))`),
 }
 
+// _gridPlaceAttrs are the attributes that say where a grid block sits:
+// its first column and row in the wide layout, and its place in the
+// stacked layout.
+var _gridPlaceAttrs = []string{document.AttrWidePosX, document.AttrWidePosY, document.AttrStackPos}
+
 // _hiddenAttrs are the attributes of a metric or log block the model
-// never sees: the uid, which is the id, the block comment, and a
-// metric's simulation flag, which core derives.
+// never sees. They are the uid, which shows as the id, the block comment,
+// a metric's simulation flag, which core derives, and the block's places
+// in its grid. The editor lays out those places, so the model sees the
+// row, column and stacked place they lead to instead.
 var _hiddenAttrs = map[string]bool{
 	document.AttrUID:              true,
 	document.AttrCommentID:        true,
 	document.AttrSimulationActive: true,
+	document.AttrWidePosX:         true,
+	document.AttrWidePosY:         true,
+	document.AttrStackPos:         true,
 }
 
-// _gridItemWidths are the widths of a block inside a grid. They mirror
-// GridItemWidth in web/app/components/editor/blocks/grid/utils.ts. A
-// value added there has to be added here, or the assistant cannot write
-// it.
-var _gridItemWidths = []string{"compact", "standard", "wide"}
+// _gridItemSizes maps each named width to the columns it spans and each
+// named height to the rows it spans. The editor offers the same sizes. A
+// size added there has to be added here, or the assistant cannot write it.
+//
+//nolint:mnd // the sizes are the table, so naming each one would hide it
+var _gridItemSizes = map[string]map[string]int{
+	document.AttrWidth:  {"compact": 8, "standard": 12, "wide": 24},
+	document.AttrHeight: {"standard": 1, "tall": 2},
+}
+
+// _gridItemWidths are the named widths of a block inside a grid,
+// narrowest first.
+var _gridItemWidths = sizeNames(_gridItemSizes[document.AttrWidth])
+
+// _gridItemHeights are the named heights of a block inside a grid,
+// lowest first.
+var _gridItemHeights = sizeNames(_gridItemSizes[document.AttrHeight])

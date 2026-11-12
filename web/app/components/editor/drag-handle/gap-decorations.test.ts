@@ -359,18 +359,13 @@ describe("gap collection", () => {
 		])
 	})
 
-	it("collects vertical gaps for metric blocks inside a metric grid", ({
-		expect,
-	}) => {
+	it("collects no gaps between the blocks of a grid", ({ expect }) => {
 		const { plugin, state } = makeState(
 			docOf(blockGrid("mg", metricBlock("m1"), metricBlock("m2"))),
 		)
 
 		expect(gapRows(plugin, state)).toEqual([
 			["doc:before:mg", 0],
-			["mg:before:m1", 1],
-			["mg:before:m2", 5],
-			["mg:after:m2", 9],
 			["doc:after:mg", 10],
 		])
 	})

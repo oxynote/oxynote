@@ -45,6 +45,10 @@ func Render(blocks []document.Block) string {
 type renderer struct {
 	// sb holds the markup written so far.
 	sb strings.Builder
+
+	// cell holds the cells of the grid block being written, or nil
+	// outside a grid.
+	cell *gridBox
 }
 
 // block renders one block and everything nested in it.
@@ -108,9 +112,9 @@ func (r *renderer) block(b document.Block, depth int) {
 			blockAttr(b, document.AttrSize),
 		))
 	case document.BlockNodeMetricBlock:
-		r.raw(depth, startTag(_elemMetrics, b), _elemMetrics, attrsJSON(b))
+		r.raw(depth, startTag(_elemMetrics, b, r.cellAttrs()...), _elemMetrics, attrsJSON(b))
 	case document.BlockNodeLogBlock:
-		r.raw(depth, startTag(_elemLogs, b), _elemLogs, attrsJSON(b))
+		r.raw(depth, startTag(_elemLogs, b, r.cellAttrs()...), _elemLogs, attrsJSON(b))
 	case document.BlockNodeSplitDoc:
 		r.container(_elemSplitDoc, startTag(_elemSplitDoc, b, blockAttr(b, document.AttrInversed)), b.Content, depth)
 	case document.BlockNodeSplitDocLeft:
@@ -141,8 +145,25 @@ func (r *renderer) line(depth int, s string) {
 func (r *renderer) container(name, openTag string, children []document.Block, depth int) {
 	r.line(depth, openTag)
 
-	for _, c := range children {
-		r.block(c, depth+1)
+	switch name {
+	case _elemGrid:
+		// a grid places its blocks by their cells and not by their
+		// order in the document. So its blocks read in the order of its
+		// wide layout, each with the row and column it starts at and its
+		// place in the stacked layout.
+		boxes := readingBoxes(children)
+		setStackPlaces(children, boxes)
+
+		for _, box := range boxes {
+			r.cell = box
+			r.block(children[box.id], depth+1)
+		}
+
+		r.cell = nil
+	default:
+		for _, c := range children {
+			r.block(c, depth+1)
+		}
 	}
 
 	r.line(depth, endTag(name))
@@ -196,13 +217,20 @@ func (r *renderer) param(row document.Block, depth int) {
 }
 
 // attrsJSON returns a metric or log block's attributes as JSON, leaving
-// out the hidden ones and those without a value.
+// out the hidden ones and those without a value. The width and height
+// show as names.
 func attrsJSON(b document.Block) string {
 	attrs := make(map[string]any, len(b.Attrs))
 
 	for k, v := range b.Attrs {
 		if v != nil && !_hiddenAttrs[k] {
 			attrs[k] = v
+		}
+	}
+
+	for key := range _gridItemSizes {
+		if _, sized := attrs[key]; sized {
+			attrs[key] = gridSizeName(b.Attrs, key)
 		}
 	}
 
@@ -250,6 +278,22 @@ func (a attr) text() string {
 	}
 
 	return ""
+}
+
+// cellAttrs returns the row and column that the grid block being
+// written starts at and its place in the stacked layout, or nothing
+// outside a grid. The values are strings, because an attribute leaves out
+// a number that is zero.
+func (r *renderer) cellAttrs() []attr {
+	if r.cell == nil {
+		return nil
+	}
+
+	return []attr{
+		{key: _attrRow, value: strconv.Itoa(r.cell.y)},
+		{key: _attrColumn, value: strconv.Itoa(r.cell.x)},
+		{key: _attrStack, value: strconv.Itoa(r.cell.stack)},
+	}
 }
 
 // blockAttr returns b's attribute key as a rendered attribute.

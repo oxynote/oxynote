@@ -13,7 +13,6 @@ import {
 	NODE_TO_WRAPPER_TYPE,
 	type GapZoneConfig,
 } from "./config"
-import { GRID_ITEM_NAMES } from "../blocks/grid/utils"
 
 declare module "@tiptap/core" {
 	interface Commands<ReturnType> {
@@ -45,37 +44,8 @@ interface GapInfo {
 	leftInset?: number
 	/** Right inset - positive shrinks from right, negative extends */
 	rightInset?: number
-	/** Whether this is a vertical gap (for horizontal layouts like a block grid) */
-	verticalGap?: boolean
-	/** Width of vertical gap zone */
-	width?: string
-	/** Horizontal offset for vertical gaps */
-	xOffset?: number
 	/** Stable key for decoration reuse, based on parent node ID + child index */
 	key: string
-}
-
-/** Measurements needed to position a vertical gap zone */
-interface VerticalGapMeasurement {
-	type: "vertical"
-	elWidth: number
-	parentRect: DOMRect
-	gapLeft: number
-	gapRight: number
-	gapHeight: number
-	gapTop: number
-	showSecondary: boolean
-	secondaryLeft: number
-	secondaryTop: number
-	secondaryHeight: number
-	// For secondary element creation
-	wrapper: HTMLElement
-	secondaryEl: HTMLElement | null
-	primaryKey: string
-	primaryWidth: string
-	primaryPointerEvents: string
-	primaryZIndex: string
-	debugColor: string | null
 }
 
 /** Flag to coalesce multiple reposition requests into a single frame */
@@ -106,193 +76,8 @@ export function clearRepositionCooldown() {
 	repositionPending = false
 }
 
-/**
- * Measure a vertical gap zone element without writing to DOM.
- * Uses X-axis positioning for horizontal layouts like a block grid.
- * For multi-row grids, calculates the correct Y coordinate.
- * When siblings wrap to different rows, calculates a secondary gap position
- * at the end of the previous row.
- *
- * Height is determined by:
- * - Before first child: height of first child
- * - Between children (same row): height of the tallest child in the grid
- * - Between children (row wrap): secondary gap uses prev height, primary uses tallest
- * - After last child: height of last child
- *
- * Returns null if element is not ready for positioning.
- */
-function measureVerticalGapZone(
-	el: HTMLElement,
-): VerticalGapMeasurement | null {
-	const wrapper = el.parentElement
-	if (!wrapper || !el.isConnected || !wrapper.isConnected) {
-		return null
-	}
-
-	const prevSibling = wrapper.previousElementSibling as HTMLElement | null
-	const nextSibling = wrapper.nextElementSibling as HTMLElement | null
-	const parentRect = el.offsetParent?.getBoundingClientRect()
-	const gridParent = wrapper.parentElement
-
-	if (!parentRect || !gridParent) {
-		return null
-	}
-
-	// Get actual computed width in pixels
-	const elWidth = el.offsetWidth
-
-	// Get existing secondary gap element for row boundaries
-	const secondaryEl = wrapper.querySelector<HTMLElement>(
-		".pm-gap-zone-secondary",
-	)
-
-	let gapLeft: number
-	let gapRight: number
-	let gapHeight: number
-	let gapTop: number
-	let showSecondary = false
-	let secondaryLeft = 0
-	let secondaryTop = 0
-	let secondaryHeight = 0
-
-	if (prevSibling && nextSibling) {
-		// Between two siblings: position relative to the next sibling (we're inserting "before" it)
-		const nextRect = nextSibling.getBoundingClientRect()
-		const prevRect = prevSibling.getBoundingClientRect()
-
-		// Check if siblings are on different rows (next is below prev)
-		const isWrapping = nextRect.top > prevRect.bottom - 10 // 10px tolerance
-
-		if (isWrapping) {
-			// Siblings are on different rows
-			// Primary gap: position at the start of next sibling's row (before the next sibling)
-			gapLeft = nextRect.left - elWidth
-			gapRight = nextRect.left
-			gapTop = nextRect.top - parentRect.top
-
-			// Secondary gap: position at the end of prev sibling's row (after the prev sibling)
-			showSecondary = true
-			// Center the secondary gap in the space after prevSibling (similar to same-row gaps)
-			const secondaryGapLeft = prevRect.right
-			const secondaryGapRight = prevRect.right + elWidth
-			const secondaryGapCenter = (secondaryGapLeft + secondaryGapRight) / 2
-			secondaryLeft = secondaryGapCenter - elWidth / 2 - parentRect.left
-			secondaryTop = prevRect.top - parentRect.top
-			secondaryHeight = prevSibling.offsetHeight
-		} else {
-			// Same row - center in the horizontal gap
-			gapLeft = prevRect.right
-			gapRight = nextRect.left
-			gapTop = nextRect.top - parentRect.top
-		}
-
-		// Find the tallest child in the grid
-		let maxHeight = 0
-		for (const child of gridParent.children) {
-			if (child !== wrapper && !child.classList.contains("pm-gap-wrapper")) {
-				maxHeight = Math.max(maxHeight, (child as HTMLElement).offsetHeight)
-			}
-		}
-		gapHeight = maxHeight
-	} else if (prevSibling) {
-		// After last child: position to the right of prev sibling
-		// Height = height of last child (prevSibling)
-		const rect = prevSibling.getBoundingClientRect()
-		gapLeft = rect.right
-		gapRight = rect.right + elWidth
-		gapHeight = prevSibling.offsetHeight
-		gapTop = rect.top - parentRect.top
-	} else if (nextSibling) {
-		// Before first child: position to the left of next sibling
-		// Height = height of first child (nextSibling)
-		const rect = nextSibling.getBoundingClientRect()
-		gapLeft = rect.left - elWidth
-		gapRight = rect.left
-		gapHeight = nextSibling.offsetHeight
-		gapTop = rect.top - parentRect.top
-	} else {
-		return null
-	}
-
-	return {
-		type: "vertical",
-		elWidth,
-		parentRect,
-		gapLeft,
-		gapRight,
-		gapHeight,
-		gapTop,
-		showSecondary,
-		secondaryLeft,
-		secondaryTop,
-		secondaryHeight,
-		wrapper,
-		secondaryEl,
-		primaryKey: el.getAttribute("data-gap-key") || "",
-		primaryWidth: el.style.width,
-		primaryPointerEvents: el.style.pointerEvents,
-		primaryZIndex: el.style.zIndex,
-		debugColor: el.getAttribute("data-debug-color"),
-	}
-}
-
-/**
- * Apply computed position to a vertical gap zone element.
- * Handles secondary gap element creation for row boundaries in multi-row grids.
- */
-function applyVerticalGapPosition(
-	el: HTMLElement,
-	m: VerticalGapMeasurement,
-	xOffset: number,
-) {
-	const gapCenter = (m.gapLeft + m.gapRight) / 2
-	const left = gapCenter - m.elWidth / 2 - m.parentRect.left + xOffset
-
-	el.style.left = `${left}px`
-	el.style.height = `${m.gapHeight}px`
-	el.style.top = `${m.gapTop}px`
-	el.style.bottom = "auto"
-
-	// Handle secondary gap element for row boundaries
-	if (m.showSecondary) {
-		let secondaryEl = m.secondaryEl
-		if (!secondaryEl) {
-			// Create secondary element if it doesn't exist
-			secondaryEl = document.createElement("div")
-			secondaryEl.classList.add("pm-gap-zone-secondary")
-			secondaryEl.classList.add("pm-gap-zone")
-			secondaryEl.classList.add("drag-handle-ignore-self")
-			// Copy key attribute from primary
-			secondaryEl.setAttribute("data-gap-key", m.primaryKey)
-			secondaryEl.setAttribute("data-gap-orientation", "vertical")
-			// Copy debug color attribute if present
-			if (m.debugColor) {
-				secondaryEl.setAttribute("data-debug-color", m.debugColor)
-			}
-			Object.assign(secondaryEl.style, {
-				position: "absolute",
-				width: m.primaryWidth,
-				pointerEvents: m.primaryPointerEvents,
-				zIndex: m.primaryZIndex,
-			})
-			m.wrapper.appendChild(secondaryEl)
-		}
-		// Update secondary element styles (including debug color if enabled)
-		secondaryEl.style.display = "block"
-		secondaryEl.style.left = `${m.secondaryLeft}px`
-		secondaryEl.style.top = `${m.secondaryTop}px`
-		secondaryEl.style.height = `${m.secondaryHeight}px`
-		// Sync background color from primary (for debug mode)
-		secondaryEl.style.backgroundColor = el.style.backgroundColor
-	} else if (m.secondaryEl) {
-		// Hide secondary element when not needed
-		m.secondaryEl.style.display = "none"
-	}
-}
-
 /** Measurements needed to position a horizontal gap zone */
 interface HorizontalGapMeasurement {
-	type: "horizontal"
 	elHeight: number
 	parentRect: DOMRect
 	gapTop: number
@@ -364,7 +149,6 @@ function measureHorizontalGapZone(
 	)
 
 	return {
-		type: "horizontal",
 		elHeight,
 		parentRect,
 		gapTop,
@@ -400,35 +184,6 @@ function applyHorizontalGapPosition(
 		// Top level: apply insets to full document width
 		el.style.left = `${m.leftInset}px`
 		el.style.right = `${m.rightInset}px`
-	}
-}
-
-type GapMeasurement = VerticalGapMeasurement | HorizontalGapMeasurement
-
-/**
- * Measure a gap zone element without writing to DOM.
- */
-function measureGapZone(el: HTMLElement): GapMeasurement | null {
-	const isVertical = el.getAttribute("data-gap-orientation") === "vertical"
-	if (isVertical) {
-		return measureVerticalGapZone(el)
-	}
-
-	return measureHorizontalGapZone(el)
-}
-
-/**
- * Apply computed position to a gap zone element.
- */
-function applyGapPosition(
-	el: HTMLElement,
-	measurement: GapMeasurement,
-	offset: number,
-) {
-	if (measurement.type === "vertical") {
-		applyVerticalGapPosition(el, measurement, offset)
-	} else {
-		applyHorizontalGapPosition(el, measurement, offset)
 	}
 }
 
@@ -544,30 +299,16 @@ function canInsertNodeAt(
  */
 function positionGapZones(elements: HTMLElement[]) {
 	// Phase 1: Collect element data (minimal reads)
-	const elementData: {
-		el: HTMLElement
-		isVertical: boolean
-		offset: number
-	}[] = []
-
-	elements.forEach((el) => {
-		const isVertical = el.getAttribute("data-gap-orientation") === "vertical"
-		const offset = isVertical
-			? parseFloat(el.getAttribute("data-gap-x-offset") || "0")
-			: parseFloat(el.dataset.yOffset || "0")
-		elementData.push({ el, isVertical, offset })
-	})
+	const offsets = elements.map((el) => parseFloat(el.dataset.yOffset || "0"))
 
 	// Phase 2: Batch all DOM measurements (reads)
-	const measurements: (GapMeasurement | null)[] = elementData.map(({ el }) =>
-		measureGapZone(el),
-	)
+	const measurements = elements.map((el) => measureHorizontalGapZone(el))
 
 	// Phase 3: Batch all DOM updates (writes)
-	elementData.forEach(({ el, offset }, i) => {
+	elements.forEach((el, i) => {
 		const measurement = measurements[i]
 		if (measurement) {
-			applyGapPosition(el, measurement, offset)
+			applyHorizontalGapPosition(el, measurement, offsets[i] ?? 0)
 		}
 	})
 }
@@ -600,9 +341,7 @@ export function repositionGapZones() {
 	requestAnimationFrame(() => {
 		repositionScheduled = false
 		positionGapZones([
-			...document.querySelectorAll<HTMLElement>(
-				".pm-gap-zone:not(.pm-gap-zone-secondary)",
-			),
+			...document.querySelectorAll<HTMLElement>(".pm-gap-zone"),
 		])
 
 		// Start cooldown period
@@ -676,9 +415,6 @@ function collectGapsForContainer(
 						indentLevel,
 						leftInset: config.leftInset,
 						rightInset: config.rightInset,
-						verticalGap: config.verticalGap,
-						width: config.width,
-						xOffset: config.xOffsetFirst ?? 0,
 						// Key identifies the gap by the child it's before
 						key: `${containerKey}:before:${childId}`,
 					})
@@ -696,9 +432,6 @@ function collectGapsForContainer(
 					indentLevel,
 					leftInset: config.leftInset,
 					rightInset: config.rightInset,
-					verticalGap: config.verticalGap,
-					width: config.width,
-					xOffset: config.xOffsetMiddle ?? 0,
 					// Key identifies the gap by the child it's before
 					key: `${containerKey}:before:${childId}`,
 				})
@@ -729,9 +462,6 @@ function collectGapsForContainer(
 			indentLevel,
 			leftInset: (lastConfig as GapZoneConfig).leftInset,
 			rightInset: (lastConfig as GapZoneConfig).rightInset,
-			verticalGap: (lastConfig as GapZoneConfig).verticalGap,
-			width: (lastConfig as GapZoneConfig).width,
-			xOffset: (lastConfig as GapZoneConfig).xOffsetLast ?? 0,
 			// Key identifies the gap by being after the last child
 			// eslint-disable-next-line @typescript-eslint/restrict-template-expressions -- lastChildId is assigned inside a forEach callback, which control-flow analysis does not track
 			key: `${containerKey}:after:${lastChildId}`,
@@ -855,9 +585,6 @@ function createGapWidget(gap: GapInfo, docSize: number): Decoration | null {
 		indentLevel,
 		leftInset,
 		rightInset,
-		verticalGap,
-		width,
-		xOffset,
 		key,
 	} = gap
 
@@ -891,37 +618,18 @@ function createGapWidget(gap: GapInfo, docSize: number): Decoration | null {
 			el.setAttribute("data-gap-right-inset", String(rightInset ?? 0))
 			el.dataset.yOffset = String(yOffset)
 
-			if (verticalGap) {
-				el.setAttribute("data-gap-orientation", "vertical")
-				el.setAttribute("data-gap-x-offset", String(xOffset ?? 0))
-			}
-
 			if (debugColor && DEBUG_SHOW_GAPS) {
 				el.setAttribute("data-debug-color", debugColor)
 			}
 
-			if (verticalGap) {
-				// Vertical gap for horizontal layouts (e.g., block grid)
-				Object.assign(el.style, {
-					position: "absolute",
-					top: "0",
-					bottom: "0",
-					width: width || "1rem",
-					height: "auto",
-					pointerEvents: "none", // Enabled only during drag
-					zIndex: String(zIndex),
-				})
-			} else {
-				// Standard horizontal gap
-				Object.assign(el.style, {
-					position: "absolute",
-					left: "0",
-					right: "0",
-					height: height,
-					pointerEvents: "none", // Enabled only during drag
-					zIndex: String(zIndex),
-				})
-			}
+			Object.assign(el.style, {
+				position: "absolute",
+				left: "0",
+				right: "0",
+				height: height,
+				pointerEvents: "none", // Enabled only during drag
+				zIndex: String(zIndex),
+			})
 
 			// Position the element in the middle of the gap
 			if (pendingGapZones.size === 0) {
@@ -1101,35 +809,27 @@ export function getGapDropPosition(
 	return null
 }
 
-/**
- * Find all gap zone elements that correspond to a given position.
- * Does a reverse lookup through the plugin state to find the key(s) for the position,
- * then queries the DOM for elements with those keys.
- */
-export function findGapElementsByPos(
+// findGapElementByPos returns the gap zone element rendered for a document
+// position, or null when there is none. It finds the keys of the position
+// in the plugin state. Then it finds the element that carries one of them.
+export function findGapElementByPos(
 	state: EditorState,
 	pos: number,
-): HTMLElement[] {
+): HTMLElement | null {
 	const pluginState = gapDecorationPluginKey.getState(state)
-	if (!pluginState) {
-		return []
-	}
 
-	const { gapsByKey } = pluginState
-	const elements: HTMLElement[] = []
+	for (const [key, p] of pluginState?.gapsByKey ?? []) {
+		const element =
+			p === pos
+				? document.querySelector<HTMLElement>(`[data-gap-key="${key}"]`)
+				: null
 
-	// Find all keys that map to this position
-	for (const [key, p] of gapsByKey) {
-		if (p === pos) {
-			// Find all elements with this key (primary and secondary gaps share the same key)
-			const els = document.querySelectorAll<HTMLElement>(
-				`[data-gap-key="${key}"]`,
-			)
-			elements.push(...els)
+		if (element) {
+			return element
 		}
 	}
 
-	return elements
+	return null
 }
 
 export function enableGapZones(
@@ -1174,10 +874,6 @@ export function enableGapZones(
 		}
 	}
 
-	// Calculate the positions immediately before and after the dragged node
-	// (for excluding gap zones at the exact source position)
-	const draggedNodeEndPos = draggedNodePos + draggedNode.nodeSize
-
 	document.querySelectorAll(".pm-gap-zone[data-gap-key]").forEach((el) => {
 		const htmlEl = el as HTMLElement
 		const key = el.getAttribute("data-gap-key")
@@ -1190,24 +886,10 @@ export function enableGapZones(
 			return
 		}
 
-		const isVerticalGap = el.getAttribute("data-gap-orientation") === "vertical"
-
-		// For grid item dragging: skip gap zones at the exact source position
-		// (immediately before or after the dragged block)
-		if (GRID_ITEM_NAMES.has(draggedNode.type.name)) {
-			if (gapPos === draggedNodePos || gapPos === draggedNodeEndPos) {
-				htmlEl.style.pointerEvents = "none"
-				htmlEl.style.backgroundColor = "transparent"
-				return
-			}
-		}
-
 		// Skip gap zones adjacent to the source wrapper (before or after the entire block grid)
-		// but only for the external wrapper gap zones (not for internal gaps)
 		if (
 			sourceWrapperStart !== null &&
 			sourceWrapperEnd !== null &&
-			!isVerticalGap &&
 			(gapPos === sourceWrapperStart || gapPos === sourceWrapperEnd)
 		) {
 			htmlEl.style.pointerEvents = "none"

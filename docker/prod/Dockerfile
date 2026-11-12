@@ -21,7 +21,7 @@
 # in its output.
 
 # mirrors web/Dockerfile.dev (the dev/e2e image); change them together.
-FROM --platform=$BUILDPLATFORM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS web-builder
+FROM --platform=$BUILDPLATFORM node:24.22.2-bookworm-slim@sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9 AS web-builder
 
 RUN npm install -g pnpm@11.1.3
 
@@ -35,9 +35,13 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 # and neither has its sources yet.
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 COPY web/layers/ui/package.json ./layers/ui/
+# web links @oxynote/common from ../packages/common, which is
+# /packages/common here.
+COPY packages/common/package.json /packages/common/
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY web/ .
+COPY packages/common/src /packages/common/src
 
 # the second install only runs the previously skipped scripts. The find
 # guard fails the build if a native addon ever lands in the output — the
@@ -49,7 +53,7 @@ RUN pnpm install --frozen-lockfile \
 # the runtime ships the package's own single-file esbuild bundle (see
 # build:bundle and src/bundle.ts — the same artifact Dockerfile.dev and
 # the e2e stack run) instead of the ~83MB production node_modules tree.
-FROM --platform=$BUILDPLATFORM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS auth-realtime-builder
+FROM --platform=$BUILDPLATFORM node:24.22.2-bookworm-slim@sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9 AS auth-realtime-builder
 
 RUN npm install -g pnpm@11.1.3
 
@@ -57,6 +61,10 @@ WORKDIR /server
 
 COPY server/auth-realtime/package.json server/auth-realtime/pnpm-lock.yaml server/auth-realtime/pnpm-workspace.yaml server/auth-realtime/tsconfig.json server/auth-realtime/tsconfig.build.json ./
 COPY server/auth-realtime/src ./src
+# auth-realtime links @oxynote/common from ../../packages/common, which is
+# /packages/common here.
+COPY packages/common/package.json /packages/common/
+COPY packages/common/src /packages/common/src
 
 # check-types gates (esbuild does not look at types); the import proves
 # the bundle loads — with no environment set it must reject with its own
@@ -65,7 +73,7 @@ COPY server/auth-realtime/src ./src
 RUN pnpm install --frozen-lockfile && pnpm run check-types && pnpm run build:bundle \
 	&& node -e "import('/server/dist/bundle.mjs').then(() => { console.error('bundle skipped env validation'); process.exit(1) }, (err) => { if (!String(err).includes('invalid environment')) { console.error(err); process.exit(1) } })"
 
-FROM --platform=$BUILDPLATFORM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS launcher-builder
+FROM --platform=$BUILDPLATFORM node:24.22.2-bookworm-slim@sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9 AS launcher-builder
 
 RUN npm install -g pnpm@11.1.3
 
@@ -93,7 +101,7 @@ RUN pnpm run check-types && pnpm run build:bundle
 # tarball, tini's MIT is fetched from the same tag as its binary. The name
 # "Caddy" is trademarked; the binary is bundled unmodified and unrebranded.
 # Each architecture pins its own checksums; a version bump updates them all.
-FROM --platform=$BUILDPLATFORM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS fetch
+FROM --platform=$BUILDPLATFORM node:24.22.2-bookworm-slim@sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9 AS fetch
 
 ARG CADDY_VERSION=2.11.7
 ARG CADDY_SHA512_AMD64=a7a433a1b133efc3c8d10eb0b99d52a24b5ef5c322dc77f5282182b1c0402139ab83f3a99f0c52409df77d20123fb0b523edad8a66d8f5e49136197bf61ef0e7
@@ -125,7 +133,7 @@ RUN case "${TARGETARCH}" in \
 # system libraries, roughly half the size of the official node binary.
 # The base is digest-pinned; nodejs then tracks alpine 3.24's package
 # repo, which only ships security bumps within the branch.
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
 # the exact pins make the build fail — instead of silently shifting —
 # when alpine's branch rotates a package (they keep only the newest build

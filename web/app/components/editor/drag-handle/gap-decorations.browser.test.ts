@@ -7,7 +7,7 @@ import {
 	clearRepositionCooldown,
 	disableGapZones,
 	enableGapZones,
-	findGapElementsByPos,
+	findGapElementByPos,
 	getGapDropPosition,
 	repositionGapZones,
 } from "./gap-decorations"
@@ -22,8 +22,8 @@ import {
 import { gapPlugin } from "./test-helpers"
 import { attrBlockBuilder, docBuilder } from "~/components/editor/test-helpers"
 
-// fixed spacing and sizes so every measured gap centre, row wrap and
-// sibling indent is the same on every run. The second item of a nested
+// fixed spacing and sizes so every measured gap centre and sibling
+// indent is the same on every run. The second item of a nested
 // list is pushed further right on purpose: the horizontal measurement
 // picks whichever sibling is more indented
 const style = document.createElement("style")
@@ -35,8 +35,6 @@ style.textContent = `
 	.ProseMirror ul { margin: 10px 0; padding-left: 20px; }
 	.ProseMirror li { margin: 6px 0; }
 	.ProseMirror ul ul li:nth-of-type(2) { margin-left: 30px; }
-	.block-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-	.metric-block { width: 250px; height: 60px; }
 `
 document.head.appendChild(style)
 
@@ -87,18 +85,8 @@ const schema = new Schema({
 		},
 		[METRIC_BLOCK_NAME]: {
 			content: "inline*",
-			attrs: { uid: { default: null }, height: { default: null } },
-			toDOM: (node) => [
-				"div",
-				{
-					class: "metric-block",
-					style:
-						typeof node.attrs.height === "number"
-							? `height: ${node.attrs.height}px`
-							: "",
-				},
-				0,
-			],
+			attrs: { uid: { default: null } },
+			toDOM: () => ["div", { class: "metric-block" }, 0],
 		},
 		[SPLIT_DOCUMENTATION_NAME]: {
 			group: "block",
@@ -195,8 +183,8 @@ const listItem = (uid: string | null, ...content: PMNode[]) =>
 const blockGrid = (uid: string | null, ...blocks: PMNode[]) =>
 	block(BLOCK_GRID_NAME, { uid }, ...blocks)
 
-const metricBlock = (uid: string | null, height: number | null = null) =>
-	block(METRIC_BLOCK_NAME, { uid, height }, "ab")
+const metricBlock = (uid: string | null) =>
+	block(METRIC_BLOCK_NAME, { uid }, "ab")
 
 const splitDoc = (uid: string | null, left: PMNode, right: PMNode) =>
 	block(SPLIT_DOCUMENTATION_NAME, { uid }, left, right)
@@ -264,7 +252,7 @@ describe("gap decorations", { concurrent: false }, () => {
 
 	function gapEl(host: HTMLElement, key: string): HTMLElement {
 		const el = host.querySelector<HTMLElement>(
-			`.pm-gap-zone[data-gap-key="${key}"]:not(.pm-gap-zone-secondary)`,
+			`.pm-gap-zone[data-gap-key="${key}"]`,
 		)
 
 		if (!el) {
@@ -327,7 +315,6 @@ describe("gap decorations", { concurrent: false }, () => {
 			expect(el.getAttribute("data-gap-indent-level")).toBe("0")
 			expect(el.getAttribute("data-gap-left-inset")).toBe("0")
 			expect(el.getAttribute("data-gap-right-inset")).toBe("0")
-			expect(el.getAttribute("data-gap-orientation")).toBeNull()
 			expect(el.getAttribute("data-debug-color")).toBeNull()
 		})
 
@@ -409,19 +396,16 @@ describe("gap decorations", { concurrent: false }, () => {
 			expect(inner.style.zIndex).toBe("51")
 		})
 
-		it("renders metric grid gaps as vertical zones", ({ expect }) => {
+		it("renders no zones between the blocks of a grid", ({ expect }) => {
 			const { host } = mountEditor(
 				docOf(blockGrid("mg", metricBlock("m1"), metricBlock("m2"))),
 			)
 
-			const vertical = gapEl(host, "mg:before:m2")
-
-			expect(vertical.getAttribute("data-gap-orientation")).toBe("vertical")
-			expect(vertical.getAttribute("data-gap-x-offset")).toBe("0")
-			expect(vertical.style.width).toBe("1rem")
 			expect(
-				gapEl(host, "doc:before:mg").getAttribute("data-gap-orientation"),
-			).toBeNull()
+				[...host.querySelectorAll<HTMLElement>(".pm-gap-zone")].map((el) =>
+					el.getAttribute("data-gap-key"),
+				),
+			).toEqual(["doc:before:mg", "doc:after:mg"])
 		})
 	})
 
@@ -575,150 +559,13 @@ describe("gap decorations", { concurrent: false }, () => {
 			expect(zone?.style.right).toBe("0px")
 			expect(zone?.style.top).toBe("15px")
 		})
-	})
-
-	describe("vertical gap positioning", () => {
-		it("centres a same-row gap between two metric blocks", async ({
-			expect,
-		}) => {
-			const { host } = mountEditor(
-				docOf(blockGrid("mg", metricBlock("m1"), metricBlock("m2", 90))),
-			)
-			await nextFrame()
-
-			const first = blockEl(host, ".metric-block", 0)
-			const second = blockEl(host, ".metric-block", 1)
-			const gap = gapEl(host, "mg:before:m2")
-			const gapRect = gap.getBoundingClientRect()
-			const boundary =
-				(first.getBoundingClientRect().right +
-					second.getBoundingClientRect().left) /
-				2
-
-			expect(gapRect.left + gapRect.width / 2).toBeCloseTo(boundary, 1)
-			// the height of a between-children gap is the tallest grid child
-			expect(gap.style.height).toBe(`${second.offsetHeight}px`)
-			expect(gap.style.bottom).toBe("auto")
-		})
-
-		it("sizes the leading and trailing gaps after their single neighbour", async ({
-			expect,
-		}) => {
-			const { host } = mountEditor(
-				docOf(blockGrid("mg", metricBlock("m1"), metricBlock("m2", 90))),
-			)
-			await nextFrame()
-
-			const first = blockEl(host, ".metric-block", 0)
-			const second = blockEl(host, ".metric-block", 1)
-			const leading = gapEl(host, "mg:before:m1")
-			const trailing = gapEl(host, "mg:after:m2")
-
-			expect(leading.style.height).toBe(`${first.offsetHeight}px`)
-			expect(trailing.style.height).toBe(`${second.offsetHeight}px`)
-			expect(leading.getBoundingClientRect().right).toBeCloseTo(
-				first.getBoundingClientRect().left,
-				1,
-			)
-			expect(trailing.getBoundingClientRect().left).toBeCloseTo(
-				second.getBoundingClientRect().right,
-				1,
-			)
-		})
-
-		it("adds a secondary zone at the end of the previous row when blocks wrap", async ({
-			expect,
-		}) => {
-			const { host } = mountEditor(
-				docOf(
-					blockGrid(
-						"mg",
-						metricBlock("m1"),
-						metricBlock("m2"),
-						metricBlock("m3"),
-					),
-				),
-			)
-			await nextFrame()
-
-			const second = blockEl(host, ".metric-block", 1)
-			const third = blockEl(host, ".metric-block", 2)
-
-			expect(third.getBoundingClientRect().top).toBeGreaterThan(
-				second.getBoundingClientRect().bottom - 10,
-			)
-
-			const primary = gapEl(host, "mg:before:m3")
-			const secondary = primary.parentElement?.querySelector<HTMLElement>(
-				".pm-gap-zone-secondary",
-			)
-
-			expect(secondary).not.toBeNull()
-			expect(secondary?.style.display).toBe("block")
-			expect(secondary?.getAttribute("data-gap-key")).toBe("mg:before:m3")
-			expect(secondary?.getAttribute("data-gap-orientation")).toBe("vertical")
-			expect(secondary?.style.height).toBe(`${second.offsetHeight}px`)
-			// the primary zone moves to the start of the wrapped row
-			expect(primary.getBoundingClientRect().right).toBeCloseTo(
-				third.getBoundingClientRect().left,
-				1,
-			)
-		})
-
-		it("reuses and then hides the secondary zone when the rows stop wrapping", async ({
-			expect,
-		}) => {
-			const { host } = mountEditor(
-				docOf(
-					blockGrid(
-						"mg",
-						metricBlock("m1"),
-						metricBlock("m2"),
-						metricBlock("m3"),
-					),
-				),
-			)
-			await nextFrame()
-
-			const secondary = gapEl(
-				host,
-				"mg:before:m3",
-			).parentElement?.querySelector<HTMLElement>(".pm-gap-zone-secondary")
-
-			if (!secondary) {
-				throw new Error("no secondary gap zone was created")
-			}
-
-			expect(secondary.style.display).toBe("block")
-
-			repositionGapZones()
-			await nextFrame()
-
-			// the same element is updated in place rather than duplicated
-			expect(
-				gapEl(host, "mg:before:m3").parentElement?.querySelectorAll(
-					".pm-gap-zone-secondary",
-				).length,
-			).toBe(1)
-
-			clearRepositionCooldown()
-			host.style.width = "1200px"
-			repositionGapZones()
-			await nextFrame()
-
-			expect(secondary.style.display).toBe("none")
-		})
 
 		it("leaves zones alone when they cannot be measured", async ({
 			expect,
 		}) => {
 			// a zone needs a laid-out offset parent and at least one sibling
 			// to measure against; these have neither
-			function fixture(
-				key: string,
-				hidden: boolean,
-				vertical: boolean,
-			): HTMLElement {
+			function fixture(key: string, hidden: boolean): HTMLElement {
 				const container = document.createElement("div")
 				container.style.position = "relative"
 				container.style.display = hidden ? "none" : "block"
@@ -729,11 +576,6 @@ describe("gap decorations", { concurrent: false }, () => {
 				zone.setAttribute("data-gap-key", key)
 				zone.style.top = "1px"
 				zone.style.left = "2px"
-
-				if (vertical) {
-					zone.setAttribute("data-gap-orientation", "vertical")
-				}
-
 				wrapper.appendChild(zone)
 				container.appendChild(wrapper)
 				document.body.appendChild(container)
@@ -744,12 +586,7 @@ describe("gap decorations", { concurrent: false }, () => {
 				return zone
 			}
 
-			const zones = [
-				fixture("hidden-horizontal", true, false),
-				fixture("hidden-vertical", true, true),
-				fixture("lonely-horizontal", false, false),
-				fixture("lonely-vertical", false, true),
-			]
+			const zones = [fixture("hidden", true), fixture("lonely", false)]
 
 			repositionGapZones()
 			await nextFrame()
@@ -758,66 +595,6 @@ describe("gap decorations", { concurrent: false }, () => {
 				expect(zone.style.top).toBe("1px")
 				expect(zone.style.left).toBe("2px")
 			}
-		})
-
-		it("copies the debug colour onto a recreated secondary zone", async ({
-			expect,
-		}) => {
-			const { host } = mountEditor(
-				docOf(
-					blockGrid(
-						"mg",
-						metricBlock("m1"),
-						metricBlock("m2"),
-						metricBlock("m3"),
-					),
-				),
-			)
-			await nextFrame()
-
-			const primary = gapEl(host, "mg:before:m3")
-			primary.parentElement?.querySelector(".pm-gap-zone-secondary")?.remove()
-			primary.setAttribute("data-debug-color", "rgb(1, 2, 3)")
-			primary.style.backgroundColor = "rgb(1, 2, 3)"
-
-			clearRepositionCooldown()
-			repositionGapZones()
-			await nextFrame()
-
-			const secondary = primary.parentElement?.querySelector<HTMLElement>(
-				".pm-gap-zone-secondary",
-			)
-
-			expect(secondary?.getAttribute("data-debug-color")).toBe("rgb(1, 2, 3)")
-			expect(secondary?.style.backgroundColor).toBe("rgb(1, 2, 3)")
-		})
-
-		it("falls back to a zero offset and an empty key without attributes", async ({
-			expect,
-		}) => {
-			const container = document.createElement("div")
-			container.style.position = "relative"
-			container.style.display = "flex"
-			container.innerHTML = `
-				<div style="width: 50px; height: 30px"></div>
-				<div class="pm-gap-wrapper" style="display: contents">
-					<div class="pm-gap-zone" data-gap-orientation="vertical"
-						style="position: absolute; width: 10px"></div>
-				</div>
-				<div style="width: 50px; height: 30px"></div>`
-			document.body.appendChild(container)
-			cleanups.push(() => {
-				container.remove()
-			})
-
-			repositionGapZones()
-			await nextFrame()
-
-			const zone = container.querySelector<HTMLElement>(".pm-gap-zone")
-
-			expect(zone?.style.left).toBe("45px")
-			expect(zone?.style.top).toBe("0px")
-			expect(zone?.style.height).toBe("30px")
 		})
 
 		it("does not position zones whose editor was torn down first", async ({
@@ -986,48 +763,26 @@ describe("gap decorations", { concurrent: false }, () => {
 		})
 	})
 
-	describe("findGapElementsByPos", () => {
-		it("finds every element rendered for a gap position", ({ expect }) => {
+	describe("findGapElementByPos", () => {
+		it("finds the element rendered for a gap position", ({ expect }) => {
 			const { view, host } = mountEditor(docOf(para("p1"), para("p2")))
 
-			expect(findGapElementsByPos(view.state, 4)).toEqual([
+			expect(findGapElementByPos(view.state, 4)).toBe(
 				gapEl(host, "doc:before:p2"),
-			])
-		})
-
-		it("includes the secondary element sharing a wrapped gap key", async ({
-			expect,
-		}) => {
-			const { view, host } = mountEditor(
-				docOf(
-					blockGrid(
-						"mg",
-						metricBlock("m1"),
-						metricBlock("m2"),
-						metricBlock("m3"),
-					),
-				),
 			)
-			await nextFrame()
-
-			const primary = gapEl(host, "mg:before:m3")
-			const found = findGapElementsByPos(view.state, 9)
-
-			expect(found).toHaveLength(2)
-			expect(found).toContain(primary)
 		})
 
-		it("returns nothing for a position without a gap", ({ expect }) => {
+		it("returns null for a position without a gap", ({ expect }) => {
 			const { view } = mountEditor(docOf(para("p1")))
 
-			expect(findGapElementsByPos(view.state, 2)).toEqual([])
+			expect(findGapElementByPos(view.state, 2)).toBeNull()
 		})
 
-		it("returns nothing when the plugin is not installed", ({ expect }) => {
+		it("returns null when the plugin is not installed", ({ expect }) => {
 			mountEditor(docOf(para("p1")))
 			const foreign = EditorState.create({ doc: docOf(para("p1")) })
 
-			expect(findGapElementsByPos(foreign, 0)).toEqual([])
+			expect(findGapElementByPos(foreign, 0)).toBeNull()
 		})
 	})
 
@@ -1066,18 +821,25 @@ describe("gap decorations", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const { host, editor } = mountEditor(
-				docOf(para("p1"), blockGrid("mg", metricBlock("m1"))),
+				docOf(
+					para("p1"),
+					splitDoc(
+						"sd",
+						leftSide("ls", heading("h1"), para("p2")),
+						rightSide("rs", titledCodeBlock("tc1")),
+					),
+				),
 			)
 
 			enableGapZones(editor, editor.state.doc.child(0), 0)
 
-			expect(statesByKey(host)).toEqual({
-				"doc:before:p1": "auto",
-				"doc:before:mg": "auto",
-				"mg:before:m1": "none",
-				"mg:after:m1": "none",
-				"doc:after:mg": "auto",
-			})
+			const states = statesByKey(host)
+
+			// the right side holds only titled code and metric blocks
+			expect(states["rs:before:tc1"]).toBe("none")
+			expect(states["rs:after:tc1"]).toBe("none")
+			expect(states["ls:before:p2"]).toBe("auto")
+			expect(states["doc:before:sd"]).toBe("auto")
 		})
 
 		it("keeps list items inside lists of their original type", ({ expect }) => {
@@ -1143,7 +905,7 @@ describe("gap decorations", { concurrent: false }, () => {
 			expect(states["doc:before:sd"]).toBe("auto")
 		})
 
-		it("skips the gaps touching the dragged metric block and its grid", ({
+		it("skips the gaps right before and after the dragged block's grid", ({
 			expect,
 		}) => {
 			const { host, editor } = mountEditor(
@@ -1160,10 +922,6 @@ describe("gap decorations", { concurrent: false }, () => {
 				"doc:before:p0": "auto",
 				// the gap right before the source grid
 				"doc:before:mg": "none",
-				// the gaps immediately before and after the dragged block
-				"mg:before:m1": "none",
-				"mg:before:m2": "none",
-				"mg:after:m2": "auto",
 				// the gap right after the source grid
 				"doc:before:p1": "none",
 				"doc:after:p1": "auto",

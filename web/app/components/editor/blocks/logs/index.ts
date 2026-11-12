@@ -3,7 +3,11 @@ import { VueNodeViewRenderer } from "@tiptap/vue-3"
 import MainBlock from "./MainBlock.vue"
 import { defaultLogConfig } from "./utils"
 import { GRID_ITEM_GROUP, LOG_BLOCK_NAME } from "../node-names"
-import { gridItemWidthAttribute } from "../grid/utils"
+import {
+	gridItemHeightAttribute,
+	gridItemPlaceAttributes,
+	gridItemWidthAttribute,
+} from "../grid/utils"
 import { insertGridItemCommand } from "../grid"
 
 declare module "@tiptap/core" {
@@ -33,6 +37,8 @@ export const LogBlock = Node.create({
 			timestampFormat: { default: defaults.timestampFormat },
 			order: { default: defaults.order },
 			width: gridItemWidthAttribute(),
+			height: gridItemHeightAttribute(),
+			...gridItemPlaceAttributes(),
 		}
 	},
 	parseHTML() {

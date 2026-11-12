@@ -10,7 +10,7 @@ import type { Store } from "./db.js"
 import { toAxiosHeaders, toHeaders } from "./headers.js"
 import { bestEffort, reportedAsMessage } from "./reporting.js"
 import { canEdit } from "./roles.js"
-import { EDITOR_SCHEMA_VERSION } from "./schema/index.js"
+import { EDITOR_SCHEMA_VERSION } from "@oxynote/common/schema-version"
 import {
 	isSystemContext,
 	replaceYdocContent,

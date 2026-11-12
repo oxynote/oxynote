@@ -23,7 +23,7 @@ func Test_LogReference(t *testing.T) {
 		}
 	}
 
-	assert.Contains(t, got, "dataSourceId, queries ([{name, query}]), timeRange, refreshInterval and width as a metric block's")
+	assert.Contains(t, got, "dataSourceId, queries ([{name, query}]), timeRange, refreshInterval, width and height as a metric block's")
 	assert.Contains(t, got, ". It may also hold title. order sorts the logs by time, and desc shows the newest first")
 }
 
@@ -41,7 +41,7 @@ func Test_decodeLogAttrs(t *testing.T) {
 		},
 		"A fully configured log block": {
 			Text: `{"title":"API errors","dataSourceId":"d1qbc8kv2vg000cnb6ag","queries":[{"name":"Query 1","query":"up"}],` +
-				`"timestampFormat":"numeric_nano","order":"asc","width":"wide"}`,
+				`"timestampFormat":"numeric_nano","order":"asc","width":"wide","height":"tall"}`,
 			Result: document.Attributes{
 				document.AttrTitle:           "API errors",
 				document.AttrDataSourceID:    "d1qbc8kv2vg000cnb6ag",
@@ -49,6 +49,7 @@ func Test_decodeLogAttrs(t *testing.T) {
 				document.AttrTimestampFormat: "numeric_nano",
 				document.AttrOrder:           "asc",
 				document.AttrWidth:           "wide",
+				document.AttrHeight:          "tall",
 			},
 		},
 		"Nulls are as absent as missing keys": {
@@ -74,6 +75,10 @@ func Test_decodeLogAttrs(t *testing.T) {
 		"An unknown enum value": {
 			Text: `{"width":"huge"}`,
 			Err:  errors.New("log block width must be one of: compact, standard, wide"),
+		},
+		"An unknown height": {
+			Text: `{"height":"double"}`,
+			Err:  errors.New("log block height must be one of: standard, tall"),
 		},
 		"A title that is not a string": {
 			Text: `{"title":1}`,

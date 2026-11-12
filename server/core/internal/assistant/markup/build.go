@@ -448,6 +448,7 @@ func buildMetrics(n node, stored document.Block) (document.Block, error) {
 
 	setSimulation(attrs, stored)
 	setWindow(attrs, stored, document.BlockNodeMetricBlock)
+	setGridCells(attrs, stored)
 
 	blk := newBlock(document.BlockNodeMetricBlock, stored, nil)
 	maps.Copy(blk.Attrs, attrs)
@@ -467,11 +468,41 @@ func buildLog(n node, stored document.Block) (document.Block, error) {
 	}
 
 	setWindow(attrs, stored, document.BlockNodeLogBlock)
+	setGridCells(attrs, stored)
 
 	blk := newBlock(document.BlockNodeLogBlock, stored, nil)
 	maps.Copy(blk.Attrs, attrs)
 
 	return blk, nil
+}
+
+// setGridCells keeps the places the stored block has in its grid,
+// because the model never sees them. It stores the named width and
+// height as the columns and rows they span. When the model leaves a name
+// as it was rendered, the stored size stays. So a size without a name of
+// its own survives. stored is the block the element's id names, or the
+// zero block.
+func setGridCells(attrs document.Attributes, stored document.Block) {
+	for _, key := range _gridPlaceAttrs {
+		if v, kept := stored.Attrs.Value(key); kept {
+			attrs[key] = v
+		}
+	}
+
+	for key, sizes := range _gridItemSizes {
+		name := attrs.Get(key).String()
+
+		size, named := sizes[name]
+		if !named {
+			continue
+		}
+
+		attrs[key] = size
+
+		if v, kept := stored.Attrs.Value(key); kept && name == gridSizeName(stored.Attrs, key) {
+			attrs[key] = v
+		}
+	}
 }
 
 // buildAtom builds an element that holds nothing but attributes.

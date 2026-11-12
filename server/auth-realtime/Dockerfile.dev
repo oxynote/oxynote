@@ -11,6 +11,10 @@ WORKDIR /server
 # install refuses to run the esbuild install script.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json tsconfig.build.json ./
 COPY src ./src
+# auth-realtime links @oxynote/common from ../../packages/common. The
+# compose file passes that folder as the common build context.
+COPY --from=common package.json /packages/common/
+COPY --from=common src /packages/common/src
 
 # check-types gates (esbuild does not look at types); build:bundle emits
 # the single-file runtime artifact the production image ships too

@@ -3,7 +3,11 @@ import { VueNodeViewRenderer } from "@tiptap/vue-3"
 import MainBlock from "./MainBlock.vue"
 import { defaultMetricConfig } from "./utils"
 import { GRID_ITEM_GROUP, METRIC_BLOCK_NAME } from "../node-names"
-import { gridItemWidthAttribute } from "../grid/utils"
+import {
+	gridItemHeightAttribute,
+	gridItemPlaceAttributes,
+	gridItemWidthAttribute,
+} from "../grid/utils"
 import { insertGridItemCommand } from "../grid"
 
 declare module "@tiptap/core" {
@@ -51,6 +55,8 @@ export const MetricBlock = Node.create({
 				rendered: false,
 			},
 			width: gridItemWidthAttribute(),
+			height: gridItemHeightAttribute(),
+			...gridItemPlaceAttributes(),
 		}
 	},
 	parseHTML() {

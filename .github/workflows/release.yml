@@ -48,6 +48,9 @@ jobs:
   launcher:
     uses: ./.github/workflows/qa-prod-launcher.yml
 
+  common:
+    uses: ./.github/workflows/qa-common.yml
+
   e2e-prod:
     uses: ./.github/workflows/qa-e2e-prod.yml
 
@@ -62,6 +65,7 @@ jobs:
       - auth-realtime
       - datagen
       - launcher
+      - common
       - e2e-prod
       - icons
     runs-on: ubuntu-latest

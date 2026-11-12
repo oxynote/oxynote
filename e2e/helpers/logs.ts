@@ -27,24 +27,60 @@ interface LogLine {
 
 // addLogBlocks creates a page holding one log block per config, each in a
 // grid of its own, so the blocks stack down the page. Every block reads
-// the demo log source. The blocks go in through the MCP surface, because
-// a block's queries are configuration and not text a test can type.
+// the demo log source.
 export async function addLogBlocks(
 	page: Page,
 	request: APIRequestContext,
 	configs: Record<string, unknown>[],
 ): Promise<{ url: string; dataSourceId: string }> {
+	return await insertLogBlocks(page, request, configs, (blocks) =>
+		blocks.map((block) => `<grid>${block}</grid>`).join(""),
+	)
+}
+
+// addLogGrid creates a page holding one grid with a log block per config.
+// The blocks and their blockIds follow the order of the configs.
+export async function addLogGrid(
+	page: Page,
+	request: APIRequestContext,
+	configs: Record<string, unknown>[],
+): Promise<LogPage> {
+	return await insertLogBlocks(
+		page,
+		request,
+		configs,
+		(blocks) => `<grid>${blocks.join("")}</grid>`,
+	)
+}
+
+export interface LogPage {
+	url: string
+	dataSourceId: string
+	documentId: string
+	branchId: string
+	blockIds: string[]
+	token: string
+}
+
+// insertLogBlocks creates a page and inserts the log blocks. wrap puts
+// them into grids. The blocks go in through the MCP surface, because a block's
+// queries are configuration and not text a test can type.
+async function insertLogBlocks(
+	page: Page,
+	request: APIRequestContext,
+	configs: Record<string, unknown>[],
+	wrap: (blocks: string[]) => string,
+): Promise<LogPage> {
 	await createDocument(page)
 	await documentPersisted(page)
 	const id = documentId(page)
 	const url = page.url()
-	const client = await connectMCPClient(
-		await authorizeMCPClient(
-			page,
-			request,
-			"documents:read documents:write data-sources:read",
-		),
+	const token = await authorizeMCPClient(
+		page,
+		request,
+		"documents:read documents:write data-sources:read",
 	)
+	const client = await connectMCPClient(token)
 
 	const sources = await client.callTool({
 		name: "list_data_sources",
@@ -76,18 +112,33 @@ export async function addLogBlocks(
 			document_id: id,
 			branch_id: branchId,
 			position: "end",
-			content: configs
-				.map(
+			content: wrap(
+				configs.map(
 					(config) =>
-						`<grid><logs>${JSON.stringify({ dataSourceId: dataSourceId, ...config })}</logs></grid>`,
-				)
-				.join(""),
+						`<logs>${JSON.stringify({ dataSourceId: dataSourceId, ...config })}</logs>`,
+				),
+			),
 		},
 	})
 	expect(inserted.isError, JSON.stringify(inserted.content)).toBeFalsy()
 	await client.close()
 
-	return { url: url, dataSourceId: dataSourceId ?? "" }
+	const written = (
+		JSON.parse((inserted.content as { text: string }[])[0]?.text ?? "{}") as {
+			content?: string
+		}
+	).content
+
+	return {
+		url: url,
+		dataSourceId: dataSourceId ?? "",
+		documentId: id,
+		branchId: branchId ?? "",
+		blockIds: [...(written ?? "").matchAll(/<logs id="([^"]+)"/g)].map(
+			(match) => match[1] ?? "",
+		),
+		token: token,
+	}
 }
 
 // logList is the scroller of the page's one log block. The page holds

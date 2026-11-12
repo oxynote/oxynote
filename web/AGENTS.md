@@ -227,7 +227,7 @@ sentinel or a restructure over a non-null assertion.
   | `.nuxt.test.ts` | nuxt runtime | composables/stores and all component tests (`mountSuspended`, real children, mocked network) |
   | `.browser.test.ts` | headless chromium | DOM behaviour happy-dom fakes (geometry, DOMPurify) |
   | `.test-d.ts` | typecheck | compile-time contracts (`expectTypeOf`) |
-  | `.bench.ts` | `vitest bench` | hot paths, only when a regression bites |
+  | `.bench.ts` | headless chromium, `vitest bench` | hot paths, only when a regression bites |
 
 - e2e lives in the repo-root [e2e/](../e2e/) package. There is no separate
   integration tier: component tests are the integration layer.

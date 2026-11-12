@@ -47,12 +47,39 @@ func Test_Build(t *testing.T) {
 		return out
 	}
 
+	// cells lists a block's column, row, columns and rows in its grid.
+	cells := func(b document.Block) []any {
+		return []any{
+			b.Attrs[document.AttrWidePosX],
+			b.Attrs[document.AttrWidePosY],
+			b.Attrs[document.AttrWidth],
+			b.Attrs[document.AttrHeight],
+		}
+	}
+
 	grid, ok := root.FindByUID("g1")
 	require.True(t, ok)
 
 	legacyGrid := grid
 	legacyGrid.Type = document.BlockNodeMetricGrid
 	legacyGrid.Attrs = document.Attributes{document.AttrUID: "g1", document.AttrCommentID: "nc-g1"}
+
+	// irregular is the fixture's metric with a width of 10 columns. No
+	// named width spans 10 columns.
+	irregular, ok := root.FindByUID("mb1")
+	require.True(t, ok)
+
+	irregular.Attrs = maps.Clone(irregular.Attrs)
+	irregular.Attrs[document.AttrWidth] = 10.0
+
+	// placedGrid's blocks read pc, pa, pb. child renders one of them.
+	placedGrid := placedTestGrid(t)
+	child := func(uid string) string {
+		b, ok := placedGrid.FindByUID(uid)
+		require.True(t, ok)
+
+		return Render([]document.Block{b})
+	}
 
 	unknown := document.Block{Type: "mysteryBlock", Attrs: document.Attributes{document.AttrUID: "x1"}}
 	mixedGrid := grid
@@ -159,7 +186,54 @@ func Test_Build(t *testing.T) {
 			Check: func(t *testing.T, got []document.Block) {
 				t.Helper()
 				assert.Equal(t, true, got[0].Attrs[document.AttrSimulationActive])
-				assert.Equal(t, "wide", got[0].Attrs[document.AttrWidth])
+				assert.Equal(t, 24, got[0].Attrs[document.AttrWidth])
+			},
+		},
+		"Metric re-sent keeps its cells in the grid": {
+			Markup: edit("mb1", `"refreshInterval":"1m"`, `"refreshInterval":"5m"`),
+			Stored: root,
+			Check: func(t *testing.T, got []document.Block) {
+				t.Helper()
+				assert.Equal(t, []any{0.0, 0.0, 12.0, 1.0}, cells(got[0]))
+			},
+		},
+		"Metric given another named width and height takes their columns and rows": {
+			Markup: strings.Replace(edit("mb1", `"width":"standard"`, `"width":"wide"`), `"height":"standard"`, `"height":"tall"`, 1),
+			Stored: root,
+			Check: func(t *testing.T, got []document.Block) {
+				t.Helper()
+				assert.Equal(t, []any{0.0, 0.0, 24, 2}, cells(got[0]))
+			},
+		},
+		"Metric keeps a width without a name the markup left as it read it": {
+			Markup: strings.Replace(Render([]document.Block{irregular}), `"refreshInterval":"1m"`, `"refreshInterval":"5m"`, 1),
+			Stored: document.RootBlock{Content: []document.Block{irregular}},
+			Check: func(t *testing.T, got []document.Block) {
+				t.Helper()
+				assert.Equal(t, []any{0.0, 0.0, 10.0, 1.0}, cells(got[0]))
+			},
+		},
+		"Log keeps a width name it was saved with when the markup leaves it": {
+			Markup: edit("lb1", `"title":"Errors"`, `"title":"Failures"`),
+			Stored: root,
+			Check: func(t *testing.T, got []document.Block) {
+				t.Helper()
+				assert.Equal(t, "standard", got[0].Attrs[document.AttrWidth])
+			},
+		},
+		"Log saved with a width name given another takes its columns": {
+			Markup: edit("lb1", `"width":"standard"`, `"width":"compact"`),
+			Stored: root,
+			Check: func(t *testing.T, got []document.Block) {
+				t.Helper()
+				assert.Equal(t, 8, got[0].Attrs[document.AttrWidth])
+			},
+		},
+		"New metric has no cells": {
+			Markup: `<metrics>{"width":"compact"}</metrics>`,
+			Check: func(t *testing.T, got []document.Block) {
+				t.Helper()
+				assert.Equal(t, []any{nil, nil, 8, nil}, cells(got[0]))
 			},
 		},
 		"Metric re-sent without its window keeps it": {
@@ -193,11 +267,11 @@ func Test_Build(t *testing.T) {
 		},
 		"Metric under its former name builds a metric": {
 			Markup: `<grid><metric>{"title":"Up"}</metric></grid>`,
-			Result: "<grid>\n  <metrics>{\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\",\"title\":\"Up\"}</metrics>\n</grid>\n",
+			Result: "<grid>\n  <metrics row=\"0\" column=\"0\" stack=\"0\">{\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\",\"title\":\"Up\"}</metrics>\n</grid>\n",
 		},
 		"New logs build a log block": {
 			Markup: `<grid><logs>{"title":"Errors","order":"asc"}</logs></grid>`,
-			Result: "<grid>\n  <logs>{\"order\":\"asc\",\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\",\"title\":\"Errors\"}</logs>\n</grid>\n",
+			Result: "<grid>\n  <logs row=\"0\" column=\"0\" stack=\"0\">{\"order\":\"asc\",\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\",\"title\":\"Errors\"}</logs>\n</grid>\n",
 		},
 		"Logs drop the uid and comment the markup sent": {
 			Markup: `<logs>{"uid":"x","nodeCommentId":"c"}</logs>`,
@@ -224,6 +298,43 @@ func Test_Build(t *testing.T) {
 			Check: func(t *testing.T, got []document.Block) {
 				t.Helper()
 				assert.Equal(t, mixedGrid.Content, got[0].Content)
+			},
+		},
+		"Grid with a block removed keeps the cells of the rest": {
+			Markup: `<grid id="pg">` + child("pc") + child("pb") + `</grid>`,
+			Stored: document.RootBlock{Content: []document.Block{placedGrid}},
+			Check: func(t *testing.T, got []document.Block) {
+				t.Helper()
+				assert.Equal(t, []string{"pc", "pb"}, uids(got[0].Content...))
+				assert.Equal(t, []any{0.0, 0.0, 12.0, 1.0}, cells(got[0].Content[0]))
+				assert.Equal(t, []any{0.0, 1.0, 24.0, 1.0}, cells(got[0].Content[1]))
+			},
+		},
+		"Grid ignores a row, column and stacked place the markup changed": {
+			Markup: strings.Replace(Render([]document.Block{placedGrid}), `id="pc" row="0" column="0" stack="0"`, `id="pc" row="5" column="3" stack="2"`, 1),
+			Stored: document.RootBlock{Content: []document.Block{placedGrid}},
+			Check: func(t *testing.T, got []document.Block) {
+				t.Helper()
+				assert.Equal(t, placedGrid, got[0])
+			},
+		},
+		"Grid with its blocks reordered stays as stored": {
+			Markup: `<grid id="pg">` + child("pb") + child("pc") + child("pa") + `</grid>`,
+			Stored: document.RootBlock{Content: []document.Block{placedGrid}},
+			Check: func(t *testing.T, got []document.Block) {
+				t.Helper()
+				assert.Equal(t, placedGrid, got[0])
+			},
+		},
+		"Grid with a new block keeps the places of the others": {
+			Markup: strings.Replace(Render([]document.Block{placedGrid}), "</grid>", "<metrics>{}</metrics></grid>", 1),
+			Stored: document.RootBlock{Content: []document.Block{placedGrid}},
+			Check: func(t *testing.T, got []document.Block) {
+				t.Helper()
+				require.Len(t, got[0].Content, 4)
+				assert.Equal(t, []string{"pc", "pa", "pb"}, uids(got[0].Content[:3]...))
+				assert.Equal(t, []any{0.0, 0.0, 12.0, 1.0}, cells(got[0].Content[0]))
+				assert.NotContains(t, got[0].Content[3].Attrs, document.AttrWidePosX)
 			},
 		},
 		"Entry with a kept p keeps it nested": {
@@ -548,6 +659,59 @@ func Test_findDuplicateUID(t *testing.T) {
 			uid, found := findDuplicateUID(c.Blocks, map[string]bool{})
 			assert.Equal(t, c.Found, found)
 			assert.Equal(t, c.UID, uid)
+		})
+	}
+}
+
+func Test_setGridCells(t *testing.T) {
+	t.Parallel()
+
+	stored := gridBlock("a", document.Attributes{
+		document.AttrWidePosX: 12.0,
+		document.AttrWidePosY: 1.0,
+		document.AttrStackPos: 2.0,
+		document.AttrWidth:    10.0,
+		document.AttrHeight:   2.0,
+	})
+	places := func(attrs document.Attributes) document.Attributes {
+		attrs[document.AttrWidePosX] = 12.0
+		attrs[document.AttrWidePosY] = 1.0
+		attrs[document.AttrStackPos] = 2.0
+
+		return attrs
+	}
+
+	cc := map[string]struct {
+		Attrs  document.Attributes
+		Stored document.Block
+		Result document.Attributes
+	}{
+		"New block takes the columns and rows of its names": {
+			Attrs:  document.Attributes{document.AttrWidth: "compact", document.AttrHeight: "tall"},
+			Result: document.Attributes{document.AttrWidth: 8, document.AttrHeight: 2},
+		},
+		"New block keeps a name the grid does not know": {
+			Attrs:  document.Attributes{document.AttrWidth: "huge"},
+			Result: document.Attributes{document.AttrWidth: "huge"},
+		},
+		"Stored block keeps its places and the size it was read with": {
+			Attrs:  document.Attributes{document.AttrWidth: "standard", document.AttrHeight: "tall"},
+			Stored: stored,
+			Result: places(document.Attributes{document.AttrWidth: 10.0, document.AttrHeight: 2.0}),
+		},
+		"Stored block given another name takes its columns": {
+			Attrs:  document.Attributes{document.AttrWidth: "wide", document.AttrHeight: "tall"},
+			Stored: stored,
+			Result: places(document.Attributes{document.AttrWidth: 24, document.AttrHeight: 2.0}),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			setGridCells(c.Attrs, c.Stored)
+			assert.Equal(t, c.Result, c.Attrs)
 		})
 	}
 }

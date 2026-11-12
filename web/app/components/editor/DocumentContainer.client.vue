@@ -11,7 +11,7 @@ import { refreshGapDecorationsInBackground } from "./drag-handle/gap-decorations
 import { editorCaretColors } from "~/assets/css"
 import { DOCUMENT_HOOK_QUERY_KEYS } from "~/composables/api/useDocumentHookAPI"
 import { asyncRenderBlockUids } from "./blocks/async-render"
-import { EDITOR_SCHEMA_VERSION } from "./schema-extensions"
+import { EDITOR_SCHEMA_VERSION } from "@oxynote/common/schema-version"
 
 interface BranchProviderEntry {
 	provider: HocuspocusProvider
