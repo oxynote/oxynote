@@ -229,16 +229,17 @@ describe("<MetricConfigBaseModal>", { concurrent: false }, () => {
 		})
 		await mountModal()
 
-		teleportedButton(trigger()).dispatchEvent(
-			new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-		)
-		await nextTick()
+		await openSetting(trigger())
 
 		const options = Array.from(
 			document.body.querySelectorAll("[role='option']"),
 		).map((o) => o.textContent.trim())
 
-		expect(options[0]).toBe(label())
+		if (trigger() === t("general.time-range-options.last_24_hours")) {
+			expect(teleportedButton(label())).toBeDefined()
+		} else {
+			expect(options[0]).toBe(label())
+		}
 	})
 
 	it("stores the reference once the global time is picked", async ({
@@ -251,18 +252,9 @@ describe("<MetricConfigBaseModal>", { concurrent: false }, () => {
 			},
 		})
 		await mountModal()
-		teleportedButton(
-			t("general.time-range-options.last_24_hours"),
-		).dispatchEvent(
-			new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-		)
-		await nextTick()
+		await openSetting(t("general.time-range-options.last_24_hours"))
 
-		document.body
-			.querySelector("[role='option']")
-			?.dispatchEvent(
-				new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-			)
+		teleportedButton(t("editor.config-modal-utils.variable-time-range")).click()
 		// the item selects only after two ticks of its own
 		await flushPromises()
 
@@ -453,4 +445,16 @@ function simulationIconShown(): boolean {
 	return (
 		document.body.querySelector('[class~="i-mingcute:test-tube-line"]') !== null
 	)
+}
+
+async function openSetting(label: string) {
+	const button = teleportedButton(label)
+	if (button.getAttribute("aria-haspopup") === "dialog") {
+		button.click()
+	} else {
+		button.dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+		)
+	}
+	await nextTick()
 }

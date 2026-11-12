@@ -309,16 +309,18 @@ describe("<LogConfigBaseModal>", { concurrent: false }, () => {
 			}),
 		})
 		await mountModal()
-		teleportedButton(trigger()).dispatchEvent(
-			new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-		)
-		await nextTick()
+		await openSetting(trigger())
 
-		Array.from(document.body.querySelectorAll("[role='option']"))
-			.find((o) => o.textContent.trim() === option())
-			?.dispatchEvent(
+		const item = Array.from(
+			document.body.querySelectorAll("[role='option'], button"),
+		).find((element) => element.textContent.trim() === option())
+		if (item instanceof HTMLButtonElement) {
+			item.click()
+		} else {
+			item?.dispatchEvent(
 				new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
 			)
+		}
 		// the item selects only after two ticks of its own
 		await flushPromises()
 
@@ -651,4 +653,16 @@ function labelText(attribute: string): string {
 	}
 
 	return document.getElementById(id)?.textContent.trim() ?? ""
+}
+
+async function openSetting(label: string) {
+	const button = teleportedButton(label)
+	if (button.getAttribute("aria-haspopup") === "dialog") {
+		button.click()
+	} else {
+		button.dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+		)
+	}
+	await nextTick()
 }
