@@ -6,13 +6,21 @@ import { registerEndpoint } from "@nuxt/test-utils/runtime"
 import type { EntryKey } from "@pinia/colada"
 import { getQuery, readBody, type H3Event } from "h3"
 import { expect as staticExpect } from "vitest"
+import { effectScope, type EffectScope } from "vue"
+
+const scopes: EffectScope[] = []
 
 // the composables' queries inject() their option defaults, which vue only
 // allows inside a component or an app context — runWithContext provides
-// the latter. The assertion is for eslint's ts program, which resolves
-// calls through runWithContext as error typed; vue-tsc infers them fine.
+// the latter. Each call runs in its own effect scope, so clearQueryCache
+// can stop the queries a test started. The assertion is for eslint's ts
+// program, which resolves calls through runWithContext as error typed;
+// vue-tsc infers them fine.
 export function runInApp<T>(fn: () => T): T {
-	return useNuxtApp().runWithContext(fn) as T
+	const scope = effectScope(true)
+	scopes.push(scope)
+
+	return useNuxtApp().runWithContext(() => scope.run(fn)) as T
 }
 
 // isXid() only checks for a 20-character length; padding a short prefix
@@ -111,8 +119,14 @@ export function disposeMockEndpoints() {
 }
 
 // queries with equal keys share app-wide cache entries between tests —
-// dropping every entry from a beforeEach gives each test a fresh cache
+// dropping every entry from a beforeEach gives each test a fresh cache.
+// The queries of earlier tests are stopped first. A query that still runs
+// would put its old entry back.
 export function clearQueryCache() {
+	scopes.splice(0).forEach((scope) => {
+		scope.stop()
+	})
+
 	runInApp(() => {
 		const queryCache = useQueryCache()
 

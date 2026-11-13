@@ -8,7 +8,7 @@ type BranchId = string
 type BlockId = string
 type BlockMap<T> = Record<DocumentId, Record<BranchId, Record<BlockId, T>>>
 
-export const EDITOR_COMPACT_MAX_WIDTH_PX = 1280
+const EDITOR_COMPACT_MAX_WIDTH_PX = 1280
 
 export const useEditorStore = defineStore("editor", () => {
 	const locked = ref(false)

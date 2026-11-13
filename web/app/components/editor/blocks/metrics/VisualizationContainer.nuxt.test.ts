@@ -1,5 +1,9 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
-import { flushPromises, type VueWrapper } from "@vue/test-utils"
+import {
+	enableAutoUnmount,
+	flushPromises,
+	type VueWrapper,
+} from "@vue/test-utils"
 import { setResponseStatus } from "h3"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import VisualizationContainer from "./VisualizationContainer.vue"
@@ -105,6 +109,8 @@ function chartNames(wrapper: VueWrapper): string[] {
 // the editor store, the query cache and the editable flag are shared
 // app-wide, so these tests cannot interleave
 describe("<VisualizationContainer>", { concurrent: false }, () => {
+	enableAutoUnmount(afterEach)
+
 	beforeEach(() => {
 		stubChartColorContext()
 		// happy-dom loads no stylesheet, so the palette has no values

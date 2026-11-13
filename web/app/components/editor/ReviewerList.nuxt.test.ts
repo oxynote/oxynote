@@ -1,4 +1,4 @@
-import type { VueWrapper } from "@vue/test-utils"
+import { enableAutoUnmount, type VueWrapper } from "@vue/test-utils"
 import { setResponseStatus } from "h3"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
@@ -88,6 +88,8 @@ function popoverButton(hint: string): HTMLButtonElement {
 // module and the teleported overlays are all shared, so these tests
 // cannot interleave
 describe("<ReviewerList>", { concurrent: false }, () => {
+	enableAutoUnmount(afterEach)
+
 	beforeEach(() => {
 		clearTeleportedOverlays()
 		clearQueryCache()

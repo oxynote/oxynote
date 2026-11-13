@@ -85,16 +85,12 @@ const listed = computed(() =>
 function hookComponent(type: DocumentHookType): Component | null {
 	switch (type) {
 		case DocumentHookType.ScheduledReminder:
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-return -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 			return ScheduledReminderConfigMenu
 		case DocumentHookType.GitHubTracking:
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-return -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 			return GitHubTrackingConfigMenu
 		case DocumentHookType.URLWatcher:
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-return -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 			return URLWatcherConfigMenu
 		case DocumentHookType.ContainerImageWatcher:
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-return -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 			return ContainerImageWatcherConfigMenu
 		default:
 			return null

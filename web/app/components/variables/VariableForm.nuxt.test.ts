@@ -616,10 +616,7 @@ function waitForValidation(check: () => void) {
 }
 
 function headerButton(wrapper: VueWrapper, label: string) {
-	return findButtonByText(
-		wrapper.findComponent(FormHeader) as VueWrapper,
-		label,
-	)
+	return findButtonByText(wrapper.findComponent(FormHeader), label)
 }
 
 function headerButtonTexts(wrapper: VueWrapper) {

@@ -1,6 +1,6 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
-import { beforeEach, describe, it, vi } from "vitest"
-import { flushPromises } from "@vue/test-utils"
+import { enableAutoUnmount, flushPromises } from "@vue/test-utils"
+import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { defineComponent, h } from "vue"
 import DiffChangeMarker from "./DiffChangeMarker.vue"
 import { DiffStatus } from "./position-map"
@@ -102,6 +102,8 @@ describe("DiffChangeMarker", () => {
 
 	// the card lands in <body>, which every test in the file shares
 	describe("when clicked", { concurrent: false }, () => {
+		enableAutoUnmount(afterEach)
+
 		beforeEach(() => {
 			clearTeleportedOverlays()
 		})

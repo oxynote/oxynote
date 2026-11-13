@@ -24,7 +24,7 @@
 		"qa-fix": "pnpm run lint && pnpm run test"
 	},
 	"dependencies": {
-		"@sentry/node": "^11.10.0",
+		"@sentry/node": "^11.11.0",
 		"pino": "^10.4.0",
 		"zod": "^4.6.7"
 	},
@@ -37,7 +37,7 @@
 		"eslint": "^10.14.0",
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-import-x": "^4.18.0",
-		"knip": "^6.44.1",
+		"knip": "^6.44.2",
 		"prettier": "^3.9.10",
 		"typescript": "^6.0.3",
 		"typescript-eslint": "^8.72.1",

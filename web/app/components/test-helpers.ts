@@ -367,13 +367,23 @@ export function mockAuthEndpoint(
 	respond: (call: RecordedCall, event: H3Event) => unknown,
 	method: "GET" | "POST" = "POST",
 ): RecordedCall[] {
+	// a request may reach either spelling, so both record into one list
+	const calls: RecordedCall[] = []
+
+	const record = (call: RecordedCall, event: H3Event) => {
+		calls.push(call)
+
+		return respond(call, event)
+	}
+
 	mockEndpoint(
 		method,
 		`http://test.local/auth-realtime/api/auth/${endpoint}`,
-		respond,
+		record,
 	)
+	mockEndpoint(method, `/auth-realtime/api/auth/${endpoint}`, record)
 
-	return mockEndpoint(method, `/auth-realtime/api/auth/${endpoint}`, respond)
+	return calls
 }
 
 // components that refetch the organization after a change bypass the

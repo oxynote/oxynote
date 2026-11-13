@@ -393,7 +393,6 @@ function tagActions(tag: TagTreeElement): SidebarItemAction[] {
 			name: t("sidebar.item-dropdown-menu-buttons.edit-tag"),
 			icon: "mingcute:pencil-line",
 			menu: {
-				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 				component: TagEditMenu,
 				props: { tag: tag },
 			},

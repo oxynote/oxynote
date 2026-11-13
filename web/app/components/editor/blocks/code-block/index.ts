@@ -87,7 +87,6 @@ export const CodeBlockTitle = Node.create({
 		}
 	},
 	addNodeView() {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(CodeTitle)
 	},
 })
@@ -306,7 +305,6 @@ export const CodeBlock = CodeBlockLowlight.extend<CodeBlockOptions>({
 		}
 	},
 	addNodeView() {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(Code)
 	},
 })

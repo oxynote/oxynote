@@ -169,7 +169,6 @@ export const SplitDocumentationLeftSide = Node.create({
 		]
 	},
 	addNodeView() {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(LeftSideBlock)
 	},
 })
@@ -194,7 +193,6 @@ export const SplitDocumentationRightSide = Node.create({
 		]
 	},
 	addNodeView() {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(RightSideBlock)
 	},
 })
@@ -695,7 +693,6 @@ export const SplitDocumentation = Node.create({
 		]
 	},
 	addNodeView() {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(MainBlock)
 	},
 })
