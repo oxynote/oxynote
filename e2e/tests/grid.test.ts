@@ -27,14 +27,16 @@ import { makeReviewable, showChanges, switchToBranch } from "../helpers/review"
 import { signUpWithWorkspace } from "../helpers/workspace"
 
 // the grid switches to its 24 columns once the grid is 56rem wide. That is
-// the grid's own width, not the window's. From a 1250px window the sidebar
-// takes about 230px of it. Below that the sidebar hides, so only the
-// page's margins of about 100px are left. That is why a 1024px window
-// shows columns too.
+// the grid's own width, not the window's. Above a 1250px window the
+// sidebar takes about 230px of it. At 1250px and below the sidebar hides,
+// so a 1024px window shows columns too. Below 1024px the page's margins
+// shrink to 40px, and a 920px window leaves the grid about 880px, so it
+// stacks although the window is wider than 56rem.
 const WIDTHS = [
 	{ name: "side by side in a 1600px window", input: 1600, expected: true },
 	{ name: "side by side in a 1280px window", input: 1280, expected: true },
 	{ name: "side by side in a 1024px window", input: 1024, expected: true },
+	{ name: "stacked in a 920px window", input: 920, expected: false },
 	{ name: "stacked in a 760px window", input: 760, expected: false },
 ]
 
@@ -148,12 +150,13 @@ test.describe("grid layout", () => {
 
 		await page.setViewportSize({ width: WIDE, height: 900 })
 		// the blocks start to read only once they know their source, so a
-		// count of no reads can look settled before the first one is sent
-		await expect
-			.poll(() => reads.urls.length, {
-				message: "the blocks send their first log read",
-			})
-			.toBeGreaterThan(0)
+		// count of no reads can look settled before the first one is sent.
+		// So wait until each block shows its logs.
+		for (const id of blockIds) {
+			await expect(
+				gridBlock(page, id).locator("button[aria-expanded]"),
+			).not.toHaveCount(0)
+		}
 		await logReadsSettled(reads)
 		const loaded = reads.urls.length
 
