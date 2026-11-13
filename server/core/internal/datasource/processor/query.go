@@ -122,5 +122,5 @@ func isValidValue(v float64) bool {
 
 // NewInvalidQueryError creates a new error indicating an invalid query with the provided message.
 func NewInvalidQueryError(msg string) error {
-	return errutil.New(http.StatusBadRequest, "query.error", "%s", msg)
+	return errutil.New(http.StatusBadRequest, codeInvalidQuery, "%s", msg)
 }

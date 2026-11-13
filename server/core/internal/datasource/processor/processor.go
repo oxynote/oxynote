@@ -36,6 +36,46 @@ var _errClosed = errors.New("the data source processor is closed")
 // source connects without TLS.
 var _errInvalidCACertificate = errors.New("the ca certificate cannot be used")
 
+// _errRateLimited is returned when the data source limits the requests it
+// answers and refused this one.
+var _errRateLimited = errutil.New(
+	http.StatusTooManyRequests,
+	codeRateLimited,
+	"The data source is rate limiting requests. Try again shortly.",
+)
+
+// The internal codes of the errors a data source answers with.
+const (
+	codeUnauthorized = "data_source.unauthorized"
+	codeUnreachable  = "data_source.unreachable"
+	codeRateLimited  = "data_source.rate_limited"
+	codeInvalidQuery = "query.error"
+)
+
+// IsConnectionFailure reports whether err says the data source was down or
+// refused the login.
+func IsConnectionFailure(err error) bool {
+	switch errutil.InternalCode(err) {
+	case codeUnauthorized, codeUnreachable:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsOutage reports whether err says the data source is down, refused the
+// login or is rate limiting requests. A different query does not fix any
+// of them.
+func IsOutage(err error) bool {
+	return IsConnectionFailure(err) || errutil.InternalCode(err) == codeRateLimited
+}
+
+// IsInvalidQuery reports whether err says the data source rejected the
+// query.
+func IsInvalidQuery(err error) bool {
+	return errutil.InternalCode(err) == codeInvalidQuery
+}
+
 // ConnectionStatus represents the status of a connection test.
 type ConnectionStatus string
 
@@ -69,9 +109,9 @@ const (
 func (cs ConnectionStatus) Error() error {
 	switch cs {
 	case ConnectionStatusUnauthorized:
-		return errutil.New(http.StatusUnauthorized, "data_source.unauthorized", "Unauthorized access to the data source.")
+		return errutil.New(http.StatusUnauthorized, codeUnauthorized, "Unauthorized access to the data source.")
 	case ConnectionStatusUnreachable:
-		return errutil.New(http.StatusBadRequest, "data_source.unreachable", "The data source is unreachable.")
+		return errutil.New(http.StatusBadRequest, codeUnreachable, "The data source is unreachable.")
 	case ConnectionStatusVersionNotSupported:
 		return errutil.New(http.StatusBadRequest, "data_source.version_not_supported", "The data source version is not supported.")
 	case ConnectionStatusNotReadOnly:
