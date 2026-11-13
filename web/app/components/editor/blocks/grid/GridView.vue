@@ -87,10 +87,10 @@ function screenBlocks(grid: HTMLElement): HTMLElement[] {
 					'grid-cols-1',
 					'*:data-grid-cell:order-(--grid-order) *:data-grid-cell:col-span-full',
 					'*:data-grid-cell:h-auto',
-					'@5xl:grid-cols-[repeat(24,minmax(0,1fr))]',
-					'@5xl:*:data-grid-cell:order-none',
-					'@5xl:*:data-grid-cell:col-[var(--grid-col)/span_var(--grid-w)]',
-					'@5xl:*:data-grid-cell:row-[var(--grid-row)/span_var(--grid-h)]',
+					'@4xl:grid-cols-[repeat(24,minmax(0,1fr))]',
+					'@4xl:*:data-grid-cell:order-none',
+					'@4xl:*:data-grid-cell:col-[var(--grid-col)/span_var(--grid-w)]',
+					'@4xl:*:data-grid-cell:row-[var(--grid-row)/span_var(--grid-h)]',
 				)
 			"
 			:aria-owns="screenOrder.join(' ') || undefined"
