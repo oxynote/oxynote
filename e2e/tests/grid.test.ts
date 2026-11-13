@@ -26,12 +26,12 @@ import { visit } from "../helpers/page"
 import { makeReviewable, showChanges, switchToBranch } from "../helpers/review"
 import { signUpWithWorkspace } from "../helpers/workspace"
 
-// the grid switches to its 24 columns once the grid is 64rem wide. That is
+// the grid switches to its 24 columns once the grid is 56rem wide. That is
 // the grid's own width, not the window's. The sidebar and the page's
-// margins take about 330px of a window, so a 1280px window still stacks.
+// margins take about 330px of a window, so a 1024px window still stacks.
 const WIDTHS = [
 	{ name: "side by side in a 1600px window", input: 1600, expected: true },
-	{ name: "stacked in a 1280px window", input: 1280, expected: false },
+	{ name: "side by side in a 1280px window", input: 1280, expected: true },
 	{ name: "stacked in a 1024px window", input: 1024, expected: false },
 	{ name: "stacked in a 760px window", input: 760, expected: false },
 ]
