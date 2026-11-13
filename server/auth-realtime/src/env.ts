@@ -241,7 +241,8 @@ const schema = z
 		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_SCOPES: z
 			.string()
 			.optional(),
-		OXYNOTE_AUTH_REALTIME_PASSWORD_LOGIN_DISABLED: flag(false),
+		OXYNOTE_AUTH_REALTIME_EMAIL_PASSWORD_LOGIN_DISABLED:
+			flag(false),
 	})
 	.superRefine((values, ctx) => {
 		for (const provider of SOCIAL_PROVIDERS) {
@@ -297,13 +298,13 @@ const schema = z
 					values[provider.secretKey],
 			)
 		if (
-			values.OXYNOTE_AUTH_REALTIME_PASSWORD_LOGIN_DISABLED &&
+			values.OXYNOTE_AUTH_REALTIME_EMAIL_PASSWORD_LOGIN_DISABLED &&
 			!hasProvider
 		) {
 			ctx.addIssue({
 				code: "custom",
 				path: [
-					"OXYNOTE_AUTH_REALTIME_PASSWORD_LOGIN_DISABLED",
+					"OXYNOTE_AUTH_REALTIME_EMAIL_PASSWORD_LOGIN_DISABLED",
 				],
 				message: "needs an OIDC or social provider, or nobody can sign in",
 			})
@@ -411,7 +412,7 @@ export function loadEnv(source: Record<string, string | undefined>): Env {
 		socialProviders: socialProviders(values),
 		oidc: oidcProvider(values),
 		passwordLoginEnabled:
-			!values.OXYNOTE_AUTH_REALTIME_PASSWORD_LOGIN_DISABLED,
+			!values.OXYNOTE_AUTH_REALTIME_EMAIL_PASSWORD_LOGIN_DISABLED,
 		maxOrganizations:
 			values.OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATIONS,
 		maxOrganizationMembers:

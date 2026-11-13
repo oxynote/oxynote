@@ -65,7 +65,11 @@ differing from `docker/docker-compose.dev.yaml` in:
 
 - **No named volumes**; every run starts empty. Do not add persistence.
 - **No `container_name`**, own ports (`:18080` front door, `:18025`
-  mailpit).
+  mailpit, `:18083` the OIDC front door, `:18180` keycloak).
+- **A second copy of the backend signs in through keycloak** for
+  `oidc-sign-in.test.ts`. It runs on its own `oidc` network, where each
+  service takes its twin's name as an alias, so the Caddyfile and the
+  internal addresses stay the same.
 - **Env inlined and committed**; a fixture, not an operator template.
 - **Every image pinned.**
 - **Images tagged `:e2e-dev`** (`:e2e-prod` in the prod stack), never
@@ -100,10 +104,11 @@ limits; only `prod-single-workspace.test.ts` drives it, through
 `helpers/single-workspace.ts`. Its tests share the one workspace and its
 admin, so the file runs serially, without retries, read-only tests first.
 Two more sign in through the `keycloak` service (`:19180`):
-`oxynote-oidc` (`:19083`) for `prod-oidc-sign-in.test.ts`, and
+`oxynote-oidc` (`:19083`) for `oidc-sign-in.test.ts`, and
 `oxynote-oidc-single-workspace` (`:19084`, password login off) for
 `prod-oidc-single-workspace.test.ts`, which runs serially like the one
-above. Origins live in `helpers/oidc.ts`.
+above. The single-workspace origin lives in `helpers/oidc.ts`, the
+`oxynote-oidc` one in `helpers/config.ts`.
 Compose builds nothing; the image comes from `make prod-build`, tagged
 `:e2e-prod`, and CI's cache reaches it through `PROD_BUILD_EXTRA`. A `probe`
 container (idle alpine on the private network) exists for the
@@ -185,8 +190,8 @@ cheaper tier can:
 - Never `page.route()` an application endpoint, stub a response or seed the
   database out of band. Reach state through the product's own surface; the
   HTTP API is the fallback where the UI offers no path, never SQL.
-- Mail is real (mailpit), and so is OIDC: the prod stack runs keycloak,
-  and each test creates its own keycloak user through the admin API. The
+- Mail is real (mailpit), and so is OIDC: both stacks run keycloak, and
+  each test creates its own keycloak user through the admin API. The
   other OAuth providers have no doubles and stay untested.
 - Needing a mock is the signal the case belongs in the component tier.
 - **Collaboration runs as two real users**: `joinAsSecondUser` sends the

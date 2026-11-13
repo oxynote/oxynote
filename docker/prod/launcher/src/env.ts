@@ -411,7 +411,7 @@ const baseSchema = z.object({
 		.string()
 		.regex(/^\//, "must be an absolute path")
 		.optional(),
-	OXYNOTE_PASSWORD_LOGIN_DISABLED: flag(),
+	OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED: flag(),
 	OXYNOTE_AI_ASSISTANT_PROVIDER: z.string().optional(),
 	OXYNOTE_AI_ASSISTANT_MODEL: z.string().optional(),
 	OXYNOTE_AI_ASSISTANT_API_KEY: z.string().optional(),
@@ -565,10 +565,10 @@ const schema = baseSchema.superRefine((values, ctx) => {
 				values[provider.idKey] &&
 				values[provider.secretKey],
 		)
-	if (values.OXYNOTE_PASSWORD_LOGIN_DISABLED && !hasProvider) {
+	if (values.OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED && !hasProvider) {
 		ctx.addIssue({
 			code: "custom",
-			path: ["OXYNOTE_PASSWORD_LOGIN_DISABLED"],
+			path: ["OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED"],
 			message: "needs an OIDC or social login provider, or nobody can sign in",
 		})
 	}
@@ -705,7 +705,8 @@ export function loadConfig(source: Record<string, string | undefined>): Config {
 						values.OXYNOTE_SOCIAL_LOGIN_OIDC_CA_CERTS,
 				}
 			: undefined,
-		passwordLoginDisabled: values.OXYNOTE_PASSWORD_LOGIN_DISABLED,
+		passwordLoginDisabled:
+			values.OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED,
 		aiAssistant: aiAssistantConfig(values),
 		maxOrganizations: values.OXYNOTE_MAX_ORGANIZATIONS ?? "",
 		maxOrganizationMembers:

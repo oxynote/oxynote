@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto"
 import { expect, type APIRequestContext, type Page } from "@playwright/test"
+import { KEYCLOAK_URL } from "./config"
 
-// keycloak in the prod stack. Changing the port means changing that
-// service.
-const KEYCLOAK_URL = "http://localhost:19180"
+// the redirect to keycloak passes through caddy, auth-realtime and
+// keycloak's discovery, which is slow on a cold stack.
+const KEYCLOAK_REDIRECT_TIMEOUT = 15_000
 
 export interface IdpUser {
 	username: string
@@ -57,7 +58,7 @@ export async function submitKeycloakLogin(
 	user: IdpUser,
 ): Promise<void> {
 	await expect(page).toHaveURL((url) => url.origin === KEYCLOAK_URL, {
-		timeout: 15_000,
+		timeout: KEYCLOAK_REDIRECT_TIMEOUT,
 	})
 	await page.locator("#username").fill(user.username)
 	await page.locator("#password").fill(user.password)
@@ -69,7 +70,7 @@ export async function submitKeycloakLogin(
 // case for a user oxynote refused and so never signed in.
 export async function confirmKeycloakLogout(page: Page): Promise<void> {
 	await expect(page).toHaveURL((url) => url.origin === KEYCLOAK_URL, {
-		timeout: 15_000,
+		timeout: KEYCLOAK_REDIRECT_TIMEOUT,
 	})
 	await page.locator("#kc-logout").click()
 }

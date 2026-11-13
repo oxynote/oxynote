@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { OIDC_URL } from "../helpers/config"
 import { t } from "../helpers/i18n"
 import { newIdpUser } from "../helpers/keycloak"
 import { fetchVerificationLink } from "../helpers/mailpit"
@@ -6,7 +7,6 @@ import {
 	keycloakLoginButton,
 	linkedProviders,
 	logInThroughKeycloak,
-	OIDC_URL,
 	signUpAndVerifyByEmail,
 } from "../helpers/oidc"
 import { hydrated, visit } from "../helpers/page"

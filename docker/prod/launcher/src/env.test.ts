@@ -528,7 +528,8 @@ describe("loadConfig", () => {
 			const config = loadConfig(
 				completeEnv({
 					...oidc,
-					OXYNOTE_PASSWORD_LOGIN_DISABLED: "true",
+					OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED:
+						"true",
 				}),
 			)
 
@@ -574,9 +575,10 @@ describe("loadConfig", () => {
 			{
 				name: "disabled password login with no provider",
 				input: {
-					OXYNOTE_PASSWORD_LOGIN_DISABLED: "true",
+					OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED:
+						"true",
 				},
-				expected: "OXYNOTE_PASSWORD_LOGIN_DISABLED",
+				expected: "OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED",
 			},
 		])("rejects $name", ({ input, expected }, { expect }) => {
 			expect(() => loadConfig(completeEnv(input))).toThrow(

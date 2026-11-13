@@ -132,7 +132,9 @@ Authentik, Authelia, Zitadel, Okta, Entra ID, Dex and others.
 `OXYNOTE_SOCIAL_LOGIN_OIDC_DISPLAY_NAME` names the provider on the login and
 signup buttons ("Log in with SSO" by default).
 `OXYNOTE_SOCIAL_LOGIN_OIDC_SCOPES` is space-separated and defaults to
-`openid email profile`.
+`openid email profile`. `openid` and `email` are required, and without an
+email the sign-in is refused. `profile` gives the user's name, which stays
+empty without it.
 
 If the provider's certificate comes from a private CA, mount that CA's
 certificates as one PEM file and set `OXYNOTE_SOCIAL_LOGIN_OIDC_CA_CERTS`
@@ -154,7 +156,7 @@ user logs out at Authelia itself.
 
 #### Sign-in only through the provider
 
-`OXYNOTE_PASSWORD_LOGIN_DISABLED=true` removes email and password sign-in,
+`OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED=true` removes email and password sign-in,
 sign-up and password reset. It needs OIDC or a social login provider.
 
 On a single workspace this also changes the first boot. No default admin is

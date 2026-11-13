@@ -245,7 +245,7 @@ export function buildChildEnvs(
 			config.oidcLogin?.displayName ?? "",
 		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_SCOPES:
 			config.oidcLogin?.scopes ?? "",
-		OXYNOTE_AUTH_REALTIME_PASSWORD_LOGIN_DISABLED:
+		OXYNOTE_AUTH_REALTIME_EMAIL_PASSWORD_LOGIN_DISABLED:
 			config.passwordLoginDisabled ? "true" : "false",
 		// node trusts these besides its public CAs.
 		NODE_EXTRA_CA_CERTS: config.oidcLogin?.caCertsPath ?? "",

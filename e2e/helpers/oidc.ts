@@ -10,14 +10,14 @@ import {
 	revealForm,
 	type Credentials,
 } from "./auth"
+import { OIDC_URL } from "./config"
 import { t } from "./i18n"
 import { submitKeycloakLogin, type IdpUser } from "./keycloak"
 import { fetchVerificationLink } from "./mailpit"
 import { visit } from "./page"
 
-// the prod stack's two instances that sign in through keycloak. Changing
-// a port means changing that service.
-export const OIDC_URL = "http://localhost:19083"
+// the prod stack's instance whose single workspace only keycloak signs in
+// to. Changing the port means changing that service.
 export const OIDC_SINGLE_WORKSPACE_URL = "http://localhost:19084"
 
 // the button label both instances configure.

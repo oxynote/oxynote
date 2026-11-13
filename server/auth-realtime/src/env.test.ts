@@ -530,7 +530,7 @@ describe("loadEnv", () => {
 				const env = loadEnv(
 					completeEnv({
 						...google,
-						OXYNOTE_AUTH_REALTIME_PASSWORD_LOGIN_DISABLED:
+						OXYNOTE_AUTH_REALTIME_EMAIL_PASSWORD_LOGIN_DISABLED:
 							input,
 					}),
 				)
@@ -550,7 +550,7 @@ describe("loadEnv", () => {
 						"oxynote",
 					OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_SECRET:
 						"oidc-secret",
-					OXYNOTE_AUTH_REALTIME_PASSWORD_LOGIN_DISABLED:
+					OXYNOTE_AUTH_REALTIME_EMAIL_PASSWORD_LOGIN_DISABLED:
 						"true",
 				}),
 			)
@@ -572,12 +572,12 @@ describe("loadEnv", () => {
 				loadEnv(
 					completeEnv({
 						...input,
-						OXYNOTE_AUTH_REALTIME_PASSWORD_LOGIN_DISABLED:
+						OXYNOTE_AUTH_REALTIME_EMAIL_PASSWORD_LOGIN_DISABLED:
 							"true",
 					}),
 				),
 			).toThrow(
-				"OXYNOTE_AUTH_REALTIME_PASSWORD_LOGIN_DISABLED",
+				"OXYNOTE_AUTH_REALTIME_EMAIL_PASSWORD_LOGIN_DISABLED",
 			)
 		})
 	})

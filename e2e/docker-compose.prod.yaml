@@ -132,7 +132,7 @@ services:
       - OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_ID=oxynote
       - OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_SECRET=oxynote-e2e-secret
       - OXYNOTE_SOCIAL_LOGIN_OIDC_DISPLAY_NAME=Keycloak
-      - OXYNOTE_PASSWORD_LOGIN_DISABLED=true
+      - OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED=true
     depends_on:
       keycloak:
         condition: service_healthy
