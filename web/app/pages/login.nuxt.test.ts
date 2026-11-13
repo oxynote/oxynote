@@ -412,8 +412,13 @@ describe("<login>", { concurrent: false }, () => {
 		const wrapper = await mountSuspended(Login)
 
 		await submitCredentials(wrapper)
-		await settleSignIn(calls)
+		// better-auth follows the redirect only after the response has passed
+		// through its fetch hooks, so a recorded call is not enough to wait on
+		await vi.waitFor(() => {
+			expect(location).toHaveBeenCalledTimes(1)
+		}, WAIT_FOR_OPTIONS)
 
+		expect.soft(calls).toHaveLength(1)
 		expect.soft(calls[0]?.body).toEqual({
 			email: "ada@example.com",
 			password: "hunter2",
