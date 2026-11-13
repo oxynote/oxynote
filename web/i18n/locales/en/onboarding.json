@@ -5,6 +5,7 @@
 			"signup-google": "Sign up with Google",
 			"signup-github": "Sign up with GitHub",
 			"signup-slack": "Sign up with Slack",
+			"signup-oidc": "Sign up with {name}",
 			"signup-email-password": "Sign up with email",
 			"email-password-form": {
 				"email-placeholder": "Email address",
@@ -44,6 +45,7 @@
 			"login-google": "Log in with Google",
 			"login-github": "Log in with GitHub",
 			"login-slack": "Log in with Slack",
+			"login-oidc": "Log in with {name}",
 			"login-email-password": "Log in with email",
 			"email-verified": "Your email has been verified. You can now log in",
 			"email-password-form": {

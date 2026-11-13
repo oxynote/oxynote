@@ -10,11 +10,14 @@ export const STACK = process.env.E2E_STACK === "prod" ? "prod" : "dev"
 // the matching docker-compose file.
 const PORTS =
 	STACK === "prod"
-		? { frontDoor: "19080", mailpit: "19025" }
-		: { frontDoor: "18080", mailpit: "18025" }
+		? { frontDoor: "19080", mailpit: "19025", oidc: "19083", keycloak: "19180" }
+		: { frontDoor: "18080", mailpit: "18025", oidc: "18083", keycloak: "18180" }
 
 export const BASE_URL = `http://localhost:${PORTS.frontDoor}`
 export const MAILPIT_URL = `http://localhost:${PORTS.mailpit}`
+// the instance that signs in through keycloak, and keycloak itself.
+export const OIDC_URL = `http://localhost:${PORTS.oidc}`
+export const KEYCLOAK_URL = `http://localhost:${PORTS.keycloak}`
 export const REALTIME_WS_URL = `ws://localhost:${PORTS.frontDoor}/auth-realtime/hocuspocus`
 // the mcp surface's canonical url, which is also the OAuth resource
 // (RFC 8707) a token is bound to.

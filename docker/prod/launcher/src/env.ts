@@ -43,6 +43,20 @@ export interface SlackAppConfig {
 
 export type SocialLoginProviderName = "github" | "google" | "slack"
 
+// the display name and scopes stay empty when unset. auth-realtime
+// applies their defaults.
+export interface OidcLoginConfig {
+	issuerUrl: string
+	clientId: string
+	clientSecret: string
+	displayName: string
+	scopes: string
+	// a mounted PEM file with the certificates of a private CA, which
+	// auth-realtime then trusts besides the public ones. Undefined when
+	// the provider's certificate is public.
+	caCertsPath: string | undefined
+}
+
 export interface Config {
 	// the public origin, no trailing slash; every public URL the
 	// components need derives from it.
@@ -70,6 +84,8 @@ export interface Config {
 	githubApp: GitHubAppConfig | undefined
 	slackApp: SlackAppConfig | undefined
 	socialLogin: Partial<Record<SocialLoginProviderName, OAuthCredentials>>
+	oidcLogin: OidcLoginConfig | undefined
+	passwordLoginDisabled: boolean
 	// the assistant family is passed through to core untouched, keyed by
 	// the OXYNOTE_AI_ASSISTANT_ suffix; core owns its deep validation.
 	aiAssistant: Record<string, string>
@@ -386,6 +402,16 @@ const baseSchema = z.object({
 	OXYNOTE_SOCIAL_LOGIN_GOOGLE_CLIENT_SECRET: z.string().optional(),
 	OXYNOTE_SOCIAL_LOGIN_SLACK_CLIENT_ID: z.string().optional(),
 	OXYNOTE_SOCIAL_LOGIN_SLACK_CLIENT_SECRET: z.string().optional(),
+	OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL: httpUrl().optional(),
+	OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_ID: z.string().optional(),
+	OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_SECRET: z.string().optional(),
+	OXYNOTE_SOCIAL_LOGIN_OIDC_DISPLAY_NAME: z.string().optional(),
+	OXYNOTE_SOCIAL_LOGIN_OIDC_SCOPES: z.string().optional(),
+	OXYNOTE_SOCIAL_LOGIN_OIDC_CA_CERTS: z
+		.string()
+		.regex(/^\//, "must be an absolute path")
+		.optional(),
+	OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED: flag(),
 	OXYNOTE_AI_ASSISTANT_PROVIDER: z.string().optional(),
 	OXYNOTE_AI_ASSISTANT_MODEL: z.string().optional(),
 	OXYNOTE_AI_ASSISTANT_API_KEY: z.string().optional(),
@@ -460,6 +486,20 @@ const featureGroups: {
 		],
 	},
 	{
+		key: "OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL",
+		requires: [
+			"OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_ID",
+			"OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_SECRET",
+		],
+		companions: [
+			"OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_ID",
+			"OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_SECRET",
+			"OXYNOTE_SOCIAL_LOGIN_OIDC_DISPLAY_NAME",
+			"OXYNOTE_SOCIAL_LOGIN_OIDC_SCOPES",
+			"OXYNOTE_SOCIAL_LOGIN_OIDC_CA_CERTS",
+		],
+	},
+	{
 		key: "OXYNOTE_AI_ASSISTANT_PROVIDER",
 		requires: [],
 		companions: aiAssistantKeys
@@ -514,6 +554,22 @@ const schema = baseSchema.superRefine((values, ctx) => {
 			code: "custom",
 			path: [id ? provider.secretKey : provider.idKey],
 			message: `${provider.name} login needs both a client id and a client secret, or neither`,
+		})
+	}
+
+	// with no password and no provider, nobody could sign in.
+	const hasProvider =
+		values.OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL !== undefined ||
+		socialLoginProviders.some(
+			(provider) =>
+				values[provider.idKey] &&
+				values[provider.secretKey],
+		)
+	if (values.OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED && !hasProvider) {
+		ctx.addIssue({
+			code: "custom",
+			path: ["OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED"],
+			message: "needs an OIDC or social login provider, or nobody can sign in",
 		})
 	}
 })
@@ -630,6 +686,27 @@ export function loadConfig(source: Record<string, string | undefined>): Config {
 				}
 			: undefined,
 		socialLogin: socialLoginConfig(values),
+		oidcLogin: values.OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL
+			? {
+					issuerUrl: values.OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL,
+					clientId:
+						values.OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_ID ??
+						"",
+					clientSecret:
+						values.OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_SECRET ??
+						"",
+					displayName:
+						values.OXYNOTE_SOCIAL_LOGIN_OIDC_DISPLAY_NAME ??
+						"",
+					scopes:
+						values.OXYNOTE_SOCIAL_LOGIN_OIDC_SCOPES ??
+						"",
+					caCertsPath:
+						values.OXYNOTE_SOCIAL_LOGIN_OIDC_CA_CERTS,
+				}
+			: undefined,
+		passwordLoginDisabled:
+			values.OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED,
 		aiAssistant: aiAssistantConfig(values),
 		maxOrganizations: values.OXYNOTE_MAX_ORGANIZATIONS ?? "",
 		maxOrganizationMembers:

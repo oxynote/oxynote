@@ -25,8 +25,13 @@ const {
 	requestPasswordReset,
 	setupSignInRedirect,
 } = useAuthSession()
-const { fetchAuthConfig, isEmailEnabled, isSingleOrganization, defaultAdmin } =
-	useAuthAPI()
+const {
+	fetchAuthConfig,
+	isEmailEnabled,
+	isSingleOrganization,
+	defaultAdmin,
+	oidcDisplayName,
+} = useAuthAPI()
 
 const route = useRoute()
 const config = useRuntimeConfig()
@@ -42,7 +47,7 @@ const emailPasswordForm = useForm({
 })
 
 const loading = ref<
-	"github" | "google" | "slack" | "email-password" | "password-reset" | null
+	ProviderAuthMethod | "email-password" | "password-reset" | null
 >(null)
 const view = ref<"methods" | "email-password" | "reset-request" | "reset-sent">(
 	"methods",
@@ -85,10 +90,10 @@ const primaryMethod = computed(() => {
 		return null
 	}
 
-	// NOCOV: the null fallback is unreachable. Every method is one of the four.
+	// NOCOV: the null fallback is unreachable. Every method is in the list.
 	return (
-		(["google", "github", "slack", "email-password"] as const).find((m) =>
-			enabledMethods.value.includes(m),
+		(["oidc", "google", "github", "slack", "email-password"] as const).find(
+			(m) => enabledMethods.value.includes(m),
 		) ?? null
 	)
 })
@@ -135,7 +140,7 @@ onUnmounted(() => {
 	}
 })
 
-async function logInWithProvider(provider: "github" | "google" | "slack") {
+async function logInWithProvider(provider: ProviderAuthMethod) {
 	loading.value = provider
 
 	const res = (await signInSocial({
@@ -148,6 +153,9 @@ async function logInWithProvider(provider: "github" | "google" | "slack") {
 			nextUrl.value,
 			"/welcome",
 		),
+		...(provider === "oidc" && {
+			errorCallbackURL: oidcErrorCallbackUrl(config.public.appBaseURL),
+		}),
 		fetchOptions: { query: route.query },
 	})) as AuthResponse
 
@@ -299,6 +307,24 @@ function methodVariant(method: AuthMethod) {
 				</div>
 			</div>
 			<div v-if="shownView === 'methods'" class="flex w-full flex-col gap-3">
+				<ShadcnUiButton
+					v-if="enabledMethods.includes('oidc')"
+					size="lg"
+					:variant="methodVariant('oidc')"
+					:class="cn('h-10 w-full', loading !== null && 'pointer-events-none')"
+					:disabled="loading === 'oidc'"
+					@click="logInWithProvider('oidc')"
+				>
+					<Icon
+						:name="
+							loading === 'oidc'
+								? 'svg-spinners:blocks-shuffle-3'
+								: 'mingcute:key-2-line'
+						"
+						class="size-4"
+					/>
+					{{ $t("onboarding.login.login-oidc", { name: oidcDisplayName }) }}
+				</ShadcnUiButton>
 				<ShadcnUiButton
 					v-if="enabledMethods.includes('google')"
 					size="lg"

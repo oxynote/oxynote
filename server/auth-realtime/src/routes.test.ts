@@ -70,6 +70,7 @@ function build(
 		hocuspocus?: DocumentRegistry
 		flushDocument?: Mock<(documentName: string) => Promise<void>>
 		findDefaultAdmin?: Mock<RouteDeps["findDefaultAdmin"]>
+		oidcEndSessionUrl?: Mock<RouteDeps["oidcEndSessionUrl"]>
 		core?: StubCore
 	} = {},
 ) {
@@ -81,6 +82,8 @@ function build(
 	const resetConnections = vi.fn<(documentName: string) => void>()
 	const findDefaultAdmin: Mock<RouteDeps["findDefaultAdmin"]> =
 		overrides.findDefaultAdmin ?? vi.fn().mockResolvedValue(null)
+	const oidcEndSessionUrl: Mock<RouteDeps["oidcEndSessionUrl"]> =
+		overrides.oidcEndSessionUrl ?? vi.fn().mockResolvedValue(null)
 	const app = createRoutes({
 		env: overrides.env ?? ENV,
 		auth,
@@ -89,6 +92,7 @@ function build(
 		flushDocument,
 		resetConnections,
 		findDefaultAdmin,
+		oidcEndSessionUrl,
 		core,
 	})
 
@@ -214,6 +218,40 @@ describe("createRoutes", () => {
 		})
 	})
 
+	describe("GET /oidc/end-session", () => {
+		it("sends the browser to the provider's end-session URL", async ({
+			expect,
+		}) => {
+			const oidcEndSessionUrl = vi
+				.fn<RouteDeps["oidcEndSessionUrl"]>()
+				.mockResolvedValue(
+					"https://idp.example.com/logout?client_id=oxynote",
+				)
+			const { app } = build({ oidcEndSessionUrl })
+
+			const res = await app.request("/oidc/end-session")
+
+			expect(res.status).toBe(302)
+			expect(res.headers.get("location")).toBe(
+				"https://idp.example.com/logout?client_id=oxynote",
+			)
+			expect.soft(oidcEndSessionUrl).toHaveBeenCalledTimes(1)
+		})
+
+		it("sends the browser to the login page without a provider endpoint", async ({
+			expect,
+		}) => {
+			const { app } = build()
+
+			const res = await app.request("/oidc/end-session")
+
+			expect(res.status).toBe(302)
+			expect(res.headers.get("location")).toBe(
+				`${ENV.frontendUrl}/login`,
+			)
+		})
+	})
+
 	describe("GET /auth-config", () => {
 		it("publishes the sign-in methods the service actually accepts", async ({
 			expect,
@@ -234,6 +272,7 @@ describe("createRoutes", () => {
 			expect(res.status).toBe(200)
 			expect(await res.json()).toEqual({
 				methods: ["email-password", "github"],
+				oidcDisplayName: null,
 				emailEnabled: true,
 				singleOrganization: false,
 				maxOrganizationMembers: 5,
@@ -253,10 +292,35 @@ describe("createRoutes", () => {
 			expect(res.status).toBe(200)
 			expect(await res.json()).toEqual({
 				methods: ["email-password"],
+				oidcDisplayName: null,
 				emailEnabled: false,
 				singleOrganization: false,
 				maxOrganizationMembers: 5,
 				defaultAdmin: null,
+			})
+		})
+
+		it("names the OIDC button and leaves out password login when it is off", async ({
+			expect,
+		}) => {
+			const { app } = build({
+				env: testEnv({
+					oidc: {
+						issuerUrl: "https://idp.example.com/realms/team",
+						clientId: "oxynote",
+						clientSecret: "oidc-secret",
+						displayName: "Keycloak",
+						scopes: ["openid"],
+					},
+					passwordLoginEnabled: false,
+				}),
+			})
+
+			const res = await app.request("/auth-config")
+
+			expect(await res.json()).toMatchObject({
+				methods: ["oidc"],
+				oidcDisplayName: "Keycloak",
 			})
 		})
 
@@ -274,6 +338,7 @@ describe("createRoutes", () => {
 
 			expect(await res.json()).toEqual({
 				methods: ["email-password"],
+				oidcDisplayName: null,
 				emailEnabled: true,
 				singleOrganization: true,
 				maxOrganizationMembers: null,
