@@ -87,6 +87,7 @@ export function stubLog(): StubLogger {
 		info: vi.fn(),
 		warn: vi.fn(),
 		error: vi.fn(),
+		flush: vi.fn(),
 	}
 }
 
