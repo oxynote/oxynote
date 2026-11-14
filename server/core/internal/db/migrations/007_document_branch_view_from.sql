@@ -1,4 +1,4 @@
--- +migrate Up
+-- +goose Up
 
 ALTER TABLE document_branch_views ADD COLUMN viewed_from TEXT NOT NULL DEFAULT 'all';
 ALTER TABLE document_branch_views ALTER COLUMN viewed_from DROP DEFAULT;
@@ -7,7 +7,7 @@ ALTER TABLE document_branch_views ADD PRIMARY KEY (fk_user_id, fk_branch_id, vie
 DROP INDEX document_branch_views_fk_user_id_viewed_at_idx;
 CREATE INDEX document_branch_views_fk_user_id_viewed_from_viewed_at_idx ON document_branch_views (fk_user_id, fk_organization_id, viewed_from, viewed_at DESC);
 
--- +migrate Down
+-- +goose Down
 
 DELETE FROM document_branch_views WHERE viewed_from <> 'all';
 DROP INDEX document_branch_views_fk_user_id_viewed_from_viewed_at_idx;

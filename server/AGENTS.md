@@ -7,7 +7,6 @@ Core domain rules sit beside their packages:
 [core/internal/document/](core/internal/document/AGENTS.md),
 [core/internal/datasource/](core/internal/datasource/AGENTS.md),
 [core/internal/assistant/](core/internal/assistant/AGENTS.md).
-auth-realtime: [auth-realtime/AGENTS.md](auth-realtime/AGENTS.md).
 
 ## Stack
 
@@ -20,8 +19,7 @@ auth-realtime: [auth-realtime/AGENTS.md](auth-realtime/AGENTS.md).
 - `datagen/`: separate Go module synthesising demo Postgres/MariaDB content.
 
 Go builds go through goreleaser (`make build` in `server/core` and
-`datagen`), producing `bin/` and the `ghcr.io/oxynote/{core,datagen}:dev`
-images the dev compose stack consumes.
+`datagen`).
 datagen shares core's test/lint workflow with its own copy of the
 golangci-lint profile; its `pgdemo`/`mariademo` suites start throwaway
 containers.
@@ -90,11 +88,13 @@ GitHub and Slack callback URLs point at `:8080/core/api/apps/...`.
 
 ## Database
 
-Postgres 18. Migrations are embedded from `core/internal/db/migrations/` and
-applied by `db.New` (`rubenv/sql-migrate`). **The system is live: every
-schema change is a new `NNN_<name>.sql`; an applied migration is never
-edited.** A dev volume behind on migrations can be reset with `docker
-compose -p oxynote -f docker/docker-compose.dev.yaml down -v`.
+Postgres 18. `db.New` applies `core/internal/db/migrations/` with goose:
+`NNN_<name>.sql` and `NNN_<name>.go` (listed in `migrations.Go`) share one
+numbering. **The system is live: every schema change is a new migration;
+an applied migration's statements never change.** A Go migration has a
+Down and uses only its `*sql.Tx` and plain values, never `db` helpers, so
+it stays frozen. A dev volume behind on migrations can be reset with
+`docker compose -p oxynote -f docker/docker-compose.dev.yaml down -v`.
 
 **Core migrations own the Better Auth tables** (snake_case columns matching
 the `fields` mappings in `auth-realtime/src/auth.ts`).

@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"embed"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -20,6 +21,7 @@ import (
 	pgx "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 	"github.com/lann/builder"
+	"github.com/oxynote/oxynote/server/core/internal/db/migrations"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
@@ -28,8 +30,9 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
+	"github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3/database"
 	"github.com/qustavo/sqlhooks/v2"
-	migr "github.com/rubenv/sql-migrate"
 )
 
 // _migrations contains all database migrations.
@@ -73,7 +76,7 @@ type DB struct {
 	log        *slog.Logger
 	sql        *sqlx.DB
 	metrics    metricutil.Factory
-	migrations migr.MigrationSet
+	migrations *goose.Provider
 
 	closer io.Closer
 }
@@ -153,6 +156,34 @@ func New(
 
 	closers := []io.Closer{sqlDB}
 
+	fsys, err := fs.Sub(_migrations, "migrations")
+	if err != nil {
+		// NOCOV: since all arguments are constants, they
+		// are always valid.
+		return nil, ioutil.AppendCloseErr(
+			ioutil.MultiCloser(true, closers...),
+			err,
+		)
+	}
+
+	// NOTE: the global registry is disabled so that a goose.AddMigration
+	// call in any imported package cannot add a migration to this run.
+	provider, err := goose.NewProvider(
+		goose.DialectPostgres,
+		sqlDB.DB,
+		fsys,
+		goose.WithGoMigrations(migrations.Go()...),
+		goose.WithDisableGlobalRegistry(true),
+	)
+	if err != nil {
+		// NOCOV: error cannot be produced because the
+		// migrations are fixed at build time.
+		return nil, ioutil.AppendCloseErr(
+			ioutil.MultiCloser(true, closers...),
+			err,
+		)
+	}
+
 	db := &DB{
 		log: log.With("component", "database"),
 		sql: sqlDB,
@@ -161,10 +192,8 @@ func New(
 			builder: sq.StatementBuilderType(builder.EmptyBuilder).PlaceholderFormat(sq.Dollar),
 			opts:    opts,
 		},
-		metrics: metrics,
-		migrations: migr.MigrationSet{
-			TableName: "migrations",
-		},
+		metrics:    metrics,
+		migrations: provider,
 	}
 
 	if err = db.migrateUp(); err != nil {
@@ -184,23 +213,118 @@ func New(
 
 // migrateUp prepares the database for usage.
 func (db *DB) migrateUp() error {
-	fsys, err := fs.Sub(_migrations, "migrations")
+	ctx := context.Background()
+
+	if err := db.moveSQLMigrateHistory(ctx); err != nil {
+		return fmt.Errorf("moving sql-migrate history: %w", err)
+	}
+
+	_, err := db.migrations.Up(ctx)
+
+	return err
+}
+
+// moveSQLMigrateHistory copies the versions that rubenv/sql-migrate
+// recorded in its migrations table into the goose version table, then
+// drops the migrations table. It does nothing when that table does not
+// exist.
+func (db *DB) moveSQLMigrateHistory(ctx context.Context) error {
+	tx, err := db.sql.BeginTxx(ctx, nil)
 	if err != nil {
-		// NOCOV: since all arguments are constants, they
-		// are always valid
 		return err
 	}
 
-	_, err = db.migrations.Exec(
-		db.sql.DB,
-		"postgres",
-		&migr.HttpFileSystemMigrationSource{
-			FileSystem: http.FS(fsys),
-		},
-		migr.Up,
-	)
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
-	return err
+	var hasHistory, hasVersionTable bool
+
+	// NOTE: sql-migrate named its table without a schema, so the table sits
+	// wherever the search_path pointed. Goose looks for its own table only
+	// in the current schema. Each lookup here matches the tool it checks
+	// for.
+	err = tx.QueryRowContext(
+		ctx,
+		"SELECT to_regclass('migrations') IS NOT NULL, to_regclass(format('%I.%I', current_schema(), $1::text)) IS NOT NULL",
+		goose.DefaultTablename,
+	).Scan(&hasHistory, &hasVersionTable)
+	if err != nil {
+		// NOCOV: a test cannot make this statement fail
+		// without failing BeginTx first.
+		return fmt.Errorf("checking tables: %w", err)
+	}
+
+	if !hasHistory {
+		return nil
+	}
+
+	store, err := database.NewStore(database.DialectPostgres, goose.DefaultTablename)
+	if err != nil {
+		// NOCOV: since all arguments are constants, they
+		// are always valid.
+		return err
+	}
+
+	// NOTE: goose inserts version 0 whenever it creates its table, and
+	// its version lookups expect that row.
+	if !hasVersionTable {
+		if err = store.CreateVersionTable(ctx, tx); err != nil {
+			// NOCOV: a test cannot make this statement fail
+			// without failing BeginTx first.
+			return fmt.Errorf("creating the goose version table: %w", err)
+		}
+
+		if err = store.Insert(ctx, tx, database.InsertRequest{Version: 0}); err != nil {
+			// NOCOV: a test cannot make this statement fail
+			// without failing BeginTx first.
+			return fmt.Errorf("recording version 0: %w", err)
+		}
+	}
+
+	recorded, err := store.ListMigrations(ctx, tx)
+	if err != nil {
+		// NOCOV: a test cannot make this statement fail
+		// without failing BeginTx first.
+		return fmt.Errorf("listing goose versions: %w", err)
+	}
+
+	known := make(map[int64]bool, len(recorded))
+
+	for _, r := range recorded {
+		known[r.Version] = true
+	}
+
+	var ids []string
+
+	if err = tx.SelectContext(ctx, &ids, "SELECT id FROM migrations ORDER BY id"); err != nil {
+		// NOCOV: a test cannot make this statement fail
+		// without failing BeginTx first.
+		return fmt.Errorf("listing sql-migrate history: %w", err)
+	}
+
+	for _, id := range ids {
+		version, perr := goose.NumericComponent(id)
+		if perr != nil {
+			return fmt.Errorf("parsing sql-migrate id %q: %w", id, perr)
+		}
+
+		if known[version] {
+			continue
+		}
+
+		if err = store.Insert(ctx, tx, database.InsertRequest{Version: version}); err != nil {
+			// NOCOV: a test cannot make this statement fail
+			// without failing BeginTx first.
+			return fmt.Errorf("recording version %d: %w", version, err)
+		}
+	}
+
+	if _, err = tx.ExecContext(ctx, "DROP TABLE migrations"); err != nil {
+		// NOCOV: a test cannot make this statement fail
+		// without failing BeginTx first.
+		return fmt.Errorf("dropping the sql-migrate table: %w", err)
+	}
+
+	return tx.Commit()
 }
 
 // Close closes the database.
