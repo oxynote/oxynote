@@ -138,12 +138,12 @@ We distilled these rules over many years of work on projects such as
 [ttlcache](https://github.com/jellydator/ttlcache), mostly long before AI
 coding tools existed. A lot of them build on existing guides, such as the
 [Uber Go Style Guide](https://github.com/uber-go/guide/blob/master/style.md).
-Others we found by reading the Go standard library. Our table tests with
-check functions, for example, came from its tests, such as
+Others we found by reading open-source code that sets the standard for
+its language, such as the Go standard library. Our table tests with check
+functions, for example, came from its tests, such as
 [`TestRecorder`](https://github.com/golang/go/blob/go1.27.1/src/net/http/httptest/recorder_test.go#L16).
-Our
-[`Test_Handler_FetchNotificationsCount`](server/core/internal/server/internal/notification/http_test.go#L154)
-follows the same pattern.
+Many of our tests follow the same pattern, such as
+[`Test_Handler_FetchNotificationsCount`](server/core/internal/server/internal/notification/http_test.go#L154).
 
 ## Pull Requests
 
