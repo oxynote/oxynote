@@ -39,7 +39,7 @@ export default function () {
 				// SSR, fall back to last auto (or light by default).
 				return lastAutoColorCookie.value
 			}
-			return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+			return mode.system.value === "dark" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
 		}
 
 		return mode.store.value
