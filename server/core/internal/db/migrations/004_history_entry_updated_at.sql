@@ -1,4 +1,4 @@
--- +migrate Up
+-- +goose Up
 
 TRUNCATE document_branch_history_entries;
 
@@ -6,7 +6,7 @@ ALTER TABLE document_branch_history_entries
 	ADD COLUMN updated_at TIMESTAMP NOT NULL,
 	ADD COLUMN checksum TEXT NOT NULL;
 
--- +migrate Down
+-- +goose Down
 
 ALTER TABLE document_branch_history_entries
 	DROP COLUMN checksum,

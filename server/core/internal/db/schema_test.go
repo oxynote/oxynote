@@ -53,7 +53,7 @@ func Test_Schema(t *testing.T) {
 		"--schema-only",
 		"--no-owner",
 		"--no-privileges",
-		"--exclude-table=public.migrations",
+		"--exclude-table=public.goose_db_version",
 		"--username="+_pgUser,
 		"--dbname="+name,
 	)

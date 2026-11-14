@@ -1,4 +1,4 @@
--- +migrate Up
+-- +goose Up
 
 -- History entries become restorable snapshots: they carry the branch
 -- name, icon, author and hook definitions and drop the Yjs binary. The
@@ -21,7 +21,7 @@ DROP INDEX document_branch_history_entries_fk_branch_id_idx;
 CREATE INDEX document_branch_history_entries_fk_branch_id_created_at_idx ON document_branch_history_entries (fk_branch_id, created_at DESC, id DESC);
 CREATE INDEX document_branch_history_entries_created_at_idx ON document_branch_history_entries (created_at);
 
--- +migrate Down
+-- +goose Down
 
 DROP INDEX document_branch_history_entries_created_at_idx;
 DROP INDEX document_branch_history_entries_fk_branch_id_created_at_idx;
