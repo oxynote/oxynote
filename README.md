@@ -128,9 +128,10 @@ password `oxynote-admin-1234`. The login page shows both until you change
 the password, so change it in the settings before anyone else can reach the
 instance.
 
-[docker/prod/README.md](docker/prod/README.md) covers the configuration,
-from a real domain to an external PostgreSQL. To run from source, see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+The [self-hosting guide](https://oxynote.io/blog/self-host-oxynote) walks
+through the install and the steps after it: Docker Compose, another port or
+domain, a first page with a metric chart, backups and upgrades. To run
+from source, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Features
 
@@ -156,6 +157,10 @@ No metric yet? Pick a pattern such as latency or error rate, and the chart
 draws simulated data until the real series arrives. SQL sources need a
 read-only database user, so a page can never change your data.
 
+To connect your own metric data source, follow the
+[Prometheus guide](https://oxynote.io/blog/connect-prometheus) or the
+[PostgreSQL guide](https://oxynote.io/blog/connect-postgresql).
+
 ### Live Logs
 
 <picture>
@@ -171,6 +176,9 @@ is easy to spot.
 Click a log to open its raw text and fields. One more click on a field
 keeps only the logs with that value, or hides them, and the query stays as
 you wrote it.
+
+To connect your own logs, follow the
+[Loki guide](https://oxynote.io/blog/connect-loki).
 
 ### Variables
 
