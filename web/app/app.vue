@@ -4,7 +4,7 @@ import { Toaster } from "#layers/ui/app/components/shadcn/ui/sonner"
 const { color } = useAppearance() // used for side effects
 </script>
 <template>
-	<Html :class="color.theme === 'dark' ? 'dark' : undefined">
+	<Html :class="{ dark: color.theme === 'dark' }">
 		<Body>
 			<Toaster
 				class="pointer-events-auto"

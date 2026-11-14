@@ -31,6 +31,7 @@ export default function () {
 			// disable automatic class handling
 		},
 	})
+	
 	const resolvedMode = computed<"light" | "dark">(() => {
 		if (mode.store.value === "auto") {
 			if (import.meta.server) {
@@ -38,25 +39,18 @@ export default function () {
 				// SSR, fall back to last auto (or light by default).
 				return lastAutoColorCookie.value
 			}
-
-			// on client, use system preference from useColorMode
-			return mode.system.value === "dark" ? "dark" : "light"
+			return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
 		}
 
 		return mode.store.value
 	})
 
 	if (import.meta.client) {
-		watchImmediate([mode.store, mode.system], () => {
-			if (mode.store.value === "auto") {
-				lastAutoColorCookie.value =
-					mode.system.value === "dark" ? "dark" : "light"
-				return
-			}
-
-			lastAutoColorCookie.value = mode.store.value
-		})
-	}
+		watchImmediate(resolvedMode, (theme) => {
+			document.documentElement.classList.toggle("dark", theme === "dark")
+			lastAutoColorCookie.value = theme
+    })
+}
 
 	function changeColorTheme(theme: "light" | "dark" | "auto") {
 		mode.value = theme
