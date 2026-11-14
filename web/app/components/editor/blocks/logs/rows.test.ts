@@ -156,6 +156,71 @@ describe("summarizeLog", () => {
 			},
 		},
 		{
+			name: "skips an empty value of a repeated logfmt key, as Loki does",
+			input: {
+					line: 'component= component=billing attempt="" attempt=1',
+					labels: {},
+					fields: {},
+			},
+			expected: {
+					message: "",
+					extracted: [
+							["component", "billing"],
+							["attempt", "1"],
+					],
+					fields: [],
+					labels: [],
+			},
+		},
+		{
+			name: "keeps the first value of a repeated logfmt key, as Loki does",
+			input: {
+				line: "component=billing component=stripe-client attempt=1 attempt=2",
+				labels: {},
+				fields: {},
+			},
+			expected: {
+				message: "",
+				extracted: [
+					["component", "billing"],
+					["attempt", "1"],
+				],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "skips an invalid bare value of a logfmt key, as Loki does",
+			input: {
+					line: "component=bad=value component=billing retry=a=b",
+					labels: {},
+					fields: {},
+			},
+			expected: {
+					message: "",
+					extracted: [["component", "billing"]],
+					fields: [],
+					labels: [],
+			},
+		},
+		{
+			name: "reads an escaped quote mark in a quoted logfmt value, as Loki does",
+			input: {
+					line: `user="bob\\'s" path="a\\\\'b"`,
+					labels: {},
+					fields: {},
+			},
+			expected: {
+					message: "",
+					extracted: [
+							["user", "bob's"],
+							["path", "a\\'b"],
+					],
+					fields: [],
+					labels: [],
+			},
+		},
+		{
 			name: "keeps a line with a word outside logfmt pairs as plain text",
 			input: { line: "user=bob logged in", labels: {}, fields: {} },
 			expected: {

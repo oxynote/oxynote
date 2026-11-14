@@ -374,29 +374,40 @@ export function isNumberText(value: unknown): boolean {
 // parseLogfmt reads a line made only of logfmt pairs. A line with any other
 // word is plain text, so it gives null.
 function parseLogfmt(line: string): Record<string, string> | null {
-	const pairs: KeyValue[] = []
+	const values = new Map<string, string>()
 	let at = 0
 
 	while (/\S/.test(line.slice(at))) {
-		LOGFMT_PAIR.lastIndex = at
-		const match = LOGFMT_PAIR.exec(line)
-		if (!match) {
-			return null
-		}
+			LOGFMT_PAIR.lastIndex = at
+			const match = LOGFMT_PAIR.exec(line)
+			if (!match) {
+					return null
+			}
 
-		const [, key = "", value = ""] = match
-		pairs.push([key, value.startsWith('"') ? unquote(value) : value])
-		at = LOGFMT_PAIR.lastIndex
+			const [, key = "", value = ""] = match
+			const quoted = value.startsWith('"')
+			// Loki keeps the first value of a repeated key. But it skips an
+			// empty value, and it drops a bare value that holds "=".
+			if (!values.get(key) && (quoted || !value.includes("="))) {
+					values.set(key, value.startsWith('"') ? unquote(value) : value)
+			}
+
+			at = LOGFMT_PAIR.lastIndex
 	}
 
-	return pairs.length ? Object.fromEntries(pairs) : null
+	return values.size ? Object.fromEntries(values) : null
 }
 
-// unquote reads a quoted logfmt value. An escape JSON does not know, such
-// as Go's \x, leaves the text between the quotes as written.
+// unquote reads a quoted logfmt value. Loki also reads \' as a quote mark,
+// but JSON does not know it. Any other escape JSON does not know, such as
+// Go's \x, leaves the text between the quotes as written.
 function unquote(quoted: string): string {
+	const json = quoted.replace(/\\(.)/g, (escape, char: string) =>
+			char === "'" ? char : escape,
+	)
+
 	try {
-		return String(JSON.parse(quoted))
+		return String(JSON.parse(json))
 	} catch {
 		return quoted.slice(1, -1)
 	}
