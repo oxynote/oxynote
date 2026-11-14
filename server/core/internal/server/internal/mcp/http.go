@@ -103,8 +103,9 @@ func NewHandler(
 			return h.server(r)
 		},
 		&mcp.StreamableHTTPOptions{
-			Stateless: true,
-			Logger:    h.log,
+			Stateless:                  true,
+			Logger:                     h.log,
+			DisableLocalhostProtection: true,
 		},
 	)
 
