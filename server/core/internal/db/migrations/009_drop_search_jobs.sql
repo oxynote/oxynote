@@ -1,8 +1,8 @@
--- +migrate Up
+-- +goose Up
 
 DROP TABLE search_jobs;
 
--- +migrate Down
+-- +goose Down
 
 CREATE TABLE search_jobs (
 	id BIGSERIAL PRIMARY KEY,

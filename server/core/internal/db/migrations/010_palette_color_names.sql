@@ -1,17 +1,17 @@
--- +migrate Up
+-- +goose Up
 
 -- tags and variable groups store a palette name instead of a hex colour.
 -- The hex came from the browser, and browsers round the theme's shades
 -- differently, so a stored hex can sit a step off the palette. Each one
 -- takes the closest palette colour, and a value that is not a hex takes
 -- green, the picker's default.
--- +migrate StatementBegin
+-- +goose StatementBegin
 CREATE FUNCTION pg_temp.hex_channel(hex TEXT, pos INT) RETURNS INT LANGUAGE SQL IMMUTABLE AS $$
 	SELECT ('x' || substr(hex, pos, 2))::BIT(8)::INT
 $$;
--- +migrate StatementEnd
+-- +goose StatementEnd
 
--- +migrate StatementBegin
+-- +goose StatementBegin
 CREATE FUNCTION pg_temp.palette_name(color TEXT) RETURNS TEXT LANGUAGE SQL IMMUTABLE AS $$
 	SELECT CASE WHEN color !~* '^#[0-9a-f]{6}$' THEN 'green' ELSE (
 		SELECT p.name
@@ -40,7 +40,7 @@ CREATE FUNCTION pg_temp.palette_name(color TEXT) RETURNS TEXT LANGUAGE SQL IMMUT
 		LIMIT 1
 	) END
 $$;
--- +migrate StatementEnd
+-- +goose StatementEnd
 
 UPDATE tags SET color = pg_temp.palette_name(color);
 UPDATE personal_variable_groups SET color = pg_temp.palette_name(color);
@@ -48,9 +48,9 @@ UPDATE personal_variable_groups SET color = pg_temp.palette_name(color);
 DROP FUNCTION pg_temp.palette_name(TEXT);
 DROP FUNCTION pg_temp.hex_channel(TEXT, INT);
 
--- +migrate Down
+-- +goose Down
 
--- +migrate StatementBegin
+-- +goose StatementBegin
 CREATE FUNCTION pg_temp.palette_hex(color TEXT) RETURNS TEXT LANGUAGE SQL IMMUTABLE AS $$
 	SELECT p.hex
 	FROM (VALUES
@@ -73,7 +73,7 @@ CREATE FUNCTION pg_temp.palette_hex(color TEXT) RETURNS TEXT LANGUAGE SQL IMMUTA
 	) AS p(name, hex)
 	WHERE p.name = color
 $$;
--- +migrate StatementEnd
+-- +goose StatementEnd
 
 UPDATE tags SET color = pg_temp.palette_hex(color);
 UPDATE personal_variable_groups SET color = pg_temp.palette_hex(color);

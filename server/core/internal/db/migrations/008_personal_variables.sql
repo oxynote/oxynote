@@ -1,4 +1,4 @@
--- +migrate Up
+-- +goose Up
 
 CREATE TABLE personal_variable_groups (
 	id TEXT PRIMARY KEY,
@@ -54,16 +54,16 @@ CREATE INDEX personal_variable_values_fk_organization_id_idx ON personal_variabl
 
 -- an xid is 12 bytes in 20 base32hex characters, so the last character
 -- carries a single bit and must be 0 or g.
--- +migrate StatementBegin
+-- +goose StatementBegin
 CREATE FUNCTION pg_temp.random_xid() RETURNS TEXT LANGUAGE SQL VOLATILE AS $$
 	SELECT string_agg(substr('0123456789abcdefghijklmnopqrstuv', floor(random() * 32)::INT + 1, 1), '')
 		|| substr('0g', floor(random() * 2)::INT + 1, 1)
 	FROM generate_series(1, 19)
 $$;
--- +migrate StatementEnd
+-- +goose StatementEnd
 
 -- every existing organization gets the built-ins a new one is seeded with.
--- +migrate StatementBegin
+-- +goose StatementBegin
 DO $$
 DECLARE
 	org RECORD;
@@ -92,11 +92,11 @@ BEGIN
 	END LOOP;
 END
 $$;
--- +migrate StatementEnd
+-- +goose StatementEnd
 
 DROP FUNCTION pg_temp.random_xid();
 
--- +migrate Down
+-- +goose Down
 
 DROP TABLE personal_variable_values;
 DROP TABLE personal_variable_options;

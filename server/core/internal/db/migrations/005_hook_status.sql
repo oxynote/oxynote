@@ -1,4 +1,4 @@
--- +migrate Up
+-- +goose Up
 
 ALTER TABLE document_hooks ALTER COLUMN state DROP NOT NULL;
 ALTER TABLE document_hooks ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
@@ -7,7 +7,7 @@ UPDATE document_hooks SET
 	status = COALESCE(state::jsonb->>'status', 'active'),
 	state = (state::jsonb - 'status')::text;
 
--- +migrate Down
+-- +goose Down
 
 UPDATE document_hooks SET state = '{}' WHERE state IS NULL;
 

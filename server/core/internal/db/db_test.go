@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -33,7 +32,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
-	migr "github.com/rubenv/sql-migrate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -274,16 +272,7 @@ func Test_DB_migrateUp(t *testing.T) {
 	// rolling back to before the variables migration (008) and up again
 	// runs its backfill over an organization that existed before it, and
 	// the palette name migration (010) over tags stored as hex.
-	fsys, err := fs.Sub(_migrations, "migrations")
-	require.NoError(t, err)
-
-	_, err = db.migrations.ExecVersion(
-		db.sql.DB,
-		"postgres",
-		&migr.HttpFileSystemMigrationSource{FileSystem: http.FS(fsys)},
-		migr.Down,
-		7,
-	)
+	_, err := db.migrations.DownTo(context.Background(), 7)
 	require.NoError(t, err)
 
 	// the member roles migration (012) turns every owner into an admin and
@@ -367,6 +356,166 @@ func Test_DB_migrateUp(t *testing.T) {
 
 	require.NoError(t, db.sql.Get(&invitationRole, "SELECT role FROM organization_invitations WHERE id = 'inv-1'"))
 	assert.Equal(t, "admin", invitationRole)
+}
+
+func Test_DB_moveSQLMigrateHistory(t *testing.T) {
+	// sql-migrate recorded these ids before goose replaced it, so its
+	// history can never list anything newer.
+	ids := []string{
+		"001_initial.sql",
+		"002_history_entry_snapshot.sql",
+		"003_document_hook_cross_branch_id.sql",
+		"004_history_entry_updated_at.sql",
+		"005_hook_status.sql",
+		"006_document_branch_views.sql",
+		"007_document_branch_view_from.sql",
+		"008_personal_variables.sql",
+		"009_drop_search_jobs.sql",
+		"010_palette_color_names.sql",
+		"011_hook_triggered.sql",
+		"012_member_roles.sql",
+	}
+
+	type tcase struct {
+		// DB, when set, replaces the database the case was given.
+		DB       *DB
+		Versions []int64
+		Err      error
+		// Check, when set, inspects the database after a failed move.
+		Check func(t *testing.T, db *DB)
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"No sql-migrate table": func(_ *testing.T, db *DB) tcase {
+			return tcase{
+				Versions: allVersions(db),
+			}
+		},
+		"Full history": func(t *testing.T, db *DB) tcase {
+			_, err := db.sql.Exec("DROP TABLE goose_db_version")
+			require.NoError(t, err)
+
+			prepSQLMigrateHistory(t, db, ids...)
+
+			return tcase{
+				Versions: []int64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
+			}
+		},
+		"History behind the migrations": func(t *testing.T, db *DB) tcase {
+			_, err := db.migrations.DownTo(context.Background(), 10)
+			require.NoError(t, err)
+
+			_, err = db.sql.Exec("DROP TABLE goose_db_version")
+			require.NoError(t, err)
+
+			prepSQLMigrateHistory(t, db, ids[:10]...)
+
+			return tcase{
+				Versions: []int64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+			}
+		},
+		"History outside the public schema": func(t *testing.T, db *DB) tcase {
+			_, err := db.sql.Exec("DROP TABLE goose_db_version")
+			require.NoError(t, err)
+
+			prepSQLMigrateHistory(t, db, ids...)
+
+			_, err = db.sql.Exec("ALTER SCHEMA public RENAME TO oxynote")
+			require.NoError(t, err)
+
+			var name string
+
+			require.NoError(t, db.sql.Get(&name, "SELECT current_database()"))
+
+			// New moves the history itself, so the move below finds nothing
+			// left to do. New fails when the move misses the history,
+			// because 001_initial runs again over the existing tables.
+			sdb, err := New(slog.New(slog.DiscardHandler), metricutil.NewFactory("test", nil), Options{
+				DSN:                       fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&search_path=oxynote", _pgUser, _pgPass, _pgDSN, name),
+				DataSourceCredentialsKeys: _dataSourceKeys,
+			})
+			require.NoError(t, err)
+
+			t.Cleanup(func() {
+				sdb.Close() //nolint:errcheck,gosec // error provides no meaningful info
+			})
+
+			return tcase{
+				DB:       sdb,
+				Versions: allVersions(sdb),
+			}
+		},
+		"History already in the goose table": func(t *testing.T, db *DB) tcase {
+			prepSQLMigrateHistory(t, db, ids...)
+
+			return tcase{
+				Versions: allVersions(db),
+			}
+		},
+		"Error returned by BeginTx": func(t *testing.T, db *DB) tcase {
+			require.NoError(t, db.Close())
+
+			return tcase{
+				Err: assert.AnError,
+			}
+		},
+		"Id without a version": func(t *testing.T, db *DB) tcase {
+			_, err := db.sql.Exec("DROP TABLE goose_db_version")
+			require.NoError(t, err)
+
+			prepSQLMigrateHistory(t, db, "initial.sql")
+
+			return tcase{
+				Err: assert.AnError,
+				Check: func(t *testing.T, db *DB) {
+					t.Helper()
+
+					var hasHistory, hasVersionTable bool
+
+					require.NoError(t, db.sql.QueryRow(
+						"SELECT to_regclass('migrations') IS NOT NULL, to_regclass('goose_db_version') IS NOT NULL",
+					).Scan(&hasHistory, &hasVersionTable))
+					assert.True(t, hasHistory)
+					assert.False(t, hasVersionTable)
+				},
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			if c.DB != nil {
+				db = c.DB
+			}
+
+			err := db.moveSQLMigrateHistory(context.Background())
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				if c.Check != nil {
+					c.Check(t, db)
+				}
+
+				return
+			}
+
+			var hasHistory bool
+
+			require.NoError(t, db.sql.Get(&hasHistory, "SELECT to_regclass('migrations') IS NOT NULL"))
+			assert.False(t, hasHistory)
+			assert.Equal(t, c.Versions, recordedVersions(t, db))
+
+			// the first migration fails on its existing tables, so a clean
+			// run proves that no recorded migration runs again.
+			require.NoError(t, db.migrateUp())
+			assert.Equal(t, allVersions(db), recordedVersions(t, db))
+		})
+	}
 }
 
 func Test_DB_BeginTx(t *testing.T) {
@@ -484,4 +633,43 @@ func prepTempDB(t *testing.T) *DB {
 	})
 
 	return db
+}
+
+// prepSQLMigrateHistory creates the migrations table that rubenv/sql-migrate
+// kept and records the given ids in it.
+func prepSQLMigrateHistory(t *testing.T, db *DB, ids ...string) {
+	t.Helper()
+
+	_, err := db.sql.Exec("CREATE TABLE migrations (id text PRIMARY KEY, applied_at timestamptz)")
+	require.NoError(t, err)
+
+	for _, id := range ids {
+		_, err = db.sql.Exec("INSERT INTO migrations (id, applied_at) VALUES ($1, now())", id)
+		require.NoError(t, err)
+	}
+}
+
+// recordedVersions returns the versions in the goose version table, in
+// ascending order and with any duplicate kept.
+func recordedVersions(t *testing.T, db *DB) []int64 {
+	t.Helper()
+
+	var versions []int64
+
+	require.NoError(t, db.sql.Select(&versions, "SELECT version_id FROM goose_db_version ORDER BY version_id"))
+
+	return versions
+}
+
+// allVersions returns version 0 followed by the version of every migration
+// goose knows, which is what the version table holds once all are applied.
+func allVersions(db *DB) []int64 {
+	sources := db.migrations.ListSources()
+	versions := make([]int64, 1, 1+len(sources))
+
+	for _, s := range sources {
+		versions = append(versions, s.Version)
+	}
+
+	return versions
 }
