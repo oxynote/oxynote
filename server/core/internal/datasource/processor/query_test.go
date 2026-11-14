@@ -179,7 +179,7 @@ func Test_NewInvalidQueryError(t *testing.T) {
 
 	assert.Equal(
 		t,
-		errutil.New(http.StatusBadRequest, "query.error", "boom"),
+		invalidQueryError{err: errutil.New(http.StatusBadRequest, "query.error", "boom")},
 		NewInvalidQueryError("boom"),
 	)
 }

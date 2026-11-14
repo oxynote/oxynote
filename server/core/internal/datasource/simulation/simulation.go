@@ -29,13 +29,6 @@ var ErrNotSimulated = errutil.New(
 	"This metric block is not simulating data.",
 )
 
-// Result is what running a simulated metric block reports back.
-type Result struct {
-	// Cleared indicates whether the block's real data has arrived and
-	// the simulation has been switched off.
-	Cleared bool `json:"cleared"`
-}
-
 // _resultTTL is how long one block's verdict answers the readers that ask
 // after it. Several people viewing the same document ask on their own
 // cadence, and each ask that finds a verdict is one that does not reach
@@ -100,6 +93,13 @@ var _probeSpans = map[string]time.Duration{
 // _queryQuery is the query text inside one of a metric block's query
 // rows.
 const _queryQuery = "query"
+
+// Result is what running a simulated metric block reports back.
+type Result struct {
+	// Cleared indicates whether the block's real data has arrived and
+	// the simulation has been switched off.
+	Cleared bool `json:"cleared"`
+}
 
 // Checker probes the data source of a simulated metric block and
 // switches the simulation off once real data answers.

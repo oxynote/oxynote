@@ -16,12 +16,6 @@ import (
 	"github.com/rs/xid"
 )
 
-// _contextKey is a custom type for context keys to avoid collisions.
-type _contextKey int
-
-// _contextKeySession is the key used to store the user ID in the context.
-const _contextKeySession _contextKey = iota
-
 // _errRateLimited is returned when the Better Auth server rate limits the
 // session check, so the caller is told to retry instead of to sign in again.
 var _errRateLimited = errutil.New(http.StatusTooManyRequests, "request.rate_limited", "too many requests")
@@ -29,6 +23,12 @@ var _errRateLimited = errutil.New(http.StatusTooManyRequests, "request.rate_limi
 // _headerForwardedFor is the header that carries the client address to the
 // Better Auth server.
 const _headerForwardedFor = "X-Forwarded-For"
+
+// _contextKey is a custom type for context keys to avoid collisions.
+type _contextKey int
+
+// _contextKeySession is the key used to store the user ID in the context.
+const _contextKeySession _contextKey = iota
 
 // Options specifies options for auth.
 type Options struct {

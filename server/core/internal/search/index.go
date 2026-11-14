@@ -18,8 +18,10 @@ import (
 	"github.com/rs/xid"
 )
 
+// _synonymsFile holds the search synonyms, embedded at build time.
+//
 //go:embed static/synonyms.json
-var synonymsFile []byte
+var _synonymsFile []byte
 
 const (
 	// _buildSuffix is appended to the index path while a fresh index is
@@ -226,7 +228,7 @@ func fill(ctx context.Context, log *slog.Logger, idx bleve.Index, src Source) er
 func indexSynonyms(idx bleve.Index) error {
 	var synonyms map[string][]string
 
-	if err := json.Unmarshal(synonymsFile, &synonyms); err != nil {
+	if err := json.Unmarshal(_synonymsFile, &synonyms); err != nil {
 		return fmt.Errorf("unmarshaling synonyms: %w", err)
 	}
 

@@ -115,12 +115,29 @@ func (qr *QueryResult) HasData() bool {
 	return false
 }
 
-// isValidValue returns true if the float64 value is a valid numeric value (not NaN or Inf).
-func isValidValue(v float64) bool {
-	return !math.IsNaN(v) && !math.IsInf(v, 0)
+// invalidQueryError is returned when the data source rejected the query.
+// It wraps a status error, so the HTTP layer still answers 400 with the
+// message.
+type invalidQueryError struct {
+	err error
 }
 
 // NewInvalidQueryError creates a new error indicating an invalid query with the provided message.
 func NewInvalidQueryError(msg string) error {
-	return errutil.New(http.StatusBadRequest, codeInvalidQuery, "%s", msg)
+	return invalidQueryError{err: errutil.New(http.StatusBadRequest, "query.error", "%s", msg)}
+}
+
+// Error returns the message the data source rejected the query with.
+func (e invalidQueryError) Error() string {
+	return e.err.Error()
+}
+
+// Unwrap returns the status error.
+func (e invalidQueryError) Unwrap() error {
+	return e.err
+}
+
+// isValidValue returns true if the float64 value is a valid numeric value (not NaN or Inf).
+func isValidValue(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0)
 }

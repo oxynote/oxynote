@@ -16,6 +16,43 @@ import (
 	"github.com/rs/xid"
 )
 
+// _maxNameLength is the most characters a data source name holds, the
+// same limit the web form sets.
+const _maxNameLength = 128
+
+var (
+	// ErrInvalidCredentials is returned when the credentials of a data
+	// source are not an object of strings.
+	ErrInvalidCredentials = errutil.New(
+		http.StatusBadRequest,
+		"data_source.invalid_credentials",
+		"credentials must be an object of strings",
+	)
+
+	// ErrInvalidName is returned when a data source is given a name that
+	// is empty or only white space.
+	ErrInvalidName = errutil.New(
+		http.StatusBadRequest,
+		"data_source.invalid_name",
+		"data source name cannot be empty",
+	)
+
+	// ErrNameTooLong is returned when a data source name holds more than
+	// _maxNameLength characters.
+	ErrNameTooLong = errutil.New(
+		http.StatusBadRequest,
+		"data_source.name_too_long",
+		"data source name cannot be longer than 128 characters",
+	)
+
+	// ErrInvalidType is returned when a data source has an unknown type.
+	ErrInvalidType = errutil.New(
+		http.StatusBadRequest,
+		"data_source.invalid_type",
+		"invalid data source type",
+	)
+)
+
 const (
 	// TypePrometheus represents a Prometheus data source.
 	TypePrometheus Type = "prometheus"
@@ -62,43 +99,6 @@ func (ty *Type) UnmarshalText(text []byte) error {
 
 	return nil
 }
-
-// _maxNameLength is the most characters a data source name holds, the
-// same limit the web form sets.
-const _maxNameLength = 128
-
-var (
-	// ErrInvalidCredentials is returned when the credentials of a data
-	// source are not an object of strings.
-	ErrInvalidCredentials = errutil.New(
-		http.StatusBadRequest,
-		"data_source.invalid_credentials",
-		"credentials must be an object of strings",
-	)
-
-	// ErrInvalidName is returned when a data source is given a name that
-	// is empty or only white space.
-	ErrInvalidName = errutil.New(
-		http.StatusBadRequest,
-		"data_source.invalid_name",
-		"data source name cannot be empty",
-	)
-
-	// ErrNameTooLong is returned when a data source name holds more than
-	// _maxNameLength characters.
-	ErrNameTooLong = errutil.New(
-		http.StatusBadRequest,
-		"data_source.name_too_long",
-		"data source name cannot be longer than 128 characters",
-	)
-
-	// ErrInvalidType is returned when a data source has an unknown type.
-	ErrInvalidType = errutil.New(
-		http.StatusBadRequest,
-		"data_source.invalid_type",
-		"invalid data source type",
-	)
-)
 
 // DataSource represents a generic data source.
 type DataSource struct {
