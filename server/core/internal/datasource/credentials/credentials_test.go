@@ -131,6 +131,11 @@ func Test_Credentials_Scan(t *testing.T) {
 			err := creds.Scan(c.Src)
 			testutil.AssertEqualError(t, c.Err, err)
 
+			// the driver may reuse its bytes for the next row.
+			if src, ok := c.Src.([]byte); ok {
+				clear(src)
+			}
+
 			if err != nil {
 				return
 			}
@@ -145,7 +150,13 @@ func Test_Credentials_UnmarshalJSON(t *testing.T) {
 
 	var c Credentials
 
-	require.NoError(t, c.UnmarshalJSON([]byte(`{"username":"user"}`)))
+	data := []byte(`{"username":"user"}`)
+
+	require.NoError(t, c.UnmarshalJSON(data))
+
+	// the decoder may reuse its buffer once the call returns.
+	clear(data)
+
 	assert.Equal(t, Credentials{data: []byte(`{"username":"user"}`)}, c)
 }
 
@@ -451,7 +462,13 @@ func Test_UpdateInput_UnmarshalJSON(t *testing.T) {
 
 	var ui UpdateInput
 
-	require.NoError(t, ui.UnmarshalJSON([]byte(`{"username":"user"}`)))
+	data := []byte(`{"username":"user"}`)
+
+	require.NoError(t, ui.UnmarshalJSON(data))
+
+	// the decoder may reuse its buffer once the call returns.
+	clear(data)
+
 	assert.Equal(t, UpdateInput(`{"username":"user"}`), ui)
 }
 

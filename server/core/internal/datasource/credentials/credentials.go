@@ -3,6 +3,7 @@
 package credentials
 
 import (
+	"bytes"
 	"cmp"
 	"crypto/x509"
 	"encoding/json"
@@ -109,9 +110,9 @@ func (c *Credentials) MarshalJSON() ([]byte, error) {
 	return c.data, nil
 }
 
-// UnmarshalJSON sets the credentials from the given JSON data.
+// UnmarshalJSON sets the credentials from a copy of the given JSON data.
 func (c *Credentials) UnmarshalJSON(data []byte) error {
-	*c = Credentials{data: data}
+	*c = Credentials{data: bytes.Clone(data)}
 
 	return nil
 }
@@ -120,7 +121,8 @@ func (c *Credentials) UnmarshalJSON(data []byte) error {
 func (c *Credentials) Scan(src any) error {
 	switch v := src.(type) {
 	case []byte:
-		*c = Credentials{data: v}
+		// the driver owns the bytes and may reuse them for the next row.
+		*c = Credentials{data: bytes.Clone(v)}
 	case string:
 		*c = Credentials{data: []byte(v)}
 	default:
@@ -273,9 +275,9 @@ type Public struct {
 // value as it is.
 type UpdateInput []byte
 
-// UnmarshalJSON sets the update input from the given JSON data.
+// UnmarshalJSON sets the update input from a copy of the given JSON data.
 func (ui *UpdateInput) UnmarshalJSON(data []byte) error {
-	*ui = data
+	*ui = bytes.Clone(data)
 
 	return nil
 }

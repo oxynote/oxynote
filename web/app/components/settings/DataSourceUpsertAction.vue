@@ -114,12 +114,15 @@ const acceptsTokens = computed(
 const { createDataSource, updateDataSource } = useDataSourceAPI()
 
 const onSubmit = form.handleSubmit(async (values) => {
+	// the kind the values were validated against, before the toggle can move
+	const kind = credentialsKind.value
+
 	loading.value = true
 	await delay(300) // slight delay to ensure loading spinner is visible
 
 	if (isCreation.value && props.creationType) {
 		const credentials: DataSourceCredentials =
-			credentialsKind.value === "token"
+			kind === "token"
 				? { kind: "token", token: values.token || "" }
 				: {
 						kind: "basic",
@@ -211,7 +214,7 @@ const onSubmit = form.handleSubmit(async (values) => {
 		}
 
 		const keys =
-			credentialsKind.value === "token"
+			kind === "token"
 				? (["token", "caCertificate"] as const)
 				: (["username", "password", "caCertificate"] as const)
 
@@ -233,12 +236,12 @@ const onSubmit = form.handleSubmit(async (values) => {
 		// to another kind is sent even when no field changed.
 		const storedKind = props.updateTarget.credentials?.kind
 
-		if (storedKind && credentialsKind.value !== storedKind) {
+		if (storedKind && kind !== storedKind) {
 			req.credentials ??= {}
 		}
 
 		if (req.credentials) {
-			req.credentials.kind = credentialsKind.value
+			req.credentials.kind = kind
 		}
 
 		if (Object.keys(req).length === 0) {
@@ -509,13 +512,13 @@ function resetCredential(key: DataSourceCredentialKey) {
 						v-for="kind in ['basic', 'token'] as const"
 						:key="kind"
 						type="button"
+						:disabled="loading"
 						:aria-pressed="credentialsKind === kind"
 						:class="
 							cn(
 								'h-7 cursor-pointer rounded-sm text-2sm font-medium text-muted-foreground transition-colors duration-150',
 								credentialsKind === kind &&
 									'bg-background text-foreground shadow-xs',
-								loading && 'pointer-events-none',
 							)
 						"
 						@click="credentialsKind = kind"

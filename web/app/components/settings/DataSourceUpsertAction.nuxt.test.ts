@@ -757,6 +757,33 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			})
 		})
 
+		it("keeps the authentication kind while the submit is in flight", async ({
+			expect,
+		}) => {
+			const calls = mockEndpoint("POST", "/api/data-sources", () => ({
+				id: EXISTING.id,
+			}))
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Prometheus,
+			})
+			await fields(wrapper).name.setValue("Prod metrics")
+			await fields(wrapper).url.setValue("http://prometheus.test")
+			await fields(wrapper).username.setValue("reader")
+
+			await wrapper.get("form").trigger("submit")
+			// validation has run and the submit waits out its spinner delay
+			await vi.advanceTimersByTimeAsync(100)
+
+			expect(kindButton(wrapper, "token").attributes("disabled")).toBeDefined()
+
+			await kindButton(wrapper, "token").trigger("click")
+			await settleActionSubmit()
+
+			expect(calls[0]?.body).toMatchObject({
+				credentials: { kind: "basic", username: "reader" },
+			})
+		})
+
 		it("rejects an empty token", async ({ expect }) => {
 			const calls = mockEndpoint("POST", "/api/data-sources", () => ({
 				id: EXISTING.id,
