@@ -141,9 +141,9 @@ func requiredArgs(t *testing.T, name Name) string {
 		case "position":
 			// a position beside a block needs the reference the tool
 			// requires; one that requires no reference takes an end.
-			vals[key] = string(positionEnd)
+			vals[key] = string(_positionEnd)
 			if slices.Contains(e.Info.Required, "reference_block_uid") {
-				vals[key] = string(positionAfter)
+				vals[key] = string(_positionAfter)
 			}
 		case "branch_id":
 			vals[key] = _stubMainBranchID.String()

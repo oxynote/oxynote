@@ -28,17 +28,6 @@ const (
 	_appVersion = "1"
 )
 
-// All available QueueName constants. Every name is declared here, so no
-// two queues share one.
-const (
-	// QueueIndexSearch holds the jobs that bring the search index in line
-	// with the database.
-	QueueIndexSearch QueueName = "index-search"
-)
-
-// QueueName names a job queue.
-type QueueName string
-
 var (
 	// _cleanupBatch is how many finished jobs one cleanup query deletes.
 	_cleanupBatch = 500
@@ -63,6 +52,17 @@ var (
 	// _shutdownTimeout bounds how long Close waits for running jobs.
 	_shutdownTimeout = 10 * time.Second
 )
+
+// All available QueueName constants. Every name is declared here, so no
+// two queues share one.
+const (
+	// QueueIndexSearch holds the jobs that bring the search index in line
+	// with the database.
+	QueueIndexSearch QueueName = "index-search"
+)
+
+// QueueName names a job queue.
+type QueueName string
 
 // Manager owns the DBOS runtime that stores, schedules and runs jobs.
 type Manager struct {

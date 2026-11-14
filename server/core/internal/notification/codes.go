@@ -8,9 +8,6 @@ import (
 	"github.com/rs/xid"
 )
 
-// Code represents a notification code.
-type Code string
-
 // Metadata keys used by the notification constructors. Readers interpreting
 // a stored notification must name keys through these constants too — a raw
 // literal would compile clean and silently drift on a rename.
@@ -28,6 +25,9 @@ const (
 	MetaKeyHookSummary    = "hookSummary"
 	MetaKeyCommentExcerpt = "commentExcerpt"
 )
+
+// Code represents a notification code.
+type Code string
 
 const (
 	// NotificationDocumentReviewRequest is the notification code for document review requests.
