@@ -21,6 +21,8 @@ import (
 	"github.com/lann/builder"
 	"github.com/orlangure/gnomock"
 	pgDocker "github.com/orlangure/gnomock/preset/postgres"
+	"github.com/oxynote/oxynote/server/core/internal/datasource"
+	"github.com/oxynote/oxynote/server/core/internal/db/migrations"
 	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
@@ -308,6 +310,13 @@ func Test_DB_migrateUp(t *testing.T) {
 	_, err = db.sql.Exec(q, args...)
 	require.NoError(t, err)
 
+	// the credentials kind migration (013) adds the basic kind to
+	// credentials stored before it.
+	source := prepDataSources(t, db, 1, func(_ int, ds *datasource.DataSource) {
+		ds.OrganizationID = organizationID
+		ds.Credentials = stubCredentials(`{"username":"user","password":"pass"}`)
+	})[0]
+
 	hexes := []string{"#f54a00", "#e7010c", "#155DFC", "rgb(1, 2, 3)"}
 
 	prepTags(t, db, len(hexes), func(i int, tg *tag.Tag) {
@@ -356,6 +365,180 @@ func Test_DB_migrateUp(t *testing.T) {
 
 	require.NoError(t, db.sql.Get(&invitationRole, "SELECT role FROM organization_invitations WHERE id = 'inv-1'"))
 	assert.Equal(t, "admin", invitationRole)
+
+	assert.JSONEq(t, `{"kind":"basic","username":"user","password":"pass"}`, decryptDataSourceCredentials(t, db, _dataSourceKeys, source.ID))
+}
+
+func Test_migrateDataSourceCredentialsKind(t *testing.T) {
+	// the keyring holds a retired key besides the newest one, so a row
+	// sealed under the retired key is still read.
+	keys := mustParseKeys(_dataSourceKey + "," + _retiredDataSourceKey)
+
+	type tcase struct {
+		CancelledContext bool
+		Down             bool
+		Err              error
+		// Check inspects the rows the migration left behind.
+		Check func(t *testing.T, db *DB)
+	}
+
+	// prep stores one data source holding the given credentials JSON,
+	// sealed under the database's keys.
+	prep := func(t *testing.T, db *DB, creds string) *datasource.DataSource {
+		t.Helper()
+
+		return prepDataSources(t, db, 1, func(_ int, ds *datasource.DataSource) {
+			ds.Credentials = stubCredentials(creds)
+		})[0]
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(t *testing.T, db *DB) tcase {
+			prep(t, db, `{"username":"user"}`)
+
+			return tcase{
+				CancelledContext: true,
+				Err:              assert.AnError,
+			}
+		},
+		"Basic credentials gain the basic kind": func(t *testing.T, db *DB) tcase {
+			ds := prep(t, db, `{"username":"user","password":"pass","caCertificate":"pem"}`)
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					assert.JSONEq(t,
+						`{"kind":"basic","username":"user","password":"pass","caCertificate":"pem"}`,
+						decryptDataSourceCredentials(t, db, keys, ds.ID),
+					)
+				},
+			}
+		},
+		"Credentials under a retired key move to the newest key": func(t *testing.T, db *DB) tcase {
+			db.opts.DataSourceCredentialsKeys = mustParseKeys(_retiredDataSourceKey)
+			ds := prep(t, db, `{"username":"user"}`)
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					assert.True(t, keys.IsCurrent(fetchDataSourceCredentials(t, db, ds.ID)))
+					assert.JSONEq(t, `{"kind":"basic","username":"user"}`, decryptDataSourceCredentials(t, db, keys, ds.ID))
+				},
+			}
+		},
+		"Credentials with a kind are left alone": func(t *testing.T, db *DB) tcase {
+			ds := prep(t, db, `{"kind":"token","token":"secret"}`)
+			before := fetchDataSourceCredentials(t, db, ds.ID)
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					assert.Equal(t, before, fetchDataSourceCredentials(t, db, ds.ID))
+				},
+			}
+		},
+		"Unreadable credentials are reset": func(t *testing.T, db *DB) tcase {
+			ds := prep(t, db, `{"username":"user"}`)
+			poisonDataSourceCredentials(t, db, ds.ID)
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					assert.Empty(t, decryptDataSourceCredentials(t, db, keys, ds.ID))
+				},
+			}
+		},
+		"Empty credentials are left alone": func(t *testing.T, db *DB) tcase {
+			ds := prep(t, db, ``)
+			before := fetchDataSourceCredentials(t, db, ds.ID)
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					assert.Equal(t, before, fetchDataSourceCredentials(t, db, ds.ID))
+				},
+			}
+		},
+		"Credentials that are not an object are reset": func(t *testing.T, db *DB) tcase {
+			array := prep(t, db, `[1]`)
+			nullCreds := prep(t, db, `null`)
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					assert.Empty(t, decryptDataSourceCredentials(t, db, keys, array.ID))
+					assert.Empty(t, decryptDataSourceCredentials(t, db, keys, nullCreds.ID))
+				},
+			}
+		},
+		"Down removes the basic kind": func(t *testing.T, db *DB) tcase {
+			ds := prep(t, db, `{"kind":"basic","username":"user","password":"pass"}`)
+
+			return tcase{
+				Down: true,
+				Check: func(t *testing.T, db *DB) {
+					assert.JSONEq(t, `{"username":"user","password":"pass"}`, decryptDataSourceCredentials(t, db, keys, ds.ID))
+				},
+			}
+		},
+		"Down removes the token and keeps the CA certificate": func(t *testing.T, db *DB) tcase {
+			ds := prep(t, db, `{"kind":"token","token":"secret","caCertificate":"pem"}`)
+
+			return tcase{
+				Down: true,
+				Check: func(t *testing.T, db *DB) {
+					assert.JSONEq(t, `{"caCertificate":"pem"}`, decryptDataSourceCredentials(t, db, keys, ds.ID))
+				},
+			}
+		},
+		"Down leaves credentials without a kind alone": func(t *testing.T, db *DB) tcase {
+			ds := prep(t, db, `{"username":"user"}`)
+			before := fetchDataSourceCredentials(t, db, ds.ID)
+
+			return tcase{
+				Down: true,
+				Check: func(t *testing.T, db *DB) {
+					assert.Equal(t, before, fetchDataSourceCredentials(t, db, ds.ID))
+				},
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			tx, err := db.sql.BeginTx(ctx, nil)
+			require.NoError(t, err)
+
+			t.Cleanup(func() {
+				tx.Rollback() //nolint:errcheck,gosec // the transaction is committed or the test failed
+			})
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			m := migrations.Go(migrations.Deps{DataSourceKeys: keys})[0]
+			require.Equal(t, int64(13), m.Version)
+
+			run := m.UpFnContext
+			if c.Down {
+				run = m.DownFnContext
+			}
+
+			err = run(ctx, tx)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			require.NoError(t, tx.Commit())
+
+			c.Check(t, db)
+		})
+	}
 }
 
 func Test_DB_moveSQLMigrateHistory(t *testing.T) {

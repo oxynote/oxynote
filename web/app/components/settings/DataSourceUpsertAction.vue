@@ -33,6 +33,20 @@ const formSchema = toTypedSchema(
 			.default(isCreation.value ? "" : props.updateTarget?.url || ""),
 		username: z.string().trim().max(128).optional(),
 		password: z.string().trim().max(128).optional(),
+		token: z
+			.string()
+			.trim()
+			.max(4096)
+			.optional()
+			.refine(
+				(token) =>
+					credentialsKind.value !== "token" ||
+					isCredentialLocked("token") ||
+					!!token,
+				t(
+					"settings.action-modals.data-source-upsert.creds-token-field.required",
+				),
+			),
 		caCertificate: z.string().trim().max(65536).optional(),
 	}),
 )
@@ -41,6 +55,10 @@ const form = useForm({
 })
 const loading = ref(false)
 const resetCredentials = ref<DataSourceCredentialKey[]>([])
+const credentialsKind = ref<DataSourceCredentialsKind>(
+	props.updateTarget?.credentials?.kind ?? "basic",
+)
+const credentialsKindLabelId = useId()
 // stored credentials belong to the stored URL, and a new URL clears them
 const urlChanged = computed(
 	() =>
@@ -87,6 +105,11 @@ const dataSourceType = computed(() => {
 
 	return null
 })
+const acceptsTokens = computed(
+	() =>
+		dataSourceType.value === DataSourceType.Prometheus ||
+		dataSourceType.value === DataSourceType.Loki,
+)
 
 const { createDataSource, updateDataSource } = useDataSourceAPI()
 
@@ -95,10 +118,14 @@ const onSubmit = form.handleSubmit(async (values) => {
 	await delay(300) // slight delay to ensure loading spinner is visible
 
 	if (isCreation.value && props.creationType) {
-		const credentials: DataSourceCredentials = {
-			username: values.username || "",
-			password: values.password || "",
-		}
+		const credentials: DataSourceCredentials =
+			credentialsKind.value === "token"
+				? { kind: "token", token: values.token || "" }
+				: {
+						kind: "basic",
+						username: values.username || "",
+						password: values.password || "",
+					}
 
 		if (values.caCertificate) {
 			credentials.caCertificate = values.caCertificate
@@ -183,7 +210,12 @@ const onSubmit = form.handleSubmit(async (values) => {
 			req.url = values.url
 		}
 
-		for (const key of ["username", "password", "caCertificate"] as const) {
+		const keys =
+			credentialsKind.value === "token"
+				? (["token", "caCertificate"] as const)
+				: (["username", "password", "caCertificate"] as const)
+
+		for (const key of keys) {
 			const value = values[key]
 			if (value) {
 				req.credentials ??= {}
@@ -195,6 +227,18 @@ const onSubmit = form.handleSubmit(async (values) => {
 				req.credentials ??= {}
 				req.credentials[key] = ""
 			}
+		}
+
+		// the server needs the kind with every credentials update. A switch
+		// to another kind is sent even when no field changed.
+		const storedKind = props.updateTarget.credentials?.kind
+
+		if (storedKind && credentialsKind.value !== storedKind) {
+			req.credentials ??= {}
+		}
+
+		if (req.credentials) {
+			req.credentials.kind = credentialsKind.value
 		}
 
 		if (Object.keys(req).length === 0) {
@@ -277,10 +321,10 @@ const onSubmit = form.handleSubmit(async (values) => {
 
 // the server says which credentials are stored but never sends them, so a
 // stored one stays locked until it is reset
-function isCredentialLocked(key: DataSourceCredentialKey) {
+function isCredentialLocked(key: DataSourceCredentialKey): boolean {
 	return (
 		hasStoredCredentials.value &&
-		!!props.updateTarget?.configured?.[key] &&
+		!!props.updateTarget?.credentials?.configured[key] &&
 		!resetCredentials.value.includes(key)
 	)
 }
@@ -445,105 +489,235 @@ function resetCredential(key: DataSourceCredentialKey) {
 					</p>
 				</ShadcnUiFormItem>
 			</ShadcnUiFormField>
+			<div v-if="acceptsTokens" class="flex w-full flex-col gap-2">
+				<span
+					:id="credentialsKindLabelId"
+					class="text-2sm leading-none font-medium"
+				>
+					{{
+						$t(
+							"settings.action-modals.data-source-upsert.auth-kind-field.label",
+						)
+					}}
+				</span>
+				<div
+					role="group"
+					:aria-labelledby="credentialsKindLabelId"
+					class="grid grid-cols-2 gap-0.5 rounded-md border bg-muted p-0.5"
+				>
+					<button
+						v-for="kind in ['basic', 'token'] as const"
+						:key="kind"
+						type="button"
+						:aria-pressed="credentialsKind === kind"
+						:class="
+							cn(
+								'h-7 cursor-pointer rounded-sm text-2sm font-medium text-muted-foreground transition-colors duration-150',
+								credentialsKind === kind &&
+									'bg-background text-foreground shadow-xs',
+								loading && 'pointer-events-none',
+							)
+						"
+						@click="credentialsKind = kind"
+					>
+						{{
+							$t(
+								`settings.action-modals.data-source-upsert.auth-kind-field.${kind}`,
+							)
+						}}
+					</button>
+				</div>
+			</div>
+			<template v-if="credentialsKind === 'basic'">
+				<ShadcnUiFormField
+					v-slot="{ componentField }"
+					name="username"
+					class="w-full"
+				>
+					<ShadcnUiFormItem class="w-full">
+						<div class="flex items-center justify-between">
+							<ShadcnUiFormLabel disable-destructive-effect class="text-2sm">
+								<span class="flex items-center">
+									<span>
+										{{
+											$t(
+												`settings.action-modals.data-source-upsert.creds-username-field.${dataSourceType}.label`,
+											)
+										}}
+									</span>
+									<span class="ml-0.75 text-2xs text-muted-foreground">
+										{{ $t("settings.optional-label") }}
+									</span>
+								</span>
+							</ShadcnUiFormLabel>
+							<ShadcnUiButton
+								v-if="isCredentialLocked('username')"
+								type="button"
+								variant="ghost-plain-destructive"
+								size="custom"
+								class="text-2xs"
+								@click="resetCredential('username')"
+							>
+								{{
+									$t("settings.action-modals.data-source-upsert.reset-button")
+								}}
+							</ShadcnUiButton>
+						</div>
+						<ShadcnUiFormControl>
+							<ShadcnUiInput
+								type="text"
+								:disabled="isCredentialLocked('username')"
+								:placeholder="
+									isCredentialLocked('username')
+										? $t(
+												'settings.action-modals.data-source-upsert.hidden-placeholder',
+											)
+										: $t(
+												`settings.action-modals.data-source-upsert.creds-username-field.${dataSourceType}.placeholder`,
+											)
+								"
+								disable-focus-effect
+								disable-destructive-effect
+								:class="cn('h-8 text-2sm!', loading && 'pointer-events-none')"
+								v-bind="{
+									...componentField,
+								}"
+							/>
+						</ShadcnUiFormControl>
+						<ShadcnUiFormMessage class="text-2xs" />
+					</ShadcnUiFormItem>
+				</ShadcnUiFormField>
+				<ShadcnUiFormField
+					v-slot="{ componentField }"
+					name="password"
+					class="w-full"
+				>
+					<ShadcnUiFormItem class="w-full">
+						<div class="flex items-center justify-between">
+							<ShadcnUiFormLabel disable-destructive-effect class="text-2sm">
+								<span class="flex items-center">
+									<span>
+										{{
+											$t(
+												`settings.action-modals.data-source-upsert.creds-password-field.${dataSourceType}.label`,
+											)
+										}}
+									</span>
+									<span class="ml-0.75 text-2xs text-muted-foreground">
+										{{ $t("settings.optional-label") }}
+									</span>
+								</span>
+							</ShadcnUiFormLabel>
+							<ShadcnUiButton
+								v-if="isCredentialLocked('password')"
+								type="button"
+								variant="ghost-plain-destructive"
+								size="custom"
+								class="text-2xs"
+								@click="resetCredential('password')"
+							>
+								{{
+									$t("settings.action-modals.data-source-upsert.reset-button")
+								}}
+							</ShadcnUiButton>
+						</div>
+						<ShadcnUiFormControl>
+							<ShadcnUiInput
+								type="password"
+								:disabled="isCredentialLocked('password')"
+								:placeholder="
+									isCredentialLocked('password')
+										? $t(
+												'settings.action-modals.data-source-upsert.hidden-placeholder',
+											)
+										: $t(
+												`settings.action-modals.data-source-upsert.creds-password-field.${dataSourceType}.placeholder`,
+											)
+								"
+								disable-focus-effect
+								disable-destructive-effect
+								:class="cn('h-8 text-2sm!', loading && 'pointer-events-none')"
+								v-bind="{
+									...componentField,
+								}"
+							/>
+						</ShadcnUiFormControl>
+						<ShadcnUiFormMessage class="text-2xs" />
+					</ShadcnUiFormItem>
+				</ShadcnUiFormField>
+			</template>
 			<ShadcnUiFormField
+				v-else
 				v-slot="{ componentField }"
-				name="username"
+				name="token"
 				class="w-full"
 			>
 				<ShadcnUiFormItem class="w-full">
 					<div class="flex items-center justify-between">
 						<ShadcnUiFormLabel disable-destructive-effect class="text-2sm">
-							<span class="flex items-center">
-								<span>
-									{{
-										$t(
-											`settings.action-modals.data-source-upsert.creds-username-field.${dataSourceType}.label`,
-										)
-									}}
-								</span>
-								<span class="ml-0.75 text-2xs text-muted-foreground">
-									{{ $t("settings.optional-label") }}
-								</span>
-							</span>
+							{{
+								$t(
+									"settings.action-modals.data-source-upsert.creds-token-field.label",
+								)
+							}}
 						</ShadcnUiFormLabel>
-						<ShadcnUiButton
-							v-if="isCredentialLocked('username')"
-							type="button"
-							variant="ghost-plain-destructive"
-							size="custom"
-							class="text-2xs"
-							@click="resetCredential('username')"
-						>
-							{{ $t("settings.action-modals.data-source-upsert.reset-button") }}
-						</ShadcnUiButton>
-					</div>
-					<ShadcnUiFormControl>
-						<ShadcnUiInput
-							type="text"
-							:disabled="isCredentialLocked('username')"
-							:placeholder="
-								isCredentialLocked('username')
-									? $t(
-											'settings.action-modals.data-source-upsert.hidden-placeholder',
-										)
-									: $t(
-											`settings.action-modals.data-source-upsert.creds-username-field.${dataSourceType}.placeholder`,
-										)
-							"
-							disable-focus-effect
-							disable-destructive-effect
-							:class="cn('h-8 text-2sm!', loading && 'pointer-events-none')"
-							v-bind="{
-								...componentField,
-							}"
-						/>
-					</ShadcnUiFormControl>
-					<ShadcnUiFormMessage class="text-2xs" />
-				</ShadcnUiFormItem>
-			</ShadcnUiFormField>
-			<ShadcnUiFormField
-				v-slot="{ componentField }"
-				name="password"
-				class="w-full"
-			>
-				<ShadcnUiFormItem class="w-full">
-					<div class="flex items-center justify-between">
-						<ShadcnUiFormLabel disable-destructive-effect class="text-2sm">
-							<span class="flex items-center">
-								<span>
-									{{
-										$t(
-											`settings.action-modals.data-source-upsert.creds-password-field.${dataSourceType}.label`,
-										)
-									}}
-								</span>
-								<span class="ml-0.75 text-2xs text-muted-foreground">
-									{{ $t("settings.optional-label") }}
-								</span>
-							</span>
-						</ShadcnUiFormLabel>
-						<ShadcnUiButton
-							v-if="isCredentialLocked('password')"
-							type="button"
-							variant="ghost-plain-destructive"
-							size="custom"
-							class="text-2xs"
-							@click="resetCredential('password')"
-						>
-							{{ $t("settings.action-modals.data-source-upsert.reset-button") }}
-						</ShadcnUiButton>
+						<div class="flex items-center gap-2">
+							<ShadcnUiButton
+								v-if="isCredentialLocked('token')"
+								type="button"
+								variant="ghost-plain-destructive"
+								size="custom"
+								class="text-2xs"
+								@click="resetCredential('token')"
+							>
+								{{
+									$t("settings.action-modals.data-source-upsert.reset-button")
+								}}
+							</ShadcnUiButton>
+							<ShadcnUiPopover>
+								<ShadcnUiPopoverTrigger as-child>
+									<ShadcnUiButton
+										type="button"
+										variant="dim"
+										size="custom"
+										class="text-2xs"
+									>
+										{{
+											$t(
+												"settings.action-modals.data-source-upsert.help-button",
+											)
+										}}
+									</ShadcnUiButton>
+								</ShadcnUiPopoverTrigger>
+								<ShadcnUiPopoverContent
+									class="flex w-100 max-w-[85dvw] flex-col px-2 pt-1 pb-1.5 text-2sm leading-4.5"
+									side="bottom"
+									side-flip
+									inside-modal
+									align="end"
+								>
+									<p>
+										{{
+											$t(
+												"settings.action-modals.data-source-upsert.creds-token-field.help",
+											)
+										}}
+									</p>
+								</ShadcnUiPopoverContent>
+							</ShadcnUiPopover>
+						</div>
 					</div>
 					<ShadcnUiFormControl>
 						<ShadcnUiInput
 							type="password"
-							:disabled="isCredentialLocked('password')"
+							:disabled="isCredentialLocked('token')"
 							:placeholder="
-								isCredentialLocked('password')
+								isCredentialLocked('token')
 									? $t(
 											'settings.action-modals.data-source-upsert.hidden-placeholder',
 										)
 									: $t(
-											`settings.action-modals.data-source-upsert.creds-password-field.${dataSourceType}.placeholder`,
+											'settings.action-modals.data-source-upsert.creds-token-field.placeholder',
 										)
 							"
 							disable-focus-effect

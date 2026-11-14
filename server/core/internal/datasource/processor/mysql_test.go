@@ -11,6 +11,7 @@ import (
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/go-sql-driver/mysql"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
@@ -451,7 +452,7 @@ func Test_MySQL_Close(t *testing.T) {
 func Test_MySQL_TestConnection(t *testing.T) {
 	cc := map[string]struct {
 		URL              string
-		Creds            Credentials
+		Creds            credentials.Credentials
 		Result           ConnectionStatus
 		CredentialsCalls int
 	}{
@@ -500,7 +501,7 @@ func Test_MySQL_TestConnection(t *testing.T) {
 
 			inp := &InputMock{
 				URLFunc:         func() string { return c.URL },
-				CredentialsFunc: func() Credentials { return c.Creds },
+				CredentialsFunc: func() credentials.Credentials { return c.Creds },
 			}
 
 			m := NewMySQL(inp)
@@ -892,7 +893,7 @@ func Test_MySQL_connect(t *testing.T) {
 func Test_MySQL_buildConfig(t *testing.T) {
 	cc := map[string]struct {
 		URL              string
-		Creds            Credentials
+		Creds            credentials.Credentials
 		User             string
 		Password         string
 		Addr             string
@@ -908,14 +909,20 @@ func Test_MySQL_buildConfig(t *testing.T) {
 		},
 		"Error returned by Credentials.basic": {
 			URL:              "mysql://dbhost/mydb",
-			Creds:            NewCredentials([]byte(`{`)),
+			Creds:            stubCredentials(`{`),
 			Err:              assert.AnError,
 			CredentialsCalls: 1,
 		},
-		"Error returned by BasicCredentials.rootCAs": {
+		"Token credentials": {
+			URL:              "mysql://dbhost/mydb",
+			Creds:            stubCredentials(`{"kind":"token","token":"secret"}`),
+			Err:              credentials.ErrInvalid,
+			CredentialsCalls: 1,
+		},
+		"Error returned by rootCAs": {
 			URL:              "mysql://dbhost/mydb",
 			Creds:            caCredentials("not a certificate"),
-			Err:              _errInvalidCACertificate,
+			Err:              credentials.ErrInvalidCACertificate,
 			CredentialsCalls: 1,
 		},
 		"URL credentials with default port": { //nolint:gosec // static test credentials
@@ -928,7 +935,7 @@ func Test_MySQL_buildConfig(t *testing.T) {
 		},
 		"Credentials override url user": { //nolint:gosec // static test credentials
 			URL:              "mysql://urluser:urlpass@dbhost:3307/mydb",
-			Creds:            NewCredentials([]byte(`{"username":"credsuser","password":"credspass"}`)),
+			Creds:            stubCredentials(`{"kind":"basic","username":"credsuser","password":"credspass"}`),
 			User:             "credsuser",
 			Password:         "credspass",
 			Addr:             "dbhost:3307",
@@ -937,7 +944,7 @@ func Test_MySQL_buildConfig(t *testing.T) {
 		},
 		"Password keeps the url user": {
 			URL:              "mysql://urluser@dbhost:3307/mydb",
-			Creds:            NewCredentials([]byte(`{"password":"credspass"}`)),
+			Creds:            stubCredentials(`{"kind":"basic","password":"credspass"}`),
 			User:             "urluser",
 			Password:         "credspass",
 			Addr:             "dbhost:3307",
@@ -946,7 +953,7 @@ func Test_MySQL_buildConfig(t *testing.T) {
 		},
 		"Empty credentials keep url user": { //nolint:gosec // static test credentials
 			URL:              "mysql://urluser:urlpass@dbhost:3307/mydb",
-			Creds:            NewCredentials([]byte(`{"username":"","password":""}`)),
+			Creds:            stubCredentials(`{"kind":"basic","username":"","password":""}`),
 			User:             "urluser",
 			Password:         "urlpass",
 			Addr:             "dbhost:3307",
@@ -984,7 +991,7 @@ func Test_MySQL_buildConfig(t *testing.T) {
 
 			inp := &InputMock{
 				URLFunc:         func() string { return c.URL },
-				CredentialsFunc: func() Credentials { return c.Creds },
+				CredentialsFunc: func() credentials.Credentials { return c.Creds },
 			}
 
 			m := NewMySQL(inp)

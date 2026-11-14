@@ -63,7 +63,7 @@ GitHub and Slack callback URLs point at `:8080/core/api/apps/...`.
   AGENTS.md for the branch rules).
 - Hocuspocus `documentName` is `"<documentId>-<branchIdentifier>"`;
   `"default"` is resolved by `resolveBranchId`
-  (`auth-realtime/src/hocuspocus.ts`). Split on the first `-` only.
+  (`auth-realtime/src/hocuspocus.ts`).
 - Branch content is stored twice: ProseMirror JSON in `content` (JSONB) and
   the Yjs binary in `raw_content` (base64 on the wire). `raw_content` is
   authoritative for CRDT continuity.
@@ -92,8 +92,8 @@ Postgres 18. `db.New` applies `core/internal/db/migrations/` with goose:
 `NNN_<name>.sql` and `NNN_<name>.go` (listed in `migrations.Go`) share one
 numbering. **The system is live: every schema change is a new migration;
 an applied migration's statements never change.** A Go migration has a
-Down and uses only its `*sql.Tx` and plain values, never `db` helpers, so
-it stays frozen. A dev volume behind on migrations can be reset with
+Down and uses only its `*sql.Tx`, plain values and `migrations.Deps`, never
+`db` helpers, so it stays frozen. A dev volume behind on migrations can be reset with
 `docker compose -p oxynote -f docker/docker-compose.dev.yaml down -v`.
 
 **Core migrations own the Better Auth tables** (snake_case columns matching

@@ -49,7 +49,7 @@ function makeCreateRequest(): DataSourceCreateRequest {
 		type: DataSourceType.Prometheus,
 		name: "New Prometheus",
 		url: "https://new-prom.test",
-		credentials: { username: "u1", password: "p1" },
+		credentials: { kind: "basic", username: "u1", password: "p1" },
 	}
 }
 

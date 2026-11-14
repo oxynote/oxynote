@@ -12,7 +12,7 @@ func TestMain(m *testing.M) {
 }
 
 func Test_Go(t *testing.T) {
-	for _, m := range Go() {
+	for _, m := range Go(Deps{}) {
 		assert.NotNil(t, m.UpFnContext, "migration %d has no up step on a transaction", m.Version)
 		assert.NotNil(t, m.DownFnContext, "migration %d has no down step on a transaction", m.Version)
 	}
