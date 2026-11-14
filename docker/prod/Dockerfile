@@ -145,9 +145,9 @@ FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5
 # /usr/libexec/postgresql18 paths: a data directory only opens under the
 # major that wrote it, so a major bump needs an upgrade path for existing
 # volumes, not only a new pin.
-ARG NODE_APK_VERSION=24.22.1-r1
+ARG NODE_APK_VERSION=24.22.3-r0
 ARG ICU_DATA_APK_VERSION=78.1-r0
-ARG POSTGRESQL_APK_VERSION=18.6-r0
+ARG POSTGRESQL_APK_VERSION=18.7-r0
 
 # the uid is explicit and never changes: the data volume's files are owned
 # by it, so a shift between releases would lock an existing deployment out
