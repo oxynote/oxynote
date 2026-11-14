@@ -1,7 +1,7 @@
 // the width in rem from which the grid shows its 24 columns. A narrower
-// grid stacks its blocks. GridView's @5xl classes switch at the same
+// grid stacks its blocks. GridView's @4xl classes switch at the same
 // width.
-const WIDE_GRID_REM = 64
+const WIDE_GRID_REM = 56
 
 // the elements that Tab can reach
 const TAB_STOPS =

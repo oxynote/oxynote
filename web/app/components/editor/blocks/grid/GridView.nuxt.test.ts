@@ -82,13 +82,13 @@ describe("<GridView>", { concurrent: false }, () => {
 
 	it.for([
 		{
-			name: "lists the blocks in reading order for a grid 64rem wide",
-			input: 1024,
+			name: "lists the blocks in reading order for a grid 56rem wide",
+			input: 896,
 			expected: "c a b",
 		},
 		{
 			name: "lists the blocks in their stacked order for a narrower grid",
-			input: 1023,
+			input: 895,
 			expected: "a b c",
 		},
 	])("$name", async ({ input, expected }, { expect }) => {
@@ -104,7 +104,7 @@ describe("<GridView>", { concurrent: false }, () => {
 	it("follows the grid's width as it changes", async ({ expect }) => {
 		const wrapper = await mountNodeView(GridView, { node: grid() })
 
-		gridContent.width.value = 1024
+		gridContent.width.value = 896
 		await nextTick()
 
 		expect(

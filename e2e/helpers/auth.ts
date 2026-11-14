@@ -31,7 +31,10 @@ export function newCredentials(): Credentials {
 // handler; visit() waits for the app instance, but under load the
 // handler can still land a beat later, and a click in that window does
 // nothing at all — no request, no error, just the same page.
-async function revealForm(button: Locator, field: Locator): Promise<void> {
+export async function revealForm(
+	button: Locator,
+	field: Locator,
+): Promise<void> {
 	await expect(async () => {
 		await button.click()
 		await expect(field).toBeVisible({ timeout: 1_000 })

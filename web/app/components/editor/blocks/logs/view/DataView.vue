@@ -130,6 +130,11 @@ const refreshIntervalMs = computed(() =>
 			RefreshInterval.M5,
 	),
 )
+
+// set when the interval changes before the route's ids exist, so the
+// deadline is moved once they do
+const intervalChangedBeforeIds = ref(false)
+
 const fetchLogs = useLogs(
 	() => props.config.dataSourceId,
 	() => {
@@ -249,6 +254,39 @@ useIntervalFn(() => void refreshData(), refreshIntervalMs, {
 onMounted(() => {
 	void refreshData()
 })
+
+// the timer restarts when the interval changes. Move the saved deadline to
+// the new interval without making the block due, so changing the variable
+// quickly does not fire a request for each change.
+watch(refreshIntervalMs, () => {
+	if (!editorStore.activeDocumentId || !editorStore.activeBranchId) {
+		intervalChangedBeforeIds.value = true
+
+		return
+	}
+
+	editorStore.setLogBlockNextRefreshTimestamp(
+		props.uid,
+		refreshIntervalMs.value,
+	)
+})
+
+// the ids arrive with the route, often after the block has mounted, so a
+// change that arrives first is applied when they do
+watch(
+	[() => editorStore.activeDocumentId, () => editorStore.activeBranchId],
+	([docId, branchId]) => {
+		if (!intervalChangedBeforeIds.value || !docId || !branchId) {
+			return
+		}
+
+		intervalChangedBeforeIds.value = false
+		editorStore.setLogBlockNextRefreshTimestamp(
+			props.uid,
+			refreshIntervalMs.value,
+		)
+	},
+)
 
 watch(near, (isNear) => {
 	if (isNear && refreshWhenNear.value) {

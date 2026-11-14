@@ -61,6 +61,10 @@ export interface RouteDeps {
 	resetConnections: (documentName: string) => void
 	// the bootstrap admin, while it still has its default email.
 	findDefaultAdmin: () => Promise<DefaultAdmin | null>
+	// where the identity provider ends its session and then returns to
+	// the login page. Null without OIDC, or when the provider has no
+	// such endpoint.
+	oidcEndSessionUrl: () => Promise<string | null>
 	core: CoreClient
 }
 
@@ -121,6 +125,7 @@ export function createRoutes({
 	flushDocument,
 	resetConnections,
 	findDefaultAdmin,
+	oidcEndSessionUrl,
 	core,
 }: RouteDeps): Hono {
 	const app = new Hono()
@@ -235,7 +240,8 @@ export function createRoutes({
 	// and the organization limits. Null is no member limit. defaultAdmin
 	// is set while the bootstrap admin keeps its default email. Its
 	// password is set only while that still works, so the login page can
-	// show it. Lives outside the better-auth /auth/** namespace.
+	// show it. oidcDisplayName labels the OIDC button and is null without
+	// OIDC. Lives outside the better-auth /auth/** namespace.
 	app.get("/auth-config", async (c) => {
 		let defaultAdmin: {
 			email: string
@@ -263,6 +269,7 @@ export function createRoutes({
 
 		return c.json({
 			methods: authMethods(env),
+			oidcDisplayName: env.oidc?.displayName ?? null,
 			emailEnabled: env.emailEnabled,
 			singleOrganization: env.maxOrganizations === 1,
 			maxOrganizationMembers: Number.isFinite(
@@ -272,6 +279,16 @@ export function createRoutes({
 				: null,
 			defaultAdmin,
 		})
+	})
+
+	// a refused sign-in leaves the identity provider's session alive, so
+	// the next try signs in as the same user again. This ends that
+	// session, and the provider sends the browser back to the login page,
+	// where another account can sign in.
+	app.get("/oidc/end-session", async (c) => {
+		const url = await oidcEndSessionUrl()
+
+		return c.redirect(url ?? `${env.frontendUrl}/login`)
 	})
 
 	// null slots is no organization limit.

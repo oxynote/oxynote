@@ -607,7 +607,7 @@ func (qd queryDataSource) Exec(inp Input) (any, error) {
 
 		res, err := prom.QueryRange(inp.Context(), variable.Substitute(vars, q)[0], tr)
 		if err != nil {
-			return nil, fmt.Errorf("%w; check the query against get_data_source_metadata", err)
+			return nil, queryError(err)
 		}
 
 		switch {
@@ -632,7 +632,7 @@ func (qd queryDataSource) Exec(inp Input) (any, error) {
 
 		res, err := pg.Query(inp.Context(), q, tr, vars)
 		if err != nil {
-			return nil, fmt.Errorf("%w; check the query against get_data_source_metadata", err)
+			return nil, queryError(err)
 		}
 
 		switch {
@@ -656,7 +656,7 @@ func (qd queryDataSource) Exec(inp Input) (any, error) {
 
 		res, err := my.Query(inp.Context(), q, tr, vars)
 		if err != nil {
-			return nil, fmt.Errorf("%w; check the query against get_data_source_metadata", err)
+			return nil, queryError(err)
 		}
 
 		switch {
@@ -687,6 +687,11 @@ func queryLogs(inp Input, runner datasource.Runner, q string, tr processor.TimeR
 
 	res, err := logs.Logs(inp.Context(), q, tr, page)
 	if err != nil {
+		if processor.IsOutage(err) {
+			// an outage or a rate limit is not fixed by a different query.
+			return nil, err
+		}
+
 		return nil, fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since metric queries such as rate() are not supported", err)
 	}
 
@@ -695,6 +700,17 @@ func queryLogs(inp Input, runner datasource.Runner, q string, tr processor.TimeR
 	}
 
 	return newRawLogs(res), nil
+}
+
+// queryError returns a failed query's error with a hint to check the query
+// when the data source rejected it. Any other failure, such as an outage or
+// a rate limit, is returned as it is: a different query does not fix it.
+func queryError(err error) error {
+	if !processor.IsInvalidQuery(err) {
+		return err
+	}
+
+	return fmt.Errorf("%w; check the query against get_data_source_metadata", err)
 }
 
 // rawSeries is a raw Prometheus answer, cut down to _maxRawSeries series

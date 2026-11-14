@@ -1,0 +1,96 @@
+# layered over the dev stack by `make run OIDC=1` (and start, dev). It adds
+# keycloak and signs auth-realtime in through it, so OIDC can be tried
+# without an account at a real provider. It is opt-in because keycloak takes
+# a while to start.
+#
+# alice (verified email) and bob (unverified) sign in with their name as
+# password. The admin console is at http://localhost:8180 as admin/admin.
+#
+# KC_HOSTNAME is the address the browser uses. The dynamic backchannel lets
+# auth-realtime fetch tokens and keys through keycloak:8080, while every
+# token still names the browser's address as its issuer.
+services:
+  keycloak:
+    container_name: keycloak
+    image: quay.io/keycloak/keycloak:26.8.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      - KC_BOOTSTRAP_ADMIN_USERNAME=admin
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+      - KC_HOSTNAME=http://localhost:8180
+      - KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true
+      - KC_HEALTH_ENABLED=true
+    ports:
+      - "8180:8080"
+    configs:
+      - source: keycloak-realm
+        target: /opt/keycloak/data/import/oxynote.json
+    # the image has no curl or wget, so bash asks the management port.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '200 OK' <&3
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  # discovery runs once at boot, and a failed one stops the service.
+  auth-realtime:
+    environment:
+      - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_ISSUER_URL=http://keycloak:8080/realms/oxynote
+      - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_ID=oxynote
+      - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_SECRET=oxynote-dev-secret
+      - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_DISPLAY_NAME=Keycloak
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
+configs:
+  keycloak-realm:
+    content: |
+      {
+        "realm": "oxynote",
+        "enabled": true,
+        "sslRequired": "none",
+        "verifyEmail": false,
+        "registrationAllowed": false,
+        "clients": [
+          {
+            "clientId": "oxynote",
+            "enabled": true,
+            "protocol": "openid-connect",
+            "publicClient": false,
+            "secret": "oxynote-dev-secret",
+            "standardFlowEnabled": true,
+            "directAccessGrantsEnabled": false,
+            "redirectUris": ["http://localhost:8080/*"],
+            "attributes": {
+              "pkce.code.challenge.method": "S256",
+              "post.logout.redirect.uris": "http://localhost:8080/*##http://localhost:3000/*"
+            }
+          }
+        ],
+        "users": [
+          {
+            "username": "alice",
+            "email": "alice@oxynote.test",
+            "emailVerified": true,
+            "firstName": "Alice",
+            "lastName": "Example",
+            "enabled": true,
+            "credentials": [{ "type": "password", "value": "alice" }]
+          },
+          {
+            "username": "bob",
+            "email": "bob@oxynote.test",
+            "emailVerified": false,
+            "firstName": "Bob",
+            "lastName": "Example",
+            "enabled": true,
+            "credentials": [{ "type": "password", "value": "bob" }]
+          }
+        ]
+      }

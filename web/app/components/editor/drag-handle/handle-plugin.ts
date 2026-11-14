@@ -59,7 +59,7 @@ const findRelativePos = (
 		absolutePos,
 		ystate.type,
 		ystate.binding.mapping,
-	) as Y.RelativePosition
+	)
 }
 
 const findAbsolutePos = (
@@ -67,7 +67,7 @@ const findAbsolutePos = (
 	relativePos: Y.RelativePosition | null,
 ) => {
 	const ystate = ySyncPluginKey.getState(state) as YSyncPluginState | undefined
-	if (!ystate) {
+	if (!ystate || !relativePos) {
 		return -1
 	}
 

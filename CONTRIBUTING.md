@@ -52,6 +52,10 @@ app on http://localhost:3000, which reloads as you save. If `make start`
 refuses to run after a pull because your env files no longer match the
 templates, run `make sync-env`. It keeps your values.
 
+To try single sign-on, add `OIDC=1` (`make start OIDC=1`). It adds a
+Keycloak with two users, alice and bob, whose passwords are their names.
+Its admin console is at http://localhost:8180 as admin/admin.
+
 ## Repository Layout
 
 - `web/`: the frontend, built with Nuxt 4 and Vue 3. It ships as a web app
@@ -134,12 +138,12 @@ We distilled these rules over many years of work on projects such as
 [ttlcache](https://github.com/jellydator/ttlcache), mostly long before AI
 coding tools existed. A lot of them build on existing guides, such as the
 [Uber Go Style Guide](https://github.com/uber-go/guide/blob/master/style.md).
-Others we found by reading the Go standard library. Our table tests with
-check functions, for example, came from its tests, such as
+Others we found by reading open-source code that sets the standard for
+its language, such as the Go standard library. Our table tests with check
+functions, for example, came from its tests, such as
 [`TestRecorder`](https://github.com/golang/go/blob/go1.27.1/src/net/http/httptest/recorder_test.go#L16).
-Our
-[`Test_Handler_FetchNotificationsCount`](server/core/internal/server/internal/notification/http_test.go#L154)
-follows the same pattern.
+Many of our tests follow the same pattern, such as
+[`Test_Handler_FetchNotificationsCount`](server/core/internal/server/internal/notification/http_test.go#L154).
 
 ## Pull Requests
 

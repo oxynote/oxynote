@@ -1,7 +1,13 @@
-export type AuthMethod = "email-password" | "github" | "google" | "slack"
+export type AuthMethod =
+	"email-password" | "github" | "google" | "slack" | "oidc"
+
+// a method that signs in through another service.
+export type ProviderAuthMethod = Exclude<AuthMethod, "email-password">
 
 export interface AuthConfig {
 	methods: AuthMethod[]
+	// the label of the OIDC button, null when OIDC is off.
+	oidcDisplayName: string | null
 	emailEnabled: boolean
 	// if true, the whole instance is one workspace: it exists from the start, and
 	// only invited users sign up.

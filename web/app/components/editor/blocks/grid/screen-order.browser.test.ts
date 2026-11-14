@@ -15,8 +15,8 @@ const cleanups: (() => void)[] = []
 
 describe("isWideGrid", () => {
 	it.for([
-		{ input: 1023, expected: false },
-		{ input: 1024, expected: true },
+		{ input: 895, expected: false },
+		{ input: 896, expected: true },
 	])(
 		"tells a grid $input pixels wide shows its columns: $expected",
 		({ input, expected }, { expect }) => {

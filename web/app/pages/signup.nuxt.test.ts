@@ -254,6 +254,29 @@ describe("<signup>", { concurrent: false }, () => {
 		},
 	)
 
+	it("signs up through the identity provider under its configured name", async ({
+		expect,
+	}) => {
+		seedAuthConfig({ methods: ["oidc"], oidcDisplayName: "Keycloak" })
+		const calls = mockSocialSignIn()
+		const wrapper = await mountSuspended(Signup)
+
+		await findButtonByText(
+			wrapper,
+			t("onboarding.signup.signup-oidc", { name: "Keycloak" }),
+		).trigger("click")
+		await settleRequest(calls)
+
+		expect.soft(calls[0]?.body).toEqual({
+			provider: "oidc",
+			callbackURL: "http://test.local/",
+			newUserCallbackURL: "http://test.local/welcome",
+			errorCallbackURL: "http://test.local/auth-error?provider=oidc",
+		})
+		expect.soft(wrapper.find('input[type="password"]').exists()).toBe(false)
+		expect.soft(toast.custom).not.toHaveBeenCalled()
+	})
+
 	it("sends an invitee's social signup on to the invitation with no workspace slot left", async ({
 		expect,
 	}) => {

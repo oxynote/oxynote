@@ -125,3 +125,14 @@ func StatusCode(err error, detect bool) int {
 
 	return serr.statusCode
 }
+
+// InternalCode returns the internal code associated with the error, or an
+// empty string for an error without one.
+func InternalCode(err error) string {
+	serr, ok := errors.AsType[*statusError](err)
+	if !ok {
+		return ""
+	}
+
+	return serr.InternalCode
+}

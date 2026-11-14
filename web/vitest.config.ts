@@ -82,6 +82,7 @@ const nuxtOverrides: NuxtConfig & {
 			authRealtimeAPIBaseHttpURL: "http://test.local/auth-realtime",
 		},
 	},
+	modules: ["./vitest.nuxt-module.ts"],
 }
 
 // build-time constants injected by vite.electron.config.ts (electron)

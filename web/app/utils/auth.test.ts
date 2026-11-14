@@ -3,6 +3,7 @@ import {
 	acceptInvitationUrl,
 	isInvitationRedirect,
 	nextUrlWithHash,
+	oidcErrorCallbackUrl,
 	postAuthDocumentUrl,
 	postEmailVerificationUrl,
 } from "./auth"
@@ -40,6 +41,14 @@ describe("postAuthDocumentUrl", () => {
 	it("uses a custom default path when given", ({ expect }) => {
 		expect(postAuthDocumentUrl("https://app.test", undefined, "/home")).toBe(
 			"https://app.test/home",
+		)
+	})
+})
+
+describe("oidcErrorCallbackUrl", () => {
+	it("marks the error page with the OIDC provider", ({ expect }) => {
+		expect(oidcErrorCallbackUrl("https://app.test")).toBe(
+			"https://app.test/auth-error?provider=oidc",
 		)
 	})
 })

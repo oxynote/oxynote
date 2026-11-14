@@ -1,5 +1,9 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
-import { flushPromises, type VueWrapper } from "@vue/test-utils"
+import {
+	enableAutoUnmount,
+	flushPromises,
+	type VueWrapper,
+} from "@vue/test-utils"
 import { setResponseStatus } from "h3"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import VisualizationContainer from "./VisualizationContainer.vue"
@@ -105,6 +109,8 @@ function chartNames(wrapper: VueWrapper): string[] {
 // the editor store, the query cache and the editable flag are shared
 // app-wide, so these tests cannot interleave
 describe("<VisualizationContainer>", { concurrent: false }, () => {
+	enableAutoUnmount(afterEach)
+
 	beforeEach(() => {
 		stubChartColorContext()
 		// happy-dom loads no stylesheet, so the palette has no values
@@ -1224,6 +1230,94 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 			expect(useEditorStore().isMetricBlockDueForRefresh(uid)).toBe(false)
 			vi.setSystemTime(start + 61_000)
 			expect(useEditorStore().isMetricBlockDueForRefresh(uid)).toBe(true)
+		})
+
+		it("uses a changed interval instead of waiting for the old one", async ({
+			expect,
+		}) => {
+			vi.useFakeTimers({ toFake: ["Date"] })
+			const tree = variableTree()
+			const refresh = at(at(tree, 0).variables, 1)
+			refresh.value = at(refresh.options, 0).id
+			seedQueryData(VARIABLE_QUERY_KEYS.tree, tree)
+			mockEndpoint("GET", QUERY_URL, () => seriesResult())
+			const uid = nextUid()
+
+			const wrapper = await mountContainer(
+				metricConfig({ refreshInterval: METRIC_REFRESH_INTERVAL_REFERENCE }),
+				{ uid: uid },
+			)
+
+			await vi.waitFor(() => {
+				expect(wrapper.emitted("loading")).toEqual([[true], [false]])
+			}, WAIT_FOR_OPTIONS)
+
+			const start = Date.now()
+
+			// the saved time is five minutes away
+			vi.setSystemTime(start + 60_000)
+			expect(useEditorStore().isMetricBlockDueForRefresh(uid)).toBe(false)
+
+			// changing the variable to one minute moves the deadline to one
+			// minute from the change instead of leaving the old five minutes
+			const nextTree = variableTree()
+			const nextRefresh = at(at(nextTree, 0).variables, 1)
+			nextRefresh.value = at(nextRefresh.options, 1).id
+			seedQueryData(VARIABLE_QUERY_KEYS.tree, nextTree)
+			await flushPromises()
+
+			vi.setSystemTime(start + 60_000 + 59_000)
+			expect(useEditorStore().isMetricBlockDueForRefresh(uid)).toBe(false)
+
+			vi.setSystemTime(start + 60_000 + 61_000)
+			expect(useEditorStore().isMetricBlockDueForRefresh(uid)).toBe(true)
+		})
+
+		it("reschedules a changed interval's deadline once the ids arrive", async ({
+			expect,
+		}) => {
+			vi.useFakeTimers({ toFake: ["Date"] })
+			const tree = variableTree()
+			const refresh = at(at(tree, 0).variables, 1)
+			refresh.value = at(refresh.options, 0).id
+			seedQueryData(VARIABLE_QUERY_KEYS.tree, tree)
+			mockEndpoint("GET", QUERY_URL, () => seriesResult())
+			const uid = nextUid()
+			const store = useEditorStore()
+
+			const wrapper = await mountContainer(
+				metricConfig({ refreshInterval: METRIC_REFRESH_INTERVAL_REFERENCE }),
+				{ uid: uid },
+			)
+
+			await vi.waitFor(() => {
+				expect(wrapper.emitted("loading")).toEqual([[true], [false]])
+			}, WAIT_FOR_OPTIONS)
+
+			// the branch id leaves with the route while the next document loads
+			store.activeBranchId = null
+
+			// the interval changes before the id comes back, so the reset has
+			// to wait for it instead of throwing
+			const nextTree = variableTree()
+			const nextRefresh = at(at(nextTree, 0).variables, 1)
+			nextRefresh.value = at(nextRefresh.options, 1).id
+			seedQueryData(VARIABLE_QUERY_KEYS.tree, nextTree)
+
+			await flushPromises()
+
+			store.activeBranchId = BRANCH_ID
+			await flushPromises()
+
+			// the one minute deadline starts from when the ids arrived
+			const resumedAt = Date.now()
+			expect(store.isMetricBlockDueForRefresh(uid)).toBe(false)
+
+			vi.setSystemTime(resumedAt + 59_000)
+			expect(store.isMetricBlockDueForRefresh(uid)).toBe(false)
+
+			vi.setSystemTime(resumedAt + 61_000)
+			expect(store.isMetricBlockDueForRefresh(uid)).toBe(true)
 		})
 
 		it("queries again when a value its queries reference changes", async ({

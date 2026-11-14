@@ -4,6 +4,7 @@
 # differences from docker/docker-compose.dev.yaml are deliberate:
 #   - no named volumes, so every run starts from an empty database
 #   - no container_name, so this stack coexists with the dev one
+#   - a second copy of the backend that signs in through keycloak (:18083)
 #   - env is inlined and committed; there is nothing secret to protect
 #   - only the services the tests exercise (no changedetection, mariadb,
 #     datagen or grafana)
@@ -152,3 +153,197 @@ services:
       - MP_QUIET=true
     ports:
       - "18025:8025"
+    networks:
+      - default
+      - oidc
+
+  # a second copy of the stack above that signs in through keycloak, with
+  # its own front door (:18083) and database. Only the OIDC sign-in tests
+  # drive it. It runs on its own network, where each service takes the
+  # name of its twin, so the Caddyfile and the internal addresses stay the
+  # same. The images are the ones built above.
+  caddy-oidc:
+    image: caddy:2.11.7-alpine
+    volumes:
+      - ../docker/Caddyfile:/etc/caddy/Caddyfile
+    ports:
+      - "18083:8080"
+    networks:
+      - oidc
+    depends_on:
+      web-oidc:
+        condition: service_healthy
+      core-oidc:
+        condition: service_started
+      auth-realtime-oidc:
+        condition: service_healthy
+
+  web-oidc:
+    image: ghcr.io/oxynote/web:e2e-dev
+    environment:
+      - NUXT_PUBLIC_APP_BASE_URL=http://localhost:18083
+      - NUXT_PUBLIC_AUTH_REALTIME_API_BASE_HTTP_URL=http://localhost:18083/auth-realtime
+      - NUXT_PUBLIC_AUTH_REALTIME_API_BASE_WS_URL=ws://localhost:18083/auth-realtime/hocuspocus
+      - NUXT_PUBLIC_CORE_API_BASE_HTTP_URL=http://localhost:18083/core
+      - NUXT_PUBLIC_CORE_API_BASE_WS_URL=ws://localhost:18083/core
+      - NUXT_CORE_API_INTERNAL_HTTP_URL=http://core:8080
+      - NUXT_AUTH_REALTIME_API_INTERNAL_HTTP_URL=http://auth-realtime:8081
+    networks:
+      oidc:
+        aliases: [web]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/login"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  # the issuer is keycloak's address on this network. Discovery through it
+  # sends the browser to keycloak's published port, so both sides reach
+  # keycloak at the issuer keycloak names itself.
+  auth-realtime-oidc:
+    image: ghcr.io/oxynote/auth-realtime:e2e-dev
+    environment:
+      - OXYNOTE_AUTH_REALTIME_BACKEND_URL=http://core:8080
+      - OXYNOTE_AUTH_REALTIME_DB_DSN=postgresql://devuser:devpass@postgres/devdb?sslmode=disable
+      - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_BASE_URL=http://localhost:18083/auth-realtime
+      - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_COOKIE_DOMAIN=localhost
+      - OXYNOTE_AUTH_REALTIME_FRONTEND_URL=http://localhost:18083
+      - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_ORGANIZATION_INVITATION_URL=http://localhost:18083/accept-invite
+      - OXYNOTE_AUTH_REALTIME_TRUSTED_ORIGINS=http://localhost:18083
+      - OXYNOTE_AUTH_REALTIME_MCP_RESOURCE=http://localhost:18083/core/api/mcp
+      - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SECRET=e2esecret
+      - OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATION_MEMBERS=5
+      - OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATIONS=100000
+      - OXYNOTE_AUTH_REALTIME_RATE_LIMIT_DISABLED=true
+      - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_ISSUER_URL=http://keycloak:8080/realms/oxynote
+      - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_ID=oxynote
+      - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_SECRET=oxynote-e2e-secret
+      - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_DISPLAY_NAME=Keycloak
+    networks:
+      oidc:
+        aliases: [auth-realtime]
+    # discovery runs once at boot, and a failed one stops the service.
+    depends_on:
+      postgres-oidc:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--spider",
+          "-q",
+          "http://localhost:8081/api/auth-config",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  core-oidc:
+    image: ghcr.io/oxynote/core:e2e-dev
+    environment:
+      - OXYNOTE_CORE_DB_DSN=postgresql://devuser:devpass@postgres/devdb?sslmode=disable
+      - OXYNOTE_CORE_SEARCH_INDEX_PATH=/home/nonroot/search
+      - OXYNOTE_CORE_OBJECT_STORAGE_LOCAL_PATH=/home/nonroot/storage
+      - OXYNOTE_CORE_SERVER_AUTH_BETTER_AUTH_URL=http://auth-realtime:8081/api/auth/get-session
+      - OXYNOTE_CORE_SERVER_MCP_SESSION_URL=http://auth-realtime:8081/api/internal/mcp/session
+      - OXYNOTE_CORE_SERVER_MCP_RESOURCE_URL=http://localhost:18083/core/api/mcp
+      - OXYNOTE_CORE_AUTH_REALTIME_URL=http://auth-realtime:8081
+      - OXYNOTE_CORE_SERVER_PUBLIC_URL=http://localhost:18083/core
+      - OXYNOTE_CORE_BASE_APP_URL=http://localhost:18083
+      - OXYNOTE_CORE_ORIGINS=http://localhost:18083,localhost:18083
+      - OXYNOTE_CORE_DB_DATA_SOURCE_CREDENTIALS_KEYS=49i0eQzCx6VZfY7ZSravUYR4CvvsDtkQlG4wPnizm+Y=
+      - OXYNOTE_CORE_EMAIL_SMTP_HOST=mailpit
+      - OXYNOTE_CORE_EMAIL_SMTP_PORT=1025
+      - OXYNOTE_CORE_EMAIL_SMTP_TLS=none
+      - OXYNOTE_CORE_EMAIL_FROM_ADDRESS=Oxynote <team@oxynote.io>
+    networks:
+      oidc:
+        aliases: [core]
+    depends_on:
+      postgres-oidc:
+        condition: service_healthy
+
+  postgres-oidc:
+    image: postgres:18.6-alpine
+    command: ["postgres", "-c", "log_checkpoints=off"]
+    environment:
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: devpass
+      POSTGRES_DB: devdb
+    networks:
+      oidc:
+        aliases: [postgres]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devuser -d devdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # the tests create their own users through the admin API, which is at
+  # http://localhost:18180 as admin/admin. KC_HOSTNAME is the address the
+  # browser uses. The dynamic backchannel lets auth-realtime fetch tokens
+  # and keys through keycloak:8080, while every token still names the
+  # browser's address as its issuer.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      - KC_BOOTSTRAP_ADMIN_USERNAME=admin
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+      - KC_HOSTNAME=http://localhost:18180
+      - KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true
+      - KC_HEALTH_ENABLED=true
+    ports:
+      - "18180:8080"
+    networks:
+      - oidc
+    configs:
+      - source: keycloak-realm
+        target: /opt/keycloak/data/import/oxynote.json
+    # the image has no curl or wget, so bash asks the management port.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '200 OK' <&3
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+networks:
+  oidc: {}
+
+configs:
+  keycloak-realm:
+    content: |
+      {
+        "realm": "oxynote",
+        "enabled": true,
+        "sslRequired": "none",
+        "verifyEmail": false,
+        "registrationAllowed": false,
+        "clients": [
+          {
+            "clientId": "oxynote",
+            "enabled": true,
+            "protocol": "openid-connect",
+            "publicClient": false,
+            "secret": "oxynote-e2e-secret",
+            "standardFlowEnabled": true,
+            "directAccessGrantsEnabled": false,
+            "redirectUris": [
+              "http://localhost:18083/auth-realtime/api/auth/callback/oidc"
+            ],
+            "attributes": {
+              "pkce.code.challenge.method": "S256",
+              "post.logout.redirect.uris": "http://localhost:18083/login"
+            }
+          }
+        ]
+      }

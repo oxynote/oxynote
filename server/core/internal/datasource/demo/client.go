@@ -117,7 +117,7 @@ func (c *Client) QueryRange(
 	query, err := c.engine.NewRangeQuery(
 		ctx,
 		queryable{registry: c.registry},
-		promql.NewPrometheusQueryOpts(false, step+_tick),
+		promql.NewPrometheusQueryOpts(false, step+_tick, nil),
 		ntr.ProcessPrometheusQuery(q),
 		ntr.From,
 		ntr.To,

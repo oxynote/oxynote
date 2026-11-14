@@ -52,7 +52,7 @@ function mountMenu(
 ): Promise<VueWrapper> {
 	return mountSuspended(TextBubbleMenu, {
 		props: { editor: target, container: null, ...props },
-	}) as Promise<VueWrapper>
+	})
 }
 
 function selectAll(target: Editor) {

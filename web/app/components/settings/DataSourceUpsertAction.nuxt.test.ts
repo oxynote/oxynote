@@ -1,4 +1,4 @@
-import type { DOMWrapper } from "@vue/test-utils"
+import { enableAutoUnmount, type DOMWrapper } from "@vue/test-utils"
 import { setResponseStatus } from "h3"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
@@ -91,6 +91,8 @@ function statusError(status: DataSourceStatus) {
 // every mount in the file shares, and the submit flow is driven by the
 // global fake timers
 describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
+	enableAutoUnmount(afterEach)
+
 	beforeEach(() => {
 		clearQueryCache()
 		vi.mocked(toast.custom).mockReset()

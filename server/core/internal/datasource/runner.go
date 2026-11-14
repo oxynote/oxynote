@@ -240,6 +240,35 @@ func (m *Manager) renew(r *runner) {
 	m.release(r)
 }
 
+// expireConnectionStatus drops the passing connection test the runner of
+// the data source remembers, when err says a query it ran found the data
+// source down or was refused its login. The next call tests the connection
+// again and records what it finds, instead of waiting out _statusTTL. A
+// test that failed is kept, as it already says so.
+func (m *Manager) expireConnectionStatus(ctx context.Context, id xid.ID, err error) {
+	if !processor.IsConnectionFailure(err) {
+		return
+	}
+
+	unlock, lerr := m.tests.Lock(ctx, id)
+	if lerr != nil {
+		// NOCOV: queries run on a context no caller can cancel.
+		return
+	}
+	defer unlock()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	r, ok := m.runners[id]
+	if !ok || r.tested.Error() != nil {
+		return
+	}
+
+	r.testedAt = time.Time{}
+	r.tested = ""
+}
+
 // keeps reports whether r is the runner the manager keeps for its data
 // source.
 func (m *Manager) keeps(r *runner) bool {

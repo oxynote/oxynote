@@ -33,8 +33,8 @@ const ADD_COMMENT = "editor.drag-handle.options.add-node-comment"
 const OPEN_COMMENT = "editor.drag-handle.options.open-node-comment"
 const DELETE = "editor.drag-handle.options.delete-block"
 const WIDTH = "editor.drag-handle.options.grid-item.width"
-const WIDE_GRID_PX = 1024
-const STACKED_GRID_PX = 1023
+const WIDE_GRID_PX = 896
+const STACKED_GRID_PX = 895
 
 // the editor the menu reads the document through, plus the transaction
 // and view calls a deletion goes through

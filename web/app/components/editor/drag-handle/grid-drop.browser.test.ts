@@ -30,8 +30,8 @@ import {
 } from "./test-helpers"
 import { paragraph } from "~/components/editor/test-helpers"
 
-// the breakpoint grid switches to its columns at 64rem. GridView.vue's
-// @5xl: classes switch at the same width.
+// the breakpoint grid switches to its columns at 56rem. GridView.vue's
+// @4xl: classes switch at the same width.
 // The tests cannot load the Tailwind styles, so this mirrors them.
 const style = document.createElement("style")
 style.textContent = `
@@ -44,7 +44,7 @@ style.textContent = `
 		grid-auto-rows: 40px;
 		gap: 4px;
 	}
-	@container (width >= 64rem) {
+	@container (width >= 56rem) {
 		.breakpoint-grid [data-type="block-grid"] {
 			grid-template-columns: repeat(24, minmax(0, 1fr));
 		}
@@ -906,8 +906,8 @@ describe("findGridDrop", { concurrent: false }, () => {
 	})
 
 	it.for([
-		{ input: 1023, expected: false },
-		{ input: 1024, expected: true },
+		{ input: 895, expected: false },
+		{ input: 896, expected: true },
 	])(
 		"reads the columns of a grid $input pixels wide exactly when isWideGrid says $expected",
 		({ input, expected }, { expect }) => {
