@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import type { VariableGroupTreeElement, VariableTreeElement } from "~/utils"
-import { showToastMessage } from "../toast"
+import { showRequestErrorToast, showToastMessage } from "../toast"
 import { variableReference, type DeletionTarget } from "./variables"
 
 type View =
@@ -19,6 +19,7 @@ const editing = defineModel<boolean>("editing", { default: false })
 
 const { t } = useI18n({ useScope: "global" })
 const { fetchVariables, deleteVariable, deleteVariableGroup } = useVariableAPI()
+const { canRoleEdit } = useAuthSession()
 
 const view = ref<View>({ kind: "list" })
 // normal mode puts the variables this page uses first, in their own section
@@ -35,6 +36,14 @@ const failed = computed(
 
 onBeforeMount(() => {
 	void fetchVariables.refresh()
+})
+
+// a reader whose role changes to viewer mid-edit leaves edit mode, since
+// a viewer changes no variables
+watch(canRoleEdit, (allowed) => {
+	if (!allowed) {
+		stopEditing()
+	}
 })
 
 function startEditing() {
@@ -58,8 +67,8 @@ function requestVariableDeletion(variable: VariableTreeElement) {
 		confirm: async () => {
 			try {
 				await deleteVariable.mutateAsync(variable.id)
-			} catch {
-				showToastMessage("error", t("variable.errors.delete-failed"))
+			} catch (err) {
+				showRequestErrorToast(err, t("variable.errors.delete-failed"))
 				return
 			}
 
@@ -80,8 +89,8 @@ function requestGroupDeletion(group: VariableGroupTreeElement) {
 		confirm: async () => {
 			try {
 				await deleteVariableGroup.mutateAsync(group.id)
-			} catch {
-				showToastMessage("error", t("variable.errors.group-delete-failed"))
+			} catch (err) {
+				showRequestErrorToast(err, t("variable.errors.group-delete-failed"))
 				return
 			}
 
@@ -115,7 +124,7 @@ function requestGroupDeletion(group: VariableGroupTreeElement) {
 							{{ t("variable.actions.done") }}
 						</ShadcnUiButton>
 						<ShadcnUiButton
-							v-else
+							v-else-if="canRoleEdit"
 							variant="ghost"
 							size="icon-sm"
 							class="shrink-0"

@@ -14,7 +14,10 @@ import {
 	findButtonByText,
 	menuItem,
 	mountUnderSidebarProvider,
+	raisedToasts,
+	refuseForRole,
 	seedAuthOrganization,
+	seedAuthSession,
 	seedCapabilities,
 	seedPersistentState,
 	settleMutations,
@@ -584,6 +587,28 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		expect(toast.custom).toHaveBeenCalledTimes(1)
 	})
 
+	it("shows only the access denied toast for a refused reviewability change", async ({
+		expect,
+	}) => {
+		mainOnly()
+		mockEndpoint(
+			"POST",
+			`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches`,
+			(_call, event) => refuseForRole(event),
+		)
+		const wrapper = await mountHeader()
+		await openOptionsMenu(wrapper)
+
+		menuItem(
+			t("editor.navbar.document-options.review-workflow.enable-title"),
+		).click()
+		await settleMutations()
+
+		expect(raisedToasts()).toMatchObject([
+			{ type: "error", title: t("general.errors.role-not-allowed") },
+		])
+	})
+
 	it("leaves the branches alone when no document is active", async ({
 		expect,
 	}) => {
@@ -643,5 +668,51 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 				"--document-header-height",
 			),
 		).toBe("0px")
+	})
+
+	describe("for a viewer", { concurrent: false }, () => {
+		beforeEach(() => {
+			seedAuthSession({ id: "u1" })
+			seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+			mainOnly()
+		})
+
+		it("offers no read and edit toggle", async ({ expect }) => {
+			const wrapper = await mountHeader()
+
+			expect
+				.soft(() =>
+					findButtonByText(wrapper, t("editor.navbar.toggle-edit-mode")),
+				)
+				.toThrow()
+			expect
+				.soft(() =>
+					findButtonByText(wrapper, t("editor.navbar.toggle-read-mode")),
+				)
+				.toThrow()
+		})
+
+		it("keeps only the view option in the document options", async ({
+			expect,
+		}) => {
+			useEditorStore().updateMainAreaWidth(1400)
+			const wrapper = await mountHeader()
+
+			await openOptionsMenu(wrapper)
+
+			expect(menuItemTexts()).toEqual([
+				t("editor.navbar.document-options.view.full-title"),
+			])
+		})
+
+		it("offers no document options on a screen too narrow for the view option", async ({
+			expect,
+		}) => {
+			const wrapper = await mountHeader()
+
+			expect(wrapper.find("[data-slot='dropdown-menu-trigger']").exists()).toBe(
+				false,
+			)
+		})
 	})
 })

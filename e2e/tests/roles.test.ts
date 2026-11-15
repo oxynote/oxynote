@@ -107,18 +107,9 @@ test.describe("member roles", () => {
 		await waitForEditor(page)
 		const settings = await openSettings(page, workspace.name)
 		const row = settings.locator("tr", { hasText: editor.credentials.email })
-		await row
-			.getByRole("button", {
-				name: t("settings.workspace.members-option-button-screen-reader-hint"),
-			})
-			.click()
+		await row.getByRole("combobox").click()
 		await page
-			.getByRole("menuitem", {
-				name: t("settings.workspace.member-options.role.title"),
-			})
-			.click()
-		await page
-			.getByRole("menuitemradio", { name: t("general.member-roles.viewer") })
+			.getByRole("option", { name: t("general.member-roles.viewer") })
 			.click()
 		await expect(row).toContainText(t("general.member-roles.viewer"))
 		await expect(async () => {

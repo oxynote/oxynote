@@ -11,6 +11,8 @@ import {
 import {
 	clearTeleportedOverlays,
 	menuItem,
+	seedAuthOrganization,
+	seedAuthSession,
 	t,
 	WAIT_FOR_OPTIONS,
 } from "~/components/test-helpers"
@@ -293,6 +295,22 @@ describe("<DataSourceSelect>", { concurrent: false }, () => {
 		await nextTick()
 
 		expect(wrapper.emitted("open-settings")).toHaveLength(1)
+	})
+
+	it("offers a member who is not an admin no way to connect one", async ({
+		expect,
+	}) => {
+		seedAuthSession({ id: "u1" })
+		seedAuthOrganization({ members: [{ userId: "u1", role: "editor" }] })
+		mockEndpoint("GET", "/api/data-sources", () => [])
+		const wrapper = await mountSelect({ modelValue: configWith(null) })
+
+		await openMenu(wrapper)
+
+		expect(document.body.textContent).toContain(EMPTY_TITLE)
+		expect(() =>
+			menuItem(t("editor.config-modal-utils.data-source-empty.connect")),
+		).toThrow()
 	})
 
 	it("offers no menu in read mode", async ({ expect }) => {

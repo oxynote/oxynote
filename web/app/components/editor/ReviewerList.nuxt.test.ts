@@ -14,8 +14,11 @@ import {
 	clearTeleportedOverlays,
 	menuItem,
 	mountUnderTooltipProvider,
+	raisedToasts,
+	refuseForRole,
 	seedAuthOrganization,
 	seedAuthSession,
+	settleMutations,
 	t,
 	WAIT_FOR_OPTIONS,
 } from "~/components/test-helpers"
@@ -245,6 +248,34 @@ describe("<ReviewerList>", { concurrent: false }, () => {
 		}, WAIT_FOR_OPTIONS)
 	})
 
+	it("shows only the access denied toast for a refused review request", async ({
+		expect,
+	}) => {
+		useEditorStore().setBranchReviewableActionsActive(true)
+		seedMembers(member(ADA, "Ada"))
+		seedReviewers(BRANCH_ID, [{ userId: ADA, currentlyApproved: true }])
+		seedReviewers(TARGET_BRANCH_ID, [])
+		mockEndpoint(
+			"POST",
+			`/api/documents/${DOCUMENT_ID}/branches/${BRANCH_ID}/reviewers`,
+			(_c, event) => refuseForRole(event),
+		)
+		const wrapper = await mountList()
+		await openPopover(wrapper)
+
+		popoverButton(
+			t(
+				"editor.name-editor.reviewer-popover.request-review-screen-reader-hint",
+			),
+		).click()
+
+		await settleMutations()
+
+		expect(raisedToasts()).toMatchObject([
+			{ type: "error", title: t("general.errors.role-not-allowed") },
+		])
+	})
+
 	it("withdraws an invitation", async ({ expect }) => {
 		useEditorStore().setBranchReviewableActionsActive(true)
 		seedMembers(member(GRACE, "Grace"))
@@ -292,6 +323,74 @@ describe("<ReviewerList>", { concurrent: false }, () => {
 		await vi.waitFor(() => {
 			expect(toast.custom).toHaveBeenCalledTimes(1)
 		}, WAIT_FOR_OPTIONS)
+	})
+
+	it("shows only the access denied toast for a refused withdrawal", async ({
+		expect,
+	}) => {
+		useEditorStore().setBranchReviewableActionsActive(true)
+		seedMembers(member(GRACE, "Grace"))
+		seedReviewers(BRANCH_ID, [{ userId: GRACE, currentlyApproved: false }])
+		seedReviewers(TARGET_BRANCH_ID, [])
+		mockEndpoint(
+			"DELETE",
+			`/api/documents/${DOCUMENT_ID}/branches/${BRANCH_ID}/reviewers`,
+			(_c, event) => refuseForRole(event),
+		)
+		const wrapper = await mountList()
+		await openPopover(wrapper)
+
+		popoverButton(
+			t("editor.name-editor.reviewer-popover.invite-remove-screen-reader-hint"),
+		).click()
+
+		await settleMutations()
+
+		expect(raisedToasts()).toMatchObject([
+			{ type: "error", title: t("general.errors.role-not-allowed") },
+		])
+	})
+
+	it("shows a viewer the reviewers without the controls that change them", async ({
+		expect,
+	}) => {
+		useEditorStore().setBranchReviewableActionsActive(true)
+		seedAuthOrganization({
+			members: [
+				{ ...member(ME, "Me"), role: "viewer" },
+				member(ADA, "Ada"),
+				member(GRACE, "Grace"),
+			],
+		})
+		seedReviewers(BRANCH_ID, [
+			{ userId: ADA, currentlyApproved: true },
+			{ userId: GRACE, currentlyApproved: false },
+		])
+		seedReviewers(TARGET_BRANCH_ID, [])
+		const wrapper = await mountList()
+
+		await openPopover(wrapper)
+
+		expect(popoverText()).toContain("Ada")
+		expect(popoverText()).toContain("Grace")
+		expect(
+			document.body.querySelectorAll("[data-slot='popover-content'] button"),
+		).toHaveLength(0)
+	})
+
+	it("stays hidden from a viewer while nobody reviews the branch", async ({
+		expect,
+	}) => {
+		useEditorStore().setBranchReviewableActionsActive(true)
+		seedAuthOrganization({
+			members: [{ ...member(ME, "Me"), role: "viewer" }, member(ADA, "Ada")],
+		})
+		seedReviewers(BRANCH_ID, [])
+		seedReviewers(TARGET_BRANCH_ID, [])
+
+		const wrapper = await mountList()
+
+		expect(wrapper.text()).toBe("")
 	})
 
 	it("suggests the reviewers of the branch being merged into", async ({

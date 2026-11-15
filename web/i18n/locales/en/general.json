@@ -93,7 +93,8 @@
 			"1d": "1d"
 		},
 		"errors": {
-			"role-not-allowed": "Access denied."
+			"role-not-allowed": "Access denied",
+			"role-not-allowed-description": "Your role in this workspace doesn't allow this action"
 		},
 		"member-roles": {
 			"admin": "Admin",

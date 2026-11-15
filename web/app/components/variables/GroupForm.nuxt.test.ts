@@ -13,6 +13,7 @@ import {
 	emitFrom,
 	findButtonByText,
 	raisedToasts,
+	refuseForRole,
 	WAIT_FOR_OPTIONS,
 	t,
 } from "../test-helpers"
@@ -179,6 +180,27 @@ describe("<GroupForm>", { concurrent: false }, () => {
 				title: t("variable.errors.group-save-failed"),
 			}),
 		])
+	})
+
+	it("shows only the access denied toast for a refused save", async ({
+		expect,
+	}) => {
+		mockTree(fullTree())
+		mockEndpoint("POST", GROUPS_URL, (_call, event) => refuseForRole(event))
+		const wrapper = await mountForm(null)
+		await wrapper.get("input").setValue("Incidents")
+
+		await wrapper.get("form").trigger("submit")
+
+		await waitForValidation(() => {
+			expect(raisedToasts()).toHaveLength(1)
+		})
+		expect.soft(wrapper.emitted("close")).toBeUndefined()
+		expect
+			.soft(raisedToasts())
+			.toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
+			])
 	})
 
 	it("goes back from its header while nothing was changed", async ({

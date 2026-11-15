@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
 import ToastMessage from "./ToastMessage.vue"
 import ToastProgress from "./ToastProgress.vue"
-import { showProgressToast, showToastMessage } from "./toast"
+import {
+	showProgressToast,
+	showRequestErrorToast,
+	showToastMessage,
+} from "./toast"
 
 vi.mock("vue-sonner", () => ({
 	toast: {
@@ -112,6 +116,32 @@ describe("showToastMessage", { concurrent: false }, () => {
 
 // vue-sonner is a module mock and settling is timed, so the calls and the
 // fake clock are shared by the whole describe
+describe("showRequestErrorToast", { concurrent: false }, () => {
+	beforeEach(() => {
+		vi.mocked(toast.custom).mockReset()
+	})
+
+	it("shows an error toast for a failed request", ({ expect }) => {
+		showRequestErrorToast(new Error("boom"), "Failed", "Try again later")
+
+		expect(renderToastBody().props).toMatchObject({
+			type: "error",
+			title: "Failed",
+			description: "Try again later",
+		})
+	})
+
+	// the api client shows its own toast for a refusal.
+	it("shows nothing for a role refusal", ({ expect }) => {
+		showRequestErrorToast(
+			{ statusCode: 403, data: { code: "member.forbidden" } },
+			"Failed",
+		)
+
+		expect(toast.custom).toHaveBeenCalledTimes(0)
+	})
+})
+
 describe("showProgressToast", { concurrent: false }, () => {
 	beforeEach(() => {
 		vi.mocked(toast.custom).mockReset()

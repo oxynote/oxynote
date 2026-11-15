@@ -4,6 +4,8 @@ import {
 	disposeMockEndpoints,
 	mockEndpoint,
 	runInApp,
+	seedAuthSession,
+	seedQueryData,
 } from "./api/test-helpers"
 import useAuthAPI from "./api/useAuthAPI"
 import useAuthSession from "./useAuthSession"
@@ -296,6 +298,49 @@ describe("useAuthSession", { concurrent: false }, () => {
 		})
 	})
 
+	describe("canRoleEdit and canRoleManage", () => {
+		beforeEach(() => {
+			clearQueryCache()
+			seedAuthSession("u1")
+		})
+
+		it.for([
+			{ input: "admin", expected: { canRoleEdit: true, canRoleManage: true } },
+			{
+				input: "editor",
+				expected: { canRoleEdit: true, canRoleManage: false },
+			},
+			{
+				input: "viewer",
+				expected: { canRoleEdit: false, canRoleManage: false },
+			},
+		])(
+			"reads what the $input role allows from the user's own member entry",
+			({ input, expected }, { expect }) => {
+				seedMembers([
+					{ userId: "u2", role: "viewer" },
+					{ userId: "u1", role: input },
+				])
+
+				const { canRoleEdit, canRoleManage } = makeAuthSession()
+
+				expect({
+					canRoleEdit: canRoleEdit.value,
+					canRoleManage: canRoleManage.value,
+				}).toEqual(expected)
+			},
+		)
+
+		it("hides nothing while the member list is unknown", ({ expect }) => {
+			seedQueryData(["auth", "organization"], { data: null, error: null })
+
+			const { canRoleEdit, canRoleManage } = makeAuthSession()
+
+			expect(canRoleEdit.value).toBe(true)
+			expect(canRoleManage.value).toBe(true)
+		})
+	})
+
 	describe("updateSessionOnInviteAccept", () => {
 		it("returns false when activating the organization fails", async ({
 			expect,
@@ -438,3 +483,10 @@ describe("useAuthSession", { concurrent: false }, () => {
 		},
 	)
 })
+
+function seedMembers(members: { userId: string; role: string }[]) {
+	seedQueryData(["auth", "organization"], {
+		data: { members: members },
+		error: null,
+	})
+}

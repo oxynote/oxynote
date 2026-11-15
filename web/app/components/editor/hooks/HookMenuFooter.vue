@@ -17,6 +17,7 @@ const emit = defineEmits<{
 }>()
 
 const { isBranchProtected } = useEditorMeta()
+const { canRoleEdit } = useAuthSession()
 </script>
 
 <template>
@@ -57,7 +58,7 @@ const { isBranchProtected } = useEditorMeta()
 	>
 		<Icon
 			:name="
-				props.mode === 'read-only'
+				props.mode === 'read-only' || !canRoleEdit
 					? 'mingcute:lock-line'
 					: 'mingcute:git-compare-line'
 			"
@@ -67,11 +68,13 @@ const { isBranchProtected } = useEditorMeta()
 			the line wraps to the menu's width. Without a width of its own, it
 			would stretch the menu instead
 		-->
-		<span v-if="props.mode === 'read-only'" class="w-0 flex-1">
+		<span v-if="props.mode === 'read-only' || !canRoleEdit" class="w-0 flex-1">
 			{{
-				isBranchProtected
-					? $t("editor.hooks.read-only-protected")
-					: $t("editor.hooks.read-only-mode")
+				!canRoleEdit
+					? $t("editor.hooks.read-only-viewer")
+					: isBranchProtected
+						? $t("editor.hooks.read-only-protected")
+						: $t("editor.hooks.read-only-mode")
 			}}
 		</span>
 		<i18n-t

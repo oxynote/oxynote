@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import HookConfigPanel from "./HookConfigPanel.vue"
 import {
 	hookNotice,
@@ -10,7 +10,13 @@ import {
 	openHookSubMenu,
 } from "./test-helpers"
 import { DiffStatus } from "../diff/position-map"
-import { clearTeleportedOverlays, t } from "~/components/test-helpers"
+import { clearQueryCache } from "~/composables/api/test-helpers"
+import {
+	clearTeleportedOverlays,
+	seedAuthOrganization,
+	seedAuthSession,
+	t,
+} from "~/components/test-helpers"
 
 const TITLE = "Website Changes"
 const NOTICE = "Maintainers are notified"
@@ -27,6 +33,8 @@ describe("<HookConfigPanel>", { concurrent: false }, () => {
 		useEditorStore().setActiveBranchProtected(false)
 		useEditorMeta().setEditable(true)
 	})
+
+	afterEach(clearQueryCache)
 
 	it("opens its notice, fields and confirm button from its row", async ({
 		expect,
@@ -237,6 +245,20 @@ describe("<HookConfigPanel>", { concurrent: false }, () => {
 		expect(onAcknowledge).toHaveBeenCalledTimes(1)
 	})
 
+	it("keeps the dismissal from a viewer", async ({ expect }) => {
+		seedAuthSession({ id: "u1" })
+		seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+		useEditorMeta().setEditable(false)
+		await mountPanel({
+			hook: makeHook({ triggered: true }),
+			acknowledgeLabel: t("editor.hooks.reset"),
+		})
+
+		await openHookSubMenu(TITLE)
+
+		expect(menuText()).not.toContain(t("editor.hooks.reset"))
+	})
+
 	it("leaves the dismissal out of the diff and says how to get it back", async ({
 		expect,
 	}) => {
@@ -255,6 +277,31 @@ describe("<HookConfigPanel>", { concurrent: false }, () => {
 
 		expect(menuText()).not.toContain(t("editor.hooks.reset"))
 		expect(collapsed(hookNotice().textContent)).toContain(
+			t("editor.hooks.dismiss-in-diff", {
+				toggle: t("editor.name-editor.review-workflow.show-diff"),
+			}),
+		)
+	})
+
+	it("gives a viewer in the diff no hint to dismiss a hook", async ({
+		expect,
+	}) => {
+		seedAuthSession({ id: "u1" })
+		seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+		useEditorStore().setReviewableDiffActive(true)
+		await mountPanel({
+			hook: makeHook({ triggered: true }),
+			diff: {
+				status: DiffStatus.Unchanged,
+				targetHook: null,
+				signColumn: false,
+			},
+			acknowledgeLabel: t("editor.hooks.reset"),
+		})
+
+		await openHookSubMenu(TITLE)
+
+		expect(collapsed(hookNotice().textContent)).not.toContain(
 			t("editor.hooks.dismiss-in-diff", {
 				toggle: t("editor.name-editor.review-workflow.show-diff"),
 			}),

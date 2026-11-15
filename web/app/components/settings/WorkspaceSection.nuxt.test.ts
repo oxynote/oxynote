@@ -16,8 +16,8 @@ import {
 	mockAuthEndpoint,
 	mockAuthOrganization,
 	mountUnderTooltipProvider,
-	openSubMenu,
 	raisedToasts,
+	refuseForRole,
 	seedAuthConfig,
 	seedAuthSession,
 	settleMutations,
@@ -59,7 +59,7 @@ function seedWorkspace(
 		name: "Acme",
 		slug: "acme-corp",
 		logo: "",
-		members: overrides.members ?? [member("u1", "ada")],
+		members: overrides.members ?? [member("u1", "ada", "admin")],
 		invitations: overrides.invitations ?? [],
 	})
 }
@@ -266,6 +266,37 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 		}, WAIT_FOR_OPTIONS)
 	})
 
+	it("shows only the access denied toast for a refused logo upload", async ({
+		expect,
+	}) => {
+		seedWorkspace()
+		mockEndpoint("PUT", "/api/organizations/logo", (_call, event) =>
+			refuseForRole(event),
+		)
+		const { wrapper } = await mountSection()
+
+		await pickLogo(wrapper)
+
+		await settleMutations()
+
+		expect(raisedToasts()).toMatchObject([
+			{ type: "error", title: t("general.errors.role-not-allowed") },
+		])
+	})
+
+	it("opens the file dialog when an admin presses the logo", async ({
+		expect,
+	}) => {
+		seedWorkspace()
+		const { wrapper } = await mountSection()
+		const input = wrapper.get<HTMLInputElement>("input[type='file']")
+		const click = vi.spyOn(input.element, "click")
+
+		await logoAvatar(wrapper).trigger("click")
+
+		expect(click).toHaveBeenCalledTimes(1)
+	})
+
 	it("does nothing when the file dialog is dismissed", async ({ expect }) => {
 		seedWorkspace()
 		const calls = mockEndpoint("PUT", "/api/organizations/logo", () => null)
@@ -331,7 +362,9 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 		})
 
 		it("lists the joined members", async ({ expect }) => {
-			seedWorkspace({ members: [member("u1", "ada"), member("u2", "linus")] })
+			seedWorkspace({
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
+			})
 
 			const { wrapper } = await mountSection()
 
@@ -344,7 +377,9 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			expect,
 		}) => {
 			seedAuthConfig({ maxOrganizationMembers: null })
-			seedWorkspace({ members: [member("u1", "ada"), member("u2", "linus")] })
+			seedWorkspace({
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
+			})
 
 			const { wrapper } = await mountSection()
 
@@ -457,10 +492,29 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			expect(rows[2]).toContain(t("general.member-roles.viewer"))
 		})
 
-		it("changes the role picked from a member's options menu", async ({
+		it("offers a role picker only on the other joined members' rows", async ({
 			expect,
 		}) => {
-			seedWorkspace({ members: [member("u1", "ada"), member("u2", "linus")] })
+			seedWorkspace({
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
+				invitations: [invitation("u2")],
+			})
+
+			const { wrapper } = await mountSection()
+
+			expect(
+				wrapper
+					.findAll("tr")
+					.map((row) => row.find("[role='combobox']").exists()),
+			).toEqual([false, true, false])
+		})
+
+		it("changes the role picked from a member's role picker", async ({
+			expect,
+		}) => {
+			seedWorkspace({
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
+			})
 			const calls = mockAuthEndpoint("organization/update-member-role", () => ({
 				id: "member-u2",
 			}))
@@ -472,16 +526,18 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 					name: "Acme",
 					slug: "acme-corp",
 					logo: "",
-					members: [member("u1", "ada"), member("u2", "linus", "viewer")],
+					members: [
+						member("u1", "ada", "admin"),
+						member("u2", "linus", "viewer"),
+					],
 					invitations: [],
 				}),
 				"GET",
 			)
 			const { wrapper } = await mountSection()
-			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
-			await openSubMenu(t("settings.workspace.member-options.role.title"))
+			await openRolePicker(wrapper)
 
-			menuItem(t("general.member-roles.viewer")).click()
+			pickRole(t("general.member-roles.viewer"))
 			await settleMutations()
 
 			expect(calls).toHaveLength(1)
@@ -495,22 +551,25 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 		it("leaves the role alone when the member's own role is picked", async ({
 			expect,
 		}) => {
-			seedWorkspace({ members: [member("u1", "ada"), member("u2", "linus")] })
+			seedWorkspace({
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
+			})
 			const calls = mockAuthEndpoint("organization/update-member-role", () => ({
 				id: "member-u2",
 			}))
 			const { wrapper } = await mountSection()
-			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
-			await openSubMenu(t("settings.workspace.member-options.role.title"))
+			await openRolePicker(wrapper)
 
-			menuItem(t("general.member-roles.editor")).click()
+			pickRole(t("general.member-roles.editor"))
 			await settleMutations()
 
 			expect(calls).toHaveLength(0)
 		})
 
 		it("tells the admin why a role change failed", async ({ expect }) => {
-			seedWorkspace({ members: [member("u1", "ada"), member("u2", "linus")] })
+			seedWorkspace({
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
+			})
 			mockAuthEndpoint("organization/update-member-role", (_, event) => {
 				setResponseStatus(event, 400)
 
@@ -520,10 +579,9 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 				}
 			})
 			const { wrapper } = await mountSection()
-			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
-			await openSubMenu(t("settings.workspace.member-options.role.title"))
+			await openRolePicker(wrapper)
 
-			menuItem(t("general.member-roles.viewer")).click()
+			pickRole(t("general.member-roles.viewer"))
 			await settleMutations()
 
 			expect(raisedToasts()).toMatchObject([
@@ -534,20 +592,12 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			])
 		})
 
-		it("offers no role change for a pending invitation", async ({ expect }) => {
-			seedWorkspace({ invitations: [invitation("u1")] })
-			const { wrapper } = await mountSection()
-			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
-
-			expect(() =>
-				menuItem(t("settings.workspace.member-options.role.title")),
-			).toThrow()
-		})
-
 		it("asks to remove the member picked from their options menu", async ({
 			expect,
 		}) => {
-			seedWorkspace({ members: [member("u1", "ada"), member("u2", "linus")] })
+			seedWorkspace({
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
+			})
 			const { wrapper, section } = await mountSection()
 			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 
@@ -566,7 +616,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 				.spyOn(navigator.clipboard, "writeText")
 				.mockResolvedValue(undefined)
 			seedWorkspace({
-				members: [member("u1", "ada"), member("u2", "linus")],
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
 				invitations: [invitation("u2")],
 			})
 			const { wrapper } = await mountSection()
@@ -611,7 +661,9 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 		it("offers no link to copy on a joined member's row", async ({
 			expect,
 		}) => {
-			seedWorkspace({ members: [member("u1", "ada"), member("u2", "linus")] })
+			seedWorkspace({
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
+			})
 			const { wrapper } = await mountSection()
 
 			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
@@ -621,7 +673,86 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			).toThrow()
 		})
 	})
+
+	describe("for a member who is not an admin", { concurrent: false }, () => {
+		beforeEach(() => {
+			seedAuthConfig()
+		})
+
+		it("shows the workspace without the controls that change it", async ({
+			expect,
+		}) => {
+			seedWorkspace({
+				members: [member("u1", "ada"), member("u2", "linus", "admin")],
+				invitations: [invitation("u2")],
+			})
+
+			const { wrapper } = await mountSection()
+
+			expect.soft(wrapper.find("input[type='text']").exists()).toBe(false)
+			expect.soft(wrapper.text()).toContain("Acme")
+			expect
+				.soft(() =>
+					findButtonByText(
+						wrapper,
+						t("settings.workspace.url-change-button-screen-reader-hint"),
+					),
+				)
+				.toThrow()
+			expect
+				.soft(() =>
+					findButtonByText(wrapper, t("settings.workspace.invitation-button")),
+				)
+				.toThrow()
+			expect.soft(wrapper.find("[role='combobox']").exists()).toBe(false)
+			expect
+				.soft(wrapper.find("[data-slot='dropdown-menu-trigger']").exists())
+				.toBe(false)
+		})
+
+		it("opens no file dialog when the logo is pressed", async ({ expect }) => {
+			seedWorkspace({
+				members: [member("u1", "ada"), member("u2", "linus", "admin")],
+			})
+			const { wrapper } = await mountSection()
+			const input = wrapper.get<HTMLInputElement>("input[type='file']")
+			const click = vi.spyOn(input.element, "click")
+
+			await logoAvatar(wrapper).trigger("click")
+
+			expect(click).toHaveBeenCalledTimes(0)
+		})
+	})
 })
+
+// the logo comes before the member list, so it is the first avatar
+function logoAvatar(
+	wrapper: Awaited<ReturnType<typeof mountSection>>["wrapper"],
+) {
+	return wrapper.get("[data-slot='avatar']")
+}
+
+// the tests that pick a role render one picker, on the other member's row
+async function openRolePicker(
+	wrapper: Awaited<ReturnType<typeof mountSection>>["wrapper"],
+) {
+	await wrapper.get("[role='combobox']").trigger("keydown", { key: "Enter" })
+	await nextTick()
+}
+
+// the open list is teleported into <body>
+function pickRole(label: string) {
+	const option = Array.from(
+		document.body.querySelectorAll("[role='option']"),
+	).find((o) => o.textContent.trim() === label)
+	if (!option) {
+		throw new Error(`no role option "${label}"`)
+	}
+
+	option.dispatchEvent(
+		new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+	)
+}
 
 // happy-dom does not let a test click through a real file dialog, so the
 // picked file is put on the input directly before its change handler runs

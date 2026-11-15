@@ -11,7 +11,7 @@ import type {
 // for some reason this isn't auto imported
 import { FormField as ShadcnUiFormField } from "#layers/ui/app/components/shadcn/ui/form"
 import { cn } from "#layers/ui/app/lib/utils"
-import { showToastMessage } from "../toast"
+import { showRequestErrorToast } from "../toast"
 import {
 	DEFAULT_TIME_RANGE,
 	NO_AUTOFILL,
@@ -234,8 +234,8 @@ const onSubmit = form.handleSubmit(async (values) => {
 		}
 
 		emit("close")
-	} catch {
-		showToastMessage("error", t("variable.errors.save-failed"))
+	} catch (err) {
+		showRequestErrorToast(err, t("variable.errors.save-failed"))
 	} finally {
 		saving.value = false
 	}

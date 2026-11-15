@@ -7,6 +7,7 @@ const emit = defineEmits<{
 }>()
 
 const { fetchDataSources } = useDataSourceAPI()
+const { canRoleManage } = useAuthSession()
 const { t } = useI18n({ useScope: "global" })
 
 const sections = computed(() => {
@@ -153,6 +154,7 @@ const sections = computed(() => {
 				</div>
 				<div>
 					<ShadcnUiButton
+						v-if="canRoleManage"
 						type="button"
 						variant="ghost-plain"
 						class="gap-1.5 p-0 text-sm"
@@ -161,6 +163,9 @@ const sections = computed(() => {
 						<Icon name="lucide:external-link" />
 						{{ $t(`settings.data-sources.${section.key}.connect`) }}
 					</ShadcnUiButton>
+					<div v-else class="text-sm whitespace-nowrap text-muted-foreground">
+						{{ $t("settings.data-sources.not-connected") }}
+					</div>
 				</div>
 			</div>
 			<div v-else class="flex w-full flex-col gap-0.75">
@@ -169,6 +174,7 @@ const sections = computed(() => {
 						{{ $t(`settings.data-sources.${section.key}.title`) }}
 					</div>
 					<ShadcnUiButton
+						v-if="canRoleManage"
 						type="button"
 						variant="ghost-plain"
 						:class="cn('gap-1.5 p-0 text-sm')"
@@ -228,6 +234,7 @@ const sections = computed(() => {
 							</td>
 							<td>
 								<div
+									v-if="canRoleManage"
 									class="flex h-full items-center justify-end whitespace-nowrap"
 								>
 									<ShadcnUiDropdownMenu>

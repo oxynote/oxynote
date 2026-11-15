@@ -11,7 +11,13 @@ import {
 	matchingString,
 	mockEndpoint,
 } from "~/composables/api/test-helpers"
-import { settleMutations, t, WAIT_FOR_OPTIONS } from "~/components/test-helpers"
+import {
+	raisedToasts,
+	refuseForRole,
+	settleMutations,
+	t,
+	WAIT_FOR_OPTIONS,
+} from "~/components/test-helpers"
 
 vi.mock("vue-sonner", () => ({
 	toast: {
@@ -599,5 +605,35 @@ describe("<FileBlock>", { concurrent: false }, () => {
 			contentType: null,
 		})
 		expect(consoleError).toHaveBeenCalledTimes(0)
+	})
+
+	it("shows only the access denied toast for a refused upload", async ({
+		expect,
+	}) => {
+		// the block logs every failed upload, a refusal too
+		vi.spyOn(console, "error").mockImplementation(() => {
+			return undefined
+		})
+		mockEndpoint(
+			"POST",
+			`/api/documents/${DOCUMENT_ID}/files`,
+			(_call, event) => refuseForRole(event),
+		)
+		const updateAttributes = vi.fn()
+		const wrapper = await mountFile({}, updateAttributes)
+
+		await pickFile(wrapper, zipFile())
+
+		await settleMutations()
+
+		expect(raisedToasts()).toMatchObject([
+			{ type: "error", title: t("general.errors.role-not-allowed") },
+		])
+		expect(updateAttributes).toHaveBeenNthCalledWith(2, {
+			uploading: false,
+			name: null,
+			size: null,
+			contentType: null,
+		})
 	})
 })

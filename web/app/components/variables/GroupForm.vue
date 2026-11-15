@@ -5,7 +5,7 @@ import * as z from "zod"
 import type { VariableGroupTreeElement, VariableTreeResponse } from "~/utils"
 // for some reason this isn't auto imported
 import { FormField as ShadcnUiFormField } from "#layers/ui/app/components/shadcn/ui/form"
-import { showToastMessage } from "../toast"
+import { showRequestErrorToast } from "../toast"
 import { useGroupOpenState } from "./group-state"
 import { NO_AUTOFILL } from "./variables"
 
@@ -67,8 +67,8 @@ const onSubmit = form.handleSubmit(async (values) => {
 		}
 
 		emit("close")
-	} catch {
-		showToastMessage("error", t("variable.errors.group-save-failed"))
+	} catch (err) {
+		showRequestErrorToast(err, t("variable.errors.group-save-failed"))
 	} finally {
 		saving.value = false
 	}

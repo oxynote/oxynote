@@ -41,6 +41,7 @@
 		"empty": {
 			"builtin-only-title": "No variables of your own yet",
 			"builtin-only-description": "Add your own to reuse a value such as an environment, a region or a release across pages.",
+			"builtin-only-description-viewer": "Editors and admins can add variables to reuse a value such as an environment, a region or a release across pages.",
 			"builtin-only-action": "Create more variables",
 			"no-groups-title": "No groups of your own yet",
 			"no-groups-description": "Groups keep related variables together under one color.",

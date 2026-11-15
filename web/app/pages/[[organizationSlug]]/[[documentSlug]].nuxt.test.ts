@@ -17,6 +17,7 @@ import DocumentEditor from "./[[documentSlug]].vue"
 import {
 	emitFrom,
 	raisedToasts,
+	refuseForRole,
 	seedAuthOrganization,
 	seedCapabilities,
 	settleMutations,
@@ -1204,6 +1205,26 @@ describe("<document-editor>", { concurrent: false }, () => {
 			])
 		})
 
+		it("shows only the access denied toast for a refused creation", async ({
+			expect,
+		}) => {
+			seedWorkspace()
+			mockEndpoint("POST", "/api/documents", (_call, event) =>
+				refuseForRole(event),
+			)
+			arrangeRoute()
+			const wrapper = await mountPage()
+			vi.useFakeTimers()
+
+			emitFrom(wrapper, { name: "AppSidebar" }, "create-document", null)
+			await settleCreation()
+
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
+			])
+			expect(navigateToMock).not.toHaveBeenCalled()
+		})
+
 		it("drops a pending deletion when a document is created", async ({
 			expect,
 		}) => {
@@ -1361,6 +1382,32 @@ describe("<document-editor>", { concurrent: false }, () => {
 			expect(navigateToMock).not.toHaveBeenCalled()
 		})
 
+		it("shows only the access denied toast for a refused deletion", async ({
+			expect,
+		}) => {
+			seedWorkspace({
+				tree: [
+					treeElement(DOC_ID, "Intro"),
+					treeElement(OTHER_DOC_ID, "Other"),
+				],
+			})
+			mockEndpoint("DELETE", `/api/documents/${OTHER_DOC_ID}`, (_call, event) =>
+				refuseForRole(event),
+			)
+			arrangeRoute()
+			const wrapper = await mountPage()
+			await finishLoading(wrapper)
+			emitFrom(wrapper, { name: "AppSidebar" }, "delete-document", OTHER_DOC_ID)
+			await nextTick()
+
+			await pendingDeletion(wrapper, "DocumentDeletionModal").deleteDocument()
+
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
+			])
+			expect(navigateToMock).not.toHaveBeenCalled()
+		})
+
 		it("asks nothing for a document outside the tree", async ({ expect }) => {
 			seedWorkspace()
 			arrangeRoute()
@@ -1440,6 +1487,28 @@ describe("<document-editor>", { concurrent: false }, () => {
 				{ type: "error", title: t("sidebar.errors.delete-tag-failed") },
 			])
 		})
+
+		it("shows only the access denied toast for a refused tag deletion", async ({
+			expect,
+		}) => {
+			seedWorkspace()
+			mockEndpoint("DELETE", `/api/tags/${TAG_ID}`, (_call, event) =>
+				refuseForRole(event),
+			)
+			arrangeRoute()
+			const wrapper = await mountPage()
+			emitFrom(wrapper, { name: "AppSidebar" }, "delete-tag", {
+				id: TAG_ID,
+				name: "Ops",
+			})
+			await nextTick()
+
+			await pendingDeletion(wrapper, "TagDeletionModal").deleteTag()
+
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
+			])
+		})
 	})
 
 	describe("when a document is duplicated", { concurrent: false }, () => {
@@ -1516,6 +1585,26 @@ describe("<document-editor>", { concurrent: false }, () => {
 
 			expect(raisedToasts()).toMatchObject([
 				{ type: "error", title: t("editor.errors.duplication-failed") },
+			])
+			expect(navigateToMock).not.toHaveBeenCalled()
+		})
+
+		it("shows only the access denied toast for a refused duplication", async ({
+			expect,
+		}) => {
+			seedWorkspace()
+			mockEndpoint(
+				"POST",
+				`/api/documents/${DOC_ID}/duplicate`,
+				(_call, event) => refuseForRole(event),
+			)
+			arrangeRoute()
+			const wrapper = await mountPage()
+
+			await callListener(wrapper, "DocumentHeader", "onDuplicateDocument")
+
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
 			])
 			expect(navigateToMock).not.toHaveBeenCalled()
 		})

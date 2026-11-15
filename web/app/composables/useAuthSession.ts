@@ -1,6 +1,6 @@
 import { AUTH_QUERY_KEYS } from "./api/useAuthAPI"
 
-const AUTH_SESSION_QUERY_KEYS = {
+export const AUTH_SESSION_QUERY_KEYS = {
 	root: ["auth", "session"] as const,
 	organization: ["auth", "organization"] as const,
 	accounts: ["auth", "accounts"] as const,
@@ -62,6 +62,23 @@ export default function () {
 		staleTime: 3 * 60 * 1000, // 3mins
 		autoRefetch: true,
 	})
+
+	// the signed-in user's own entry in the member list holds their role.
+	// The role is null until the session and the member list have loaded.
+	// While it is null, both checks allow everything, so no action is hidden.
+	// This is safe because the server checks each request anyway.
+	const role = computed(() => {
+		const userId = fetchAuthSession.state.value.data?.data?.user.id
+		const memberRole = fetchOrganization.state.value.data?.data?.members.find(
+			(m) => m.userId === userId,
+		)?.role
+
+		return isRole(memberRole) ? memberRole : null
+	})
+	const canRoleEdit = computed(() => role.value !== "viewer")
+	const canRoleManage = computed(
+		() => role.value === null || role.value === "admin",
+	)
 
 	const fetchAccounts = useQuery({
 		key: AUTH_SESSION_QUERY_KEYS.accounts,
@@ -324,6 +341,8 @@ export default function () {
 		fetchAuthSession,
 		fetchOrganization,
 		fetchAccounts,
+		canRoleEdit,
+		canRoleManage,
 		hasPassword,
 		updateSessionOnInviteAccept,
 		safeSignOut,

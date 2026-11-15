@@ -10,6 +10,10 @@ import {
 import AppsSection from "./AppsSection.vue"
 import {
 	findButtonByText,
+	raisedToasts,
+	refuseForRole,
+	seedAuthOrganization,
+	seedAuthSession,
 	seedCapabilities,
 	settleMutations,
 	t,
@@ -255,6 +259,72 @@ describe("<AppsSection>", { concurrent: false }, () => {
 		await settleMutations()
 
 		expect(toast.custom).toHaveBeenCalledTimes(1)
+	})
+
+	it.for([
+		{ name: "github", endpoint: "/api/github/install" },
+		{ name: "slack", endpoint: "/api/slack/install" },
+	])(
+		"shows only the access denied toast for a refused $name install",
+		async ({ name, endpoint }, { expect }) => {
+			seedApps({})
+			mockEndpoint("GET", endpoint, (_call, event) => refuseForRole(event))
+			const wrapper = await mountSection()
+
+			await row(wrapper, t(`settings.apps.${name}.title`))
+				.get("button")
+				.trigger("click")
+			await settleMutations()
+
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
+			])
+		},
+	)
+
+	it.for([
+		{
+			name: "github",
+			endpoint: "/api/github",
+			apps: () => ({ gitHub: { connected: true, configured: true } }),
+		},
+		{
+			name: "slack",
+			endpoint: "/api/slack",
+			apps: () => ({ slack: { connected: true, configured: true } }),
+		},
+	])(
+		"shows only the access denied toast for a refused $name disconnect",
+		async ({ name, endpoint, apps }, { expect }) => {
+			seedApps(apps())
+			mockEndpoint("DELETE", endpoint, (_call, event) => refuseForRole(event))
+			const wrapper = await mountSection()
+
+			await row(wrapper, t(`settings.apps.${name}.title`))
+				.get("button")
+				.trigger("click")
+			await settleMutations()
+
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
+			])
+		},
+	)
+
+	it("shows a member who is not an admin each status without the controls", async ({
+		expect,
+	}) => {
+		seedAuthSession({ id: "u1" })
+		seedAuthOrganization({ members: [{ userId: "u1", role: "editor" }] })
+		seedApps({ gitHub: { connected: true, configured: true } })
+
+		const wrapper = await mountSection()
+
+		const gitHub = row(wrapper, t("settings.apps.github.title"))
+		const slack = row(wrapper, t("settings.apps.slack.title"))
+		expect.soft(gitHub.text()).toContain(t("settings.apps.github.connected"))
+		expect.soft(slack.text()).toContain(t("settings.apps.slack.not-connected"))
+		expect.soft(wrapper.findAll("button")).toHaveLength(0)
 	})
 
 	it("separates the two rows only when both are shown", async ({ expect }) => {

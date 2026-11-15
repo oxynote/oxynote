@@ -159,6 +159,11 @@ describe("<TagEditMenu>", { concurrent: false }, () => {
 			input: { status: 500, body: { code: "general" } },
 			expected: "sidebar.errors.update-tag-failed",
 		},
+		{
+			name: "shows only the access denied toast for a refused save",
+			input: { status: 403, body: { code: "member.forbidden" } },
+			expected: "general.errors.role-not-allowed",
+		},
 	])("$name", async ({ input, expected }, { expect }) => {
 		const calls = mockEndpoint("PUT", UPDATE_URL, (_call, event) => {
 			setResponseStatus(event, input.status)

@@ -520,9 +520,6 @@
 				},
 				"delete": {
 					"title": "Remove"
-				},
-				"role": {
-					"title": "Role"
 				}
 			},
 			"success-messages": {
@@ -558,6 +555,7 @@
 				"connect": "Connect",
 				"disconnect": "Disconnect",
 				"connected": "Connected",
+				"not-connected": "Not connected",
 				"errors": {
 					"install": {
 						"title": "GitHub couldn't be connected",
@@ -575,6 +573,7 @@
 				"connect": "Connect",
 				"disconnect": "Disconnect",
 				"connected": "Connected",
+				"not-connected": "Not connected",
 				"errors": {
 					"install": {
 						"title": "Slack couldn't be connected",
@@ -613,6 +612,7 @@
 		},
 		"data-sources": {
 			"title": "External Data Sources",
+			"not-connected": "Not connected",
 			"prometheus": {
 				"title": "Prometheus",
 				"description": "Connect your Prometheus server and use it in metric monitoring blocks in your pages",

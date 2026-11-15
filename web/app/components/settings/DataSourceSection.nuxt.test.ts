@@ -5,7 +5,14 @@ import {
 	seedQueryData,
 } from "~/composables/api/test-helpers"
 import DataSourceSection from "./DataSourceSection.vue"
-import { at, menuItem, mountUnderTooltipProvider, t } from "../test-helpers"
+import {
+	at,
+	menuItem,
+	mountUnderTooltipProvider,
+	seedAuthOrganization,
+	seedAuthSession,
+	t,
+} from "../test-helpers"
 
 function makeDataSource(overrides: Partial<DataSource> = {}): DataSource {
 	return {
@@ -198,5 +205,27 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 		const { wrapper } = await mountSection()
 
 		expect(wrapper.text()).toContain("Jan 1, 2026")
+	})
+
+	describe("for a member who is not an admin", { concurrent: false }, () => {
+		beforeEach(() => {
+			seedAuthSession({ id: "u1" })
+			seedAuthOrganization({ members: [{ userId: "u1", role: "editor" }] })
+		})
+
+		it("lists the connections without the controls that change them", async ({
+			expect,
+		}) => {
+			seedDataSources([makeDataSource()])
+
+			const { wrapper } = await mountSection()
+
+			expect.soft(wrapper.text()).toContain("Prod metrics")
+			expect.soft(wrapper.findAll("button")).toHaveLength(0)
+			// the five types other than prometheus have nothing connected
+			expect
+				.soft(wrapper.text().split(t("settings.data-sources.not-connected")))
+				.toHaveLength(6)
+		})
 	})
 })

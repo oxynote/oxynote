@@ -65,6 +65,7 @@ describe("processDocumentTree", () => {
 			"placeholder",
 			"Acme Corp",
 			noActions,
+			true,
 		)
 
 		expect(items).toEqual([
@@ -93,6 +94,7 @@ describe("processDocumentTree", () => {
 			"placeholder",
 			"Acme",
 			noActions,
+			true,
 		)
 
 		expect(items.map((item) => item.active)).toEqual([false, true])
@@ -107,6 +109,7 @@ describe("processDocumentTree", () => {
 			"placeholder",
 			"Acme",
 			noActions,
+			true,
 		)
 
 		expect(item?.url).toBe("#")
@@ -120,6 +123,7 @@ describe("processDocumentTree", () => {
 			"placeholder",
 			"Acme",
 			noActions,
+			true,
 		)
 
 		expect(items[0]?.children).toEqual([
@@ -136,6 +140,7 @@ describe("processDocumentTree", () => {
 			"Add a page",
 			"Acme",
 			noActions,
+			true,
 		)
 
 		expect(items[0]?.children).toEqual([
@@ -162,6 +167,7 @@ describe("processDocumentTree", () => {
 			"Add a page",
 			"Acme",
 			noActions,
+			true,
 		)
 
 		expect(items[0]?.children).toEqual([
@@ -170,7 +176,14 @@ describe("processDocumentTree", () => {
 	})
 
 	it("returns a lone placeholder for an empty tree", ({ expect }) => {
-		const items = processDocumentTree([], null, "Add a page", "Acme", noActions)
+		const items = processDocumentTree(
+			[],
+			null,
+			"Add a page",
+			"Acme",
+			noActions,
+			true,
+		)
 
 		expect(items).toEqual([
 			expect.objectContaining({
@@ -178,6 +191,48 @@ describe("processDocumentTree", () => {
 				name: "Add a page",
 			}),
 		])
+	})
+
+	it("gives a reader who may not edit no drag handles and no placeholder rows", ({
+		expect,
+	}) => {
+		const items = processDocumentTree(
+			[treeElement(ID_A, "Parent", [treeElement(ID_B, "Leaf", [])])],
+			null,
+			"Add a page",
+			"Acme",
+			noActions,
+			false,
+		)
+
+		expect(items).toEqual([
+			expect.objectContaining({
+				id: ID_A,
+				draggable: false,
+				children: [
+					expect.objectContaining({
+						id: ID_B,
+						draggable: false,
+						children: null,
+					}),
+				],
+			}),
+		])
+	})
+
+	it("returns no rows for an empty tree a reader may not edit", ({
+		expect,
+	}) => {
+		const items = processDocumentTree(
+			[],
+			null,
+			"Add a page",
+			"Acme",
+			noActions,
+			false,
+		)
+
+		expect(items).toEqual([])
 	})
 })
 
@@ -203,6 +258,7 @@ describe("processTagTree", () => {
 			"Acme",
 			() => [action("hide-tag")],
 			noActions,
+			true,
 		)
 
 		expect(items).toEqual([
@@ -229,6 +285,7 @@ describe("processTagTree", () => {
 			(documentId, branchId, tagId) => [
 				action(`remove-${documentId}@${branchId}-from-${tagId}`),
 			],
+			true,
 		)
 
 		expect(items[0]?.children).toEqual([
@@ -260,6 +317,7 @@ describe("processTagTree", () => {
 			"Acme",
 			noActions,
 			() => [action("remove-tag")],
+			true,
 		)
 
 		expect(items[0]?.children?.[0]?.actions).toEqual([])
@@ -276,6 +334,7 @@ describe("processTagTree", () => {
 			"Acme",
 			noActions,
 			noActions,
+			true,
 		)
 
 		expect(items[0]?.children?.[0]?.children).toEqual([
@@ -295,6 +354,7 @@ describe("processTagTree", () => {
 			"Acme",
 			noActions,
 			noActions,
+			true,
 		)
 
 		expect(items[0]?.children?.map((child) => child.active)).toEqual([
@@ -316,6 +376,7 @@ describe("processTagTree", () => {
 			"Acme",
 			noActions,
 			(documentId) => [action(`remove-${documentId}`)],
+			true,
 		)
 
 		const parent = items[0]?.children?.[0]
@@ -334,6 +395,7 @@ describe("processTagTree", () => {
 			"Acme",
 			noActions,
 			noActions,
+			true,
 		)
 
 		expect(items.map((item) => item.name)).toEqual(["Staging"])
@@ -346,9 +408,23 @@ describe("processTagTree", () => {
 			"Acme",
 			noActions,
 			noActions,
+			true,
 		)
 
 		expect(items[0]?.children).toBeNull()
+	})
+
+	it("keeps a tag in place for a reader who may not edit", ({ expect }) => {
+		const items = processTagTree(
+			[tagElement(ID_A, "Production")],
+			null,
+			"Acme",
+			noActions,
+			noActions,
+			false,
+		)
+
+		expect(items[0]?.draggable).toBe(false)
 	})
 })
 

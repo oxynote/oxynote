@@ -26,7 +26,7 @@ import {
 	HOOK_ICON_STATUS_CLASS,
 	hookGroupStatus,
 } from "./hooks/hook-status"
-import { showToastMessage } from "../toast"
+import { showRequestErrorToast, showToastMessage } from "../toast"
 import {
 	DEFAULT_HIGHLIGHT_OVERLAY_PADDING,
 	type HighlightOverlayRect,
@@ -72,7 +72,7 @@ const fetchCurrentBranchReviewers = useFetchBranchReviewers(
 	() => editorStore.activeDocumentId,
 	() => editorStore.activeBranchId,
 )
-const { fetchAuthSession } = useAuthSession()
+const { fetchAuthSession, canRoleEdit } = useAuthSession()
 
 const isReviewable = computed(() => {
 	// NOTE this will be removed in the future
@@ -151,7 +151,11 @@ const processedReviewableAction = computed<ReviewableAction | null>({
 			return null
 		}
 
-		return selectedReviewableAction.value
+		// a viewer approves but never merges, even when merge was picked
+		// before their role changed
+		return canRoleEdit.value
+			? selectedReviewableAction.value
+			: ReviewableAction.ApproveUnapprove
 	},
 	set: (val: ReviewableAction | null) => {
 		if (!editorStore.branchReviewableActionsActive) {
@@ -430,9 +434,9 @@ async function executeReviewableAction() {
 					"success",
 					t("editor.name-editor.review-workflow.merge.success"),
 				)
-			} catch {
-				showToastMessage(
-					"error",
+			} catch (err) {
+				showRequestErrorToast(
+					err,
 					t("editor.name-editor.review-workflow.merge.error"),
 				)
 			}
@@ -603,8 +607,8 @@ async function executeReviewableAction() {
 								: $t(`editor.name-editor.review-workflow.merge.title`)
 						}}
 					</ShadcnUiButton>
-					<ShadcnUiButtonGroupSeparator />
-					<ShadcnUiDropdownMenu>
+					<ShadcnUiButtonGroupSeparator v-if="canRoleEdit" />
+					<ShadcnUiDropdownMenu v-if="canRoleEdit">
 						<ShadcnUiDropdownMenuTrigger as-child>
 							<ShadcnUiButton
 								size="2sm"

@@ -1,6 +1,7 @@
 import { toast } from "vue-sonner"
 import ToastMessage from "./ToastMessage.vue"
 import ToastProgress from "./ToastProgress.vue"
+import { isRoleRefusal } from "~/utils/auth"
 
 export function showToastMessage(
 	type: "success" | "error" | "info" | "warning",
@@ -21,6 +22,20 @@ export function showToastMessage(
 			}),
 		action ? { duration: Number.POSITIVE_INFINITY } : undefined,
 	)
+}
+
+// the toast for a failed request. A role refusal already has the api
+// client's own toast, so it gets no second one.
+export function showRequestErrorToast(
+	error: unknown,
+	title: string,
+	description?: string,
+) {
+	if (isRoleRefusal(error)) {
+		return
+	}
+
+	showToastMessage("error", title, description)
 }
 
 export interface ProgressToast {

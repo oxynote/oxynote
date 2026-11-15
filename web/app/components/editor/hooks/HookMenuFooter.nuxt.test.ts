@@ -1,17 +1,23 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
-import { beforeEach, describe, it } from "vitest"
+import { afterEach, beforeEach, describe, it } from "vitest"
 import HookMenuFooter from "./HookMenuFooter.vue"
+import { clearQueryCache } from "~/composables/api/test-helpers"
 import {
 	findButtonByText,
 	renderedIconNames,
+	seedAuthOrganization,
+	seedAuthSession,
 	t,
 } from "~/components/test-helpers"
 
-// the editor store is shared, so these tests cannot interleave
+// the editor store and the auth cache are shared, so these tests cannot
+// interleave
 describe("<HookMenuFooter>", { concurrent: false }, () => {
 	beforeEach(() => {
 		useEditorStore().setActiveBranchProtected(false)
 	})
+
+	afterEach(clearQueryCache)
 
 	it("confirms a new hook", async ({ expect }) => {
 		const wrapper = await mountSuspended(HookMenuFooter, {
@@ -107,6 +113,35 @@ describe("<HookMenuFooter>", { concurrent: false }, () => {
 
 		expect(wrapper.text()).toBe(t("editor.hooks.read-only-protected"))
 		expect(wrapper.findAll("button")).toHaveLength(0)
+	})
+
+	it("tells a viewer their role keeps the hook read-only, on a protected branch too", async ({
+		expect,
+	}) => {
+		seedAuthSession({ id: "u1" })
+		seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+		useEditorStore().setActiveBranchProtected(true)
+
+		const wrapper = await mountSuspended(HookMenuFooter, {
+			props: { mode: "read-only" },
+		})
+
+		expect(wrapper.text()).toBe(t("editor.hooks.read-only-viewer"))
+		expect(wrapper.findAll("button")).toHaveLength(0)
+	})
+
+	it("keeps a viewer's diff footer read-only, since leaving the diff lets them edit nothing", async ({
+		expect,
+	}) => {
+		seedAuthSession({ id: "u1" })
+		seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+
+		const wrapper = await mountSuspended(HookMenuFooter, {
+			props: { mode: "diff" },
+		})
+
+		expect(wrapper.text()).toBe(t("editor.hooks.read-only-viewer"))
+		expect(renderedIconNames(wrapper)).toEqual(["mingcute:lock-line"])
 	})
 
 	it("tells how to leave the diff to edit", async ({ expect }) => {

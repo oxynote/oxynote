@@ -27,6 +27,7 @@ const emit = defineEmits<{
 }>()
 
 const { isEditable } = useEditorMeta()
+const { canRoleManage } = useAuthSession()
 const editorStore = useEditorStore()
 
 const isEditingDisabled = computed(() => {
@@ -302,7 +303,11 @@ function removeThreshold(index: number) {
 					:types="dataSourceTypes"
 					:empty-title="$t('editor.metrics.config.data-source-empty-title')"
 					:empty-description="
-						$t('editor.metrics.config.data-source-empty-description')
+						canRoleManage
+							? $t('editor.metrics.config.data-source-empty-description')
+							: $t(
+									'editor.metrics.config.data-source-empty-description-non-admin',
+								)
 					"
 					:diff-mode="!!props.diffStatus"
 					:diff-status="isDataSourceIdModified ? DiffStatus.Added : null"
@@ -313,7 +318,11 @@ function removeThreshold(index: number) {
 					:types="dataSourceTypes"
 					:empty-title="$t('editor.metrics.config.data-source-empty-title')"
 					:empty-description="
-						$t('editor.metrics.config.data-source-empty-description')
+						canRoleManage
+							? $t('editor.metrics.config.data-source-empty-description')
+							: $t(
+									'editor.metrics.config.data-source-empty-description-non-admin',
+								)
 					"
 					:diff-mode="!!props.diffStatus"
 					:old-config="props.oldConfig"

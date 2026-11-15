@@ -1,10 +1,13 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
 import type { VueWrapper } from "@vue/test-utils"
-import { describe, it } from "vitest"
+import { afterEach, beforeEach, describe, it } from "vitest"
 import NoDocumentIndicator from "./NoDocumentIndicator.vue"
+import { clearQueryCache } from "~/composables/api/test-helpers"
 import {
 	findButtonByText,
 	renderedIconNames,
+	seedAuthOrganization,
+	seedAuthSession,
 	t,
 } from "~/components/test-helpers"
 
@@ -75,5 +78,29 @@ describe("<NoDocumentIndicator>", () => {
 		await findButtonByText(wrapper, t(CREATE_BUTTON)).trigger("click")
 
 		expect(wrapper.emitted("create-document")).toBeUndefined()
+	})
+
+	// the role is read from the auth cache, which every mount shares
+	describe("for a viewer", { concurrent: false }, () => {
+		beforeEach(() => {
+			seedAuthSession({ id: "u1" })
+			seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+		})
+
+		afterEach(clearQueryCache)
+
+		it("says who can create pages and offers no button for it", async ({
+			expect,
+		}) => {
+			const wrapper = await mountIndicator()
+
+			expect
+				.soft(wrapper.text())
+				.toContain(t("editor.no-document-indicator.heading-viewer"))
+			expect
+				.soft(wrapper.text())
+				.toContain(t("editor.no-document-indicator.subheading-viewer"))
+			expect.soft(wrapper.find("button").exists()).toBe(false)
+		})
 	})
 })

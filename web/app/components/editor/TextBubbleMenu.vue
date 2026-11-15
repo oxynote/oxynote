@@ -34,6 +34,7 @@ const emit = defineEmits<{
 	(e: "add-thread" | "edit-link"): void
 }>()
 
+const { canRoleEdit } = useAuthSession()
 const isDiffMode = computed(() => !!props.diffContext)
 const showBubbleMenu = ref(false)
 const showLinkCreateMenu = ref(false)
@@ -92,12 +93,12 @@ function shouldShowBubbleMenuWrapped(opts: {
 	from: number
 	to: number
 }): boolean {
+	// the diff menu only adds a comment, which a viewer cannot
 	if (isDiffMode.value) {
-		return shouldShowDiffBubbleMenu(opts)
+		return canRoleEdit.value && shouldShowDiffBubbleMenu(opts)
 	}
 
 	const shouldShow = shouldShowBubbleMenu(opts)
-
 	if (!shouldShow) {
 		closeLinkCreateMenu()
 	}
