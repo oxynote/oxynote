@@ -572,7 +572,7 @@ describe("<FileBlock>", { concurrent: false }, () => {
 			size: null,
 			contentType: null,
 		})
-		expect(consoleError).toHaveBeenCalledTimes(1)
+		expect(consoleError).toHaveBeenCalledTimes(0)
 	})
 
 	it("leaves a file over the size limit to the storage error handler", async ({
@@ -610,10 +610,6 @@ describe("<FileBlock>", { concurrent: false }, () => {
 	it("shows only the access denied toast for a refused upload", async ({
 		expect,
 	}) => {
-		// the block logs every failed upload, a refusal too
-		vi.spyOn(console, "error").mockImplementation(() => {
-			return undefined
-		})
 		mockEndpoint(
 			"POST",
 			`/api/documents/${DOCUMENT_ID}/files`,

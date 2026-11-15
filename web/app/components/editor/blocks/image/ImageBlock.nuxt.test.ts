@@ -523,7 +523,7 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 			expect(toast.custom).toHaveBeenCalledTimes(1)
 		}, WAIT_FOR_OPTIONS)
 		expect(updateAttributes).toHaveBeenNthCalledWith(2, { uploading: false })
-		expect(consoleError).toHaveBeenCalledTimes(1)
+		expect(consoleError).toHaveBeenCalledTimes(0)
 	})
 
 	it("leaves a rejected file type to the storage error handler", async ({
@@ -556,10 +556,6 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 	it("shows only the access denied toast for a refused upload", async ({
 		expect,
 	}) => {
-		// the block logs every failed upload, a refusal too
-		vi.spyOn(console, "error").mockImplementation(() => {
-			return undefined
-		})
 		mockEndpoint(
 			"POST",
 			`/api/documents/${DOCUMENT_ID}/files`,
@@ -591,6 +587,6 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 		await vi.waitFor(() => {
 			expect(toast.custom).toHaveBeenCalledTimes(1)
 		}, WAIT_FOR_OPTIONS)
-		expect(consoleError).toHaveBeenCalledTimes(1)
+		expect(consoleError).toHaveBeenCalledTimes(0)
 	})
 })

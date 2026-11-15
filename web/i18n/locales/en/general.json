@@ -100,6 +100,11 @@
 			"admin": "Admin",
 			"editor": "Editor",
 			"viewer": "Viewer"
+		},
+		"member-role-descriptions": {
+			"admin": "Can do everything an editor can, plus manage the workspace, members, apps and data sources",
+			"editor": "Can do everything a viewer can, plus edit pages, branches, variables, tags and freshness hooks",
+			"viewer": "Can read pages and query data sources"
 		}
 	},
 	"storage-errors": {

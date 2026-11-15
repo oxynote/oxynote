@@ -16,11 +16,13 @@ import {
 	mockAuthEndpoint,
 	mockAuthOrganization,
 	mountUnderTooltipProvider,
+	openSubMenu,
 	raisedToasts,
 	refuseForRole,
 	seedAuthConfig,
 	seedAuthSession,
 	settleMutations,
+	stubViewportMatches,
 	t,
 	WAIT_FOR_OPTIONS,
 } from "../test-helpers"
@@ -463,16 +465,41 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			expect(wrapper.text()).not.toContain("grace@oxynote.test")
 		})
 
-		it("offers no options menu on the signed-in user's own row", async ({
+		it("offers the signed-in user only an email copy on their own row", async ({
 			expect,
 		}) => {
 			seedWorkspace()
-
 			const { wrapper } = await mountSection()
 
-			expect(wrapper.find("[data-slot='dropdown-menu-trigger']").exists()).toBe(
-				false,
-			)
+			await openMemberOptions(wrapper, "ada@oxynote.test")
+
+			expect(
+				menuItem(t("settings.workspace.member-options.copy-email.title")),
+			).toBeTruthy()
+			expect(() =>
+				menuItem(t("settings.workspace.member-options.delete.title")),
+			).toThrow()
+		})
+
+		it("copies a member's email from their options menu", async ({
+			expect,
+		}) => {
+			const writeText = vi
+				.spyOn(navigator.clipboard, "writeText")
+				.mockResolvedValue(undefined)
+			seedWorkspace({
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
+			})
+			const { wrapper } = await mountSection()
+			await openMemberOptions(wrapper, "linus@oxynote.test")
+
+			menuItem(t("settings.workspace.member-options.copy-email.title")).click()
+			await settleMutations()
+
+			expect(writeText).toHaveBeenCalledExactlyOnceWith("linus@oxynote.test")
+			expect(raisedToasts()).toMatchObject([
+				{ type: "success", title: t("settings.workspace.email-copied") },
+			])
 		})
 
 		it("labels each member and pending invitation with their role", async ({
@@ -507,6 +534,85 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 					.findAll("tr")
 					.map((row) => row.find("[role='combobox']").exists()),
 			).toEqual([false, true, false])
+		})
+
+		it("explains each role in the role picker", async ({ expect }) => {
+			seedWorkspace({
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
+			})
+			const { wrapper } = await mountSection()
+
+			await openRolePicker(wrapper)
+
+			expect(
+				Array.from(document.body.querySelectorAll("[role='option']")).map((o) =>
+					o.textContent.replace(/\s+/g, " ").trim(),
+				),
+			).toEqual(
+				(["admin", "editor", "viewer"] as const).map(
+					(role) =>
+						`${t(`general.member-roles.${role}`)}${t(`general.member-role-descriptions.${role}`)}`,
+				),
+			)
+		})
+
+		it("changes a role from the options menu on a small screen", async ({
+			expect,
+		}) => {
+			stubViewportMatches(false)
+			seedWorkspace({
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
+			})
+			const calls = mockAuthEndpoint("organization/update-member-role", () => ({
+				id: "member-u2",
+			}))
+			const { wrapper } = await mountSection()
+			await openMemberOptions(wrapper, "linus@oxynote.test")
+			await openSubMenu(t("settings.workspace.member-options.role.title"))
+
+			menuItem(t("general.member-role-descriptions.viewer")).click()
+			await settleMutations()
+
+			expect(calls).toHaveLength(1)
+			expect(calls[0]?.body).toEqual({ memberId: "member-u2", role: "viewer" })
+		})
+
+		it("marks the member's role in the options menu on a small screen", async ({
+			expect,
+		}) => {
+			stubViewportMatches(false)
+			seedWorkspace({
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
+			})
+			const { wrapper } = await mountSection()
+			await openMemberOptions(wrapper, "linus@oxynote.test")
+
+			await openSubMenu(t("settings.workspace.member-options.role.title"))
+
+			expect(
+				(["admin", "editor", "viewer"] as const).map(
+					(role) =>
+						menuItem(
+							t(`general.member-role-descriptions.${role}`),
+						).querySelector("[class*='i-lucide:check']") !== null,
+				),
+			).toEqual([false, true, false])
+		})
+
+		it("keeps the role out of the options menu on a wide screen", async ({
+			expect,
+		}) => {
+			stubViewportMatches(true)
+			seedWorkspace({
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
+			})
+			const { wrapper } = await mountSection()
+
+			await openMemberOptions(wrapper, "linus@oxynote.test")
+
+			expect(() =>
+				menuItem(t("settings.workspace.member-options.role.title")),
+			).toThrow()
 		})
 
 		it("changes the role picked from a member's role picker", async ({
@@ -545,7 +651,17 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			expect(at(wrapper.findAll("tr"), 1).text()).toContain(
 				t("general.member-roles.viewer"),
 			)
-			expect(raisedToasts()).toEqual([])
+			expect(raisedToasts()).toMatchObject([
+				{
+					type: "success",
+					title: t("settings.workspace.success-messages.role.title"),
+					description: {
+						keypath:
+							"settings.workspace.success-messages.role.description.viewer",
+						params: { name: "linus", role: t("general.member-roles.viewer") },
+					},
+				},
+			])
 		})
 
 		it("leaves the role alone when the member's own role is picked", async ({
@@ -588,6 +704,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 				{
 					type: "error",
 					title: t("settings.workspace.errors.toasts.role.title"),
+					description: t("settings.workspace.errors.toasts.role.description"),
 				},
 			])
 		})
@@ -599,7 +716,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 				members: [member("u1", "ada", "admin"), member("u2", "linus")],
 			})
 			const { wrapper, section } = await mountSection()
-			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
+			await openMemberOptions(wrapper, "linus@oxynote.test")
 
 			menuItem(t("settings.workspace.member-options.delete.title")).click()
 			await nextTick()
@@ -620,10 +737,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 				invitations: [invitation("u2")],
 			})
 			const { wrapper } = await mountSection()
-			await at(
-				wrapper.findAll("[data-slot='dropdown-menu-trigger']"),
-				1,
-			).trigger("click")
+			await openMemberOptions(wrapper, "grace@oxynote.test")
 
 			menuItem(t("settings.workspace.member-options.copy-link.title")).click()
 			await settleMutations()
@@ -648,7 +762,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 				.mockResolvedValue(undefined)
 			seedWorkspace({ invitations: [invitation("u9")] })
 			const { wrapper } = await mountSection()
-			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
+			await openMemberOptions(wrapper, "grace@oxynote.test")
 
 			menuItem(t("settings.workspace.member-options.copy-link.title")).click()
 			await settleMutations()
@@ -666,7 +780,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			})
 			const { wrapper } = await mountSection()
 
-			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
+			await openMemberOptions(wrapper, "linus@oxynote.test")
 
 			expect(() =>
 				menuItem(t("settings.workspace.member-options.copy-link.title")),
@@ -676,6 +790,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 
 	describe("for a member who is not an admin", { concurrent: false }, () => {
 		beforeEach(() => {
+			clearTeleportedOverlays()
 			seedAuthConfig()
 		})
 
@@ -705,9 +820,49 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 				)
 				.toThrow()
 			expect.soft(wrapper.find("[role='combobox']").exists()).toBe(false)
-			expect
-				.soft(wrapper.find("[data-slot='dropdown-menu-trigger']").exists())
-				.toBe(false)
+		})
+
+		it("offers only the role list and an email copy in a member's options menu", async ({
+			expect,
+		}) => {
+			stubViewportMatches(false)
+			seedWorkspace({
+				members: [member("u1", "ada"), member("u2", "linus", "admin")],
+				invitations: [invitation("u2")],
+			})
+			const { wrapper } = await mountSection()
+
+			await openMemberOptions(wrapper, "grace@oxynote.test")
+
+			expect(
+				Array.from(
+					document.body.querySelectorAll("[role='menu'] [role^='menuitem']"),
+				).map((el) => el.textContent.trim()),
+			).toEqual([
+				t("settings.workspace.member-options.role.title"),
+				t("settings.workspace.member-options.copy-email.title"),
+			])
+		})
+
+		it("disables the small screen role list on a row the user cannot change", async ({
+			expect,
+		}) => {
+			stubViewportMatches(false)
+			seedWorkspace({
+				members: [member("u1", "ada", "admin"), member("u2", "linus")],
+			})
+			const { wrapper } = await mountSection()
+			await openMemberOptions(wrapper, "ada@oxynote.test")
+
+			await openSubMenu(t("settings.workspace.member-options.role.title"))
+
+			expect(
+				(["admin", "editor", "viewer"] as const).map((role) =>
+					menuItem(t(`general.member-role-descriptions.${role}`)).hasAttribute(
+						"data-disabled",
+					),
+				),
+			).toEqual([true, true, true])
 		})
 
 		it("opens no file dialog when the logo is pressed", async ({ expect }) => {
@@ -740,11 +895,28 @@ async function openRolePicker(
 	await nextTick()
 }
 
-// the open list is teleported into <body>
+// the row's options menu, found by the email the row shows
+async function openMemberOptions(
+	wrapper: Awaited<ReturnType<typeof mountSection>>["wrapper"],
+	email: string,
+) {
+	const row = wrapper.findAll("tr").find((r) => r.text().includes(email))
+	if (!row) {
+		throw new Error(`no member row for "${email}"`)
+	}
+
+	await row.get("[data-slot='dropdown-menu-trigger']").trigger("click")
+}
+
+// the open list is teleported into <body>. An option shows the role's name
+// above its description, so it is found by the name's line.
 function pickRole(label: string) {
 	const option = Array.from(
 		document.body.querySelectorAll("[role='option']"),
-	).find((o) => o.textContent.trim() === label)
+	).find(
+		(o) =>
+			o.querySelector(".text-popover-foreground")?.textContent.trim() === label,
+	)
 	if (!option) {
 		throw new Error(`no role option "${label}"`)
 	}

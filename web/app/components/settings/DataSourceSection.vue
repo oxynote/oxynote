@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { cn } from "#layers/ui/app/lib/utils"
+import { showToastMessage } from "../toast"
 
 const emit = defineEmits<{
 	(e: "data-source-creation", type: DataSourceType): void
@@ -130,6 +131,11 @@ const sections = computed(() => {
 
 	return res
 })
+
+async function copyURL(dataSource: DataSource) {
+	await navigator.clipboard.writeText(dataSource.url)
+	showToastMessage("success", t("settings.data-sources.url-copied"))
+}
 </script>
 <template>
 	<div class="flex flex-col">
@@ -234,7 +240,6 @@ const sections = computed(() => {
 							</td>
 							<td>
 								<div
-									v-if="canRoleManage"
 									class="flex h-full items-center justify-end whitespace-nowrap"
 								>
 									<ShadcnUiDropdownMenu>
@@ -261,7 +266,16 @@ const sections = computed(() => {
 											loop
 											inside-modal
 										>
-											<ShadcnUiDropdownMenuItem @click="section.update(item)">
+											<ShadcnUiDropdownMenuItem @click="copyURL(item)">
+												<Icon name="lucide:copy" />
+												<span>
+													{{ $t("settings.data-sources.copy-url") }}
+												</span>
+											</ShadcnUiDropdownMenuItem>
+											<ShadcnUiDropdownMenuItem
+												v-if="canRoleManage"
+												@click="section.update(item)"
+											>
 												<Icon name="lucide:settings" />
 												<span>
 													{{
@@ -271,7 +285,10 @@ const sections = computed(() => {
 													}}
 												</span>
 											</ShadcnUiDropdownMenuItem>
-											<ShadcnUiDropdownMenuItem @click="section.delete(item)">
+											<ShadcnUiDropdownMenuItem
+												v-if="canRoleManage"
+												@click="section.delete(item)"
+											>
 												<Icon name="lucide:trash-2" />
 												<span>
 													{{

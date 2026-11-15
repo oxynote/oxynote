@@ -3,10 +3,16 @@ import ToastMessage from "./ToastMessage.vue"
 import ToastProgress from "./ToastProgress.vue"
 import { isRoleRefusal } from "~/utils/auth"
 
+// a translated text whose params render in bold
+export interface ToastText {
+	keypath: string
+	params: Record<string, string>
+}
+
 export function showToastMessage(
 	type: "success" | "error" | "info" | "warning",
 	title: string,
-	description?: string,
+	description?: string | ToastText,
 	action?: { label: string; onClick: () => void },
 ) {
 	const toastId = toast.custom(
