@@ -81,6 +81,13 @@ Only API composables and plugins touch the clients. A component, store or
 util that needs a request calls a composable, adding a query or mutation
 there when none exists.
 
+**Member roles**: an action the role does not allow is hidden, never
+disabled. `useAuthSession()` reads the role (`canRoleEdit`,
+`canRoleManage`). The
+clients toast a 403 role refusal themselves and re-read the member list,
+so a failed request's toast goes through `showRequestErrorToast`, which
+skips it.
+
 ## Data, editor, routing
 
 - **Pinia Colada** (`useQuery`/`useMutation`) is the data primitive.

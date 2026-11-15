@@ -65,10 +65,15 @@ vi.mock("./auth-client", () => ({
 const channels = Object.keys(leaves)
 
 // channels whose handlers deliberately drop the renderer-provided args
-const argslessChannels = new Set([
-	"auth:getSession",
-	"auth:listAccounts",
-	"auth:getFullOrganization",
+// channels that ignore the renderer's arguments, with what each passes on
+// instead
+const fixedArgChannels = new Map<string, unknown[]>([
+	["auth:getSession", []],
+	["auth:listAccounts", []],
+	[
+		"auth:getFullOrganization",
+		[{ query: { membersLimit: Number.MAX_SAFE_INTEGER } }],
+	],
 ])
 
 // eslint-disable-next-line @typescript-eslint/unbound-method -- the vi.mock replacement is a this-independent vi.fn
@@ -118,9 +123,10 @@ describe("registerAuthIpcHandlers", { concurrent: false }, () => {
 
 		await expect(registeredHandler(channel)({}, args)).resolves.toBe(result)
 
-		if (argslessChannels.has(channel)) {
+		const fixedArgs = fixedArgChannels.get(channel)
+		if (fixedArgs) {
 			expect(leaf).toHaveBeenCalledTimes(1)
-			expect(leaf).toHaveBeenCalledWith()
+			expect(leaf).toHaveBeenCalledWith(...fixedArgs)
 		} else {
 			expect(leaf).toHaveBeenCalledTimes(1)
 			expect(leaf).toHaveBeenCalledWith(args)

@@ -13,6 +13,8 @@ import {
 	findButtonByText,
 	clearTeleportedOverlays,
 	mountWithFrozenClock,
+	raisedToasts,
+	refuseForRole,
 	settleActionSubmit,
 	t,
 } from "../test-helpers"
@@ -325,6 +327,26 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			expect(wrapper.emitted("close")).toBeUndefined()
 		})
 
+		it("shows only the access denied toast for a refused creation", async ({
+			expect,
+		}) => {
+			mockEndpoint("POST", "/api/data-sources", (_call, event) =>
+				refuseForRole(event),
+			)
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Prometheus,
+			})
+			await fields(wrapper).name.setValue("Prod metrics")
+			await fields(wrapper).url.setValue("http://prometheus.test")
+
+			await submit(wrapper)
+
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
+			])
+			expect(wrapper.emitted("close")).toBeUndefined()
+		})
+
 		it("closes without connecting anything when cancelled", async ({
 			expect,
 		}) => {
@@ -631,6 +653,23 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			await submit(wrapper)
 
 			expect(toast.custom).toHaveBeenCalledTimes(1)
+			expect(wrapper.emitted("close")).toBeUndefined()
+		})
+
+		it("shows only the access denied toast for a refused update", async ({
+			expect,
+		}) => {
+			mockEndpoint("PUT", `/api/data-sources/${EXISTING.id}`, (_call, event) =>
+				refuseForRole(event),
+			)
+			const wrapper = await mountAction({ updateTarget: EXISTING })
+			await fields(wrapper).name.setValue("Staging metrics")
+
+			await submit(wrapper)
+
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
+			])
 			expect(wrapper.emitted("close")).toBeUndefined()
 		})
 	})

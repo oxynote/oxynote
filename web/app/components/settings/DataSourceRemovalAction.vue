@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { showToastMessage } from "../toast"
+import { showRequestErrorToast, showToastMessage } from "../toast"
 
 const props = defineProps<{
 	data: DataSource
@@ -18,10 +18,10 @@ async function removeDataSource() {
 
 	try {
 		await deleteDataSource.mutateAsync(props.data.id)
-	} catch {
+	} catch (err) {
 		loading.value = false
-		showToastMessage(
-			"error",
+		showRequestErrorToast(
+			err,
 			t("settings.action-modals.data-source-removal.error-message.title", {
 				name: props.data.name,
 			}),

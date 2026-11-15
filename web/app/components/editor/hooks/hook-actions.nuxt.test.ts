@@ -11,7 +11,12 @@ import {
 	mockEndpoint,
 	type RecordedCall,
 } from "~/composables/api/test-helpers"
-import { raisedToasts, t, WAIT_FOR_OPTIONS } from "~/components/test-helpers"
+import {
+	raisedToasts,
+	refuseForRole,
+	t,
+	WAIT_FOR_OPTIONS,
+} from "~/components/test-helpers"
 
 vi.mock("vue-sonner", () => ({
 	toast: { custom: vi.fn(), dismiss: vi.fn() },
@@ -223,6 +228,51 @@ describe("useHookActions", { concurrent: false }, () => {
 			{ type: "error", title: t("editor.hooks.errors.reset-failed") },
 		])
 	})
+
+	it.for<{
+		name: string
+		method: "POST" | "PUT" | "DELETE"
+		path: string
+		run: (actions: ReturnType<typeof useHookActions>) => Promise<boolean>
+	}>([
+		{
+			name: "creation",
+			method: "POST",
+			path: `/api/documents/${DOCUMENT_ID}/hooks`,
+			run: (actions) => actions.create(SETTINGS),
+		},
+		{
+			name: "update",
+			method: "PUT",
+			path: HOOK_PATH,
+			run: (actions) => actions.update(SETTINGS),
+		},
+		{
+			name: "deletion",
+			method: "DELETE",
+			path: HOOK_PATH,
+			run: (actions) => actions.remove(),
+		},
+		{
+			name: "reset",
+			method: "PUT",
+			path: `${HOOK_PATH}/reset`,
+			run: (actions) => actions.reset(),
+		},
+	])(
+		"shows only the access denied toast for a refused $name",
+		async ({ method, path, run }, { expect }) => {
+			mockEndpoint(method, path, (_call, event) => refuseForRole(event))
+			const { actions } = await mountActions()
+
+			const done = await run(actions)
+
+			expect(done).toBe(false)
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
+			])
+		},
+	)
 
 	it("resets nothing without a hook", async ({ expect }) => {
 		const calls = mockEndpoint("PUT", `${HOOK_PATH}/reset`, () => ({

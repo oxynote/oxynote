@@ -17,6 +17,8 @@ import {
 	clearTeleportedOverlays,
 	emitFrom,
 	findButtonByText,
+	seedAuthOrganization,
+	seedAuthSession,
 	t,
 } from "~/components/test-helpers"
 import {
@@ -511,6 +513,19 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 		expect(select.props("emptyDescription")).toBe(
 			t("editor.metrics.config.data-source-empty-description"),
 		)
+	})
+
+	it("tells a member who is not an admin to ask one for a data source", async ({
+		expect,
+	}) => {
+		seedAuthSession({ id: "u1" })
+		seedAuthOrganization({ members: [{ userId: "u1", role: "editor" }] })
+
+		const wrapper = await mountSidebar()
+
+		expect(
+			wrapper.getComponent(DataSourceSelect).props("emptyDescription"),
+		).toBe(t("editor.metrics.config.data-source-empty-description-non-admin"))
 	})
 
 	it("lets both data source pickers of a diff offer only metric sources", async ({

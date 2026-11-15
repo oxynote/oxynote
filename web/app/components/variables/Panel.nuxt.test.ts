@@ -1,3 +1,4 @@
+import { flushPromises } from "@vue/test-utils"
 import type { VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
@@ -14,6 +15,9 @@ import {
 	findButtonByText,
 	mountUnderTooltipProvider,
 	raisedToasts,
+	refuseForRole,
+	seedAuthOrganization,
+	seedAuthSession,
 	settleMutations,
 	t,
 	teleportedButton,
@@ -162,6 +166,41 @@ describe("<Panel>", { concurrent: false }, () => {
 		})
 	})
 
+	describe("for a viewer", { concurrent: false }, () => {
+		beforeEach(() => {
+			seedAuthSession({ id: "u1" })
+			seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+		})
+
+		it("offers no edit mode", async ({ expect }) => {
+			mockTree(fullTree())
+
+			const wrapper = await mountPanel()
+
+			expect(() =>
+				findButtonByText(wrapper, t("variable.actions.edit")),
+			).toThrow()
+		})
+	})
+
+	it("leaves edit mode once the reader's role turns to viewer", async ({
+		expect,
+	}) => {
+		mockTree(fullTree())
+		seedAuthSession({ id: "u1" })
+		seedAuthOrganization({ members: [{ userId: "u1", role: "editor" }] })
+		const wrapper = await mountEditing()
+
+		seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+		await nextTick()
+
+		expect.soft(wrapper.findComponent(EditList).exists()).toBe(false)
+		expect.soft(wrapper.findComponent(NormalList).exists()).toBe(true)
+		expect
+			.soft(wrapper.findComponent(Panel).emitted("update:editing"))
+			.toEqual([[true], [false]])
+	})
+
 	describe("forms", () => {
 		it("opens a new variable in the group whose add row was pressed", async ({
 			expect,
@@ -225,6 +264,22 @@ describe("<Panel>", { concurrent: false }, () => {
 			expect(wrapper.findComponent(VariableForm).exists()).toBe(false)
 			expect(wrapper.findComponent(EditList).exists()).toBe(true)
 		})
+	})
+
+	it("closes an open deletion dialog once the reader's role turns to viewer", async ({
+		expect,
+	}) => {
+		mockTree(fullTree())
+		seedAuthSession({ id: "u1" })
+		seedAuthOrganization({ members: [{ userId: "u1", role: "editor" }] })
+		const wrapper = await mountEditing()
+		await askToDeleteRegion(wrapper)
+		expect(dialogText()).toContain("Region")
+
+		seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+		await flushPromises()
+
+		expect(dialogText()).toBe("")
 	})
 
 	describe("deleting a variable", () => {
@@ -314,6 +369,33 @@ describe("<Panel>", { concurrent: false }, () => {
 				}),
 			])
 		})
+
+		it("shows only the access denied toast for a refused deletion", async ({
+			expect,
+		}) => {
+			mockTree(fullTree())
+			mockEndpoint("DELETE", `/api/variables/${VAR_REGION}`, (_call, event) =>
+				refuseForRole(event),
+			)
+			const wrapper = await mountEditing()
+			await findButtonByText(
+				wrapper,
+				t("variable.actions.open-variable", { name: "Region" }),
+			).trigger("click")
+			await findButtonByText(
+				wrapper,
+				t("variable.variable-form.delete-button"),
+			).trigger("click")
+
+			await confirmDeletion()
+
+			expect.soft(wrapper.findComponent(VariableForm).exists()).toBe(true)
+			expect
+				.soft(raisedToasts())
+				.toMatchObject([
+					{ type: "error", title: t("general.errors.role-not-allowed") },
+				])
+		})
 	})
 
 	describe("deleting a group", () => {
@@ -367,6 +449,29 @@ describe("<Panel>", { concurrent: false }, () => {
 					title: t("variable.errors.group-delete-failed"),
 				}),
 			])
+		})
+
+		it("shows only the access denied toast for a refused group deletion", async ({
+			expect,
+		}) => {
+			stubThemeColorContext()
+			mockTree(fullTree())
+			mockEndpoint(
+				"DELETE",
+				`/api/variables/groups/${GROUP_DEPLOYS}`,
+				(_call, event) => refuseForRole(event),
+			)
+			const wrapper = await mountEditing()
+			await askToDeleteGroup(wrapper, "Deploys")
+
+			await confirmDeletion("variable.deletion-modal.group-confirm-button")
+
+			expect.soft(wrapper.findComponent(GroupForm).exists()).toBe(true)
+			expect
+				.soft(raisedToasts())
+				.toMatchObject([
+					{ type: "error", title: t("general.errors.role-not-allowed") },
+				])
 		})
 	})
 

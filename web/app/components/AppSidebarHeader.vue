@@ -12,6 +12,7 @@ const emit = defineEmits<{
 }>()
 
 const { changeColorTheme, color } = useAppearance()
+const { canRoleEdit } = useAuthSession()
 </script>
 
 <template>
@@ -100,6 +101,7 @@ const { changeColorTheme, color } = useAppearance()
 				</ShadcnUiDropdownMenuItem>
 			</ShadcnUiDropdownMenuContent>
 			<ShortcutTooltip
+				v-if="canRoleEdit"
 				side="bottom"
 				:shortcut="SHORTCUT_ACTIONS.createNewDocument"
 			>

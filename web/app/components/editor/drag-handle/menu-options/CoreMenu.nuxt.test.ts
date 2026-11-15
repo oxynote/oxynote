@@ -13,10 +13,13 @@ import {
 } from "../../test-helpers/node-view"
 import { BLOCK_GRID_NAME, METRIC_BLOCK_NAME } from "../../blocks/node-names"
 import { SUPPRESS_SCROLL_TO_SELECTION_META } from "../../scroll-control"
+import { clearQueryCache } from "~/composables/api/test-helpers"
 import {
 	clearTeleportedOverlays,
 	menuItem,
 	openSubMenu,
+	seedAuthOrganization,
+	seedAuthSession,
 	t,
 } from "~/components/test-helpers"
 
@@ -152,6 +155,7 @@ describe("<CoreMenu>", { concurrent: false }, () => {
 	})
 
 	afterEach(clearTeleportedOverlays)
+	afterEach(clearQueryCache)
 
 	it("offers the block actions for an ordinary block", async ({ expect }) => {
 		const { editor } = makeMenuEditor()
@@ -176,6 +180,18 @@ describe("<CoreMenu>", { concurrent: false }, () => {
 		await mountCoreMenu(editor, block("paragraph", { uid: "block-1" }))
 
 		expect(menuLabels()).toEqual([t(COPY_LINK), t(ADD_COMMENT)])
+	})
+
+	it("offers a viewer no comment on a draft's block", async ({ expect }) => {
+		seedAuthSession({ id: "u1" })
+		seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+		useEditorMeta().setEditable(false)
+		useEditorStore().setBranchReviewableActionsActive(true)
+		const { editor } = makeMenuEditor()
+
+		await mountCoreMenu(editor, block("paragraph", { uid: "block-1" }))
+
+		expect(menuLabels()).toEqual([t(COPY_LINK)])
 	})
 
 	it("offers no comment action while comments are not allowed", async ({

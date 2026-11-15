@@ -1,5 +1,6 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { Editor } from "@tiptap/vue-3"
+import { BubbleMenu } from "@tiptap/vue-3/menus"
 import Blockquote from "@tiptap/extension-blockquote"
 import Bold from "@tiptap/extension-bold"
 import Code from "@tiptap/extension-code"
@@ -12,11 +13,18 @@ import Strike from "@tiptap/extension-strike"
 import Text from "@tiptap/extension-text"
 import Underline from "@tiptap/extension-underline"
 import { enableAutoUnmount, type VueWrapper } from "@vue/test-utils"
-import { afterEach, describe, it } from "vitest"
+import { afterEach, beforeEach, describe, it } from "vitest"
 import TextBubbleMenu from "./TextBubbleMenu.vue"
 import { CommentMark } from "./comments/comment-mark"
 import LinkCreateMenu from "./link/LinkCreateMenu.vue"
-import { at, renderedIconNames, t } from "~/components/test-helpers"
+import { clearQueryCache } from "~/composables/api/test-helpers"
+import {
+	at,
+	renderedIconNames,
+	seedAuthOrganization,
+	seedAuthSession,
+	t,
+} from "~/components/test-helpers"
 
 let editor: Editor | null = null
 
@@ -249,6 +257,72 @@ describe("<TextBubbleMenu>", { concurrent: false }, () => {
 		expect(wrapper.emitted("add-thread")).toHaveLength(1)
 	})
 
+	it("shows the diff menu over a focused selection", async ({ expect }) => {
+		const target = makeMenuEditor("<p>hello world</p>")
+		selectAll(target)
+
+		const wrapper = await mountMenu(target, {
+			diffContext: { positionMap: [] },
+		})
+
+		expect(shouldShow(wrapper, target)).toBe(true)
+	})
+
+	// the role is read from the auth cache, which every mount shares
+	describe("for a viewer", { concurrent: false }, () => {
+		beforeEach(() => {
+			seedAuthSession({ id: "u1" })
+			seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+		})
+
+		afterEach(clearQueryCache)
+
+		it("shows no diff menu, since its only action is a comment", async ({
+			expect,
+		}) => {
+			const target = makeMenuEditor("<p>hello world</p>")
+			selectAll(target)
+
+			const wrapper = await mountMenu(target, {
+				diffContext: { positionMap: [] },
+			})
+
+			expect(shouldShow(wrapper, target)).toBe(false)
+			expect(wrapper.findAll("button")).toHaveLength(0)
+		})
+
+		it("keeps the formatting menu outside a diff", async ({ expect }) => {
+			const target = makeMenuEditor("<p>hello world</p>")
+			selectAll(target)
+
+			const wrapper = await mountMenu(target)
+
+			expect(shouldShow(wrapper, target)).toBe(true)
+		})
+	})
+
+	describe("when the role changes", { concurrent: false }, () => {
+		afterEach(clearQueryCache)
+
+		it("removes an open diff menu once the role turns to viewer", async ({
+			expect,
+		}) => {
+			seedAuthSession({ id: "u1" })
+			seedAuthOrganization({ members: [{ userId: "u1", role: "editor" }] })
+			const target = makeMenuEditor("<p>hello world</p>")
+			selectAll(target)
+			const wrapper = await mountMenu(target, {
+				diffContext: { positionMap: [] },
+			})
+			expect(wrapper.findAll("button")).toHaveLength(1)
+
+			seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+			await nextTick()
+
+			expect(wrapper.findAll("button")).toHaveLength(0)
+		})
+	})
+
 	it("stays invisible until the menu is positioned", async ({ expect }) => {
 		const target = makeMenuEditor("<p>hello world</p>")
 		selectAll(target)
@@ -260,3 +334,19 @@ describe("<TextBubbleMenu>", { concurrent: false }, () => {
 		).toBeUndefined()
 	})
 })
+
+// asks the bubble menu whether it would show over the current selection.
+// The test editor never holds the focus, so the view reports that it does.
+function shouldShow(wrapper: VueWrapper, target: Editor): boolean {
+	const check = wrapper.findComponent(BubbleMenu).props("shouldShow") as (
+		opts: Record<string, unknown>,
+	) => boolean
+
+	return check({
+		editor: target,
+		state: target.state,
+		view: { hasFocus: () => true },
+		from: target.state.selection.from,
+		to: target.state.selection.to,
+	})
+}

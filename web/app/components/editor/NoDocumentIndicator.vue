@@ -9,6 +9,8 @@ const emit = defineEmits<{
 	(e: "load-complete" | "create-document"): void
 }>()
 
+const { canRoleEdit } = useAuthSession()
+
 onMounted(() => {
 	emit("load-complete")
 })
@@ -21,13 +23,22 @@ onMounted(() => {
 		>
 			<div class="flex max-w-80 flex-col gap-2 text-center">
 				<h1 class="text-xl font-semibold text-foreground">
-					{{ $t("editor.no-document-indicator.heading") }}
+					{{
+						canRoleEdit
+							? $t("editor.no-document-indicator.heading")
+							: $t("editor.no-document-indicator.heading-viewer")
+					}}
 				</h1>
 				<p class="text-base text-muted-foreground">
-					{{ $t("editor.no-document-indicator.subheading") }}
+					{{
+						canRoleEdit
+							? $t("editor.no-document-indicator.subheading")
+							: $t("editor.no-document-indicator.subheading-viewer")
+					}}
 				</p>
 			</div>
 			<ShadcnUiButton
+				v-if="canRoleEdit"
 				size="lg"
 				:class="
 					cn('h-[2.5rem] w-60', props.createLoading && 'pointer-events-none')

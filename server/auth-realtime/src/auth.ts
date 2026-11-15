@@ -572,7 +572,8 @@ export async function refuseLastMemberOrAdminDeletion(
 // claim. The bootstrap admin's address receives no mail, so the new
 // address gets the link that completes the change instead, the one
 // better-auth sends when no approval is configured. better-auth signs its
-// tokens with the configured secret, so this one verifies like its own.
+// tokens with the configured secret, so this one verifies like its own. It
+// refuses a change token that does not name the user, so this one does.
 export async function sendChangeEmailConfirmation(
 	env: Env,
 	core: CoreClient,
@@ -580,7 +581,11 @@ export async function sendChangeEmailConfirmation(
 		user,
 		newEmail,
 		url,
-	}: { user: { email: string }; newEmail: string; url: string },
+	}: {
+		user: { id: string; email: string }
+		newEmail: string
+		url: string
+	},
 ): Promise<void> {
 	if (user.email !== bootstrapAdmin.email) {
 		await core.sendEmail("email_change_confirmation", {
@@ -599,7 +604,10 @@ export async function sendChangeEmailConfirmation(
 			user.email,
 			newEmail,
 			undefined,
-			{ requestType: "change-email-verification" },
+			{
+				requestType: "change-email-verification",
+				userId: user.id,
+			},
 		),
 	)
 

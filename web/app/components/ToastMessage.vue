@@ -1,10 +1,11 @@
 <script lang="ts" setup>
 import { cn } from "#layers/ui/app/lib/utils"
+import type { ToastText } from "./toast"
 
 const props = defineProps<{
 	type: "success" | "error" | "info" | "warning"
 	title: string
-	description?: string
+	description?: string | ToastText
 	action?: { label: string; onClick: () => void }
 }>()
 const emit = defineEmits<{
@@ -56,7 +57,20 @@ function runAction() {
 				v-if="props.description"
 				class="text-2sm font-normal text-muted-foreground"
 			>
-				{{ props.description }}
+				<i18n-t
+					v-if="typeof props.description === 'object'"
+					scope="global"
+					:keypath="props.description.keypath"
+				>
+					<template
+						v-for="(value, name) in props.description.params"
+						:key="name"
+						#[name]
+					>
+						<span class="font-medium text-foreground">{{ value }}</span>
+					</template>
+				</i18n-t>
+				<template v-else>{{ props.description }}</template>
 			</div>
 			<ShadcnUiButton
 				v-if="props.action"

@@ -6,7 +6,7 @@ import * as z from "zod"
 import { FormField as ShadcnUiFormField } from "#layers/ui/app/components/shadcn/ui/form"
 import { cn } from "#layers/ui/app/lib/utils"
 import type { OrganizationMember } from "./workspace"
-import { showToastMessage } from "../toast"
+import { showRequestErrorToast, showToastMessage } from "../toast"
 
 const emit = defineEmits<{
 	(event: "url-change" | "invitation"): void
@@ -18,11 +18,13 @@ const {
 	fetchAuthSession,
 	updateOrganization,
 	updateOrganizationMemberRole,
+	canRoleManage,
 } = useAuthSession()
 const { isEmailEnabled, maxOrganizationMembers } = useAuthAPI()
 const { t } = useI18n({ useScope: "global" })
 const { uploadOrganizationLogo } = useOrganizationAPI()
 const config = useRuntimeConfig()
+const isMinWidth768px = useMediaQuery("(min-width: 768px)")
 
 const formSchema = toTypedSchema(
 	z.object({
@@ -167,8 +169,8 @@ async function handleLogoChange(event: Event) {
 		await onSubmit()
 	} catch (error) {
 		if (!handleStorageError(error, t)) {
-			showToastMessage(
-				"error",
+			showRequestErrorToast(
+				error,
 				t("settings.workspace.errors.toasts.logo.title"),
 				t("settings.workspace.errors.toasts.logo.description"),
 			)
@@ -179,7 +181,7 @@ async function handleLogoChange(event: Event) {
 }
 
 function handleAvatarClick() {
-	if (loading.value === "logo") {
+	if (!canRoleManage.value || loading.value === "logo") {
 		return
 	}
 
@@ -188,6 +190,17 @@ function handleAvatarClick() {
 
 function handleMemberDelete(member: OrganizationMember) {
 	emit("member-removal", member)
+}
+
+// an admin changes the roles of the other members, never their own. A
+// pending invitation keeps the role it was sent with, because a new role
+// needs a new invitation.
+function canChangeRole(member: OrganizationMember) {
+	return canRoleManage.value && !member.invitationPending && !isSelf(member)
+}
+
+function isSelf(member: OrganizationMember) {
+	return member.userId === fetchAuthSession.state.value.data?.data?.user.id
 }
 
 async function changeMemberRole(member: OrganizationMember, role: unknown) {
@@ -203,12 +216,23 @@ async function changeMemberRole(member: OrganizationMember, role: unknown) {
 		showToastMessage(
 			"error",
 			t("settings.workspace.errors.toasts.role.title"),
-			error.message,
+			t("settings.workspace.errors.toasts.role.description"),
 		)
 
 		return
 	}
 
+	showToastMessage(
+		"success",
+		t("settings.workspace.success-messages.role.title"),
+		{
+			keypath: `settings.workspace.success-messages.role.description.${role}`,
+			params: {
+				name: member.user.name,
+				role: t(`general.member-roles.${role}`),
+			},
+		},
+	)
 	await fetchOrganization.refetch()
 }
 
@@ -220,6 +244,11 @@ async function copyInvitationLink(member: OrganizationMember) {
 
 	await navigator.clipboard.writeText(member.invitationUrl)
 	showToastMessage("success", t("settings.workspace.invitation-link-copied"))
+}
+
+async function copyEmail(member: OrganizationMember) {
+	await navigator.clipboard.writeText(member.user.email)
+	showToastMessage("success", t("settings.workspace.email-copied"))
 }
 </script>
 <template>
@@ -243,7 +272,12 @@ async function copyInvitationLink(member: OrganizationMember) {
 				</div>
 				<ShadcnUiFormControl>
 					<ShadcnUiAvatar
-						class="group/avatar size-8.5 cursor-pointer rounded-md border"
+						:class="
+							cn(
+								'group/avatar size-8.5 rounded-md border',
+								canRoleManage && 'cursor-pointer',
+							)
+						"
 						@click="handleAvatarClick"
 					>
 						<ShadcnUiAvatarImage
@@ -258,6 +292,7 @@ async function copyInvitationLink(member: OrganizationMember) {
 							/>
 						</ShadcnUiAvatarFallback>
 						<div
+							v-if="canRoleManage"
 							:data-loading="loading === 'logo' ? '' : undefined"
 							class="absolute top-1/2 left-1/2 z-10 flex size-full -translate-x-1/2 -translate-y-1/2 items-center justify-center bg-black/40 opacity-0 transition group-hover/avatar:opacity-100 data-loading:opacity-100 dark:bg-white/50"
 						>
@@ -297,7 +332,7 @@ async function copyInvitationLink(member: OrganizationMember) {
 					</div>
 				</div>
 				<div class="w-full shrink-0 sm:w-44 md:w-52">
-					<ShadcnUiFormControl>
+					<ShadcnUiFormControl v-if="canRoleManage">
 						<ShadcnUiInput
 							type="text"
 							:placeholder="$t('settings.workspace.name-placeholder')"
@@ -310,6 +345,9 @@ async function copyInvitationLink(member: OrganizationMember) {
 							@blur="onSubmit()"
 						/>
 					</ShadcnUiFormControl>
+					<div v-else class="truncate text-2sm sm:text-right">
+						{{ componentField.modelValue }}
+					</div>
 					<ShadcnUiFormMessage class="text-2xs" />
 				</div>
 			</ShadcnUiFormItem>
@@ -338,6 +376,7 @@ async function copyInvitationLink(member: OrganizationMember) {
 					</div>
 				</div>
 				<ShadcnUiButton
+					v-if="canRoleManage"
 					type="button"
 					class="size-6 shrink-0 bg-transparent p-0"
 					variant="outline"
@@ -374,6 +413,7 @@ async function copyInvitationLink(member: OrganizationMember) {
 				</i18n-t>
 
 				<ShadcnUiButton
+					v-if="canRoleManage"
 					type="button"
 					variant="ghost-plain"
 					:class="cn('gap-1.5 p-0 text-sm')"
@@ -387,6 +427,7 @@ async function copyInvitationLink(member: OrganizationMember) {
 				<colgroup>
 					<col class="w-auto md:w-25 lg:w-30" />
 					<col class="hidden md:table-column md:w-9 lg:w-14" />
+					<col class="hidden md:table-column md:w-6 lg:w-7" />
 					<col class="w-5 lg:w-7" />
 				</colgroup>
 				<tbody class="divide-y divide-border/70 dark:divide-border/50">
@@ -413,13 +454,8 @@ async function copyInvitationLink(member: OrganizationMember) {
 									</ShadcnUiAvatarFallback>
 								</ShadcnUiAvatar>
 								<div class="flex min-w-0 flex-col">
-									<div class="flex min-w-0 items-center gap-1.5">
-										<span class="truncate text-sm">
-											{{ member.user.name }}
-										</span>
-										<span class="shrink-0 text-2xs text-muted-foreground">
-											{{ $t(`general.member-roles.${member.role}`) }}
-										</span>
+									<div class="truncate text-sm">
+										{{ member.user.name }}
 									</div>
 									<div class="truncate text-2sm text-muted-foreground">
 										{{ member.user.email }}
@@ -446,12 +482,50 @@ async function copyInvitationLink(member: OrganizationMember) {
 								</div>
 							</div>
 						</td>
+						<td class="hidden md:table-cell">
+							<ShadcnUiSelect
+								v-if="canChangeRole(member)"
+								:model-value="member.role"
+								@update:model-value="changeMemberRole(member, $event)"
+							>
+								<ShadcnUiSelectTrigger disable-default-styles as-child>
+									<ShadcnUiButton
+										variant="ghost-plain"
+										size="custom"
+										class="gap-0.5 text-2sm text-foreground"
+									>
+										{{ $t(`general.member-roles.${member.role}`) }}
+										<Icon
+											name="lucide:chevron-down"
+											class="size-3.5 translate-y-0.25 text-muted-foreground"
+										/>
+									</ShadcnUiButton>
+								</ShadcnUiSelectTrigger>
+								<ShadcnUiSelectContent inside-modal class="max-w-72">
+									<ShadcnUiSelectItem
+										v-for="role in ROLES"
+										:key="role"
+										:value="role"
+									>
+										<div
+											class="flex min-w-0 flex-col gap-0.5 whitespace-normal"
+										>
+											<span class="text-2sm text-popover-foreground">
+												{{ $t(`general.member-roles.${role}`) }}
+											</span>
+											<span class="text-xs text-muted-foreground">
+												{{ $t(`general.member-role-descriptions.${role}`) }}
+											</span>
+										</div>
+									</ShadcnUiSelectItem>
+								</ShadcnUiSelectContent>
+							</ShadcnUiSelect>
+							<span v-else class="text-2sm font-medium">
+								{{ $t(`general.member-roles.${member.role}`) }}
+							</span>
+						</td>
 						<td>
 							<div
-								v-if="
-									member.userId !==
-									fetchAuthSession.state.value.data?.data?.user.id
-								"
 								class="flex h-full items-center justify-end whitespace-nowrap"
 							>
 								<ShadcnUiDropdownMenu>
@@ -478,8 +552,56 @@ async function copyInvitationLink(member: OrganizationMember) {
 										loop
 										inside-modal
 									>
+										<!-- the role column hides on small screens, so the role moves here -->
+										<template v-if="!isMinWidth768px">
+											<ShadcnUiDropdownMenuSub>
+												<ShadcnUiDropdownMenuSubTrigger>
+													<div class="flex w-full items-center gap-1.5">
+														<Icon name="lucide:user-round-cog" />
+														<span>
+															{{
+																$t(
+																	"settings.workspace.member-options.role.title",
+																)
+															}}
+														</span>
+													</div>
+												</ShadcnUiDropdownMenuSubTrigger>
+												<ShadcnUiDropdownMenuSubContent class="max-w-72">
+													<ShadcnUiDropdownMenuItem
+														v-for="role in ROLES"
+														:key="role"
+														:active="role === member.role"
+														:disabled="!canChangeRole(member)"
+														@click="changeMemberRole(member, role)"
+													>
+														<div class="flex min-w-0 flex-1 flex-col gap-0.5">
+															<span class="text-2sm text-popover-foreground">
+																{{ $t(`general.member-roles.${role}`) }}
+															</span>
+															<span class="text-xs text-muted-foreground">
+																{{
+																	$t(`general.member-role-descriptions.${role}`)
+																}}
+															</span>
+														</div>
+													</ShadcnUiDropdownMenuItem>
+												</ShadcnUiDropdownMenuSubContent>
+											</ShadcnUiDropdownMenuSub>
+											<ShadcnUiDropdownMenuSeparator />
+										</template>
+										<ShadcnUiDropdownMenuItem @click="copyEmail(member)">
+											<Icon name="lucide:copy" />
+											<span>
+												{{
+													$t(
+														"settings.workspace.member-options.copy-email.title",
+													)
+												}}
+											</span>
+										</ShadcnUiDropdownMenuItem>
 										<ShadcnUiDropdownMenuItem
-											v-if="member.invitationUrl"
+											v-if="canRoleManage && member.invitationUrl"
 											@click="copyInvitationLink(member)"
 										>
 											<Icon name="lucide:link" />
@@ -491,31 +613,8 @@ async function copyInvitationLink(member: OrganizationMember) {
 												}}
 											</span>
 										</ShadcnUiDropdownMenuItem>
-										<ShadcnUiDropdownMenuSub v-if="!member.invitationPending">
-											<ShadcnUiDropdownMenuSubTrigger>
-												<Icon name="lucide:user-round-cog" />
-												<span>
-													{{
-														$t("settings.workspace.member-options.role.title")
-													}}
-												</span>
-											</ShadcnUiDropdownMenuSubTrigger>
-											<ShadcnUiDropdownMenuSubContent inside-modal>
-												<ShadcnUiDropdownMenuRadioGroup
-													:model-value="member.role"
-													@update:model-value="changeMemberRole(member, $event)"
-												>
-													<ShadcnUiDropdownMenuRadioItem
-														v-for="role in ROLES"
-														:key="role"
-														:value="role"
-													>
-														{{ $t(`general.member-roles.${role}`) }}
-													</ShadcnUiDropdownMenuRadioItem>
-												</ShadcnUiDropdownMenuRadioGroup>
-											</ShadcnUiDropdownMenuSubContent>
-										</ShadcnUiDropdownMenuSub>
 										<ShadcnUiDropdownMenuItem
+											v-if="canRoleManage && !isSelf(member)"
 											@click="handleMemberDelete(member)"
 										>
 											<Icon name="lucide:user-round-x" />

@@ -5,7 +5,7 @@ import * as z from "zod"
 // for some reason this isn't auto imported
 import { FormField as ShadcnUiFormField } from "#layers/ui/app/components/shadcn/ui/form"
 import { cn } from "#layers/ui/app/lib/utils"
-import { showToastMessage } from "../toast"
+import { showRequestErrorToast, showToastMessage } from "../toast"
 
 const props = defineProps<{
 	creationType?: DataSourceType
@@ -125,8 +125,8 @@ const onSubmit = form.handleSubmit(async (values) => {
 				status &&
 				DataSourceErrorStatuses.map((v) => v as string).includes(status)
 			) {
-				showToastMessage(
-					"error",
+				showRequestErrorToast(
+					err,
 					t(
 						`settings.action-modals.data-source-upsert.error-message.status.${status}.title.creation`,
 						{
@@ -141,8 +141,8 @@ const onSubmit = form.handleSubmit(async (values) => {
 				return
 			}
 
-			showToastMessage(
-				"error",
+			showRequestErrorToast(
+				err,
 				t(
 					"settings.action-modals.data-source-upsert.error-message.creation.generic.title",
 					{
@@ -223,8 +223,8 @@ const onSubmit = form.handleSubmit(async (values) => {
 				status &&
 				DataSourceErrorStatuses.map((v) => v as string).includes(status)
 			) {
-				showToastMessage(
-					"error",
+				showRequestErrorToast(
+					err,
 					t(
 						`settings.action-modals.data-source-upsert.error-message.status.${status}.title.update`,
 						{
@@ -239,8 +239,8 @@ const onSubmit = form.handleSubmit(async (values) => {
 				return
 			}
 
-			showToastMessage(
-				"error",
+			showRequestErrorToast(
+				err,
 				t(
 					"settings.action-modals.data-source-upsert.error-message.update.generic.title",
 					{

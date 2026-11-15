@@ -2,6 +2,7 @@ import { describe, it } from "vitest"
 import {
 	acceptInvitationUrl,
 	isInvitationRedirect,
+	isRoleRefusal,
 	nextUrlWithHash,
 	oidcErrorCallbackUrl,
 	postAuthDocumentUrl,
@@ -118,5 +119,38 @@ describe("postEmailVerificationUrl", () => {
 		expect(postEmailVerificationUrl(undefined, "a@test.io")).toBe(
 			"/verify-email?new=a%40test.io",
 		)
+	})
+})
+
+describe("isRoleRefusal", () => {
+	it.for([
+		{
+			name: "recognizes a 403 that names the role",
+			input: { statusCode: 403, data: { code: "member.forbidden" } },
+			expected: true,
+		},
+		{
+			name: "rejects a 403 with another code",
+			input: { statusCode: 403, data: { code: "document.branch_protected" } },
+			expected: false,
+		},
+		{
+			name: "rejects the role's code under another status",
+			input: { statusCode: 400, data: { code: "member.forbidden" } },
+			expected: false,
+		},
+		{
+			name: "rejects a 403 without a body",
+			input: { statusCode: 403, data: null },
+			expected: false,
+		},
+		{
+			name: "rejects an error that carries no response",
+			input: new Error("x"),
+			expected: false,
+		},
+		{ name: "rejects a missing error", input: undefined, expected: false },
+	])("$name", ({ input, expected }, { expect }) => {
+		expect(isRoleRefusal(input)).toBe(expected)
 	})
 })
