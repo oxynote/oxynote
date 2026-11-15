@@ -1204,7 +1204,7 @@ describe("sendChangeEmailConfirmation", () => {
 		const core = stubCore()
 
 		await sendChangeEmailConfirmation(testEnv(), core, {
-			user: { email: "old@b.c" },
+			user: { id: "u1", email: "old@b.c" },
 			newEmail: "new@b.c",
 			url: "http://localhost:8080/api/auth/verify-email?token=tok&callbackURL=%2F",
 		})
@@ -1225,7 +1225,7 @@ describe("sendChangeEmailConfirmation", () => {
 		const core = stubCore()
 
 		await sendChangeEmailConfirmation(testEnv(), core, {
-			user: { email: "admin@example.com" },
+			user: { id: "u1", email: "admin@example.com" },
 			newEmail: "new@b.c",
 			url: "http://localhost:8080/api/auth/verify-email?token=tok&callbackURL=%2F",
 		})
@@ -1255,6 +1255,7 @@ describe("sendChangeEmailConfirmation", () => {
 			email: "admin@example.com",
 			updateTo: "new@b.c",
 			requestType: "change-email-verification",
+			userId: "u1",
 		})
 	})
 
@@ -1265,7 +1266,7 @@ describe("sendChangeEmailConfirmation", () => {
 
 		await expect(
 			sendChangeEmailConfirmation(testEnv(), core, {
-				user: { email: "old@b.c" },
+				user: { id: "u1", email: "old@b.c" },
 				newEmail: "new@b.c",
 				url: "http://localhost:8080/api/auth/verify-email?token=tok",
 			}),
@@ -1714,7 +1715,7 @@ describe("createAuth", () => {
 				auth.options.user.changeEmail
 					.sendChangeEmailConfirmation,
 			)({
-				user: { email: "old@b.c" },
+				user: { id: "u1", email: "old@b.c" },
 				newEmail: "new@b.c",
 				url: "http://localhost:8080/api/auth/change/tok",
 				token: "tok",

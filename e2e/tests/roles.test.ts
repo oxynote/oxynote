@@ -108,8 +108,12 @@ test.describe("member roles", () => {
 		const settings = await openSettings(page, workspace.name)
 		const row = settings.locator("tr", { hasText: editor.credentials.email })
 		await row.getByRole("combobox").click()
+		// an option's name is the role followed by its description, and the
+		// editor's description names the viewer role too
 		await page
-			.getByRole("option", { name: t("general.member-roles.viewer") })
+			.getByRole("option", {
+				name: new RegExp(`^${t("general.member-roles.viewer")}`),
+			})
 			.click()
 		await expect(row).toContainText(t("general.member-roles.viewer"))
 		await expect(async () => {
