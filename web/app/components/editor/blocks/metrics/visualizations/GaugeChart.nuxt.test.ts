@@ -1,4 +1,6 @@
+import { mockNuxtImport } from "@nuxt/test-utils/runtime"
 import { beforeEach, describe, it, vi } from "vitest"
+import { nextTick, ref } from "vue"
 import GaugeChart from "./GaugeChart.vue"
 import ChartTitle from "./ChartTitle.vue"
 import {
@@ -9,8 +11,9 @@ import {
 	type ChartSeries,
 } from "./test-helpers"
 import { stubChartColorContext } from "../test-helpers"
-import { VisualizationDataUnit } from "../utils"
+import { VisualizationDataUnit, VisualizationMiscUnit } from "../utils"
 import type { MultipleGaugeChartData } from "."
+import { t } from "~/components/test-helpers"
 
 // the stand-in chart reports a canvas that never fits its host, so every
 // redraw the component asks for reaches resize
@@ -21,6 +24,17 @@ const { chartStub } = vi.hoisted(() => ({
 		getWidth: () => 0,
 		getHeight: () => 0,
 	},
+}))
+
+const gaugeSize = vi.hoisted(() => ({
+	width: null as unknown as { value: number },
+	height: null as unknown as { value: number },
+}))
+
+mockNuxtImport("useChartSize", () => () => ({
+	width: gaugeSize.width,
+	height: gaugeSize.height,
+	redraw: chartStub.resize,
 }))
 
 // echarts draws onto a canvas happy-dom does not implement; the option
@@ -70,6 +84,8 @@ describe("<GaugeChart>", { concurrent: false }, () => {
 	beforeEach(() => {
 		stubChartColorContext()
 		chartStub.resize.mockReset()
+		gaugeSize.width = ref(500)
+		gaugeSize.height = ref(320)
 	})
 
 	it("draws the value and its name", async ({ expect }) => {
@@ -217,6 +233,83 @@ describe("<GaugeChart>", { concurrent: false }, () => {
 
 		expect(ring.min).toBe(0)
 		expect(ring.max).toBe(200)
+	})
+
+	it("uses the configured percentage bounds even when a threshold exceeds them", async ({
+		expect,
+	}) => {
+		const wrapper = await mountGauge({
+			gauges: [{ name: "cpu", value: 29 }],
+			unit: { type: VisualizationMiscUnit.Percent0to100, custom: null },
+			thresholds: [{ value: 120, color: "#ff0000" }],
+		})
+
+		const ring = valueRing(chartOption(wrapper), 1)
+
+		expect(ring.min).toBe(0)
+		expect(ring.max).toBe(100)
+	})
+
+	it("keeps the percentage default on an unconfigured bound", async ({
+		expect,
+	}) => {
+		const wrapper = await mountGauge({
+			gauges: [{ name: "ratio", value: 0.29 }],
+			unit: { type: VisualizationMiscUnit.Percent0to1, custom: null },
+			axisBounds: { min: 0.2 },
+		})
+
+		const ring = valueRing(chartOption(wrapper))
+
+		expect(ring.min).toBe(0.2)
+		expect(ring.max).toBe(1)
+	})
+
+	it("exposes overflowing gauges through a labelled keyboard scroll region", async ({
+		expect,
+	}) => {
+		const wrapper = await mountGauge({ gauges: FIVE_GAUGES })
+		const region = wrapper.get('[role="region"]')
+
+		expect(region.attributes("tabindex")).toBe("0")
+		expect(region.attributes("aria-label")).toBe(
+			t("editor.metrics.gauge-scroll-label"),
+		)
+		expect(wrapper.text()).toContain(t("editor.metrics.gauge-scroll-hint"))
+	})
+
+	it("shows and hides the overflow cue as the series count changes", async ({
+		expect,
+	}) => {
+		const wrapper = await mountGauge()
+		const hint = t("editor.metrics.gauge-scroll-hint")
+
+		expect(wrapper.text()).not.toContain(hint)
+
+		await wrapper.setProps({ gauges: FIVE_GAUGES })
+		expect(wrapper.text()).toContain(hint)
+
+		await wrapper.setProps({ gauges: GAUGES })
+		expect(wrapper.text()).not.toContain(hint)
+	})
+
+	it("shows the overflow cue when the container narrows", async ({
+		expect,
+	}) => {
+		gaugeSize.height.value = 220
+		const wrapper = await mountGauge({
+			gauges: [
+				{ name: "cpu", value: 40 },
+				{ name: "memory", value: 70 },
+			],
+		})
+
+		expect(wrapper.text()).not.toContain(t("editor.metrics.gauge-scroll-hint"))
+
+		gaugeSize.width.value = 220
+		await nextTick()
+
+		expect(wrapper.text()).toContain(t("editor.metrics.gauge-scroll-hint"))
 	})
 
 	it("shows the value in the configured unit", async ({ expect }) => {

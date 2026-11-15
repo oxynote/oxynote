@@ -1017,6 +1017,52 @@ describe("calculateYAxisBounds", () => {
 			expected,
 		)
 	})
+
+	it.for([
+		{
+			name: "uses 0 to 100 for Percent (0-100)",
+			values: [29, 120],
+			threshold: 130,
+			unit: VisualizationMiscUnit.Percent0to100,
+			expected: { min: 0, max: 100 },
+		},
+		{
+			name: "uses 0 to 1 for Percent (0-1)",
+			values: [0.29, 1.2],
+			threshold: 1.3,
+			unit: VisualizationMiscUnit.Percent0to1,
+			expected: { min: 0, max: 1 },
+		},
+	])("$name", ({ values, threshold, unit, expected }, { expect }) => {
+		expect(
+			calculateYAxisBounds(
+				bars(...values),
+				[{ value: threshold }],
+				0.1,
+				undefined,
+				unit,
+			),
+		).toEqual(expected)
+	})
+
+	it.for([
+		{
+			name: "keeps the default maximum when only the minimum is overridden",
+			unit: VisualizationMiscUnit.Percent0to100,
+			bounds: { min: 20 },
+			expected: { min: 20, max: 100 },
+		},
+		{
+			name: "keeps the default minimum when only the maximum is overridden",
+			unit: VisualizationMiscUnit.Percent0to1,
+			bounds: { max: 0.8 },
+			expected: { min: 0, max: 0.8 },
+		},
+	])("$name", ({ unit, bounds, expected }, { expect }) => {
+		expect(
+			calculateYAxisBounds(bars(0.29, 1.2), undefined, 0.1, bounds, unit),
+		).toEqual(expected)
+	})
 })
 
 describe("calculateGaugeAxisBounds", () => {
@@ -1113,6 +1159,52 @@ describe("calculateGaugeAxisBounds", () => {
 	])("$name", ({ values, bounds, expected }, { expect }) => {
 		expect(
 			calculateGaugeAxisBounds(gauges(...values), undefined, 0.1, bounds),
+		).toEqual(expected)
+	})
+
+	it.for([
+		{
+			name: "uses 0 to 100 for Percent (0-100)",
+			values: [29, 120],
+			threshold: 130,
+			unit: VisualizationMiscUnit.Percent0to100,
+			expected: { min: 0, max: 100 },
+		},
+		{
+			name: "uses 0 to 1 for Percent (0-1)",
+			values: [0.29, 1.2],
+			threshold: 1.3,
+			unit: VisualizationMiscUnit.Percent0to1,
+			expected: { min: 0, max: 1 },
+		},
+	])("$name", ({ values, threshold, unit, expected }, { expect }) => {
+		expect(
+			calculateGaugeAxisBounds(
+				gauges(...values),
+				[{ value: threshold }],
+				0.1,
+				undefined,
+				unit,
+			),
+		).toEqual(expected)
+	})
+
+	it.for([
+		{
+			name: "keeps the default maximum when only the minimum is overridden",
+			unit: VisualizationMiscUnit.Percent0to100,
+			bounds: { min: 20 },
+			expected: { min: 20, max: 100 },
+		},
+		{
+			name: "keeps the default minimum when only the maximum is overridden",
+			unit: VisualizationMiscUnit.Percent0to1,
+			bounds: { max: 0.8 },
+			expected: { min: 0, max: 0.8 },
+		},
+	])("$name", ({ unit, bounds, expected }, { expect }) => {
+		expect(
+			calculateGaugeAxisBounds(gauges(0.29, 1.2), undefined, 0.1, bounds, unit),
 		).toEqual(expected)
 	})
 })

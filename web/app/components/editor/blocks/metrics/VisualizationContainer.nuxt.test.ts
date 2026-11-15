@@ -12,6 +12,7 @@ import {
 	defaultMetricConfig,
 	MetricSimulationPreset,
 	type MetricConfig,
+	VisualizationMiscUnit,
 } from "./utils"
 import { RefreshInterval, TimeRangePreset } from "~/utils/time-range"
 import {
@@ -370,6 +371,40 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 			expect(chartNames(wrapper)).toEqual(["GaugeChart"])
 		}, WAIT_FOR_OPTIONS)
 	})
+
+	it.for([
+		{
+			name: "line chart",
+			type: GenericQueryChartType.Line,
+			chart: "LineChart",
+		},
+		{ name: "bar chart", type: GenericQueryChartType.Bar, chart: "BarChart" },
+		{ name: "gauge", type: GenericQueryChartType.Gauge, chart: "GaugeChart" },
+	])(
+		"passes percentage units and manual bounds to the $name",
+		async ({ type, chart }, { expect }) => {
+			mockEndpoint("GET", QUERY_URL, () => seriesResult())
+
+			const config = metricConfig({
+				visualizationType: type,
+				unit: { type: VisualizationMiscUnit.Percent0to1, custom: null },
+				axisBounds: { min: 0.25, max: 0.75 },
+			})
+			const wrapper = await mountContainer(config)
+
+			await vi.waitFor(() => {
+				expect(chartNames(wrapper)).toEqual([chart])
+			}, WAIT_FOR_OPTIONS)
+
+			const props = wrapper.findComponent({ name: chart }).props() as {
+				unit: typeof config.unit
+				axisBounds: typeof config.axisBounds
+			}
+
+			expect(props.unit).toEqual(config.unit)
+			expect(props.axisBounds).toEqual(config.axisBounds)
+		},
+	)
 
 	it("passes only the enabled thresholds to the chart", async ({ expect }) => {
 		mockEndpoint("GET", QUERY_URL, () => seriesResult())

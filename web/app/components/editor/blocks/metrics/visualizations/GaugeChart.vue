@@ -49,6 +49,8 @@ const {
 	redraw,
 } = useChartSize(containerRef, chartElem, () => option.value)
 
+const scrollLeft = ref(0)
+
 const MIN_GAUGE_SIZE = 180 // minimum size for a single gauge in pixels
 const SIDE_PADDING = 10 // padding on each side in pixels
 const GAUGE_GAP = 20 // gap between gauges in pixels
@@ -108,7 +110,35 @@ watch(
 
 // the canvas host is as wide as the gauges need, which changes with their
 // count while the container keeps its size
-watch(() => gaugeLayout.value.totalWidth, redraw, { flush: "post" })
+watch(
+	() => gaugeLayout.value.totalWidth,
+	() => {
+		scrollLeft.value = containerRef.value?.scrollLeft ?? 0
+		redraw()
+	},
+	{ flush: "post" },
+)
+watch(
+	containerWidth,
+	() => {
+		scrollLeft.value = containerRef.value?.scrollLeft ?? 0
+	},
+	{ flush: "post" },
+)
+
+const hasMoreGauges = computed(() => {
+	const maxScrollLeft = gaugeLayout.value.totalWidth - containerWidth.value
+	return (
+		containerWidth.value > 0 &&
+		containerHeight.value > 0 &&
+		maxScrollLeft > 1 &&
+		scrollLeft.value < maxScrollLeft - 1
+	)
+})
+
+function updateScrollPosition(event: Event) {
+	scrollLeft.value = (event.currentTarget as HTMLDivElement).scrollLeft
+}
 
 function buildGaugeSeries(
 	gauge: GaugeChartData,
@@ -308,6 +338,7 @@ const option = computed<ECOption>(() => {
 		props.thresholds,
 		0.1,
 		props.axisBounds,
+		props.unit.type,
 	)
 	const series: GaugeSeriesOption[] = []
 
@@ -368,13 +399,28 @@ const chartStyle = computed(() => {
 		printing a scrollbar -->
 		<div
 			ref="chart-container"
-			class="size-full min-w-0 overflow-x-auto overflow-y-hidden print:overflow-hidden"
+			role="region"
+			tabindex="0"
+			:aria-label="$t('editor.metrics.gauge-scroll-label')"
+			class="size-full min-w-0 overflow-x-auto overflow-y-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none print:overflow-hidden"
+			@scroll="updateScrollPosition"
 		>
 			<VChart
 				ref="chart"
 				:style="chartStyle"
 				:option="option"
 				:update-options="{ notMerge: true }"
+			/>
+		</div>
+		<div
+			v-if="hasMoreGauges"
+			aria-hidden="true"
+			class="pointer-events-none absolute right-2 bottom-2 z-10 rounded-full border border-border bg-background/90 px-2 py-1 text-xs text-muted-foreground shadow-sm print:hidden"
+		>
+			{{ $t("editor.metrics.gauge-scroll-hint") }}
+			<Icon
+				name="lucide:chevrons-right"
+				class="inline-block size-3.5 align-text-bottom"
 			/>
 		</div>
 		<ChartTitle
