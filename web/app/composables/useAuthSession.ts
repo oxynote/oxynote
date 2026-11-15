@@ -54,7 +54,11 @@ export default function () {
 			if (__DESKTOP_BUILD__) {
 				return (await getHost().auth.getFullOrganization()) as never
 			}
-			return await $authClient.organization.getFullOrganization()
+			// without a limit, better-auth returns at most 100 members. The
+			// role checks below need the user's own entry, so ask for all.
+			return await $authClient.organization.getFullOrganization({
+				query: { membersLimit: Number.MAX_SAFE_INTEGER },
+			})
 		},
 		refetchOnMount: false,
 		refetchOnWindowFocus: false,

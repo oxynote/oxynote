@@ -655,6 +655,31 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 		expect(showToastMessageMock).not.toHaveBeenCalled()
 	})
 
+	// a read-only connection that turns writable and back starts a second
+	// wait while the first still runs
+	it("warns once when the connection turns read-only again during the role read", async ({
+		expect,
+	}) => {
+		seedAuthOrganization(organization("editor"))
+		mockAuthEndpoint(
+			"organization/get-full-organization",
+			() => organization("editor"),
+			"GET",
+		)
+		await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "read-write" })
+		await nextTick()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "read-write" })
+		await nextTick()
+
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await settleMutations()
+
+		expect(showToastMessageMock).toHaveBeenCalledTimes(1)
+	})
+
 	it("warns an editor whose connection comes back read-only for another reason", async ({
 		expect,
 	}) => {

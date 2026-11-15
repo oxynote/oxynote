@@ -301,10 +301,17 @@ watchImmediate(
 	},
 )
 
-watch(unexpectedReadOnly, async (readOnly) => {
+watch(unexpectedReadOnly, async (readOnly, _, onCleanup) => {
 	if (!readOnly) {
 		return
 	}
+
+	// a branch switch while the wait below runs starts a second wait. Only
+	// the latest one may warn.
+	const latest = new AbortController()
+	onCleanup(() => {
+		latest.abort()
+	})
 
 	// a demoted editor's connection comes back read-only before the role
 	// read that its reconnect started has answered. So the warning waits for
@@ -316,7 +323,7 @@ watch(unexpectedReadOnly, async (readOnly) => {
 		await read
 	} while (read !== roleRead)
 
-	if (!unexpectedReadOnly.value) {
+	if (latest.signal.aborted || !unexpectedReadOnly.value) {
 		return
 	}
 

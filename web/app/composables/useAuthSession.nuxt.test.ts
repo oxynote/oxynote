@@ -247,7 +247,11 @@ describe("useAuthSession", { concurrent: false }, () => {
 		expect(result.data).toEqual(sessionData)
 	})
 
-	it("fetches the organization through the auth client", async ({ expect }) => {
+	// without a limit better-auth returns at most 100 members, and the role
+	// checks need the user's own entry
+	it("fetches the organization through the auth client with every member", async ({
+		expect,
+	}) => {
 		const orgData = { data: { id: "o1", slug: "my-org" }, error: null }
 		authClientStub.organization.getFullOrganization.mockResolvedValue(
 			orgData as never,
@@ -258,7 +262,9 @@ describe("useAuthSession", { concurrent: false }, () => {
 
 		expect(
 			authClientStub.organization.getFullOrganization,
-		).toHaveBeenCalledTimes(1)
+		).toHaveBeenCalledExactlyOnceWith({
+			query: { membersLimit: Number.MAX_SAFE_INTEGER },
+		})
 		expect(result.data).toEqual(orgData)
 	})
 

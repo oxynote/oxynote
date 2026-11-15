@@ -144,6 +144,23 @@ describe("<HookMenuFooter>", { concurrent: false }, () => {
 		expect(renderedIconNames(wrapper)).toEqual(["mingcute:lock-line"])
 	})
 
+	// the branch connection starts writable and learns its read-only scope
+	// later, so a viewer can briefly get a create or edit footer
+	it.for(["create", "edit"] as const)(
+		"shows a viewer no save or delete in %s mode",
+		async (mode, { expect }) => {
+			seedAuthSession({ id: "u1" })
+			seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+
+			const wrapper = await mountSuspended(HookMenuFooter, {
+				props: { mode },
+			})
+
+			expect(wrapper.findAll("button")).toHaveLength(0)
+			expect(wrapper.text()).toBe(t("editor.hooks.read-only-viewer"))
+		},
+	)
+
 	it("tells how to leave the diff to edit", async ({ expect }) => {
 		const wrapper = await mountSuspended(HookMenuFooter, {
 			props: { mode: "diff" },

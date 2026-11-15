@@ -1,3 +1,4 @@
+import { flushPromises } from "@vue/test-utils"
 import type { VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
@@ -263,6 +264,22 @@ describe("<Panel>", { concurrent: false }, () => {
 			expect(wrapper.findComponent(VariableForm).exists()).toBe(false)
 			expect(wrapper.findComponent(EditList).exists()).toBe(true)
 		})
+	})
+
+	it("closes an open deletion dialog once the reader's role turns to viewer", async ({
+		expect,
+	}) => {
+		mockTree(fullTree())
+		seedAuthSession({ id: "u1" })
+		seedAuthOrganization({ members: [{ userId: "u1", role: "editor" }] })
+		const wrapper = await mountEditing()
+		await askToDeleteRegion(wrapper)
+		expect(dialogText()).toContain("Region")
+
+		seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+		await flushPromises()
+
+		expect(dialogText()).toBe("")
 	})
 
 	describe("deleting a variable", () => {

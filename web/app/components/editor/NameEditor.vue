@@ -381,8 +381,9 @@ function selectIcon(v: string) {
 }
 
 async function executeReviewableAction() {
+	const action = processedReviewableAction.value
 	if (
-		!processedReviewableAction.value ||
+		!action ||
 		!editorStore.activeDocumentId ||
 		!editorStore.activeBranchId ||
 		!editorStore.targetBranchId
@@ -395,7 +396,14 @@ async function executeReviewableAction() {
 
 	// TODO make editor read only during loading (styles shouldn't changed)
 
-	switch (processedReviewableAction.value) {
+	// a user who lost the editor role during the delay no longer merges
+	if (action === ReviewableAction.Merge && !canRoleEdit.value) {
+		reviewableActionLoading.value = false
+
+		return
+	}
+
+	switch (action) {
 		case ReviewableAction.ApproveUnapprove: {
 			const newStatus = !approvedByActiveUser.value
 

@@ -21,7 +21,7 @@ const { canRoleEdit } = useAuthSession()
 </script>
 
 <template>
-	<div v-if="props.mode === 'create'" class="px-2 py-1.5">
+	<div v-if="props.mode === 'create' && canRoleEdit" class="px-2 py-1.5">
 		<ShadcnUiButton
 			class="w-full gap-1"
 			size="2sm"
@@ -32,7 +32,10 @@ const { canRoleEdit } = useAuthSession()
 			{{ $t("editor.hooks.create") }}
 		</ShadcnUiButton>
 	</div>
-	<div v-else-if="props.mode === 'edit'" class="flex gap-1.5 px-2 py-1.5">
+	<div
+		v-else-if="props.mode === 'edit' && canRoleEdit"
+		class="flex gap-1.5 px-2 py-1.5"
+	>
 		<ShadcnUiButton
 			class="flex-1 gap-1"
 			size="2sm"

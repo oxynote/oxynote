@@ -1001,6 +1001,35 @@ describe("<NameEditor>", { concurrent: false }, () => {
 		])
 	})
 
+	it("neither merges nor approves once the role turns to viewer during the delay", async ({
+		expect,
+	}) => {
+		useEditorStore().setBranchReviewableActionsActive(true)
+		const mergeCalls = mockMergeEndpoint(() => null)
+		const approvalCalls = mockEndpoint(
+			"PUT",
+			`/api/documents/${DOCUMENT_ID}/branches/${BRANCH_ID}/review-approve`,
+			() => null,
+		)
+		const wrapper = await mountEditor()
+		await openActionMenu(wrapper)
+		menuItem(t("editor.name-editor.review-workflow.merge.title")).click()
+		await nextTick()
+		vi.useFakeTimers()
+		await findButtonByText(
+			wrapper,
+			t("editor.name-editor.review-workflow.merge.title"),
+		).trigger("click")
+
+		seedAuthOrganization({ members: [{ userId: ME, role: "viewer" }] })
+		await vi.advanceTimersByTimeAsync(REVIEWABLE_ACTION_DELAY_MS)
+		await settleMutations()
+
+		expect(mergeCalls).toHaveLength(0)
+		expect(approvalCalls).toHaveLength(0)
+		expect(toast.custom).toHaveBeenCalledTimes(0)
+	})
+
 	it("offers a viewer the approval but no switch to merging", async ({
 		expect,
 	}) => {

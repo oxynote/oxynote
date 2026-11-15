@@ -20,8 +20,12 @@ const handlers: Record<string, (args: never) => Promise<unknown>> = {
 	"auth:updateUser": (args) => authClient.updateUser(args),
 	"auth:changeEmail": (args) => authClient.changeEmail(args),
 	"auth:deleteUser": (args) => authClient.deleteUser(args),
+	// without a limit, better-auth returns at most 100 members, and the
+	// renderer reads the user's role from their own entry
 	"auth:getFullOrganization": () =>
-		authClient.organization.getFullOrganization(),
+		authClient.organization.getFullOrganization({
+			query: { membersLimit: Number.MAX_SAFE_INTEGER },
+		}),
 	"auth:checkOrganizationSlug": (args) =>
 		authClient.organization.checkSlug(args),
 	"auth:createOrganization": (args) => authClient.organization.create(args),

@@ -38,11 +38,12 @@ onBeforeMount(() => {
 	void fetchVariables.refresh()
 })
 
-// a reader whose role changes to viewer mid-edit leaves edit mode, since
-// a viewer changes no variables
+// a reader whose role changes to viewer mid-edit leaves edit mode and
+// any open deletion dialog, since a viewer changes no variables
 watch(canRoleEdit, (allowed) => {
 	if (!allowed) {
 		stopEditing()
+		pendingDeletion.value = null
 	}
 })
 

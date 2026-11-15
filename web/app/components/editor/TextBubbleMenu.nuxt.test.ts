@@ -288,6 +288,38 @@ describe("<TextBubbleMenu>", { concurrent: false }, () => {
 			})
 
 			expect(shouldShow(wrapper, target)).toBe(false)
+			expect(wrapper.findAll("button")).toHaveLength(0)
+		})
+
+		it("keeps the formatting menu outside a diff", async ({ expect }) => {
+			const target = makeMenuEditor("<p>hello world</p>")
+			selectAll(target)
+
+			const wrapper = await mountMenu(target)
+
+			expect(shouldShow(wrapper, target)).toBe(true)
+		})
+	})
+
+	describe("when the role changes", { concurrent: false }, () => {
+		afterEach(clearQueryCache)
+
+		it("removes an open diff menu once the role turns to viewer", async ({
+			expect,
+		}) => {
+			seedAuthSession({ id: "u1" })
+			seedAuthOrganization({ members: [{ userId: "u1", role: "editor" }] })
+			const target = makeMenuEditor("<p>hello world</p>")
+			selectAll(target)
+			const wrapper = await mountMenu(target, {
+				diffContext: { positionMap: [] },
+			})
+			expect(wrapper.findAll("button")).toHaveLength(1)
+
+			seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+			await nextTick()
+
+			expect(wrapper.findAll("button")).toHaveLength(0)
 		})
 	})
 
