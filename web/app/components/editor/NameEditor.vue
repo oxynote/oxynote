@@ -382,11 +382,12 @@ function selectIcon(v: string) {
 
 async function executeReviewableAction() {
 	const action = processedReviewableAction.value
+	const targetBranchId = editorStore.targetBranchId
 	if (
 		!action ||
 		!editorStore.activeDocumentId ||
 		!editorStore.activeBranchId ||
-		!editorStore.targetBranchId
+		!targetBranchId
 	) {
 		return
 	}
@@ -398,6 +399,17 @@ async function executeReviewableAction() {
 
 	// a user who lost the editor role during the delay no longer merges
 	if (action === ReviewableAction.Merge && !canRoleEdit.value) {
+		reviewableActionLoading.value = false
+
+		return
+	}
+
+	// the target selector stays usable during the delay, so a merge is
+	// cancelled when the target changed since the button was pressed
+	if (
+		action === ReviewableAction.Merge &&
+		editorStore.targetBranchId !== targetBranchId
+	) {
 		reviewableActionLoading.value = false
 
 		return
@@ -435,7 +447,7 @@ async function executeReviewableAction() {
 				await mergeDocumentBranches.mutateAsync({
 					docId: editorStore.activeDocumentId,
 					fromBranchId: editorStore.activeBranchId,
-					toBranchId: editorStore.targetBranchId,
+					toBranchId: targetBranchId,
 				})
 				emit("branch-merged", false)
 				showToastMessage(
