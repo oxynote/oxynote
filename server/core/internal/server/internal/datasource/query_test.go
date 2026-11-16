@@ -167,7 +167,7 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 			Target: "http://test.com/?q=up&chartType=bogus",
 			ID:     _testID.String(),
 			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"chart_type.invalid","message":"Invalid chart type. Must be one of: line, bar, gauge."}`),
+				hasResp(http.StatusBadRequest, `{"code":"chart_type.invalid","message":"invalid chart type, must be line_chart, bar_chart or gauge_chart"}`),
 				wasExecutorQueryCalled(0, 0, 0),
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
