@@ -1986,18 +1986,53 @@ describe("createRoutes", () => {
 			).toBe("true")
 		})
 
-		it("does not answer an untrusted origin with its own origin", async ({
+		it("allows the desktop app's origin to send credentials", async ({
 			expect,
 		}) => {
 			const { app } = build()
 
 			const res = await app.request("/auth-config", {
-				headers: { Origin: "http://evil.example" },
+				headers: { Origin: "oxynote://app" },
 			})
 
 			expect(
 				res.headers.get("Access-Control-Allow-Origin"),
-			).not.toBe("http://evil.example")
+			).toBe("oxynote://app")
+			expect(
+				res.headers.get(
+					"Access-Control-Allow-Credentials",
+				),
+			).toBe("true")
 		})
+
+		it.for([
+			{
+				name: "an untrusted origin",
+				input: "http://evil.example",
+			},
+			{
+				name: "another oxynote origin",
+				input: "oxynote://evil",
+			},
+			{
+				name: "a prefix of a trusted origin",
+				input: "http://localhost:808",
+			},
+		])(
+			"does not answer $name with its own origin",
+			async ({ input }, { expect }) => {
+				const { app } = build()
+
+				const res = await app.request("/auth-config", {
+					headers: { Origin: input },
+				})
+
+				expect(
+					res.headers.get(
+						"Access-Control-Allow-Origin",
+					),
+				).not.toBe(input)
+			},
+		)
 	})
 })
