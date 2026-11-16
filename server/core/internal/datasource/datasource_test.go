@@ -155,14 +155,22 @@ func Test_NewDataSource(t *testing.T) {
 			Err:   ErrInvalidName,
 		},
 		"Invalid credentials": {
-			Input: CreateInput{Type: TypePrometheus, Name: "test-source", Credentials: stubCredentials(`[1]`)},
+			Input: CreateInput{Type: TypePrometheus, Name: "test-source", URL: "http://prometheus.test", Credentials: stubCredentials(`[1]`)},
 			Err:   credentials.ErrInvalid,
+		},
+		"URL of white space only": {
+			Input: CreateInput{Type: TypePrometheus, Name: "test-source", URL: " \t\n "},
+			Err:   ErrInvalidURL,
+		},
+		"URL that does not parse": {
+			Input: CreateInput{Type: TypePrometheus, Name: "test-source", URL: "http://prometheus.test/%"},
+			Err:   ErrInvalidURL,
 		},
 		"Successful creation": {
 			Input: CreateInput{
 				Type:        TypePrometheus,
 				Name:        " test-source ",
-				URL:         "http://prometheus.test",
+				URL:         " http://prometheus.test\n",
 				Credentials: creds,
 			},
 			Result: &DataSource{
@@ -266,33 +274,57 @@ func Test_CreateInput_Validate(t *testing.T) {
 			Input: CreateInput{Type: TypePrometheus, Name: strings.Repeat("é", _maxNameLength+1)},
 			Err:   ErrNameTooLong,
 		},
+		"Empty URL": {
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics"},
+			Err:   ErrInvalidURL,
+		},
+		"URL of white space only": {
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", URL: " \t\n "},
+			Err:   ErrInvalidURL,
+		},
+		"URL that does not parse": {
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", URL: "http://prometheus:9090/%"},
+			Err:   ErrInvalidURL,
+		},
 		"Credentials that are not an object": {
-			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: stubCredentials(`[1]`)},
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", URL: "http://source.test", Credentials: stubCredentials(`[1]`)},
 			Err:   credentials.ErrInvalid,
 		},
 		"Credentials holding a number": {
-			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: stubCredentials(`{"username":1,"kind":"basic"}`)},
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", URL: "http://source.test", Credentials: stubCredentials(`{"username":1,"kind":"basic"}`)},
 			Err:   credentials.ErrInvalid,
 		},
 		"Credentials without a kind": {
-			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: stubCredentials(`{"username":"user"}`)},
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", URL: "http://source.test", Credentials: stubCredentials(`{"username":"user"}`)},
 			Err:   credentials.ErrInvalid,
 		},
 		"Token credentials for a SQL type": {
-			Input: CreateInput{Type: TypePostgreSQL, Name: "DB", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
+			Input: CreateInput{Type: TypePostgreSQL, Name: "DB", URL: "postgres://db.test:5432/oxynote", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
 			Err:   credentials.ErrInvalid,
 		},
 		"Token credentials for Loki": {
-			Input: CreateInput{Type: TypeLoki, Name: "Logs", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
+			Input: CreateInput{Type: TypeLoki, Name: "Logs", URL: "http://loki.test", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
 		},
 		"No credentials": {
-			Input: CreateInput{Type: TypePrometheus, Name: "Metrics"},
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", URL: "http://source.test"},
 		},
 		"Name at the limit once trimmed": {
-			Input: CreateInput{Type: TypePrometheus, Name: " " + strings.Repeat("é", _maxNameLength) + " "},
+			Input: CreateInput{Type: TypePrometheus, Name: " " + strings.Repeat("é", _maxNameLength) + " ", URL: "http://source.test"},
 		},
 		"Valid credentials": {
-			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: stubCredentials(`{"username":"user","password":"pass","kind":"basic"}`)},
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", URL: "http://source.test", Credentials: stubCredentials(`{"username":"user","password":"pass","kind":"basic"}`)},
+		},
+		"URL with outer white space": {
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", URL: " http://source.test\n"},
+		},
+		"Demo URL": {
+			Input: CreateInput{Type: TypePrometheus, Name: "Demo", URL: demo.URL},
+		},
+		"PostgreSQL URL": {
+			Input: CreateInput{Type: TypePostgreSQL, Name: "DB", URL: "postgres://user:pass@db.test:5432/oxynote?sslmode=disable"},
+		},
+		"MySQL URL": {
+			Input: CreateInput{Type: TypeMySQL, Name: "DB", URL: "mysql://user:pass@db.test:3306/oxynote"},
 		},
 	}
 
@@ -313,12 +345,16 @@ func Test_CreateInput_sanitize(t *testing.T) {
 		Result CreateInput
 	}{
 		"Name without outer white space": {
-			Input:  CreateInput{Type: TypePrometheus, Name: "Metrics"},
-			Result: CreateInput{Type: TypePrometheus, Name: "Metrics"},
+			Input:  CreateInput{Type: TypePrometheus, Name: "Metrics", URL: "http://source.test"},
+			Result: CreateInput{Type: TypePrometheus, Name: "Metrics", URL: "http://source.test"},
 		},
 		"Name with outer white space": {
-			Input:  CreateInput{Type: TypePrometheus, Name: " \tMetrics\n "},
-			Result: CreateInput{Type: TypePrometheus, Name: "Metrics"},
+			Input:  CreateInput{Type: TypePrometheus, Name: " \tMetrics\n ", URL: "http://source.test"},
+			Result: CreateInput{Type: TypePrometheus, Name: "Metrics", URL: "http://source.test"},
+		},
+		"URL with outer white space": {
+			Input:  CreateInput{Type: TypePrometheus, Name: "Metrics", URL: " \thttp://source.test\n "},
+			Result: CreateInput{Type: TypePrometheus, Name: "Metrics", URL: "http://source.test"},
 		},
 	}
 
@@ -351,6 +387,28 @@ func Test_DataSource_ApplyUpdate(t *testing.T) {
 			},
 			Err: ErrInvalidName,
 		},
+		"URL of white space only": {
+			DataSource: &DataSource{
+				Type: TypePrometheus,
+				Name: "old",
+				URL:  "http://old.test",
+			},
+			Inp: UpdateInput{
+				URL: null.StringFrom("   "),
+			},
+			Err: ErrInvalidURL,
+		},
+		"URL that does not parse": {
+			DataSource: &DataSource{
+				Type: TypePrometheus,
+				Name: "old",
+				URL:  "http://old.test",
+			},
+			Inp: UpdateInput{
+				URL: null.StringFrom("http://old.test/%"),
+			},
+			Err: ErrInvalidURL,
+		},
 		"Error returned by updatedCredentials": {
 			DataSource: &DataSource{
 				Type: Type("bogus"),
@@ -382,6 +440,18 @@ func Test_DataSource_ApplyUpdate(t *testing.T) {
 				URL:  null.StringFrom("http://new.test"),
 			},
 			Name: "new",
+			URL:  "http://new.test",
+		},
+		"Successful update of a padded url": {
+			DataSource: &DataSource{
+				Type: TypePrometheus,
+				Name: "old",
+				URL:  "http://old.test",
+			},
+			Inp: UpdateInput{
+				URL: null.StringFrom(" http://new.test\n"),
+			},
+			Name: "old",
 			URL:  "http://new.test",
 		},
 		// the stored credentials were entered for the old endpoint.
@@ -613,11 +683,29 @@ func Test_UpdateInput_Validate(t *testing.T) {
 			Input: UpdateInput{Name: null.StringFrom(strings.Repeat("a", _maxNameLength+1))},
 			Err:   ErrNameTooLong,
 		},
+		"Empty URL": {
+			Input: UpdateInput{URL: null.StringFrom("")},
+			Err:   ErrInvalidURL,
+		},
+		"URL of white space only": {
+			Input: UpdateInput{URL: null.StringFrom(" \t\n ")},
+			Err:   ErrInvalidURL,
+		},
+		"URL that does not parse": {
+			Input: UpdateInput{URL: null.StringFrom("http://prometheus:9090/%")},
+			Err:   ErrInvalidURL,
+		},
 		"Name unset": {
 			Input: UpdateInput{URL: null.StringFrom("http://new.test")},
 		},
+		"URL unset": {
+			Input: UpdateInput{Name: null.StringFrom("Metrics")},
+		},
 		"Name with outer white space": {
 			Input: UpdateInput{Name: null.StringFrom(" Metrics ")},
+		},
+		"URL with outer white space": {
+			Input: UpdateInput{URL: null.StringFrom(" http://new.test ")},
 		},
 	}
 
@@ -644,6 +732,10 @@ func Test_UpdateInput_sanitize(t *testing.T) {
 		"Name with outer white space": {
 			Input:  UpdateInput{Name: null.StringFrom(" Metrics\t")},
 			Result: UpdateInput{Name: null.StringFrom("Metrics")},
+		},
+		"URL with outer white space": {
+			Input:  UpdateInput{URL: null.StringFrom(" http://new.test\n")},
+			Result: UpdateInput{URL: null.StringFrom("http://new.test")},
 		},
 	}
 
