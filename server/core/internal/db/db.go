@@ -172,7 +172,9 @@ func New(
 		goose.DialectPostgres,
 		sqlDB.DB,
 		fsys,
-		goose.WithGoMigrations(migrations.Go()...),
+		goose.WithGoMigrations(migrations.Go(migrations.Deps{
+			DataSourceKeys: opts.DataSourceCredentialsKeys,
+		})...),
 		goose.WithDisableGlobalRegistry(true),
 	)
 	if err != nil {

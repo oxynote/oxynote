@@ -16,8 +16,8 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
-	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 )
 
@@ -128,7 +128,7 @@ func (l *Loki) TestConnection(ctx context.Context) (ConnectionStatus, error) {
 
 	client, err := l.client()
 	if err != nil {
-		if errors.Is(err, _errInvalidCACertificate) {
+		if errors.Is(err, credentials.ErrInvalidCACertificate) {
 			return ConnectionStatusInvalidCACertificate, nil
 		}
 
@@ -484,23 +484,18 @@ func (l *Loki) request(
 func (l *Loki) client() (*http.Client, error) {
 	rawCreds := l.inp.Credentials()
 
-	creds, err := rawCreds.basic()
+	auth, err := rawCreds.Read()
 	if err != nil {
 		return nil, err
 	}
 
-	transport, err := l.transport.roundTripper(http.DefaultTransport, l.inp.URL(), creds)
+	transport, err := l.transport.roundTripper(http.DefaultTransport, l.inp.URL(), auth)
 	if err != nil {
 		return nil, err
 	}
 
-	// credentials holding only a CA certificate authenticate nobody.
-	if creds.Username != "" || creds.Password != "" {
-		transport = config.NewBasicAuthRoundTripper(
-			config.NewInlineSecret(creds.Username),
-			config.NewInlineSecret(creds.Password),
-			transport,
-		)
+	if auth != nil {
+		transport = auth.Authorize(transport)
 	}
 
 	return &http.Client{

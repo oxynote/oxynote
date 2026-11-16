@@ -53,34 +53,42 @@ export interface DataSource {
 	status: DataSourceStatus
 	createdAt: Date | string
 	updatedAt: Date | string | null
-	// which credentials are set, never their values; an older server omits it
-	configured?: Partial<Record<DataSourceCredentialKey, boolean>>
+	// the stored credentials, never their values; absent without any
+	credentials?: DataSourceStoredCredentials
 }
 
-export type DataSourceCredentialKey = "username" | "password" | "caCertificate"
+export interface DataSourceStoredCredentials {
+	kind: DataSourceCredentialsKind
+	// which credentials are set
+	configured: Partial<Record<DataSourceCredentialKey, boolean>>
+}
 
-export interface DataSourceCredentialsPrometheus {
+export type DataSourceCredentialsKind = "basic" | "token"
+
+export type DataSourceCredentialKey =
+	"username" | "password" | "token" | "caCertificate"
+
+export interface DataSourceBasicCredentials {
+	kind: "basic"
 	username: string
 	password: string
 	caCertificate?: string
 }
 
-export interface DataSourceCredentialsLoki {
-	username: string
-	password: string
-	caCertificate?: string
-}
-
-export interface DataSourceCredentialsSQL {
-	username: string
-	password: string
+export interface DataSourceTokenCredentials {
+	kind: "token"
+	token: string
 	caCertificate?: string
 }
 
 export type DataSourceCredentials =
-	| DataSourceCredentialsPrometheus
-	| DataSourceCredentialsLoki
-	| DataSourceCredentialsSQL
+	DataSourceBasicCredentials | DataSourceTokenCredentials
+
+// an absent field keeps the stored value, and an absent kind the stored
+// kind
+export type DataSourceCredentialsUpdate = Partial<
+	Record<DataSourceCredentialKey, string>
+> & { kind?: DataSourceCredentialsKind }
 
 export interface DataSourceCreateRequest {
 	type: DataSourceType
@@ -92,7 +100,7 @@ export interface DataSourceCreateRequest {
 export interface DataSourceUpdateRequest {
 	name?: string | null
 	url?: string | null
-	credentials?: Partial<DataSourceCredentials> | null
+	credentials?: DataSourceCredentialsUpdate | null
 }
 
 export type DataSourceResponse = DataSource
