@@ -96,6 +96,69 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 		expect(nameInput(wrapper).element.value).toBe("Acme")
 	})
 
+	it("fills the name field once a late organization arrives", async ({
+		expect,
+	}) => {
+		mockAuthOrganization(null)
+
+		const { wrapper } = await mountSection()
+		expect(nameInput(wrapper).element.value).toBe("")
+
+		mockAuthOrganization({
+			id: "org-1",
+			name: "Acme",
+			slug: "acme-corp",
+			logo: "",
+			members: [member("u1", "ada")],
+			invitations: [],
+		})
+		await nextTick()
+
+		expect(nameInput(wrapper).element.value).toBe("Acme")
+	})
+
+	it("follows a name that changed since the field was filled", async ({
+		expect,
+	}) => {
+		seedWorkspace()
+
+		const { wrapper } = await mountSection()
+		expect(nameInput(wrapper).element.value).toBe("Acme")
+
+		mockAuthOrganization({
+			id: "org-1",
+			name: "Acme-Renamed",
+			slug: "acme-corp",
+			logo: "",
+			members: [member("u1", "ada")],
+			invitations: [],
+		})
+		await nextTick()
+
+		expect(nameInput(wrapper).element.value).toBe("Acme-Renamed")
+	})
+
+	it("leaves a half-typed name alone when the organization updates", async ({
+		expect,
+	}) => {
+		seedWorkspace()
+
+		const { wrapper } = await mountSection()
+		await nameInput(wrapper).setValue("half-typed")
+
+		mockAuthOrganization({
+			id: "org-1",
+			name: "Acme-Renamed",
+			slug: "acme-corp",
+			logo: "",
+			members: [member("u1", "ada")],
+			invitations: [],
+		})
+		await nextTick()
+
+		expect(nameInput(wrapper).element.value).toBe("half-typed")
+	})
+
 	it("shows the workspace url", async ({ expect }) => {
 		seedWorkspace()
 
@@ -152,6 +215,45 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			data: { name: "Acme-EU" },
 			organizationId: "org-1",
 		})
+	})
+
+	it("retains the saved name when blurred after form submission", async ({
+		expect,
+	}) => {
+		const org = {
+			id: "org-1",
+			name: "Acme",
+			slug: "acme-corp",
+			logo: "",
+			members: [member("u1", "ada")],
+			invitations: [],
+		}
+		mockAuthOrganization(org)
+		const calls = mockAuthEndpoint("organization/update", (args) => {
+			const body = args.body as { data: { name?: string } }
+			if (body.data.name) {
+				org.name = body.data.name
+			}
+			return { id: "org-1" }
+		})
+		const { wrapper } = await mountSection()
+
+		await nameInput(wrapper).setValue("Acme-EU")
+		await wrapper.find("form").trigger("submit")
+
+		await vi.waitFor(() => {
+			expect(calls).toHaveLength(1)
+		}, WAIT_FOR_OPTIONS)
+		expect(calls[0]?.body).toEqual({
+			data: { name: "Acme-EU" },
+			organizationId: "org-1",
+		})
+
+		await nameInput(wrapper).trigger("blur")
+		await settleMutations()
+
+		expect(calls).toHaveLength(1)
+		expect(nameInput(wrapper).element.value).toBe("Acme-EU")
 	})
 
 	it("saves a name made of several words", async ({ expect }) => {

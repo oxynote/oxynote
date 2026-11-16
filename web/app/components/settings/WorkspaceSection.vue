@@ -26,10 +26,7 @@ const config = useRuntimeConfig()
 
 const formSchema = toTypedSchema(
 	z.object({
-		logoUrl: z
-			.string()
-			.trim()
-			.default(fetchOrganization.state.value.data?.data?.logo || ""),
+		logoUrl: z.string().trim().default(""),
 		name: z
 			.string()
 			.trim()
@@ -38,11 +35,31 @@ const formSchema = toTypedSchema(
 			.regex(/^[a-zA-Z0-9-_ ]+$/, {
 				message: t("settings.workspace.errors.name-regex"),
 			})
-			.default(fetchOrganization.state.value.data?.data?.name || ""),
+			.default(""),
 	}),
 )
 const form = useForm({
 	validationSchema: formSchema,
+})
+
+// the organization arrives asynchronously, so the form follows it rather
+// than reading it once during setup. A dialog mounted before the query
+// settles would keep showing an empty name, and one reopened after a save
+// would show the value from before it. Resetting only while the form is clean
+// leaves a half-typed edit alone.
+const organization = computed(() => fetchOrganization.state.value.data?.data)
+
+watchImmediate(organization, (org) => {
+	if (!org || form.meta.value.dirty) {
+		return
+	}
+
+	form.resetForm({
+		values: {
+			logoUrl: org.logo || "",
+			name: org.name,
+		},
+	})
 })
 const members = computed<OrganizationMember[]>(() => {
 	const organization = fetchOrganization.state.value.data?.data
@@ -129,6 +146,13 @@ const onSubmit = form.handleSubmit(async (values) => {
 	}
 
 	await fetchOrganization.refetch()
+
+	form.resetForm({
+		values: {
+			logoUrl: fetchOrganization.state.value.data?.data?.logo || "",
+			name: fetchOrganization.state.value.data?.data?.name || "",
+		},
+	})
 
 	loading.value = null
 
