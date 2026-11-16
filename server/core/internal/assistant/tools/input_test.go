@@ -768,8 +768,9 @@ func Test_input_FetchDocument(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB  *DBMock
-		Err error
+		DB    *DBMock
+		DocID xid.ID
+		Err   error
 	}{
 		"Error returned by db.FetchDocument": {
 			DB:  failingDocumentDB(),
@@ -783,6 +784,18 @@ func Test_input_FetchDocument(t *testing.T) {
 			},
 			Err: ErrUnknownDocument,
 		},
+		"Branch id passed as document id": {
+			DocID: _stubBranchID,
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
+					return nil, errutil.ErrNotFound
+				},
+				FetchDocumentByBranchIDFunc: func(_ context.Context, _ xid.ID, orgID string) (*document.Document, error) {
+					return stubBranchDocument(_testDocID, orgID, _stubBranchID, _stubBranchName), nil
+				},
+			},
+			Err: fmt.Errorf("that id is a branch of document %s (%q); pass %s as document_id and this id as branch_id", _testDocID, _stubDocumentName, _testDocID),
+		},
 		"Default branch": {DB: stubDocumentDB()},
 	}
 
@@ -790,7 +803,12 @@ func Test_input_FetchDocument(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			doc, err := testDeps(c.DB, nil, nil).newInput(context.Background(), NameGetDocument).FetchDocument(_testDocID)
+			id := c.DocID
+			if id.IsNil() {
+				id = _testDocID
+			}
+
+			doc, err := testDeps(c.DB, nil, nil).newInput(context.Background(), NameGetDocument).FetchDocument(id)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, c.DB.FetchDocumentCalls(), 1)
@@ -809,11 +827,12 @@ func Test_input_FetchBranch(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB       *DBMock
-		Branch   xid.ID
-		Result   string
-		Listings int
-		Err      error
+		DB            *DBMock
+		Branch        xid.ID
+		Result        string
+		Listings      int
+		BranchIDCalls int
+		Err           error
 	}{
 		"Error returned by db.FetchDocumentByBranchID": {
 			DB: &DBMock{
@@ -821,14 +840,16 @@ func Test_input_FetchBranch(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			Branch: _stubBranchID,
-			Err:    assert.AnError,
+			Branch:        _stubBranchID,
+			BranchIDCalls: 1,
+			Err:           assert.AnError,
 		},
 		"Unknown branch names the ones that exist": {
-			DB:       stubDocumentDB(),
-			Branch:   _unknownBranchID,
-			Listings: 1,
-			Err:      fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
+			DB:            stubDocumentDB(),
+			Branch:        _unknownBranchID,
+			Listings:      1,
+			BranchIDCalls: 1,
+			Err:           fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
 		},
 		"Unknown branch of an unknown document": {
 			DB: &DBMock{
@@ -838,7 +859,9 @@ func Test_input_FetchBranch(t *testing.T) {
 			},
 			Branch:   _unknownBranchID,
 			Listings: 1,
-			Err:      ErrUnknownDocument,
+			// the unknown document is probed as a branch id too.
+			BranchIDCalls: 2,
+			Err:           ErrUnknownDocument,
 		},
 		// a branch id resolves on its own, so another document's branch
 		// is refused as unknown to this one.
@@ -851,19 +874,22 @@ func Test_input_FetchBranch(t *testing.T) {
 
 				return db
 			}(),
-			Branch:   _stubBranchID,
-			Listings: 1,
-			Err:      fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _stubBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
+			Branch:        _stubBranchID,
+			Listings:      1,
+			BranchIDCalls: 1,
+			Err:           fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _stubBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
 		},
 		"Default branch": {
-			DB:     stubDocumentDB(),
-			Branch: _stubMainBranchID,
-			Result: document.DefaultBranch,
+			DB:            stubDocumentDB(),
+			Branch:        _stubMainBranchID,
+			Result:        document.DefaultBranch,
+			BranchIDCalls: 1,
 		},
 		"Another branch": {
-			DB:     stubDocumentDB(),
-			Branch: _stubBranchID,
-			Result: _stubBranchName,
+			DB:            stubDocumentDB(),
+			Branch:        _stubBranchID,
+			Result:        _stubBranchName,
+			BranchIDCalls: 1,
 		},
 	}
 
@@ -876,7 +902,7 @@ func Test_input_FetchBranch(t *testing.T) {
 			doc, err := inp.FetchBranch(_testDocID, c.Branch)
 			testutil.AssertEqualError(t, c.Err, err)
 
-			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), 1)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.BranchIDCalls)
 			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), c.Listings)
 
 			if err != nil {
@@ -905,8 +931,9 @@ func Test_input_unknownBranchError(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB  *DBMock
-		Err error
+		DB    *DBMock
+		DocID xid.ID
+		Err   error
 	}{
 		// the listing itself failing is passed on.
 		"Error returned by db.FetchDocumentBranches": {
@@ -922,13 +949,32 @@ func Test_input_unknownBranchError(t *testing.T) {
 			DB:  stubDocumentDB(),
 			Err: fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
 		},
+		// a document id that names a branch says so and names its
+		// document, instead of reporting an unknown document.
+		"Document id names a branch": {
+			DocID: _stubBranchID,
+			DB: func() *DBMock {
+				db := stubDocumentDB()
+				db.FetchDocumentBranchesFunc = func(context.Context, xid.ID, string) ([]document.BranchSummary, error) {
+					return nil, nil
+				}
+
+				return db
+			}(),
+			Err: fmt.Errorf("that id is a branch of document %s (%q); pass %s as document_id and this id as branch_id", _testDocID, _stubDocumentName, _testDocID),
+		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			err := testDeps(c.DB, nil, nil).newInput(context.Background(), NameGetDocument).unknownBranchError(_testDocID, _unknownBranchID)
+			id := c.DocID
+			if id.IsNil() {
+				id = _testDocID
+			}
+
+			err := testDeps(c.DB, nil, nil).newInput(context.Background(), NameGetDocument).unknownBranchError(id, _unknownBranchID)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), 1)

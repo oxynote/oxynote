@@ -305,18 +305,40 @@ func (i *input) DataSourceRunner(id xid.ID) (datasource.Runner, error) {
 // FetchDocument returns the document on its default branch. An id naming
 // nothing in the session's organisation is reported as such rather
 // than in the driver's own words, which say nothing a caller can act
-// on.
+// on. An id naming one of a document's branches names that document
+// instead.
 func (i *input) FetchDocument(documentID xid.ID) (*document.Document, error) {
 	doc, err := i.db.FetchDocument(i.ctx, documentID, i.orgID, document.DefaultBranch)
 	if err != nil {
 		if errutil.IsNotFound(err) {
-			return nil, ErrUnknownDocument
+			return nil, i.unknownDocumentError(documentID)
 		}
 
 		return nil, err
 	}
 
 	return doc, nil
+}
+
+// unknownDocumentError returns the error for a document id that names
+// nothing in the organisation. When the id is one of a document's
+// branches instead, the error names that document and the ids to pass
+// next, so the caller recovers without listing the whole tree.
+func (i *input) unknownDocumentError(documentID xid.ID) error {
+	doc, err := i.db.FetchDocumentByBranchID(i.ctx, documentID, i.orgID)
+	if err != nil {
+		if errutil.IsNotFound(err) {
+			return ErrUnknownDocument
+		}
+
+		return err
+	}
+
+	if doc == nil {
+		return ErrUnknownDocument
+	}
+
+	return fmt.Errorf("that id is a branch of document %s (%q); pass %s as document_id and this id as branch_id", doc.ID, doc.DocumentName, doc.ID)
 }
 
 // FetchBranch returns the document on the branch branchID names. A branch id
@@ -352,10 +374,15 @@ func (i *input) FetchBranch(documentID, branchID xid.ID) (*document.Document, er
 
 // unknownBranchError returns the error for a branch the document does
 // not have. A document without branches is itself unknown, since every
-// document has one.
+// document has one. When the document id names a branch instead, the
+// error names the document that branch belongs to.
 func (i *input) unknownBranchError(documentID, branchID xid.ID) error {
 	branches, err := i.FetchDocumentBranches(documentID)
 	if err != nil {
+		if errors.Is(err, ErrUnknownDocument) {
+			return i.unknownDocumentError(documentID)
+		}
+
 		return err
 	}
 
