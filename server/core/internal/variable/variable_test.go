@@ -779,6 +779,14 @@ func Test_Input_Validate(t *testing.T) {
 			Input: with(func(vi *Input) { vi.Options = []OptionInput{{Value: ""}} }),
 			Err:   ErrInvalidOption,
 		},
+		"List with an option of white space only": {
+			Input: with(func(vi *Input) { vi.Options = []OptionInput{{Value: "   "}} }),
+			Err:   ErrInvalidOption,
+		},
+		"List repeating an option value after trimming": {
+			Input: with(func(vi *Input) { vi.Options = []OptionInput{{Value: "prod"}, {Value: "prod "}} }),
+			Err:   ErrDuplicateOptionValue,
+		},
 		"List with an option over the length limit": {
 			Input: with(func(vi *Input) { vi.Options = []OptionInput{{Value: strings.Repeat("a", 129)}} }),
 			Err:   ErrValueTooLong,
@@ -895,6 +903,20 @@ func Test_Input_sanitize(t *testing.T) {
 		"Name with outer white space": {
 			Input:  Input{Key: "region", Name: " Region\t", Type: TypeText},
 			Result: Input{Key: "region", Name: "Region", Type: TypeText},
+		},
+		"Options with outer white space": {
+			Input: Input{
+				Key:     "region",
+				Name:    "Region",
+				Type:    TypeList,
+				Options: []OptionInput{{Value: " eu-west-1 "}, {Value: "us-east-1\t"}},
+			},
+			Result: Input{
+				Key:     "region",
+				Name:    "Region",
+				Type:    TypeList,
+				Options: []OptionInput{{Value: "eu-west-1"}, {Value: "us-east-1"}},
+			},
 		},
 	}
 
