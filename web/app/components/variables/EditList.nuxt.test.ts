@@ -12,6 +12,7 @@ import {
 	findButtonByText,
 	mountUnderTooltipProvider,
 	raisedToasts,
+	refuseForRole,
 	renderedIconNames,
 	settleMutations,
 	t,
@@ -274,6 +275,46 @@ describe("<EditList>", { concurrent: false }, () => {
 					type: "error",
 					title: t("variable.errors.move-failed"),
 				}),
+			])
+		})
+
+		it("shows only the access denied toast for a refused variable move", async ({
+			expect,
+		}) => {
+			mockTree(fullTree())
+			mockEndpoint("PUT", "/api/variables/tree", (_call, event) =>
+				refuseForRole(event),
+			)
+			const wrapper = await mountList(fullTree())
+
+			dropRow(wrapper, VAR_ENV, {
+				parentId: GROUP_DEPLOYS,
+				insertBeforeId: null,
+			})
+			await settleMutations()
+
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
+			])
+		})
+
+		it("shows only the access denied toast for a refused group move", async ({
+			expect,
+		}) => {
+			mockTree(fullTree())
+			mockEndpoint("PUT", "/api/variables/groups/tree", (_call, event) =>
+				refuseForRole(event),
+			)
+			const wrapper = await mountList(fullTree())
+
+			dropRow(wrapper, GROUP_DEPLOYS, {
+				parentId: null,
+				insertBeforeId: GROUP_ENV,
+			})
+			await settleMutations()
+
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
 			])
 		})
 	})

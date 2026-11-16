@@ -13,6 +13,7 @@ import {
 	emitFrom,
 	findButtonByText,
 	raisedToasts,
+	refuseForRole,
 	t,
 } from "../test-helpers"
 import OptionsField from "./OptionsField.vue"
@@ -400,6 +401,28 @@ describe("<VariableForm>", { concurrent: false }, () => {
 					title: t("variable.errors.save-failed"),
 				}),
 			])
+		})
+
+		it("shows only the access denied toast for a refused save", async ({
+			expect,
+		}) => {
+			mockTree(fullTree())
+			mockEndpoint("PUT", `${VARIABLES_URL}/${VAR_ENV}`, (_call, event) =>
+				refuseForRole(event),
+			)
+			const wrapper = await mountEdit(VAR_ENV)
+
+			await wrapper.get("form").trigger("submit")
+			await waitForValidation(() => {
+				expect(raisedToasts()).toHaveLength(1)
+			})
+
+			expect.soft(wrapper.emitted("close")).toBeUndefined()
+			expect
+				.soft(raisedToasts())
+				.toMatchObject([
+					{ type: "error", title: t("general.errors.role-not-allowed") },
+				])
 		})
 	})
 

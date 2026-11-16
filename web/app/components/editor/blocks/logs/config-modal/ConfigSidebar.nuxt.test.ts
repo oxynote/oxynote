@@ -11,6 +11,8 @@ import {
 	at,
 	clearTeleportedOverlays,
 	emitFrom,
+	seedAuthOrganization,
+	seedAuthSession,
 	t,
 } from "~/components/test-helpers"
 import {
@@ -68,6 +70,19 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 		expect(at(selects, 0).props("emptyDescription")).toBe(
 			t("editor.logs.config.data-source-empty-description"),
 		)
+	})
+
+	it("tells a member who is not an admin to ask one for a data source", async ({
+		expect,
+	}) => {
+		seedAuthSession({ id: "u1" })
+		seedAuthOrganization({ members: [{ userId: "u1", role: "editor" }] })
+
+		const wrapper = await mountSidebar()
+
+		expect(
+			wrapper.getComponent(DataSourceSelect).props("emptyDescription"),
+		).toBe(t("editor.logs.config.data-source-empty-description-non-admin"))
 	})
 
 	it("asks the host to open the data source settings", async ({ expect }) => {

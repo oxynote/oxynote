@@ -9,6 +9,8 @@ import DataSourceRemovalAction from "./DataSourceRemovalAction.vue"
 import {
 	findButtonByText,
 	mountUnderDialogRoot,
+	raisedToasts,
+	refuseForRole,
 	settleMutations,
 	t,
 } from "../test-helpers"
@@ -128,6 +130,29 @@ describe("<DataSourceRemovalAction>", { concurrent: false }, () => {
 		await settleMutations()
 
 		expect(toast.custom).toHaveBeenCalledTimes(1)
+		expect(wrapper.emitted("close")).toBeUndefined()
+	})
+
+	it("shows only the access denied toast for a refused removal", async ({
+		expect,
+	}) => {
+		mockEndpoint(
+			"DELETE",
+			`/api/data-sources/${DATA_SOURCE.id}`,
+			(_call, event) => refuseForRole(event),
+		)
+		const wrapper = await mountAction()
+
+		await findButtonByText(
+			wrapper,
+			t("settings.action-modals.data-source-removal.submit-button"),
+		).trigger("click")
+		await vi.advanceTimersByTimeAsync(300)
+		await settleMutations()
+
+		expect(raisedToasts()).toMatchObject([
+			{ type: "error", title: t("general.errors.role-not-allowed") },
+		])
 		expect(wrapper.emitted("close")).toBeUndefined()
 	})
 

@@ -11,7 +11,13 @@ import {
 	matchingString,
 	mockEndpoint,
 } from "~/composables/api/test-helpers"
-import { settleMutations, t, WAIT_FOR_OPTIONS } from "~/components/test-helpers"
+import {
+	raisedToasts,
+	refuseForRole,
+	settleMutations,
+	t,
+	WAIT_FOR_OPTIONS,
+} from "~/components/test-helpers"
 
 vi.mock("vue-sonner", () => ({
 	toast: {
@@ -517,7 +523,7 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 			expect(toast.custom).toHaveBeenCalledTimes(1)
 		}, WAIT_FOR_OPTIONS)
 		expect(updateAttributes).toHaveBeenNthCalledWith(2, { uploading: false })
-		expect(consoleError).toHaveBeenCalledTimes(1)
+		expect(consoleError).toHaveBeenCalledTimes(0)
 	})
 
 	it("leaves a rejected file type to the storage error handler", async ({
@@ -547,6 +553,27 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 		expect(consoleError).toHaveBeenCalledTimes(0)
 	})
 
+	it("shows only the access denied toast for a refused upload", async ({
+		expect,
+	}) => {
+		mockEndpoint(
+			"POST",
+			`/api/documents/${DOCUMENT_ID}/files`,
+			(_call, event) => refuseForRole(event),
+		)
+		const updateAttributes = vi.fn()
+		const wrapper = await mountImage({}, updateAttributes)
+
+		await pickFile(wrapper, pngFile())
+
+		await settleMutations()
+
+		expect(raisedToasts()).toMatchObject([
+			{ type: "error", title: t("general.errors.role-not-allowed") },
+		])
+		expect(updateAttributes).toHaveBeenNthCalledWith(2, { uploading: false })
+	})
+
 	it("warns when the upload response carries no body", async ({ expect }) => {
 		const consoleError = vi.spyOn(console, "error").mockImplementation(() => {
 			return undefined
@@ -560,6 +587,6 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 		await vi.waitFor(() => {
 			expect(toast.custom).toHaveBeenCalledTimes(1)
 		}, WAIT_FOR_OPTIONS)
-		expect(consoleError).toHaveBeenCalledTimes(1)
+		expect(consoleError).toHaveBeenCalledTimes(0)
 	})
 })

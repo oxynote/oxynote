@@ -1,11 +1,13 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -235,6 +237,7 @@ func Test_Handler_ServeHTTP(t *testing.T) {
 		Session                httpmock.Responder
 		Header                 http.Header
 		Body                   string
+		LocalAddr              net.Addr
 		Code                   int
 		Check                  func(t *testing.T, rec *httptest.ResponseRecorder)
 		SessionCalls           int
@@ -301,6 +304,33 @@ func Test_Handler_ServeHTTP(t *testing.T) {
 			ToolSetCalls:           _serverBuilds,
 			FetchDocumentTreeCalls: _serverBuilds,
 		},
+		"Successful initialize on a loopback listener behind a proxy": {
+			Session: stubRoleSession(t, []string{ScopeDocumentRead}, org.RoleEditor),
+			Header: http.Header{
+				"Content-Type":  {"application/json"},
+				"Accept":        {"application/json, text/event-stream"},
+				"Authorization": {"Bearer tok"},
+			},
+			Body:      `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`,
+			LocalAddr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8180},
+			Code:      http.StatusOK,
+			Check: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				t.Helper()
+
+				payload := ssePayload(t, rec.Body.String())
+				require.NotNil(t, payload)
+
+				result, ok := payload["result"].(map[string]any)
+				require.True(t, ok, "payload: %v", payload)
+
+				info, ok := result["serverInfo"].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, "oxynote", info["name"])
+			},
+			SessionCalls:           1,
+			ToolSetCalls:           _serverBuilds,
+			FetchDocumentTreeCalls: _serverBuilds,
+		},
 	}
 
 	for cn, c := range cc {
@@ -324,6 +354,10 @@ func Test_Handler_ServeHTTP(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodPost, "http://test.com/", strings.NewReader(c.Body))
 			maps.Copy(req.Header, c.Header)
+
+			if c.LocalAddr != nil {
+				req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, c.LocalAddr))
+			}
 
 			rec := httptest.NewRecorder()
 			hdl.ServeHTTP(rec, req)

@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { nodeViewProps, NodeViewWrapper } from "@tiptap/vue-3"
 import { nanoid } from "nanoid"
-import { showToastMessage } from "~/components/toast"
+import { showRequestErrorToast, showToastMessage } from "~/components/toast"
 import { cn } from "#layers/ui/app/lib/utils"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 import DiffChangeMarker from "~/components/editor/diff/DiffChangeMarker.vue"
@@ -197,8 +197,7 @@ async function handleFileChange(event: Event) {
 	} catch (error) {
 		props.updateAttributes({ uploading: false })
 		if (!handleStorageError(error, t)) {
-			console.error("Failed to upload image:", error)
-			showToastMessage("error", t("editor.image.errors.upload-failed"))
+			showRequestErrorToast(error, t("editor.image.errors.upload-failed"))
 		}
 	} finally {
 		target.value = ""

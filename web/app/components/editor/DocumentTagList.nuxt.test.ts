@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { enableAutoUnmount } from "@vue/test-utils"
+import { toast } from "vue-sonner"
 import {
 	clearQueryCache,
 	disposeMockEndpoints,
@@ -15,6 +16,8 @@ import ColorSelect from "../ColorSelect.vue"
 import {
 	clearTeleportedOverlays,
 	mountUnderSidebarProvider,
+	raisedToasts,
+	refuseForRole,
 	renderedIconNames,
 	settleMutations,
 	t,
@@ -22,6 +25,10 @@ import {
 } from "../test-helpers"
 import type WsState from "~/utils/websocket"
 import { makeWsBranchTagsChangeTopic, PALETTE_COLORS } from "~/utils"
+
+vi.mock("vue-sonner", () => ({
+	toast: { custom: vi.fn(), dismiss: vi.fn() },
+}))
 
 const DOC_ID = makeXid("doc")
 const BRANCH_ID = makeXid("br")
@@ -139,6 +146,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	beforeEach(() => {
 		clearQueryCache()
 		clearTeleportedOverlays()
+		vi.mocked(toast.custom).mockReset()
 		useEditorStore().activeDocumentId = DOC_ID
 		useEditorStore().activeBranchId = BRANCH_ID
 		useEditorStore().setActiveBranchProtected(false)
@@ -506,6 +514,24 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		expect(calls[0]?.body).toEqual({ tagId: TAG_A })
 	})
 
+	it("shows only the access denied toast for a refused attachment", async ({
+		expect,
+	}) => {
+		stubTags([makeTag(TAG_A, "Production", "green")])
+		mockEndpoint("POST", BRANCH_TAGS_URL, (_call, event) =>
+			refuseForRole(event),
+		)
+		const wrapper = await mountTags()
+		await openPicker(wrapper)
+
+		pickerItems()[0]?.click()
+		await settleMutations()
+
+		expect(raisedToasts()).toMatchObject([
+			{ type: "error", title: t("general.errors.role-not-allowed") },
+		])
+	})
+
 	it("keeps one trigger element across the first attachment", async ({
 		expect,
 	}) => {
@@ -620,6 +646,25 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 			color: "red",
 		})
 		expect(assigned[0]?.body).toEqual({ tagId: TAG_B })
+	})
+
+	it("shows only the access denied toast for a refused creation", async ({
+		expect,
+	}) => {
+		stubTags([makeTag(TAG_A, "Production", "green")])
+		mockEndpoint("POST", "/api/tags", (_call, event) => refuseForRole(event))
+		const wrapper = await mountTags()
+		await openPicker(wrapper)
+		await search("Rollout")
+
+		pickerItems()
+			.find((el) => el.textContent.includes(t("editor.tags.create")))
+			?.click()
+		await settleMutations()
+
+		expect(raisedToasts()).toMatchObject([
+			{ type: "error", title: t("general.errors.role-not-allowed") },
+		])
 	})
 
 	it("creates the typed tag on enter in the search box", async ({ expect }) => {

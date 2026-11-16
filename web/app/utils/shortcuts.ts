@@ -8,6 +8,7 @@ export const SHORTCUT_ACTIONS = {
 			other: "Ctrl+\\",
 		},
 		i18nKey: "shortcuts.keys.toggle-sidebar",
+		minimumRole: "viewer",
 	},
 	addSlashCommandQueryAsPlainText: {
 		keyboardKey: {
@@ -15,6 +16,7 @@ export const SHORTCUT_ACTIONS = {
 			other: "esc",
 		},
 		i18nKey: null, // explained in the slash menu already
+		minimumRole: "editor",
 	},
 	searchForDocuments: {
 		keyboardKey: {
@@ -22,6 +24,7 @@ export const SHORTCUT_ACTIONS = {
 			other: "Ctrl+K",
 		},
 		i18nKey: "shortcuts.keys.search-for-documents",
+		minimumRole: "viewer",
 	},
 	toggleInbox: {
 		keyboardKey: {
@@ -29,6 +32,7 @@ export const SHORTCUT_ACTIONS = {
 			other: "Ctrl+Shift+\\",
 		},
 		i18nKey: "shortcuts.keys.toggle-inbox",
+		minimumRole: "viewer",
 	},
 	toggleVariables: {
 		keyboardKey: {
@@ -36,6 +40,7 @@ export const SHORTCUT_ACTIONS = {
 			other: "Ctrl+Shift+X",
 		},
 		i18nKey: "shortcuts.keys.toggle-variables",
+		minimumRole: "viewer",
 	},
 	createNewDocument: {
 		keyboardKey: {
@@ -43,6 +48,7 @@ export const SHORTCUT_ACTIONS = {
 			other: "Ctrl+.",
 		},
 		i18nKey: "shortcuts.keys.create-new-document",
+		minimumRole: "editor",
 	},
 	toggleSettings: {
 		keyboardKey: {
@@ -50,6 +56,7 @@ export const SHORTCUT_ACTIONS = {
 			other: "Ctrl+Shift+,",
 		},
 		i18nKey: "shortcuts.keys.toggle-settings",
+		minimumRole: "viewer",
 	},
 	toggleShortcuts: {
 		keyboardKey: {
@@ -57,6 +64,7 @@ export const SHORTCUT_ACTIONS = {
 			other: "Ctrl+/",
 		},
 		i18nKey: "shortcuts.keys.toggle-shortcuts",
+		minimumRole: "viewer",
 	},
 	addParamsToSplitDocLeftSide: {
 		// context-dependent (handle by the node)
@@ -65,6 +73,7 @@ export const SHORTCUT_ACTIONS = {
 			other: "Ctrl+Alt+P",
 		},
 		i18nKey: "shortcuts.keys.add-params-to-split-doc-left-side",
+		minimumRole: "editor",
 	},
 	addCodeBlockToSplitDocRightSide: {
 		// context-dependent (handle by the node)
@@ -73,6 +82,7 @@ export const SHORTCUT_ACTIONS = {
 			other: "Ctrl+Alt+E",
 		},
 		i18nKey: "shortcuts.keys.add-code-block-to-split-doc-right-side",
+		minimumRole: "editor",
 	},
 	addMetricsToSplitDocRightSide: {
 		// context-dependent (handle by the node)
@@ -81,6 +91,7 @@ export const SHORTCUT_ACTIONS = {
 			other: "Ctrl+Alt+G",
 		},
 		i18nKey: "shortcuts.keys.add-metrics-to-split-doc-right-side",
+		minimumRole: "editor",
 	},
 	addDiagramToSplitDocRightSide: {
 		// context-dependent (handle by the node)
@@ -89,6 +100,7 @@ export const SHORTCUT_ACTIONS = {
 			other: "Ctrl+Alt+D",
 		},
 		i18nKey: "shortcuts.keys.add-diagram-to-split-doc-right-side",
+		minimumRole: "editor",
 	},
 	openEditorCompletionMenu: {
 		keyboardKey: {
@@ -96,12 +108,15 @@ export const SHORTCUT_ACTIONS = {
 			other: "Ctrl+Space",
 		},
 		i18nKey: null, // the shortcut is hidden/implicit
+		minimumRole: "editor",
 	},
-}
+} satisfies Record<string, ShortcutAction>
 
 export interface ShortcutAction {
 	keyboardKey: { macOS: string; other: string }
 	i18nKey: string | null
+	// the least role the shortcut is any use to
+	minimumRole: Role
 }
 
 // one row of the shortcut modal. An "action" is bound app-wide through
@@ -123,12 +138,18 @@ type ShortcutTrigger =
 export type ShortcutEntry = {
 	i18nKey: string
 	descriptionI18nKey: string
+	minimumRole: Role
 } & ShortcutTrigger
 
+// an action entry takes its minimum role from the action. The other entries
+// are keys and markdown that format text on the page. Changing a page
+// needs at least the editor role, so they need it too.
 function entry(key: string, trigger: ShortcutTrigger): ShortcutEntry {
 	return {
 		i18nKey: `shortcuts.modal.entries.${key}.label`,
 		descriptionI18nKey: `shortcuts.modal.entries.${key}.description`,
+		minimumRole:
+			trigger.kind === "action" ? trigger.action.minimumRole : "editor",
 		...trigger,
 	}
 }

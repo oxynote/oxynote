@@ -49,7 +49,7 @@ func Test_Hooks_Before(t *testing.T) {
 	nctx, err := h.Before(ctx, "query")
 	require.NoError(t, err)
 
-	tstamp, ok := nctx.Value(timeKey).(time.Time)
+	tstamp, ok := nctx.Value(_timeKey).(time.Time)
 	require.True(t, ok)
 
 	assert.WithinDuration(t, timeutil.Now(), tstamp, time.Second*5)
@@ -98,10 +98,10 @@ func Test_Hooks_After(t *testing.T) {
 			Context: context.Background(),
 		},
 		"Duration below threshold": {
-			Context: context.WithValue(context.Background(), timeKey, timeutil.Now()),
+			Context: context.WithValue(context.Background(), _timeKey, timeutil.Now()),
 		},
 		"Duration above threshold": {
-			Context: context.WithValue(context.Background(), timeKey, timeutil.Now().Add(-time.Hour*2)),
+			Context: context.WithValue(context.Background(), _timeKey, timeutil.Now().Add(-time.Hour*2)),
 			Calls:   1,
 		},
 	}

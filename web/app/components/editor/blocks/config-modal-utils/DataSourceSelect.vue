@@ -22,6 +22,7 @@ const emit = defineEmits<{
 }>()
 
 const { isEditable } = useEditorMeta()
+const { canRoleManage } = useAuthSession()
 const { fetchDataSources } = useDataSourceAPI()
 const editorStore = useEditorStore()
 
@@ -158,8 +159,11 @@ function handleDataSourceSelection(dataSourceId: string) {
 						</ShadcnUiEmptyDescription>
 					</ShadcnUiEmptyHeader>
 				</ShadcnUiEmpty>
-				<ShadcnUiDropdownMenuSeparator />
-				<ShadcnUiDropdownMenuItem @click="emit('open-settings')">
+				<ShadcnUiDropdownMenuSeparator v-if="canRoleManage" />
+				<ShadcnUiDropdownMenuItem
+					v-if="canRoleManage"
+					@click="emit('open-settings')"
+				>
 					<Icon name="mingcute:add-line" class="shrink-0" />
 					<span>
 						{{ $t("editor.config-modal-utils.data-source-empty.connect") }}

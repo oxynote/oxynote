@@ -10,7 +10,7 @@ import {
 } from "./sidebar"
 import SidebarNestedGroup from "./SidebarNestedGroup.vue"
 import TagEditMenu from "./TagEditMenu.vue"
-import { showToastMessage } from "./toast"
+import { showRequestErrorToast, showToastMessage } from "./toast"
 import { useSidebar } from "#layers/ui/app/components/shadcn/ui/sidebar"
 
 const props = defineProps<{
@@ -43,7 +43,8 @@ const { fetchDocumentTree, updateDocumentTree } = useDocumentAPI()
 const { fetchTagTree, updateTagTree, updateTagVisibility, unassignBranchTag } =
 	useTagAPI()
 const { fetchVariables } = useVariableAPI()
-const { fetchOrganization, safeSignOut } = useAuthSession()
+const { fetchOrganization, safeSignOut, canRoleEdit, canRoleManage } =
+	useAuthSession()
 const { fetchGitHubConnectionStatus, gitHubConfigured, fetchGitHubInstallURL } =
 	useGitHubAPI()
 const { fetchSlackConnectionStatus, slackConfigured, fetchSlackInstallURL } =
@@ -72,7 +73,9 @@ useShortcut(SHORTCUT_ACTIONS.toggleVariables.keyboardKey, () => {
 	emit("toggle-variables")
 })
 useShortcut(SHORTCUT_ACTIONS.createNewDocument.keyboardKey, () => {
-	handleCreate({ parentId: null })
+	if (canRoleEdit.value) {
+		handleCreate({ parentId: null })
+	}
 })
 useShortcut(SHORTCUT_ACTIONS.toggleSettings.keyboardKey, () => {
 	toggleSettings()
@@ -111,20 +114,23 @@ const sections = computed<Section[]>(() => {
 		{
 			id: "workspace",
 			heading: t("sidebar.sections.main-workspace.heading"),
-			headingAction: {
-				title: t("sidebar.sections.main-workspace.heading-action-title"),
-				icon: "lucide:plus",
-				shortcutTooltip: SHORTCUT_ACTIONS.createNewDocument,
-				fn: () => {
-					handleCreate({ parentId: null })
-				},
-			},
+			headingAction: canRoleEdit.value
+				? {
+						title: t("sidebar.sections.main-workspace.heading-action-title"),
+						icon: "lucide:plus",
+						shortcutTooltip: SHORTCUT_ACTIONS.createNewDocument,
+						fn: () => {
+							handleCreate({ parentId: null })
+						},
+					}
+				: undefined,
 			items: processDocumentTree(
 				fetchDocumentTree.data.value ?? [],
 				editorStore.activeDocumentId,
 				t("sidebar.item-placeholder-name"),
 				fetchOrganization.data.value?.data?.name || "",
 				documentActions,
+				canRoleEdit.value,
 			),
 			isEmptyAfterLoad:
 				!fetchDocumentTree.data.value?.length &&
@@ -138,6 +144,7 @@ const sections = computed<Section[]>(() => {
 		fetchOrganization.data.value?.data?.name || "",
 		tagActions,
 		taggedDocumentActions,
+		canRoleEdit.value,
 	)
 
 	// the section stays as long as the organization has any tag at all: it
@@ -235,6 +242,7 @@ const sections = computed<Section[]>(() => {
 	}
 
 	if (
+		canRoleManage.value &&
 		gitHubConfigured.value &&
 		!fetchGitHubConnectionStatus.data.value?.connected
 	) {
@@ -256,6 +264,7 @@ const sections = computed<Section[]>(() => {
 	}
 
 	if (
+		canRoleManage.value &&
 		slackConfigured.value &&
 		!fetchSlackConnectionStatus.data.value?.connected
 	) {
@@ -354,6 +363,10 @@ function handleCreate(data: SidebarItemCreate) {
 }
 
 function documentActions(documentId: string): SidebarItemAction[] {
+	if (!canRoleEdit.value) {
+		return []
+	}
+
 	return [
 		{
 			id: "duplicate-page",
@@ -387,7 +400,7 @@ function handleTagVisibilityToggle(tag: TagTreeElement) {
 }
 
 function tagActions(tag: TagTreeElement): SidebarItemAction[] {
-	return [
+	const actions: SidebarItemAction[] = [
 		{
 			id: "edit-tag",
 			name: t("sidebar.item-dropdown-menu-buttons.edit-tag"),
@@ -414,6 +427,12 @@ function tagActions(tag: TagTreeElement): SidebarItemAction[] {
 			},
 		},
 	]
+
+	// hiding a tag changes only the reader's own sidebar, so a viewer keeps
+	// that one
+	return canRoleEdit.value
+		? actions
+		: actions.filter((action) => action.id === "hide-tag")
 }
 
 function taggedDocumentActions(
@@ -421,6 +440,10 @@ function taggedDocumentActions(
 	defaultBranchId: string,
 	tagId: string,
 ): SidebarItemAction[] {
+	if (!canRoleEdit.value) {
+		return []
+	}
+
 	return [
 		{
 			id: "remove-tag",
@@ -454,8 +477,8 @@ async function handleDocumentTagRemoval(
 			branchId: defaultBranchId,
 			tagId: tagId,
 		})
-	} catch {
-		showToastMessage("error", t("sidebar.errors.remove-document-tag-failed"))
+	} catch (err) {
+		showRequestErrorToast(err, t("sidebar.errors.remove-document-tag-failed"))
 	}
 }
 
@@ -466,8 +489,8 @@ async function handleDocumentLocationUpdate(data: SidebarItemLocationUpdate) {
 			parentId: data.parentId,
 			insertBeforeId: data.insertBeforeId,
 		})
-	} catch {
-		showToastMessage("error", t("sidebar.errors.update-tree-failed"))
+	} catch (err) {
+		showRequestErrorToast(err, t("sidebar.errors.update-tree-failed"))
 	}
 }
 
@@ -477,8 +500,8 @@ async function handleTagLocationUpdate(data: SidebarItemLocationUpdate) {
 			id: data.id,
 			insertBeforeId: data.insertBeforeId,
 		})
-	} catch {
-		showToastMessage("error", t("sidebar.errors.update-tags-failed"))
+	} catch (err) {
+		showRequestErrorToast(err, t("sidebar.errors.update-tags-failed"))
 	}
 }
 
@@ -486,9 +509,9 @@ async function installGitHub() {
 	try {
 		const result = await fetchGitHubInstallURL()
 		openExternalLink(result.url)
-	} catch {
-		showToastMessage(
-			"error",
+	} catch (err) {
+		showRequestErrorToast(
+			err,
 			t("settings.apps.github.errors.install.title"),
 			t("settings.apps.github.errors.install.description"),
 		)
@@ -499,9 +522,9 @@ async function installSlack() {
 	try {
 		const result = await fetchSlackInstallURL()
 		openExternalLink(result.url)
-	} catch {
-		showToastMessage(
-			"error",
+	} catch (err) {
+		showRequestErrorToast(
+			err,
 			t("settings.apps.slack.errors.install.title"),
 			t("settings.apps.slack.errors.install.description"),
 		)

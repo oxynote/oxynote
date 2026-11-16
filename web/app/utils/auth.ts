@@ -1,3 +1,7 @@
+// the code core answers a 403 with when the member's role does not allow
+// an action. Other 403s are each caller's to explain.
+export const ROLE_REFUSAL_CODE = "member.forbidden"
+
 export interface AuthError {
 	message?: string | undefined
 	status: number
@@ -78,4 +82,15 @@ export function postEmailVerificationUrl(
 	email: string,
 ): string {
 	return `${baseUrl || ""}/verify-email?new=${encodeURIComponent(email)}`
+}
+
+// the api client has already shown a role refusal, so a caller skips its
+// own error toast for it.
+export function isRoleRefusal(error: unknown): boolean {
+	const { statusCode, data } = (error ?? {}) as {
+		statusCode?: unknown
+		data?: { code?: unknown } | null
+	}
+
+	return statusCode === 403 && data?.code === ROLE_REFUSAL_CODE
 }

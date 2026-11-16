@@ -30,6 +30,32 @@ describe("<ToastMessage>", () => {
 		expect(wrapper.text()).toContain("Workspace saved")
 	})
 
+	it("shows a translated description with its named values in bold", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSuspended(ToastMessage, {
+			props: {
+				type: "success",
+				title: "Member role changed",
+				description: {
+					keypath:
+						"settings.workspace.success-messages.role.description.viewer",
+					params: { name: "Linus", role: "Viewer" },
+				},
+			},
+		})
+
+		expect(wrapper.text()).toContain(
+			t("settings.workspace.success-messages.role.description.viewer", {
+				name: "Linus",
+				role: "Viewer",
+			}),
+		)
+		expect(
+			wrapper.findAll(".font-medium.text-foreground").map((el) => el.text()),
+		).toEqual(["Linus", "Viewer"])
+	})
+
 	it("shows the description alongside the title", async ({ expect }) => {
 		const wrapper = await mountSuspended(ToastMessage, {
 			props: {

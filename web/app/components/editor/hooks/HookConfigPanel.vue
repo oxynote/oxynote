@@ -32,6 +32,7 @@ const open = defineModel<boolean>("open", { default: false })
 
 const editorStore = useEditorStore()
 const { isEditable } = useEditorMeta()
+const { canRoleEdit } = useAuthSession()
 
 const status = computed(() => (props.hook ? hookStatus(props.hook) : null))
 const isSettingUp = computed(() => props.hook?.status === "initializing")
@@ -60,13 +61,16 @@ const shownNoticeIcon = computed(() =>
 		: (props.noticeIcon ?? props.icon),
 )
 // the diff shows two branches at once, so a hook is dismissed only once it
-// is off
+// is off. A read-only reader still dismisses one, unless they are a viewer.
 const canAcknowledge = computed(
-	() => !!props.acknowledgeLabel && mode.value !== "diff",
+	() => !!props.acknowledgeLabel && mode.value !== "diff" && canRoleEdit.value,
 )
 const showsDismissHint = computed(
 	() =>
-		mode.value === "diff" && status.value === "triggered" && !isRemoved.value,
+		mode.value === "diff" &&
+		status.value === "triggered" &&
+		!isRemoved.value &&
+		canRoleEdit.value,
 )
 </script>
 

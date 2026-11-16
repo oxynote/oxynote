@@ -7,6 +7,10 @@ import (
 	"math/rand"
 )
 
+// _poissonNormalLambda is the lambda above which Poisson switches from
+// Knuth's algorithm to a Normal approximation.
+const _poissonNormalLambda = 50
+
 // Normal returns a sample from N(mean, stddev) via Box-Muller transform.
 func Normal(r *rand.Rand, mean, stddev float64) float64 {
 	u1 := r.Float64()
@@ -28,10 +32,6 @@ func Clamp(x, lo, hi float64) float64 {
 
 	return x
 }
-
-// _poissonNormalLambda is the lambda above which Poisson switches from
-// Knuth's algorithm to a Normal approximation.
-const _poissonNormalLambda = 50
 
 // Poisson returns a Poisson-distributed sample with the given lambda.
 // Knuth's algorithm is used for small lambda; above _poissonNormalLambda a

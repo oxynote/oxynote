@@ -525,15 +525,19 @@
 			"invited-label": "Invited",
 			"email-disabled-notice": "Email sending isn't configured. Copy invitation links from the member list and send them yourself.",
 			"invitation-link-copied": "Invitation link copied",
+			"email-copied": "Email copied",
 			"member-options": {
 				"copy-link": {
 					"title": "Copy invitation link"
 				},
-				"delete": {
-					"title": "Remove"
+				"copy-email": {
+					"title": "Copy email"
 				},
 				"role": {
 					"title": "Role"
+				},
+				"delete": {
+					"title": "Remove"
 				}
 			},
 			"success-messages": {
@@ -542,6 +546,14 @@
 				},
 				"name": {
 					"title": "Workspace name changed"
+				},
+				"role": {
+					"title": "Member role changed",
+					"description": {
+						"admin": "{name} is now an {role}. They can manage the workspace, its members, apps and data sources, and edit everything else",
+						"editor": "{name} is now an {role}. They can edit pages, branches, variables, tags and freshness hooks",
+						"viewer": "{name} is now a {role}. They can read pages and query data sources, but can't change anything outside their own settings"
+					}
 				}
 			},
 			"errors": {
@@ -556,7 +568,8 @@
 						"description": "An error occurred while trying to change the workspace name. Please try again"
 					},
 					"role": {
-						"title": "Role couldn't be changed"
+						"title": "Role couldn't be changed",
+						"description": "An error occurred while trying to change the member's role. Please try again"
 					}
 				}
 			}
@@ -569,6 +582,7 @@
 				"connect": "Connect",
 				"disconnect": "Disconnect",
 				"connected": "Connected",
+				"not-connected": "Not connected",
 				"errors": {
 					"install": {
 						"title": "GitHub couldn't be connected",
@@ -586,6 +600,7 @@
 				"connect": "Connect",
 				"disconnect": "Disconnect",
 				"connected": "Connected",
+				"not-connected": "Not connected",
 				"errors": {
 					"install": {
 						"title": "Slack couldn't be connected",
@@ -624,6 +639,9 @@
 		},
 		"data-sources": {
 			"title": "External Data Sources",
+			"not-connected": "Not connected",
+			"copy-url": "Copy URL",
+			"url-copied": "URL copied",
 			"prometheus": {
 				"title": "Prometheus",
 				"description": "Connect your Prometheus server and use it in metric monitoring blocks in your pages",

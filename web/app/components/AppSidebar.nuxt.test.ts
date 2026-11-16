@@ -9,6 +9,7 @@ import {
 import { mockNuxtImport } from "@nuxt/test-utils/runtime"
 import AppSidebar from "./AppSidebar.vue"
 import TagEditMenu from "./TagEditMenu.vue"
+import type { SidebarItem } from "./sidebar"
 import {
 	at,
 	clearTeleportedOverlays,
@@ -18,7 +19,10 @@ import {
 	mockAuthEndpoint,
 	mountUnderSidebarProvider,
 	openSubMenu,
+	raisedToasts,
+	refuseForRole,
 	seedAuthOrganization,
+	seedAuthSession,
 	seedCapabilities,
 	seedPersistentState,
 	settleMutations,
@@ -451,6 +455,15 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		expect(sidebar(wrapper).emitted("create-document")).toEqual([[null]])
 	})
 
+	it("asks to create a page from the new page shortcut", async ({ expect }) => {
+		stubQueries()
+		const wrapper = await mountSidebar()
+
+		await pressNewPageShortcut()
+
+		expect(sidebar(wrapper).emitted("create-document")).toEqual([[null]])
+	})
+
 	it("asks to toggle the settings from the workspace header", async ({
 		expect,
 	}) => {
@@ -688,6 +701,63 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			expect(toast.custom).toHaveBeenCalledTimes(1)
 		})
 
+		it.for([
+			{
+				name: "github",
+				endpoint: "/api/github/install",
+				queries: () => ({ gitHub: { connected: false, configured: true } }),
+			},
+			{
+				name: "slack",
+				endpoint: "/api/slack/install",
+				queries: () => ({ slack: { connected: false, configured: true } }),
+			},
+		])(
+			"shows only the access denied toast for a refused $name install",
+			async ({ name, endpoint, queries }, { expect }) => {
+				stubQueries(queries())
+				mockEndpoint("GET", endpoint, (_call, event) => refuseForRole(event))
+				const wrapper = await mountSidebar()
+				await settleMutations()
+
+				await itemNamed(
+					wrapper,
+					t(`sidebar.sections.next-steps.items.connect-${name}`),
+				).trigger("click")
+				await settleMutations()
+
+				expect(raisedToasts()).toMatchObject([
+					{ type: "error", title: t("general.errors.role-not-allowed") },
+				])
+			},
+		)
+
+		it("keeps the integrations out of the next steps of a member who is not an admin", async ({
+			expect,
+		}) => {
+			seedAuthSession({ id: "u1" })
+			seedAuthOrganization({
+				id: "org-1",
+				name: "Acme Corp",
+				members: [
+					{ id: "m1", userId: "u1", role: "editor", user: { name: "Ada" } },
+					{ id: "m2", userId: "u2", role: "admin", user: { name: "Linus" } },
+				],
+				invitations: [],
+			})
+			stubQueries({
+				gitHub: { connected: false, configured: true },
+				slack: { connected: false, configured: true },
+			})
+
+			const wrapper = await mountSidebar()
+			await settleMutations()
+
+			expect(wrapper.text()).not.toContain(
+				t("sidebar.sections.next-steps.heading"),
+			)
+		})
+
 		it("opens the slack install page in the browser", async ({ expect }) => {
 			stubQueries({ slack: { connected: false, configured: true } })
 			mockEndpoint("GET", "/api/slack/install", () => ({
@@ -890,6 +960,28 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			expect(calls).toHaveLength(1)
 		})
 
+		it("shows only the access denied toast for a refused detach", async ({
+			expect,
+		}) => {
+			stubQueries({ tags: seededTags() })
+			mockEndpoint(
+				"DELETE",
+				`/api/documents/${DOC_ID}/branches/${BRANCH_ID}/tags/${TAG_A}`,
+				(_call, event) => refuseForRole(event),
+			)
+			const wrapper = await mountSidebar()
+			await settleMutations()
+			await openFirstTag(wrapper)
+			await openRowMenu(wrapper, "Runbook")
+
+			menuItem(t("sidebar.item-dropdown-menu-buttons.remove-tag")).click()
+			await settleMutations()
+
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
+			])
+		})
+
 		it("offers a tagged document only its detach action", async ({
 			expect,
 		}) => {
@@ -1007,9 +1099,62 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			expect(toast.custom).toHaveBeenCalledTimes(1)
 			expect(tagNames(wrapper)).toEqual(names)
 		})
+
+		it("shows only the access denied toast for a refused tag move", async ({
+			expect,
+		}) => {
+			stubQueries({ tags: seededTags() })
+			mockEndpoint("PUT", "/api/tags/tree", (_call, event) =>
+				refuseForRole(event),
+			)
+			const wrapper = await mountSidebar()
+			await settleMutations()
+			const names = tagNames(wrapper)
+
+			emitFromNth(
+				wrapper,
+				"SidebarNestedGroup",
+				groupIndexShowing(wrapper, at(names, 0)),
+				"update-location",
+				{
+					id: at(tagIds(wrapper), names.length - 1),
+					parentId: null,
+					insertBeforeId: at(tagIds(wrapper), 0),
+				},
+			)
+			await settleMutations()
+
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
+			])
+		})
 	})
 
 	describe("page moves", { concurrent: false }, () => {
+		it("shows only the access denied toast for a refused move", async ({
+			expect,
+		}) => {
+			stubQueries({ tree: [treeElement()] })
+			mockEndpoint("PUT", "/api/documents/tree", (_call, event) =>
+				refuseForRole(event),
+			)
+			const wrapper = await mountSidebar()
+			await settleMutations()
+
+			emitFromNth(
+				wrapper,
+				"SidebarNestedGroup",
+				groupIndexShowing(wrapper, "Runbook"),
+				"update-location",
+				{ id: DOC_ID, parentId: null, insertBeforeId: null },
+			)
+			await settleMutations()
+
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
+			])
+		})
+
 		it("persists a move requested by the page tree", async ({ expect }) => {
 			stubQueries({ tree: [treeElement()] })
 			const calls = mockEndpoint("PUT", "/api/documents/tree", () => ({}))
@@ -1083,6 +1228,105 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			await nextTick()
 
 			expect(sidebar(wrapper).emitted("create-document")).toEqual([[DOC_ID]])
+		})
+	})
+
+	describe("for a viewer", { concurrent: false }, () => {
+		beforeEach(() => {
+			seedAuthSession({ id: "u1" })
+			seedAuthOrganization({
+				id: "org-1",
+				name: "Acme Corp",
+				members: [
+					{ id: "m1", userId: "u1", role: "viewer", user: { name: "Ada" } },
+					{ id: "m2", userId: "u2", role: "admin", user: { name: "Linus" } },
+				],
+				invitations: [],
+			})
+		})
+
+		it("lists the pages without a way to add, move or change them", async ({
+			expect,
+		}) => {
+			stubQueries({ tree: [treeElement()] })
+
+			const wrapper = await mountSidebar()
+			await settleMutations()
+
+			expect.soft(wrapper.text()).toContain("Runbook")
+			expect
+				.soft(wrapper.text())
+				.not.toContain(t("sidebar.item-placeholder-name"))
+			expect
+				.soft(wrapper.find("[data-sidebar='group-action']").exists())
+				.toBe(false)
+			expect
+				.soft(
+					wrapper
+						.get(`[data-item-id='${DOC_ID}']`)
+						.find("[data-slot='dropdown-menu-trigger']")
+						.exists(),
+				)
+				.toBe(false)
+			expect
+				.soft(
+					wrapper
+						.findAllComponents({ name: "SidebarItem" })
+						.some((item) => (item.props("item") as SidebarItem).draggable),
+				)
+				.toBe(false)
+		})
+
+		it("ignores the new page shortcut", async ({ expect }) => {
+			stubQueries()
+			const wrapper = await mountSidebar()
+
+			await pressNewPageShortcut()
+
+			expect(sidebar(wrapper).emitted("create-document")).toBeUndefined()
+		})
+
+		it("offers only the hide action on a tag", async ({ expect }) => {
+			stubQueries({ tags: seededTags() })
+			const wrapper = await mountSidebar()
+			await settleMutations()
+
+			await openRowMenu(wrapper, "Production")
+
+			expect(openMenuRows()).toEqual([
+				t("sidebar.item-dropdown-menu-buttons.hide-tag"),
+			])
+		})
+
+		it("offers no detach action on a tagged document", async ({ expect }) => {
+			stubQueries({ tags: seededTags() })
+			const wrapper = await mountSidebar()
+			await settleMutations()
+
+			await openFirstTag(wrapper)
+
+			const row = wrapper
+				.findAll("[data-item-id]")
+				.find((el) => el.attributes("data-item-id") === DOC_ID)
+			expect(row?.find("[data-slot='dropdown-menu-trigger']").exists()).toBe(
+				false,
+			)
+		})
+
+		it("keeps the tags in place", async ({ expect }) => {
+			stubQueries({ tags: seededTags() })
+
+			const wrapper = await mountSidebar()
+			await settleMutations()
+
+			expect(
+				wrapper
+					.findAllComponents({ name: "SidebarItem" })
+					.filter((item) =>
+						tagIds(wrapper).includes((item.props("item") as SidebarItem).id),
+					)
+					.map((item) => (item.props("item") as SidebarItem).draggable),
+			).toEqual([false, false])
 		})
 	})
 
@@ -1205,3 +1449,15 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		})
 	})
 })
+
+// the shortcut listens on the window. In the test browser it is the
+// non-mac one, and the period is matched by its key code.
+async function pressNewPageShortcut() {
+	window.dispatchEvent(new KeyboardEvent("keydown", { key: "Control" }))
+	window.dispatchEvent(
+		new KeyboardEvent("keydown", { key: ".", code: "Period" }),
+	)
+	await nextTick()
+	window.dispatchEvent(new KeyboardEvent("keyup", { key: ".", code: "Period" }))
+	window.dispatchEvent(new KeyboardEvent("keyup", { key: "Control" }))
+}

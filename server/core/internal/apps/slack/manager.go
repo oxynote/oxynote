@@ -37,6 +37,9 @@ var (
 // verification.
 const _maxRequestBodyBytes = 10 << 20
 
+// _maxNotificationRetries caps the retries of one Slack delivery.
+const _maxNotificationRetries = 3
+
 // Options holds configuration options for the Slack manager.
 type Options struct {
 	// RedirectURL is the URL to redirect users to connect their Slack organization.
@@ -85,9 +88,6 @@ func (o Options) Validate() error {
 
 	return nil
 }
-
-// _maxNotificationRetries caps the retries of one Slack delivery.
-const _maxNotificationRetries = 3
 
 // Manager represents a Slack App manager for handling Slack integrations.
 type Manager struct {

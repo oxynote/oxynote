@@ -1,4 +1,6 @@
 import { showToastMessage } from "~/components/toast"
+import { AUTH_SESSION_QUERY_KEYS } from "~/composables/useAuthSession"
+import { ROLE_REFUSAL_CODE } from "~/utils/auth"
 
 export default defineNuxtPlugin((nuxtApp) => {
 	const config = useRuntimeConfig()
@@ -84,24 +86,48 @@ export default defineNuxtPlugin((nuxtApp) => {
 	}
 })
 
-// the code core answers with when the member's role does not allow an
-// action. Other 403s are each caller's to explain.
-const FORBIDDEN_CODE = "member.forbidden"
+// invalidating a query cancels its fetch in flight and starts a new one.
+// So without this, every refusal in a burst would send its own request.
+let organizationReread: Promise<unknown> | null = null
 
 // a role refusal reaches the user as one toast, whichever call hit it.
+// The role may have changed since the member list was read, so the list is
+// read again and the hidden actions follow it. Refusals that arrive while
+// that read runs share it.
 function notifyRoleNotAllowed(
 	response: Response & { _data?: unknown },
-	nuxtApp: { $i18n: { t: (key: string) => string } },
+	nuxtApp: {
+		$i18n: { t: (key: string) => string }
+		runWithContext: <T>(fn: () => Promise<T>) => Promise<T>
+	},
 ) {
 	if (
 		!import.meta.client ||
 		response.status !== 403 ||
-		(response._data as { code?: unknown } | undefined)?.code !== FORBIDDEN_CODE
+		(response._data as { code?: unknown } | undefined)?.code !==
+			ROLE_REFUSAL_CODE
 	) {
 		return
 	}
 
-	showToastMessage("error", nuxtApp.$i18n.t("general.errors.role-not-allowed"))
+	showToastMessage(
+		"error",
+		nuxtApp.$i18n.t("general.errors.role-not-allowed"),
+		nuxtApp.$i18n.t("general.errors.role-not-allowed-description"),
+	)
+
+	organizationReread ??= nuxtApp
+		.runWithContext(() =>
+			useQueryCache().invalidateQueries({
+				key: AUTH_SESSION_QUERY_KEYS.organization,
+			}),
+		)
+		// a failed read keeps its error in the query state and the old list
+		// stays, so nothing else needs the rejection
+		.catch(() => undefined)
+		.finally(() => {
+			organizationReread = null
+		})
 }
 
 export function redirectToLogin(

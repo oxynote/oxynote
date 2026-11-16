@@ -8,6 +8,7 @@ import {
 } from "@vue/test-utils"
 import { setResponseStatus } from "h3"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
+import { toast } from "vue-sonner"
 import CommentRenderer from "./CommentRenderer.vue"
 import { CommentMark, findCommentMarkById } from "./comment-mark"
 import { NodeComment } from "./node-comment-extension"
@@ -23,14 +24,22 @@ import {
 	seedQueryData,
 } from "~/composables/api/test-helpers"
 import {
+	at,
 	clearTeleportedOverlays,
 	menuItem,
+	raisedToasts,
+	refuseForRole,
 	seedAuthOrganization,
 	seedAuthSession,
+	settleMutations,
 	t,
 	WAIT_FOR_OPTIONS,
 } from "~/components/test-helpers"
 import type WsState from "~/utils/websocket"
+
+vi.mock("vue-sonner", () => ({
+	toast: { custom: vi.fn(), dismiss: vi.fn() },
+}))
 
 // the thread list is virtualized off the rendered row heights, which
 // happy-dom reports as zero — no comment would ever be drawn. The
@@ -42,15 +51,18 @@ vi.mock("vue-virtual-scroller", async () => {
 		DynamicScroller: defineComponent({
 			name: "DynamicScroller",
 			props: { items: { type: Array, required: true } },
-			setup:
-				(props, { slots }) =>
-				() =>
+			setup(props, { slots, expose }) {
+				// a new reply scrolls the thread to its end
+				expose({ scrollToBottom: () => undefined })
+
+				return () =>
 					h(
 						"div",
 						(props.items as Record<string, unknown>[]).map((item, index) =>
 							slots.default?.({ item: item, index: index, active: true }),
 						),
-					),
+					)
+			},
 		}),
 		DynamicScrollerItem: defineComponent({
 			name: "DynamicScrollerItem",
@@ -73,6 +85,7 @@ const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("branch")
 const ME = makeXid("usme")
 const COMMENT_ID = makeXid("cmt")
+const REPLY_ID = makeXid("rpl")
 const BLOCK_UID = "block-1"
 
 let contentEditor: Editor | null = null
@@ -228,10 +241,15 @@ function press(target: Element) {
 	target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }))
 }
 
-// tiptap hangs its editor instance off the editable element
+// tiptap hangs its editor instance off the editable element. The thread
+// draws each comment in an editor of its own, and the draft's editor comes
+// last, below them.
 function commentEditor(wrapper: VueWrapper): Editor {
-	const element = wrapper.find(".z-popover .ProseMirror").element as
-		(Element & { editor?: Editor }) | undefined
+	const editors = wrapper.findAll<Element & { editor?: Editor }>(
+		".z-popover .ProseMirror",
+	)
+	const element = editors[editors.length - 1]?.element
+
 	if (!element?.editor) {
 		throw new Error("no comment editor in the popover")
 	}
@@ -264,6 +282,7 @@ describe("<CommentRenderer>", { concurrent: false }, () => {
 		stubThemeColorContext()
 		popover.height = ref(0)
 		clearQueryCache()
+		vi.mocked(toast.custom).mockReset()
 		useEditorMeta().setEditable(true)
 		useEditorStore().updateActiveDocumentId(DOCUMENT_ID)
 		useEditorStore().updateActiveBranchId(BRANCH_ID)
@@ -840,9 +859,180 @@ describe("<CommentRenderer>", { concurrent: false }, () => {
 			t("editor.comment-thread.resolve-button"),
 		).trigger("click")
 
+		// the thread closes before the request answers, and the warning
+		// follows once it has
 		await vi.waitFor(() => {
-			expect(popoverOpen(wrapper)).toBe(false)
+			expect(toast.custom).toHaveBeenCalledTimes(1)
 		}, WAIT_FOR_OPTIONS)
+		expect(popoverOpen(wrapper)).toBe(false)
+	})
+
+	describe("when the server refuses a write for the role", () => {
+		it("shows only the access denied toast for a refused comment", async ({
+			expect,
+		}) => {
+			const editor = textDoc("hello world")
+			mockEndpoint(
+				"POST",
+				`/api/documents/${DOCUMENT_ID}/comments`,
+				(_c, event) => refuseForRole(event),
+			)
+			const wrapper = await mountRenderer(editor)
+			await api(wrapper).addNewComment(0)
+			await nextTick()
+			await writeDraft(wrapper, t("editor.comment-thread.comment-button"))
+
+			await popoverButton(
+				wrapper,
+				t("editor.comment-thread.comment-button"),
+			).trigger("click")
+			await settleMutations()
+
+			expect(raisedToasts()).toMatchObject([roleToast()])
+		})
+
+		it("shows only the access denied toast for a refused resolve", async ({
+			expect,
+		}) => {
+			const wrapper = await openThread()
+			mockEndpoint(
+				"PUT",
+				`/api/documents/${DOCUMENT_ID}/comments/${COMMENT_ID}/status`,
+				(_c, event) => refuseForRole(event),
+			)
+
+			await popoverButton(
+				wrapper,
+				t("editor.comment-thread.resolve-button"),
+			).trigger("click")
+			await settleMutations()
+
+			expect(raisedToasts()).toMatchObject([roleToast()])
+		})
+
+		it("shows only the access denied toast for a refused reply", async ({
+			expect,
+		}) => {
+			const wrapper = await openThread()
+			mockEndpoint(
+				"POST",
+				`/api/documents/${DOCUMENT_ID}/comments/${COMMENT_ID}/replies`,
+				(_c, event) => refuseForRole(event),
+			)
+			await writeDraft(wrapper, t("editor.comment-thread.reply-button"))
+
+			await popoverButton(
+				wrapper,
+				t("editor.comment-thread.reply-button"),
+			).trigger("click")
+			await settleMutations()
+
+			expect(raisedToasts()).toMatchObject([roleToast()])
+		})
+
+		it("shows only the access denied toast for a refused comment edit", async ({
+			expect,
+		}) => {
+			const wrapper = await openThread()
+			mockEndpoint(
+				"PUT",
+				`/api/documents/${DOCUMENT_ID}/comments/${COMMENT_ID}`,
+				(_c, event) => refuseForRole(event),
+			)
+			await openItemMenu(wrapper, 0)
+			menuItem(t("editor.comment-thread.edit-start-button")).click()
+			await nextTick()
+
+			await popoverButton(
+				wrapper,
+				t("editor.comment-thread.edit-button"),
+			).trigger("click")
+			await settleMutations()
+
+			expect(raisedToasts()).toMatchObject([roleToast()])
+		})
+
+		it("shows only the access denied toast for a refused comment deletion", async ({
+			expect,
+		}) => {
+			const wrapper = await openThread()
+			mockEndpoint(
+				"DELETE",
+				`/api/documents/${DOCUMENT_ID}/comments/${COMMENT_ID}`,
+				(_c, event) => refuseForRole(event),
+			)
+			await openItemMenu(wrapper, 0)
+
+			menuItem(t("editor.comment-thread.delete-button")).click()
+			await settleMutations()
+
+			expect(raisedToasts()).toMatchObject([roleToast()])
+		})
+
+		it("shows only the access denied toast for a refused reply edit", async ({
+			expect,
+		}) => {
+			const wrapper = await openThread([myReply()])
+			mockEndpoint(
+				"PUT",
+				`/api/documents/${DOCUMENT_ID}/comments/${COMMENT_ID}/replies/${REPLY_ID}`,
+				(_c, event) => refuseForRole(event),
+			)
+			await openItemMenu(wrapper, 1)
+			menuItem(t("editor.comment-thread.edit-start-button")).click()
+			await nextTick()
+
+			await popoverButton(
+				wrapper,
+				t("editor.comment-thread.edit-button"),
+			).trigger("click")
+			await settleMutations()
+
+			expect(raisedToasts()).toMatchObject([roleToast()])
+		})
+
+		it("shows only the access denied toast for a refused reply deletion", async ({
+			expect,
+		}) => {
+			const wrapper = await openThread([myReply()])
+			mockEndpoint(
+				"DELETE",
+				`/api/documents/${DOCUMENT_ID}/comments/${COMMENT_ID}/replies/${REPLY_ID}`,
+				(_c, event) => refuseForRole(event),
+			)
+			await openItemMenu(wrapper, 1)
+
+			menuItem(t("editor.comment-thread.delete-button")).click()
+			await settleMutations()
+
+			expect(raisedToasts()).toMatchObject([roleToast()])
+		})
+	})
+
+	describe("for a viewer", { concurrent: false }, () => {
+		beforeEach(() => {
+			seedAuthOrganization({
+				members: [
+					{
+						userId: ME,
+						role: "viewer",
+						user: { name: "Me", image: undefined },
+					},
+				],
+			})
+		})
+
+		it("shows the thread, their own comment included, with nothing to write or change", async ({
+			expect,
+		}) => {
+			const wrapper = await openThread()
+
+			expect.soft(wrapper.text()).toContain("looks good")
+			expect
+				.soft(wrapper.find(".z-popover [contenteditable='true']").exists())
+				.toBe(false)
+			expect.soft(wrapper.find(".z-popover button").exists()).toBe(false)
+		})
 	})
 
 	it("refetches the comments when the server says they changed", async ({
@@ -921,3 +1111,63 @@ describe("<CommentRenderer>", { concurrent: false }, () => {
 		})
 	})
 })
+
+// the access denied toast the api client raises for a refused request
+function roleToast() {
+	return { type: "error", title: t("general.errors.role-not-allowed") }
+}
+
+function myReply() {
+	return {
+		id: REPLY_ID,
+		commentId: COMMENT_ID,
+		userId: ME,
+		content: commentBody("agreed"),
+		createdAt: new Date("2026-01-02T00:00:00Z"),
+	}
+}
+
+// opens the reader's own block comment, with the given replies
+async function openThread(replies: unknown[] = []) {
+	const editor = textDoc("hello world")
+	editor.commands.addNodeComment(0, { nodeCommentId: COMMENT_ID })
+	seedComments([serverComment({ replies: replies })])
+	const wrapper = await mountRenderer(editor)
+	await api(wrapper).selectComment({ textComment: false, id: COMMENT_ID })
+
+	// the thread list loads as an async component, so its rows show a few
+	// ticks after the popover opens
+	await vi.waitFor(() => {
+		if (!wrapper.text().includes("looks good")) {
+			throw new Error("the thread has not been drawn yet")
+		}
+	}, WAIT_FOR_OPTIONS)
+
+	return wrapper
+}
+
+// tiptap hands vue a new draft two animation frames after it changes, so
+// the button that saves the draft stays disabled until then
+async function writeDraft(wrapper: VueWrapper, saveButton: string) {
+	commentEditor(wrapper).commands.setContent(commentBody("agreed"))
+
+	await vi.waitFor(() => {
+		if (
+			popoverButton(wrapper, saveButton).attributes("disabled") !== undefined
+		) {
+			throw new Error(`"${saveButton}" is still disabled`)
+		}
+	}, WAIT_FOR_OPTIONS)
+}
+
+// the thread lists the comment first and its replies below, each with an
+// actions menu of its own
+async function openItemMenu(wrapper: VueWrapper, index: number) {
+	const trigger = at(
+		wrapper.findAll("[data-slot='dropdown-menu-trigger']"),
+		index,
+	)
+	await trigger.trigger("pointerdown", { button: 0 })
+	await trigger.trigger("click")
+	await nextTick()
+}

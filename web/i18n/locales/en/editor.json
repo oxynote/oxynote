@@ -397,6 +397,7 @@
 			"dismiss-in-diff": "To dismiss it, turn off {toggle}.",
 			"read-only-protected": "Read-only · change this hook on the draft branch and merge it here",
 			"read-only-mode": "Read-only · switch to edit mode to change this hook",
+			"read-only-viewer": "Read-only · viewers can't change hooks",
 			"showing-changes": "Showing changes · turn off {toggle} to edit",
 			"value-change": "{old} → {new}",
 			"subtext-detail": "{subtext} · {detail}",
@@ -885,7 +886,8 @@
 				"legend-format-placeholder": "{'{{'}some label{'}}'} {'{{'}another label{'}}'}",
 				"legend-format-empty-value-placeholder": "[empty]",
 				"data-source-empty-title": "No metric data sources",
-				"data-source-empty-description": "Connect Prometheus or a SQL database in the settings to chart its data here."
+				"data-source-empty-description": "Connect Prometheus or a SQL database in the settings to chart its data here.",
+				"data-source-empty-description-non-admin": "Ask an admin to connect Prometheus or a SQL database to chart its data here."
 			},
 			"diff": {
 				"visualization": "Visualization",
@@ -994,7 +996,8 @@
 				"add-query-button": "Add Query",
 				"delete-query-button": "Delete Query",
 				"data-source-empty-title": "No log data sources",
-				"data-source-empty-description": "Connect Loki in the settings to show its logs here."
+				"data-source-empty-description": "Connect Loki in the settings to show its logs here.",
+				"data-source-empty-description-non-admin": "Ask an admin to connect Loki to show its logs here."
 			},
 			"levels": {
 				"critical": "Crit",
@@ -1069,6 +1072,8 @@
 		"no-document-indicator": {
 			"heading": "Time to create something great",
 			"subheading": "Pages are where the magic happens. Create one to dive in.",
+			"heading-viewer": "No pages yet",
+			"subheading-viewer": "Pages show up here once an editor or admin creates one.",
 			"create-document-button": "Create Page"
 		},
 		"document-deletion-modal": {
