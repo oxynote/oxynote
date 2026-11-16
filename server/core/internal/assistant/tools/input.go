@@ -483,6 +483,18 @@ func (i *input) CreateDocument(doc document.Document) error {
 		return fmt.Errorf("inserting document: %w", err)
 	}
 
+	// like the HTTP create path, record the empty starting version
+	// as a boundary entry, so the branch history starts at creation.
+	if err := tx.RecordDocumentBranchHistoryEntry(
+		i.ctx,
+		doc.BranchID,
+		i.orgID,
+		null.StringFrom(i.userID),
+		true,
+	); err != nil {
+		return fmt.Errorf("recording branch history: %w", err)
+	}
+
 	// mirror the HTTP create path: whoever asked for the document
 	// becomes its first maintainer so they own it from the start.
 	if err := tx.UpsertDocumentMaintainers(i.ctx, doc.ID, i.orgID, []string{i.userID}); err != nil {
@@ -1373,6 +1385,16 @@ type Tx interface {
 	// UpsertDocumentMaintainers should add the given user ids to a
 	// document's maintainer set. Used by create_document.
 	UpsertDocumentMaintainers(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error
+
+	// RecordDocumentBranchHistoryEntry should record the branch as it
+	// stands, with its hooks. Used by create_document.
+	RecordDocumentBranchHistoryEntry(
+		ctx context.Context,
+		branchID xid.ID,
+		organizationID string,
+		by null.String,
+		boundary bool,
+	) error
 
 	// DeleteDocument should remove a document and report the ids of the
 	// document and of every cascade-deleted descendant. Used by
