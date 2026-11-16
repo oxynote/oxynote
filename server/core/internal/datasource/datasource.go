@@ -23,10 +23,6 @@ import (
 const _maxNameLength = 128
 
 var (
-	// ErrInvalidCredentials is returned when the credentials of a data
-	// source cannot be read, or have a kind its type does not accept.
-	ErrInvalidCredentials = credentials.ErrInvalid
-
 	// ErrInvalidName is returned when a data source is given a name that
 	// is empty or only white space.
 	ErrInvalidName = errutil.New(
@@ -294,11 +290,11 @@ func (ci CreateInput) Validate() error {
 
 	auth, err := sanitized.Credentials.Read()
 	if err != nil {
-		return ErrInvalidCredentials
+		return credentials.ErrInvalid
 	}
 
 	if auth != nil && !slices.Contains(sanitized.Type.credentialsKinds(), auth.Kind()) {
-		return ErrInvalidCredentials
+		return credentials.ErrInvalid
 	}
 
 	return nil

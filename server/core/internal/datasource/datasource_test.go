@@ -156,7 +156,7 @@ func Test_NewDataSource(t *testing.T) {
 		},
 		"Invalid credentials": {
 			Input: CreateInput{Type: TypePrometheus, Name: "test-source", Credentials: stubCredentials(`[1]`)},
-			Err:   ErrInvalidCredentials,
+			Err:   credentials.ErrInvalid,
 		},
 		"Successful creation": {
 			Input: CreateInput{
@@ -268,19 +268,19 @@ func Test_CreateInput_Validate(t *testing.T) {
 		},
 		"Credentials that are not an object": {
 			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: stubCredentials(`[1]`)},
-			Err:   ErrInvalidCredentials,
+			Err:   credentials.ErrInvalid,
 		},
 		"Credentials holding a number": {
 			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: stubCredentials(`{"username":1,"kind":"basic"}`)},
-			Err:   ErrInvalidCredentials,
+			Err:   credentials.ErrInvalid,
 		},
 		"Credentials without a kind": {
 			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: stubCredentials(`{"username":"user"}`)},
-			Err:   ErrInvalidCredentials,
+			Err:   credentials.ErrInvalid,
 		},
 		"Token credentials for a SQL type": {
 			Input: CreateInput{Type: TypePostgreSQL, Name: "DB", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
-			Err:   ErrInvalidCredentials,
+			Err:   credentials.ErrInvalid,
 		},
 		"Token credentials for Loki": {
 			Input: CreateInput{Type: TypeLoki, Name: "Logs", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
@@ -545,7 +545,7 @@ func Test_DataSource_updatedCredentials(t *testing.T) {
 		"Token refused for mysql": {
 			DataSource: &DataSource{Type: TypeMySQL},
 			Inp:        null.ValueFrom(credentials.UpdateInput(`{"kind":"token","token":"secret"}`)),
-			Err:        ErrInvalidCredentials,
+			Err:        credentials.ErrInvalid,
 		},
 		"Successful loki token update": {
 			DataSource: &DataSource{Type: TypeLoki},
