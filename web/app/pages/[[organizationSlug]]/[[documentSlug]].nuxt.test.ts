@@ -431,6 +431,24 @@ describe("<document-editor>", { concurrent: false }, () => {
 			expect.soft(pageReplaces()).toEqual([])
 		})
 
+		it("does not preload a branch the server has not created yet", async ({
+			expect,
+		}) => {
+			// the branch list can hold an optimistic branch with a nanoid
+			// id while the fork request runs. The server has not created
+			// it yet, so it must not be preloaded.
+			seedWorkspace({
+				branches: [...twoBranches(), branch("V1StGXR8_Z5jdHi6B-myT", false)],
+			})
+			arrangeRoute()
+
+			await mountPage()
+
+			expect
+				.soft(useEditorStore().preloadedBranchIds)
+				.toEqual([DEFAULT_BRANCH_ID, DRAFT_BRANCH_ID])
+		})
+
 		it("opens the branch the url names, diffed against the default one", async ({
 			expect,
 		}) => {

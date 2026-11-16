@@ -355,8 +355,12 @@ watchImmediate(
 		// NOTE: for now we preload all branches of the document as soon as
 		// we have them, to avoid loading states when switching between
 		// branches. In the future, we might want to have a more on-demand
-		// loading strategy
-		editorStore.updatePreloadedBranchIds(branches.map((b) => b.branchId))
+		// loading strategy. The list can hold an optimistic branch the
+		// server has not created yet, so only branches the server knows
+		// are preloaded.
+		editorStore.updatePreloadedBranchIds(
+			branches.filter((b) => isXid(b.branchId)).map((b) => b.branchId),
+		)
 
 		const activeBranch = branches.find(
 			(b) => b.branchId === editorStore.activeBranchId,
