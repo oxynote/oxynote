@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 )
 
 const (
@@ -138,7 +139,7 @@ func (m *MySQL) TestConnection(ctx context.Context) (ConnectionStatus, error) {
 // indistinguishable to the user otherwise, and a typo in the password is the
 // far more common of them.
 func mysqlConnectionStatus(err error) ConnectionStatus {
-	if errors.Is(err, _errInvalidCACertificate) {
+	if errors.Is(err, credentials.ErrInvalidCACertificate) {
 		return ConnectionStatusInvalidCACertificate
 	}
 
@@ -381,7 +382,7 @@ func (m *MySQL) buildConfig() (*mysql.Config, error) {
 
 	rawCreds := m.inp.Credentials()
 
-	creds, err := rawCreds.basic()
+	creds, err := rawCreds.Basic()
 	if err != nil {
 		return nil, err
 	}
@@ -412,8 +413,8 @@ func (m *MySQL) buildConfig() (*mysql.Config, error) {
 	// a CA certificate replaces whatever TLS the URL asks for, which could
 	// skip the certificate the CA is there to check. The driver checks it
 	// against the host.
-	if creds.CACertificate != "" {
-		roots, rerr := creds.rootCAs()
+	if creds.HasCACertificate() {
+		roots, rerr := creds.RootCAs()
 		if rerr != nil {
 			return nil, rerr
 		}

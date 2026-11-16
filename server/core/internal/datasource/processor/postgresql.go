@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 )
 
 const (
@@ -171,7 +172,7 @@ func (p *PostgreSQL) TestConnection(ctx context.Context) (ConnectionStatus, erro
 // indistinguishable to the user otherwise, and a typo in the password is the
 // far more common of them.
 func pgConnectionStatus(err error) ConnectionStatus {
-	if errors.Is(err, _errInvalidCACertificate) {
+	if errors.Is(err, credentials.ErrInvalidCACertificate) {
 		return ConnectionStatusInvalidCACertificate
 	}
 
@@ -384,7 +385,7 @@ func (p *PostgreSQL) connect(ctx context.Context) (*pgxpool.Pool, error) {
 
 	rawCreds := p.inp.Credentials()
 
-	creds, err := rawCreds.basic()
+	creds, err := rawCreds.Basic()
 	if err != nil {
 		return nil, err
 	}
@@ -404,8 +405,8 @@ func (p *PostgreSQL) connect(ctx context.Context) (*pgxpool.Pool, error) {
 	connCfg.DefaultQueryExecMode = pgx.QueryExecModeCacheDescribe
 	connCfg.ConnectTimeout = _connectTimeout
 
-	if creds.CACertificate != "" {
-		roots, rerr := creds.rootCAs()
+	if creds.HasCACertificate() {
+		roots, rerr := creds.RootCAs()
 		if rerr != nil {
 			return nil, rerr
 		}
@@ -415,7 +416,7 @@ func (p *PostgreSQL) connect(ctx context.Context) (*pgxpool.Pool, error) {
 		if connCfg.TLSConfig == nil || slices.ContainsFunc(connCfg.Fallbacks, func(fb *pgconn.FallbackConfig) bool {
 			return fb.TLSConfig == nil
 		}) {
-			return nil, _errInvalidCACertificate
+			return nil, credentials.ErrInvalidCACertificate
 		}
 
 		// verify-full gives every host one TLS config and no plaintext
@@ -453,7 +454,7 @@ func (p *PostgreSQL) connect(ctx context.Context) (*pgxpool.Pool, error) {
 }
 
 // buildConnectionString builds a PostgreSQL connection string from the URL and credentials.
-func (p *PostgreSQL) buildConnectionString(creds BasicCredentials) (string, error) {
+func (p *PostgreSQL) buildConnectionString(creds credentials.Basic) (string, error) {
 	u, err := url.Parse(p.inp.URL())
 	if err != nil {
 		return "", fmt.Errorf("error parsing postgresql url: %w", err)
@@ -468,7 +469,7 @@ func (p *PostgreSQL) buildConnectionString(creds BasicCredentials) (string, erro
 
 	// any other sslmode would let the connection skip the certificate the
 	// CA is there to check, or fall back to plaintext.
-	if creds.CACertificate != "" {
+	if creds.HasCACertificate() {
 		q := u.Query()
 		q.Set("sslmode", "verify-full")
 		u.RawQuery = q.Encode()
