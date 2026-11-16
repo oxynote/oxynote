@@ -90,7 +90,7 @@ func (p *Prometheus) Metadata(ctx context.Context) (*PrometheusMetadataResult, e
 
 	v, err := client.Metadata(ctx, "", _metadataLimit)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching metadata: %w", err)
+		return nil, sortPrometheusError(err, "error fetching metadata")
 	}
 
 	return &PrometheusMetadataResult{
@@ -116,26 +116,7 @@ func (p *Prometheus) QueryRange(ctx context.Context, q string, tr TimeRange) (*P
 		Step:  ntr.QueryStep(),
 	}, v1.WithLimit(_queryLimit))
 	if err != nil {
-		perr, ok := errors.AsType[*v1.Error](err)
-		if !ok {
-			return nil, fmt.Errorf("error performing query: %w", err)
-		}
-
-		// the client keeps no status code. For a status Prometheus did
-		// not describe itself, it builds the message from the code, so
-		// that message tells an outage, a refused login or a rate limit
-		// from an error about the query.
-		switch {
-		case perr.Type == v1.ErrServer:
-			return nil, ConnectionStatusUnreachable.Error()
-		case perr.Type == v1.ErrClient &&
-			(perr.Msg == "client error: 401" || perr.Msg == "client error: 403"):
-			return nil, ConnectionStatusUnauthorized.Error()
-		case perr.Type == v1.ErrClient && perr.Msg == "client error: 429":
-			return nil, _errRateLimited
-		}
-
-		return nil, NewInvalidQueryError(perr.Msg)
+		return nil, sortPrometheusError(err, "error performing query")
 	}
 
 	return &PrometheusQueryResult{
@@ -166,7 +147,7 @@ func (p *Prometheus) LabelNames(ctx context.Context, matchers []string, tr TimeR
 		v1.WithLimit(_labelLimit),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching label names: %w", err)
+		return nil, sortPrometheusError(err, "error fetching label names")
 	}
 
 	result := make([]string, len(names))
@@ -202,7 +183,7 @@ func (p *Prometheus) LabelValues(ctx context.Context, label string, matchers []s
 		v1.WithLimit(_labelLimit),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching label values: %w", err)
+		return nil, sortPrometheusError(err, "error fetching label values")
 	}
 
 	result := make([]string, len(values))
@@ -237,13 +218,39 @@ func (p *Prometheus) Series(ctx context.Context, matchers []string, tr TimeRange
 		v1.WithLimit(_labelLimit),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching series: %w", err)
+		return nil, sortPrometheusError(err, "error fetching series")
 	}
 
 	return &PrometheusSeriesResult{
 		Warnings: warns,
 		Result:   series,
 	}, nil
+}
+
+// sortPrometheusError sorts a Prometheus client error: a rejected query
+// becomes an invalid-query error, a 429 becomes a rate-limit error, and
+// so on. Any other error keeps the caller's wrap.
+func sortPrometheusError(err error, wrap string) error {
+	perr, ok := errors.AsType[*v1.Error](err)
+	if !ok {
+		return fmt.Errorf("%s: %w", wrap, err)
+	}
+
+	// the client keeps no status code. For a status Prometheus did
+	// not describe itself, it builds the message from the code, so
+	// that message tells an outage, a refused login or a rate limit
+	// from an error about the query.
+	switch {
+	case perr.Type == v1.ErrServer:
+		return ConnectionStatusUnreachable.Error()
+	case perr.Type == v1.ErrClient &&
+		(perr.Msg == "client error: 401" || perr.Msg == "client error: 403"):
+		return ConnectionStatusUnauthorized.Error()
+	case perr.Type == v1.ErrClient && perr.Msg == "client error: 429":
+		return _errRateLimited
+	}
+
+	return NewInvalidQueryError(perr.Msg)
 }
 
 // client creates a Prometheus API client for the data source's URL and
