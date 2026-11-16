@@ -370,7 +370,7 @@ func Test_insertBlocks_Exec(t *testing.T) {
 		// the rest go after the first, since each append would land
 		// before an empty paragraph the write itself put last.
 		"Appended in order": {
-			Tool:       insertBlocks{docTarget: target, Position: positionEnd, Content: two},
+			Tool:       insertBlocks{docTarget: target, ReturnContent: true, Position: positionEnd, Content: two},
 			Content:    []string{">one</p>\n<p id=", ">two</p>"},
 			Ops:        []string{`"kind":"append"`, `"kind":"insert","position":"after"`},
 			CheckCalls: 1,
@@ -587,7 +587,7 @@ func Test_replaceBlocks_Exec(t *testing.T) {
 			Err:        assert.AnError,
 		},
 		"Text rewritten in place": {
-			Tool:       replaceBlocks{docTarget: target, BlockUID: "a", Content: `<p id="a">new <b>words</b></p>`},
+			Tool:       replaceBlocks{docTarget: target, ReturnContent: true, BlockUID: "a", Content: `<p id="a">new <b>words</b></p>`},
 			Content:    []string{`<p id="a">new <b>words</b></p>`},
 			Ops:        []string{`"kind":"replace","block_uid":"a","block":{"type":"paragraph"`},
 			FetchCalls: 1,
@@ -602,7 +602,7 @@ func Test_replaceBlocks_Exec(t *testing.T) {
 			ApplyCalls: 1,
 		},
 		"Nested block kept by its id": {
-			Tool:       replaceBlocks{docTarget: target, BlockUID: "c", Content: `<callout id="c" icon="lucide:info"><p id="cp">inside</p><p>more</p></callout>`},
+			Tool:       replaceBlocks{docTarget: target, ReturnContent: true, BlockUID: "c", Content: `<callout id="c" icon="lucide:info"><p id="cp">inside</p><p>more</p></callout>`},
 			Content:    []string{`<p id="cp">inside</p>`},
 			Ops:        []string{`"kind":"replace","block_uid":"c"`},
 			FetchCalls: 1,
@@ -1010,6 +1010,122 @@ func Test_position_relative(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, c.Result, c.Position.relative())
+		})
+	}
+}
+
+func Test_writtenBlocks(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		ReturnContent bool
+		Result        blockWriteResult
+		JSON          string
+	}{
+		"Compact by default": {
+			Result: blockWriteResult{BlockUIDs: []string{"a", "c", "cp"}},
+			JSON:   `{"block_uids":["a","c","cp"]}`,
+		},
+		"Full content on request": {
+			ReturnContent: true,
+			Result:        blockWriteResult{Content: "<p id=\"a\">hello</p>\n<callout id=\"c\" icon=\"lucide:info\">\n  <p id=\"cp\">inside</p>\n</callout>\n"},
+			JSON:          `{"content":"<p id=\"a\">hello</p>\n<callout id=\"c\" icon=\"lucide:info\">\n  <p id=\"cp\">inside</p>\n</callout>\n"}`,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			got := writtenBlocks(stubContentRoot().Content, c.ReturnContent)
+			assert.Equal(t, c.Result, got)
+
+			raw, err := json.Marshal(got)
+			require.NoError(t, err)
+			assert.JSONEq(t, c.JSON, string(raw))
+		})
+	}
+}
+
+func Test_blockWriteResponses(t *testing.T) {
+	t.Parallel()
+
+	target := docTarget{DocumentID: _testDocID, BranchID: _stubMainBranchID}
+
+	cc := map[string]struct {
+		Tool          Tool
+		ReturnContent bool
+		KeptIDs       []string
+	}{
+		"Insert returns new ids": {
+			Tool: insertBlocks{docTarget: target, Position: positionEnd, Content: "<p>one</p><p>two</p>"},
+		},
+		"Replacement returns kept and new ids": {
+			Tool:    replaceBlocks{docTarget: target, BlockUID: "c", Content: `<callout id="c" icon="lucide:info"><p id="cp">inside</p><p>new</p></callout>`},
+			KeptIDs: []string{"c", "cp"},
+		},
+		"Insert can return normalised XML": {
+			Tool:          insertBlocks{docTarget: target, Position: positionEnd, Content: "<ul><li><p>text</p></li></ul>", ReturnContent: true},
+			ReturnContent: true,
+		},
+		"Replacement can return normalised XML": {
+			Tool:          replaceBlocks{docTarget: target, BlockUID: "a", Content: "<ul><li><p>text</p></li></ul>", ReturnContent: true},
+			ReturnContent: true,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var ops []edit.Operation
+
+			inp := &InputMock{
+				FetchDocumentBlockFunc: func(_, _ xid.ID, uid string) (document.Block, error) {
+					b, ok := stubContentRoot().FindByUID(uid)
+					require.True(t, ok)
+
+					return b, nil
+				},
+				CheckDataSourcesFunc: func([]document.Block) error { return nil },
+				ApplyEditFunc: func(_, _ xid.ID, oo []edit.Operation) error {
+					ops = oo
+
+					return nil
+				},
+			}
+
+			res, err := c.Tool.Exec(inp)
+			require.NoError(t, err)
+			got, ok := res.(blockWriteResult)
+			require.True(t, ok)
+			require.NotEmpty(t, ops)
+
+			if c.ReturnContent {
+				assert.Empty(t, got.BlockUIDs)
+				assert.Regexp(t, `<li id="[^"]+">text</li>`, got.Content)
+				assert.NotContains(t, got.Content, "<p")
+
+				return
+			}
+
+			assert.Empty(t, got.Content)
+
+			var ids []string
+
+			if len(c.KeptIDs) > 0 {
+				uid, _ := ops[0].Block.Content[1].UID()
+				ids = append(c.KeptIDs, uid)
+			} else {
+				for _, op := range ops {
+					uid, ok := op.Block.UID()
+					require.True(t, ok)
+					ids = append(ids, uid)
+				}
+			}
+
+			assert.Equal(t, ids, got.BlockUIDs)
+			assert.NotContains(t, got.BlockUIDs, "")
 		})
 	}
 }
