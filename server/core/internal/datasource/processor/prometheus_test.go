@@ -178,6 +178,22 @@ func Test_Prometheus_Metadata(t *testing.T) {
 			Handler: http.NewServeMux(),
 			Err:     assert.AnError,
 		},
+		"Bad data from Prometheus": {
+			Handler: testutil.JSONHandler("/api/v1/metadata", http.StatusBadRequest, `{"status":"error","errorType":"bad_data","error":"parse error"}`),
+			Err:     NewInvalidQueryError("parse error"),
+		},
+		"Unauthorized data source": {
+			Handler: testutil.JSONHandler("/api/v1/metadata", http.StatusUnauthorized, `<html>unauthorized</html>`),
+			Err:     ConnectionStatusUnauthorized.Error(),
+		},
+		"Rate limited data source": {
+			Handler: testutil.JSONHandler("/api/v1/metadata", http.StatusTooManyRequests, `too many requests`),
+			Err:     _errRateLimited,
+		},
+		"Data source that is down": {
+			Handler: testutil.JSONHandler("/api/v1/metadata", http.StatusServiceUnavailable, `<html>upstream down</html>`),
+			Err:     ConnectionStatusUnreachable.Error(),
+		},
 		"Successful metadata retrieval": {
 			Handler: testutil.JSONHandler("/api/v1/metadata", http.StatusOK, `{"status":"success","data":{"go_goroutines":[{"type":"gauge","help":"Number of goroutines.","unit":""}]}}`),
 			Result: &PrometheusMetadataResult{
