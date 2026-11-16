@@ -13,6 +13,7 @@ import {
 	type LogSummary,
 } from "./rows"
 import { LineFormat, type LogDialect } from "./dialect"
+import { lokiDialect } from "./loki"
 
 const NOON_MILLIS = BigInt(Date.UTC(2026, 0, 1, 12, 0, 0))
 const MULTILINE_LOGFMT = [
@@ -138,18 +139,17 @@ describe("summarizeLog", () => {
 			},
 		},
 		{
-			name: "reads quoted and empty logfmt values without escapes",
+			name: "reads quoted logfmt values and keeps invalid escapes visible",
 			input: {
 				line: 'msg="say \\"hi\\"" empty= spaced="two words" go="\\x01"',
 				labels: {},
 				fields: {},
 			},
 			expected: {
-				message: 'say "hi"',
+				message: 'say "hi"\ngo="\\x01"',
 				extracted: [
 					["empty", '""'],
 					["spaced", '"two words"'],
-					["go", "\\x01"],
 				],
 				fields: [],
 				labels: [],
@@ -158,18 +158,18 @@ describe("summarizeLog", () => {
 		{
 			name: "skips an empty value of a repeated logfmt key, as Loki does",
 			input: {
-					line: 'component= component=billing attempt="" attempt=1',
-					labels: {},
-					fields: {},
+				line: 'component= component=billing attempt="" attempt=1',
+				labels: {},
+				fields: {},
 			},
 			expected: {
-					message: "",
-					extracted: [
-							["component", "billing"],
-							["attempt", "1"],
-					],
-					fields: [],
-					labels: [],
+				message: "",
+				extracted: [
+					["component", "billing"],
+					["attempt", "1"],
+				],
+				fields: [],
+				labels: [],
 			},
 		},
 		{
@@ -534,6 +534,128 @@ describe("extractedFields", () => {
 				isNull: false,
 			},
 		])
+	})
+})
+
+describe("logfmt duplicate values", () => {
+	it.for([
+		{
+			name: "skips an invalid bare value before choosing a duplicate",
+			line: "component=bad=value component=billing",
+			parsed: undefined,
+			expected: [["component", "billing"]],
+		},
+		{
+			name: "skips an invalid quoted escape before choosing a duplicate",
+			line: String.raw`component="bad\q" component=billing`,
+			parsed: undefined,
+			expected: [["component", "billing"]],
+		},
+		{
+			name: "decodes an escaped apostrophe before choosing a duplicate",
+			line: String.raw`component="a\'b" component=other`,
+			parsed: undefined,
+			expected: [["component", "a'b"]],
+		},
+		{
+			name: "decodes a quoted value with an escaped backslash before an apostrophe",
+			line: String.raw`component="a\\'b" component=other`,
+			parsed: undefined,
+			expected: [["component", String.raw`a\'b`]],
+		},
+		{
+			name: "decodes an unescaped tab inside a quoted value as Loki does",
+			line: 'component="a	b" component=other',
+			parsed: undefined,
+			expected: [["component", "a	b"]],
+		},
+		{
+			name: "replaces an invalid surrogate with a space as Loki does",
+			line: String.raw`component="a\ud800b" component=other`,
+			parsed: undefined,
+			expected: [["component", "a b"]],
+		},
+		{
+			name: "keeps an empty first value retained by the source parser",
+			line: 'component="" component=billing component=""',
+			parsed: { component: "" },
+			expected: [["component", ""]],
+		},
+		{
+			name: "keeps the first non-empty value without keep-empty",
+			line: 'component="" component=billing component=other',
+			parsed: { component: "billing" },
+			expected: [["component", "billing"]],
+		},
+	])("$name", ({ line, parsed, expected }, { expect }) => {
+		const log = makeLog({ id: "duplicate", line, parsed })
+
+		expect(
+			extractedFields(log, EXACT_DIALECT).map((f) => [f.key, f.value]),
+		).toEqual(expected)
+	})
+
+	it("uses the source's empty value when Loki renames a clashing key", ({
+		expect,
+	}) => {
+		const log = makeLog({
+			id: "clashing-empty",
+			line: 'component="" component=billing',
+			labels: { component: "stream" },
+			parsed: { component_extracted: "" },
+		})
+
+		expect(
+			extractedFields(log, lokiDialect).map((f) => [f.key, f.value]),
+		).toEqual([["component", ""]])
+	})
+
+	it("keeps a wholly invalid logfmt line visible as plain text", ({
+		expect,
+	}) => {
+		const log = makeLog({ id: "invalid", line: String.raw`component="bad\q"` })
+
+		expect(summarizeLog(log, EXACT_DIALECT).message).toBe(log.line)
+		expect(extractedFields(log, EXACT_DIALECT)).toEqual([])
+	})
+
+	it("does not infer filterable fields after a strict parser error", ({
+		expect,
+	}) => {
+		const log = makeLog({
+			id: "strict",
+			line: "service=api component=bad=value component=billing",
+			parsed: { service: "api", __error__: "LogfmtParserErr" },
+		})
+
+		expect(summarizeLog(log, EXACT_DIALECT).message).toBe(log.line)
+		expect(
+			extractedFields(log, EXACT_DIALECT).map((f) => [
+				f.key,
+				f.value,
+				f.format,
+			]),
+		).toEqual([
+			["__error__", "LogfmtParserErr", null],
+			["service", "api", null],
+		])
+	})
+
+	it("keeps rejected message text visible beside accepted fields", ({
+		expect,
+	}) => {
+		const log = makeLog({
+			id: "invalid-message",
+			line: "level=info msg=retry=failed component=billing",
+			level: LogLevel.Info,
+		})
+
+		expect(summarizeLog(log, EXACT_DIALECT)).toEqual({
+			message: "msg=retry=failed",
+			extracted: [["component", "billing"]],
+			fields: [],
+			labels: [],
+		})
 	})
 })
 

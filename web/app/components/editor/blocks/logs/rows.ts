@@ -79,7 +79,7 @@ interface ReadLine {
 export function summarizeLog(log: Log, dialect: LogDialect): LogSummary {
 	const shown = (key: string) =>
 		log.level === LogLevel.Unknown || !LEVEL_KEYS.has(key)
-	const line = readLine(log.line)
+	const line = readLine(log, dialect)
 	const messageKey = line
 		? MESSAGE_KEYS.find((k) => typeof line.record[k] === "string")
 		: undefined
@@ -113,7 +113,7 @@ export function extractedFields(
 	log: Log,
 	dialect: LogDialect,
 ): ExtractedField[] {
-	return extract(log, readLine(log.line), dialect, false)
+	return extract(log, readLine(log, dialect), dialect, false)
 }
 
 // displayValue quotes a value when it is empty or holds white space, so the
@@ -317,10 +317,18 @@ function extract(
 
 // readLine reads a JSON or logfmt line key by key, or gives null for any
 // other line
-function readLine(line: string): ReadLine | null {
+function readLine(log: Log, dialect: LogDialect): ReadLine | null {
+	const line = log.line
+
 	const json = parseJSONObject(line)
 	if (json) {
 		return { record: json, format: LineFormat.JSON, continuation: "" }
+	}
+
+	// a strict parser stops at its first error, so later fields cannot
+	// be offered as filters even when they look valid locally.
+	if (log.parsed?.__error__ === "LogfmtParserErr") {
+		return null
 	}
 
 	const newline = line.indexOf("\n")
@@ -328,13 +336,21 @@ function readLine(line: string): ReadLine | null {
 		/\r$/,
 		"",
 	)
-	const logfmt = parseLogfmt(firstLine)
+	const logfmt = parseLogfmt(
+		firstLine,
+		(key) => log.parsed?.[dialect.lineKeyName(key, log)] === "",
+	)
 
 	return logfmt
 		? {
-				record: logfmt,
+				record: logfmt.record,
 				format: LineFormat.Logfmt,
-				continuation: newline < 0 ? "" : line.slice(newline + 1),
+				continuation: [
+					logfmt.rejected,
+					newline < 0 ? "" : line.slice(newline + 1),
+				]
+					.filter(Boolean)
+					.join("\n"),
 			}
 		: null
 }
@@ -371,38 +387,61 @@ export function isNumberText(value: unknown): boolean {
 	return SOURCE_JSON.isRawJSON?.(value) ?? false
 }
 
-// parseLogfmt reads a line made only of logfmt pairs. A line with any other
-// word is plain text, so it gives null.
-function parseLogfmt(line: string): Record<string, string> | null {
+// parseLogfmt keeps the first valid value of each key. Empty values may
+// be replaced unless the source's parser explicitly retained one.
+function parseLogfmt(
+	line: string,
+	keepEmpty: (key: string) => boolean,
+): { record: Record<string, string>; rejected: string } | null {
 	const values = new Map<string, string>()
+	const rejected: string[] = []
 	let at = 0
 
 	while (/\S/.test(line.slice(at))) {
-			LOGFMT_PAIR.lastIndex = at
-			const match = LOGFMT_PAIR.exec(line)
-			if (!match) {
-					return null
-			}
+		LOGFMT_PAIR.lastIndex = at
+		const match = LOGFMT_PAIR.exec(line)
+		if (!match) {
+			return null
+		}
 
-			const [, key = "", value = ""] = match
-			// Loki keeps the first value of a repeated key, but it skips an
-			// empty one.
-			if (!values.get(key)) {
-					values.set(key, value.startsWith('"') ? unquote(value) : value)
-			}
+		const [, key = "", raw = ""] = match
+		const value = raw.startsWith('"')
+			? unquote(raw)
+			: raw.includes("=")
+				? null
+				: raw
 
-			at = LOGFMT_PAIR.lastIndex
+		if (value === null) {
+			rejected.push(match[0].trimStart())
+		} else if (
+			!values.has(key) ||
+			(values.get(key) === "" && !keepEmpty(key))
+		) {
+			values.set(key, value.toWellFormed().replaceAll("\uFFFD", " "))
+		}
+
+		at = LOGFMT_PAIR.lastIndex
 	}
 
-	return values.size ? Object.fromEntries(values) : null
+	return values.size
+		? { record: Object.fromEntries(values), rejected: rejected.join(" ") }
+		: null
 }
 
-// unquote reads a quoted logfmt value. An escape JSON does not know, such
-// as Go's \x, leaves the text between the quotes as written.
-function unquote(quoted: string): string {
+// unquote reads Loki's JSON-style escapes, which also allow an escaped
+// apostrophe. Invalid escapes must not hide a later valid duplicate.
+function unquote(quoted: string): string | null {
+	const json = quoted.replace(/\\[\s\S]|\p{Cc}/gu, (escape) =>
+		escape === "\\'"
+			? "'"
+			: escape.length === 1
+				? JSON.stringify(escape).slice(1, -1)
+				: escape,
+	)
+
 	try {
-		return String(JSON.parse(quoted))
+		return String(JSON.parse(json))
 	} catch {
-		return quoted.slice(1, -1)
+		return null
 	}
 }
