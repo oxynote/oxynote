@@ -431,13 +431,19 @@ describe("main", { concurrent: false }, () => {
 			})
 		})
 
-		it("leaves auth endpoint requests untouched", async () => {
+		it.for([
+			{
+				name: "under the api base path",
+				input: "http://test.local/core/api/auth/get-session",
+			},
+			{
+				name: "at the origin root",
+				input: "http://test.local/api/auth/get-session",
+			},
+		])("leaves auth endpoint requests $name untouched", async ({ input }) => {
 			await importMain()
 
-			const headers = injectedHeaders(
-				"http://test.local/core/api/auth/get-session",
-				{ Accept: "application/json" },
-			)
+			const headers = injectedHeaders(input, { Accept: "application/json" })
 
 			expect(headers).toEqual({ Accept: "application/json" })
 			expect(mocks.getCookieMock).toHaveBeenCalledTimes(0)
