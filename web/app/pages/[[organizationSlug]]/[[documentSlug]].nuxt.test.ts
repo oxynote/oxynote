@@ -623,6 +623,121 @@ describe("<document-editor>", { concurrent: false }, () => {
 		})
 	})
 
+	describe("when the branch changes", { concurrent: false }, () => {
+		it("shows the main branch's icon and name after switching back to main", async ({
+			expect,
+		}) => {
+			seedWorkspace({
+				branches: [
+					branch(DEFAULT_BRANCH_ID, true),
+					branch(DRAFT_BRANCH_ID, false, "Draft", "mingcute:book-2-fill"),
+				],
+				tags: [tagWith(treeElement(DOC_ID, "Intro"))],
+			})
+			arrangeRoute({ query: { branch: DRAFT_BRANCH_ID } })
+			const wrapper = await mountPage()
+
+			emitFrom(
+				wrapper,
+				{ name: "EditorDocumentContainer" },
+				"updated-live-icon",
+				"mingcute:pen-fill",
+			)
+			emitFrom(
+				wrapper,
+				{ name: "EditorDocumentContainer" },
+				"updated-live-name",
+				"Drafty",
+			)
+
+			useEditorStore().updateActiveBranchId(DEFAULT_BRANCH_ID)
+			await nextTick()
+
+			const main = treeElement(DOC_ID, "Intro")
+			expect.soft(readQueryData(["documents", "tree"])).toEqual([main])
+			expect.soft(readQueryData(["tags", "tree"])).toEqual([tagWith(main)])
+		})
+
+		it("shows the draft branch's live icon and name after switching back to it", async ({
+			expect,
+		}) => {
+			seedWorkspace({
+				branches: [
+					branch(DEFAULT_BRANCH_ID, true),
+					branch(DRAFT_BRANCH_ID, false, "Draft", "mingcute:book-2-fill"),
+				],
+				tags: [tagWith(treeElement(DOC_ID, "Intro"))],
+			})
+			arrangeRoute({ query: { branch: DRAFT_BRANCH_ID } })
+			const wrapper = await mountPage()
+
+			emitFrom(
+				wrapper,
+				{ name: "EditorDocumentContainer" },
+				"updated-live-icon",
+				"mingcute:pen-fill",
+			)
+			emitFrom(
+				wrapper,
+				{ name: "EditorDocumentContainer" },
+				"updated-live-name",
+				"Drafty",
+			)
+			useEditorStore().updateActiveBranchId(DEFAULT_BRANCH_ID)
+			await nextTick()
+
+			useEditorStore().updateActiveBranchId(DRAFT_BRANCH_ID)
+			await nextTick()
+
+			const draft = {
+				...treeElement(DOC_ID, "Drafty"),
+				icon: "mingcute:pen-fill",
+			}
+			expect.soft(readQueryData(["documents", "tree"])).toEqual([draft])
+			expect.soft(readQueryData(["tags", "tree"])).toEqual([tagWith(draft)])
+		})
+
+		it("shows the main branch's icon and name for the document left behind", async ({
+			expect,
+		}) => {
+			seedWorkspace({
+				tree: [
+					treeElement(DOC_ID, "Intro"),
+					treeElement(OTHER_DOC_ID, "Other"),
+				],
+				branches: [
+					branch(DEFAULT_BRANCH_ID, true),
+					branch(DRAFT_BRANCH_ID, false, "Draft", "mingcute:book-2-fill"),
+				],
+				tags: [tagWith(treeElement(DOC_ID, "Intro"))],
+			})
+			const route = arrangeRoute({ query: { branch: DRAFT_BRANCH_ID } })
+			const wrapper = await mountPage()
+
+			emitFrom(
+				wrapper,
+				{ name: "EditorDocumentContainer" },
+				"updated-live-icon",
+				"mingcute:pen-fill",
+			)
+			emitFrom(
+				wrapper,
+				{ name: "EditorDocumentContainer" },
+				"updated-live-name",
+				"Drafty",
+			)
+
+			route.params.documentSlug = `Other-${OTHER_DOC_ID}`
+			await nextTick()
+
+			const main = treeElement(DOC_ID, "Intro")
+			expect
+				.soft(readQueryData(["documents", "tree"]))
+				.toEqual([main, treeElement(OTHER_DOC_ID, "Other")])
+			expect.soft(readQueryData(["tags", "tree"])).toEqual([tagWith(main)])
+		})
+	})
+
 	describe(
 		"when the document's metadata changes",
 		{ concurrent: false },
@@ -1709,12 +1824,17 @@ function tagWith(document: DocumentTreeElement): TagTreeElement {
 	}
 }
 
-function branch(id: string, isDefault: boolean): DocumentBranch {
+function branch(
+	id: string,
+	isDefault: boolean,
+	documentName = "Intro",
+	icon = "mingcute:document-2-fill",
+): DocumentBranch {
 	return {
 		branchId: id,
 		branchName: isDefault ? "main" : "draft",
-		documentName: "Intro",
-		icon: "mingcute:document-2-fill",
+		documentName: documentName,
+		icon: icon,
 		protected: false,
 		default: isDefault,
 		createdAt: "2026-01-01T10:00:00Z",

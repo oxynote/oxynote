@@ -10,6 +10,7 @@ import {
 	redirectToOrgRoot,
 } from "~/plugins/03.api-fetch"
 import { showRequestErrorToast, showToastMessage } from "~/components/toast"
+import { DOCUMENT_QUERY_KEYS } from "~/composables/api/useDocumentAPI"
 import type { Editor } from "@tiptap/core"
 
 const DOC_CREATION_MIN_SPINNER_TIME_MS = 500
@@ -120,6 +121,7 @@ const {
 } = useDocumentAPI()
 const { deleteTag, updateTagTreeDocumentCache } = useTagAPI()
 const { fetchOrganization } = useAuthSession()
+const queryCache = useQueryCache()
 const { t } = useI18n({ useScope: "global" })
 const { isAssistantEnabled } = useCapabilitiesAPI()
 const wsState = useWebSocketStateStore()
@@ -216,6 +218,16 @@ const breadcrumbs = computed(() => {
 
 let recordedBranchView = ""
 
+// the name and icon last set live on each branch, keyed by branch id.
+// The branch list lags live edits, so a switch back to a branch the
+// user renamed reads here first.
+const liveBranchValues = new Map<string, { name: string; icon: string }>()
+
+// the branch the sidebar row was last synced to, as
+// "<documentId>-<branchId>". The sync runs once per activation, so a
+// branch list refetch never overwrites a live value with a stale one.
+let lastSyncedBranchKey = ""
+
 useHead({
 	title: () =>
 		activeDocMetadata.value
@@ -243,7 +255,11 @@ watch(fetchDocumentTree.state, (newV) => {
 
 watchImmediate(
 	() => activeDocMetadata.value?.id,
-	(newV) => {
+	(newV, oldV) => {
+		if (oldV && oldV !== newV) {
+			restorePreviousDocumentTreeCaches(oldV)
+		}
+
 		editorStore.updateActiveDocumentId(newV ?? null)
 		pageReady.value = false
 
@@ -397,6 +413,17 @@ watchImmediate(
 		editorStore.setBranchReviewableActionsActive(
 			branches.length > 1 && !activeBranch?.default,
 		)
+
+		// the sidebar row follows the branch that is open. The sync runs
+		// once per activation, so a later refetch of the list cannot
+		// overwrite a live value with a stale one.
+		if (activeBranch) {
+			const branchKey = `${activeDocMetadata.value.id}-${activeBranch.branchId}`
+			if (branchKey !== lastSyncedBranchKey) {
+				lastSyncedBranchKey = branchKey
+				syncBranchIntoTreeCaches(activeBranch)
+			}
+		}
 	},
 )
 
@@ -560,6 +587,86 @@ function syncBranchQuery(dropLinkedBlock = false) {
 	})
 }
 
+function recordLiveBranchValues(name: string, icon: string) {
+	const branchId = editorStore.activeBranchId
+	if (!branchId) {
+		return
+	}
+
+	liveBranchValues.set(branchId, { name: name, icon: icon })
+}
+
+// writes a branch's name and icon into the document and tag tree
+// caches, so the sidebar row shows the branch that is open. Live
+// values the user set on the branch win over the branch list, which
+// lags live edits.
+function syncBranchIntoTreeCaches(branch: DocumentBranch) {
+	const metadata = activeDocMetadata.value
+	if (!metadata) {
+		return
+	}
+
+	const live = liveBranchValues.get(branch.branchId)
+	const name = live?.name ?? branch.documentName
+	const icon = live?.icon ?? branch.icon
+
+	if (metadata.name === name && metadata.icon === icon) {
+		return
+	}
+
+	updateDocumentTreeElementCache(metadata.id, {
+		name: name,
+		icon: icon,
+		protected: metadata.protected,
+	})
+	updateTagTreeDocumentCache(metadata.id, {
+		name: name,
+		icon: icon,
+		protected: metadata.protected,
+	})
+}
+
+// puts the document the user just left back to its default branch's
+// name and icon in the trees. The row keeps the draft branch's live
+// values otherwise. A document left from its default branch already
+// shows them, so it needs no restoring.
+function restorePreviousDocumentTreeCaches(docId: string) {
+	const branches = queryCache.getQueryData<DocumentBranchesResponse>(
+		DOCUMENT_QUERY_KEYS.branches(docId),
+	)
+	const defaultBranch = branches?.find((b) => b.default)
+	if (!defaultBranch || editorStore.activeBranchId === defaultBranch.branchId) {
+		return
+	}
+
+	const tree = queryCache.getQueryData<DocumentTreeResponse>(
+		DOCUMENT_QUERY_KEYS.root,
+	)
+	const elem = tree ? extractDocumentTreeElement(tree, docId) : undefined
+	if (!elem) {
+		return
+	}
+
+	const live = liveBranchValues.get(defaultBranch.branchId)
+	const name = live?.name ?? defaultBranch.documentName
+	const icon = live?.icon ?? defaultBranch.icon
+
+	if (elem.documentName === name && elem.icon === icon) {
+		return
+	}
+
+	updateDocumentTreeElementCache(docId, {
+		name: name,
+		icon: icon,
+		protected: elem.protected,
+	})
+	updateTagTreeDocumentCache(docId, {
+		name: name,
+		icon: icon,
+		protected: elem.protected,
+	})
+}
+
 function applyDocumentNameChange(name: string) {
 	if (!activeDocMetadata.value) {
 		// NOCOV: the container that sends this renders only with a document.
@@ -580,6 +687,7 @@ function applyDocumentNameChange(name: string) {
 		icon: activeDocMetadata.value.icon,
 		protected: activeDocMetadata.value.protected,
 	})
+	recordLiveBranchValues(name, activeDocMetadata.value.icon)
 
 	void pageRouter.replace({
 		path: `/${createNameSlug(fetchOrganization.data.value?.data?.slug || "")}/${createNameSlugWithId(
@@ -622,6 +730,7 @@ function applyIconChange(icon: string) {
 		icon: icon,
 		protected: activeDocMetadata.value.protected,
 	})
+	recordLiveBranchValues(activeDocMetadata.value.name, icon)
 }
 
 async function handleDocumentCreation(
