@@ -19,6 +19,7 @@ import {
 	openSubMenu,
 	raisedToasts,
 	seedAuthConfig,
+	seedAuthOrganization,
 	seedAuthSession,
 	settleMutations,
 	t,
@@ -99,7 +100,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 	it("fills the name field once a late organization arrives", async ({
 		expect,
 	}) => {
-		mockAuthOrganization(null)
+		seedAuthOrganization(null)
 
 		const { wrapper } = await mountSection()
 		expect(nameInput(wrapper).element.value).toBe("")
@@ -254,6 +255,35 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 
 		expect(calls).toHaveLength(1)
 		expect(nameInput(wrapper).element.value).toBe("Acme-EU")
+	})
+
+	it("preserves edits made while a save is pending", async ({ expect }) => {
+		const org = {
+			id: "org-1",
+			name: "Acme",
+			slug: "acme-corp",
+			logo: "",
+			members: [member("u1", "ada")],
+			invitations: [],
+		}
+		mockAuthOrganization(org)
+		let resolveUpdate: (value: { id: string }) => void = () => undefined
+		mockAuthEndpoint("organization/update", () => {
+			return new Promise<{ id: string }>((resolve) => {
+				resolveUpdate = resolve
+			})
+		})
+		const { wrapper } = await mountSection()
+
+		await nameInput(wrapper).setValue("Acme-EU")
+		await wrapper.find("form").trigger("submit")
+
+		await nameInput(wrapper).setValue("Acme-US")
+
+		resolveUpdate({ id: "org-1" })
+		await settleMutations()
+
+		expect(nameInput(wrapper).element.value).toBe("Acme-US")
 	})
 
 	it("saves a name made of several words", async ({ expect }) => {

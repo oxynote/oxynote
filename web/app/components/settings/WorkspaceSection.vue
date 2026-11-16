@@ -147,12 +147,17 @@ const onSubmit = form.handleSubmit(async (values) => {
 
 	await fetchOrganization.refetch()
 
-	form.resetForm({
-		values: {
-			logoUrl: fetchOrganization.state.value.data?.data?.logo || "",
-			name: fetchOrganization.state.value.data?.data?.name || "",
-		},
-	})
+	if (
+		form.values.name === values.name &&
+		form.values.logoUrl === values.logoUrl
+	) {
+		form.resetForm({
+			values: {
+				logoUrl: fetchOrganization.state.value.data?.data?.logo || "",
+				name: fetchOrganization.state.value.data?.data?.name || "",
+			},
+		})
+	}
 
 	loading.value = null
 
