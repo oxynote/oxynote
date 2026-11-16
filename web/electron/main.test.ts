@@ -435,7 +435,7 @@ describe("main", { concurrent: false }, () => {
 			await importMain()
 
 			const headers = injectedHeaders(
-				"http://test.local/api/auth/get-session",
+				"http://test.local/core/api/auth/get-session",
 				{ Accept: "application/json" },
 			)
 
