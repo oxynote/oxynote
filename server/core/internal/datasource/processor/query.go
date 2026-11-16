@@ -10,7 +10,11 @@ import (
 
 // ErrInvalidChartType is returned when a chart type is not one the
 // processors draw.
-var ErrInvalidChartType = errutil.New(http.StatusBadRequest, "chart_type.invalid", "Invalid chart type. Must be one of: line, bar, gauge.")
+var ErrInvalidChartType = errutil.New(
+	http.StatusBadRequest,
+	"chart_type.invalid",
+	fmt.Sprintf("invalid chart type, must be %s, %s or %s", ChartTypeLine, ChartTypeBar, ChartTypeGauge),
+)
 
 // ChartType represents the type of chart visualization.
 type ChartType string
