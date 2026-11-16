@@ -4,6 +4,7 @@ package datasource
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -44,6 +45,14 @@ var (
 		http.StatusBadRequest,
 		"data_source.invalid_type",
 		"invalid data source type",
+	)
+
+	// ErrInvalidURL is returned when a data source URL is empty or does
+	// not parse.
+	ErrInvalidURL = errutil.New(
+		http.StatusBadRequest,
+		"data_source.invalid_url",
+		"invalid data source url",
 	)
 )
 
@@ -274,9 +283,9 @@ type CreateInput struct {
 }
 
 // Validate checks that the type is a known one, that the name, once
-// sanitized, is usable and that the credentials can be read. A connection
-// test does not always read the credentials first: the demo data source
-// passes without them.
+// sanitized, is usable, that the URL, once sanitized, parses and that the
+// credentials can be read. A connection test does not always read the
+// credentials first: the demo data source passes without them.
 func (ci CreateInput) Validate() error {
 	if err := ci.Type.Validate(); err != nil {
 		return err
@@ -285,6 +294,10 @@ func (ci CreateInput) Validate() error {
 	sanitized := ci.sanitize()
 
 	if err := validateName(sanitized.Name); err != nil {
+		return err
+	}
+
+	if err := validateURL(sanitized.URL); err != nil {
 		return err
 	}
 
@@ -300,10 +313,11 @@ func (ci CreateInput) Validate() error {
 	return nil
 }
 
-// sanitize returns the input with the white space around its name
-// removed.
+// sanitize returns the input with the white space around its name and
+// URL removed.
 func (ci CreateInput) sanitize() CreateInput {
 	ci.Name = strings.TrimSpace(ci.Name)
+	ci.URL = strings.TrimSpace(ci.URL)
 
 	return ci
 }
@@ -320,22 +334,35 @@ type UpdateInput struct {
 	Credentials null.Value[credentials.UpdateInput] `json:"credentials"`
 }
 
-// Validate checks that a set name, once sanitized, is usable.
+// Validate checks that a set name, once sanitized, is usable and that a
+// set URL, once sanitized, parses.
 func (ui UpdateInput) Validate() error {
 	sanitized := ui.sanitize()
 
 	if sanitized.Name.Valid {
-		return validateName(sanitized.Name.String)
+		if err := validateName(sanitized.Name.String); err != nil {
+			return err
+		}
+	}
+
+	if sanitized.URL.Valid {
+		if err := validateURL(sanitized.URL.String); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-// sanitize returns the input with the white space around its name
-// removed.
+// sanitize returns the input with the white space around its set name and
+// URL removed.
 func (ui UpdateInput) sanitize() UpdateInput {
 	if ui.Name.Valid {
 		ui.Name = null.StringFrom(strings.TrimSpace(ui.Name.String))
+	}
+
+	if ui.URL.Valid {
+		ui.URL = null.StringFrom(strings.TrimSpace(ui.URL.String))
 	}
 
 	return ui
@@ -345,4 +372,18 @@ func (ui UpdateInput) sanitize() UpdateInput {
 // nor too long.
 func validateName(name string) error {
 	return strutil.ValidateName(name, _maxNameLength, ErrInvalidName, ErrNameTooLong)
+}
+
+// validateURL reports whether a trimmed data source URL is neither empty
+// nor one url.Parse refuses.
+func validateURL(rawURL string) error {
+	if rawURL == "" {
+		return ErrInvalidURL
+	}
+
+	if _, err := url.Parse(rawURL); err != nil {
+		return ErrInvalidURL
+	}
+
+	return nil
 }
