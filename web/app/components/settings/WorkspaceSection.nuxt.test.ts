@@ -243,8 +243,14 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 		await wrapper.find("form").trigger("submit")
 
 		await vi.waitFor(() => {
-			expect(calls).toHaveLength(1)
+			expect(raisedToasts()).toMatchObject([
+				{
+					type: "success",
+					title: t("settings.workspace.success-messages.name.title"),
+				},
+			])
 		}, WAIT_FOR_OPTIONS)
+		expect(calls).toHaveLength(1)
 		expect(calls[0]?.body).toEqual({
 			data: { name: "Acme-EU" },
 			organizationId: "org-1",
@@ -268,7 +274,16 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 		}
 		mockAuthOrganization(org)
 		let resolveUpdate: (value: { id: string }) => void = () => undefined
-		mockAuthEndpoint("organization/update", () => {
+		let requestDispatched: () => void = () => undefined
+		const dispatched = new Promise<void>((resolve) => {
+			requestDispatched = resolve
+		})
+		const calls = mockAuthEndpoint("organization/update", (args) => {
+			requestDispatched()
+			const body = args.body as { data: { name?: string } }
+			if (body.data.name) {
+				org.name = body.data.name
+			}
 			return new Promise<{ id: string }>((resolve) => {
 				resolveUpdate = resolve
 			})
@@ -277,12 +292,26 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 
 		await nameInput(wrapper).setValue("Acme-EU")
 		await wrapper.find("form").trigger("submit")
+		await dispatched
 
 		await nameInput(wrapper).setValue("Acme-US")
 
 		resolveUpdate({ id: "org-1" })
+		await vi.waitFor(() => {
+			expect(raisedToasts()).toMatchObject([
+				{
+					type: "success",
+					title: t("settings.workspace.success-messages.name.title"),
+				},
+			])
+		}, WAIT_FOR_OPTIONS)
 		await settleMutations()
 
+		expect(calls).toHaveLength(1)
+		expect(calls[0]?.body).toEqual({
+			data: { name: "Acme-EU" },
+			organizationId: "org-1",
+		})
 		expect(nameInput(wrapper).element.value).toBe("Acme-US")
 	})
 

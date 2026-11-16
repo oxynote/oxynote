@@ -106,6 +106,8 @@ const loading = ref<"logo" | null>(null)
 const logoInput = useTemplateRef<HTMLInputElement>("logoInput")
 
 const onSubmit = form.handleSubmit(async (values) => {
+	const submittedValues = { ...form.values }
+
 	const data: { logo?: string; name?: string } = {}
 	if (values.logoUrl !== fetchOrganization.state.value.data?.data?.logo) {
 		data.logo = values.logoUrl
@@ -147,14 +149,16 @@ const onSubmit = form.handleSubmit(async (values) => {
 
 	await fetchOrganization.refetch()
 
+	const refreshedOrg = fetchOrganization.state.value.data?.data
 	if (
-		form.values.name === values.name &&
-		form.values.logoUrl === values.logoUrl
+		refreshedOrg &&
+		form.values.name === submittedValues.name &&
+		form.values.logoUrl === submittedValues.logoUrl
 	) {
 		form.resetForm({
 			values: {
-				logoUrl: fetchOrganization.state.value.data?.data?.logo || "",
-				name: fetchOrganization.state.value.data?.data?.name || "",
+				logoUrl: refreshedOrg.logo || "",
+				name: refreshedOrg.name,
 			},
 		})
 	}
