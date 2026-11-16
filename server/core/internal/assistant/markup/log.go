@@ -44,7 +44,8 @@ func LogReference() string {
 		fmt.Fprintf(&sb, ", %s (%s)", key, strings.Join(_logOnlyEnums[key], "|"))
 	}
 
-	sb.WriteString(". It may also hold title. order sorts the logs by time, and desc shows the newest first")
+	sb.WriteString(". It may also hold title. order sorts the logs by time, and desc shows the newest first. " +
+		"queries defaults to one empty query when it is missing or empty")
 
 	return sb.String()
 }
@@ -73,7 +74,8 @@ type logQuery struct {
 
 // decodeLogAttrs reads a log block's JSON attributes and checks them:
 // every enum holds one of its values, every other attribute has its
-// type, and every query has a name and a query.
+// type, and every query has a name and a query. A block with no queries
+// gets the editor's default one.
 func decodeLogAttrs(text string) (document.Attributes, error) {
 	attrs := document.Attributes{}
 
@@ -106,6 +108,17 @@ func decodeLogAttrs(text string) (document.Attributes, error) {
 		if q.Name == nil || q.Query == nil {
 			return nil, fmt.Errorf("log block query %d: name and query are required", i+1)
 		}
+	}
+
+	// a block with no queries gets the editor's default one, so a
+	// block the assistant wrote reads like one made in the editor.
+	// A null value stays null: it means the caller left the field
+	// unset, and the stored value already says that.
+	queries, present := attrs[document.AttrQueries]
+	rows, isList := queries.([]any)
+
+	if !present || (isList && len(rows) == 0) {
+		attrs[document.AttrQueries] = []any{map[string]any{"name": "Query 1", "query": ""}}
 	}
 
 	return attrs, nil

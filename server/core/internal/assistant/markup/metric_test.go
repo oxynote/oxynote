@@ -106,19 +106,33 @@ func Test_decodeMetricAttrs(t *testing.T) {
 			Text:   `{"visualizationType":null,"queries":null,"thresholds":null,"decimals":null}`,
 			Result: document.Attributes{document.AttrVisualizationType: nil, document.AttrQueries: nil, "thresholds": nil, "decimals": nil},
 		},
+		"A missing queries key gets the default query": {
+			Text: `{"title":"Request rate"}`,
+			Result: document.Attributes{
+				document.AttrTitle:   "Request rate",
+				document.AttrQueries: []any{map[string]any{"name": "Query 1", "query": "", "legendFormat": ""}},
+			},
+		},
+		"An empty queries list gets the default query": {
+			Text: `{"queries":[]}`,
+			Result: document.Attributes{
+				document.AttrQueries: []any{map[string]any{"name": "Query 1", "query": "", "legendFormat": ""}},
+			},
+		},
 		"An unknown attr passes through": {
 			Text:   `{"wibble":1}`,
-			Result: document.Attributes{"wibble": 1.0},
+			Result: document.Attributes{"wibble": 1.0, document.AttrQueries: []any{map[string]any{"name": "Query 1", "query": "", "legendFormat": ""}}},
 		},
 		"A threshold row with nothing set": {
 			Text:   `{"thresholds":[{}]}`,
-			Result: document.Attributes{"thresholds": []any{map[string]any{}}},
+			Result: document.Attributes{"thresholds": []any{map[string]any{}}, document.AttrQueries: []any{map[string]any{"name": "Query 1", "query": "", "legendFormat": ""}}},
 		},
 		"Built-in variable references": {
 			Text: `{"timeRange":"$metric_range","refreshInterval":"$metric_refresh"}`,
 			Result: document.Attributes{
 				document.AttrTimeRange:       "$metric_range",
 				document.AttrRefreshInterval: "$metric_refresh",
+				document.AttrQueries:         []any{map[string]any{"name": "Query 1", "query": "", "legendFormat": ""}},
 			},
 		},
 		"A time range following the refresh interval": {
@@ -192,6 +206,7 @@ func Test_decodeMetricAttrs(t *testing.T) {
 			Result: document.Attributes{
 				"thresholds":         []any{map[string]any{"value": 90.0, "color": legacyColor}},
 				"baseThresholdColor": legacyColor,
+				document.AttrQueries: []any{map[string]any{"name": "Query 1", "query": "", "legendFormat": ""}},
 			},
 		},
 	}

@@ -220,6 +220,22 @@ describe("<BottomConfig>", { concurrent: false }, () => {
 		).toHaveLength(0)
 	})
 
+	it("says there is no query in read mode when the config has none", async ({
+		expect,
+	}) => {
+		useEditorMeta().setEditable(false)
+
+		const wrapper = await mountBottom({
+			modelValue: configWith({ queries: null }),
+		})
+
+		expect(queryEditors(wrapper)).toHaveLength(0)
+		expect(wrapper.text()).toContain(t("editor.metrics.config.no-query"))
+		expect(wrapper.text()).not.toContain(
+			t("editor.metrics.config.add-query-button"),
+		)
+	})
+
 	it("explains the query language of the chosen data source", async ({
 		expect,
 	}) => {

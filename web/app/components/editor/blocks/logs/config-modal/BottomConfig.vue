@@ -179,6 +179,12 @@ function deleteQuery(index: number) {
 				</ConfigField>
 			</div>
 		</div>
+		<p
+			v-if="!entries.length && isEditingDisabled"
+			class="px-1.75 text-2sm text-muted-foreground"
+		>
+			{{ $t("editor.logs.config.no-query") }}
+		</p>
 		<ShadcnUiButton
 			v-if="!isEditingDisabled"
 			variant="dim"

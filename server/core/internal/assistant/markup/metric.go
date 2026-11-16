@@ -80,7 +80,8 @@ func MetricReference() string {
 	sb.WriteString(". It may also hold title, unitCustom (the label when unitType is custom), decimals, thresholds ([{value, label, color}]), baseThresholdColor, axisBoundsMin and axisBoundsMax. " +
 		"A threshold colour and baseThresholdColor are one of " + strings.Join(tagCore.ColorNames(), "|") + ". " +
 		"timeRange and refreshInterval default to " + _windowReferences[document.AttrTimeRange] + " and " + _windowReferences[document.AttrRefreshInterval] +
-		", the built-in variables each user sets. Give a preset only to pin one chart, and the reference to unpin it")
+		", the built-in variables each user sets. Give a preset only to pin one chart, and the reference to unpin it. " +
+		"queries defaults to one empty query when it is missing or empty")
 
 	return sb.String()
 }
@@ -143,8 +144,9 @@ type metricThreshold struct {
 
 // decodeMetricAttrs reads and checks a metric's JSON attributes. A
 // threshold colour must be a palette name, or one the stored metric
-// already carries, since older metrics hold css. stored is the metric
-// the element's id names, or the zero block.
+// already carries, since older metrics hold css. A block with no queries
+// gets the editor's default one. stored is the metric the element's id
+// names, or the zero block.
 func decodeMetricAttrs(text string, stored document.Block) (document.Attributes, error) {
 	attrs := document.Attributes{}
 
@@ -177,6 +179,17 @@ func decodeMetricAttrs(text string, stored document.Block) (document.Attributes,
 		if q.Name == nil || q.Query == nil {
 			return nil, fmt.Errorf("metric block query %d: name and query are required", i+1)
 		}
+	}
+
+	// a block with no queries gets the editor's default one, so a
+	// block the assistant wrote reads like one made in the editor.
+	// A null value stays null: it means the caller left the field
+	// unset, and the stored value already says that.
+	queries, present := attrs[document.AttrQueries]
+	rows, isList := queries.([]any)
+
+	if !present || (isList && len(rows) == 0) {
+		attrs[document.AttrQueries] = []any{map[string]any{"name": "Query 1", "query": "", "legendFormat": ""}}
 	}
 
 	colors := append(tagCore.ColorNames(), storedMetricColors(stored)...)

@@ -56,6 +56,19 @@ func Test_decodeLogAttrs(t *testing.T) {
 			Text:   `{"order":null,"queries":null}`,
 			Result: document.Attributes{document.AttrOrder: nil, document.AttrQueries: nil},
 		},
+		"A missing queries key gets the default query": {
+			Text: `{"title":"API errors"}`,
+			Result: document.Attributes{
+				document.AttrTitle:   "API errors",
+				document.AttrQueries: []any{map[string]any{"name": "Query 1", "query": ""}},
+			},
+		},
+		"An empty queries list gets the default query": {
+			Text: `{"queries":[]}`,
+			Result: document.Attributes{
+				document.AttrQueries: []any{map[string]any{"name": "Query 1", "query": ""}},
+			},
+		},
 		"Not JSON": {
 			Text: "{",
 			Err:  assert.AnError,
@@ -66,7 +79,7 @@ func Test_decodeLogAttrs(t *testing.T) {
 		},
 		"A time range that follows the built-in variable": {
 			Text:   `{"timeRange":"$metric_range","refreshInterval":"1m"}`,
-			Result: document.Attributes{document.AttrTimeRange: "$metric_range", document.AttrRefreshInterval: "1m"},
+			Result: document.Attributes{document.AttrTimeRange: "$metric_range", document.AttrRefreshInterval: "1m", document.AttrQueries: []any{map[string]any{"name": "Query 1", "query": ""}}},
 		},
 		"An unknown refresh interval": {
 			Text: `{"refreshInterval":"1y"}`,

@@ -191,6 +191,22 @@ describe("<BottomConfig>", { concurrent: false }, () => {
 		expect(deleteButtons(wrapper)).toHaveLength(0)
 	})
 
+	it("says there is no query in read mode when the config has none", async ({
+		expect,
+	}) => {
+		useEditorMeta().setEditable(false)
+
+		const wrapper = await mountBottom({
+			modelValue: configWith({ queries: null }),
+		})
+
+		expect(queryEditors(wrapper)).toHaveLength(0)
+		expect(wrapper.text()).toContain(t("editor.logs.config.no-query"))
+		expect(wrapper.text()).not.toContain(
+			t("editor.logs.config.add-query-button"),
+		)
+	})
+
 	it("offers no editing controls while a reviewable diff is shown", async ({
 		expect,
 	}) => {

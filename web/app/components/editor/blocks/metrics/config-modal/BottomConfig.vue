@@ -462,6 +462,12 @@ function deleteQuery(index: number) {
 					</div>
 				</template>
 			</template>
+			<p
+				v-if="!metricConfig.queries?.length && isEditingDisabled"
+				class="px-1.75 text-2sm text-muted-foreground"
+			>
+				{{ $t("editor.metrics.config.no-query") }}
+			</p>
 			<ShadcnUiButton
 				v-if="!isEditingDisabled"
 				variant="dim"
