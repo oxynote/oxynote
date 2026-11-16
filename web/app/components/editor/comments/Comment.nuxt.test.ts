@@ -37,7 +37,7 @@ describe("<Comment>", () => {
 	})
 
 	it("turns spellchecking off", async ({ expect }) => {
-		const wrapper = await mountComment(paragraphDoc("Teh comment"))
+		const wrapper = await mountComment(paragraphDoc("The comment"))
 
 		await vi.waitFor(() => {
 			expect(wrapper.find(".ProseMirror").exists()).toBe(true)
