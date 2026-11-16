@@ -1097,6 +1097,7 @@ func Test_blockWriteResponses(t *testing.T) {
 
 			res, err := c.Tool.Exec(inp)
 			require.NoError(t, err)
+
 			got, ok := res.(blockWriteResult)
 			require.True(t, ok)
 			require.NotEmpty(t, ops)
@@ -1115,11 +1116,14 @@ func Test_blockWriteResponses(t *testing.T) {
 
 			if len(c.KeptIDs) > 0 {
 				uid, _ := ops[0].Block.Content[1].UID()
-				ids = append(c.KeptIDs, uid)
+
+				ids = append(ids, c.KeptIDs...)
+				ids = append(ids, uid)
 			} else {
 				for _, op := range ops {
 					uid, ok := op.Block.UID()
 					require.True(t, ok)
+
 					ids = append(ids, uid)
 				}
 			}
