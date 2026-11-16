@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"database/sql"
-	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -23,27 +22,15 @@ import (
 	mysqlDriver "github.com/go-sql-driver/mysql"
 	"github.com/orlangure/gnomock"
 	pgDocker "github.com/orlangure/gnomock/preset/postgres"
-	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
-	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
 
-// _testKeys is the keyring used by credentials crypto tests.
-var _testKeys = func() *cryptoutil.Keyring {
-	keys, err := cryptoutil.ParseKeyring(base64.StdEncoding.EncodeToString([]byte("01234567890123456789012345678901")))
-	if err != nil {
-		panic("cannot parse test keyring: " + err.Error())
-	}
-
-	return keys
-}()
-
-// _testAAD is the associated data credentials crypto tests seal with.
-var _testAAD = []byte("data-source-id")
+// _testToken is the token a data source behind tokenHandler accepts.
+const _testToken = "good"
 
 // _testCA is a self-signed CA certificate, PEM-encoded, that signed no
 // server the tests start.
@@ -296,406 +283,17 @@ func Test_ConnectionStatus_Error(t *testing.T) {
 	}
 }
 
-func Test_Credentials_MarshalJSON(t *testing.T) {
-	cc := map[string]struct {
-		Creds Credentials
+// tokenHandler answers 401 to a request that does not carry _testToken as
+// its bearer token, and passes every other request to next.
+func tokenHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+_testToken {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 
-		// ByValue marshals the credentials as a field held by value in
-		// another struct.
-		ByValue bool
-		Result  string
-	}{
-		"Credentials with a payload": {
-			Creds:  NewCredentials([]byte(`{"username":"user"}`)),
-			Result: `{"username":"user"}`,
-		},
-		// empty credentials marshal as null rather than as the zero bytes
-		// that make every enclosing struct fail with "unexpected end of JSON
-		// input".
-		"Empty credentials": {
-			Result: `null`,
-		},
-		// the payload is unexported, so a struct that marshals credentials
-		// it should not emits nothing of them rather than the secret
-		// itself.
-		"Credentials held by value": {
-			Creds:   NewCredentials([]byte(`{"username":"user"}`)),
-			ByValue: true,
-			Result:  `{"credentials":{}}`,
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			var (
-				data []byte
-				err  error
-			)
-
-			if c.ByValue {
-				data, err = json.Marshal(struct {
-					Credentials Credentials `json:"credentials"`
-				}{Credentials: c.Creds})
-			} else {
-				data, err = c.Creds.MarshalJSON()
-			}
-
-			require.NoError(t, err)
-			assert.JSONEq(t, c.Result, string(data))
-		})
-	}
-}
-
-func Test_Credentials_IsValid(t *testing.T) {
-	t.Parallel()
-
-	// credentials carrying a payload, and empty ones standing for a data
-	// source that authenticates through its URL, are both readable.
-	c := NewCredentials([]byte(`{"username":"user"}`))
-	assert.True(t, c.IsValid())
-
-	var empty Credentials
-	assert.True(t, empty.IsValid())
-
-	// only a decrypt that could not make sense of them says otherwise.
-	unreadable := NewCredentials([]byte("not-sealed"))
-	require.Error(t, unreadable.Decrypt(_testKeys, _testAAD))
-	assert.False(t, unreadable.IsValid())
-}
-
-func Test_Credentials_Scan(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		Src    any
-		Result Credentials
-		Err    error
-	}{
-		"Bytes straight off the column": {
-			Src:    []byte(`{"username":"user"}`),
-			Result: NewCredentials([]byte(`{"username":"user"}`)),
-		},
-		"A driver handing them over as a string": {
-			Src:    `{"username":"user"}`,
-			Result: NewCredentials([]byte(`{"username":"user"}`)),
-		},
-		"Anything else": {
-			Src: 42,
-			Err: assert.AnError,
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			var creds Credentials
-
-			err := creds.Scan(c.Src)
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			assert.Equal(t, c.Result, creds)
-		})
-	}
-}
-
-func Test_Credentials_UnmarshalJSON(t *testing.T) {
-	t.Parallel()
-
-	var c Credentials
-
-	require.NoError(t, c.UnmarshalJSON([]byte(`{"username":"user"}`)))
-	assert.Equal(t, NewCredentials([]byte(`{"username":"user"}`)), c)
-}
-
-func Test_Credentials_Encrypt(t *testing.T) {
-	type tcase struct {
-		Creds Credentials
-		Err   error
-	}
-
-	cc := map[string]tcase{
-		// credentials a decrypt could not read are refused, so the
-		// ciphertext they came from is never overwritten by an encryption
-		// of nothing.
-		"Unreadable credentials": func() tcase {
-			creds := NewCredentials([]byte("not-sealed"))
-			require.Error(t, creds.Decrypt(_testKeys, _testAAD))
-
-			return tcase{
-				Creds: creds,
-				Err:   assert.AnError,
-			}
-		}(),
-		"Successful encryption": {
-			Creds: NewCredentials([]byte(`{"username":"user"}`)),
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			data, err := c.Creds.Encrypt(_testKeys, _testAAD)
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			require.NotEmpty(t, data)
-
-			decrypted := NewCredentials(data)
-			require.NoError(t, decrypted.Decrypt(_testKeys, _testAAD))
-			assert.Equal(t, c.Creds, decrypted)
-		})
-	}
-}
-
-func Test_Credentials_Decrypt(t *testing.T) {
-	original := NewCredentials([]byte(`{"username":"user"}`))
-
-	sealed, err := original.Encrypt(_testKeys, _testAAD)
-	require.NoError(t, err)
-
-	cc := map[string]struct {
-		Data   []byte
-		AAD    []byte
-		Result Credentials
-		Err    error
-	}{
-		// what it could not read is dropped rather than left as ciphertext
-		// nobody can use, and says so to every later reader.
-		"Error returned by Keyring.Decrypt": {
-			Data:   []byte("not-sealed"),
-			AAD:    _testAAD,
-			Result: Credentials{unreadable: true},
-			Err:    assert.AnError,
-		},
-		"Credentials sealed for another row": {
-			Data:   sealed,
-			AAD:    []byte("other-id"),
-			Result: Credentials{unreadable: true},
-			Err:    assert.AnError,
-		},
-		"Successful decryption": {
-			Data:   sealed,
-			AAD:    _testAAD,
-			Result: original,
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			creds := NewCredentials(c.Data)
-
-			err := creds.Decrypt(_testKeys, c.AAD)
-			testutil.AssertEqualError(t, c.Err, err)
-			assert.Equal(t, err == nil, creds.IsValid())
-			assert.Equal(t, c.Result, creds)
-		})
-	}
-}
-
-func Test_Credentials_basic(t *testing.T) {
-	cc := map[string]struct {
-		Creds  Credentials
-		Result BasicCredentials
-		Err    error
-	}{
-		"Error returned by json.Unmarshal": {
-			Creds: NewCredentials([]byte(`{`)),
-			Err:   assert.AnError,
-		},
-		"Empty credentials": {},
-		"Successful read": {
-			Creds: NewCredentials([]byte(`{"username":"user","password":"pass","caCertificate":"pem"}`)),
-			Result: BasicCredentials{
-				Username:      "user",
-				Password:      "pass",
-				CACertificate: "pem",
-			},
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			bc, err := c.Creds.basic()
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			assert.Equal(t, c.Result, bc)
-		})
-	}
-}
-
-func Test_CredentialsUpdateInput_UnmarshalJSON(t *testing.T) {
-	t.Parallel()
-
-	var cui CredentialsUpdateInput
-
-	require.NoError(t, cui.UnmarshalJSON([]byte(`{"username":"user"}`)))
-	assert.Equal(t, CredentialsUpdateInput(`{"username":"user"}`), cui)
-}
-
-func Test_Credentials_Configured(t *testing.T) {
-	cc := map[string]struct {
-		Creds  Credentials
-		Result map[string]bool
-		Err    error
-	}{
-		"Error returned by Credentials.basic": {
-			Creds: NewCredentials([]byte(`{`)),
-			Err:   assert.AnError,
-		},
-		"Empty credentials": {
-			Result: map[string]bool{},
-		},
-		"Credentials that could not be read": {
-			Creds:  Credentials{unreadable: true},
-			Result: map[string]bool{},
-		},
-		"Some credentials set": {
-			Creds: NewCredentials([]byte(`{"username":"user","password":"","caCertificate":"pem"}`)),
-			Result: map[string]bool{
-				"username":      true,
-				"caCertificate": true,
-			},
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			configured, err := c.Creds.Configured()
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			assert.Equal(t, c.Result, configured)
-		})
-	}
-}
-
-func Test_BasicCredentials_rootCAs(t *testing.T) {
-	cc := map[string]struct {
-		CACertificate string
-		Err           error
-	}{
-		"Certificate that is not PEM": {
-			CACertificate: "not a certificate",
-			Err:           _errInvalidCACertificate,
-		},
-		"Successful pool": {
-			CACertificate: _testCA,
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			pool, err := BasicCredentials{CACertificate: c.CACertificate}.rootCAs()
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			// the pool trusts the CA, so the CA verifies against it.
-			block, _ := pem.Decode([]byte(c.CACertificate))
-			require.NotNil(t, block)
-
-			cert, err := x509.ParseCertificate(block.Bytes)
-			require.NoError(t, err)
-
-			_, err = cert.Verify(x509.VerifyOptions{Roots: pool})
-			assert.NoError(t, err)
-		})
-	}
-}
-
-func Test_UpdateBasicCredentials(t *testing.T) {
-	cc := map[string]struct {
-		Creds  Credentials
-		Inp    CredentialsUpdateInput
-		Result Credentials
-		Err    error
-	}{
-		"Error returned by json.Unmarshal of credentials": {
-			Creds: NewCredentials([]byte(`{`)),
-			Inp:   CredentialsUpdateInput(`{"username":"user"}`),
-			Err:   assert.AnError,
-		},
-		"Error returned by json.Unmarshal of update input": {
-			Inp: CredentialsUpdateInput(`{`),
-			Err: assert.AnError,
-		},
-		"Updated username retains password": {
-			Creds:  NewCredentials([]byte(`{"username":"old","password":"secret"}`)),
-			Inp:    CredentialsUpdateInput(`{"username":"new"}`),
-			Result: NewCredentials([]byte(`{"username":"new","password":"secret"}`)),
-		},
-		"Updated password retains username": {
-			Creds:  NewCredentials([]byte(`{"username":"user","password":"old"}`)),
-			Inp:    CredentialsUpdateInput(`{"password":"new"}`),
-			Result: NewCredentials([]byte(`{"username":"user","password":"new"}`)),
-		},
-		"Cleared credentials": {
-			Creds: NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
-			Inp:   CredentialsUpdateInput(`{"username":"","password":""}`),
-		},
-		"Created credentials from scratch": {
-			Inp:    CredentialsUpdateInput(`{"username":"user","password":"pass"}`),
-			Result: NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
-		},
-		"Updated CA certificate retains username and password": {
-			Creds:  NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
-			Inp:    CredentialsUpdateInput(`{"caCertificate":"pem"}`),
-			Result: NewCredentials([]byte(`{"username":"user","password":"pass","caCertificate":"pem"}`)),
-		},
-		"Credentials holding only a CA certificate": {
-			Creds:  NewCredentials([]byte(`{"username":"user","password":"pass","caCertificate":"pem"}`)),
-			Inp:    CredentialsUpdateInput(`{"username":"","password":""}`),
-			Result: NewCredentials([]byte(`{"username":"","password":"","caCertificate":"pem"}`)),
-		},
-		"Cleared CA certificate": {
-			Creds:  NewCredentials([]byte(`{"username":"user","password":"pass","caCertificate":"pem"}`)),
-			Inp:    CredentialsUpdateInput(`{"caCertificate":""}`),
-			Result: NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			creds, err := UpdateBasicCredentials(c.Creds, c.Inp)
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			assert.Equal(t, c.Result, creds)
-		})
-	}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // pemCertificate encodes a DER certificate as PEM.
@@ -707,11 +305,21 @@ func pemCertificate(der []byte) string {
 }
 
 // caCredentials returns credentials carrying only the CA certificate.
-func caCredentials(ca string) Credentials {
-	data, err := json.Marshal(map[string]string{"caCertificate": ca})
+func caCredentials(ca string) credentials.Credentials {
+	data, err := json.Marshal(credentials.Basic{CACertificate: ca})
 	if err != nil {
 		panic("cannot marshal test credentials: " + err.Error())
 	}
 
-	return NewCredentials(data)
+	return stubCredentials(string(data))
+}
+
+// stubCredentials returns credentials holding the given JSON.
+func stubCredentials(data string) credentials.Credentials {
+	var creds credentials.Credentials
+	if err := creds.UnmarshalJSON([]byte(data)); err != nil {
+		panic("cannot set test credentials: " + err.Error())
+	}
+
+	return creds
 }

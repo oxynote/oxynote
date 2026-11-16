@@ -3,12 +3,12 @@ package datasource
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
@@ -82,14 +82,14 @@ func (h *Handler) CreateDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, rerr := newDataSourceResponse(ds)
-	if rerr != nil {
+	public, perr := ds.Credentials.Public()
+	if perr != nil {
 		// NOCOV: the input was validated, so its credentials can be read.
-		httpserver.RespondError(h.log, w, rerr)
+		httpserver.RespondError(h.log, w, perr)
 		return
 	}
 
-	httpserver.Respond(h.log, w, res, http.StatusCreated)
+	httpserver.Respond(h.log, w, dataSourceResponse{DataSource: *ds, Credentials: public}, http.StatusCreated)
 }
 
 // FetchDataSource handles retrieving a single data source by ID.
@@ -111,13 +111,13 @@ func (h *Handler) FetchDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := newDataSourceResponse(ds)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	public, perr := ds.Credentials.Public()
+	if perr != nil {
+		httpserver.RespondError(h.log, w, perr)
 		return
 	}
 
-	httpserver.Respond(h.log, w, res, http.StatusOK)
+	httpserver.Respond(h.log, w, dataSourceResponse{DataSource: *ds, Credentials: public}, http.StatusOK)
 }
 
 // TestDataSourceConnection handles testing the connection of a data source.
@@ -175,13 +175,13 @@ func (h *Handler) FetchDataSources(w http.ResponseWriter, r *http.Request) {
 	res := make([]dataSourceResponse, 0, len(sources))
 
 	for i := range sources {
-		item, rerr := newDataSourceResponse(&sources[i])
-		if rerr != nil {
-			httpserver.RespondError(h.log, w, rerr)
+		public, perr := sources[i].Credentials.Public()
+		if perr != nil {
+			httpserver.RespondError(h.log, w, perr)
 			return
 		}
 
-		res = append(res, item)
+		res = append(res, dataSourceResponse{DataSource: sources[i], Credentials: public})
 	}
 
 	httpserver.Respond(h.log, w, res, http.StatusOK)
@@ -239,13 +239,13 @@ func (h *Handler) UpdateDataSource(w http.ResponseWriter, r *http.Request) {
 
 	h.runners.Evict(nds.ID)
 
-	res, rerr := newDataSourceResponse(&nds)
-	if rerr != nil {
-		httpserver.RespondError(h.log, w, rerr)
+	public, perr := nds.Credentials.Public()
+	if perr != nil {
+		httpserver.RespondError(h.log, w, perr)
 		return
 	}
 
-	httpserver.Respond(h.log, w, res, http.StatusOK)
+	httpserver.Respond(h.log, w, dataSourceResponse{DataSource: nds, Credentials: public}, http.StatusOK)
 }
 
 // DeleteDataSource handles deleting a data source.
@@ -331,26 +331,14 @@ func (h *Handler) substitute(r *http.Request, session auth.Session, texts ...str
 	return variable.Substitute(values, texts...), nil
 }
 
-// dataSourceResponse is a data source as the API returns it: with which of
-// its credentials are set, never their values.
+// dataSourceResponse is a data source as the API returns it: with the kind
+// of its credentials and which of them are set, never their values.
 type dataSourceResponse struct {
 	datasourceCore.DataSource
 
-	// Configured specifies the credentials that are set.
-	Configured map[string]bool `json:"configured,omitempty"`
-}
-
-// newDataSourceResponse builds the API response for the data source.
-func newDataSourceResponse(ds *datasourceCore.DataSource) (dataSourceResponse, error) {
-	configured, err := ds.Credentials.Configured()
-	if err != nil {
-		return dataSourceResponse{}, fmt.Errorf("error reading configured credentials: %w", err)
-	}
-
-	return dataSourceResponse{
-		DataSource: *ds,
-		Configured: configured,
-	}, nil
+	// Credentials describes the stored credentials. It is absent when
+	// there are none, or when no key could decrypt them.
+	Credentials credentials.Public `json:"credentials,omitzero"`
 }
 
 // DB is an interface that handles communication with the data source database.

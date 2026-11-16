@@ -307,12 +307,15 @@ copy:
    connects to the source, runs queries and shapes the results for charts.
    A source that speaks an existing protocol reuses that processor, the way
    MariaDB uses the MySQL one.
-2. Make the processor's connection test check that the credentials can't
+2. List the credential kinds the type accepts in `credentialsKinds`
+   (`server/core/internal/datasource/datasource.go`). The processor then
+   handles each of them: a username and password, or a token.
+3. Make the processor's connection test check that the credentials can't
    write, because Oxynote only reads from a data source.
-3. If the source is a database, start it in a container in the processor
+4. If the source is a database, start it in a container in the processor
    tests' `TestMain`. If those tests need a new tool, add it to the
    prerequisites at the top of this guide.
-4. After you change the assistant tools, regenerate the golden file their
+5. After you change the assistant tools, regenerate the golden file their
    descriptions are compared against, and review the diff:
 
    ```sh

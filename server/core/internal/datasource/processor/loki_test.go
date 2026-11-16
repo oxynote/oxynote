@@ -2,6 +2,7 @@ package processor
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	"github.com/orlangure/gnomock"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -335,19 +337,23 @@ func Test_Loki_TestConnection(t *testing.T) {
 		TLS           bool
 		CACertificate string
 
+		// Creds is the credentials JSON the data source is given, in place
+		// of a username and password.
+		Creds string
+
 		Result ConnectionStatus
 		Err    error
 	}{
 		"Error returned by Loki.client": {
 			Inp: &InputMock{
-				CredentialsFunc: func() Credentials { return NewCredentials([]byte(`{`)) },
+				CredentialsFunc: func() credentials.Credentials { return stubCredentials(`{`) },
 			},
 			Err: assert.AnError,
 		},
 		"Invalid CA certificate": {
 			Inp: &InputMock{
 				URLFunc:         func() string { return "https://loki.test" },
-				CredentialsFunc: func() Credentials { return caCredentials("not a certificate") },
+				CredentialsFunc: func() credentials.Credentials { return caCredentials("not a certificate") },
 			},
 			Result: ConnectionStatusInvalidCACertificate,
 		},
@@ -377,6 +383,16 @@ func Test_Loki_TestConnection(t *testing.T) {
 		"Forbidden data source": {
 			Handler: testutil.JSONHandler(_lokiBuildInfoPath, http.StatusForbidden, `{}`),
 			Result:  ConnectionStatusUnauthorized,
+		},
+		"Rejected token": { //nolint:gosec // static test credentials
+			Handler: tokenHandler(testutil.JSONHandler(_lokiBuildInfoPath, http.StatusOK, `{"version":"v3.7.9"}`)),
+			Creds:   `{"kind":"token","token":"bad"}`,
+			Result:  ConnectionStatusUnauthorized,
+		},
+		"Successful connection with a token": {
+			Handler: tokenHandler(testutil.JSONHandler(_lokiBuildInfoPath, http.StatusOK, `{"version":"v3.7.9"}`)),
+			Creds:   `{"kind":"token","token":"` + _testToken + `"}`,
+			Result:  ConnectionStatusSuccess,
 		},
 		"Not a Loki": {
 			Handler: testutil.JSONHandler(_lokiBuildInfoPath, http.StatusNotFound, `not found`),
@@ -434,10 +450,10 @@ func Test_Loki_TestConnection(t *testing.T) {
 					target = "http://" + _lokiAddrs[c.Version]
 				}
 
+				creds := cmp.Or(c.Creds, `{"kind":"basic","username":"user","password":"pass"}`)
+
 				inp = prepLokiInput(t, target, c.Handler)
-				inp.CredentialsFunc = func() Credentials {
-					return NewCredentials([]byte(`{"username":"user","password":"pass"}`))
-				}
+				inp.CredentialsFunc = func() credentials.Credentials { return stubCredentials(creds) }
 			}
 
 			l := NewLoki(inp)
@@ -1110,7 +1126,7 @@ func Test_Loki_get(t *testing.T) {
 	}{
 		"Error returned by Loki.client": {
 			Inp: &InputMock{
-				CredentialsFunc: func() Credentials { return NewCredentials([]byte(`{`)) },
+				CredentialsFunc: func() credentials.Credentials { return stubCredentials(`{`) },
 			},
 			Err: assert.AnError,
 		},
@@ -1286,7 +1302,7 @@ func Test_Loki_request(t *testing.T) {
 func Test_Loki_client(t *testing.T) {
 	cc := map[string]struct {
 		URL         string
-		Credentials Credentials
+		Credentials credentials.Credentials
 
 		// TLS indicates whether the data source is served over TLS, with
 		// its own certificate as the credentials' CA.
@@ -1299,18 +1315,27 @@ func Test_Loki_client(t *testing.T) {
 	}{
 		"Credentials that do not decode": {
 			URL:         "http://loki.test",
-			Credentials: NewCredentials([]byte(`{`)),
+			Credentials: stubCredentials(`{`),
 			Err:         assert.AnError,
+		},
+		"Credentials without a kind": {
+			URL:         "http://loki.test",
+			Credentials: stubCredentials(`{"username":"user","password":"pass"}`),
+			Err:         credentials.ErrInvalidKind,
 		},
 		"Error returned by ownTransport.roundTripper": {
 			URL:         "http://loki.test",
 			Credentials: caCredentials("not a certificate"),
-			Err:         _errInvalidCACertificate,
+			Err:         credentials.ErrInvalidCACertificate,
 		},
 		"No credentials": {},
 		"Basic credentials": {
-			Credentials: NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+			Credentials: stubCredentials(`{"kind":"basic","username":"user","password":"pass"}`),
 			Auth:        "Basic dXNlcjpwYXNz",
+		},
+		"Token credentials": {
+			Credentials: stubCredentials(`{"kind":"token","token":"secret"}`),
+			Auth:        "Bearer secret",
 		},
 		// credentials holding only a CA certificate authenticate nobody.
 		"Only a CA certificate": {
@@ -1341,7 +1366,7 @@ func Test_Loki_client(t *testing.T) {
 			}
 
 			if !c.TLS {
-				inp.CredentialsFunc = func() Credentials { return c.Credentials }
+				inp.CredentialsFunc = func() credentials.Credentials { return c.Credentials }
 			}
 
 			l := NewLoki(inp)

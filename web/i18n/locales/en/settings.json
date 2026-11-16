@@ -211,53 +211,53 @@
 				},
 				"name-field": {
 					"prometheus": {
-						"label": "Data Source Nickname",
+						"label": "Name",
 						"placeholder": "Main Prometheus Server"
 					},
 					"loki": {
-						"label": "Data Source Nickname",
+						"label": "Name",
 						"placeholder": "Main Loki Server"
 					},
 					"postgresql": {
-						"label": "Data Source Nickname",
+						"label": "Name",
 						"placeholder": "Main PostgreSQL Server"
 					},
 					"supabase": {
-						"label": "Data Source Nickname",
+						"label": "Name",
 						"placeholder": "Main Supabase Project"
 					},
 					"mysql": {
-						"label": "Data Source Nickname",
+						"label": "Name",
 						"placeholder": "Main MySQL Server"
 					},
 					"mariadb": {
-						"label": "Data Source Nickname",
+						"label": "Name",
 						"placeholder": "Main MariaDB Server"
 					}
 				},
 				"url-field": {
 					"prometheus": {
-						"label": "Data Source URL",
+						"label": "URL",
 						"placeholder": "https://prometheus.example.com:9090"
 					},
 					"loki": {
-						"label": "Data Source URL",
+						"label": "URL",
 						"placeholder": "https://loki.example.com:3100"
 					},
 					"postgresql": {
-						"label": "Data Source URL",
+						"label": "URL",
 						"placeholder": "postgresql://postgres.example.com:5432/main_database"
 					},
 					"supabase": {
-						"label": "Data Source URL",
+						"label": "URL",
 						"placeholder": "postgresql://aws-0-eu-west-1.pooler.supabase.com:6543/postgres"
 					},
 					"mysql": {
-						"label": "Data Source URL",
+						"label": "URL",
 						"placeholder": "mysql://mysql.example.com:3306/main_database"
 					},
 					"mariadb": {
-						"label": "Data Source URL",
+						"label": "URL",
 						"placeholder": "mariadb://mariadb.example.com:3306/main_database"
 					},
 					"credentials-reset": "Changing the URL clears the saved credentials",
@@ -272,60 +272,71 @@
 						}
 					}
 				},
+				"auth-kind-field": {
+					"label": "Authentication",
+					"basic": "Username and password",
+					"token": "Token"
+				},
 				"creds-username-field": {
 					"prometheus": {
-						"label": "Auth Username",
+						"label": "Username",
 						"placeholder": "Username"
 					},
 					"loki": {
-						"label": "Auth Username",
+						"label": "Username",
 						"placeholder": "Username"
 					},
 					"postgresql": {
-						"label": "Auth Username",
+						"label": "Username",
 						"placeholder": "Username"
 					},
 					"supabase": {
-						"label": "Auth Username",
+						"label": "Username",
 						"placeholder": "Username"
 					},
 					"mysql": {
-						"label": "Auth Username",
+						"label": "Username",
 						"placeholder": "Username"
 					},
 					"mariadb": {
-						"label": "Auth Username",
+						"label": "Username",
 						"placeholder": "Username"
 					}
 				},
 				"creds-password-field": {
 					"prometheus": {
-						"label": "Auth Password",
+						"label": "Password",
 						"placeholder": "Password"
 					},
 					"loki": {
-						"label": "Auth Password",
+						"label": "Password",
 						"placeholder": "Password"
 					},
 					"postgresql": {
-						"label": "Auth Password",
+						"label": "Password",
 						"placeholder": "Password"
 					},
 					"supabase": {
-						"label": "Auth Password",
+						"label": "Password",
 						"placeholder": "Password"
 					},
 					"mysql": {
-						"label": "Auth Password",
+						"label": "Password",
 						"placeholder": "Password"
 					},
 					"mariadb": {
-						"label": "Auth Password",
+						"label": "Password",
 						"placeholder": "Password"
 					}
 				},
+				"creds-token-field": {
+					"label": "Token",
+					"placeholder": "Token",
+					"help": "Sent as a bearer token in the Authorization header.",
+					"required": "Enter the token."
+				},
 				"creds-ca-field": {
-					"label": "CA Certificate",
+					"label": "Trusted Certificate",
 					"placeholder": "-----BEGIN CERTIFICATE-----",
 					"help": "Only this CA may sign the server's certificate, and the connection always uses TLS. Reset it to trust the usual public CAs again.",
 					"supabase-help": {
