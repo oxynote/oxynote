@@ -49,9 +49,14 @@ export default function () {
 	})
 
 	if (import.meta.client) {
-		watchImmediate(resolvedMode, (theme) => {
-			document.documentElement.classList.toggle("dark", theme === "dark")
-			lastAutoColorCookie.value = theme
+		watchImmediate([mode.store, mode.system], () => {
+			if (mode.store.value === "auto") {
+				lastAutoColorCookie.value = resolvedMode.value
+
+				return
+			}
+
+			lastAutoColorCookie.value = mode.store.value
 		})
 	}
 
