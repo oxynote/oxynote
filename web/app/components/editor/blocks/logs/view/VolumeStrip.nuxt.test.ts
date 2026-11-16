@@ -112,6 +112,18 @@ describe("<VolumeStrip>", { concurrent: false }, () => {
 		expect(empty?.data).toEqual([0, null, 0])
 	})
 
+	it("gives every bar the same minimum height", async ({ expect }) => {
+		const wrapper = await mountStrip([
+			bucket(0, { info: 1 }),
+			bucket(1),
+			bucket(2, { error: 2, unknown: 3 }),
+		])
+
+		expect(chartSeries(wrapper).map((series) => series.barMinHeight)).toEqual([
+			2, 2, 2, 2,
+		])
+	})
+
 	it("says an interval under the pointer has no lines", async ({ expect }) => {
 		tooltip.params = [
 			tooltipParam(LogLevel.Info, 0, 0),

@@ -40,6 +40,9 @@ const STACK_ORDER = [
 ]
 // the series that marks an interval without lines on the baseline
 const EMPTY_SERIES_ID = "empty"
+// every bar stands at least this tall, so one log reads the same as an
+// empty interval's dash
+const BAR_MIN_HEIGHT = 2
 // how many times the axis names, spread evenly from start to end
 const AXIS_LABELS = 4
 // a window longer than this names days on its axis instead of times
@@ -94,6 +97,7 @@ const option = computed<ECOption>(() => {
 				type: "bar" as const,
 				stack: "volume",
 				barCategoryGap: "15%",
+				barMinHeight: BAR_MIN_HEIGHT,
 				itemStyle: { color: st.logLevels[level], opacity: 0.8 },
 				emphasis: { disabled: true },
 				data: props.buckets.map((bucket) => bucket.counts[level]),
@@ -105,7 +109,7 @@ const option = computed<ECOption>(() => {
 				type: "bar" as const,
 				stack: "volume",
 				barCategoryGap: "15%",
-				barMinHeight: 2,
+				barMinHeight: BAR_MIN_HEIGHT,
 				itemStyle: { color: st.logVolumeEmpty },
 				emphasis: { disabled: true },
 				data: props.buckets.map((bucket) => (isEmpty(bucket) ? 0 : null)),
