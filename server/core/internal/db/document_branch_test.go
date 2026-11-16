@@ -247,7 +247,7 @@ func Test_agent_InsertDocumentBranch(t *testing.T) {
 			return tcase{
 				Document: doc,
 				Err: errutil.New(
-					http.StatusBadRequest,
+					http.StatusConflict,
 					"document_branch.duplicate_name",
 					"branch name is already in use",
 				),
