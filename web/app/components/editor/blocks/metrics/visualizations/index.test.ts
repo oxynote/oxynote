@@ -1063,6 +1063,31 @@ describe("calculateYAxisBounds", () => {
 			calculateYAxisBounds(bars(0.29, 1.2), undefined, 0.1, bounds, unit),
 		).toEqual(expected)
 	})
+
+	it.for([
+		{
+			name: "falls back when the minimum equals the default maximum",
+			unit: VisualizationMiscUnit.Percent0to1,
+			bounds: { min: 1 },
+			expected: { min: 0, max: 1 },
+		},
+		{
+			name: "falls back when the minimum exceeds the default maximum",
+			unit: VisualizationMiscUnit.Percent0to1,
+			bounds: { min: 20 },
+			expected: { min: 0, max: 1 },
+		},
+		{
+			name: "falls back when manual bounds are reversed",
+			unit: VisualizationMiscUnit.Percent0to100,
+			bounds: { min: 80, max: 40 },
+			expected: { min: 0, max: 100 },
+		},
+	])("$name", ({ unit, bounds, expected }, { expect }) => {
+		expect(
+			calculateYAxisBounds(bars(0.29, 1.2), undefined, 0.1, bounds, unit),
+		).toEqual(expected)
+	})
 })
 
 describe("calculateGaugeAxisBounds", () => {
@@ -1201,6 +1226,31 @@ describe("calculateGaugeAxisBounds", () => {
 			unit: VisualizationMiscUnit.Percent0to1,
 			bounds: { max: 0.8 },
 			expected: { min: 0, max: 0.8 },
+		},
+	])("$name", ({ unit, bounds, expected }, { expect }) => {
+		expect(
+			calculateGaugeAxisBounds(gauges(0.29, 1.2), undefined, 0.1, bounds, unit),
+		).toEqual(expected)
+	})
+
+	it.for([
+		{
+			name: "falls back when the minimum equals the default maximum",
+			unit: VisualizationMiscUnit.Percent0to1,
+			bounds: { min: 1 },
+			expected: { min: 0, max: 1 },
+		},
+		{
+			name: "falls back when the minimum exceeds the default maximum",
+			unit: VisualizationMiscUnit.Percent0to1,
+			bounds: { min: 20 },
+			expected: { min: 0, max: 1 },
+		},
+		{
+			name: "falls back when manual bounds are reversed",
+			unit: VisualizationMiscUnit.Percent0to100,
+			bounds: { min: 80, max: 40 },
+			expected: { min: 0, max: 100 },
 		},
 	])("$name", ({ unit, bounds, expected }, { expect }) => {
 		expect(

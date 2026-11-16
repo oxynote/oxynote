@@ -265,6 +265,31 @@ describe("<GaugeChart>", { concurrent: false }, () => {
 		expect(ring.max).toBe(1)
 	})
 
+	it("keeps threshold positions valid when a percentage range is invalid", async ({
+		expect,
+	}) => {
+		const wrapper = await mountGauge({
+			gauges: [{ name: "ratio", value: 0.29 }],
+			unit: { type: VisualizationMiscUnit.Percent0to1, custom: null },
+			axisBounds: { min: 20 },
+			thresholds: [
+				{ value: 0.5, color: "#ff0000" },
+				{ value: 0.75, color: "#00ff00" },
+			],
+		})
+		const option = chartOption(wrapper)
+		const thresholdRing = chartSeries(option)
+		const ring = valueRing(option, 1)
+
+		expect(ring.min).toBe(0)
+		expect(ring.max).toBe(1)
+		expect(thresholdRing.axisLine?.lineStyle.color).toEqual([
+			[0.5, BASE_COLOR],
+			[0.75, "#ff0000"],
+			[1, "#00ff00"],
+		])
+	})
+
 	it("exposes overflowing gauges through a labelled keyboard scroll region", async ({
 		expect,
 	}) => {

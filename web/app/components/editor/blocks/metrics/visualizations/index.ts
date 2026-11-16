@@ -574,10 +574,13 @@ function getPercentageBounds(
 		return null
 	}
 
-	return {
-		min: bounds?.min ?? defaults.min,
-		max: bounds?.max ?? defaults.max,
+	const min = bounds?.min ?? defaults.min
+	const max = bounds?.max ?? defaults.max
+	if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) {
+		return defaults
 	}
+
+	return { min, max }
 }
 
 /**
