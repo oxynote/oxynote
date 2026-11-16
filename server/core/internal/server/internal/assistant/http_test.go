@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"database/sql"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
@@ -48,11 +50,13 @@ func Test_NewHandler(t *testing.T) {
 	t.Parallel()
 
 	man := &ManagerMock{}
+	db := &DBMock{}
 
-	hdl := NewHandler(slog.New(slog.DiscardHandler), man, websocket.AcceptOptions{InsecureSkipVerify: true})
+	hdl := NewHandler(slog.New(slog.DiscardHandler), db, man, websocket.AcceptOptions{InsecureSkipVerify: true})
 	require.NotNil(t, hdl)
 	assert.NotNil(t, hdl.log)
 	assert.True(t, hdl.acceptOpts.InsecureSkipVerify)
+	assert.Same(t, db, hdl.db)
 	assert.Same(t, man, hdl.assistant)
 }
 
@@ -61,6 +65,12 @@ func Test_Handler_HandleChat(t *testing.T) {
 
 	type tcase struct {
 		Man *ManagerMock
+
+		// Role is the role the member holds; RoleErr fails its lookup.
+		// RoleCalls is the number of role lookups.
+		Role      org.Role
+		RoleErr   error
+		RoleCalls int
 
 		// Client drives the socket side of a case that completes the
 		// websocket handshake; Resp inspects the response of one that
@@ -90,8 +100,46 @@ func Test_Handler_HandleChat(t *testing.T) {
 				assert.JSONEq(t, `{"code":"account.not_authenticated","message":"not authenticated"}`, rec.Body.String())
 			},
 		},
+		"Error returned by DB.FetchOrganizationMemberRole": {
+			Man:       &ManagerMock{},
+			RoleErr:   assert.AnError,
+			RoleCalls: 1,
+			Resp: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				assert.Equal(t, http.StatusInternalServerError, rec.Code)
+				assert.JSONEq(t, `{"code":"general","message":"internal server error"}`, rec.Body.String())
+			},
+		},
+		"User is no longer a member": {
+			Man:       &ManagerMock{},
+			RoleErr:   sql.ErrNoRows,
+			RoleCalls: 1,
+			Resp: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				assert.Equal(t, http.StatusForbidden, rec.Code)
+				assert.JSONEq(t, `{"code":"member.forbidden","message":"forbidden"}`, rec.Body.String())
+			},
+		},
+		"Viewer chats with their role": {
+			Man: &ManagerMock{
+				ChatFunc: func(context.Context, string, string, org.Role, protocol.SessionConn) error {
+					return nil
+				},
+			},
+			Role:      org.RoleViewer,
+			RoleCalls: 1,
+			Chats:     1,
+			Client: func(t *testing.T, conn *websocket.Conn) {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				_, _, err := conn.Read(ctx)
+				require.Error(t, err)
+				assert.Equal(t, websocket.StatusNormalClosure, websocket.CloseStatus(err))
+			},
+		},
 		"Websocket upgrade failure": {
-			Man: &ManagerMock{},
+			Man:       &ManagerMock{},
+			Role:      org.RoleEditor,
+			RoleCalls: 1,
 			Resp: func(t *testing.T, rec *httptest.ResponseRecorder) {
 				// a plain GET without upgrade headers cannot be accepted.
 				assert.NotEqual(t, http.StatusSwitchingProtocols, rec.Code)
@@ -99,11 +147,13 @@ func Test_Handler_HandleChat(t *testing.T) {
 		},
 		"Error returned by Manager.Chat": {
 			Man: &ManagerMock{
-				ChatFunc: func(context.Context, string, string, protocol.SessionConn) error {
+				ChatFunc: func(context.Context, string, string, org.Role, protocol.SessionConn) error {
 					return assert.AnError
 				},
 			},
-			Chats: 1,
+			Role:      org.RoleEditor,
+			RoleCalls: 1,
+			Chats:     1,
 			Client: func(t *testing.T, conn *websocket.Conn) {
 				defer conn.Close(websocket.StatusNormalClosure, "") //nolint:errcheck // already closed by the server
 
@@ -123,7 +173,7 @@ func Test_Handler_HandleChat(t *testing.T) {
 
 			return tcase{
 				Man: &ManagerMock{
-					ChatFunc: func(ctx context.Context, _, _ string, conn protocol.SessionConn) error {
+					ChatFunc: func(ctx context.Context, _, _ string, _ org.Role, conn protocol.SessionConn) error {
 						msg, err := conn.Read(ctx)
 						if err != nil {
 							return err
@@ -137,7 +187,9 @@ func Test_Handler_HandleChat(t *testing.T) {
 						return nil
 					},
 				},
-				Chats: 1,
+				Role:      org.RoleEditor,
+				RoleCalls: 1,
+				Chats:     1,
 				Client: func(t *testing.T, conn *websocket.Conn) {
 					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 					defer cancel()
@@ -161,14 +213,16 @@ func Test_Handler_HandleChat(t *testing.T) {
 
 			return tcase{
 				Man: &ManagerMock{
-					ChatFunc: func(ctx context.Context, _, _ string, conn protocol.SessionConn) error {
+					ChatFunc: func(ctx context.Context, _, _ string, _ org.Role, conn protocol.SessionConn) error {
 						_, err := conn.Read(ctx)
 						readErrs <- err
 
 						return nil
 					},
 				},
-				Chats: 1,
+				Role:      org.RoleEditor,
+				RoleCalls: 1,
+				Chats:     1,
 				Client: func(t *testing.T, conn *websocket.Conn) {
 					require.NoError(t, conn.CloseNow())
 					testutil.AssertEqualError(t, io.EOF, <-readErrs)
@@ -187,8 +241,15 @@ func Test_Handler_HandleChat(t *testing.T) {
 				c.Man.ConfiguredFunc = func() bool { return true }
 			}
 
+			db := &DBMock{
+				FetchOrganizationMemberRoleFunc: func(context.Context, string, string) (org.Role, error) {
+					return c.Role, c.RoleErr
+				},
+			}
+
 			hdl := &Handler{
 				log:        slog.New(slog.DiscardHandler),
+				db:         db,
 				assistant:  c.Man,
 				acceptOpts: websocket.AcceptOptions{InsecureSkipVerify: true},
 			}
@@ -221,6 +282,7 @@ func Test_Handler_HandleChat(t *testing.T) {
 			}
 
 			assert.Len(t, c.Man.ConfiguredCalls(), 1)
+			assert.Len(t, db.FetchOrganizationMemberRoleCalls(), c.RoleCalls)
 
 			ff := c.Man.ChatCalls()
 			require.Len(t, ff, c.Chats)
@@ -231,6 +293,7 @@ func Test_Handler_HandleChat(t *testing.T) {
 
 			assert.Equal(t, "org1", ff[0].OrgID)
 			assert.Equal(t, "u1", ff[0].UserID)
+			assert.Equal(t, c.Role, ff[0].Role)
 			assert.NotNil(t, ff[0].Conn)
 		})
 	}

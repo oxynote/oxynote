@@ -14,6 +14,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 )
@@ -24,6 +25,7 @@ const _maxMessageBytes = 1 << 20
 // Handler holds dependencies for AI chat operations.
 type Handler struct {
 	log        *slog.Logger
+	db         DB
 	assistant  Manager
 	acceptOpts websocket.AcceptOptions
 }
@@ -31,11 +33,13 @@ type Handler struct {
 // NewHandler creates a new AI handler.
 func NewHandler(
 	log *slog.Logger,
+	db DB,
 	assistantMan Manager,
 	acceptOpts websocket.AcceptOptions,
 ) *Handler {
 	return &Handler{
 		log:        log.With("component", "assistant-handler"),
+		db:         db,
 		assistant:  assistantMan,
 		acceptOpts: acceptOpts,
 	}
@@ -53,6 +57,12 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 
 	sess, ok := auth.RequireSession(h.log, w, r)
 	if !ok {
+		return
+	}
+
+	role, err := auth.FetchRole(r.Context(), h.db, sess)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
@@ -76,7 +86,7 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		cancel: cancel,
 	}
 
-	err = h.assistant.Chat(ctx, sess.ActiveOrganizationID, sess.UserID, wc)
+	err = h.assistant.Chat(ctx, sess.ActiveOrganizationID, sess.UserID, role, wc)
 	if err != nil {
 		h.log.Error("assistant chat failed", slog.String("error", err.Error()))
 
@@ -142,6 +152,16 @@ type Manager interface {
 	Configured() bool
 
 	// Chat should run the chat loop over the connection until the
-	// client disconnects, returning nil on a clean close.
-	Chat(ctx context.Context, orgID, userID string, conn protocol.SessionConn) error
+	// client disconnects, returning nil on a clean close. The chat
+	// should offer only the tools the given role may call.
+	Chat(ctx context.Context, orgID, userID string, role org.Role, conn protocol.SessionConn) error
+}
+
+// DB is the database the chat reads the member's role from.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal DB db
+type DB interface {
+	// FetchOrganizationMemberRole should retrieve the role a user holds
+	// in an organization.
+	FetchOrganizationMemberRole(ctx context.Context, organizationID, userID string) (org.Role, error)
 }

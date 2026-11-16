@@ -241,6 +241,7 @@ func Test_NewServer(t *testing.T) {
 			assert.NotNil(t, srv.log)
 			assert.Same(t, fc, srv.fc)
 			assert.Same(t, http.DefaultClient, srv.client)
+			assert.Same(t, db, srv.db)
 			assert.Equal(t, ":8080", srv.http.Addr)
 			assert.NotNil(t, srv.http.Handler)
 			assert.NotNil(t, srv.ws)

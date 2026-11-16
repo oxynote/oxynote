@@ -1,7 +1,7 @@
 import type { Editor } from "@tiptap/core"
 import { FileHandler } from "@tiptap/extension-file-handler"
 import { nanoid } from "nanoid"
-import { showToastMessage } from "~/components/toast"
+import { showRequestErrorToast } from "~/components/toast"
 import { FILE_BLOCK_NAME, IMAGE_BLOCK_NAME } from "./node-names"
 
 export interface UploadFileHandlerOptions {
@@ -133,14 +133,14 @@ function insertBlockWithUpload(
 						},
 			)
 		})
-		.catch((error: unknown) => {
+		.catch((err: unknown) => {
 			console.error(
 				isImage ? "Failed to upload image:" : "Failed to upload file:",
-				error,
+				err,
 			)
 			updateAttrsByUid(editor, nodeName, blockId, { uploading: false })
-			showToastMessage(
-				"error",
+			showRequestErrorToast(
+				err,
 				$t(
 					isImage
 						? "editor.image.errors.upload-failed"

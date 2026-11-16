@@ -33,7 +33,7 @@ const {
 	signUpEmailPassword,
 	setupSignInRedirect,
 } = useAuthSession()
-const { fetchAuthConfig, isEmailEnabled } = useAuthAPI()
+const { fetchAuthConfig, isEmailEnabled, oidcDisplayName } = useAuthAPI()
 
 const { fetchOrganizationStats } = useOrganizationAPI()
 const { currentUrl } = useCurrentUrl()
@@ -59,9 +59,7 @@ const emailPasswordForm = useForm({
 	validationSchema: emailPasswordFormSchema,
 })
 
-const loading = ref<"github" | "google" | "slack" | "email-password" | null>(
-	null,
-)
+const loading = ref<ProviderAuthMethod | "email-password" | null>(null)
 const showEmailPasswordForm = ref(false)
 const enabledMethods = computed(
 	() => fetchAuthConfig.state.value.data?.methods ?? [],
@@ -84,10 +82,10 @@ const primaryMethod = computed(() => {
 		return null
 	}
 
-	// NOCOV: the null fallback is unreachable. Every method is one of the four.
+	// NOCOV: the null fallback is unreachable. Every method is in the list.
 	return (
-		(["google", "github", "slack", "email-password"] as const).find((m) =>
-			enabledMethods.value.includes(m),
+		(["oidc", "google", "github", "slack", "email-password"] as const).find(
+			(m) => enabledMethods.value.includes(m),
 		) ?? null
 	)
 })
@@ -137,7 +135,7 @@ onUnmounted(() => {
 	if (redirectTimeout !== undefined) clearTimeout(redirectTimeout)
 })
 
-async function signUpWithProvider(provider: "github" | "google" | "slack") {
+async function signUpWithProvider(provider: ProviderAuthMethod) {
 	if (!newAccountsAllowed.value && !route.query.next) {
 		showToastMessage(
 			"info",
@@ -160,6 +158,9 @@ async function signUpWithProvider(provider: "github" | "google" | "slack") {
 			route.query.next as string | undefined,
 			"/welcome",
 		),
+		...(provider === "oidc" && {
+			errorCallbackURL: oidcErrorCallbackUrl(config.public.appBaseURL),
+		}),
 		fetchOptions: { query: route.query },
 	})) as AuthResponse
 
@@ -259,6 +260,24 @@ function methodVariant(method: AuthMethod) {
 				v-if="!showEmailPasswordForm && !isEmailPasswordOnly"
 				class="flex w-full flex-col gap-3"
 			>
+				<ShadcnUiButton
+					v-if="enabledMethods.includes('oidc')"
+					size="lg"
+					:variant="methodVariant('oidc')"
+					:class="cn('h-10 w-full', loading !== null && 'pointer-events-none')"
+					:disabled="loading === 'oidc'"
+					@click="signUpWithProvider('oidc')"
+				>
+					<Icon
+						:name="
+							loading === 'oidc'
+								? 'svg-spinners:blocks-shuffle-3'
+								: 'mingcute:key-2-line'
+						"
+						class="size-4"
+					/>
+					{{ $t("onboarding.signup.signup-oidc", { name: oidcDisplayName }) }}
+				</ShadcnUiButton>
 				<ShadcnUiButton
 					v-if="enabledMethods.includes('google')"
 					size="lg"

@@ -315,6 +315,15 @@ describe("buildChildEnvs", () => {
 			envs.authRealtime
 				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GITHUB_CLIENT_ID,
 		).toBe("")
+		expect(
+			envs.authRealtime
+				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_ISSUER_URL,
+		).toBe("")
+		expect(
+			envs.authRealtime
+				.OXYNOTE_AUTH_REALTIME_EMAIL_PASSWORD_LOGIN_DISABLED,
+		).toBe("false")
+		expect(envs.authRealtime.NODE_EXTRA_CA_CERTS).toBe("")
 	})
 
 	it("maps an enabled feature onto its component variables", ({
@@ -346,6 +355,15 @@ describe("buildChildEnvs", () => {
 						clientSecret: "gs",
 					},
 				},
+				oidcLogin: {
+					issuerUrl: "https://idp.example.com/realms/team",
+					clientId: "oid",
+					clientSecret: "os",
+					displayName: "Keycloak",
+					scopes: "openid email",
+					caCertsPath: "/oxynote/oidc-ca.pem",
+				},
+				passwordLoginDisabled: true,
 				aiAssistant: {
 					...testConfig().aiAssistant,
 					PROVIDER: "anthropic",
@@ -380,6 +398,20 @@ describe("buildChildEnvs", () => {
 			envs.authRealtime
 				.OXYNOTE_AUTH_REALTIME_RATE_LIMIT_DISABLED,
 		).toBe("true")
+		expect(envs.authRealtime).toMatchObject({
+			OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_ISSUER_URL:
+				"https://idp.example.com/realms/team",
+			OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_ID: "oid",
+			OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_SECRET:
+				"os",
+			OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_DISPLAY_NAME:
+				"Keycloak",
+			OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_SCOPES:
+				"openid email",
+			OXYNOTE_AUTH_REALTIME_EMAIL_PASSWORD_LOGIN_DISABLED:
+				"true",
+			NODE_EXTRA_CA_CERTS: "/oxynote/oidc-ca.pem",
+		})
 		expect(
 			envs.authRealtime
 				.OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATIONS,

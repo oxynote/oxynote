@@ -12,6 +12,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
@@ -38,6 +39,9 @@ var _ tools.DB = &DB{}
 //			},
 //			CheckDocumentExistsFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
 //				panic("mock out the CheckDocumentExists method")
+//			},
+//			CheckOrganizationMemberFunc: func(ctx context.Context, organizationID string, userID string) (bool, error) {
+//				panic("mock out the CheckOrganizationMember method")
 //			},
 //			DeleteTagFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
 //				panic("mock out the DeleteTag method")
@@ -74,6 +78,9 @@ var _ tools.DB = &DB{}
 //			},
 //			FetchDocumentTreeByDocumentParentIDFunc: func(ctx context.Context, parentID null.Value[xid.ID], organizationID string) (document.Summaries, error) {
 //				panic("mock out the FetchDocumentTreeByDocumentParentID method")
+//			},
+//			FetchOrganizationMemberRoleFunc: func(ctx context.Context, organizationID string, userID string) (org.Role, error) {
+//				panic("mock out the FetchOrganizationMemberRole method")
 //			},
 //			FetchTagFunc: func(ctx context.Context, id xid.ID, organizationID string) (*tag.Tag, error) {
 //				panic("mock out the FetchTag method")
@@ -115,6 +122,9 @@ type DB struct {
 	// CheckDocumentExistsFunc mocks the CheckDocumentExists method.
 	CheckDocumentExistsFunc func(ctx context.Context, id xid.ID, organizationID string) error
 
+	// CheckOrganizationMemberFunc mocks the CheckOrganizationMember method.
+	CheckOrganizationMemberFunc func(ctx context.Context, organizationID string, userID string) (bool, error)
+
 	// DeleteTagFunc mocks the DeleteTag method.
 	DeleteTagFunc func(ctx context.Context, id xid.ID, organizationID string) error
 
@@ -150,6 +160,9 @@ type DB struct {
 
 	// FetchDocumentTreeByDocumentParentIDFunc mocks the FetchDocumentTreeByDocumentParentID method.
 	FetchDocumentTreeByDocumentParentIDFunc func(ctx context.Context, parentID null.Value[xid.ID], organizationID string) (document.Summaries, error)
+
+	// FetchOrganizationMemberRoleFunc mocks the FetchOrganizationMemberRole method.
+	FetchOrganizationMemberRoleFunc func(ctx context.Context, organizationID string, userID string) (org.Role, error)
 
 	// FetchTagFunc mocks the FetchTag method.
 	FetchTagFunc func(ctx context.Context, id xid.ID, organizationID string) (*tag.Tag, error)
@@ -211,6 +224,15 @@ type DB struct {
 			ID xid.ID
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
+		}
+		// CheckOrganizationMember holds details about calls to the CheckOrganizationMember method.
+		CheckOrganizationMember []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// UserID is the userID argument value.
+			UserID string
 		}
 		// DeleteTag holds details about calls to the DeleteTag method.
 		DeleteTag []struct {
@@ -318,6 +340,15 @@ type DB struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
+		// FetchOrganizationMemberRole holds details about calls to the FetchOrganizationMemberRole method.
+		FetchOrganizationMemberRole []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// UserID is the userID argument value.
+			UserID string
+		}
 		// FetchTag holds details about calls to the FetchTag method.
 		FetchTag []struct {
 			// Ctx is the ctx argument value.
@@ -388,6 +419,7 @@ type DB struct {
 	lockBeginTx                               sync.RWMutex
 	lockCheckDocumentCycle                    sync.RWMutex
 	lockCheckDocumentExists                   sync.RWMutex
+	lockCheckOrganizationMember               sync.RWMutex
 	lockDeleteTag                             sync.RWMutex
 	lockFetchBranchTags                       sync.RWMutex
 	lockFetchDataSource                       sync.RWMutex
@@ -400,6 +432,7 @@ type DB struct {
 	lockFetchDocumentHooksByBranchID          sync.RWMutex
 	lockFetchDocumentTree                     sync.RWMutex
 	lockFetchDocumentTreeByDocumentParentID   sync.RWMutex
+	lockFetchOrganizationMemberRole           sync.RWMutex
 	lockFetchTag                              sync.RWMutex
 	lockFetchTagTree                          sync.RWMutex
 	lockInsertTag                             sync.RWMutex
@@ -584,6 +617,50 @@ func (mock *DB) CheckDocumentExistsCalls() []struct {
 	mock.lockCheckDocumentExists.RLock()
 	calls = mock.calls.CheckDocumentExists
 	mock.lockCheckDocumentExists.RUnlock()
+	return calls
+}
+
+// CheckOrganizationMember calls CheckOrganizationMemberFunc.
+func (mock *DB) CheckOrganizationMember(ctx context.Context, organizationID string, userID string) (bool, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		UserID         string
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		UserID:         userID,
+	}
+	mock.lockCheckOrganizationMember.Lock()
+	mock.calls.CheckOrganizationMember = append(mock.calls.CheckOrganizationMember, callInfo)
+	mock.lockCheckOrganizationMember.Unlock()
+	if mock.CheckOrganizationMemberFunc == nil {
+		var (
+			bOut   bool
+			errOut error
+		)
+		return bOut, errOut
+	}
+	return mock.CheckOrganizationMemberFunc(ctx, organizationID, userID)
+}
+
+// CheckOrganizationMemberCalls gets all the calls that were made to CheckOrganizationMember.
+// Check the length with:
+//
+//	len(mockedDB.CheckOrganizationMemberCalls())
+func (mock *DB) CheckOrganizationMemberCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	UserID         string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		UserID         string
+	}
+	mock.lockCheckOrganizationMember.RLock()
+	calls = mock.calls.CheckOrganizationMember
+	mock.lockCheckOrganizationMember.RUnlock()
 	return calls
 }
 
@@ -1107,6 +1184,50 @@ func (mock *DB) FetchDocumentTreeByDocumentParentIDCalls() []struct {
 	mock.lockFetchDocumentTreeByDocumentParentID.RLock()
 	calls = mock.calls.FetchDocumentTreeByDocumentParentID
 	mock.lockFetchDocumentTreeByDocumentParentID.RUnlock()
+	return calls
+}
+
+// FetchOrganizationMemberRole calls FetchOrganizationMemberRoleFunc.
+func (mock *DB) FetchOrganizationMemberRole(ctx context.Context, organizationID string, userID string) (org.Role, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		UserID         string
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		UserID:         userID,
+	}
+	mock.lockFetchOrganizationMemberRole.Lock()
+	mock.calls.FetchOrganizationMemberRole = append(mock.calls.FetchOrganizationMemberRole, callInfo)
+	mock.lockFetchOrganizationMemberRole.Unlock()
+	if mock.FetchOrganizationMemberRoleFunc == nil {
+		var (
+			roleOut org.Role
+			errOut  error
+		)
+		return roleOut, errOut
+	}
+	return mock.FetchOrganizationMemberRoleFunc(ctx, organizationID, userID)
+}
+
+// FetchOrganizationMemberRoleCalls gets all the calls that were made to FetchOrganizationMemberRole.
+// Check the length with:
+//
+//	len(mockedDB.FetchOrganizationMemberRoleCalls())
+func (mock *DB) FetchOrganizationMemberRoleCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	UserID         string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		UserID         string
+	}
+	mock.lockFetchOrganizationMemberRole.RLock()
+	calls = mock.calls.FetchOrganizationMemberRole
+	mock.lockFetchOrganizationMemberRole.RUnlock()
 	return calls
 }
 

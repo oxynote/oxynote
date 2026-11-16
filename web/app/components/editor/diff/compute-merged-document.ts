@@ -4,6 +4,8 @@ import { lcs } from "./lcs"
 import { buildPositionMap, type PositionMap, DiffStatus } from "./position-map"
 import { DEFAULT_MERGE_OPTIONS } from "./config"
 import { expandInlineDiffs } from "./inline-diff-expansion"
+import { removedAfterGrid, withGridPlaces } from "./grid-place"
+import { BLOCK_GRID_NAMES } from "~/components/editor/blocks/grid/utils"
 
 export interface MergeOptions extends HashOptions {
 	/** use block uid attribute for primary matching (default: true) */
@@ -76,11 +78,16 @@ function extractBlocks(doc: JSONContent, options: MergeOptions): BlockInfo[] {
  * core merge logic: match blocks from original and modified, then build
  * a merged array with diff attributes. extracted so it can be reused
  * recursively for child-level diffing of unwrapped types.
+ *
+ * ordered is false for the blocks of a grid. A grid places its blocks by
+ * their attributes and not by their order. So a change of order alone is
+ * no change, and the removed blocks come last.
  */
 function mergeBlocks(
 	original: JSONContent,
 	modified: JSONContent,
 	options: MergeOptions,
+	ordered = true,
 ): JSONContent[] {
 	const originalBlocks = extractBlocks(original, options)
 	const modifiedBlocks = extractBlocks(modified, options)
@@ -158,7 +165,7 @@ function mergeBlocks(
 	// the same parent show as removed + added instead of unchanged.
 	// find the longest increasing subsequence (LIS) of original indices
 	// in modified order — pairs not in the LIS have moved position.
-	if (modifiedToOriginal.size > 0) {
+	if (ordered && modifiedToOriginal.size > 0) {
 		const matchedPairs: [number, number][] = []
 		for (let mi = 0; mi < modifiedBlocks.length; mi++) {
 			const orig = modifiedToOriginal.get(mi)
@@ -193,7 +200,7 @@ function mergeBlocks(
 		const matchedOriginal = modifiedToOriginal.get(mi)
 
 		// insert any removed blocks that should appear before this modified block
-		if (matchedOriginal) {
+		if (ordered && matchedOriginal) {
 			while (removedIdx < removedOriginalBlocks.length) {
 				const removed = removedOriginalBlocks[removedIdx]
 
@@ -263,21 +270,25 @@ function mergeBlocks(
 	}
 
 	// step 5a: always unwrap transparent types (e.g. blockGrid) —
-	// they never carry diff status, only their children do.
-	if (options.transparentTypes?.length) {
-		for (const [i, block] of mergedContent.entries()) {
-			if (!block.type || !options.transparentTypes.includes(block.type)) {
-				continue
-			}
-
-			mergedContent[i] = unwrapBlock(block, options)
+	// they never carry diff status, only their children do. The removed
+	// blocks of a grid move to a copy of the grid, right after it.
+	const transparentTypes = options.transparentTypes ?? []
+	const unwrapped = mergedContent.flatMap((block) => {
+		if (!block.type || !transparentTypes.includes(block.type)) {
+			return [block]
 		}
-	}
+
+		const merged = unwrapBlock(block, options)
+
+		return BLOCK_GRID_NAMES.has(block.type)
+			? removedAfterGrid(merged)
+			: [merged]
+	})
 
 	// step 5b: unwrap compound types only when modified — the parent
 	// keeps its own status for added/removed/unchanged.
 	if (options.unwrapTypes?.length) {
-		for (const [i, block] of mergedContent.entries()) {
+		for (const [i, block] of unwrapped.entries()) {
 			if (
 				block.attrs?.diffStatus !== DiffStatus.Modified ||
 				!block.type ||
@@ -286,11 +297,11 @@ function mergeBlocks(
 				continue
 			}
 
-			mergedContent[i] = unwrapBlock(block, options, true)
+			unwrapped[i] = unwrapBlock(block, options, true)
 		}
 	}
 
-	return mergedContent
+	return unwrapped
 }
 
 /**
@@ -315,7 +326,12 @@ function unwrapBlock(
 		const originalNode: JSONContent = block.attrs.oldNode as JSONContent
 		const originalDoc = { type: "doc", content: originalNode.content ?? [] }
 		const modifiedDoc = { type: "doc", content: cloned.content ?? [] }
-		cloned.content = mergeBlocks(originalDoc, modifiedDoc, options)
+		cloned.content = mergeBlocks(
+			originalDoc,
+			modifiedDoc,
+			options,
+			!BLOCK_GRID_NAMES.has(block.type ?? ""),
+		)
 	} else if (cloned.content) {
 		cloned.content = cloned.content.map((child, i) =>
 			injectDiffAttrs(child, {
@@ -363,7 +379,11 @@ export function computeMergedDocument(
 	options: MergeOptions = DEFAULT_MERGE_OPTIONS,
 ): MergedResult {
 	const opts = { ...DEFAULT_MERGE_OPTIONS, ...options }
-	const mergedContent = mergeBlocks(original, modified, opts)
+	const mergedContent = mergeBlocks(
+		withGridPlaces(original),
+		withGridPlaces(modified),
+		opts,
+	)
 
 	const doc: JSONContent = {
 		type: "doc",

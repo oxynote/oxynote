@@ -58,7 +58,7 @@ export interface SidebarItem {
 		keyboardKey: { macOS: string; other: string }
 		i18nKey: string | null
 	}
-	children: SidebarItem[] | null // all normal pages need to have at least an empty array
+	children: SidebarItem[] | null // null when the row has nothing to open
 }
 
 export interface SidebarItemCreate {
@@ -78,12 +78,15 @@ export interface DocumentBreadcrumb {
 	icon: string
 }
 
+// a reader who may not edit moves no pages and adds none, so their tree
+// has no drag handles and no placeholder rows to add a page from
 export function processDocumentTree(
 	data: DocumentTreeResponse,
 	activeDocId: string | null,
 	placeholderName: string,
 	orgName: string,
 	actions: (documentId: string) => SidebarItemAction[],
+	editable: boolean,
 ): SidebarItem[] {
 	const res: SidebarItem[] = []
 
@@ -94,26 +97,29 @@ export function processDocumentTree(
 			icon: v.icon,
 			acceptsChildren: true,
 			active: v.id === activeDocId,
-			draggable: true,
+			draggable: editable,
 			url: !v.localOptimisticInsert
 				? `/${createNameSlug(orgName)}/${createNameSlugWithId(v.documentName, v.id)}`
 				: "#",
 			prefetchUrlOnInteraction: true,
 			localOptimisticInsert: v.localOptimisticInsert,
 			actions: actions(v.id),
-			children: v.children
+			children: v.children?.length
 				? processDocumentTree(
 						v.children,
 						activeDocId,
 						placeholderName,
 						orgName,
 						actions,
+						editable,
 					)
-				: [sidebarItemPlaceholder(placeholderName)],
+				: editable
+					? [sidebarItemPlaceholder(placeholderName)]
+					: null,
 		})
 	})
 
-	if (res.length === 0) {
+	if (res.length === 0 && editable) {
 		res.push(sidebarItemPlaceholder(placeholderName))
 	}
 
@@ -130,6 +136,7 @@ export function processTagTree(
 		defaultBranchId: string,
 		tagId: string,
 	) => SidebarItemAction[],
+	editable: boolean,
 ): SidebarItem[] {
 	return data
 		.filter((v) => !v.hidden)
@@ -139,7 +146,7 @@ export function processTagTree(
 			dotColor: paletteColor(v.color),
 			acceptsChildren: false,
 			active: false,
-			draggable: true,
+			draggable: editable,
 			dragGroup: TAG_DRAG_GROUP,
 			actions: tagActions(v),
 			children: v.documents?.length

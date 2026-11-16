@@ -7,9 +7,6 @@ Sentry.init({
 	// only accessible via process.env.
 	dsn: process.env.NUXT_PUBLIC_SENTRY_DSN,
 
-	// Enable logs to be sent to Sentry
-	enableLogs: true,
-
 	// every category the SDK may attach, stated in full: an omitted field
 	// takes a default that collects. Errors and stack traces only, since
 	// anything else here would carry document content.

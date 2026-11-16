@@ -1,0 +1,695 @@
+{
+	"sizes": {
+		"width": {
+			"wide": 24,
+			"standard": 12,
+			"compact": 8
+		},
+		"height": {
+			"standard": 1,
+			"tall": 2
+		},
+		"default": {
+			"w": 12,
+			"h": 1
+		}
+	},
+	"grids": [
+		{
+			"name": "named widths flow row by row",
+			"blocks": [
+				{
+					"width": "compact"
+				},
+				{
+					"width": "wide"
+				},
+				{
+					"width": "standard"
+				},
+				{
+					"width": "standard"
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 1,
+					"w": 24,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 2,
+					"w": 12,
+					"h": 1
+				},
+				{
+					"x": 12,
+					"y": 2,
+					"w": 12,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1, 2, 3],
+			"stackOrder": [0, 1, 2, 3]
+		},
+		{
+			"name": "blocks without attributes are standard",
+			"blocks": [{}, {}, {}],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				},
+				{
+					"x": 12,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 1,
+					"w": 12,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1, 2],
+			"stackOrder": [0, 1, 2]
+		},
+		{
+			"name": "placed blocks keep their cells",
+			"blocks": [
+				{
+					"widePosX": 12,
+					"widePosY": 0,
+					"width": 12,
+					"height": 1
+				},
+				{
+					"widePosX": 0,
+					"widePosY": 0,
+					"width": 12,
+					"height": 2
+				},
+				{
+					"widePosX": 0,
+					"widePosY": 2,
+					"width": 24,
+					"height": 1
+				}
+			],
+			"rects": [
+				{
+					"x": 12,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 0,
+					"w": 12,
+					"h": 2
+				},
+				{
+					"x": 0,
+					"y": 2,
+					"w": 24,
+					"h": 1
+				}
+			],
+			"readingOrder": [1, 0, 2],
+			"stackOrder": [1, 0, 2]
+		},
+		{
+			"name": "a block covering another moves down",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 0,
+					"width": 12
+				},
+				{
+					"widePosX": 6,
+					"widePosY": 0,
+					"width": 12
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 1,
+					"w": 12,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1],
+			"stackOrder": [0, 1]
+		},
+		{
+			"name": "blocks float up",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 5,
+					"width": 8
+				},
+				{
+					"widePosX": 8,
+					"widePosY": 9,
+					"width": 8,
+					"height": 2
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 8,
+					"y": 0,
+					"w": 8,
+					"h": 2
+				}
+			],
+			"readingOrder": [0, 1],
+			"stackOrder": [0, 1]
+		},
+		{
+			"name": "blocks without a place take the first free cells",
+			"blocks": [
+				{
+					"widePosX": 12,
+					"widePosY": 0,
+					"width": 12
+				},
+				{
+					"width": "compact"
+				},
+				{
+					"width": "standard"
+				}
+			],
+			"rects": [
+				{
+					"x": 8,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 1,
+					"w": 12,
+					"h": 1
+				}
+			],
+			"readingOrder": [1, 0, 2],
+			"stackOrder": [1, 0, 2]
+		},
+		{
+			"name": "a block past the right edge moves left, then down past the block it covers",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 0,
+					"width": 16
+				},
+				{
+					"widePosX": 20,
+					"widePosY": 0,
+					"width": 12
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 16,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 1,
+					"w": 12,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1],
+			"stackOrder": [0, 1]
+		},
+		{
+			"name": "invalid values fall back",
+			"blocks": [
+				{
+					"widePosX": -1,
+					"widePosY": 1.5,
+					"width": 30,
+					"height": 0
+				},
+				{
+					"width": "huge",
+					"height": 100
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				},
+				{
+					"x": 12,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1],
+			"stackOrder": [0, 1]
+		},
+		{
+			"name": "a height above the tallest named one falls back",
+			"blocks": [
+				{
+					"height": 2
+				},
+				{
+					"height": 3
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 12,
+					"h": 2
+				},
+				{
+					"x": 12,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1],
+			"stackOrder": [0, 1]
+		},
+		{
+			"name": "stacked places, and a block without one after its wide neighbour",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 0,
+					"width": 12,
+					"stackPos": 1
+				},
+				{
+					"widePosX": 12,
+					"widePosY": 0,
+					"width": 12
+				},
+				{
+					"widePosX": 0,
+					"widePosY": 1,
+					"width": 24,
+					"stackPos": 0
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				},
+				{
+					"x": 12,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 1,
+					"w": 24,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1, 2],
+			"stackOrder": [2, 0, 1]
+		},
+		{
+			"name": "blocks on the same stacked place keep the wide order",
+			"blocks": [
+				{
+					"stackPos": 0
+				},
+				{
+					"stackPos": 0
+				},
+				{
+					"width": "compact",
+					"stackPos": 2
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				},
+				{
+					"x": 12,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 1,
+					"w": 8,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1, 2],
+			"stackOrder": [0, 1, 2]
+		},
+		{
+			"name": "a tall block with blocks flowing beside it",
+			"blocks": [
+				{
+					"width": "standard",
+					"height": 2
+				},
+				{
+					"width": "standard"
+				},
+				{
+					"width": "standard"
+				},
+				{
+					"width": "wide"
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 12,
+					"h": 2
+				},
+				{
+					"x": 12,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				},
+				{
+					"x": 12,
+					"y": 1,
+					"w": 12,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 2,
+					"w": 24,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1, 2, 3],
+			"stackOrder": [0, 1, 2, 3]
+		},
+		{
+			"name": "a gap on the left of a block closes",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 0,
+					"width": 8
+				},
+				{
+					"widePosX": 16,
+					"widePosY": 0,
+					"width": 8
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 8,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1],
+			"stackOrder": [0, 1]
+		},
+		{
+			"name": "a block floats up before it slides left",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 0,
+					"width": 8
+				},
+				{
+					"widePosX": 16,
+					"widePosY": 1,
+					"width": 8
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 8,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1],
+			"stackOrder": [0, 1]
+		},
+		{
+			"name": "a tall block stops a slide in its second row",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 0,
+					"width": 12,
+					"height": 2
+				},
+				{
+					"widePosX": 12,
+					"widePosY": 0,
+					"width": 12
+				},
+				{
+					"widePosX": 16,
+					"widePosY": 1,
+					"width": 8
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 12,
+					"h": 2
+				},
+				{
+					"x": 12,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				},
+				{
+					"x": 12,
+					"y": 1,
+					"w": 8,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1, 2],
+			"stackOrder": [0, 1, 2]
+		},
+		{
+			"name": "a block that slides left lets the block under it float up",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 0,
+					"width": 8
+				},
+				{
+					"widePosX": 16,
+					"widePosY": 0,
+					"width": 8
+				},
+				{
+					"widePosX": 16,
+					"widePosY": 1,
+					"width": 8
+				},
+				{
+					"widePosX": 0,
+					"widePosY": 1,
+					"width": 16
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 8,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 16,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 1,
+					"w": 16,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1, 2, 3],
+			"stackOrder": [0, 1, 2, 3]
+		},
+		{
+			"name": "a block that floats up slides left again",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 0,
+					"width": 8
+				},
+				{
+					"widePosX": 12,
+					"widePosY": 0,
+					"width": 4
+				},
+				{
+					"widePosX": 14,
+					"widePosY": 1,
+					"width": 8
+				},
+				{
+					"widePosX": 0,
+					"widePosY": 1,
+					"width": 14
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 8,
+					"y": 0,
+					"w": 4,
+					"h": 1
+				},
+				{
+					"x": 12,
+					"y": 0,
+					"w": 8,
+					"h": 1
+				},
+				{
+					"x": 0,
+					"y": 1,
+					"w": 14,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1, 2, 3],
+			"stackOrder": [0, 1, 2, 3]
+		},
+		{
+			"name": "a block stored too far down to count rows still floats up",
+			"blocks": [
+				{
+					"widePosX": 0,
+					"widePosY": 9007199254740992,
+					"width": 12,
+					"height": 2
+				},
+				{
+					"widePosX": 12,
+					"widePosY": 0,
+					"width": 12
+				}
+			],
+			"rects": [
+				{
+					"x": 0,
+					"y": 0,
+					"w": 12,
+					"h": 2
+				},
+				{
+					"x": 12,
+					"y": 0,
+					"w": 12,
+					"h": 1
+				}
+			],
+			"readingOrder": [0, 1],
+			"stackOrder": [0, 1]
+		}
+	]
+}

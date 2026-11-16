@@ -1,5 +1,7 @@
 import { mockNuxtImport } from "@nuxt/test-utils/runtime"
+import { flushPromises } from "@vue/test-utils"
 import { beforeEach, describe, it, vi } from "vitest"
+import { t } from "~/components/test-helpers"
 import plugin, {
 	redirectToDocId,
 	redirectToFirst,
@@ -7,19 +9,34 @@ import plugin, {
 	redirectToOrgRoot,
 } from "./03.api-fetch"
 
-const { navigateToMock, useRouteMock, fetchMock } = vi.hoisted(() => {
+const {
+	navigateToMock,
+	useRouteMock,
+	fetchMock,
+	showToastMessageMock,
+	invalidateQueriesMock,
+} = vi.hoisted(() => {
 	return {
 		navigateToMock: vi.fn(),
 		useRouteMock: vi.fn(() => ({ fullPath: "/" })),
 		fetchMock: { create: vi.fn() },
+		showToastMessageMock: vi.fn(),
+		invalidateQueriesMock: vi.fn(),
 	}
 })
+
+vi.mock("~/components/toast", () => ({
+	showToastMessage: showToastMessageMock,
+}))
 
 mockNuxtImport("navigateTo", () => navigateToMock)
 mockNuxtImport("useRoute", () => useRouteMock)
 // the auto-imported $fetch binds globalThis.$fetch once, at module eval,
 // so stubbing the global from a test body is too late
 mockNuxtImport("$fetch", () => fetchMock)
+mockNuxtImport("useQueryCache", () => () => ({
+	invalidateQueries: invalidateQueriesMock,
+}))
 
 // restoreMocks does not touch hand-made vi.fn() singletons in vitest 4 —
 // every describe resets the module-level mocks explicitly
@@ -27,6 +44,9 @@ function resetSharedMocks() {
 	navigateToMock.mockReset()
 	useRouteMock.mockReset()
 	fetchMock.create.mockReset()
+	showToastMessageMock.mockReset()
+	invalidateQueriesMock.mockReset()
+	invalidateQueriesMock.mockResolvedValue([])
 }
 
 const DOC_ID_A = "aaaaaaaaaaaaaaaaaaaa" // xid length
@@ -37,6 +57,11 @@ interface CreatedClientOptions {
 	credentials?: RequestCredentials
 	onRequest?: (ctx: { options: { headers?: unknown } }) => void
 	onResponseError?: (ctx: { response: Response }) => Promise<void>
+}
+
+// a 403 the way ofetch hands it over, with the parsed body on _data.
+function refusal(data: unknown): Response {
+	return Object.assign(new Response(null, { status: 403 }), { _data: data })
 }
 
 function arrangeFetch() {
@@ -165,6 +190,86 @@ describe("03.api-fetch", { concurrent: false }, () => {
 		})
 
 		expect(navigateToMock).toHaveBeenCalledTimes(0)
+		expect(showToastMessageMock).toHaveBeenCalledTimes(0)
+	})
+
+	it.for([
+		{ name: "the core api client", index: 0 },
+		{ name: "the auth-realtime api client", index: 1 },
+	])(
+		"$name shows a role refusal as an error toast",
+		async ({ index }, { expect }) => {
+			const { created } = arrangeFetch()
+			void plugin(useNuxtApp())
+
+			await created[index]?.onResponseError?.({
+				response: refusal({ code: "member.forbidden" }),
+			})
+
+			expect(showToastMessageMock).toHaveBeenCalledExactlyOnceWith(
+				"error",
+				t("general.errors.role-not-allowed"),
+				t("general.errors.role-not-allowed-description"),
+			)
+			expect(navigateToMock).toHaveBeenCalledTimes(0)
+		},
+	)
+
+	it("reads the member list again once per burst of role refusals", async ({
+		expect,
+	}) => {
+		const { created } = arrangeFetch()
+		void plugin(useNuxtApp())
+		const read = Promise.withResolvers<never[]>()
+		invalidateQueriesMock.mockReturnValueOnce(read.promise)
+		const refuse = () =>
+			created[0]?.onResponseError?.({
+				response: refusal({ code: "member.forbidden" }),
+			})
+
+		await refuse()
+		await refuse()
+
+		expect(invalidateQueriesMock).toHaveBeenCalledExactlyOnceWith({
+			key: ["auth", "organization"],
+		})
+
+		read.resolve([])
+		// the finished read clears its guard in a finally
+		await flushPromises()
+		await refuse()
+
+		expect(invalidateQueriesMock).toHaveBeenCalledTimes(2)
+	})
+
+	it("reads the member list again after a failed read", async ({ expect }) => {
+		const { created } = arrangeFetch()
+		void plugin(useNuxtApp())
+		invalidateQueriesMock.mockRejectedValueOnce(new Error("offline"))
+		const refuse = () =>
+			created[0]?.onResponseError?.({
+				response: refusal({ code: "member.forbidden" }),
+			})
+
+		await refuse()
+		// the failed read clears its guard in a finally
+		await flushPromises()
+		await refuse()
+
+		expect(invalidateQueriesMock).toHaveBeenCalledTimes(2)
+	})
+
+	// other 403s, like a protected branch, are each caller's to explain.
+	it("leaves another 403 to its caller", async ({ expect }) => {
+		const { created } = arrangeFetch()
+		void plugin(useNuxtApp())
+
+		await created[0]?.onResponseError?.({
+			response: refusal({ code: "document.branch_protected" }),
+		})
+
+		expect(showToastMessageMock).toHaveBeenCalledTimes(0)
+		expect(invalidateQueriesMock).toHaveBeenCalledTimes(0)
 	})
 })
 

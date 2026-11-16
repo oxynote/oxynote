@@ -1,6 +1,6 @@
 import type { JSONContent } from "@tiptap/core"
 import { describe, expect, it } from "vitest"
-import { hashBlockContent } from "./content-hash"
+import { comparableGridAttrs, hashBlockContent } from "./content-hash"
 import { text } from "../test-helpers"
 
 function paragraph(
@@ -9,6 +9,30 @@ function paragraph(
 ): JSONContent {
 	return { type: "paragraph", attrs, content }
 }
+
+describe("comparableGridAttrs", () => {
+	it.for([
+		{
+			name: "drops the places and keeps the size it stores",
+			input: {
+				title: "a",
+				widePosX: 12,
+				widePosY: 3,
+				width: 8,
+				height: 2,
+				stackPos: 1,
+			},
+			expected: { title: "a", width: 8, height: 2 },
+		},
+		{
+			name: "reads a named width and a missing height as columns and rows",
+			input: { title: "a", width: "wide" },
+			expected: { title: "a", width: 24, height: 1 },
+		},
+	])("$name", ({ input, expected }, { expect }) => {
+		expect(comparableGridAttrs(input)).toEqual(expected)
+	})
+})
 
 describe("hashBlockContent", () => {
 	it("returns identical hashes for structurally equal nodes", () => {
@@ -66,6 +90,40 @@ describe("hashBlockContent", () => {
 		const b = {
 			type: "metricBlock",
 			attrs: { uid: "m1", simulationPreset: "error_rate" },
+		}
+
+		expect(hashBlockContent(a)).not.toBe(hashBlockContent(b))
+	})
+
+	// a drop writes cells into every block that it moves. In a grid saved
+	// before blocks stored cells, it writes them into every block.
+	it("ignores where a grid block sits and how it stores its size", () => {
+		const saved = {
+			type: "metricBlock",
+			attrs: { uid: "m1", width: "compact" },
+		}
+		const placed = {
+			type: "metricBlock",
+			attrs: {
+				uid: "m1",
+				widePosX: 16,
+				widePosY: 3,
+				width: 8,
+				height: 1,
+			},
+		}
+
+		expect(hashBlockContent(placed)).toBe(hashBlockContent(saved))
+	})
+
+	it("keeps a grid block's size significant", () => {
+		const a = {
+			type: "logBlock",
+			attrs: { uid: "l1", width: 8, height: 1 },
+		}
+		const b = {
+			type: "logBlock",
+			attrs: { uid: "l1", width: 10, height: 1 },
 		}
 
 		expect(hashBlockContent(a)).not.toBe(hashBlockContent(b))

@@ -127,7 +127,7 @@ function moveDrag(e: MouseEvent) {
 
 	<div
 		v-else
-		class="group peer hidden text-sidebar-foreground md:block"
+		class="group peer hidden text-sidebar-foreground md:block print:hidden"
 		data-slot="sidebar"
 		:data-state="state"
 		:data-collapsible="state === 'collapsed' ? 'offcanvas' : ''"

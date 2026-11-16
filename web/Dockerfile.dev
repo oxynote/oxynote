@@ -14,9 +14,13 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 # `prepare` runs `nuxt prepare`, which has no sources at this point.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY layers/ui/package.json ./layers/ui/
+# web links @oxynote/common from ../packages/common. The compose file
+# passes that folder as the common build context.
+COPY --from=common package.json /packages/common/
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY . .
+COPY --from=common src /packages/common/src
 
 # the dependency tree is already in place, so this install only runs the
 # scripts skipped above (`prepare`, and the allowBuilds native packages).

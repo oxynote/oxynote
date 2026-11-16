@@ -22,6 +22,10 @@
 			"page-title": "Authorization failed",
 			"heading": "Authorization failed",
 			"description": "Oxynote could not complete this request. Start the authorization again from the application you were connecting.",
+			"sign-up-disabled": "Sign-up is by invitation only. Ask a workspace admin to invite your email address.",
+			"other-account": "Use a different account",
+			"account-not-linked": "An account with this email already exists. It can be joined only when both Oxynote and your identity provider have verified the email. Log in the way you did before.",
+			"email-not-verified": "Your identity provider has not verified this email, so Oxynote sent its own verification link. Open it from your inbox, then log in again.",
 			"code": "Error code: {code}",
 			"button": "Back to Oxynote"
 		}

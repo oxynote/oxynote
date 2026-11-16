@@ -14,6 +14,20 @@ import (
 	"github.com/cloudwego/eino/components/model"
 )
 
+// ErrInvalidProvider is returned when the configured provider is not one
+// this build supports.
+var ErrInvalidProvider = errors.New("invalid assistant provider")
+
+// _providers lists every supported provider in the order they are
+// reported to the user, so the error message reads the same every time.
+var _providers = []Provider{
+	ProviderAnthropic,
+	ProviderOpenAI,
+	ProviderGoogle,
+	ProviderOllama,
+	ProviderOpenRouter,
+}
+
 const (
 	// ProviderAnthropic specifies Anthropic's Claude models, reachable
 	// directly or through AWS Bedrock and Google Vertex.
@@ -36,20 +50,6 @@ const (
 
 // Provider specifies which vendor backs the assistant's chat model.
 type Provider string
-
-// ErrInvalidProvider is returned when the configured provider is not one
-// this build supports.
-var ErrInvalidProvider = errors.New("invalid assistant provider")
-
-// _providers lists every supported provider in the order they are
-// reported to the user, so the error message reads the same every time.
-var _providers = []Provider{
-	ProviderAnthropic,
-	ProviderOpenAI,
-	ProviderGoogle,
-	ProviderOllama,
-	ProviderOpenRouter,
-}
 
 // Validate checks whether the provider is one this build supports,
 // naming the offending value and the supported set when it is not.

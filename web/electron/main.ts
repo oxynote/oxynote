@@ -8,7 +8,8 @@ import {
 	shell,
 } from "electron"
 import path from "node:path"
-import { existsSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { existsSync, readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 import squirrelStartup from "electron-squirrel-startup"
 import { authClient } from "./auth-client"
@@ -65,6 +66,23 @@ const openWebOrMailUrl = async (url: string): Promise<void> => {
 	if (/^(https?|mailto):/i.test(url)) {
 		await shell.openExternal(url)
 	}
+}
+
+// nuxt writes its import map and its runtime config into every page as
+// inline scripts. They change with each build, so their hashes are read
+// from the bundled index.html. Every page carries the same scripts, so
+// that one file covers them all.
+const inlineScriptHashes = (): string[] => {
+	const html = readFileSync(path.join(RENDERER_DIST, "index.html"), "utf8")
+
+	return [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)]
+		.map((match) => match[1])
+		.filter((body) => body !== "")
+		.map((body) => {
+			const hash = createHash("sha256").update(body).digest("base64")
+
+			return `'sha256-${hash}'`
+		})
 }
 
 protocol.registerSchemesAsPrivileged([
@@ -152,10 +170,11 @@ void app.whenReady().then(() => {
 	// loaded — without it, scripts default to unrestricted and eval() works,
 	// which Electron probes for and warns about. In dev we relax it because
 	// Vite/Nuxt HMR needs eval and inline scripts.
+	// When packaged, only the inline scripts nuxt wrote are allowed, by hash.
 	// The trailing `'none'` directives are zero-cost hardening: nothing in
 	// the app uses <base>, <object>/<embed>, framing, or forms.
 	const scriptSrc = app.isPackaged
-		? `script-src 'self'`
+		? ["script-src 'self'", ...inlineScriptHashes()].join(" ")
 		: `script-src 'self' 'unsafe-eval' 'unsafe-inline'`
 	const styleSrc = `style-src 'self' 'unsafe-inline'`
 	session.defaultSession.webRequest.onHeadersReceived((details, callback) => {

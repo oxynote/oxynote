@@ -67,6 +67,52 @@ describe("useAuthAPI", { concurrent: false }, () => {
 			expect(api.isEmailEnabled.value).toBe(false)
 		})
 	})
+	describe("isPasswordLoginEnabled", () => {
+		it("assumes password login until the config arrives", async ({
+			expect,
+		}) => {
+			mockEndpoint(
+				"GET",
+				"http://test.local/auth-realtime/api/auth-config",
+				() => ({ methods: ["oidc"], emailEnabled: true }),
+			)
+			const api = makeAuthAPI()
+
+			expect(api.isPasswordLoginEnabled.value).toBe(true)
+
+			// drains the eager load so it cannot land in the next test
+			await api.fetchAuthConfig.refresh()
+		})
+
+		it("is off once the server lists no password login", async ({ expect }) => {
+			mockEndpoint(
+				"GET",
+				"http://test.local/auth-realtime/api/auth-config",
+				() => ({ methods: ["oidc"], emailEnabled: true }),
+			)
+			const api = makeAuthAPI()
+
+			await api.fetchAuthConfig.refresh()
+
+			expect(api.isPasswordLoginEnabled.value).toBe(false)
+		})
+	})
+	describe("oidcDisplayName", () => {
+		it("names the OIDC button once the config arrives", async ({ expect }) => {
+			mockEndpoint(
+				"GET",
+				"http://test.local/auth-realtime/api/auth-config",
+				() => ({ methods: ["oidc"], oidcDisplayName: "Keycloak" }),
+			)
+			const api = makeAuthAPI()
+
+			expect(api.oidcDisplayName.value).toBe("")
+
+			await api.fetchAuthConfig.refresh()
+
+			expect(api.oidcDisplayName.value).toBe("Keycloak")
+		})
+	})
 	describe("organization limits", () => {
 		it("hides the default admin outside single-workspace mode", async ({
 			expect,

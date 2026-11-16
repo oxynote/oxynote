@@ -5,8 +5,10 @@ import {
 	clearQueryCache,
 	disposeMockEndpoints,
 } from "~/composables/api/test-helpers"
+import { Select } from "#layers/ui/app/components/shadcn/ui/select"
 import WorkspaceInvitationAction from "./WorkspaceInvitationAction.vue"
 import {
+	emitFrom,
 	findButtonByText,
 	mockAuthEndpoint,
 	mockAuthOrganization,
@@ -36,7 +38,7 @@ function seedWorkspace(memberCount: number, pendingInvitations = 0) {
 			id: `inv${i}`,
 			status: "pending",
 			email: `inv${i}@test`,
-			role: "member",
+			role: "editor",
 			organizationId: "org-1",
 		})),
 	})
@@ -76,21 +78,38 @@ describe("<WorkspaceInvitationAction>", { concurrent: false }, () => {
 		expect(wrapper.text()).toContain("Send an invitation")
 	})
 
-	it("sends the invitation as an owner", async ({ expect }) => {
+	it.for([
+		{ name: "as an editor by default", input: null, expected: "editor" },
+		{ name: "with the role picked", input: "viewer", expected: "viewer" },
+	])("sends the invitation $name", async ({ input, expected }, { expect }) => {
 		seedWorkspace(1)
 		const calls = mockAuthEndpoint("organization/invite-member", () => ({
 			id: "inv-1",
 		}))
 		const wrapper = await mountAction()
 
+		if (input !== null) {
+			emitFrom(wrapper, Select, "update:modelValue", input)
+		}
+
 		await submitEmail(wrapper, "new@oxynote.test")
 
 		expect(calls).toHaveLength(1)
 		expect(calls[0]?.body).toEqual({
 			email: "new@oxynote.test",
-			role: "owner",
-			resend: true,
+			role: expected,
 		})
+	})
+
+	it("labels the role picker with the role it sends", async ({ expect }) => {
+		seedWorkspace(1)
+
+		const wrapper = await mountAction()
+
+		expect(wrapper.text()).toContain(
+			t("settings.action-modals.workspace-invitation.role-label"),
+		)
+		expect(wrapper.findComponent(Select).props("modelValue")).toBe("editor")
 	})
 
 	it("confirms and closes once the invitation is sent", async ({ expect }) => {

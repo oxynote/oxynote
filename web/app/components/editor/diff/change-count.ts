@@ -9,6 +9,8 @@ import {
 	UPLOADING_ATTR,
 } from "~/components/editor/attribute-names"
 import { SIMULATION_ACTIVE_ATTR } from "~/components/editor/blocks/metrics/simulation"
+import { comparableGridAttrs } from "~/components/editor/diff/content-hash"
+import { GRID_ITEM_NAMES } from "~/components/editor/blocks/grid/utils"
 import {
 	CODE_BLOCK_NAME,
 	FILE_BLOCK_NAME,
@@ -225,8 +227,11 @@ function attributeUnits(
 	const itemFields = ITEM_FIELDS[typeName] ?? {}
 	const untracked = UNTRACKED_ATTRIBUTES[typeName] ?? []
 	const units = new Map<string, unknown>()
+	const compared = GRID_ITEM_NAMES.has(typeName)
+		? comparableGridAttrs(attrs)
+		: attrs
 
-	for (const [key, value] of Object.entries(attrs)) {
+	for (const [key, value] of Object.entries(compared)) {
 		if (
 			IGNORED_ATTRIBUTES.has(key) ||
 			untracked.includes(key) ||

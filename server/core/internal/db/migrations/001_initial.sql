@@ -1,4 +1,4 @@
--- +migrate Up
+-- +goose Up
 
 -- Better-auth-owned identity tables.
 
@@ -481,7 +481,7 @@ CREATE TABLE notifications (
 CREATE INDEX notifications_fk_organization_id_fk_user_id_idx ON notifications (fk_organization_id, fk_user_id);
 CREATE INDEX notifications_fk_user_id_idx ON notifications (fk_user_id);
 
--- +migrate Down
+-- +goose Down
 DROP TABLE notifications;
 DROP TABLE slack_messages;
 DROP TABLE github_installations;

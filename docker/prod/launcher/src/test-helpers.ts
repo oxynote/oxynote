@@ -39,6 +39,8 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
 		githubApp: undefined,
 		slackApp: undefined,
 		socialLogin: {},
+		oidcLogin: undefined,
+		passwordLoginDisabled: false,
 		aiAssistant: {
 			PROVIDER: "",
 			MODEL: "",

@@ -7,6 +7,11 @@ import {
 	LEGACY_METRIC_GRID_NAME,
 	METRIC_BLOCK_NAME,
 } from "../blocks/node-names"
+import {
+	gridItemHeightAttribute,
+	gridItemPlaceAttributes,
+	gridItemWidthAttribute,
+} from "../blocks/grid/utils"
 
 // the suites build minimal schemas whose node names come from the real
 // block extensions. Computed keys widen the schema's node map to a
@@ -72,4 +77,17 @@ export const MetricBlockStub = TiptapNode.create({
 	group: GRID_ITEM_GROUP,
 	atom: true,
 	isolating: true,
+})
+
+// a metric block with the size and place attributes of the real grid
+// blocks. A suite that needs more attributes extends this stub and adds
+// them to the result of this.parent().
+export const GridMetricBlockStub = MetricBlockStub.extend({
+	addAttributes() {
+		return {
+			width: gridItemWidthAttribute(),
+			height: gridItemHeightAttribute(),
+			...gridItemPlaceAttributes(),
+		}
+	},
 })

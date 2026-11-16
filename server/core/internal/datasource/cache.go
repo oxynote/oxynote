@@ -15,6 +15,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/rs/xid"
 )
 
 const (
@@ -48,7 +49,7 @@ type cachedPrometheus struct {
 // key does the same and the client is given the range as asked: aligning
 // twice can widen the window.
 func (cp cachedPrometheus) QueryRange(ctx context.Context, q string, tr processor.TimeRange) (*processor.PrometheusQueryResult, error) {
-	return cachedQuery(ctx, cp.m, cacheKey(cp.ds, "query_range", tr.Normalize(), q), func(ctx context.Context) (*processor.PrometheusQueryResult, error) {
+	return cachedQuery(ctx, cp.m, cp.ds.ID, cacheKey(cp.ds, "query_range", tr.Normalize(), q), func(ctx context.Context) (*processor.PrometheusQueryResult, error) {
 		return cp.Prometheus.QueryRange(ctx, q, tr)
 	})
 }
@@ -65,7 +66,7 @@ type cachedPostgreSQL struct {
 func (cp cachedPostgreSQL) Query(ctx context.Context, q string, tr processor.TimeRange, vars map[string]string) (*processor.PostgreSQLQueryResult, error) {
 	gtr := tr.AlignTo(_cacheGrid)
 
-	return cachedQuery(ctx, cp.m, cacheKey(cp.ds, "postgresql_query", gtr, append([]string{q}, variableArgs(q, vars)...)...), func(ctx context.Context) (*processor.PostgreSQLQueryResult, error) {
+	return cachedQuery(ctx, cp.m, cp.ds.ID, cacheKey(cp.ds, "postgresql_query", gtr, append([]string{q}, variableArgs(q, vars)...)...), func(ctx context.Context) (*processor.PostgreSQLQueryResult, error) {
 		return cp.PostgreSQL.Query(ctx, q, gtr, vars)
 	})
 }
@@ -82,7 +83,7 @@ type cachedMySQL struct {
 func (cm cachedMySQL) Query(ctx context.Context, q string, tr processor.TimeRange, vars map[string]string) (*processor.MySQLQueryResult, error) {
 	gtr := tr.AlignTo(_cacheGrid)
 
-	return cachedQuery(ctx, cm.m, cacheKey(cm.ds, "mysql_query", gtr, append([]string{q}, variableArgs(q, vars)...)...), func(ctx context.Context) (*processor.MySQLQueryResult, error) {
+	return cachedQuery(ctx, cm.m, cm.ds.ID, cacheKey(cm.ds, "mysql_query", gtr, append([]string{q}, variableArgs(q, vars)...)...), func(ctx context.Context) (*processor.MySQLQueryResult, error) {
 		return cm.MySQL.Query(ctx, q, gtr, vars)
 	})
 }
@@ -123,7 +124,7 @@ func (cl cachedLogs) Logs(
 	gtr := tr.AlignTo(_cacheGrid)
 	key := cacheKey(cl.ds, "logs", gtr, q, strconv.Itoa(page.Limit), string(cursor), string(page.Order))
 
-	return cachedQuery(ctx, cl.m, key, func(ctx context.Context) (*processor.LogsResult, error) {
+	return cachedQuery(ctx, cl.m, cl.ds.ID, key, func(ctx context.Context) (*processor.LogsResult, error) {
 		return cl.client.Logs(ctx, q, gtr, page)
 	})
 }
@@ -132,7 +133,7 @@ func (cl cachedLogs) Logs(
 func (cl cachedLogs) LogsVolume(ctx context.Context, q string, tr processor.TimeRange) (*processor.QueryResult, error) {
 	gtr := tr.AlignTo(_cacheGrid)
 
-	return cachedQuery(ctx, cl.m, cacheKey(cl.ds, "logs_volume", gtr, q), func(ctx context.Context) (*processor.QueryResult, error) {
+	return cachedQuery(ctx, cl.m, cl.ds.ID, cacheKey(cl.ds, "logs_volume", gtr, q), func(ctx context.Context) (*processor.QueryResult, error) {
 		return cl.client.LogsVolume(ctx, q, gtr)
 	})
 }
@@ -142,7 +143,7 @@ func (cl cachedLogs) LogsVolume(ctx context.Context, q string, tr processor.Time
 func (cl cachedLogs) LogFields(ctx context.Context, q string, tr processor.TimeRange) (*processor.LogFieldsResult, error) {
 	gtr := tr.AlignTo(_cacheGrid)
 
-	return cachedQuery(ctx, cl.m, cacheKey(cl.ds, "log_fields", gtr, q), func(ctx context.Context) (*processor.LogFieldsResult, error) {
+	return cachedQuery(ctx, cl.m, cl.ds.ID, cacheKey(cl.ds, "log_fields", gtr, q), func(ctx context.Context) (*processor.LogFieldsResult, error) {
 		return cl.client.LogFields(ctx, q, gtr)
 	})
 }
@@ -152,7 +153,7 @@ func (cl cachedLogs) LogFields(ctx context.Context, q string, tr processor.TimeR
 func (cl cachedLogs) LogFieldValues(ctx context.Context, field, q string, tr processor.TimeRange) (*processor.LogFieldValuesResult, error) {
 	gtr := tr.AlignTo(_cacheGrid)
 
-	return cachedQuery(ctx, cl.m, cacheKey(cl.ds, "log_field_values", gtr, field, q), func(ctx context.Context) (*processor.LogFieldValuesResult, error) {
+	return cachedQuery(ctx, cl.m, cl.ds.ID, cacheKey(cl.ds, "log_field_values", gtr, field, q), func(ctx context.Context) (*processor.LogFieldValuesResult, error) {
 		return cl.client.LogFieldValues(ctx, field, q, gtr)
 	})
 }
@@ -164,6 +165,7 @@ func (cl cachedLogs) LogFieldValues(ctx context.Context, field, q string, tr pro
 func cachedQuery[T cacheable](
 	ctx context.Context,
 	m *Manager,
+	id xid.ID,
 	key string,
 	call func(context.Context) (T, error),
 ) (T, error) {
@@ -220,6 +222,12 @@ func cachedQuery[T cacheable](
 
 	if led {
 		m.metrics.recordLookup(_lookupMiss)
+
+		// expiring waits on the connection test, which only the caller
+		// that ran the query has to do. The ones sharing its answer go on.
+		if err != nil {
+			m.expireConnectionStatus(context.WithoutCancel(ctx), id, err)
+		}
 	} else {
 		m.metrics.recordLookup(_lookupShared)
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -140,7 +141,7 @@ func Test_listVariables_Info(t *testing.T) {
 
 	info := listVariables{}.Info()
 
-	assert.Equal(t, Traits{Group: GroupVariables}, info.Traits)
+	assert.Equal(t, Traits{Group: GroupVariables, Role: org.RoleViewer}, info.Traits)
 	assert.Equal(t, NameListVariables, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Empty(t, info.Properties)
@@ -230,7 +231,7 @@ func Test_createVariableGroup_Info(t *testing.T) {
 
 	info := createVariableGroup{}.Info()
 
-	assert.Equal(t, Traits{Write: true, Group: GroupVariables}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Group: GroupVariables, Role: org.RoleEditor}, info.Traits)
 	assert.Equal(t, NameCreateVariableGroup, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"name", "color"}, info.Required)
@@ -337,7 +338,7 @@ func Test_updateVariableGroup_Info(t *testing.T) {
 
 	info := updateVariableGroup{}.Info()
 
-	assert.Equal(t, Traits{Write: true, Idempotent: true, Group: GroupVariables}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Idempotent: true, Group: GroupVariables, Role: org.RoleEditor}, info.Traits)
 	assert.Equal(t, NameUpdateVariableGroup, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"group_id"}, info.Required)
@@ -488,7 +489,7 @@ func Test_deleteVariableGroup_Info(t *testing.T) {
 
 	info := deleteVariableGroup{}.Info()
 
-	assert.Equal(t, Traits{Write: true, Destructive: true, Group: GroupVariables}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Destructive: true, Group: GroupVariables, Role: org.RoleEditor}, info.Traits)
 	assert.Equal(t, NameDeleteVariableGroup, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"group_id"}, info.Required)
@@ -600,7 +601,7 @@ func Test_createVariable_Info(t *testing.T) {
 
 	info := createVariable{}.Info()
 
-	assert.Equal(t, Traits{Write: true, Group: GroupVariables}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Group: GroupVariables, Role: org.RoleEditor}, info.Traits)
 	assert.Equal(t, NameCreateVariable, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"group_id", "key", "name", "type"}, info.Required)
@@ -778,7 +779,7 @@ func Test_updateVariable_Info(t *testing.T) {
 
 	info := updateVariable{}.Info()
 
-	assert.Equal(t, Traits{Write: true, Overwrites: true, Idempotent: true, Group: GroupVariables}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Overwrites: true, Idempotent: true, Group: GroupVariables, Role: org.RoleEditor}, info.Traits)
 	assert.Equal(t, NameUpdateVariable, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"variable_id"}, info.Required)
@@ -875,17 +876,56 @@ func Test_updateVariable_Exec(t *testing.T) {
 
 	tool := updateVariable{VariableID: _testVariableID, Name: "Zone"}
 
+	// stubBuiltinInput holds the built-in variable, whose default fails
+	// to set with defaultErr.
+	stubBuiltinInput := func(defaultErr error) *InputMock {
+		inp := stubVariableInput()
+		inp.FetchVariableFunc = func(xid.ID) (*variable.Entry, error) {
+			return &stubVariableTree()[0].Variables[0], nil
+		}
+		inp.SetVariableDefaultFunc = func(xid.ID, string) error { return defaultErr }
+
+		return inp
+	}
+
 	cc := map[string]struct {
-		Input   *InputMock
-		Updates int
-		Result  any
-		Err     error
+		Input    *InputMock
+		Tool     updateVariable
+		Updates  int
+		Defaults int
+		Result   any
+		Err      error
 	}{
 		"Error returned by Input.FetchVariable": {
 			Input: &InputMock{
 				FetchVariableFunc: func(xid.ID) (*variable.Entry, error) { return nil, assert.AnError },
 			},
-			Err: assert.AnError,
+			Tool: tool,
+			Err:  assert.AnError,
+		},
+		"Built-in variable without a default": {
+			Input: stubBuiltinInput(nil),
+			Tool:  updateVariable{VariableID: _builtinVariableID, Name: "Range"},
+			Err:   variable.ErrBuiltinVariable,
+		},
+		"Built-in variable's default with another change": {
+			Input: stubBuiltinInput(nil),
+			Tool:  updateVariable{VariableID: _builtinVariableID, Name: "Range", Default: null.StringFrom("last_7_days")},
+			Err:   variable.ErrBuiltinVariable,
+		},
+		"Error returned by Input.SetVariableDefault": {
+			Input:    stubBuiltinInput(assert.AnError),
+			Tool:     updateVariable{VariableID: _builtinVariableID, Default: null.StringFrom("last_7_days")},
+			Defaults: 1,
+			Err:      assert.AnError,
+		},
+		// a built-in variable's default is the one thing that changes on
+		// it, so it goes straight to the default.
+		"Built-in variable's default": {
+			Input:    stubBuiltinInput(nil),
+			Tool:     updateVariable{VariableID: _builtinVariableID, Default: null.StringFrom("last_7_days")},
+			Defaults: 1,
+			Result:   variableResult{VariableID: _builtinVariableID},
 		},
 		"Error returned by Input.UpdateVariable": {
 			Input: func() *InputMock {
@@ -894,6 +934,7 @@ func Test_updateVariable_Exec(t *testing.T) {
 
 				return inp
 			}(),
+			Tool:    tool,
 			Updates: 1,
 			Err:     assert.AnError,
 		},
@@ -901,6 +942,7 @@ func Test_updateVariable_Exec(t *testing.T) {
 		// the call left out are kept.
 		"Updated": {
 			Input:   stubVariableInput(),
+			Tool:    tool,
 			Updates: 1,
 			Result:  variableResult{VariableID: _testVariableID},
 		},
@@ -910,18 +952,29 @@ func Test_updateVariable_Exec(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := tool.Exec(c.Input)
+			res, err := c.Tool.Exec(c.Input)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			ff := c.Input.UpdateVariableCalls()
 			require.Len(t, ff, c.Updates)
 
+			dd := c.Input.SetVariableDefaultCalls()
+			require.Len(t, dd, c.Defaults)
+
+			for _, d := range dd {
+				assert.Equal(t, _builtinVariableID, d.VariableID)
+				assert.Equal(t, "last_7_days", d.Value)
+			}
+
+			for _, f := range ff {
+				assert.Equal(t, _testVariableID, f.VariableID)
+				assert.Equal(t, tool.input(stubVariableTree()[1].Variables[0]), f.Inp)
+			}
+
 			if err != nil {
 				return
 			}
 
-			assert.Equal(t, _testVariableID, ff[0].VariableID)
-			assert.Equal(t, tool.input(stubVariableTree()[1].Variables[0]), ff[0].Inp)
 			assert.Equal(t, c.Result, res)
 		})
 	}
@@ -1029,7 +1082,7 @@ func Test_deleteVariable_Info(t *testing.T) {
 
 	info := deleteVariable{}.Info()
 
-	assert.Equal(t, Traits{Write: true, Destructive: true, Group: GroupVariables}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Destructive: true, Group: GroupVariables, Role: org.RoleEditor}, info.Traits)
 	assert.Equal(t, NameDeleteVariable, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"variable_id"}, info.Required)
@@ -1141,10 +1194,10 @@ func Test_setVariableValue_Info(t *testing.T) {
 
 	info := setVariableValue{}.Info()
 
-	assert.Equal(t, Traits{Write: true, Idempotent: true, Group: GroupVariables}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Idempotent: true, Group: GroupVariables, Role: org.RoleViewer}, info.Traits)
 	assert.Equal(t, NameSetVariableValue, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Equal(t, []string{"variable_id", "value"}, info.Required)
+	assert.Equal(t, []string{"variable_id"}, info.Required)
 }
 
 func Test_setVariableValue_Validate(t *testing.T) {
@@ -1162,8 +1215,8 @@ func Test_setVariableValue_Validate(t *testing.T) {
 			Tool: setVariableValue{VariableID: _testVariableID},
 			Err:  errors.New("value is required"),
 		},
-		"Empty default": {
-			Tool: setVariableValue{VariableID: _testVariableID, Value: null.StringFrom(""), Default: true},
+		"Reset without a value": {
+			Tool: setVariableValue{VariableID: _testVariableID, Default: true},
 		},
 	}
 
@@ -1198,10 +1251,10 @@ func Test_setVariableValue_Summary(t *testing.T) {
 			Tool:   setVariableValue{VariableID: _testVariableID, Value: null.StringFrom(_testOtherOptionID.String())},
 			Result: `Set your $region to "us-east-1"`,
 		},
-		"Default of a list": {
+		"Reset": {
 			Input:  stubVariableInput(),
-			Tool:   setVariableValue{VariableID: _testVariableID, Value: null.StringFrom(_testOptionID.String()), Default: true},
-			Result: `Set the default of $region to "eu-west-1"`,
+			Tool:   setVariableValue{VariableID: _testVariableID, Default: true},
+			Result: "Reset your $region to the default",
 		},
 	}
 
@@ -1227,12 +1280,12 @@ func Test_setVariableValue_Exec(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Input    *InputMock
-		Tool     setVariableValue
-		Values   int
-		Defaults int
-		Result   any
-		Err      error
+		Input  *InputMock
+		Tool   setVariableValue
+		Values int
+		Resets int
+		Result any
+		Err    error
 	}{
 		"Error returned by Input.SetVariableValue": {
 			Input:  &InputMock{SetVariableValueFunc: func(xid.ID, string) error { return assert.AnError }},
@@ -1246,11 +1299,18 @@ func Test_setVariableValue_Exec(t *testing.T) {
 			Values: 1,
 			Result: setVariableValueResult{VariableID: _testVariableID, Value: "x"},
 		},
-		"Default set": {
-			Input:    &InputMock{},
-			Tool:     setVariableValue{VariableID: _testVariableID, Value: null.StringFrom("x"), Default: true},
-			Defaults: 1,
-			Result:   setVariableValueResult{VariableID: _testVariableID, Value: "x", Default: true},
+		"Error returned by Input.ResetVariableValue": {
+			Input:  &InputMock{ResetVariableValueFunc: func(xid.ID) error { return assert.AnError }},
+			Tool:   setVariableValue{VariableID: _testVariableID, Default: true},
+			Resets: 1,
+			Err:    assert.AnError,
+		},
+		// a reset needs no value: the user sees the default again.
+		"Reset to the default": {
+			Input:  &InputMock{},
+			Tool:   setVariableValue{VariableID: _testVariableID, Default: true},
+			Resets: 1,
+			Result: setVariableValueResult{VariableID: _testVariableID, Default: true},
 		},
 	}
 
@@ -1262,7 +1322,10 @@ func Test_setVariableValue_Exec(t *testing.T) {
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, c.Input.SetVariableValueCalls(), c.Values)
-			assert.Len(t, c.Input.SetVariableDefaultCalls(), c.Defaults)
+			assert.Len(t, c.Input.ResetVariableValueCalls(), c.Resets)
+
+			// setting a default is update_variable's.
+			assert.Empty(t, c.Input.SetVariableDefaultCalls())
 
 			if err != nil {
 				return

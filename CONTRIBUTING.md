@@ -1,9 +1,10 @@
 # Contributing
 
 This guide takes you from a fresh clone to a running dev stack, then covers
-what a pull request needs before it can merge. Oxynote is a web app built
-with Nuxt and Vue, a Go API server and a Node service for sign-in and
-real-time editing, all driven from the repository root with `make`.
+how to claim an issue and what a pull request needs before it can merge.
+Oxynote is a web app built with Nuxt and Vue, a Go API server and a Node
+service for sign-in and real-time editing, all driven from the repository
+root with `make`.
 
 - [Quick Start](#quick-start)
 - [Repository Layout](#repository-layout)
@@ -11,6 +12,11 @@ real-time editing, all driven from the repository root with `make`.
 - [Tests and Lints](#tests-and-lints)
 - [Code Standards and AGENTS.md](#code-standards-and-agentsmd)
 - [Pull Requests](#pull-requests)
+  - [Discuss First](#discuss-first)
+  - [Claiming an Issue](#claiming-an-issue)
+  - [Good First Issues](#good-first-issues)
+  - [Duplicate Pull Requests](#duplicate-pull-requests)
+  - [When We Close a Pull Request](#when-we-close-a-pull-request)
 - [Naming Commits and Pull Requests](#naming-commits-and-pull-requests)
 - [Adding a Data Source](#adding-a-data-source)
 - [Adding a Freshness Hook](#adding-a-freshness-hook)
@@ -45,6 +51,10 @@ For frontend work, `make dev` runs the backend in containers and the web
 app on http://localhost:3000, which reloads as you save. If `make start`
 refuses to run after a pull because your env files no longer match the
 templates, run `make sync-env`. It keeps your values.
+
+To try single sign-on, add `OIDC=1` (`make start OIDC=1`). It adds a
+Keycloak with two users, alice and bob, whose passwords are their names.
+Its admin console is at http://localhost:8180 as admin/admin.
 
 ## Repository Layout
 
@@ -128,32 +138,152 @@ We distilled these rules over many years of work on projects such as
 [ttlcache](https://github.com/jellydator/ttlcache), mostly long before AI
 coding tools existed. A lot of them build on existing guides, such as the
 [Uber Go Style Guide](https://github.com/uber-go/guide/blob/master/style.md).
-Others we found by reading the Go standard library. Our table tests with
-check functions, for example, came from its tests, such as
+Others we found by reading open-source code that sets the standard for
+its language, such as the Go standard library. Our table tests with check
+functions, for example, came from its tests, such as
 [`TestRecorder`](https://github.com/golang/go/blob/go1.27.1/src/net/http/httptest/recorder_test.go#L16).
-Our
-[`Test_Handler_FetchNotificationsCount`](server/core/internal/server/internal/notification/http_test.go#L154)
-follows the same pattern.
+Many of our tests follow the same pattern, such as
+[`Test_Handler_FetchNotificationsCount`](server/core/internal/server/internal/notification/http_test.go#L154).
 
 ## Pull Requests
 
-- Bug fixes and small changes can go straight to a pull request.
+- Bug fixes and small changes with no open issue can go straight to a pull
+  request.
 - New features and UI changes start with an issue. Agree on the approach
   there first, with design mockups or screenshots for anything visual, so
   you don't build something that can't be merged.
-- A pull request that changes the UI should show the result in screenshots or a
-  short video.
+- A pull request that changes the UI should show the app before and after,
+  in screenshots or a short video. For a new UI feature, screenshots are
+  required.
 - Keep to one issue per pull request, and fill in the template.
 - Report a security vulnerability privately, as [SECURITY.md](SECURITY.md)
   describes.
 
+### Discuss First
+
+Some issues need a decision before anyone writes code. It's easier to make
+that decision together in the issue than to rework a finished pull
+request. So if an issue has the type or one of the labels below, wait until
+a maintainer assigns it to you before you start:
+
+- `Feature` issue type: features are usually big changes, so agree in the
+  comments on what the feature does and how to build it. Show any new UI as
+  design artboards or mockups.
+- `needs design alignment`: propose a design in the comments, with design
+  artboards, mockups or annotated screenshots of the app. A description in
+  words alone isn't enough.
+- `needs more information`: we can't act on the issue until someone adds
+  what's missing, such as the steps to reproduce a bug.
+- `brainstorm`: we haven't decided yet whether Oxynote should do this at
+  all. Share your ideas and use cases in the comments to help us decide.
+
+A pull request opened before the assignment can't be merged, because
+the decision it depends on is still open. We usually close it and move the
+discussion back to the issue.
+
+Not every good idea fits Oxynote. We prefer good defaults to extra
+settings, and one clear way to do each job to several, as
+[Simple on Purpose](README.md#simple-on-purpose) in the README explains.
+If a better default would make a new setting unnecessary, we'll usually
+suggest the default instead.
+
+To discuss an idea before you open an issue, or to get help choosing what
+to work on, join our [Discord](https://discord.gg/mNJd5zJkvC). What we
+agree on there still goes into the issue, where everyone can see it.
+
+### Claiming an Issue
+
+To work on an open issue, comment that you're interested and wait until a
+maintainer assigns it to you. Add a few lines on how you plan to solve it,
+so we can see you've read the issue and help early if the plan needs a
+change. The assignment tells everyone else that the issue is taken, so if
+someone is already assigned, pick another issue. If you start before
+you're assigned and someone else gets the issue, we merge their pull
+request instead of yours.
+
+If an assigned issue has no update for 10 days, such as a comment or a
+draft pull request, we may unassign it so someone else can pick it up. If
+you need more time, say so in the issue.
+
+Issues labeled `maintainers only` are reserved for maintainers, because
+they involve complex changes or need internal knowledge that is hard to
+pass on in an issue. Your ideas and feedback in the comments are still
+welcome.
+
+### Good First Issues
+
+Issues labeled `good first issue` are for first-time contributors, meaning
+people who haven't had a pull request merged into Oxynote yet. Each one is
+small and usually comes with step-by-step instructions. We want Oxynote
+to be easy to start contributing to, so these issues let you learn the
+codebase and our review process on an easy change. We help as much as we
+can with that first pull request, even when Go, Nuxt, Node.js, or Vue is new to you.
+
+If one of them interests you, we strongly encourage you to comment on it
+first and wait to be assigned, as [Claiming an Issue](#claiming-an-issue)
+describes. That way nobody else starts on the same issue, and your work
+doesn't go to waste.
+
+Each contributor gets one good first issue. Once your pull request for one
+is merged, or open and waiting for review, please leave the others to the
+next newcomer. We close further pull requests for them, however good the
+code is. We have plenty of other
+[bug](https://github.com/oxynote/oxynote/issues?q=is%3Aissue+state%3Aopen+type%3ABug)
+and
+[improvement](https://github.com/oxynote/oxynote/issues?q=is%3Aissue+state%3Aopen+type%3AImprovement)
+issues you can work on, and we'd be glad to have your help there.
+
+### Duplicate Pull Requests
+
+Before you open a pull request, search the open pull requests for one that
+fixes the same issue. If you find one, open yours only if it does something
+better. Then link the existing pull request in your description and explain
+what yours improves.
+
+When several pull requests address the same issue anyway, we merge one and
+close the others. We review them in the order of this list, from highest
+priority to lowest, and merge the first one that meets our requirements:
+
+1. The pull request from the person assigned to the issue.
+2. All other pull requests, in the order they were opened.
+
+### When We Close a Pull Request
+
+We close a pull request when it:
+
+- builds a feature or a UI change that nobody agreed on in an issue, or
+  works on an issue that isn't ready for code
+  ([Discuss First](#discuss-first))
+- targets an issue labeled `maintainers only` and isn't from a maintainer
+  ([Claiming an Issue](#claiming-an-issue))
+- targets a `good first issue` and comes from someone whose pull request
+  for another one is already merged or waiting for review
+  ([Good First Issues](#good-first-issues))
+- targets the same issue as a pull request with higher priority
+  ([Duplicate Pull Requests](#duplicate-pull-requests))
+- changes more than its issue asks for, such as by reformatting or
+  refactoring other code
+- contains code its author can't explain in review
+  ([Code Standards and AGENTS.md](#code-standards-and-agentsmd))
+- doesn't fit Oxynote's direction, even when the code is good
+- looks like one of many automated pull requests, opened without a person
+  checking the result
+
+On that last point: a lot of automated bots open pull requests for issues
+labeled `good first issue`, and those take the issues away from the
+newcomers they're meant for. You're welcome to use AI tools, as long as
+you've read the change yourself and can answer questions about it. We only
+want to keep review time for pull requests that a person stands behind. If
+we closed yours by mistake, tell us in a comment and we'll reopen it.
+
 ## Naming Commits and Pull Requests
 
-A commit subject starts with a type and the component it touches, such as
-`feat(web): add tag name and color editing` or
-`fix(core): fix mysql timestamp parsing`. After the colon comes a short
-sentence in the imperative, lowercase and without a trailing period. A
-pull request title follows the same format.
+Commit subjects and pull request titles should both start with a type and the
+component they touch, such as `feat(web): add tag name and color editing`
+or `fix(core): fix mysql timestamp parsing`. After the colon comes a short
+sentence in the imperative, lowercase and without a trailing period. The
+title matters most, because we often squash a pull request when we merge
+it, and then its title becomes the commit subject on `main`.
 
 | Type | Used for |
 | --- | --- |
@@ -191,12 +321,15 @@ copy:
    connects to the source, runs queries and shapes the results for charts.
    A source that speaks an existing protocol reuses that processor, the way
    MariaDB uses the MySQL one.
-2. Make the processor's connection test check that the credentials can't
+2. List the credential kinds the type accepts in `credentialsKinds`
+   (`server/core/internal/datasource/datasource.go`). The processor then
+   handles each of them: a username and password, or a token.
+3. Make the processor's connection test check that the credentials can't
    write, because Oxynote only reads from a data source.
-3. If the source is a database, start it in a container in the processor
+4. If the source is a database, start it in a container in the processor
    tests' `TestMain`. If those tests need a new tool, add it to the
    prerequisites at the top of this guide.
-4. After you change the assistant tools, regenerate the golden file their
+5. After you change the assistant tools, regenerate the golden file their
    descriptions are compared against, and review the diff:
 
    ```sh

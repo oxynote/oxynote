@@ -1,20 +1,24 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jarcoal/httpmock"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,9 +47,9 @@ type stubSearchQueue struct {
 	tools.SearchQueue
 }
 
-// stubSet builds a real tool set over the given tools DB mock, so the
-// bridged tools behave exactly as the assistant's would.
-func stubSet(db *toolsMock.DB) *tools.Set {
+// stubSet builds a real tool set for the given role over the given tools
+// DB mock, so the bridged tools behave exactly as the assistant's would.
+func stubSet(db *toolsMock.DB, role org.Role) *tools.Set {
 	return tools.New(tools.NewDeps(
 		slog.New(slog.DiscardHandler),
 		db,
@@ -62,12 +66,12 @@ func stubSet(db *toolsMock.DB) *tools.Set {
 		nil,
 		"org1",
 		"user1",
-	))
+	), role)
 }
 
-// stubSession answers the session endpoint with a valid session
-// carrying the given scopes.
-func stubSession(t *testing.T, scopes []string) httpmock.Responder {
+// stubRoleSession answers the session endpoint with a valid session of a
+// member holding the given role and scopes.
+func stubRoleSession(t *testing.T, scopes []string, role org.Role) httpmock.Responder {
 	t.Helper()
 
 	scopesJSON, err := json.Marshal(scopes)
@@ -76,21 +80,21 @@ func stubSession(t *testing.T, scopes []string) httpmock.Responder {
 	return httpmock.NewStringResponder(
 		http.StatusOK,
 		fmt.Sprintf(
-			`{"userId":"user1","organizationId":"org1","clientId":"client1","scopes":%s,"expiresAt":32503680000}`,
+			`{"userId":"user1","organizationId":"org1","role":%q,"clientId":"client1","scopes":%s,"expiresAt":32503680000}`,
+			role,
 			scopesJSON,
 		),
 	)
 }
 
 // prepHandler builds a Handler whose bearer middleware talks to a
-// mocked session endpoint answering with the given responder. The
-// returned transport counts the session endpoint calls.
+// mocked session endpoint answering with the given responder.
 func prepHandler(
 	t *testing.T,
 	session httpmock.Responder,
 	man *ManagerMock,
 	db *DBMock,
-) (*Handler, *httpmock.MockTransport) {
+) *Handler {
 	t.Helper()
 
 	client, mt := testutil.MockHTTP()
@@ -102,7 +106,7 @@ func prepHandler(
 	})
 	require.NoError(t, err)
 
-	return hdl, mt
+	return hdl
 }
 
 // rpc posts one JSON-RPC message to the handler with a bearer token and
@@ -233,6 +237,7 @@ func Test_Handler_ServeHTTP(t *testing.T) {
 		Session                httpmock.Responder
 		Header                 http.Header
 		Body                   string
+		LocalAddr              net.Addr
 		Code                   int
 		Check                  func(t *testing.T, rec *httptest.ResponseRecorder)
 		SessionCalls           int
@@ -240,7 +245,7 @@ func Test_Handler_ServeHTTP(t *testing.T) {
 		FetchDocumentTreeCalls int
 	}{
 		"Missing bearer token": {
-			Session: stubSession(t, []string{ScopeDocumentRead}),
+			Session: stubRoleSession(t, []string{ScopeDocumentRead}, org.RoleEditor),
 			Body:    "{}",
 			Code:    http.StatusUnauthorized,
 			Check: func(t *testing.T, rec *httptest.ResponseRecorder) {
@@ -266,7 +271,7 @@ func Test_Handler_ServeHTTP(t *testing.T) {
 			SessionCalls: 1,
 		},
 		"Successful initialize": {
-			Session: stubSession(t, []string{ScopeDocumentRead}),
+			Session: stubRoleSession(t, []string{ScopeDocumentRead}, org.RoleEditor),
 			Header: http.Header{
 				"Content-Type":  {"application/json"},
 				"Accept":        {"application/json, text/event-stream"},
@@ -299,6 +304,33 @@ func Test_Handler_ServeHTTP(t *testing.T) {
 			ToolSetCalls:           _serverBuilds,
 			FetchDocumentTreeCalls: _serverBuilds,
 		},
+		"Successful initialize on a loopback listener behind a proxy": {
+			Session: stubRoleSession(t, []string{ScopeDocumentRead}, org.RoleEditor),
+			Header: http.Header{
+				"Content-Type":  {"application/json"},
+				"Accept":        {"application/json, text/event-stream"},
+				"Authorization": {"Bearer tok"},
+			},
+			Body:      `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`,
+			LocalAddr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8180},
+			Code:      http.StatusOK,
+			Check: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				t.Helper()
+
+				payload := ssePayload(t, rec.Body.String())
+				require.NotNil(t, payload)
+
+				result, ok := payload["result"].(map[string]any)
+				require.True(t, ok, "payload: %v", payload)
+
+				info, ok := result["serverInfo"].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, "oxynote", info["name"])
+			},
+			SessionCalls:           1,
+			ToolSetCalls:           _serverBuilds,
+			FetchDocumentTreeCalls: _serverBuilds,
+		},
 	}
 
 	for cn, c := range cc {
@@ -306,15 +338,26 @@ func Test_Handler_ServeHTTP(t *testing.T) {
 			t.Parallel()
 
 			man := &ManagerMock{
-				ToolSetFunc: func(string, string) *tools.Set {
-					return stubSet(&toolsMock.DB{})
+				ToolSetFunc: func(string, string, org.Role) *tools.Set {
+					return stubSet(&toolsMock.DB{}, org.RoleEditor)
 				},
 			}
 			db := &DBMock{}
-			hdl, mt := prepHandler(t, c.Session, man, db)
+
+			var sessionCalls atomic.Int32
+
+			hdl := prepHandler(t, func(r *http.Request) (*http.Response, error) {
+				sessionCalls.Add(1)
+
+				return c.Session(r)
+			}, man, db)
 
 			req := httptest.NewRequest(http.MethodPost, "http://test.com/", strings.NewReader(c.Body))
 			maps.Copy(req.Header, c.Header)
+
+			if c.LocalAddr != nil {
+				req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, c.LocalAddr))
+			}
 
 			rec := httptest.NewRecorder()
 			hdl.ServeHTTP(rec, req)
@@ -322,7 +365,7 @@ func Test_Handler_ServeHTTP(t *testing.T) {
 			require.Equal(t, c.Code, rec.Code)
 			c.Check(t, rec)
 
-			assert.Equal(t, c.SessionCalls, mt.GetTotalCallCount())
+			assert.EqualValues(t, c.SessionCalls, sessionCalls.Load())
 
 			toolSetCalls := man.ToolSetCalls()
 			require.Len(t, toolSetCalls, c.ToolSetCalls)

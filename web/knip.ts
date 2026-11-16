@@ -15,6 +15,11 @@ const config: KnipConfig = {
 
 	workspaces: {
 		".": {
+			// the plugin runs vite.electron.config.ts, which throws without
+			// the electron build env vars. The entries below cover the same
+			// files instead.
+			"electron-forge": false,
+
 			entry: [
 				// the auto-import map connects named exports, but not the
 				// `export default function useX` style these composables
@@ -29,6 +34,8 @@ const config: KnipConfig = {
 				"electron/preload.ts",
 				"forge.config.ts",
 				"vite.electron.config.ts",
+				// nuxt module the vitest config loads by path
+				"vitest.nuxt-module.ts",
 			],
 
 			ignoreDependencies: [

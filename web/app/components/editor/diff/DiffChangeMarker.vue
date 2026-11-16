@@ -15,8 +15,11 @@ const props = defineProps<{
 	node: PMNode
 }>()
 
+// a removed grid block keeps its old places, so its marker lists where it
+// was
 const count = computed(() =>
-	props.node.attrs.diffStatus === DiffStatus.Modified
+	props.node.attrs.diffStatus === DiffStatus.Modified ||
+	props.node.attrs.diffStatus === DiffStatus.Removed
 		? countNodeChanges(props.node)
 		: null,
 )

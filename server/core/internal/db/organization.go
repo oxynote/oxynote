@@ -5,6 +5,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
@@ -49,6 +50,27 @@ func (a *agent) CheckOrganizationMember(ctx context.Context, organizationID, use
 	}
 
 	return true, nil
+}
+
+// FetchOrganizationMemberRole retrieves the role a user holds in an
+// organization. A user who is not a member is a bare sql.ErrNoRows.
+func (a *agent) FetchOrganizationMemberRole(ctx context.Context, organizationID, userID string) (org.Role, error) {
+	q, args := a.builder.Select("role").
+		From("organization_members").
+		Where(sq.Eq{
+			"fk_organization_id": organizationID,
+			"fk_user_id":         userID,
+		}).
+		Limit(1).
+		MustSql()
+
+	var role org.Role
+
+	if err := sqlx.GetContext(ctx, a.sql, &role, q, args...); err != nil {
+		return "", err
+	}
+
+	return role, nil
 }
 
 // FetchOrganizationSlug retrieves the slug of an organization by its ID.

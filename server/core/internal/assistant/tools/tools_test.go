@@ -11,6 +11,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -61,7 +62,7 @@ func allToolNames() []Name {
 func Test_New(t *testing.T) {
 	t.Parallel()
 
-	s := New(testDeps(nil, nil, nil))
+	s := New(testDeps(nil, nil, nil), org.RoleAdmin)
 	require.NotNil(t, s)
 
 	// every tool the model is told about has to be reachable by the
@@ -85,6 +86,9 @@ func Test_New(t *testing.T) {
 		require.True(t, ok, "the registry holds an unexpected %T", it)
 
 		tr := et.info.Traits
+
+		// a tool without a known role is offered to nobody.
+		assert.Contains(t, []org.Role{org.RoleViewer, org.RoleEditor, org.RoleAdmin}, tr.Role, "%s names no known role", name)
 
 		tl, derr := et.reg.decode(json.RawMessage(requiredArgs(t, name)))
 		require.NoError(t, derr)
@@ -120,12 +124,37 @@ func Test_New(t *testing.T) {
 		// a batch of text edits is not consent to delete.
 		assert.Equal(t, tr.Destructive, c.destructive, "%s gate destructive flag", name)
 	}
+
+	// a viewer's set keeps exactly the tools a viewer may call, on every
+	// surface it feeds. Each group the model can load keeps one, so
+	// loading one is never empty.
+	vs := New(testDeps(nil, nil, nil), org.RoleViewer)
+
+	assert.Equal(t, []string{string(NameSetVariableValue)}, vs.WriteNames())
+
+	kept := 0
+
+	for _, e := range s.Entries() {
+		_, ok := vs.tools[e.Info.Name]
+		assert.Equal(t, e.Info.Traits.Role == org.RoleViewer, ok, "%s kept=%v in a viewer's set", e.Info.Name, ok)
+
+		if ok {
+			kept++
+		}
+	}
+
+	assert.Len(t, vs.Tools(), kept)
+	assert.Len(t, vs.Entries(), kept)
+
+	for group := range s.Grouped() {
+		assert.NotEmpty(t, vs.Grouped()[group], "group %s is empty in a viewer's set", group)
+	}
 }
 
 func Test_Set_Entries(t *testing.T) {
 	t.Parallel()
 
-	s := New(testDeps(nil, nil, nil))
+	s := New(testDeps(nil, nil, nil), org.RoleAdmin)
 
 	entries := s.Entries()
 	require.Len(t, entries, len(allToolNames()))
@@ -228,17 +257,17 @@ func Test_Set_Entry(t *testing.T) {
 			Name: NameGetDocument,
 		},
 		"Unknown name": {
-			Set:  New(testDeps(nil, nil, nil)),
+			Set:  New(testDeps(nil, nil, nil), org.RoleAdmin),
 			Name: "not_a_tool",
 		},
 		"Registered read tool": {
-			Set:    New(testDeps(nil, nil, nil)),
+			Set:    New(testDeps(nil, nil, nil), org.RoleAdmin),
 			Name:   NameGetDocument,
 			Result: NameGetDocument,
 			Found:  true,
 		},
 		"Registered write tool comes back ungated": {
-			Set:    New(testDeps(nil, nil, nil)),
+			Set:    New(testDeps(nil, nil, nil), org.RoleAdmin),
 			Name:   NameDeleteDocument,
 			Result: NameDeleteDocument,
 			Found:  true,
@@ -269,7 +298,7 @@ func Test_Set_Entry(t *testing.T) {
 func Test_Set_Tools(t *testing.T) {
 	t.Parallel()
 
-	ts := New(testDeps(nil, nil, nil)).Tools()
+	ts := New(testDeps(nil, nil, nil), org.RoleAdmin).Tools()
 	require.Len(t, ts, len(allToolNames()))
 
 	got := make([]Name, 0, len(ts))
@@ -289,7 +318,7 @@ func Test_Set_Tools(t *testing.T) {
 func Test_Set_Grouped(t *testing.T) {
 	t.Parallel()
 
-	s := New(testDeps(nil, nil, nil))
+	s := New(testDeps(nil, nil, nil), org.RoleAdmin)
 
 	got := map[Group][]Name{}
 
@@ -385,7 +414,7 @@ func Test_Set_Label(t *testing.T) {
 				db = stubDocumentDB()
 			}
 
-			s := New(testDeps(db, nil, nil))
+			s := New(testDeps(db, nil, nil), org.RoleAdmin)
 
 			got := s.Label(context.Background(), c.Name, json.RawMessage(c.Args))
 			assert.Equal(t, c.Result, got)
@@ -400,7 +429,7 @@ func Test_Set_Label(t *testing.T) {
 func Test_Set_WriteNames(t *testing.T) {
 	t.Parallel()
 
-	s := New(testDeps(nil, nil, nil))
+	s := New(testDeps(nil, nil, nil), org.RoleAdmin)
 
 	got := s.WriteNames()
 

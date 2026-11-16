@@ -10,6 +10,7 @@ import (
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/markup"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
@@ -51,7 +52,7 @@ func Test_listDocuments_Info(t *testing.T) {
 
 	info := listDocuments{}.Info()
 
-	assert.Equal(t, Traits{}, info.Traits)
+	assert.Equal(t, Traits{Role: org.RoleViewer}, info.Traits)
 
 	assert.Equal(t, NameListDocuments, info.Name)
 	assert.NotEmpty(t, info.Description)
@@ -216,7 +217,7 @@ func Test_getDocument_Info(t *testing.T) {
 
 	info := getDocument{}.Info()
 
-	assert.Equal(t, Traits{}, info.Traits)
+	assert.Equal(t, Traits{Role: org.RoleViewer}, info.Traits)
 
 	assert.Equal(t, NameGetDocument, info.Name)
 	assert.NotEmpty(t, info.Description)
@@ -386,7 +387,7 @@ func Test_createDocument_Info(t *testing.T) {
 
 	info := createDocument{}.Info()
 
-	assert.Equal(t, Traits{Write: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Role: org.RoleEditor}, info.Traits)
 
 	assert.Equal(t, NameCreateDocument, info.Name)
 	assert.Equal(t, []string{"name"}, info.Required)
@@ -557,7 +558,7 @@ func Test_deleteDocument_Info(t *testing.T) {
 	info := deleteDocument{}.Info()
 
 	// a delete stays outside any "approve all" answer.
-	assert.Equal(t, Traits{Write: true, Destructive: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Destructive: true, Role: org.RoleEditor}, info.Traits)
 
 	assert.Equal(t, NameDeleteDocument, info.Name)
 	assert.Contains(t, info.Description, "cannot be restored")
@@ -709,7 +710,7 @@ func Test_updateDocument_Info(t *testing.T) {
 
 	info := updateDocument{}.Info()
 
-	assert.Equal(t, Traits{Write: true, Idempotent: true}, info.Traits)
+	assert.Equal(t, Traits{Write: true, Idempotent: true, Role: org.RoleEditor}, info.Traits)
 
 	assert.Equal(t, NameUpdateDocument, info.Name)
 	assert.Equal(t, []string{"document_id"}, info.Required)

@@ -80,6 +80,7 @@ export default defineNuxtConfig({
 	],
 
 	devtools: { enabled: false },
+	devServer: { host: "localhost" },
 
 	eslint: {
 		config: {
@@ -180,7 +181,10 @@ export default defineNuxtConfig({
 				...(isDesktopBuild ? selectableIconList() : []),
 			],
 			scan: true,
-			sizeLimitKb: 256,
+			// the desktop build bundles every selectable title icon,
+			// about 545 KB, so its limit has to cover the bundle. The
+			// web build leaves them out and keeps the tight limit.
+			sizeLimitKb: isDesktopBuild ? 1024 : 256,
 		},
 		customCollections: [
 			{

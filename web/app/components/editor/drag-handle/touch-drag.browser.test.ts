@@ -8,6 +8,7 @@ import { Drag } from "./drag"
 import { GapDecorations } from "./gap-decorations"
 import { DragHandlePlugin } from "./handle-plugin"
 import { startTouchDrag } from "./touch-drag"
+import { gridStackOf } from "../blocks/grid/layout"
 import {
 	METRIC_BLOCK_NAME,
 	BLOCK_GRID_NAME,
@@ -22,8 +23,8 @@ import {
 	SplitDocumentationStub,
 } from "./test-helpers"
 import {
-	MetricBlockStub,
 	BlockGridStub,
+	GridMetricBlockStub,
 	paragraph,
 	touchPointer,
 } from "~/components/editor/test-helpers"
@@ -41,9 +42,9 @@ const BlockGrid = BlockGridStub.extend({
 		return ["div", { "data-type": "block-grid" }, 0]
 	},
 })
-const MetricBlock = MetricBlockStub.extend({
+const MetricBlock = GridMetricBlockStub.extend({
 	addAttributes() {
-		return { title: { default: "" } }
+		return { ...this.parent?.(), title: { default: "" } }
 	},
 
 	renderHTML({ HTMLAttributes }) {
@@ -194,15 +195,12 @@ describe("startTouchDrag", { concurrent: false }, () => {
 		)
 	})
 
-	it("keeps a list item's preview from widening the page", ({ expect }) => {
+	it.for([
+		{ name: "a list item's", input: LIST_ITEM },
+		{ name: "any other block's", input: null },
+	])("keeps $name preview from widening the page", ({ input }, { expect }) => {
 		const { handle, block, preview } = mountBlock()
-		const drag = startTouchDrag(
-			handle,
-			block,
-			() => preview,
-			HELD_AT,
-			LIST_ITEM,
-		)
+		const drag = startTouchDrag(handle, block, () => preview, HELD_AT, input)
 
 		drag?.move(touchPointer("pointermove", 5000, 120))
 
@@ -249,13 +247,15 @@ describe("startTouchDrag", { concurrent: false }, () => {
 		expect(onDragOver).toHaveBeenCalledOnce()
 	})
 
-	it("keeps any other block's preview in its column", ({ expect }) => {
+	it("moves any other block's preview as far as the finger moves", ({
+		expect,
+	}) => {
 		const { handle, block, preview } = mountBlock()
 		const drag = startTouchDrag(handle, block, () => preview, HELD_AT, null)
 
 		drag?.move(touchPointer("pointermove", 200, 300))
 
-		expect.soft(preview.style.left).toBe("20px")
+		expect.soft(preview.style.left).toBe("160px")
 		expect.soft(preview.style.top).toBe("280px")
 	})
 
@@ -492,10 +492,13 @@ describe("startTouchDrag", { concurrent: false }, () => {
 				y: input.landing === "bottom" ? target.bottom - 10 : target.top + 10,
 			})
 
+			// a grid drop keeps the blocks in document order and changes
+			// their stored places instead. So the test reads the new order
+			// from the stacked layout.
+			const grid = editor.state.doc.child(0)
+
 			expect(
-				editor.state.doc.firstChild?.children.map(
-					(block) => block.attrs.title as string,
-				),
+				gridStackOf(grid).map((i) => grid.child(i).attrs.title as string),
 			).toEqual(expected)
 		})
 

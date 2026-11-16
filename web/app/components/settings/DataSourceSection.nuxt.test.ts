@@ -1,11 +1,26 @@
-import { afterEach, beforeEach, describe, it } from "vitest"
+import { flushPromises } from "@vue/test-utils"
+import { afterEach, beforeEach, describe, it, vi } from "vitest"
+import { toast } from "vue-sonner"
 import {
 	clearQueryCache,
 	disposeMockEndpoints,
 	seedQueryData,
 } from "~/composables/api/test-helpers"
 import DataSourceSection from "./DataSourceSection.vue"
-import { at, menuItem, mountUnderTooltipProvider, t } from "../test-helpers"
+import {
+	at,
+	clearTeleportedOverlays,
+	menuItem,
+	mountUnderTooltipProvider,
+	raisedToasts,
+	seedAuthOrganization,
+	seedAuthSession,
+	t,
+} from "../test-helpers"
+
+vi.mock("vue-sonner", () => ({
+	toast: { custom: vi.fn(), dismiss: vi.fn() },
+}))
 
 function makeDataSource(overrides: Partial<DataSource> = {}): DataSource {
 	return {
@@ -192,11 +207,68 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 		expect(section.emitted("data-source-removal")).toEqual([[dataSource]])
 	})
 
+	it("copies a data source's URL from its options menu", async ({ expect }) => {
+		vi.mocked(toast.custom).mockReset()
+		const writeText = vi
+			.spyOn(navigator.clipboard, "writeText")
+			.mockResolvedValue(undefined)
+		seedDataSources([makeDataSource()])
+		const { wrapper } = await mountSection()
+		await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
+
+		menuItem(t("settings.data-sources.copy-url")).click()
+		await flushPromises()
+
+		expect(writeText).toHaveBeenCalledExactlyOnceWith("http://prometheus.test")
+		expect(raisedToasts()).toMatchObject([
+			{ type: "success", title: t("settings.data-sources.url-copied") },
+		])
+	})
+
 	it("shows when the data source was connected", async ({ expect }) => {
 		seedDataSources([makeDataSource()])
 
 		const { wrapper } = await mountSection()
 
 		expect(wrapper.text()).toContain("Jan 1, 2026")
+	})
+
+	describe("for a member who is not an admin", { concurrent: false }, () => {
+		beforeEach(() => {
+			clearTeleportedOverlays()
+			seedAuthSession({ id: "u1" })
+			seedAuthOrganization({ members: [{ userId: "u1", role: "editor" }] })
+		})
+
+		it("lists the connections without the controls that change them", async ({
+			expect,
+		}) => {
+			seedDataSources([makeDataSource()])
+
+			const { wrapper } = await mountSection()
+
+			expect.soft(wrapper.text()).toContain("Prod metrics")
+			// only the options menu, which holds nothing that changes the source
+			expect.soft(wrapper.findAll("button")).toHaveLength(1)
+			// the five types other than prometheus have nothing connected
+			expect
+				.soft(wrapper.text().split(t("settings.data-sources.not-connected")))
+				.toHaveLength(6)
+		})
+
+		it("offers only the URL copy in a data source's options menu", async ({
+			expect,
+		}) => {
+			seedDataSources([makeDataSource()])
+			const { wrapper } = await mountSection()
+
+			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
+
+			expect(
+				Array.from(
+					document.body.querySelectorAll("[role='menu'] [role^='menuitem']"),
+				).map((el) => el.textContent.trim()),
+			).toEqual([t("settings.data-sources.copy-url")])
+		})
 	})
 })

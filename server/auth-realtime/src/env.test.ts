@@ -407,4 +407,178 @@ describe("loadEnv", () => {
 			},
 		)
 	})
+
+	describe("oidc", () => {
+		const issuer = {
+			OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_ISSUER_URL:
+				"https://idp.example.com/realms/team/",
+			OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_ID:
+				"oxynote",
+			OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_SECRET:
+				"oidc-secret",
+		}
+
+		it("leaves oidc off when no issuer is configured", ({
+			expect,
+		}) => {
+			const env = loadEnv(completeEnv())
+
+			expect(env.oidc).toBeUndefined()
+		})
+
+		it("registers the provider with its defaults given an issuer and both credentials", ({
+			expect,
+		}) => {
+			const env = loadEnv(completeEnv(issuer))
+
+			expect(env.oidc).toEqual({
+				issuerUrl: "https://idp.example.com/realms/team",
+				clientId: "oxynote",
+				clientSecret: "oidc-secret",
+				displayName: "SSO",
+				scopes: ["openid", "email", "profile"],
+			})
+		})
+
+		it("takes the display name and space-separated scopes when set", ({
+			expect,
+		}) => {
+			const env = loadEnv(
+				completeEnv({
+					...issuer,
+					OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_DISPLAY_NAME:
+						"Keycloak",
+					OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_SCOPES:
+						"openid  email groups",
+				}),
+			)
+
+			expect(env.oidc?.displayName).toBe("Keycloak")
+			expect(env.oidc?.scopes).toEqual([
+				"openid",
+				"email",
+				"groups",
+			])
+		})
+
+		it.for([
+			{
+				name: "the issuer is set without a client id",
+				input: {
+					...issuer,
+					OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_ID:
+						undefined,
+				},
+				expected: "OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_ID",
+			},
+			{
+				name: "the issuer is set without a client secret",
+				input: {
+					...issuer,
+					OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_SECRET:
+						undefined,
+				},
+				expected: "OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_SECRET",
+			},
+			{
+				name: "a client id is set without the issuer",
+				input: {
+					OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_ID:
+						"oxynote",
+				},
+				expected: "OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_ID",
+			},
+			{
+				name: "a display name is set without the issuer",
+				input: {
+					OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_DISPLAY_NAME:
+						"Keycloak",
+				},
+				expected: "OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_DISPLAY_NAME",
+			},
+			{
+				name: "the issuer is not an http or https URL",
+				input: {
+					...issuer,
+					OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_ISSUER_URL:
+						"keycloak:8080/realms/team",
+				},
+				expected: "OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_ISSUER_URL",
+			},
+		])("fails when $name", ({ input, expected }, { expect }) => {
+			expect(() => loadEnv(completeEnv(input))).toThrow(
+				expected,
+			)
+		})
+	})
+
+	describe("password login", () => {
+		const google = {
+			OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_ID:
+				"google-id",
+			OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_SECRET:
+				"google-secret",
+		}
+
+		it.for([
+			{ name: "unset", input: undefined, expected: true },
+			{ name: '"false"', input: "false", expected: true },
+			{ name: '"true"', input: "true", expected: false },
+		])(
+			"is enabled=$expected when the disable flag is $name",
+			({ input, expected }, { expect }) => {
+				const env = loadEnv(
+					completeEnv({
+						...google,
+						OXYNOTE_AUTH_REALTIME_EMAIL_PASSWORD_LOGIN_DISABLED:
+							input,
+					}),
+				)
+
+				expect(env.passwordLoginEnabled).toBe(expected)
+			},
+		)
+
+		it("may be disabled when only oidc is configured", ({
+			expect,
+		}) => {
+			const env = loadEnv(
+				completeEnv({
+					OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_ISSUER_URL:
+						"https://idp.example.com/realms/team",
+					OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_ID:
+						"oxynote",
+					OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_SECRET:
+						"oidc-secret",
+					OXYNOTE_AUTH_REALTIME_EMAIL_PASSWORD_LOGIN_DISABLED:
+						"true",
+				}),
+			)
+
+			expect(env.passwordLoginEnabled).toBe(false)
+		})
+
+		it.for([
+			{ name: "no provider is configured", input: {} },
+			{
+				name: "a provider has only one half",
+				input: {
+					OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_ID:
+						"google-id",
+				},
+			},
+		])("fails to disable when $name", ({ input }, { expect }) => {
+			expect(() =>
+				loadEnv(
+					completeEnv({
+						...input,
+						OXYNOTE_AUTH_REALTIME_EMAIL_PASSWORD_LOGIN_DISABLED:
+							"true",
+					}),
+				),
+			).toThrow(
+				"OXYNOTE_AUTH_REALTIME_EMAIL_PASSWORD_LOGIN_DISABLED",
+			)
+		})
+	})
 })

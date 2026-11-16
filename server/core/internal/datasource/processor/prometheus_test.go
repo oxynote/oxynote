@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -69,6 +70,9 @@ func Test_Prometheus_TestConnection(t *testing.T) {
 		URLPath     string
 		CloseServer bool
 
+		// Creds is the credentials JSON the data source is given.
+		Creds string
+
 		Result ConnectionStatus
 		Err    error
 	}{
@@ -78,8 +82,10 @@ func Test_Prometheus_TestConnection(t *testing.T) {
 		},
 		"Invalid CA certificate": {
 			Inp: &InputMock{
-				URLFunc:         func() string { return "https://prometheus.test" },
-				CredentialsFunc: func() Credentials { return NewCredentials([]byte(`{"caCertificate":"not a certificate"}`)) },
+				URLFunc: func() string { return "https://prometheus.test" },
+				CredentialsFunc: func() credentials.Credentials {
+					return stubCredentials(`{"kind":"basic","caCertificate":"not a certificate"}`)
+				},
 			},
 			Result: ConnectionStatusInvalidCACertificate,
 		},
@@ -101,6 +107,16 @@ func Test_Prometheus_TestConnection(t *testing.T) {
 		"Forbidden data source": {
 			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusForbidden, `{}`),
 			Result:  ConnectionStatusUnauthorized,
+		},
+		"Rejected token": { //nolint:gosec // static test credentials
+			Handler: tokenHandler(testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusOK, `{"status":"success","data":{"version":"2.50.0"}}`)),
+			Creds:   `{"kind":"token","token":"bad"}`,
+			Result:  ConnectionStatusUnauthorized,
+		},
+		"Successful connection with a token": {
+			Handler: tokenHandler(testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusOK, `{"status":"success","data":{"version":"2.50.0"}}`)),
+			Creds:   `{"kind":"token","token":"` + _testToken + `"}`,
+			Result:  ConnectionStatusSuccess,
 		},
 		"Unreachable data source": {
 			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusInternalServerError, `{}`),
@@ -143,6 +159,10 @@ func Test_Prometheus_TestConnection(t *testing.T) {
 				inp = prepTLSInput(t, c.Handler, c.CACertificate)
 			default:
 				inp = prepPrometheusInput(t, c.Handler)
+			}
+
+			if c.Creds != "" {
+				inp.CredentialsFunc = func() credentials.Credentials { return stubCredentials(c.Creds) }
 			}
 
 			p := NewPrometheus(inp)
@@ -233,6 +253,26 @@ func Test_Prometheus_QueryRange(t *testing.T) {
 		"Invalid query error": {
 			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusBadRequest, `{"status":"error","errorType":"bad_data","error":"parse error"}`),
 			Err:     NewInvalidQueryError("parse error"),
+		},
+		"Query that failed to execute": {
+			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusUnprocessableEntity, `{"status":"error","errorType":"execution","error":"many-to-many matching"}`),
+			Err:     NewInvalidQueryError("many-to-many matching"),
+		},
+		"Unauthorized data source": {
+			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusUnauthorized, `<html>unauthorized</html>`),
+			Err:     ConnectionStatusUnauthorized.Error(),
+		},
+		"Forbidden data source": {
+			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusForbidden, `{"status":"error","error":"forbidden"}`),
+			Err:     ConnectionStatusUnauthorized.Error(),
+		},
+		"Rate limited data source": {
+			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusTooManyRequests, `too many requests`),
+			Err:     _errRateLimited,
+		},
+		"Data source that is down": {
+			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusServiceUnavailable, `<html>upstream down</html>`),
+			Err:     ConnectionStatusUnreachable.Error(),
 		},
 		"Successful query": {
 			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusOK, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"up"},"values":[[1700000000,"1"]]}]}}`),
@@ -435,24 +475,33 @@ func Test_Prometheus_client(t *testing.T) {
 
 		Err error
 	}{
-		"Error returned by Credentials.basic": {
+		"Error returned by Credentials.read": {
 			URL:   "http://prometheus.test",
 			Creds: `{`,
 			Err:   assert.AnError,
 		},
-		"Error returned by ownTransport.roundTripper": {
+		"Credentials without a kind": {
 			URL:   "http://prometheus.test",
-			Creds: `{"caCertificate":"not a certificate"}`,
-			Err:   _errInvalidCACertificate,
+			Creds: `{"username":"user","password":"pass"}`,
+			Err:   credentials.ErrInvalidKind,
+		},
+		"Error returned by ownTransport.roundTripper": { //nolint:gosec // static test credentials
+			URL:   "http://prometheus.test",
+			Creds: `{"kind":"basic","caCertificate":"not a certificate"}`,
+			Err:   credentials.ErrInvalidCACertificate,
 		},
 		"Error returned by api.NewClient": {
 			URL: "://",
 			Err: assert.AnError,
 		},
 		"No credentials": {},
-		"Username and password": {
-			Creds: `{"username":"user","password":"pass"}`,
+		"Username and password": { //nolint:gosec // static test credentials
+			Creds: `{"kind":"basic","username":"user","password":"pass"}`,
 			Auth:  "Basic dXNlcjpwYXNz",
+		},
+		"Token": { //nolint:gosec // static test credentials
+			Creds: `{"kind":"token","token":"secret"}`,
+			Auth:  "Bearer secret",
 		},
 		// credentials holding only a CA certificate authenticate nobody.
 		"Only a CA certificate": {
@@ -484,7 +533,7 @@ func Test_Prometheus_client(t *testing.T) {
 			}
 
 			if c.Creds != "" {
-				inp.CredentialsFunc = func() Credentials { return NewCredentials([]byte(c.Creds)) }
+				inp.CredentialsFunc = func() credentials.Credentials { return stubCredentials(c.Creds) }
 			}
 
 			p := NewPrometheus(inp)

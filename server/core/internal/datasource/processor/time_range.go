@@ -67,6 +67,35 @@ var _volumeSteps = []time.Duration{
 	365 * 24 * time.Hour,
 }
 
+// _isoMillisFormat is ISO 8601/RFC 3339 with millisecond precision.
+const _isoMillisFormat = "2006-01-02T15:04:05.000Z07:00"
+
+// _timeFormatReplacer converts date format tokens (YYYY, MM, DD, etc.) to Go time layout tokens.
+// Longer tokens must appear before shorter ones to ensure correct matching.
+var _timeFormatReplacer = strings.NewReplacer(
+	"YYYY", "2006",
+	"YY", "06",
+	"MMMM", "January",
+	"MMM", "Jan",
+	"MM", "01",
+	"M", "1",
+	"DD", "02",
+	"D", "2",
+	"dddd", "Monday",
+	"ddd", "Mon",
+	"HH", "15",
+	"hh", "03",
+	"h", "3",
+	"mm", "04",
+	"m", "4",
+	"ss", "05",
+	"s", "5",
+	"SSS", ".000",
+	"A", "PM",
+	"a", "pm",
+	"ZZ", "-0700",
+)
+
 // TimeRange represents a time range with a start and end time.
 type TimeRange struct {
 	// From is the start time of the range.
@@ -185,35 +214,6 @@ func (tr TimeRange) calculateInterval() time.Duration {
 
 	return roundInterval(interval)
 }
-
-// _isoMillisFormat is ISO 8601/RFC 3339 with millisecond precision.
-const _isoMillisFormat = "2006-01-02T15:04:05.000Z07:00"
-
-// _timeFormatReplacer converts date format tokens (YYYY, MM, DD, etc.) to Go time layout tokens.
-// Longer tokens must appear before shorter ones to ensure correct matching.
-var _timeFormatReplacer = strings.NewReplacer(
-	"YYYY", "2006",
-	"YY", "06",
-	"MMMM", "January",
-	"MMM", "Jan",
-	"MM", "01",
-	"M", "1",
-	"DD", "02",
-	"D", "2",
-	"dddd", "Monday",
-	"ddd", "Mon",
-	"HH", "15",
-	"hh", "03",
-	"h", "3",
-	"mm", "04",
-	"m", "4",
-	"ss", "05",
-	"s", "5",
-	"SSS", ".000",
-	"A", "PM",
-	"a", "pm",
-	"ZZ", "-0700",
-)
 
 // toGoTimeFormat converts a date format string (e.g., "YYYY-MM-DD") to a Go time layout string.
 func toGoTimeFormat(f string) string {

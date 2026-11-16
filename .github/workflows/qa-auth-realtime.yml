@@ -9,12 +9,14 @@ on:
       - main
     paths:
       - server/auth-realtime/**
+      - packages/common/**
       - .github/workflows/qa-auth-realtime.yml
   pull_request:
     branches:
       - main
     paths:
       - server/auth-realtime/**
+      - packages/common/**
       - .github/workflows/qa-auth-realtime.yml
 
 # a newer push supersedes the still-running workflow of the stale commit

@@ -1,4 +1,5 @@
-import { mountSuspended } from "@nuxt/test-utils/runtime"
+import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime"
+import type { onAuthenticatedParameters } from "@hocuspocus/provider"
 import { enableAutoUnmount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import DocumentContainer from "./DocumentContainer.client.vue"
@@ -12,14 +13,17 @@ import {
 import {
 	at,
 	emitFrom,
+	mockAuthEndpoint,
+	seedAuthOrganization,
 	seedAuthSession,
 	seedPersistentState,
 	settleMutations,
+	t,
 	WAIT_FOR_OPTIONS,
 } from "~/components/test-helpers"
 import { stubThemeColorContext } from "./test-helpers/theme"
 import { MERMAID_BLOCK_NAME } from "./blocks/node-names"
-import { EDITOR_SCHEMA_VERSION } from "./schema-extensions"
+import { EDITOR_SCHEMA_VERSION } from "@oxynote/common/schema-version"
 import type WsState from "~/utils/websocket"
 import { makeWsHooksChangeTopic } from "~/utils"
 
@@ -32,6 +36,7 @@ interface ProviderOptions {
 	onSynced: () => void
 	onConnect: () => void
 	onAuthenticationFailed: () => void
+	onAuthenticated: (data: onAuthenticatedParameters) => void
 	onStateless: (message: { payload: string }) => void
 }
 
@@ -76,6 +81,9 @@ vi.mock("@hocuspocus/provider", () => {
 })
 
 const redirectToLogin = vi.hoisted(() => vi.fn())
+const reloadPage = vi.hoisted(() => vi.fn())
+
+mockNuxtImport("reloadNuxtApp", () => reloadPage)
 
 vi.mock("~/plugins/03.api-fetch", async (importOriginal) => ({
 	...(await importOriginal<Record<string, unknown>>()),
@@ -85,6 +93,7 @@ vi.mock("~/plugins/03.api-fetch", async (importOriginal) => ({
 const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("brancha")
 const TARGET_BRANCH_ID = makeXid("branchb")
+const USER_ID = makeXid("usme")
 
 // the three editors each drive a live tiptap instance of their own; the
 // container's contract with them is which of them it shows and what it
@@ -186,6 +195,8 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 		stubThemeColorContext()
 		providers.created.splice(0)
 		redirectToLogin.mockReset()
+		reloadPage.mockReset()
+		showToastMessageMock.mockReset()
 		clearQueryCache()
 		useEditorMeta().setEditable(true)
 		seedPersistentState("editor-compact-view", true)
@@ -195,7 +206,7 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 		useEditorStore().updateTargetBranchId(null)
 		useEditorStore().updatePreloadedBranchIds([])
 		useEditorStore().setReviewableDiffActive(false)
-		seedAuthSession({ id: makeXid("usme"), name: "Me" })
+		seedAuthSession({ id: USER_ID, name: "Me" })
 		seedBranches({ branchId: BRANCH_ID, protected: false })
 		seedQueryData(["documents", "hooks", DOCUMENT_ID, BRANCH_ID], [])
 	})
@@ -516,6 +527,297 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 		expect(consoleError).toHaveBeenCalledTimes(1)
 		expect(showToastMessageMock).toHaveBeenCalledTimes(1)
 		expect(showToastMessageMock.mock.calls[0]?.[0]).toBe("error")
+		const action = showToastMessageMock.mock.calls[0]?.[3] as {
+			label: string
+			onClick: () => void
+		}
+		expect(action.label).toBe(t("editor.reload-page"))
+		expect(reloadPage).not.toHaveBeenCalled()
+		action.onClick()
+		expect(reloadPage).toHaveBeenCalledExactlyOnceWith({ force: true })
+	})
+
+	it("offers a page reload when the server makes an unprotected branch read-only", async ({
+		expect,
+	}) => {
+		await mountContainer()
+
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+
+		expect(useEditorMeta().isEditable.value).toBe(false)
+		expect(showToastMessageMock).toHaveBeenCalledExactlyOnceWith(
+			"warning",
+			t("editor.readonly-error.title"),
+			t("editor.readonly-error.description"),
+			{
+				label: t("editor.reload-page"),
+				onClick: expect.any(Function) as () => void,
+			},
+		)
+		const action = showToastMessageMock.mock.calls[0]?.[3] as {
+			onClick: () => void
+		}
+		expect(reloadPage).not.toHaveBeenCalled()
+		action.onClick()
+		expect(reloadPage).toHaveBeenCalledExactlyOnceWith({ force: true })
+	})
+
+	it("does not warn for the expected read-only scope of a protected branch", async ({
+		expect,
+	}) => {
+		seedBranches({ branchId: BRANCH_ID, protected: true })
+		await mountContainer()
+
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+
+		expect(useEditorMeta().isEditable.value).toBe(false)
+		expect(showToastMessageMock).not.toHaveBeenCalled()
+	})
+
+	it("shows a viewer the read-only page without a warning", async ({
+		expect,
+	}) => {
+		seedAuthOrganization(organization("viewer"))
+		await mountContainer()
+
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+
+		expect(useEditorMeta().isEditable.value).toBe(false)
+		expect(showToastMessageMock).not.toHaveBeenCalled()
+	})
+
+	it("reads the role again once a connection comes back", async ({
+		expect,
+	}) => {
+		seedAuthOrganization(organization("viewer"))
+		const reads = mockAuthEndpoint(
+			"organization/get-full-organization",
+			() => organization("editor"),
+			"GET",
+		)
+		await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+		expect(reads).toHaveLength(0)
+
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "read-write" })
+		await settleMutations()
+
+		expect(reads).toHaveLength(1)
+		expect(useEditorMeta().isEditable.value).toBe(true)
+		expect(showToastMessageMock).not.toHaveBeenCalled()
+	})
+
+	it("holds the warning back from an editor who comes back as a viewer", async ({
+		expect,
+	}) => {
+		seedAuthOrganization(organization("editor"))
+		const reads = mockAuthEndpoint(
+			"organization/get-full-organization",
+			() => organization("viewer"),
+			"GET",
+		)
+		await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "read-write" })
+		await nextTick()
+
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await settleMutations()
+
+		expect(reads).toHaveLength(1)
+		expect(useEditorMeta().isEditable.value).toBe(false)
+		expect(showToastMessageMock).not.toHaveBeenCalled()
+	})
+
+	// in the diff view a second connection reconnects too, and its role read
+	// replaces the first one before that one answers
+	it("holds the warning back until the latest role read has answered", async ({
+		expect,
+	}) => {
+		seedAuthOrganization(organization("editor"))
+		mockAuthEndpoint(
+			"organization/get-full-organization",
+			() => organization("viewer"),
+			"GET",
+		)
+		await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "read-write" })
+		await nextTick()
+
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await settleMutations()
+
+		expect(showToastMessageMock).not.toHaveBeenCalled()
+	})
+
+	// a read-only connection that turns writable and back starts a second
+	// wait while the first still runs
+	it("warns once when the connection turns read-only again during the role read", async ({
+		expect,
+	}) => {
+		seedAuthOrganization(organization("editor"))
+		mockAuthEndpoint(
+			"organization/get-full-organization",
+			() => organization("editor"),
+			"GET",
+		)
+		await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "read-write" })
+		await nextTick()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "read-write" })
+		await nextTick()
+
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await settleMutations()
+
+		expect(showToastMessageMock).toHaveBeenCalledTimes(1)
+	})
+
+	it("warns an editor whose connection comes back read-only for another reason", async ({
+		expect,
+	}) => {
+		seedAuthOrganization(organization("editor"))
+		mockAuthEndpoint(
+			"organization/get-full-organization",
+			() => organization("editor"),
+			"GET",
+		)
+		await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "read-write" })
+		await nextTick()
+
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await settleMutations()
+
+		expect(showToastMessageMock).toHaveBeenCalledExactlyOnceWith(
+			"warning",
+			t("editor.readonly-error.title"),
+			t("editor.readonly-error.description"),
+			{
+				label: t("editor.reload-page"),
+				onClick: expect.any(Function) as () => void,
+			},
+		)
+	})
+
+	it("waits for branch metadata before warning about a read-only connection", async ({
+		expect,
+	}) => {
+		seedBranches()
+		await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+		expect(showToastMessageMock).not.toHaveBeenCalled()
+
+		seedBranches({ branchId: BRANCH_ID, protected: false })
+		await nextTick()
+
+		expect(showToastMessageMock).toHaveBeenCalledTimes(1)
+	})
+
+	it("does not repeat the warning on reconnection or metadata refresh", async ({
+		expect,
+	}) => {
+		await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		seedBranches({ branchId: BRANCH_ID, protected: false })
+		await nextTick()
+
+		expect(showToastMessageMock).toHaveBeenCalledTimes(1)
+	})
+
+	it("keeps preloaded read-only branches from locking the active writable branch", async ({
+		expect,
+	}) => {
+		useEditorStore().updatePreloadedBranchIds([TARGET_BRANCH_ID])
+		await mountContainer()
+
+		providerFor(TARGET_BRANCH_ID).options.onAuthenticated({
+			scope: "readonly",
+		})
+		await nextTick()
+
+		expect(useEditorMeta().isEditable.value).toBe(true)
+		expect(showToastMessageMock).not.toHaveBeenCalled()
+	})
+
+	it("restores editing when the active connection regains write access", async ({
+		expect,
+	}) => {
+		await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+		expect(useEditorMeta().isEditable.value).toBe(false)
+
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "read-write" })
+		await nextTick()
+
+		expect(useEditorMeta().isEditable.value).toBe(true)
+		expect(showToastMessageMock).toHaveBeenCalledTimes(1)
+	})
+
+	it("warns when a previously preloaded read-only branch becomes active", async ({
+		expect,
+	}) => {
+		seedBranches(
+			{ branchId: BRANCH_ID, protected: false },
+			{ branchId: TARGET_BRANCH_ID, protected: false },
+		)
+		useEditorStore().updatePreloadedBranchIds([TARGET_BRANCH_ID])
+		await mountContainer()
+		providerFor(TARGET_BRANCH_ID).options.onAuthenticated({
+			scope: "readonly",
+		})
+		await nextTick()
+		expect(showToastMessageMock).not.toHaveBeenCalled()
+
+		useEditorStore().updateActiveBranchId(TARGET_BRANCH_ID)
+		await nextTick()
+
+		expect(useEditorMeta().isEditable.value).toBe(false)
+		expect(showToastMessageMock).toHaveBeenCalledTimes(1)
+	})
+
+	it("clears the connection's read-only state when the container unmounts", async ({
+		expect,
+	}) => {
+		const wrapper = await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+
+		wrapper.unmount()
+
+		expect(useEditorMeta().isEditable.value).toBe(true)
+	})
+
+	it("keeps editing disabled when switching between two read-only connections", async ({
+		expect,
+	}) => {
+		seedBranches(
+			{ branchId: BRANCH_ID, protected: false },
+			{ branchId: TARGET_BRANCH_ID, protected: false },
+		)
+		useEditorStore().updatePreloadedBranchIds([TARGET_BRANCH_ID])
+		await mountContainer()
+		providerFor(BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		providerFor(TARGET_BRANCH_ID).options.onAuthenticated({ scope: "readonly" })
+		await nextTick()
+
+		useEditorStore().updateActiveBranchId(TARGET_BRANCH_ID)
+		await nextTick()
+
+		expect(useEditorMeta().isEditable.value).toBe(false)
+		expect(showToastMessageMock).toHaveBeenCalledTimes(1)
 	})
 
 	it("stays quiet for any other realtime message", async ({ expect }) => {
@@ -753,3 +1055,12 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 		])
 	})
 })
+
+// the organization as better-auth lists it, with the signed-in user as its
+// one member
+function organization(role: string) {
+	return {
+		id: "org-1",
+		members: [{ id: "m1", userId: USER_ID, role: role }],
+	}
+}

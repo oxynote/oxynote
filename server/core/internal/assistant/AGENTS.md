@@ -66,7 +66,8 @@ server picks it up for free.
   not in `Exec`. Block writes go through `ApplyEdit`. What core cannot
   check, placement and content order, is auth-realtime's, against the
   editor schema (`validate.ts`).
-- **`Info.Traits` says what a tool is**; the zero value is a plain read.
+- **`Info.Traits` says what a tool is**. Every tool names `Role`, the
+  least role that may call it, and a set holds only what its role reaches.
   `Write` gates behind confirmation and protects the result from context
   middlewares (only writes have a `Summary`; `Test_New` checks).
   `Destructive` keeps it outside "approve all" (every `delete_*`).
@@ -80,9 +81,10 @@ server picks it up for free.
   and annotations.
 
 Tool descriptions stand alone (an MCP client may never show the prompt):
-what it does and returns, when to use it and which sibling instead, the
-failure it can hit, and each argument's meaning, optionality and default.
-Nothing about confirmation. Plain language, no caps, no em dashes, British
+what it does and returns, when to use it and which sibling instead, and the
+failure it hits. Each argument gets one sentence. Optionality, fixed
+defaults and ranges are schema keywords, not prose. Nothing about
+confirmation. Plain sentences, no semicolons, caps or em dashes, British
 spelling. `tools/testdata/tool_schemas.golden` pins them; regenerate with
 `UPDATE_GOLDEN=1 go test -run Test_Info_toEino ./internal/assistant/tools/`
-and review the diff as the change.
+and review its diff.

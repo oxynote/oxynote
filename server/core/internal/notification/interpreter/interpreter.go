@@ -205,28 +205,6 @@ func (i *Interpreter) documentURL(doc *document.Document, orgSlug string, anchor
 	return url
 }
 
-// DB is the interface for database operations needed by the interpreter.
-//
-//go:generate ../../../scripts/codegen/mock -t internal DB db
-type DB interface {
-	// FetchDocumentByBranchID should fetch a document joined against the branch
-	// identified by branchID.
-	FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error)
-
-	// FetchOrganizationSlug should fetch the slug for a given organization ID.
-	FetchOrganizationSlug(ctx context.Context, organizationID string) (string, error)
-
-	// FetchUserName should fetch the user's name by their user ID.
-	FetchUserName(ctx context.Context, userID string) (string, error)
-}
-
-// Formatter is an interface that handles platform-specific message
-// formatting.
-type Formatter interface {
-	// Link should render a link with the given URL and display text.
-	Link(url, text string) string
-}
-
 // metaHookType extracts the hook type from notification metadata. Like every
 // metadata reader here it accepts both the typed value the in-memory fan-out
 // carries and the plain string a stored notification decodes into.
@@ -282,4 +260,26 @@ func metaBranchID(n notification.Notification) (xid.ID, bool) {
 	}
 
 	return xid.ID{}, false
+}
+
+// DB is the interface for database operations needed by the interpreter.
+//
+//go:generate ../../../scripts/codegen/mock -t internal DB db
+type DB interface {
+	// FetchDocumentByBranchID should fetch a document joined against the branch
+	// identified by branchID.
+	FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error)
+
+	// FetchOrganizationSlug should fetch the slug for a given organization ID.
+	FetchOrganizationSlug(ctx context.Context, organizationID string) (string, error)
+
+	// FetchUserName should fetch the user's name by their user ID.
+	FetchUserName(ctx context.Context, userID string) (string, error)
+}
+
+// Formatter is an interface that handles platform-specific message
+// formatting.
+type Formatter interface {
+	// Link should render a link with the given URL and display text.
+	Link(url, text string) string
 }

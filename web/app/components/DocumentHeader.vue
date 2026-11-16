@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { cn } from "#layers/ui/app/lib/utils"
 import type { DocumentBreadcrumb } from "./sidebar"
-import { showToastMessage } from "./toast"
+import { showRequestErrorToast } from "./toast"
 
 const props = defineProps<{
 	allInitialSectionsLoaded: boolean
@@ -20,6 +20,7 @@ const {
 	toggleCompactView,
 } = useEditorMeta()
 const editorStore = useEditorStore()
+const { canRoleEdit } = useAuthSession()
 const { isAssistantEnabled } = useCapabilitiesAPI()
 const { useFetchDocumentBranchesByDocId } = useDocumentAPI()
 const fetchBranches = useFetchDocumentBranchesByDocId(
@@ -137,8 +138,8 @@ async function toggleReviewability() {
 				protectedMode: false,
 			})
 		}
-	} catch {
-		showToastMessage("error", t("editor.errors.reviewability-update-failed"))
+	} catch (err) {
+		showRequestErrorToast(err, t("editor.errors.reviewability-update-failed"))
 	}
 }
 
@@ -163,7 +164,7 @@ function activateBranch(branch: "default" | "draft") {
 <template>
 	<header
 		ref="header"
-		class="sticky top-0 z-navbar h-10 w-full border-b border-border bg-background pr-2 pl-2"
+		class="sticky top-0 z-navbar h-10 w-full border-b border-border bg-background pr-2 pl-2 print:hidden"
 	>
 		<Transition v-bind="defaultTransitionProps">
 			<div
@@ -296,7 +297,7 @@ function activateBranch(branch: "default" | "draft") {
 								</ShadcnUiDropdownMenuItem>
 							</ShadcnUiDropdownMenuContent>
 						</ShadcnUiDropdownMenu>
-						<ShadcnUiTooltip :delay-duration="600">
+						<ShadcnUiTooltip v-if="canRoleEdit" :delay-duration="600">
 							<ShadcnUiTooltipTrigger as-child>
 								<ShadcnUiButton
 									variant="ghost"
@@ -335,7 +336,9 @@ function activateBranch(branch: "default" | "draft") {
 								</div>
 							</ShadcnUiTooltipContent>
 						</ShadcnUiTooltip>
-						<ShadcnUiDropdownMenu>
+						<ShadcnUiDropdownMenu
+							v-if="canRoleEdit || editorStore.compactViewAvailable"
+						>
 							<ShadcnUiDropdownMenuTrigger as-child>
 								<ShadcnUiButton
 									variant="ghost"
@@ -372,7 +375,10 @@ function activateBranch(branch: "default" | "draft") {
 										}}
 									</span>
 								</ShadcnUiDropdownMenuItem>
-								<ShadcnUiDropdownMenuItem @click="requestToggleReviewability">
+								<ShadcnUiDropdownMenuItem
+									v-if="canRoleEdit"
+									@click="requestToggleReviewability"
+								>
 									<Icon
 										:name="
 											isReviewable
@@ -392,13 +398,19 @@ function activateBranch(branch: "default" | "draft") {
 										}}
 									</span>
 								</ShadcnUiDropdownMenuItem>
-								<ShadcnUiDropdownMenuItem @click="emit('duplicate-document')">
+								<ShadcnUiDropdownMenuItem
+									v-if="canRoleEdit"
+									@click="emit('duplicate-document')"
+								>
 									<Icon name="mingcute:copy-2-line" />
 									<span>
 										{{ $t("editor.navbar.document-options.duplicate.title") }}
 									</span>
 								</ShadcnUiDropdownMenuItem>
-								<ShadcnUiDropdownMenuItem @click="emit('delete-document')">
+								<ShadcnUiDropdownMenuItem
+									v-if="canRoleEdit"
+									@click="emit('delete-document')"
+								>
 									<Icon name="lucide:trash-2" />
 									<span>
 										{{ $t("editor.navbar.document-options.delete.title") }}

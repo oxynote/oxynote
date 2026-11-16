@@ -141,6 +141,56 @@ function serialize(node: Y.XmlElement | Y.Text): string {
 	return (node as unknown as { toString(): string }).toString()
 }
 
+function gridBlock(uid: string, attrs: Record<string, unknown> = {}): PMNode {
+	return {
+		type: "metricBlock",
+		attrs: { uid: uid, title: uid, ...attrs },
+	}
+}
+
+function grid(uid: string, ...blocks: PMNode[]): PMNode {
+	return { type: "blockGrid", attrs: { uid: uid }, content: blocks }
+}
+
+// a grid g whose standard blocks a and b sit side by side
+function pairGrid(): PMNode {
+	return grid(
+		"g",
+		gridBlock("a", {
+			widePosX: 0,
+			widePosY: 0,
+			width: 12,
+			height: 1,
+		}),
+		gridBlock("b", {
+			widePosX: 12,
+			widePosY: 0,
+			width: 12,
+			height: 1,
+		}),
+	)
+}
+
+// placesIn lists the cells that each block of the grid stores, as
+// "uid x,y wxh". The list is sorted by uid.
+function placesIn(doc: Y.Doc, gridUid: string): string[] {
+	return blockByUid(doc, gridUid)
+		.toArray()
+		.flatMap((child) => {
+			if (!(child instanceof Y.XmlElement)) {
+				return []
+			}
+
+			const { uid, widePosX, widePosY, width, height } =
+				attrsOf(child)
+
+			return [
+				`${String(uid)} ${String(widePosX)},${String(widePosY)} ${String(width)}x${String(height)}`,
+			]
+		})
+		.sort()
+}
+
 describe("applyOperations", () => {
 	it("applies nothing when one operation fails", ({ expect }) => {
 		const doc = docWith(sampleBlocks())
@@ -405,7 +455,7 @@ describe("applyOperations", () => {
 		// the position arrives as unvalidated JSON, and taking anything
 		// that is not "before" as "after" would put the block on the
 		// wrong side of the reference without saying so
-		it("reports an error for a position that is neither before nor after", ({
+		it("reports an error for a position that is no side of a block", ({
 			expect,
 		}) => {
 			const doc = docWith(sampleBlocks())
@@ -420,7 +470,7 @@ describe("applyOperations", () => {
 			])
 
 			expect(result.errors[0]?.message).toBe(
-				'insert position must be "before" or "after", got: beforeX',
+				'insert position must be "before", "after", "above" or "below", got: beforeX',
 			)
 			expect(topUids(doc)).toEqual([
 				"intro",
@@ -880,6 +930,42 @@ describe("applyOperations", () => {
 			})
 		})
 
+		it("writes only the attributes whose value changes", ({
+			expect,
+		}) => {
+			const doc = docWith([
+				grid(
+					"g",
+					gridBlock("a", {
+						queries: [{ query: "up" }],
+					}),
+				),
+			])
+			const changes: string[] = []
+
+			blockByUid(doc, "a").observe((event) => {
+				changes.push(...event.attributesChanged)
+			})
+
+			const result = applyOperations(doc, [
+				{
+					kind: "update_attrs",
+					block_uid: "a",
+					attrs: {
+						title: "Renamed",
+						queries: [{ query: "up" }],
+					},
+				},
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(changes).toEqual(["title"])
+			expect(attrsOf(blockByUid(doc, "a"))).toMatchObject({
+				title: "Renamed",
+				queries: [{ query: "up" }],
+			})
+		})
+
 		it("refuses to change the uid while applying the other attributes", ({
 			expect,
 		}) => {
@@ -1215,7 +1301,7 @@ describe("applyOperations", () => {
 			expect(blockByUid(doc, "callout").length).toBe(1)
 		})
 
-		it("reports an error for a position that is neither before nor after", ({
+		it("reports an error for a position that is no side of a block", ({
 			expect,
 		}) => {
 			const doc = docWith(sampleBlocks())
@@ -1233,7 +1319,7 @@ describe("applyOperations", () => {
 				errors: [
 					{
 						index: 0,
-						message: `move position must be "before" or "after", got: under`,
+						message: `move position must be "before", "after", "above" or "below", got: under`,
 					},
 				],
 			})
@@ -1358,6 +1444,730 @@ describe("applyOperations", () => {
 				"callout",
 				"head",
 			])
+		})
+	})
+
+	describe("in a grid", () => {
+		it.for([
+			{
+				name: "puts a block inserted after another at its right edge",
+				input: { position: "after", reference: "a" },
+				expected: [
+					"a 0,0 12x1",
+					"b 0,1 12x1",
+					"n 12,0 12x1",
+				],
+			},
+			{
+				name: "puts a block inserted before another at its left edge",
+				input: { position: "before", reference: "b" },
+				expected: [
+					"a 0,0 12x1",
+					"b 0,1 12x1",
+					"n 12,0 12x1",
+				],
+			},
+			{
+				name: "puts a block inserted below another under it",
+				input: { position: "below", reference: "a" },
+				expected: [
+					"a 0,0 12x1",
+					"b 12,0 12x1",
+					"n 0,1 12x1",
+				],
+			},
+			{
+				name: "puts a block inserted above another over it",
+				input: { position: "above", reference: "b" },
+				expected: [
+					"a 0,0 12x1",
+					"b 0,1 12x1",
+					"n 12,0 12x1",
+				],
+			},
+		] as const)("$name", ({ input, expected }, { expect }) => {
+			const doc = docWith([pairGrid()])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "insert",
+					position: input.position,
+					reference_uid: input.reference,
+					block: gridBlock("n", {
+						widePosX: 5,
+						widePosY: 9,
+						stackPos: 4,
+					}),
+				},
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(placesIn(doc, "g")).toEqual(expected)
+			expect(
+				attrsOf(blockByUid(doc, "n")).stackPos,
+			).toBeUndefined()
+		})
+
+		it("refuses above or below next to a block outside a grid", ({
+			expect,
+		}) => {
+			const doc = docWith(sampleBlocks())
+
+			const result = applyOperations(doc, [
+				{
+					kind: "insert",
+					position: "below",
+					reference_uid: "intro",
+					block: textParagraph("n", "New"),
+				},
+			])
+
+			expect(result).toEqual({
+				errors: [
+					{
+						index: 0,
+						message: "position below only places a block next to a block in a grid; use before or after here",
+					},
+				],
+			})
+		})
+
+		it("moves a block within its grid by its cells alone", ({
+			expect,
+		}) => {
+			const doc = docWith([pairGrid()])
+			const moved = blockByUid(doc, "b")
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: "b",
+					position: "before",
+					reference_uid: "a",
+				},
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(placesIn(doc, "g")).toEqual([
+				"a 12,0 12x1",
+				"b 0,0 12x1",
+			])
+			expect(blockByUid(doc, "b")).toBe(moved)
+		})
+
+		it("moves a block from another grid in without its old places and deletes the grid it empties", ({
+			expect,
+		}) => {
+			const doc = docWith([
+				pairGrid(),
+				grid(
+					"h",
+					gridBlock("m", {
+						widePosX: 0,
+						widePosY: 0,
+						width: 8,
+						height: 1,
+						stackPos: 0,
+					}),
+				),
+			])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: "m",
+					position: "below",
+					reference_uid: "b",
+				},
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(placesIn(doc, "g")).toEqual([
+				"a 0,0 12x1",
+				"b 12,0 12x1",
+				"m 0,1 8x1",
+			])
+			expect(
+				attrsOf(blockByUid(doc, "m")).stackPos,
+			).toBeUndefined()
+			expect(findBlock(doc, "h")).toBeUndefined()
+		})
+
+		it.for([
+			{
+				name: "makes room for a block that an update makes wider",
+				input: { width: 24 },
+				expected: ["a 0,0 24x1", "b 0,1 12x1"],
+			},
+			{
+				name: "makes room below a block an update makes taller",
+				input: { height: 2 },
+				expected: ["a 0,0 12x2", "b 12,0 12x1"],
+			},
+		])("$name", ({ input, expected }, { expect }) => {
+			const doc = docWith([pairGrid()])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "update_attrs",
+					block_uid: "a",
+					attrs: input,
+				},
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(placesIn(doc, "g")).toEqual(expected)
+		})
+
+		it("leaves the other blocks alone when an update keeps the size", ({
+			expect,
+		}) => {
+			const doc = docWith([pairGrid()])
+			const changes: string[] = []
+
+			blockByUid(doc, "b").observe((event) => {
+				changes.push(...event.attributesChanged)
+			})
+
+			const result = applyOperations(doc, [
+				{
+					kind: "update_attrs",
+					block_uid: "a",
+					attrs: { title: "Renamed" },
+				},
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(changes).toEqual([])
+			expect(attrsOf(blockByUid(doc, "a")).title).toBe(
+				"Renamed",
+			)
+		})
+
+		it("changes a block replaced by itself in place and keeps its live places", ({
+			expect,
+		}) => {
+			const doc = docWith([pairGrid()])
+			const replaced = blockByUid(doc, "a")
+
+			const result = applyOperations(doc, [
+				{
+					kind: "replace",
+					block_uid: "a",
+					block: gridBlock("a", {
+						title: "Renamed",
+						widePosX: 12,
+						widePosY: 4,
+						width: 12,
+						height: 1,
+					}),
+				},
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(blockByUid(doc, "a")).toBe(replaced)
+			expect(attrsOf(replaced).title).toBe("Renamed")
+			expect(placesIn(doc, "g")).toEqual([
+				"a 0,0 12x1",
+				"b 12,0 12x1",
+			])
+		})
+
+		it("removes the attributes a block replaced by itself leaves out", ({
+			expect,
+		}) => {
+			const doc = docWith([
+				grid(
+					"g",
+					gridBlock("a", {
+						decimals: 2,
+						widePosX: 0,
+						widePosY: 0,
+						width: 12,
+						height: 1,
+					}),
+				),
+			])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "replace",
+					block_uid: "a",
+					block: gridBlock("a", {
+						width: 12,
+						height: 1,
+					}),
+				},
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(
+				attrsOf(blockByUid(doc, "a")).decimals,
+			).toBeUndefined()
+			expect(placesIn(doc, "g")).toEqual(["a 0,0 12x1"])
+		})
+
+		it("leaves an object attribute alone when a block replaced by itself sends it with its keys reordered", ({
+			expect,
+		}) => {
+			const cells = {
+				widePosX: 0,
+				widePosY: 0,
+				width: 12,
+				height: 1,
+			}
+			const doc = docWith([
+				grid(
+					"g",
+					gridBlock("a", {
+						queries: [
+							{
+								expr: "up",
+								refId: "A",
+							},
+						],
+						...cells,
+					}),
+				),
+			])
+			const changes: string[] = []
+
+			blockByUid(doc, "a").observe((event) => {
+				changes.push(...event.attributesChanged)
+			})
+
+			const result = applyOperations(doc, [
+				{
+					kind: "replace",
+					block_uid: "a",
+					block: gridBlock("a", {
+						title: "Renamed",
+						queries: [
+							{
+								refId: "A",
+								expr: "up",
+							},
+						],
+						simulationActive: false,
+						...cells,
+					}),
+				},
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(changes).toEqual(["title"])
+		})
+
+		it("gives a block of another type with the same id the replaced one's places", ({
+			expect,
+		}) => {
+			const doc = docWith([pairGrid()])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "replace",
+					block_uid: "b",
+					block: {
+						type: "logBlock",
+						attrs: {
+							uid: "b",
+							width: 24,
+						},
+					},
+				},
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(blockByUid(doc, "b").nodeName).toBe("logBlock")
+			expect(placesIn(doc, "g")).toEqual([
+				"a 0,0 12x1",
+				"b 0,1 24x1",
+			])
+		})
+
+		it("gives a block that replaces another its places", ({
+			expect,
+		}) => {
+			const doc = docWith([
+				grid(
+					"g",
+					gridBlock("a", {
+						widePosX: 0,
+						widePosY: 0,
+						width: 12,
+						height: 1,
+						stackPos: 1,
+					}),
+					gridBlock("b", {
+						widePosX: 12,
+						widePosY: 0,
+						width: 12,
+						height: 1,
+						stackPos: 0,
+					}),
+				),
+			])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "replace",
+					block_uid: "a",
+					block: gridBlock("n"),
+				},
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(placesIn(doc, "g")).toEqual([
+				"b 12,0 12x1",
+				"n 0,0 12x1",
+			])
+			expect(attrsOf(blockByUid(doc, "n")).stackPos).toBe(1)
+		})
+
+		it("keeps a user's edit to a block the assistant moves at the same time", ({
+			expect,
+		}) => {
+			const server = docWith([pairGrid()])
+			const user = new Y.Doc()
+
+			Y.applyUpdate(user, Y.encodeStateAsUpdate(server))
+			;(
+				blockByUid(user, "a") as Y.XmlElement<
+					Record<string, any>
+				>
+			).setAttribute("title", "Renamed")
+
+			const result = applyOperations(server, [
+				{
+					kind: "move",
+					block_uid: "a",
+					position: "after",
+					reference_uid: "b",
+				},
+			])
+
+			Y.applyUpdate(
+				server,
+				Y.encodeStateAsUpdate(
+					user,
+					Y.encodeStateVector(server),
+				),
+			)
+			Y.applyUpdate(
+				user,
+				Y.encodeStateAsUpdate(
+					server,
+					Y.encodeStateVector(user),
+				),
+			)
+
+			expect(result).toEqual({ errors: [] })
+
+			for (const doc of [server, user]) {
+				expect(
+					attrsOf(blockByUid(doc, "a")).title,
+				).toBe("Renamed")
+				expect(placesIn(doc, "g")).toEqual([
+					"a 12,0 12x1",
+					"b 0,0 12x1",
+				])
+			}
+		})
+
+		it("deletes the grid a delete takes the last block from", ({
+			expect,
+		}) => {
+			const doc = docWith([
+				grid("g", gridBlock("a")),
+				textParagraph("p", "Line"),
+			])
+
+			const result = applyOperations(doc, [
+				{ kind: "delete", block_uid: "a" },
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(topUids(doc)).toEqual(["p"])
+		})
+
+		it("keeps an emptied grid that is the document's only block", ({
+			expect,
+		}) => {
+			const doc = docWith([grid("g", gridBlock("a"))])
+
+			const result = applyOperations(doc, [
+				{ kind: "delete", block_uid: "a" },
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(topUids(doc)).toEqual(["g"])
+		})
+
+		it("deletes the grid a move takes the last block out of", ({
+			expect,
+		}) => {
+			const doc = docWith([
+				grid("g", gridBlock("a")),
+				{
+					type: "splitDocumentation",
+					attrs: { uid: "s" },
+					content: [
+						{
+							type: "splitDocumentationLeftSide",
+							content: [
+								{
+									type: "heading",
+									attrs: {
+										uid: "h",
+										level: 2,
+									},
+									content: [
+										{
+											type: "text",
+											text: "Title",
+										},
+									],
+								},
+								textParagraph(
+									"l",
+									"Left",
+								),
+							],
+						},
+						{
+							type: "splitDocumentationRightSide",
+							content: [
+								gridBlock("r"),
+							],
+						},
+					],
+				},
+			])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: "a",
+					position: "after",
+					reference_uid: "r",
+				},
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(topUids(doc)).toEqual(["s"])
+			expect(findBlock(doc, "a")).toBeDefined()
+		})
+
+		it("refuses to write a grid without blocks", ({ expect }) => {
+			const doc = docWith([textParagraph("p", "Line")])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "insert",
+					position: "after",
+					reference_uid: "p",
+					block: {
+						type: "blockGrid",
+						attrs: { uid: "n" },
+						content: [],
+					},
+				},
+			])
+
+			expect(result.errors[0]?.message).toContain(
+				"blockGrid must hold at least one block",
+			)
+			expect(topUids(doc)).toEqual(["p"])
+		})
+	})
+
+	describe("move in the stacked layout", () => {
+		// a, b and c sit in one row, so they also stack as a, b, c
+		const rowGrid = () =>
+			docWith([
+				textParagraph("intro", "Intro"),
+				grid(
+					"g",
+					gridBlock("a", {
+						widePosX: 0,
+						widePosY: 0,
+						width: 8,
+						height: 1,
+					}),
+					gridBlock("b", {
+						widePosX: 8,
+						widePosY: 0,
+						width: 8,
+						height: 1,
+					}),
+					gridBlock("c", {
+						widePosX: 16,
+						widePosY: 0,
+						width: 8,
+						height: 1,
+					}),
+				),
+			])
+
+		it.for([
+			{
+				name: "puts a block before another",
+				input: {
+					block: "c",
+					position: "before",
+					reference: "a",
+				},
+				expected: { a: 1, b: 2, c: 0 },
+			},
+			{
+				name: "puts a block above another, as before it",
+				input: {
+					block: "c",
+					position: "above",
+					reference: "a",
+				},
+				expected: { a: 1, b: 2, c: 0 },
+			},
+			{
+				name: "puts a block after another",
+				input: {
+					block: "a",
+					position: "after",
+					reference: "c",
+				},
+				expected: { a: 2, b: 0, c: 1 },
+			},
+			{
+				name: "puts a block below another, as after it",
+				input: {
+					block: "a",
+					position: "below",
+					reference: "b",
+				},
+				expected: { a: 1, b: 0, c: 2 },
+			},
+		] as const)(
+			"$name and leaves the wide layout alone",
+			({ input, expected }, { expect }) => {
+				const doc = rowGrid()
+				const wide = () =>
+					["a", "b", "c"].map((uid) => {
+						const {
+							widePosX,
+							widePosY,
+							width,
+							height,
+						} = attrsOf(
+							blockByUid(doc, uid),
+						)
+
+						return [
+							widePosX,
+							widePosY,
+							width,
+							height,
+						]
+					})
+				const before = wide()
+
+				const result = applyOperations(doc, [
+					{
+						kind: "move",
+						block_uid: input.block,
+						position: input.position,
+						reference_uid: input.reference,
+						layout: "stacked",
+					},
+				])
+
+				expect(result).toEqual({ errors: [] })
+				expect({
+					a: attrsOf(blockByUid(doc, "a"))
+						.stackPos,
+					b: attrsOf(blockByUid(doc, "b"))
+						.stackPos,
+					c: attrsOf(blockByUid(doc, "c"))
+						.stackPos,
+				}).toEqual(expected)
+				expect(wide()).toEqual(before)
+			},
+		)
+
+		it("writes only the places that change", ({ expect }) => {
+			const doc = docWith([
+				grid(
+					"g",
+					gridBlock("a", { stackPos: 0 }),
+					gridBlock("b", { stackPos: 1 }),
+					gridBlock("c", { stackPos: 2 }),
+				),
+			])
+			const changes: string[] = []
+
+			blockByUid(doc, "a").observe((event) => {
+				changes.push(...event.attributesChanged)
+			})
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: "c",
+					position: "before",
+					reference_uid: "b",
+					layout: "stacked",
+				},
+			])
+
+			expect(result).toEqual({ errors: [] })
+			expect(changes).toEqual([])
+			expect(attrsOf(blockByUid(doc, "c")).stackPos).toBe(1)
+			expect(attrsOf(blockByUid(doc, "b")).stackPos).toBe(2)
+		})
+
+		it.for([
+			{
+				name: "a block from outside the grid",
+				input: {
+					block: "intro",
+					reference: "a",
+					layout: "stacked",
+				},
+				expected: "a stacked move needs both blocks in the same grid; move the block into the grid first",
+			},
+			{
+				name: "a reference outside a grid",
+				input: {
+					block: "a",
+					reference: "intro",
+					layout: "stacked",
+				},
+				expected: "a stacked move needs both blocks in the same grid; move the block into the grid first",
+			},
+			{
+				name: "a layout it does not know",
+				input: {
+					block: "a",
+					reference: "b",
+					layout: "narrow",
+				},
+				expected: 'move layout must be "wide" or "stacked", got: narrow',
+			},
+		])("refuses $name", ({ input, expected }, { expect }) => {
+			const doc = rowGrid()
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: input.block,
+					position: "before",
+					reference_uid: input.reference,
+					layout: input.layout as "stacked",
+				},
+			])
+
+			expect(result).toEqual({
+				errors: [{ index: 0, message: expected }],
+			})
 		})
 	})
 

@@ -7,6 +7,19 @@ import (
 	"slices"
 )
 
+// _modelsJSON is the embedded per-provider model list: every supported
+// model id with its status, and the default model, per provider. The
+// OpenRouter entries mirror the vendors' own ids behind their vendor
+// prefix.
+//
+//go:embed models/models.json
+var _modelsJSON []byte
+
+// _models holds the parsed model list; _modelsErr holds the parse
+// failure, which ModelStatus reports instead of silently judging every
+// model against an empty list.
+var _models, _modelsErr = parseModels(_modelsJSON)
+
 const (
 	// StatusActive specifies that the configured model meets the
 	// assistant's recommended strength.
@@ -59,19 +72,6 @@ func (ml modelList) status(model string) Status {
 
 	return StatusInactiveTooWeak
 }
-
-// _modelsJSON is the embedded per-provider model list: every supported
-// model id with its status, and the default model, per provider. The
-// OpenRouter entries mirror the vendors' own ids behind their vendor
-// prefix.
-//
-//go:embed models/models.json
-var _modelsJSON []byte
-
-// _models holds the parsed model list; _modelsErr holds the parse
-// failure, which ModelStatus reports instead of silently judging every
-// model against an empty list.
-var _models, _modelsErr = parseModels(_modelsJSON)
 
 // ModelStatus validates the options and classifies the configured
 // model against the provider's supported list: whether the assistant

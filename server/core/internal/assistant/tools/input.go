@@ -16,6 +16,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
@@ -198,6 +199,21 @@ type input struct {
 	// A call reads its branch in several steps, and they share one
 	// fetch.
 	branches map[xid.ID]*document.Document
+}
+
+// HasRole reports whether the user holds at least the given role now. A
+// user who is no longer a member holds none.
+func (i *input) HasRole(least org.Role) (bool, error) {
+	role, err := i.db.FetchOrganizationMemberRole(i.ctx, i.orgID, i.userID)
+	if err != nil {
+		if errutil.IsNotFound(err) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("fetching the member role: %w", err)
+	}
+
+	return role.AtLeast(least), nil
 }
 
 // Context returns the context of the call being served.
@@ -873,6 +889,20 @@ func (i *input) SetVariableDefault(variableID xid.ID, value string) error {
 	return nil
 }
 
+// ResetVariableValue removes the user's own value of the variable the id
+// names, so they see its default again.
+func (i *input) ResetVariableValue(variableID xid.ID) error {
+	if err := i.variableMan.ResetValue(i.ctx, variableID, i.orgID, i.userID); err != nil {
+		if errutil.IsNotFound(err) {
+			return fmt.Errorf("variable %s: %w", variableID, ErrUnknownVariable)
+		}
+
+		return err
+	}
+
+	return nil
+}
+
 // FetchBranchTags returns the tags the branch branchID names carries, in the
 // tags' display order.
 func (i *input) FetchBranchTags(documentID, branchID xid.ID) ([]tag.Tag, error) {
@@ -1200,10 +1230,23 @@ type DataSourceRunners interface {
 //go:generate ../../../scripts/codegen/mock -t both DB db
 type DB interface {
 	sqlutil.DB
+	MemberDB
 	DocumentDB
 	DataSourceDB
 	TagDB
 	HookDB
+}
+
+// MemberDB is the membership a chat checks before each message and the
+// member role a write checks before it runs.
+type MemberDB interface {
+	// CheckOrganizationMember should report whether a user is a member
+	// of an organization.
+	CheckOrganizationMember(ctx context.Context, organizationID, userID string) (bool, error)
+
+	// FetchOrganizationMemberRole should retrieve the role a user holds
+	// in an organization.
+	FetchOrganizationMemberRole(ctx context.Context, organizationID, userID string) (org.Role, error)
 }
 
 // DocumentDB is the document tree, its branches and their content as
@@ -1401,6 +1444,9 @@ type VariableManager interface {
 	// SetDefaultValue should set the value everyone without their own
 	// sees.
 	SetDefaultValue(ctx context.Context, id xid.ID, value, organizationID string) error
+
+	// ResetValue should remove the user's own value.
+	ResetValue(ctx context.Context, id xid.ID, organizationID, userID string) error
 }
 
 // Searcher is the full-text search surface search_documents uses.

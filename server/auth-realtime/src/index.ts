@@ -6,7 +6,7 @@ import { destination } from "pino"
 import { loadEnv } from "./env.js"
 import { createDatabase } from "./db.js"
 import { createCoreClient } from "./core.js"
-import { createAuth } from "./auth.js"
+import { createAuth, OIDC_PROVIDER_ID } from "./auth.js"
 import {
 	bootstrapSingleOrganization,
 	createDefaultAdminLookup,
@@ -41,8 +41,40 @@ if (env.valkeyDsn) {
 	await redis.connect()
 }
 
-const auth = createAuth({ env, store, dialect, redis, core, log })
+// hocuspocus comes first, so auth can drop a user's connections when their
+// role changes. Its session lookup only runs once a client connects.
+const {
+	instance: hocuspocus,
+	flushDocument,
+	resetConnections,
+	closeUserConnections,
+} = createHocuspocus({
+	auth: { getSession: (input) => auth.api.getSession(input) },
+	store,
+	core,
+	log,
+})
+
+const auth = createAuth({
+	env,
+	store,
+	dialect,
+	redis,
+	core,
+	log,
+	closeUserConnections,
+})
 const authContext = await auth.$context
+
+// better-auth only logs a failed OIDC discovery and leaves the provider
+// out. The login page would then offer a button that fails, so the
+// service refuses to start instead.
+const oidcProvider = authContext.socialProviders.find(
+	(provider) => provider.id === OIDC_PROVIDER_ID,
+)
+if (env.oidc && !oidcProvider) {
+	throw new Error(`OIDC discovery failed for ${env.oidc.issuerUrl}`)
+}
 
 // before listening, so no signup can race the organization's creation.
 await bootstrapSingleOrganization({
@@ -54,16 +86,6 @@ await bootstrapSingleOrganization({
 	createOrganization: (organization) =>
 		auth.api.createOrganization({ body: organization }),
 	random: Math.random,
-})
-
-const {
-	instance: hocuspocus,
-	flushDocument,
-	resetConnections,
-} = createHocuspocus({
-	auth: { getSession: (input) => auth.api.getSession(input) },
-	core,
-	log,
 })
 
 const app = new Hono()
@@ -80,6 +102,14 @@ app.route(
 		hocuspocus,
 		flushDocument,
 		resetConnections,
+		// the redirect configured on the provider brings the browser back.
+		oidcEndSessionUrl: async () => {
+			const url = await oidcProvider?.createEndSessionURL?.(
+				{},
+			)
+
+			return url?.toString() ?? null
+		},
 		findDefaultAdmin: createDefaultAdminLookup({
 			store,
 			verifyPassword: (data) =>

@@ -19,6 +19,7 @@ import (
 	protocolMock "github.com/oxynote/oxynote/server/core/internal/assistant/protocol/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/memkit"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
@@ -372,17 +373,63 @@ func Test_Manager_SetTagNotifier(t *testing.T) {
 func Test_Manager_ToolSet(t *testing.T) {
 	t.Parallel()
 
-	m, _ := testManagerStores()
+	cc := map[string]struct {
+		Role       org.Role
+		Tools      int
+		WriteNames []string
+	}{
+		// the full registry: ten document tools, five tag tools, eight
+		// variable tools, four hook tools, six data-source tools and the
+		// offloaded-result reader.
+		"Editor set": {
+			Role:  org.RoleEditor,
+			Tools: 34,
+			WriteNames: []string{
+				"create_document",
+				"delete_document",
+				"update_document",
+				"insert_blocks",
+				"replace_blocks",
+				"delete_block",
+				"move_block",
+				"create_tag",
+				"update_tag",
+				"delete_tag",
+				"set_tag_assignment",
+				"create_variable_group",
+				"update_variable_group",
+				"delete_variable_group",
+				"create_variable",
+				"update_variable",
+				"delete_variable",
+				"set_variable_value",
+				"create_hook",
+				"update_hook",
+				"delete_hook",
+			},
+		},
+		// the twelve reads, the offloaded-result reader and the one write
+		// a viewer may make, to their own variable values.
+		"Viewer set": {
+			Role:       org.RoleViewer,
+			Tools:      14,
+			WriteNames: []string{"set_variable_value"},
+		},
+	}
 
-	s := m.ToolSet("org1", "user1")
-	require.NotNil(t, s)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// the set carries the full registry: the ten document tools, the
-	// five tag tools, the eight variable tools, the four hook tools, the
-	// six data-source tools and the offloaded-result reader. It is wired
-	// from the manager's shared dependencies and scoped to the requested
-	// pair.
-	assert.Len(t, s.Tools(), 34)
+			m, _ := testManagerStores()
+
+			s := m.ToolSet("org1", "user1", c.Role)
+			require.NotNil(t, s)
+
+			assert.Len(t, s.Tools(), c.Tools)
+			assert.Equal(t, c.WriteNames, s.WriteNames())
+		})
+	}
 }
 
 func Test_Manager_claimTurn(t *testing.T) {
@@ -439,10 +486,30 @@ func Test_Manager_releaseTurn(t *testing.T) {
 func Test_Manager_Chat(t *testing.T) {
 	t.Parallel()
 
+	// oneMessage answers one message, then the client's close.
+	oneMessage := func() *protocolMock.SessionConn {
+		var sent bool
+
+		return &protocolMock.SessionConn{
+			ReadFunc: func(_ context.Context) ([]byte, error) {
+				if sent {
+					return nil, io.EOF
+				}
+
+				sent = true
+
+				return []byte(`{"type":"nonsense"}`), nil
+			},
+		}
+	}
+
 	cc := map[string]struct {
 		OmitSummary bool
+		NotMember   bool
+		MemberErr   error
 		Conn        *protocolMock.SessionConn
 		Reads       int
+		MemberCalls int
 		Writes      int
 		Stores      storeCalls
 		Err         error
@@ -470,9 +537,10 @@ func Test_Manager_Chat(t *testing.T) {
 					},
 				}
 			}(),
-			Reads:  2,
-			Writes: 1,
-			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
+			Reads:       2,
+			MemberCalls: 1,
+			Writes:      1,
+			Stores:      storeCalls{HistoryGet: 1, PendingGet: 1},
 		},
 		"Clean client close ends the chat": {
 			Conn: &protocolMock.SessionConn{
@@ -482,6 +550,22 @@ func Test_Manager_Chat(t *testing.T) {
 			},
 			Reads:  1,
 			Stores: storeCalls{HistoryGet: 1, PendingGet: 1},
+		},
+		"User removed while the chat is open": {
+			NotMember:   true,
+			Conn:        oneMessage(),
+			Reads:       1,
+			MemberCalls: 1,
+			Stores:      storeCalls{HistoryGet: 1, PendingGet: 1},
+			Err:         org.ErrForbidden,
+		},
+		"Error returned by DB.CheckOrganizationMember": {
+			MemberErr:   assert.AnError,
+			Conn:        oneMessage(),
+			Reads:       1,
+			MemberCalls: 1,
+			Stores:      storeCalls{HistoryGet: 1, PendingGet: 1},
+			Err:         assert.AnError,
 		},
 		"Error returned by conn.Read": {
 			Conn: &protocolMock.SessionConn{
@@ -508,10 +592,18 @@ func Test_Manager_Chat(t *testing.T) {
 				m.summary = nil
 			}
 
-			err := m.Chat(context.Background(), "org", "user", c.Conn)
+			db := &toolsMock.DB{
+				CheckOrganizationMemberFunc: func(context.Context, string, string) (bool, error) {
+					return !c.NotMember, c.MemberErr
+				},
+			}
+			m.db = db
+
+			err := m.Chat(context.Background(), "org", "user", org.RoleEditor, c.Conn)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, c.Conn.ReadCalls(), c.Reads)
+			assert.Len(t, db.CheckOrganizationMemberCalls(), c.MemberCalls)
 			assert.Len(t, c.Conn.WriteJSONCalls(), c.Writes)
 			assert.Empty(t, cm.StreamCalls())
 			st.assertCalls(t, c.Stores)

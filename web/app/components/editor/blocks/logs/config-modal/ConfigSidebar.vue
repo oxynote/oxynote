@@ -19,6 +19,7 @@ const emit = defineEmits<{
 }>()
 
 const { isEditable } = useEditorMeta()
+const { canRoleManage } = useAuthSession()
 const editorStore = useEditorStore()
 
 const isEditingDisabled = computed(() => {
@@ -66,7 +67,9 @@ const isOrderModified = computed(
 					:types="dataSourceTypes"
 					:empty-title="$t('editor.logs.config.data-source-empty-title')"
 					:empty-description="
-						$t('editor.logs.config.data-source-empty-description')
+						canRoleManage
+							? $t('editor.logs.config.data-source-empty-description')
+							: $t('editor.logs.config.data-source-empty-description-non-admin')
 					"
 					:diff-mode="!!props.diffStatus"
 					:diff-status="isDataSourceIdModified ? DiffStatus.Added : null"
@@ -77,7 +80,9 @@ const isOrderModified = computed(
 					:types="dataSourceTypes"
 					:empty-title="$t('editor.logs.config.data-source-empty-title')"
 					:empty-description="
-						$t('editor.logs.config.data-source-empty-description')
+						canRoleManage
+							? $t('editor.logs.config.data-source-empty-description')
+							: $t('editor.logs.config.data-source-empty-description-non-admin')
 					"
 					:diff-mode="!!props.diffStatus"
 					:old-config="modifiedFrom"

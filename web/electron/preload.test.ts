@@ -47,6 +47,7 @@ const authKeys = [
 	"inviteOrganizationMember",
 	"cancelOrganizationInvitation",
 	"removeOrganizationMember",
+	"updateOrganizationMemberRole",
 ]
 
 interface Host {

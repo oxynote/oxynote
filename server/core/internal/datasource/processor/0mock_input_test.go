@@ -5,6 +5,8 @@ package processor
 
 import (
 	"sync"
+
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 )
 
 // Ensure, that InputMock does implement Input.
@@ -17,7 +19,7 @@ var _ Input = &InputMock{}
 //
 //		// make and configure a mocked Input
 //		mockedInput := &InputMock{
-//			CredentialsFunc: func() Credentials {
+//			CredentialsFunc: func() credentials.Credentials {
 //				panic("mock out the Credentials method")
 //			},
 //			URLFunc: func() string {
@@ -31,7 +33,7 @@ var _ Input = &InputMock{}
 //	}
 type InputMock struct {
 	// CredentialsFunc mocks the Credentials method.
-	CredentialsFunc func() Credentials
+	CredentialsFunc func() credentials.Credentials
 
 	// URLFunc mocks the URL method.
 	URLFunc func() string
@@ -50,7 +52,7 @@ type InputMock struct {
 }
 
 // Credentials calls CredentialsFunc.
-func (mock *InputMock) Credentials() Credentials {
+func (mock *InputMock) Credentials() credentials.Credentials {
 	callInfo := struct {
 	}{}
 	mock.lockCredentials.Lock()
@@ -58,7 +60,7 @@ func (mock *InputMock) Credentials() Credentials {
 	mock.lockCredentials.Unlock()
 	if mock.CredentialsFunc == nil {
 		var (
-			credentialsOut Credentials
+			credentialsOut credentials.Credentials
 		)
 		return credentialsOut
 	}

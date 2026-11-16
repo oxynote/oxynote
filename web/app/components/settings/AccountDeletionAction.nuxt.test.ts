@@ -396,5 +396,33 @@ describe("<AccountDeletionAction>", { concurrent: false }, () => {
 			expect(navigateToMock).not.toHaveBeenCalled()
 			expect(wrapper.emitted("close")).toBeUndefined()
 		})
+
+		it("explains a refusal for the last admin and stays open", async ({
+			expect,
+		}) => {
+			seedAuthOrganization({ members: [{ id: "m1" }, { id: "m2" }] })
+			mockAuthEndpoint("delete-user", (_call, event) => {
+				setResponseStatus(event, 403)
+
+				return {
+					code: "LAST_ORGANIZATION_ADMIN",
+					message: "The last admin of the organization cannot be deleted",
+				}
+			})
+			const wrapper = await mountAction()
+
+			await confirmDeletion(wrapper)
+
+			expect(raisedToasts()).toMatchObject([
+				{
+					type: "error",
+					description: t(
+						"settings.action-modals.account-deletion.errors.last-admin.description",
+					),
+				},
+			])
+			expect(navigateToMock).not.toHaveBeenCalled()
+			expect(wrapper.emitted("close")).toBeUndefined()
+		})
 	})
 })

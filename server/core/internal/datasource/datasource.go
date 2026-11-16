@@ -4,16 +4,47 @@ package datasource
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/demo"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
+)
+
+// _maxNameLength is the most characters a data source name holds, the
+// same limit the web form sets.
+const _maxNameLength = 128
+
+var (
+	// ErrInvalidName is returned when a data source is given a name that
+	// is empty or only white space.
+	ErrInvalidName = errutil.New(
+		http.StatusBadRequest,
+		"data_source.invalid_name",
+		"data source name cannot be empty",
+	)
+
+	// ErrNameTooLong is returned when a data source name holds more than
+	// _maxNameLength characters.
+	ErrNameTooLong = errutil.New(
+		http.StatusBadRequest,
+		"data_source.name_too_long",
+		"data source name cannot be longer than 128 characters",
+	)
+
+	// ErrInvalidType is returned when a data source has an unknown type.
+	ErrInvalidType = errutil.New(
+		http.StatusBadRequest,
+		"data_source.invalid_type",
+		"invalid data source type",
+	)
 )
 
 const (
@@ -50,6 +81,19 @@ func (ty Type) Validate() error {
 	}
 }
 
+// credentialsKinds returns the credential kinds the type accepts. An
+// unknown type accepts none.
+func (ty Type) credentialsKinds() []credentials.Kind {
+	switch ty {
+	case TypePrometheus, TypeLoki:
+		return []credentials.Kind{credentials.KindBasic, credentials.KindToken}
+	case TypePostgreSQL, TypeSupabase, TypeMariaDB, TypeMySQL:
+		return []credentials.Kind{credentials.KindBasic}
+	default:
+		return nil
+	}
+}
+
 // MarshalText returns the type as text.
 func (ty Type) MarshalText() ([]byte, error) {
 	return []byte(ty), nil
@@ -62,43 +106,6 @@ func (ty *Type) UnmarshalText(text []byte) error {
 
 	return nil
 }
-
-// _maxNameLength is the most characters a data source name holds, the
-// same limit the web form sets.
-const _maxNameLength = 128
-
-var (
-	// ErrInvalidCredentials is returned when the credentials of a data
-	// source are not an object of strings.
-	ErrInvalidCredentials = errutil.New(
-		http.StatusBadRequest,
-		"data_source.invalid_credentials",
-		"credentials must be an object of strings",
-	)
-
-	// ErrInvalidName is returned when a data source is given a name that
-	// is empty or only white space.
-	ErrInvalidName = errutil.New(
-		http.StatusBadRequest,
-		"data_source.invalid_name",
-		"data source name cannot be empty",
-	)
-
-	// ErrNameTooLong is returned when a data source name holds more than
-	// _maxNameLength characters.
-	ErrNameTooLong = errutil.New(
-		http.StatusBadRequest,
-		"data_source.name_too_long",
-		"data source name cannot be longer than 128 characters",
-	)
-
-	// ErrInvalidType is returned when a data source has an unknown type.
-	ErrInvalidType = errutil.New(
-		http.StatusBadRequest,
-		"data_source.invalid_type",
-		"invalid data source type",
-	)
-)
 
 // DataSource represents a generic data source.
 type DataSource struct {
@@ -118,7 +125,7 @@ type DataSource struct {
 	URL string `json:"url" db:"url"`
 
 	// Credentials holds the authentication credentials for the data source.
-	Credentials processor.Credentials `json:"-" db:"credentials"`
+	Credentials credentials.Credentials `json:"-" db:"credentials"`
 
 	// Status indicates the current connection status of the data source.
 	Status processor.ConnectionStatus `json:"status" db:"status"`
@@ -157,16 +164,14 @@ func NewDataSource(ci CreateInput, organizationID string) (*DataSource, error) {
 func NewDemoDataSources(organizationID string) ([]*DataSource, error) {
 	inputs := []CreateInput{
 		{
-			Type:        TypePrometheus,
-			Name:        "Demo Metrics",
-			URL:         demo.URL,
-			Credentials: processor.NewCredentials([]byte(`{}`)),
+			Type: TypePrometheus,
+			Name: "Demo Metrics",
+			URL:  demo.URL,
 		},
 		{
-			Type:        TypeLoki,
-			Name:        "Demo Logs",
-			URL:         demo.URL,
-			Credentials: processor.NewCredentials([]byte(`{}`)),
+			Type: TypeLoki,
+			Name: "Demo Logs",
+			URL:  demo.URL,
 		},
 	}
 
@@ -212,7 +217,7 @@ func (ds DataSource) ApplyUpdate(ui UpdateInput) (DataSource, error) {
 	// starts without them, or with only those the update brings.
 	if ui.URL.Valid && ui.URL.String != ds.URL {
 		ds.URL = ui.URL.String
-		ds.Credentials = processor.Credentials{}
+		ds.Credentials = credentials.Credentials{}
 	}
 
 	creds, err := ds.updatedCredentials(ui.Credentials)
@@ -228,19 +233,17 @@ func (ds DataSource) ApplyUpdate(ui UpdateInput) (DataSource, error) {
 
 // updatedCredentials returns the data source credentials with the update
 // applied, or the current ones when the update carries none.
-func (ds DataSource) updatedCredentials(inp null.Value[processor.CredentialsUpdateInput]) (processor.Credentials, error) {
+func (ds DataSource) updatedCredentials(inp null.Value[credentials.UpdateInput]) (credentials.Credentials, error) {
 	if !inp.Valid {
 		return ds.Credentials, nil
 	}
 
-	switch ds.Type {
-	case TypePrometheus, TypePostgreSQL, TypeSupabase, TypeMariaDB, TypeMySQL, TypeLoki:
-		// OK.
-	default:
-		return processor.Credentials{}, errors.New("invalid data source type")
+	kinds := ds.Type.credentialsKinds()
+	if kinds == nil {
+		return credentials.Credentials{}, errors.New("invalid data source type")
 	}
 
-	return processor.UpdateBasicCredentials(ds.Credentials, inp.V)
+	return credentials.Update(ds.Credentials, inp.V, kinds...)
 }
 
 // Info is the subset of data source fields returned to the AI.
@@ -267,7 +270,7 @@ type CreateInput struct {
 	URL string `json:"url"`
 
 	// Credentials holds the authentication credentials for the data source.
-	Credentials processor.Credentials `json:"credentials"`
+	Credentials credentials.Credentials `json:"credentials"`
 }
 
 // Validate checks that the type is a known one, that the name, once
@@ -285,8 +288,13 @@ func (ci CreateInput) Validate() error {
 		return err
 	}
 
-	if _, err := sanitized.Credentials.Configured(); err != nil {
-		return ErrInvalidCredentials
+	auth, err := sanitized.Credentials.Read()
+	if err != nil {
+		return credentials.ErrInvalid
+	}
+
+	if auth != nil && !slices.Contains(sanitized.Type.credentialsKinds(), auth.Kind()) {
+		return credentials.ErrInvalid
 	}
 
 	return nil
@@ -309,7 +317,7 @@ type UpdateInput struct {
 	URL null.String `json:"url"`
 
 	// Credentials holds the authentication credentials for the data source.
-	Credentials null.Value[processor.CredentialsUpdateInput] `json:"credentials"`
+	Credentials null.Value[credentials.UpdateInput] `json:"credentials"`
 }
 
 // Validate checks that a set name, once sanitized, is usable.

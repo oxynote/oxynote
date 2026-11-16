@@ -1,18 +1,23 @@
 name: Feature request
-description: Suggest a new feature or an improvement.
+description: Suggest something Oxynote can't do yet.
 type: Feature
 body:
   - type: textarea
-    id: problem
+    id: idea
     attributes:
-      label: What problem would this solve?
-      description: Describe what you are trying to do and what gets in the way.
+      label: What would you like Oxynote to do?
+      description: Describe the feature and why you need it.
     validations:
       required: true
   - type: textarea
-    id: proposal
+    id: details
     attributes:
-      label: What do you propose?
-      description: Add sketches or screenshots if it helps.
+      label: How do you imagine it working?
+      description: Describe how you would use it step by step. Add sketches or screenshots if it helps.
     validations:
       required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you handle this today?
+      description: Another tool, a workaround, or not at all.

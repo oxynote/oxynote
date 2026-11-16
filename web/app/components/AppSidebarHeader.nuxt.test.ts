@@ -1,10 +1,13 @@
 import { flushPromises } from "@vue/test-utils"
 import { beforeEach, describe, it } from "vitest"
 import AppSidebarHeader from "./AppSidebarHeader.vue"
+import { clearQueryCache } from "~/composables/api/test-helpers"
 import {
 	clearTeleportedOverlays,
 	menuItem,
 	mountUnderSidebarProvider,
+	seedAuthOrganization,
+	seedAuthSession,
 	t,
 } from "./test-helpers"
 
@@ -17,10 +20,11 @@ function mountHeader(workspaceName: string | null) {
 }
 
 // the dropdown body is teleported into the shared <body>, and the colour
-// theme lives in an app-wide persistent state every mount in the file sees
+// theme and the auth cache are app-wide state every mount in the file sees
 describe("<AppSidebarHeader>", { concurrent: false }, () => {
 	beforeEach(() => {
 		clearTeleportedOverlays()
+		clearQueryCache()
 		useAppearance().changeColorTheme("auto")
 	})
 
@@ -58,6 +62,15 @@ describe("<AppSidebarHeader>", { concurrent: false }, () => {
 		await header.get("[data-sidebar='menu-action']").trigger("click")
 
 		expect(header.emitted("create-new-item")).toHaveLength(1)
+	})
+
+	it("offers a viewer no compose action", async ({ expect }) => {
+		seedAuthSession({ id: "u1" })
+		seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+
+		const wrapper = await mountHeader("Acme Corp")
+
+		expect(wrapper.find("[data-sidebar='menu-action']").exists()).toBe(false)
 	})
 
 	it("keeps the menu closed until the workspace button is pressed", async ({

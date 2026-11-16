@@ -70,6 +70,7 @@ function build(
 		hocuspocus?: DocumentRegistry
 		flushDocument?: Mock<(documentName: string) => Promise<void>>
 		findDefaultAdmin?: Mock<RouteDeps["findDefaultAdmin"]>
+		oidcEndSessionUrl?: Mock<RouteDeps["oidcEndSessionUrl"]>
 		core?: StubCore
 	} = {},
 ) {
@@ -81,6 +82,8 @@ function build(
 	const resetConnections = vi.fn<(documentName: string) => void>()
 	const findDefaultAdmin: Mock<RouteDeps["findDefaultAdmin"]> =
 		overrides.findDefaultAdmin ?? vi.fn().mockResolvedValue(null)
+	const oidcEndSessionUrl: Mock<RouteDeps["oidcEndSessionUrl"]> =
+		overrides.oidcEndSessionUrl ?? vi.fn().mockResolvedValue(null)
 	const app = createRoutes({
 		env: overrides.env ?? ENV,
 		auth,
@@ -89,6 +92,7 @@ function build(
 		flushDocument,
 		resetConnections,
 		findDefaultAdmin,
+		oidcEndSessionUrl,
 		core,
 	})
 
@@ -191,7 +195,7 @@ async function mcpToken(
 // left the organization the token names
 function memberlessStore() {
 	const store = stubStore()
-	store.isOrganizationMember.mockResolvedValue(false)
+	store.memberRole.mockResolvedValue(null)
 
 	return store
 }
@@ -211,6 +215,40 @@ describe("createRoutes", () => {
 
 			expect(res.status).toBe(200)
 			expect(await res.text()).toBe("Hello Hono!")
+		})
+	})
+
+	describe("GET /oidc/end-session", () => {
+		it("sends the browser to the provider's end-session URL", async ({
+			expect,
+		}) => {
+			const oidcEndSessionUrl = vi
+				.fn<RouteDeps["oidcEndSessionUrl"]>()
+				.mockResolvedValue(
+					"https://idp.example.com/logout?client_id=oxynote",
+				)
+			const { app } = build({ oidcEndSessionUrl })
+
+			const res = await app.request("/oidc/end-session")
+
+			expect(res.status).toBe(302)
+			expect(res.headers.get("location")).toBe(
+				"https://idp.example.com/logout?client_id=oxynote",
+			)
+			expect.soft(oidcEndSessionUrl).toHaveBeenCalledTimes(1)
+		})
+
+		it("sends the browser to the login page without a provider endpoint", async ({
+			expect,
+		}) => {
+			const { app } = build()
+
+			const res = await app.request("/oidc/end-session")
+
+			expect(res.status).toBe(302)
+			expect(res.headers.get("location")).toBe(
+				`${ENV.frontendUrl}/login`,
+			)
 		})
 	})
 
@@ -234,6 +272,7 @@ describe("createRoutes", () => {
 			expect(res.status).toBe(200)
 			expect(await res.json()).toEqual({
 				methods: ["email-password", "github"],
+				oidcDisplayName: null,
 				emailEnabled: true,
 				singleOrganization: false,
 				maxOrganizationMembers: 5,
@@ -253,10 +292,35 @@ describe("createRoutes", () => {
 			expect(res.status).toBe(200)
 			expect(await res.json()).toEqual({
 				methods: ["email-password"],
+				oidcDisplayName: null,
 				emailEnabled: false,
 				singleOrganization: false,
 				maxOrganizationMembers: 5,
 				defaultAdmin: null,
+			})
+		})
+
+		it("names the OIDC button and leaves out password login when it is off", async ({
+			expect,
+		}) => {
+			const { app } = build({
+				env: testEnv({
+					oidc: {
+						issuerUrl: "https://idp.example.com/realms/team",
+						clientId: "oxynote",
+						clientSecret: "oidc-secret",
+						displayName: "Keycloak",
+						scopes: ["openid"],
+					},
+					passwordLoginEnabled: false,
+				}),
+			})
+
+			const res = await app.request("/auth-config")
+
+			expect(await res.json()).toMatchObject({
+				methods: ["oidc"],
+				oidcDisplayName: "Keycloak",
 			})
 		})
 
@@ -274,6 +338,7 @@ describe("createRoutes", () => {
 
 			expect(await res.json()).toEqual({
 				methods: ["email-password"],
+				oidcDisplayName: null,
 				emailEnabled: true,
 				singleOrganization: true,
 				maxOrganizationMembers: null,
@@ -1374,8 +1439,58 @@ describe("createRoutes", () => {
 			expect(await res.json()).toMatchObject({
 				userId: "user-1",
 				organizationId: "org-1",
+				role: "editor",
 				clientId: "client-1",
 				scopes: ["documents:read", "documents:write"],
+			})
+		})
+
+		// the role is read per request, so a change applies to the next
+		// tool call rather than to the next token.
+		it("reports the member's current role", async ({ expect }) => {
+			const { privateKey, jwks } = await mcpKeys()
+			const auth = stubAuth()
+			auth.api.getJwks.mockResolvedValue(jwks)
+			const store = stubStore()
+			store.memberRole.mockResolvedValue("viewer")
+			const { app } = build({ auth, store })
+			const token = await mcpToken(privateKey)
+
+			const res = await app.request(
+				"/internal/mcp/session",
+				bearer(token),
+			)
+
+			expect(res.status).toBe(200)
+			expect(await res.json()).toMatchObject({
+				role: "viewer",
+			})
+			expect.soft(store.memberRole.mock.calls).toEqual([
+				["user-1", "org-1"],
+			])
+		})
+
+		it("answers 500 when the role lookup fails", async ({
+			expect,
+		}) => {
+			const { privateKey, jwks } = await mcpKeys()
+			const auth = stubAuth()
+			auth.api.getJwks.mockResolvedValue(jwks)
+			const store = stubStore()
+			store.memberRole.mockRejectedValue(
+				new Error("connection terminated"),
+			)
+			const { app } = build({ auth, store })
+			const token = await mcpToken(privateKey)
+
+			const res = await app.request(
+				"/internal/mcp/session",
+				bearer(token),
+			)
+
+			expect(res.status).toBe(500)
+			expect(await res.json()).toEqual({
+				error: "token validation failed",
 			})
 		})
 

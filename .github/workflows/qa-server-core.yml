@@ -8,12 +8,16 @@ on:
       - main
     paths:
       - server/core/**
+      # the Go copy of the grid layout runs the cases in packages/common
+      - packages/common/testdata/**
       - .github/workflows/qa-server-core.yml
   pull_request:
     branches:
       - main
     paths:
       - server/core/**
+      # the Go copy of the grid layout runs the cases in packages/common
+      - packages/common/testdata/**
       - .github/workflows/qa-server-core.yml
 
 # a newer push supersedes the still-running workflow of the stale commit

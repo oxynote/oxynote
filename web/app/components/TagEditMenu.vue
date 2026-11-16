@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { showToastMessage } from "./toast"
+import { showRequestErrorToast, showToastMessage } from "./toast"
 
 const props = defineProps<{
 	tag: TagTreeElement
@@ -71,8 +71,8 @@ async function save() {
 		// the core API's JSON body. The tree can be stale, so a name taken
 		// by someone else meanwhile only shows up here
 		const { data } = err as { data?: { code?: string } }
-		showToastMessage(
-			"error",
+		showRequestErrorToast(
+			err,
 			data?.code === "tag.duplicate_name"
 				? t("sidebar.tag-edit-menu.name-taken")
 				: t("sidebar.errors.update-tag-failed"),

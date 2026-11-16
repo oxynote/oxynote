@@ -55,6 +55,14 @@ export const DiffAttributes = Extension.create<DiffAttributeOptions>({
 						default: null,
 						rendered: false,
 					},
+					gridPlace: {
+						default: null,
+						rendered: false,
+					},
+					stackPlace: {
+						default: null,
+						rendered: false,
+					},
 				},
 			},
 		]

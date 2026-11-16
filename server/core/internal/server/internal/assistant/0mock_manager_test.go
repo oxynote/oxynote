@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 )
 
 // Ensure, that ManagerMock does implement Manager.
@@ -20,7 +21,7 @@ var _ Manager = &ManagerMock{}
 //
 //		// make and configure a mocked Manager
 //		mockedManager := &ManagerMock{
-//			ChatFunc: func(ctx context.Context, orgID string, userID string, conn protocol.SessionConn) error {
+//			ChatFunc: func(ctx context.Context, orgID string, userID string, role org.Role, conn protocol.SessionConn) error {
 //				panic("mock out the Chat method")
 //			},
 //			ConfiguredFunc: func() bool {
@@ -34,7 +35,7 @@ var _ Manager = &ManagerMock{}
 //	}
 type ManagerMock struct {
 	// ChatFunc mocks the Chat method.
-	ChatFunc func(ctx context.Context, orgID string, userID string, conn protocol.SessionConn) error
+	ChatFunc func(ctx context.Context, orgID string, userID string, role org.Role, conn protocol.SessionConn) error
 
 	// ConfiguredFunc mocks the Configured method.
 	ConfiguredFunc func() bool
@@ -49,6 +50,8 @@ type ManagerMock struct {
 			OrgID string
 			// UserID is the userID argument value.
 			UserID string
+			// Role is the role argument value.
+			Role org.Role
 			// Conn is the conn argument value.
 			Conn protocol.SessionConn
 		}
@@ -61,16 +64,18 @@ type ManagerMock struct {
 }
 
 // Chat calls ChatFunc.
-func (mock *ManagerMock) Chat(ctx context.Context, orgID string, userID string, conn protocol.SessionConn) error {
+func (mock *ManagerMock) Chat(ctx context.Context, orgID string, userID string, role org.Role, conn protocol.SessionConn) error {
 	callInfo := struct {
 		Ctx    context.Context
 		OrgID  string
 		UserID string
+		Role   org.Role
 		Conn   protocol.SessionConn
 	}{
 		Ctx:    ctx,
 		OrgID:  orgID,
 		UserID: userID,
+		Role:   role,
 		Conn:   conn,
 	}
 	mock.lockChat.Lock()
@@ -82,7 +87,7 @@ func (mock *ManagerMock) Chat(ctx context.Context, orgID string, userID string, 
 		)
 		return errOut
 	}
-	return mock.ChatFunc(ctx, orgID, userID, conn)
+	return mock.ChatFunc(ctx, orgID, userID, role, conn)
 }
 
 // ChatCalls gets all the calls that were made to Chat.
@@ -93,12 +98,14 @@ func (mock *ManagerMock) ChatCalls() []struct {
 	Ctx    context.Context
 	OrgID  string
 	UserID string
+	Role   org.Role
 	Conn   protocol.SessionConn
 } {
 	var calls []struct {
 		Ctx    context.Context
 		OrgID  string
 		UserID string
+		Role   org.Role
 		Conn   protocol.SessionConn
 	}
 	mock.lockChat.RLock()

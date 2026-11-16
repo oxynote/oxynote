@@ -1,0 +1,86 @@
+name: QA
+
+on:
+  # the release workflow runs every gate on a tag and publishes only
+  # once they all pass, so each one has to be callable.
+  workflow_call:
+  push:
+    branches:
+      - main
+    paths:
+      - packages/common/**
+      - .github/workflows/qa-common.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - packages/common/**
+      - .github/workflows/qa-common.yml
+
+# a newer push supersedes the still-running workflow of the stale commit
+# and cancels it. The group carries a hardcoded per-file prefix because
+# every QA workflow shares the display name "QA", so github.workflow
+# would put them all in one group and let a run of one workflow cancel
+# an in-flight run of another.
+concurrency:
+  group: qa-common-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: Linting common package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: packages/common/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: packages/common/pnpm-lock.yaml
+
+      - name: Installing dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: packages/common
+
+      - name: Run check-lint
+        run: pnpm run check-lint
+        working-directory: packages/common
+
+  test:
+    name: Testing common package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: packages/common/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: packages/common/pnpm-lock.yaml
+
+      - name: Installing dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: packages/common
+
+      - name: Run tests
+        run: pnpm run test
+        working-directory: packages/common

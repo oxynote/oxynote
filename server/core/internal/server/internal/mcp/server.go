@@ -43,7 +43,9 @@ func (h *Handler) server(r *http.Request) *mcp.Server {
 		return srv
 	}
 
-	set := h.man.ToolSet(session.OrganizationID, session.UserID)
+	// a member is offered only the tools their role may call, so a call
+	// to another fails as an unknown tool.
+	set := h.man.ToolSet(session.OrganizationID, session.UserID, session.Role)
 
 	for _, e := range set.Entries() {
 		// a tool no scope grants is not offered: an internal one addresses

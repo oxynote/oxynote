@@ -5,9 +5,13 @@
 E2E_DEV_COMPOSE_EXTRA ?=
 PROD_BUILD_EXTRA ?=
 
+# OIDC=1 layers keycloak over the dev stack and signs in through it.
+OIDC ?=
+
 # one compose invocation per stack. Only the dev stack is a project name
 # away from the others; the e2e stacks are named by their own files.
-COMPOSE := docker-compose -p oxynote -f docker/docker-compose.dev.yaml
+COMPOSE := docker-compose -p oxynote -f docker/docker-compose.dev.yaml \
+	$(if $(OIDC),-f docker/docker-compose.oidc.yaml)
 E2E_DEV_COMPOSE := docker compose -f e2e/docker-compose.dev.yaml $(E2E_DEV_COMPOSE_EXTRA)
 E2E_PROD_COMPOSE := docker compose -f e2e/docker-compose.prod.yaml
 PROD_COMPOSE := docker compose -f docker/prod/docker-compose.example.yaml \
@@ -48,9 +52,10 @@ run: check-env build-go sync-changedetection-key
 start: check-env build-go sync-changedetection-key
 	$(COMPOSE) --profile web up --build -d
 
+# keycloak goes down with the rest, whether or not OIDC=1 started it.
 .PHONY: stop
 stop:
-	$(COMPOSE) --profile web down
+	$(COMPOSE) -f docker/docker-compose.oidc.yaml --profile web down
 
 # the e2e stack runs on its own ports with throwaway state, so it can be
 # up at the same time as the dev stack.
@@ -108,6 +113,7 @@ lint:
 	@$(QUIET) "linting datagen" sh -c 'cd datagen && make lint'
 	@$(QUIET) "linting e2e" sh -c 'cd e2e && pnpm run lint'
 	@$(QUIET) "linting launcher" sh -c 'cd docker/prod/launcher && pnpm run lint'
+	@$(QUIET) "linting packages/common" sh -c 'cd packages/common && pnpm run lint'
 
 .PHONY: check-lint
 check-lint:
@@ -117,6 +123,7 @@ check-lint:
 	@$(QUIET) "lint-checking datagen" sh -c 'cd datagen && make check-lint'
 	@$(QUIET) "lint-checking e2e" sh -c 'cd e2e && pnpm run check-lint'
 	@$(QUIET) "lint-checking launcher" sh -c 'cd docker/prod/launcher && pnpm run check-lint'
+	@$(QUIET) "lint-checking packages/common" sh -c 'cd packages/common && pnpm run check-lint'
 	@$(QUIET) "checking icon lists" node scripts/check-icons.mjs
 
 # unit tests of every component, with the coverage gates CI applies.
@@ -127,6 +134,16 @@ test:
 	@$(QUIET) "testing core" sh -c 'cd server/core && make check-coverage'
 	@$(QUIET) "testing datagen" sh -c 'cd datagen && make check-coverage'
 	@$(QUIET) "testing launcher" sh -c 'cd docker/prod/launcher && pnpm run test'
+	@$(QUIET) "testing packages/common" sh -c 'cd packages/common && pnpm run test'
+
+# the benchmarks of every package. They only measure, so they never fail on
+# a slow result. Their output is the result, so nothing here runs quietly.
+.PHONY: bench
+bench:
+	cd web && pnpm run bench
+	cd server/auth-realtime && pnpm run bench
+	cd docker/prod/launcher && pnpm run bench
+	cd packages/common && pnpm run bench
 
 # everything CI checks, to run before a commit. Nothing here modifies a
 # file.
@@ -141,6 +158,7 @@ setup:
 	cd web && pnpm run setup
 	cd server/auth-realtime && pnpm install
 	cd docker/prod/launcher && pnpm install
+	cd packages/common && pnpm install
 	cd e2e && pnpm run setup
 	cd server/core && go mod download
 	cd datagen && go mod download
@@ -161,6 +179,7 @@ deps:
 	cd web && pnpm run deps
 	cd server/auth-realtime && pnpm install
 	cd docker/prod/launcher && pnpm install
+	cd packages/common && pnpm install
 	cd e2e && pnpm install
 	cd server/core && go mod download
 	cd datagen && go mod download

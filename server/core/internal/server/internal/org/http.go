@@ -269,7 +269,7 @@ func (h *Handler) RetrieveOrganizationLogo(w http.ResponseWriter, r *http.Reques
 	}
 
 	if !found {
-		http.NotFound(w, r)
+		httpserver.RespondError(h.log, w, errutil.ErrNotFound)
 		return
 	}
 

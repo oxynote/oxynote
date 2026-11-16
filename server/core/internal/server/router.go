@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	orgCore "github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/wetsocks/wsserver"
@@ -172,6 +173,7 @@ func (s *Server) internalRouter() chi.Router {
 		sr.Group(func(ssr chi.Router) {
 			ssr.Use(auth.Middleware(s.log, s.opts.Auth, s.client))
 			ssr.Use(s.handlers.document.RequireDocumentAccess)
+			ssr.Use(auth.RequireRole(s.log, s.db, orgCore.RoleEditor))
 			ssr.Put("/merge", s.handlers.document.MergeBranches)
 			ssr.Post("/branches", s.handlers.document.CreateDocumentBranch)
 			ssr.Put("/branches/{branchId}", s.handlers.document.UpdateDocumentBranch)
@@ -219,6 +221,11 @@ func (s *Server) router() chi.Router {
 	s.setupCORS(r)
 	r.Use(auth.Middleware(s.log, s.opts.Auth, s.client))
 
+	// every member may read, so a route without a role check is open to
+	// viewers. Writes name the least role they need.
+	requireEditor := auth.RequireRole(s.log, s.db, orgCore.RoleEditor)
+	requireAdmin := auth.RequireRole(s.log, s.db, orgCore.RoleAdmin)
+
 	r.Handle("/ws", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.ws.ServeHTTP(w, r)
 	}))
@@ -231,10 +238,15 @@ func (s *Server) router() chi.Router {
 		sr.Get("/", s.handlers.github.CheckInstallation)
 
 		sr.Group(func(ssr chi.Router) {
+			ssr.Use(requireAdmin)
 			ssr.Use(s.handlers.github.RequireConfigured)
 			ssr.Delete("/", s.handlers.github.DisconnectOrganization)
 			ssr.Get("/install", s.handlers.github.FetchInstall)
 			ssr.Get("/connect", s.handlers.github.ConnectOrganization)
+		})
+
+		sr.Group(func(ssr chi.Router) {
+			ssr.Use(s.handlers.github.RequireConfigured)
 			ssr.Route("/repositories", func(sssr chi.Router) {
 				sssr.Get("/", s.handlers.github.FetchRepositories)
 				sssr.Route("/{repository}", func(ssssr chi.Router) {
@@ -252,7 +264,7 @@ func (s *Server) router() chi.Router {
 		sr.Get("/{userId}/image", s.handlers.user.RetrieveUserImage)
 	})
 	r.Route("/organizations/logo", func(sr chi.Router) {
-		sr.Put("/", s.handlers.organization.UploadOrganizationLogo)
+		sr.With(requireAdmin).Put("/", s.handlers.organization.UploadOrganizationLogo)
 		sr.Get("/", s.handlers.organization.RetrieveOrganizationLogo)
 	})
 
@@ -262,10 +274,15 @@ func (s *Server) router() chi.Router {
 		sr.Get("/", s.handlers.slack.CheckInstallation)
 
 		sr.Group(func(ssr chi.Router) {
+			ssr.Use(requireAdmin)
 			ssr.Use(s.handlers.slack.RequireConfigured)
 			ssr.Delete("/", s.handlers.slack.DisconnectOrganization)
 			ssr.Get("/install", s.handlers.slack.FetchInstall)
 			ssr.Get("/connect", s.handlers.slack.ConnectOrganization)
+		})
+
+		sr.Group(func(ssr chi.Router) {
+			ssr.Use(s.handlers.slack.RequireConfigured)
 			ssr.Get("/messages", s.handlers.slack.FetchMessages)
 			ssr.Route("/users", func(sssr chi.Router) {
 				sssr.Get("/", s.handlers.slack.FetchUserLink)
@@ -284,12 +301,12 @@ func (s *Server) router() chi.Router {
 
 	r.Route("/data-sources", func(sr chi.Router) {
 		sr.Get("/", s.handlers.datasource.FetchDataSources)
-		sr.Post("/", s.handlers.datasource.CreateDataSource)
+		sr.With(requireAdmin).Post("/", s.handlers.datasource.CreateDataSource)
 		sr.Route("/{dataSourceId}", func(ssr chi.Router) {
 			ssr.Get("/", s.handlers.datasource.FetchDataSource)
-			ssr.Put("/", s.handlers.datasource.UpdateDataSource)
-			ssr.Delete("/", s.handlers.datasource.DeleteDataSource)
-			ssr.Get("/connection", s.handlers.datasource.TestDataSourceConnection)
+			ssr.With(requireAdmin).Put("/", s.handlers.datasource.UpdateDataSource)
+			ssr.With(requireAdmin).Delete("/", s.handlers.datasource.DeleteDataSource)
+			ssr.With(requireAdmin).Get("/connection", s.handlers.datasource.TestDataSourceConnection)
 			ssr.Get("/query", s.handlers.datasource.QueryDataSource)
 			ssr.Route("/logs", func(sssr chi.Router) {
 				sssr.Get("/", s.handlers.datasource.FetchDataSourceLogs)
@@ -320,13 +337,13 @@ func (s *Server) router() chi.Router {
 		sr.Get("/search", s.handlers.document.SearchDocuments)
 		sr.Get("/search/legacy", s.handlers.document.SearchDocumentsLegacy)
 		sr.Get("/recent", s.handlers.document.FetchRecentlyViewedDocuments)
-		sr.Post("/", s.handlers.document.CreateDocument)
+		sr.With(requireEditor).Post("/", s.handlers.document.CreateDocument)
 		sr.Route("/{documentId}", func(ssr chi.Router) {
 			ssr.Use(s.handlers.document.RequireDocumentAccess)
 			ssr.Get("/access", s.handlers.document.VerifyDocumentAccess)
 			ssr.Get("/maintainers", s.handlers.document.FetchDocumentMaintainers)
-			ssr.Delete("/", s.handlers.document.DeleteDocument)
-			ssr.Post("/duplicate", s.handlers.document.DuplicateDocument)
+			ssr.With(requireEditor).Delete("/", s.handlers.document.DeleteDocument)
+			ssr.With(requireEditor).Post("/duplicate", s.handlers.document.DuplicateDocument)
 			ssr.Route("/branches", func(sssr chi.Router) {
 				sssr.Get("/", s.handlers.document.FetchDocumentBranches)
 				sssr.Route("/{branchId}", func(ssssr chi.Router) {
@@ -337,39 +354,45 @@ func (s *Server) router() chi.Router {
 					ssssr.Post("/blocks/{blockUid}/run", s.handlers.block.RunBlock)
 					ssssr.Route("/reviewers", func(sssssr chi.Router) {
 						sssssr.Get("/", s.handlers.document.FetchBranchReviewers)
-						sssssr.Post("/", s.handlers.document.RequestBranchReviewer)
-						sssssr.Delete("/", s.handlers.document.RemoveBranchReviewer)
+						sssssr.With(requireEditor).Post("/", s.handlers.document.RequestBranchReviewer)
+						sssssr.With(requireEditor).Delete("/", s.handlers.document.RemoveBranchReviewer)
 					})
 					ssssr.Route("/tags", func(sssssr chi.Router) {
 						sssssr.Get("/", s.handlers.tag.FetchBranchTags)
-						sssssr.Post("/", s.handlers.tag.AssignBranchTag)
-						sssssr.Delete("/{tagId}", s.handlers.tag.UnassignBranchTag)
+						sssssr.With(requireEditor).Post("/", s.handlers.tag.AssignBranchTag)
+						sssssr.With(requireEditor).Delete("/{tagId}", s.handlers.tag.UnassignBranchTag)
 					})
 				})
 			})
 			ssr.Route("/hooks", func(sssr chi.Router) {
 				sssr.Get("/", s.handlers.hook.FetchDocumentHooks)
-				sssr.Post("/", s.handlers.hook.CreateDocumentHook)
+				sssr.With(requireEditor).Post("/", s.handlers.hook.CreateDocumentHook)
 				sssr.Route("/{hookId}", func(ssssr chi.Router) {
+					ssssr.Use(requireEditor)
 					ssssr.Put("/", s.handlers.hook.UpdateDocumentHook)
 					ssssr.Delete("/", s.handlers.hook.DeleteDocumentHook)
 					ssssr.Put("/reset", s.handlers.hook.ResetDocumentHook)
 				})
 			})
 			ssr.Route("/files", func(sssr chi.Router) {
-				sssr.Post("/", s.handlers.files.UploadDocumentFile)
+				sssr.With(requireEditor).Post("/", s.handlers.files.UploadDocumentFile)
 				sssr.Get("/{ref}", s.handlers.files.RetrieveDocumentFile)
 			})
 
 			ssr.Route("/comments", func(sssr chi.Router) {
 				sssr.Get("/", s.handlers.comment.FetchDocumentComments)
-				sssr.Post("/", s.handlers.comment.CreateDocumentComment)
+				// TODO: let viewers comment once a comment's anchor can be
+				// written without editing the document. The anchor is a mark
+				// a read-only connection cannot write, and resolving removes
+				// it.
+				sssr.With(requireEditor).Post("/", s.handlers.comment.CreateDocumentComment)
 				sssr.Route("/{commentId}", func(ssssr chi.Router) {
 					ssssr.Get("/", s.handlers.comment.FetchDocumentComment)
-					ssssr.Put("/", s.handlers.comment.UpdateDocumentComment)
-					ssssr.Put("/status", s.handlers.comment.UpdateDocumentCommentStatus)
-					ssssr.Delete("/", s.handlers.comment.DeleteDocumentComment)
+					ssssr.With(requireEditor).Put("/", s.handlers.comment.UpdateDocumentComment)
+					ssssr.With(requireEditor).Put("/status", s.handlers.comment.UpdateDocumentCommentStatus)
+					ssssr.With(requireEditor).Delete("/", s.handlers.comment.DeleteDocumentComment)
 					ssssr.Route("/replies", func(sssssr chi.Router) {
+						sssssr.Use(requireEditor)
 						sssssr.Post("/", s.handlers.comment.CreateDocumentCommentReply)
 						sssssr.Route("/{replyId}", func(ssssssr chi.Router) {
 							ssssssr.Put("/", s.handlers.comment.UpdateDocumentCommentReply)
@@ -381,40 +404,41 @@ func (s *Server) router() chi.Router {
 		})
 
 		sr.Route("/tree", func(ssr chi.Router) {
-			ssr.Put("/", s.handlers.document.UpdateDocumentTree)
+			ssr.With(requireEditor).Put("/", s.handlers.document.UpdateDocumentTree)
 			ssr.Get("/", s.handlers.document.FetchDocumentTree)
 		})
 	})
 
 	r.Route("/variables", func(sr chi.Router) {
-		sr.Post("/", s.handlers.variable.CreateVariable)
+		sr.With(requireEditor).Post("/", s.handlers.variable.CreateVariable)
 		sr.Route("/tree", func(ssr chi.Router) {
 			ssr.Get("/", s.handlers.variable.FetchVariableTree)
-			ssr.Put("/", s.handlers.variable.UpdateVariableTree)
+			ssr.With(requireEditor).Put("/", s.handlers.variable.UpdateVariableTree)
 		})
 		sr.Route("/groups", func(ssr chi.Router) {
+			ssr.Use(requireEditor)
 			ssr.Post("/", s.handlers.variable.CreateVariableGroup)
 			ssr.Put("/tree", s.handlers.variable.UpdateVariableGroupTree)
 			ssr.Put("/{groupId}", s.handlers.variable.UpdateVariableGroup)
 			ssr.Delete("/{groupId}", s.handlers.variable.DeleteVariableGroup)
 		})
 		sr.Route("/{variableId}", func(ssr chi.Router) {
-			ssr.Put("/", s.handlers.variable.UpdateVariable)
-			ssr.Delete("/", s.handlers.variable.DeleteVariable)
-			ssr.Put("/default", s.handlers.variable.SetVariableDefault)
+			ssr.With(requireEditor).Put("/", s.handlers.variable.UpdateVariable)
+			ssr.With(requireEditor).Delete("/", s.handlers.variable.DeleteVariable)
+			ssr.With(requireEditor).Put("/default", s.handlers.variable.SetVariableDefault)
 			ssr.Put("/value", s.handlers.variable.SetVariableValue)
 			ssr.Delete("/value", s.handlers.variable.ResetVariableValue)
 		})
 	})
 
 	r.Route("/tags", func(sr chi.Router) {
-		sr.Post("/", s.handlers.tag.CreateTag)
-		sr.Put("/{tagId}", s.handlers.tag.UpdateTag)
+		sr.With(requireEditor).Post("/", s.handlers.tag.CreateTag)
+		sr.With(requireEditor).Put("/{tagId}", s.handlers.tag.UpdateTag)
 		sr.Put("/{tagId}/visibility", s.handlers.tag.SetTagVisibility)
-		sr.Delete("/{tagId}", s.handlers.tag.DeleteTag)
+		sr.With(requireEditor).Delete("/{tagId}", s.handlers.tag.DeleteTag)
 		sr.Route("/tree", func(ssr chi.Router) {
 			ssr.Get("/", s.handlers.tag.FetchTagTree)
-			ssr.Put("/", s.handlers.tag.UpdateTagTree)
+			ssr.With(requireEditor).Put("/", s.handlers.tag.UpdateTagTree)
 		})
 	})
 

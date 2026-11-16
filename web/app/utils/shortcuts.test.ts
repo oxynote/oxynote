@@ -221,6 +221,18 @@ describe("SHORTCUT_GROUPS", () => {
 		})
 	})
 
+	it("gives an action's entry the action's least role and every other entry an editor's", ({
+		expect,
+	}) => {
+		expect(
+			entries.every((entry) =>
+				entry.kind === "action"
+					? entry.minimumRole === entry.action.minimumRole
+					: entry.minimumRole === "editor",
+			),
+		).toBe(true)
+	})
+
 	it("leaves the self-explanatory actions out", ({ expect }) => {
 		const grouped = entries.flatMap((entry) =>
 			entry.kind === "action" ? [entry.action] : [],

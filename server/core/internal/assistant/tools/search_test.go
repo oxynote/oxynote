@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
@@ -19,7 +20,7 @@ func Test_searchDocuments_Info(t *testing.T) {
 
 	info := searchDocuments{}.Info()
 
-	assert.Equal(t, Traits{}, info.Traits)
+	assert.Equal(t, Traits{Role: org.RoleViewer}, info.Traits)
 
 	assert.Equal(t, NameSearchDocuments, info.Name)
 	assert.Equal(t, []string{"query"}, info.Required)

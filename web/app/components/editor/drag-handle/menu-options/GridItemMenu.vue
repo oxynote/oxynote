@@ -2,7 +2,28 @@
 import type { HookGroupStatus } from "../../hooks/hook-status"
 import type { Node } from "@tiptap/pm/model"
 import type { Editor } from "@tiptap/vue-3"
-import { GridItemWidth } from "../../blocks/grid/utils"
+import { BLOCK_GRID_NAMES, gridSizeLabel } from "../../blocks/grid/utils"
+import {
+	GRID_HEIGHT_ROWS,
+	GRID_WIDTH_COLUMNS,
+	gridItemOf,
+	GridItemHeight,
+	GridItemWidth,
+	resizeInGrid,
+	widthName,
+} from "@oxynote/common/grid"
+import { gridLayoutOf, writeGridPlaces } from "../../blocks/grid/layout"
+
+const WIDTH_ICONS: Record<GridItemWidth, string> = {
+	[GridItemWidth.Compact]: "lucide:signal-low",
+	[GridItemWidth.Standard]: "lucide:signal-medium",
+	[GridItemWidth.Wide]: "lucide:signal-high",
+}
+
+const HEIGHT_ICONS: Record<GridItemHeight, string> = {
+	[GridItemHeight.Standard]: "mingcute:rectangle-line",
+	[GridItemHeight.Tall]: "mingcute:rectangle-vertical-line",
+}
 
 const props = defineProps<{
 	editor: Editor
@@ -17,32 +38,32 @@ const props = defineProps<{
 
 const { t } = useI18n({ useScope: "global" })
 
-const sizes = computed(() => [
-	{
-		value: GridItemWidth.Compact,
-		label: t("editor.drag-handle.options.grid-item.width-options.compact"),
-		icon: "lucide:signal-low",
-	},
-	{
-		value: GridItemWidth.Standard,
-		label: t("editor.drag-handle.options.grid-item.width-options.standard"),
-		icon: "lucide:signal-medium",
-	},
-	{
-		value: GridItemWidth.Wide,
-		label: t("editor.drag-handle.options.grid-item.width-options.wide"),
-		icon: "lucide:signal-high",
-	},
-])
+const size = computed(() => gridItemOf(props.hovered?.node.attrs ?? {}))
+const widths = computed(() =>
+	[...GRID_WIDTH_COLUMNS].reverse().map(([name, columns]) => ({
+		value: columns,
+		label: t(`editor.grid-item.width-options.${name}`),
+		icon: WIDTH_ICONS[name],
+	})),
+)
+const heights = computed(() =>
+	GRID_HEIGHT_ROWS.map(([name, rows]) => ({
+		value: rows,
+		label: t(`editor.grid-item.height-options.${name}`),
+		icon: HEIGHT_ICONS[name],
+	})),
+)
+// a width without a name in the menu. It shows only while the block has
+// it. Every height a block can have has a name.
+const otherWidth = computed(() =>
+	widthName(size.value.w) ? null : gridSizeLabel(t, "width", size.value.w),
+)
 
-const currentSize = computed<GridItemWidth>(() => {
-	return (
-		(props.hovered?.node.attrs.width as GridItemWidth | undefined) ||
-		GridItemWidth.Standard
-	)
-})
-
-function setSize(width: GridItemWidth) {
+// resize gives the block new columns or rows. The size it keeps is read
+// from the block now, since another user may have changed it since the
+// menu opened. In a grid, the grid makes room. The blocks beside it slide
+// and the ones below it move. Then every block gets its new cells.
+function resize(change: { w: number } | { h: number }) {
 	if (props.hovered == null) {
 		return
 	}
@@ -55,7 +76,27 @@ function setSize(width: GridItemWidth) {
 		return
 	}
 
-	view.dispatch(state.tr.setNodeMarkup(pos, null, { ...node.attrs, width }))
+	const { w, h } = { ...gridItemOf(node.attrs), ...change }
+	const $pos = state.doc.resolve(pos)
+	const grid = $pos.parent
+	const tr = state.tr
+
+	// outside a grid a block has no place, only its size
+	if (!BLOCK_GRID_NAMES.has(grid.type.name)) {
+		view.dispatch(
+			tr.setNodeMarkup(pos, null, { ...node.attrs, width: w, height: h }),
+		)
+
+		return
+	}
+
+	writeGridPlaces(
+		tr,
+		$pos.before(),
+		resizeInGrid(gridLayoutOf(grid), $pos.index(), w, h),
+		null,
+	)
+	view.dispatch(tr)
 }
 </script>
 <template>
@@ -67,16 +108,45 @@ function setSize(width: GridItemWidth) {
 			</div>
 		</ShadcnUiDropdownMenuSubTrigger>
 		<ShadcnUiDropdownMenuSubContent>
+			<ShadcnUiDropdownMenuItem v-if="otherWidth" active disabled>
+				<div class="flex w-full items-center gap-1">
+					<Icon name="mingcute:ruler-line" />
+					<span>{{ otherWidth }}</span>
+				</div>
+			</ShadcnUiDropdownMenuItem>
 			<ShadcnUiDropdownMenuItem
-				v-for="size in sizes"
-				:key="size.value"
-				:active="size.value === currentSize"
-				@click="setSize(size.value)"
+				v-for="width in widths"
+				:key="width.value"
+				:active="width.value === size.w"
+				@click="resize({ w: width.value })"
 			>
 				<div class="flex w-full items-center gap-1">
-					<Icon :name="size.icon" />
+					<Icon :name="width.icon" />
 					<span>
-						{{ size.label }}
+						{{ width.label }}
+					</span>
+				</div>
+			</ShadcnUiDropdownMenuItem>
+		</ShadcnUiDropdownMenuSubContent>
+	</ShadcnUiDropdownMenuSub>
+	<ShadcnUiDropdownMenuSub>
+		<ShadcnUiDropdownMenuSubTrigger>
+			<div class="flex w-full items-center gap-1">
+				<Icon name="lucide:move-vertical" />
+				<span>{{ $t("editor.drag-handle.options.grid-item.height") }}</span>
+			</div>
+		</ShadcnUiDropdownMenuSubTrigger>
+		<ShadcnUiDropdownMenuSubContent>
+			<ShadcnUiDropdownMenuItem
+				v-for="height in heights"
+				:key="height.value"
+				:active="height.value === size.h"
+				@click="resize({ h: height.value })"
+			>
+				<div class="flex w-full items-center gap-1">
+					<Icon :name="height.icon" />
+					<span>
+						{{ height.label }}
 					</span>
 				</div>
 			</ShadcnUiDropdownMenuItem>

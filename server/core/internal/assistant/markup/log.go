@@ -22,13 +22,15 @@ var _logOnlyEnums = map[string][]string{
 
 // _logEnums maps each enum-valued log attribute to its values, without
 // the built-in variable references. enumValues adds those for the
-// decoder. The window and width take the same values as a metric's.
+// decoder. The window, width and height take the same values as a
+// metric's.
 var _logEnums = map[string][]string{
 	document.AttrTimestampFormat: _logOnlyEnums[document.AttrTimestampFormat],
 	document.AttrOrder:           _logOnlyEnums[document.AttrOrder],
 	document.AttrTimeRange:       document.MetricTimeRanges(),
 	document.AttrRefreshInterval: document.MetricRefreshIntervals(),
 	document.AttrWidth:           _gridItemWidths,
+	document.AttrHeight:          _gridItemHeights,
 }
 
 // LogReference describes the attributes a <logs> holds, its enum values
@@ -36,13 +38,13 @@ var _logEnums = map[string][]string{
 func LogReference() string {
 	var sb strings.Builder
 
-	sb.WriteString("dataSourceId, queries ([{name, query}]), timeRange, refreshInterval and width as a metric block's")
+	sb.WriteString("dataSourceId, queries ([{name, query}]), timeRange, refreshInterval, width and height as a metric block's")
 
 	for _, key := range slices.Sorted(maps.Keys(_logOnlyEnums)) {
 		fmt.Fprintf(&sb, ", %s (%s)", key, strings.Join(_logOnlyEnums[key], "|"))
 	}
 
-	sb.WriteString(", and optionally title. order sorts the logs by time, desc showing the newest first")
+	sb.WriteString(". It may also hold title. order sorts the logs by time, and desc shows the newest first")
 
 	return sb.String()
 }

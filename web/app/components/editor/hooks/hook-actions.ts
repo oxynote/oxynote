@@ -1,10 +1,11 @@
-import { showToastMessage } from "~/components/toast"
+import { showRequestErrorToast } from "~/components/toast"
 import { hookErrorMessage } from "./hook-errors"
 
 // useHookActions sends the requests a hook's menu makes. Each one closes
 // the menu before it goes out, raises a toast when it fails, and resolves
 // to whether it went through. When core names why it refused, the toast
-// shows that reason.
+// shows that reason. A refusal for the role keeps the api client's own
+// toast instead.
 export function useHookActions(options: {
 	type: DocumentHookType
 	nodeId: () => string | null
@@ -36,8 +37,8 @@ export function useHookActions(options: {
 				},
 			})
 		} catch (err) {
-			showToastMessage(
-				"error",
+			showRequestErrorToast(
+				err,
 				hookErrorMessage(err, t) ?? t("editor.hooks.errors.create-failed"),
 			)
 			return false
@@ -70,8 +71,8 @@ export function useHookActions(options: {
 				req: { settings: settings },
 			})
 		} catch (err) {
-			showToastMessage(
-				"error",
+			showRequestErrorToast(
+				err,
 				hookErrorMessage(err, t) ??
 					(renewal
 						? t("editor.hooks.errors.renew-failed")
@@ -100,8 +101,8 @@ export function useHookActions(options: {
 				branchId: branchId,
 				hookId: hook.id,
 			})
-		} catch {
-			showToastMessage("error", t("editor.hooks.errors.delete-failed"))
+		} catch (err) {
+			showRequestErrorToast(err, t("editor.hooks.errors.delete-failed"))
 			return false
 		}
 
@@ -125,8 +126,8 @@ export function useHookActions(options: {
 				branchId: branchId,
 				hookId: hook.id,
 			})
-		} catch {
-			showToastMessage("error", t("editor.hooks.errors.reset-failed"))
+		} catch (err) {
+			showRequestErrorToast(err, t("editor.hooks.errors.reset-failed"))
 			return false
 		}
 

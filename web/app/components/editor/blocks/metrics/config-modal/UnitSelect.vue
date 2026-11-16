@@ -43,17 +43,10 @@ const processedSelectedUnit = computed(() => {
 
 	const category = unitToCategory[unit]
 	if (category) {
-		return {
-			category,
-			unit: unit as
-				VisualizationTimeUnit | VisualizationDataUnit | VisualizationMiscUnit,
-		}
+		return { category, unit }
 	}
 
-	return {
-		category: null,
-		unit: unit as VisualizationCoreUnit,
-	}
+	return { category: null, unit }
 })
 
 function selectUnit(unit: VisualizationUnit) {

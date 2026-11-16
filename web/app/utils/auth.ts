@@ -1,3 +1,7 @@
+// the code core answers a 403 with when the member's role does not allow
+// an action. Other 403s are each caller's to explain.
+export const ROLE_REFUSAL_CODE = "member.forbidden"
+
 export interface AuthError {
 	message?: string | undefined
 	status: number
@@ -15,6 +19,13 @@ export function postAuthDocumentUrl(
 	defaultPath = "/",
 ): string {
 	return `${baseUrl || ""}${next ? decodeURIComponent(next) : defaultPath}`
+}
+
+// where a refused OIDC sign-in lands. The other providers fail to the same
+// page with the same codes, so the marker tells the page that ending the
+// OIDC provider's session would help.
+export function oidcErrorCallbackUrl(baseUrl: string | undefined): string {
+	return `${baseUrl || ""}/auth-error?provider=oidc`
 }
 
 // a server redirect to the login page cannot put the hash in next, because
@@ -71,4 +82,15 @@ export function postEmailVerificationUrl(
 	email: string,
 ): string {
 	return `${baseUrl || ""}/verify-email?new=${encodeURIComponent(email)}`
+}
+
+// the api client has already shown a role refusal, so a caller skips its
+// own error toast for it.
+export function isRoleRefusal(error: unknown): boolean {
+	const { statusCode, data } = (error ?? {}) as {
+		statusCode?: unknown
+		data?: { code?: unknown } | null
+	}
+
+	return statusCode === 403 && data?.code === ROLE_REFUSAL_CODE
 }

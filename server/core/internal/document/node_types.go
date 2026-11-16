@@ -136,3 +136,9 @@ const (
 	// a parameter row. Macro-internal.
 	BlockNodeParamListItemType BlockNodeType = "splitDocumentationParameterListItemHeaderType"
 )
+
+// IsGrid reports whether the type is a grid, under its current name or
+// its legacy one.
+func (t BlockNodeType) IsGrid() bool {
+	return t == BlockNodeBlockGrid || t == BlockNodeMetricGrid
+}

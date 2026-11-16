@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
-	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 )
 
@@ -53,7 +53,7 @@ func (p *Prometheus) TestConnection(ctx context.Context) (ConnectionStatus, erro
 
 	client, err := p.client()
 	if err != nil {
-		if errors.Is(err, _errInvalidCACertificate) {
+		if errors.Is(err, credentials.ErrInvalidCACertificate) {
 			return ConnectionStatusInvalidCACertificate, nil
 		}
 
@@ -116,11 +116,26 @@ func (p *Prometheus) QueryRange(ctx context.Context, q string, tr TimeRange) (*P
 		Step:  ntr.QueryStep(),
 	}, v1.WithLimit(_queryLimit))
 	if err != nil {
-		if perr, ok := errors.AsType[*v1.Error](err); ok {
-			return nil, NewInvalidQueryError(perr.Msg)
+		perr, ok := errors.AsType[*v1.Error](err)
+		if !ok {
+			return nil, fmt.Errorf("error performing query: %w", err)
 		}
 
-		return nil, fmt.Errorf("error performing query: %w", err)
+		// the client keeps no status code. For a status Prometheus did
+		// not describe itself, it builds the message from the code, so
+		// that message tells an outage, a refused login or a rate limit
+		// from an error about the query.
+		switch {
+		case perr.Type == v1.ErrServer:
+			return nil, ConnectionStatusUnreachable.Error()
+		case perr.Type == v1.ErrClient &&
+			(perr.Msg == "client error: 401" || perr.Msg == "client error: 403"):
+			return nil, ConnectionStatusUnauthorized.Error()
+		case perr.Type == v1.ErrClient && perr.Msg == "client error: 429":
+			return nil, _errRateLimited
+		}
+
+		return nil, NewInvalidQueryError(perr.Msg)
 	}
 
 	return &PrometheusQueryResult{
@@ -236,25 +251,20 @@ func (p *Prometheus) Series(ctx context.Context, matchers []string, tr TimeRange
 func (p *Prometheus) client() (v1.API, error) {
 	rawCreds := p.inp.Credentials()
 
-	creds, err := rawCreds.basic()
+	auth, err := rawCreds.Read()
 	if err != nil {
 		return nil, err
 	}
 
 	address := p.inp.URL()
 
-	roundTripper, err := p.transport.roundTripper(api.DefaultRoundTripper, address, creds)
+	roundTripper, err := p.transport.roundTripper(api.DefaultRoundTripper, address, auth)
 	if err != nil {
 		return nil, err
 	}
 
-	// credentials holding only a CA certificate authenticate nobody.
-	if creds.Username != "" || creds.Password != "" {
-		roundTripper = config.NewBasicAuthRoundTripper(
-			config.NewInlineSecret(creds.Username),
-			config.NewInlineSecret(creds.Password),
-			roundTripper,
-		)
+	if auth != nil {
+		roundTripper = auth.Authorize(roundTripper)
 	}
 
 	client, err := api.NewClient(api.Config{

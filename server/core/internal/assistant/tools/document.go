@@ -11,6 +11,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/icon"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/markup"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/rs/xid"
 )
 
@@ -28,9 +29,10 @@ type listDocuments struct {
 func (listDocuments) Info() Info {
 	return Info{
 		Name:        NameListDocuments,
-		Description: "List the organisation's documents as a tree of {id, name, branches: [{id, name, protected, default}], children}. parent_id narrows it to that document's children. search_documents finds a document by title or content.",
+		Traits:      Traits{Role: org.RoleViewer},
+		Description: "List the organisation's documents as a tree of {id, name, branches: [{id, name, protected, default}], children}. To find a document by title or content, use search_documents instead.",
 		Properties: map[string]any{
-			"parent_id": map[string]any{"type": "string", "description": "Optional. A document whose direct children to list; omit it for the whole tree."},
+			"parent_id": map[string]any{"type": "string", "description": "The document whose direct children to list. Without it the whole tree is listed."},
 		},
 	}
 }
@@ -126,11 +128,12 @@ type getDocument struct {
 func (getDocument) Info() Info {
 	return Info{
 		Name:        NameGetDocument,
-		Description: "Read one document on one branch: its name, icon, parent_id and updated_at, every branch it has as {id, name, protected, default, updated_at}, the tags on the branch read, and content: its blocks as XML, one element per block with its id, in the format insert_blocks describes. Read a document this way before editing it.",
+		Traits:      Traits{Role: org.RoleViewer},
+		Description: "Read one document on one branch: its name, icon, parent_id, updated_at, its branches as [{id, name, protected, default, updated_at}], the tags on this branch, and content. content is its blocks as XML, one element per block with its id, in the format insert_blocks describes. Read a document this way before editing it.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
 			"branch_id":   map[string]any{"type": "string", "description": _branchIDDescription},
-			"block_uid":   map[string]any{"type": "string", "description": "Optional. Narrows content to this block and what it holds; an id inside a block, such as a search hit's, reads the block holding it."},
+			"block_uid":   map[string]any{"type": "string", "description": "A block to narrow content to, with what it holds. An id inside a block, such as a search hit's, reads the block holding it."},
 		},
 		Required: []string{"document_id", "branch_id"},
 	}
@@ -261,12 +264,16 @@ type createDocument struct {
 func (createDocument) Info() Info {
 	return Info{
 		Name:        NameCreateDocument,
-		Traits:      Traits{Write: true},
-		Description: "Create a document and return {document_id, branch_id}, the branch_id being its default branch. It starts with one empty paragraph; fill it with insert_blocks at position end on that branch.",
+		Traits:      Traits{Write: true, Role: org.RoleEditor},
+		Description: "Create a document and return {document_id, branch_id}, the branch being its default one. It starts with one empty paragraph, so fill it with insert_blocks at position end on that branch.",
 		Properties: map[string]any{
-			"name":            map[string]any{"type": "string", "description": "The display name."},
-			document.AttrIcon: map[string]any{"type": "string", "description": "Optional. An Iconify id from the icon picker, mostly MingCute fills such as mingcute:file-code-fill; another id is refused, naming the closest ones. Defaults to mingcute:document-2-fill."},
-			"parent_id":       map[string]any{"type": "string", "description": "Optional. The parent document id; omit it for the organisation root."},
+			"name": map[string]any{"type": "string", "description": "The display name."},
+			document.AttrIcon: map[string]any{
+				"type":        "string",
+				"description": "An Iconify id from the icon picker, mostly MingCute fills such as mingcute:file-code-fill. Another id is refused, naming the closest ones.",
+				"default":     _defaultDocumentIcon,
+			},
+			"parent_id": map[string]any{"type": "string", "description": "The parent document id. Leave it out for the organisation root."},
 		},
 		Required: []string{"name"},
 	}
@@ -344,8 +351,8 @@ type deleteDocument struct {
 func (deleteDocument) Info() Info {
 	return Info{
 		Name:        NameDeleteDocument,
-		Traits:      Traits{Write: true, Destructive: true},
-		Description: "Delete a document and every document nested under it. The whole subtree goes and cannot be restored, so check the tree with list_documents first, and use update_document when the aim is to relocate rather than remove. Returns {document_id, deleted}.",
+		Traits:      Traits{Write: true, Destructive: true, Role: org.RoleEditor},
+		Description: "Delete a document and every document nested under it. Returns {document_id, deleted}. It cannot be restored, so check the tree with list_documents first. update_document moves a document instead.",
 		Properties:  map[string]any{"document_id": map[string]any{"type": "string", "description": _documentIDDescription}},
 		Required:    []string{"document_id"},
 	}
@@ -427,13 +434,13 @@ type updateDocument struct {
 func (updateDocument) Info() Info {
 	return Info{
 		Name:        NameUpdateDocument,
-		Traits:      Traits{Write: true, Idempotent: true},
-		Description: "Change a document's name, icon or parent; give only what changes, and a call changing nothing is refused. Content is untouched, and a parent that is the document itself or one of its descendants is refused. Returns {document_id} with what changed.",
+		Traits:      Traits{Write: true, Idempotent: true, Role: org.RoleEditor},
+		Description: "Change a document's name, icon or parent. Returns {document_id} and the fields that changed. Give only what changes, but give at least one. Content is not touched. A parent that is the document itself or one of its descendants is refused.",
 		Properties: map[string]any{
 			"document_id":     map[string]any{"type": "string", "description": _documentIDDescription},
-			"name":            map[string]any{"type": "string", "description": "Optional. The new display name."},
-			document.AttrIcon: map[string]any{"type": "string", "description": "Optional. An Iconify id from the icon picker, mostly MingCute fills such as mingcute:rocket-fill; another id is refused, naming the closest ones."},
-			"parent_id":       map[string]any{"type": "string", "description": "Optional. The new parent document id, or an empty string for the organisation root."},
+			"name":            map[string]any{"type": "string", "description": "The new display name."},
+			document.AttrIcon: map[string]any{"type": "string", "description": "An Iconify id from the icon picker, mostly MingCute fills such as mingcute:rocket-fill. Another id is refused, and the error names the closest ones."},
+			"parent_id":       map[string]any{"type": "string", "description": "The new parent document id. An empty string moves the document to the organisation root."},
 		},
 		Required: []string{"document_id"},
 	}

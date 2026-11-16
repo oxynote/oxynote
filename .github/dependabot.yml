@@ -1,6 +1,6 @@
 # dependabot covers every subproject: web, server/core, server/auth-realtime,
-# datagen and e2e — plus the GitHub Actions workflows, the subprojects'
-# Dockerfiles and the compose stacks. Each entry gets grouped update PRs
+# datagen, e2e and packages/common — plus the GitHub Actions workflows, the
+# subprojects' Dockerfiles and the compose stacks. Each entry gets grouped update PRs
 # (never one PR per dependency): a "safe" group with minor and patch updates,
 # and a separate "breaking" group for major updates. The commit-message prefix
 # names the subproject, so it shows up in every dependabot PR title.
@@ -174,6 +174,31 @@ updates:
       # types ahead of it compile against apis that are not there.
       - dependency-name: "@types/node"
         versions: [">=25.0.0"]
+    groups:
+      breaking:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+      safe:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "npm"
+    directory: "/packages/common"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "deps(common)"
+    ignore:
+      # typescript-eslint caps typescript at <6.1.0 and vue-tsc has not
+      # caught up with the 7.x native port, so 6.x is the ceiling until
+      # both support it.
+      - dependency-name: "typescript"
+        versions: [">=7.0.0"]
     groups:
       breaking:
         patterns:

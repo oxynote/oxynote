@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"database/sql"
 	"io"
 	"log/slog"
 	"maps"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jarcoal/httpmock"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/wetsocks/wsserver"
@@ -504,6 +506,167 @@ func Test_RequireSession(t *testing.T) {
 			assert.Equal(t, c.OK, ok)
 			assert.Equal(t, c.Result, got)
 			testutil.AssertResponse(t, rec, c.RespCode, c.RespJSON)
+		})
+	}
+}
+
+func Test_RequireRole(t *testing.T) {
+	t.Parallel()
+
+	session := Session{
+		UserID:               "u1",
+		ActiveOrganizationID: "org1",
+	}
+
+	stubDB := func(role org.Role, err error) *DBMock {
+		return &DBMock{
+			FetchOrganizationMemberRoleFunc: func(_ context.Context, _, _ string) (org.Role, error) {
+				return role, err
+			},
+		}
+	}
+
+	cc := map[string]struct {
+		Ctx       context.Context
+		DB        *DBMock
+		Least     org.Role
+		Next      bool
+		RoleCalls int
+		RespCode  int
+		RespJSON  string
+	}{
+		"No session in context": {
+			Ctx:      context.Background(),
+			DB:       stubDB(org.RoleAdmin, nil),
+			Least:    org.RoleViewer,
+			RespCode: http.StatusUnauthorized,
+			RespJSON: `{"code":"account.not_authenticated","message":"not authenticated"}`,
+		},
+		"Error returned by DB.FetchOrganizationMemberRole": {
+			Ctx:       AddSessionToContext(context.Background(), session),
+			DB:        stubDB("", assert.AnError),
+			Least:     org.RoleViewer,
+			RoleCalls: 1,
+			RespCode:  http.StatusInternalServerError,
+			RespJSON:  `{"code":"general","message":"internal server error"}`,
+		},
+		"User is no longer a member": {
+			Ctx:       AddSessionToContext(context.Background(), session),
+			DB:        stubDB("", sql.ErrNoRows),
+			Least:     org.RoleViewer,
+			RoleCalls: 1,
+			RespCode:  http.StatusForbidden,
+			RespJSON:  `{"code":"member.forbidden","message":"forbidden"}`,
+		},
+		"Role below the least": {
+			Ctx:       AddSessionToContext(context.Background(), session),
+			DB:        stubDB(org.RoleViewer, nil),
+			Least:     org.RoleEditor,
+			RoleCalls: 1,
+			RespCode:  http.StatusForbidden,
+			RespJSON:  `{"code":"member.forbidden","message":"forbidden"}`,
+		},
+		"Role at the least": {
+			Ctx:       AddSessionToContext(context.Background(), session),
+			DB:        stubDB(org.RoleEditor, nil),
+			Least:     org.RoleEditor,
+			Next:      true,
+			RoleCalls: 1,
+			RespCode:  http.StatusNoContent,
+		},
+		"Role above the least": {
+			Ctx:       AddSessionToContext(context.Background(), session),
+			DB:        stubDB(org.RoleAdmin, nil),
+			Least:     org.RoleEditor,
+			Next:      true,
+			RoleCalls: 1,
+			RespCode:  http.StatusNoContent,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var called bool
+
+			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				called = true
+
+				w.WriteHeader(http.StatusNoContent)
+			})
+
+			req := httptest.NewRequest(http.MethodPut, "http://test.com/", http.NoBody)
+			req = req.WithContext(c.Ctx)
+			rec := httptest.NewRecorder()
+
+			RequireRole(slog.New(slog.DiscardHandler), c.DB, c.Least)(next).ServeHTTP(rec, req)
+
+			assert.Equal(t, c.Next, called)
+			testutil.AssertResponse(t, rec, c.RespCode, c.RespJSON)
+
+			calls := c.DB.FetchOrganizationMemberRoleCalls()
+			require.Len(t, calls, c.RoleCalls)
+
+			for _, call := range calls {
+				assert.Equal(t, "org1", call.OrganizationID)
+				assert.Equal(t, "u1", call.UserID)
+			}
+		})
+	}
+}
+
+func Test_FetchRole(t *testing.T) {
+	t.Parallel()
+
+	session := Session{
+		UserID:               "u1",
+		ActiveOrganizationID: "org1",
+	}
+
+	cc := map[string]struct {
+		Role    org.Role
+		RoleErr error
+		Result  org.Role
+		Err     error
+	}{
+		"Error returned by DB.FetchOrganizationMemberRole": {
+			RoleErr: assert.AnError,
+			Err:     assert.AnError,
+		},
+		"User is no longer a member": {
+			RoleErr: sql.ErrNoRows,
+			Err:     org.ErrForbidden,
+		},
+		"Successful fetch": {
+			Role:   org.RoleViewer,
+			Result: org.RoleViewer,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := &DBMock{
+				FetchOrganizationMemberRoleFunc: func(_ context.Context, _, _ string) (org.Role, error) {
+					return c.Role, c.RoleErr
+				},
+			}
+
+			res, err := FetchRole(context.Background(), db, session)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			calls := db.FetchOrganizationMemberRoleCalls()
+			require.Len(t, calls, 1)
+			assert.Equal(t, "org1", calls[0].OrganizationID)
+			assert.Equal(t, "u1", calls[0].UserID)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
 		})
 	}
 }

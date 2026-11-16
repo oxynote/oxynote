@@ -16,6 +16,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	notificationCore "github.com/oxynote/oxynote/server/core/internal/notification"
+	orgCore "github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
@@ -180,6 +181,9 @@ var _ DB = &DBMock{}
 //			},
 //			FetchNotificationCountFunc: func(ctx context.Context, organizationID string, userID string, read bool) (uint64, error) {
 //				panic("mock out the FetchNotificationCount method")
+//			},
+//			FetchOrganizationMemberRoleFunc: func(ctx context.Context, organizationID string, userID string) (orgCore.Role, error) {
+//				panic("mock out the FetchOrganizationMemberRole method")
 //			},
 //			FetchOrganizationMembersFunc: func(ctx context.Context, organizationID string) ([]string, error) {
 //				panic("mock out the FetchOrganizationMembers method")
@@ -478,6 +482,9 @@ type DBMock struct {
 
 	// FetchNotificationCountFunc mocks the FetchNotificationCount method.
 	FetchNotificationCountFunc func(ctx context.Context, organizationID string, userID string, read bool) (uint64, error)
+
+	// FetchOrganizationMemberRoleFunc mocks the FetchOrganizationMemberRole method.
+	FetchOrganizationMemberRoleFunc func(ctx context.Context, organizationID string, userID string) (orgCore.Role, error)
 
 	// FetchOrganizationMembersFunc mocks the FetchOrganizationMembers method.
 	FetchOrganizationMembersFunc func(ctx context.Context, organizationID string) ([]string, error)
@@ -1064,6 +1071,15 @@ type DBMock struct {
 			// Read is the read argument value.
 			Read bool
 		}
+		// FetchOrganizationMemberRole holds details about calls to the FetchOrganizationMemberRole method.
+		FetchOrganizationMemberRole []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// UserID is the userID argument value.
+			UserID string
+		}
 		// FetchOrganizationMembers holds details about calls to the FetchOrganizationMembers method.
 		FetchOrganizationMembers []struct {
 			// Ctx is the ctx argument value.
@@ -1522,6 +1538,7 @@ type DBMock struct {
 	lockFetchGithubInstallationOrganizationID     sync.RWMutex
 	lockFetchManyNotifications                    sync.RWMutex
 	lockFetchNotificationCount                    sync.RWMutex
+	lockFetchOrganizationMemberRole               sync.RWMutex
 	lockFetchOrganizationMembers                  sync.RWMutex
 	lockFetchRecentlyViewedDocuments              sync.RWMutex
 	lockFetchSlackAppByOrganizationID             sync.RWMutex
@@ -3703,6 +3720,50 @@ func (mock *DBMock) FetchNotificationCountCalls() []struct {
 	mock.lockFetchNotificationCount.RLock()
 	calls = mock.calls.FetchNotificationCount
 	mock.lockFetchNotificationCount.RUnlock()
+	return calls
+}
+
+// FetchOrganizationMemberRole calls FetchOrganizationMemberRoleFunc.
+func (mock *DBMock) FetchOrganizationMemberRole(ctx context.Context, organizationID string, userID string) (orgCore.Role, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		UserID         string
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		UserID:         userID,
+	}
+	mock.lockFetchOrganizationMemberRole.Lock()
+	mock.calls.FetchOrganizationMemberRole = append(mock.calls.FetchOrganizationMemberRole, callInfo)
+	mock.lockFetchOrganizationMemberRole.Unlock()
+	if mock.FetchOrganizationMemberRoleFunc == nil {
+		var (
+			roleOut orgCore.Role
+			errOut  error
+		)
+		return roleOut, errOut
+	}
+	return mock.FetchOrganizationMemberRoleFunc(ctx, organizationID, userID)
+}
+
+// FetchOrganizationMemberRoleCalls gets all the calls that were made to FetchOrganizationMemberRole.
+// Check the length with:
+//
+//	len(mockedDB.FetchOrganizationMemberRoleCalls())
+func (mock *DBMock) FetchOrganizationMemberRoleCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	UserID         string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		UserID         string
+	}
+	mock.lockFetchOrganizationMemberRole.RLock()
+	calls = mock.calls.FetchOrganizationMemberRole
+	mock.lockFetchOrganizationMemberRole.RUnlock()
 	return calls
 }
 

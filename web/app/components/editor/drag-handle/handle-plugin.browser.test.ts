@@ -994,7 +994,7 @@ describe("DragHandlePlugin", { concurrent: false }, () => {
 			expect(draggingOf(editor.view)?.sourceWrapperBounds).toBeNull()
 		})
 
-		it("drags the whole selection when the hovered node is part of it", ({
+		it("drags the hovered node alone when the selection covers it and more", ({
 			expect,
 		}) => {
 			const { editor, element, handle } = setup({
@@ -1006,10 +1006,8 @@ describe("DragHandlePlugin", { concurrent: false }, () => {
 			startDrag(element)
 			const dragging = draggingOf(editor.view)
 
-			expect(dragging?.slice.content.childCount).toBe(2)
-			expect(dragging?.slice.content.child(1).textContent).toBe("two")
-			expect(editor.state.selection.from).toBe(0)
-			expect(editor.state.selection.to).toBe(10)
+			expect(dragging?.slice.content.childCount).toBe(1)
+			expect(dragging?.slice.content.firstChild?.textContent).toBe("one")
 		})
 
 		it("drags the hovered node alone when the selection covers other nodes", ({

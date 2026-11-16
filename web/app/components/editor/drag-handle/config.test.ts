@@ -156,18 +156,9 @@ describe("gapZoneConfigByType", () => {
 		{ child: LOG_BLOCK_NAME, parent: BLOCK_GRID_NAME },
 		{ child: METRIC_BLOCK_NAME, parent: LEGACY_METRIC_GRID_NAME },
 	])(
-		"returns a vertical gap for a $child inside a $parent",
+		"returns no gap for a $child inside a $parent",
 		({ child, parent }, { expect }) => {
-			expect(gapZoneConfigByType(child, undefined, parent)).toEqual({
-				height: "100%",
-				width: "1rem",
-				verticalGap: true,
-				includeBeforeFirst: true,
-				xOffsetFirst: 0,
-				xOffsetMiddle: 0,
-				xOffsetLast: 0,
-				debugColor: "rgba(128, 0, 200, 0.3)",
-			})
+			expect(gapZoneConfigByType(child, undefined, parent)).toBeNull()
 		},
 	)
 

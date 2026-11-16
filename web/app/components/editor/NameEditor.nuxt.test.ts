@@ -1,4 +1,5 @@
-import { registerEndpoint } from "@nuxt/test-utils/runtime"
+import { mockNuxtImport, registerEndpoint } from "@nuxt/test-utils/runtime"
+import type { Editor } from "@tiptap/core"
 import type { HocuspocusProvider } from "@hocuspocus/provider"
 import {
 	type DOMWrapper,
@@ -6,7 +7,7 @@ import {
 	flushPromises,
 	type VueWrapper,
 } from "@vue/test-utils"
-import { setResponseStatus } from "h3"
+import { setResponseStatus, type H3Event } from "h3"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
 import { Awareness } from "y-protocols/awareness"
@@ -31,6 +32,8 @@ import {
 	findButtonByText,
 	menuItem,
 	mountUnderTooltipProvider,
+	raisedToasts,
+	refuseForRole,
 	renderedIconNames,
 	seedAuthOrganization,
 	seedAuthSession,
@@ -42,6 +45,10 @@ import {
 vi.mock("vue-sonner", () => ({
 	toast: { custom: vi.fn(), dismiss: vi.fn() },
 }))
+
+const reloadPage = vi.hoisted(() => vi.fn())
+
+mockNuxtImport("reloadNuxtApp", () => reloadPage)
 
 const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("brancha")
@@ -78,12 +85,12 @@ function titleOf(ydoc: Y.Doc, text: string) {
 
 // the merge request goes through the auth-realtime client, which asks for
 // an absolute url; the path spelling is the one the test-time app answers
-function mockMergeEndpoint(respond: () => unknown) {
+function mockMergeEndpoint(respond: (event: H3Event) => unknown) {
 	const calls: unknown[] = []
-	const handler = () => {
+	const handler = (event: H3Event) => {
 		calls.push(true)
 
-		return respond()
+		return respond(event)
 	}
 
 	trackEndpointDisposal(
@@ -391,6 +398,37 @@ describe("<NameEditor>", { concurrent: false }, () => {
 		await vi.waitFor(() => {
 			expect(emittedFrom(wrapper, "editor-ready")).toHaveLength(1)
 		}, WAIT_FOR_OPTIONS)
+	})
+
+	it("offers a reload after a content error disables editing and collaboration", async ({
+		expect,
+	}) => {
+		const wrapper = await mountEditor()
+		await vi.waitFor(() => {
+			expect(emittedFrom(wrapper, "editor-ready")).toHaveLength(1)
+		}, WAIT_FOR_OPTIONS)
+		const editor = emittedFrom(wrapper, "editor-ready")[0]?.[0] as Editor
+		const disableCollaboration = vi.fn()
+		reloadPage.mockReset()
+
+		editor.emit("contentError", {
+			editor,
+			error: new Error("invalid content"),
+			disableCollaboration,
+		})
+
+		expect(editor.isEditable).toBe(false)
+		expect(disableCollaboration).toHaveBeenCalledExactlyOnceWith()
+		expect(toast.custom).toHaveBeenCalledTimes(1)
+		const render = vi.mocked(toast.custom).mock.calls[0]?.[0] as () => VNode
+		const action = render().props?.action as {
+			label: string
+			onClick: () => void
+		}
+		expect(action.label).toBe(t("editor.reload-page"))
+		expect(reloadPage).not.toHaveBeenCalled()
+		action.onClick()
+		expect(reloadPage).toHaveBeenCalledExactlyOnceWith({ force: true })
 	})
 
 	it("shows the name the branch carries", async ({ expect }) => {
@@ -937,6 +975,93 @@ describe("<NameEditor>", { concurrent: false }, () => {
 			expect(emittedFrom(wrapper, "branch-merged")).toEqual([[false]])
 		}, WAIT_FOR_OPTIONS)
 		expect(calls).toHaveLength(1)
+	})
+
+	it("shows only the access denied toast for a refused merge", async ({
+		expect,
+	}) => {
+		useEditorStore().setBranchReviewableActionsActive(true)
+		const calls = mockMergeEndpoint((event) => refuseForRole(event))
+		const wrapper = await mountEditor()
+		await openActionMenu(wrapper)
+		menuItem(t("editor.name-editor.review-workflow.merge.title")).click()
+		await nextTick()
+		vi.useFakeTimers()
+
+		await findButtonByText(
+			wrapper,
+			t("editor.name-editor.review-workflow.merge.title"),
+		).trigger("click")
+		await vi.advanceTimersByTimeAsync(REVIEWABLE_ACTION_DELAY_MS)
+		await settleMutations()
+
+		expect(calls).toHaveLength(1)
+		expect(raisedToasts()).toMatchObject([
+			{ type: "error", title: t("general.errors.role-not-allowed") },
+		])
+	})
+
+	it("neither merges nor approves once the role turns to viewer during the delay", async ({
+		expect,
+	}) => {
+		useEditorStore().setBranchReviewableActionsActive(true)
+		const mergeCalls = mockMergeEndpoint(() => null)
+		const approvalCalls = mockEndpoint(
+			"PUT",
+			`/api/documents/${DOCUMENT_ID}/branches/${BRANCH_ID}/review-approve`,
+			() => null,
+		)
+		const wrapper = await mountEditor()
+		await openActionMenu(wrapper)
+		menuItem(t("editor.name-editor.review-workflow.merge.title")).click()
+		await nextTick()
+		vi.useFakeTimers()
+		await findButtonByText(
+			wrapper,
+			t("editor.name-editor.review-workflow.merge.title"),
+		).trigger("click")
+
+		seedAuthOrganization({ members: [{ userId: ME, role: "viewer" }] })
+		await vi.advanceTimersByTimeAsync(REVIEWABLE_ACTION_DELAY_MS)
+		await settleMutations()
+
+		expect(mergeCalls).toHaveLength(0)
+		expect(approvalCalls).toHaveLength(0)
+		expect(toast.custom).toHaveBeenCalledTimes(0)
+	})
+
+	it("offers a viewer the approval but no switch to merging", async ({
+		expect,
+	}) => {
+		seedAuthOrganization({ members: [{ userId: ME, role: "viewer" }] })
+		useEditorStore().setBranchReviewableActionsActive(true)
+
+		const wrapper = await mountEditor()
+
+		expect(
+			wrapper
+				.get("[data-slot='button-group']")
+				.findAll("button")
+				.map((button) => button.text()),
+		).toEqual([t("editor.name-editor.review-workflow.approve.title")])
+	})
+
+	it("goes back to approving once the reader's role no longer lets them merge", async ({
+		expect,
+	}) => {
+		seedAuthOrganization({ members: [{ userId: ME, role: "editor" }] })
+		useEditorStore().setBranchReviewableActionsActive(true)
+		const wrapper = await mountEditor()
+		await openActionMenu(wrapper)
+		menuItem(t("editor.name-editor.review-workflow.merge.title")).click()
+		await nextTick()
+
+		seedAuthOrganization({ members: [{ userId: ME, role: "viewer" }] })
+		await nextTick()
+
+		expect(wrapper.get("[data-slot='button-group']").text()).toBe(
+			t("editor.name-editor.review-workflow.approve.title"),
+		)
 	})
 
 	it("turns the diff on and off", async ({ expect }) => {

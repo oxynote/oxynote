@@ -1,5 +1,7 @@
 package document
 
+import "math"
+
 // Attributes is the attribute map carried by document nodes and
 // marks. It behaves as a plain map (range, index, len all work) and
 // adds typed access to individual attributes via Get.
@@ -49,6 +51,31 @@ func (a Attribute) Int() int {
 	default:
 		return 0
 	}
+}
+
+// WholeAtLeast returns the value when it is a whole number no smaller
+// than floor, and whether it is. JSON numbers arrive as float64, so it
+// refuses a fraction such as 2.5. A value above the largest 32-bit
+// integer is cut down to it, so adding to it cannot overflow.
+func (a Attribute) WholeAtLeast(floor int) (int, bool) {
+	var v float64
+
+	switch n := a.value.(type) {
+	case int:
+		v = float64(n)
+	case int64:
+		v = float64(n)
+	case float64:
+		v = n
+	default:
+		return 0, false
+	}
+
+	if v != math.Trunc(v) || v < float64(floor) {
+		return 0, false
+	}
+
+	return int(min(v, math.MaxInt32)), true
 }
 
 // String returns the value when it is a string, "" otherwise.

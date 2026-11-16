@@ -14,6 +14,7 @@ import {
 	mockAuthEndpoint,
 	mockAuthOrganization,
 	seedAuthAccounts,
+	seedAuthConfig,
 	seedAuthSession,
 	settleMutations,
 	t,
@@ -76,6 +77,7 @@ describe("<ProfileSection>", { concurrent: false }, () => {
 			image: "https://cdn.test/ada.png",
 		})
 		seedAuthAccounts(["credential"])
+		seedAuthConfig()
 		mockAuthOrganization({ id: "org-1", members: [], invitations: [] })
 		seedSlack({})
 	})
@@ -184,6 +186,24 @@ describe("<ProfileSection>", { concurrent: false }, () => {
 		expect(wrapper.text()).toContain(
 			t("settings.profile.password-description.status-not-set"),
 		)
+	})
+
+	// the identity provider is the only way in, so a password would never
+	// be used
+	it("leaves the password out when password login is off", async ({
+		expect,
+	}) => {
+		seedAuthAccounts(["oidc"])
+		seedAuthConfig({ methods: ["oidc"], oidcDisplayName: "SSO" })
+
+		const wrapper = await mountSection()
+
+		expect
+			.soft(wrapper.text())
+			.not.toContain(t("settings.profile.password-label"))
+		expect
+			.soft(wrapper.text())
+			.not.toContain(t("settings.profile.password-set-button"))
 	})
 
 	it("asks to delete the account when its button is pressed", async ({

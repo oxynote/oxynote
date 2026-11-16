@@ -84,7 +84,6 @@ export const SlashCommands = Extension.create<
 
 					return {
 						onStart: (props) => {
-							// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 							component = new VueRenderer(CommandList, {
 								editor: props.editor,
 								props: {

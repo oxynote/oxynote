@@ -3,7 +3,6 @@ package datasource
 import (
 	"testing"
 
-	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -13,12 +12,12 @@ func Test_newStateInput(t *testing.T) {
 
 	si := newStateInput(
 		"http://prometheus.test",
-		processor.NewCredentials([]byte(`{"username":"user"}`)),
+		stubCredentials(`{"username":"user"}`),
 	)
 
 	require.NotNil(t, si)
 	assert.Equal(t, "http://prometheus.test", si.url)
-	assert.Equal(t, processor.NewCredentials([]byte(`{"username":"user"}`)), si.credentials)
+	assert.Equal(t, stubCredentials(`{"username":"user"}`), si.credentials)
 }
 
 func Test_stateInput_URL(t *testing.T) {
@@ -31,6 +30,6 @@ func Test_stateInput_URL(t *testing.T) {
 func Test_stateInput_Credentials(t *testing.T) {
 	t.Parallel()
 
-	si := &stateInput{credentials: processor.NewCredentials([]byte(`{"username":"user"}`))}
-	assert.Equal(t, processor.NewCredentials([]byte(`{"username":"user"}`)), si.Credentials())
+	si := &stateInput{credentials: stubCredentials(`{"username":"user"}`)}
+	assert.Equal(t, stubCredentials(`{"username":"user"}`), si.Credentials())
 }

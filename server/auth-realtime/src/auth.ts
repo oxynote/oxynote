@@ -5,19 +5,29 @@ import {
 	createEmailVerificationToken,
 	getSessionFromCtx,
 } from "better-auth/api"
-import { jwt, organization } from "better-auth/plugins"
+import { genericOAuth, jwt, organization } from "better-auth/plugins"
 import { electron } from "@better-auth/electron"
 import { mcp } from "@better-auth/mcp"
 import type { PostgresDialect } from "kysely"
 import { z } from "zod"
-import { bootstrapAdmin } from "./bootstrap.js"
+import {
+	bootstrapAdmin,
+	createFirstUserOrganization,
+	type FirstUserDeps,
+} from "./bootstrap.js"
 import type { Store } from "./db.js"
 import type { CoreClient, EmailTemplate } from "./core.js"
 import type { Env, SocialProviderName } from "./env.js"
 import type { Logger, LogLevel } from "./logging.js"
 import { reported } from "./reporting.js"
+import { ac, ADMIN_ROLE, isRole, roles } from "./roles.js"
 
-export type AuthMethod = "email-password" | "google" | "github" | "slack"
+export type AuthMethod =
+	"email-password" | "google" | "github" | "slack" | "oidc"
+
+// the id better-auth knows the OIDC provider by. It also names the
+// provider's callback path.
+export const OIDC_PROVIDER_ID = "oidc" satisfies AuthMethod
 
 // the subset of the redis client better-auth's secondary storage uses.
 // Declared structurally so a test can drive the adapter with a plain
@@ -44,6 +54,9 @@ export interface AuthDeps {
 	redis?: SecondaryStorageClient
 	core: CoreClient
 	log: Logger
+	// drops every document connection the user holds, so each one
+	// reconnects under the user's new role.
+	closeUserConnections: (userId: string) => void
 }
 
 // better-auth resolves its extra "success" level to info before calling out.
@@ -58,13 +71,57 @@ const betterAuthLevels: Record<LogLevel, "debug" | "info" | "warn" | "error"> =
 // the capability list served by /api/auth-config. Derived from the same
 // credentials that register the social providers, so the endpoint can
 // never disagree with what better-auth actually accepts. Email-password
-// needs no external credentials, so it is always available.
+// needs no external credentials, so it is there unless switched off.
 export function authMethods(env: Env): AuthMethod[] {
 	return [
-		"email-password",
+		...(env.passwordLoginEnabled
+			? (["email-password"] as const)
+			: []),
 		...(env.socialProviders.google ? (["google"] as const) : []),
 		...(env.socialProviders.github ? (["github"] as const) : []),
 		...(env.socialProviders.slack ? (["slack"] as const) : []),
+		...(env.oidc ? ([OIDC_PROVIDER_ID] as const) : []),
+	]
+}
+
+// genericOAuth registers the provider as a social one, so it signs in
+// through /sign-in/social and returns to the social callback. Discovery
+// runs once, while the context is built at boot.
+function oidcPlugins(env: Env) {
+	const oidc = env.oidc
+	if (!oidc) {
+		return []
+	}
+
+	return [
+		genericOAuth({
+			config: [
+				{
+					providerId: OIDC_PROVIDER_ID,
+					name: oidc.displayName,
+					discoveryUrl: `${oidc.issuerUrl}/.well-known/openid-configuration`,
+					clientId: oidc.clientId,
+					clientSecret: oidc.clientSecret,
+					scopes: oidc.scopes,
+					// better-auth's default misses the public prefix.
+					redirectURI: `${env.publicAuthBaseUrl}/api/auth/callback/${OIDC_PROVIDER_ID}`,
+					// where the provider returns the browser after a
+					// refused user ends its session. Without it, the
+					// provider keeps the browser on its own page.
+					postLogoutRedirectURI: `${env.frontendUrl}/login`,
+					requireIdTokenVerification: true,
+					// as for password sign-up: an email the provider has
+					// not verified is confirmed by our own link first,
+					// so it cannot claim an invitation sent to it.
+					requireEmailVerification:
+						env.emailEnabled,
+					// the OIDC default. Every provider accepts it, and
+					// some, such as Authelia, accept nothing else unless
+					// told to.
+					authentication: "basic",
+				},
+			],
+		}),
 	]
 }
 
@@ -106,7 +163,7 @@ export function verificationTemplate(token: string): EmailTemplate {
 		: "signup_verification"
 }
 
-export interface SocialSignInContext {
+export interface AuthRequestContext {
 	path: string
 	query?: Record<string, unknown> | null
 	body?: Record<string, unknown> | null
@@ -121,7 +178,7 @@ export interface SocialSignInContext {
 // Returns undefined for every other request, which leaves the context
 // untouched.
 export function electronCallbackOverride(
-	ctx: SocialSignInContext,
+	ctx: AuthRequestContext,
 	frontendUrl: string,
 ): { context: { body: Record<string, unknown> } } | undefined {
 	if (
@@ -140,6 +197,21 @@ export function electronCallbackOverride(
 			},
 		},
 	}
+}
+
+// better-auth sends a sign-out on to the identity provider's logout,
+// which would also sign the user out of every other app that uses the
+// provider. Oxynote signs out only itself. A refused sign-in can still end
+// the provider's session on purpose, when someone needs another account.
+// Returns undefined for every other request.
+export function localSignOut(
+	ctx: AuthRequestContext,
+): { context: { body: Record<string, unknown> } } | undefined {
+	if (ctx.path !== "/sign-out") {
+		return undefined
+	}
+
+	return { context: { body: { ...ctx.body, disableRedirect: true } } }
 }
 
 export interface InvitationData {
@@ -190,10 +262,14 @@ export function createOrganizationHooks({
 	env,
 	store,
 	core,
+	closeUserConnections,
+	revokeUserSessions,
 }: {
 	env: Env
 	store: Store
 	core: CoreClient
+	closeUserConnections: (userId: string) => void
+	revokeUserSessions: (userId: string) => Promise<void>
 }) {
 	return {
 		canCreateOrganization: () =>
@@ -228,6 +304,43 @@ export function createOrganizationHooks({
 			)
 		},
 
+		// better-auth always accepts its own owner, admin and member
+		// roles next to the configured ones, so the list is enforced
+		// here.
+		beforeCreateInvitation: ({
+			invitation,
+		}: {
+			invitation: { role: string }
+		}) => {
+			refuseUnknownRole(invitation.role)
+
+			return Promise.resolve()
+		},
+
+		beforeUpdateMemberRole: ({ newRole }: { newRole: string }) => {
+			refuseUnknownRole(newRole)
+
+			return Promise.resolve()
+		},
+
+		afterUpdateMemberRole: ({ user }: { user: { id: string } }) => {
+			closeUserConnections(user.id)
+
+			return Promise.resolve()
+		},
+
+		// a removed member's session still names the organization, and
+		// core trusts that name. So the sessions go before the sockets,
+		// and the reconnect finds no session.
+		afterRemoveMember: async ({
+			user,
+		}: {
+			user: { id: string }
+		}) => {
+			await reported(() => revokeUserSessions(user.id))
+			closeUserConnections(user.id)
+		},
+
 		sendInvitationEmail: async (data: InvitationData) => {
 			await reported(() =>
 				core.sendEmail("organization_invitation", {
@@ -238,6 +351,17 @@ export function createOrganizationHooks({
 			)
 		},
 	}
+}
+
+function refuseUnknownRole(role: string): void {
+	if (isRole(role)) {
+		return
+	}
+
+	throw APIError.from("BAD_REQUEST", {
+		code: "ROLE_NOT_FOUND",
+		message: `ROLE_NOT_FOUND: ${role}`,
+	})
 }
 
 // the part of better-auth's endpoint context confirmWithPassword reads.
@@ -347,7 +471,9 @@ export async function confirmWithPassword(
 
 // a single-organization deployment has no open signup: a request creates
 // an account only for an address with a pending invitation. A user created
-// outside any request is the bootstrap's admin.
+// outside any request is the bootstrap's admin. Without password login
+// there is no such admin, so the first account is allowed while no
+// organization exists yet.
 export async function checkSignUpAllowed(
 	env: Env,
 	store: Store,
@@ -356,6 +482,15 @@ export async function checkSignUpAllowed(
 ): Promise<void> {
 	if (env.maxOrganizations !== 1 || !fromRequest) {
 		return
+	}
+
+	if (!env.passwordLoginEnabled) {
+		const organizations = await reported(() =>
+			store.totalOrganizationCount(),
+		)
+		if (organizations === 0) {
+			return
+		}
 	}
 
 	const allowed = await reported(() => store.hasPendingInvitation(email))
@@ -370,19 +505,18 @@ export async function checkSignUpAllowed(
 	})
 }
 
-// a single-organization deployment keeps at least one member, because
-// nobody can sign up to take over an empty organization. The callback is
-// checked too, since members may leave between the request and the link.
-export async function refuseLastMemberDeletion(
+// an organization with other members keeps at least one admin, because
+// only an admin can manage them. A single-organization deployment also
+// keeps at least one member, because nobody can sign up to take over an
+// empty organization. The callback is checked too, since members may
+// leave or change roles between the request and the link.
+export async function refuseLastMemberOrAdminDeletion(
 	env: Env,
 	store: Store,
 	path: string,
 	currentUser: () => Promise<SessionUser | undefined>,
 ): Promise<void> {
-	if (
-		env.maxOrganizations !== 1 ||
-		(path !== "/delete-user" && path !== "/delete-user/callback")
-	) {
+	if (path !== "/delete-user" && path !== "/delete-user/callback") {
 		return
 	}
 
@@ -392,23 +526,44 @@ export async function refuseLastMemberDeletion(
 		return
 	}
 
-	const last = await reported(async () => {
+	const refusal = await reported(async () => {
 		const organizationId = await store.userOrganizationId(user.id)
+		if (organizationId === null) {
+			return null
+		}
 
-		return (
-			organizationId !== null &&
-			(await store.organizationMemberCount(organizationId)) <=
-				1
+		const members =
+			await store.organizationMemberCount(organizationId)
+		if (members <= 1) {
+			return env.maxOrganizations === 1 ? "last-member" : null
+		}
+
+		const role = await store.memberRole(user.id, organizationId)
+		if (role !== ADMIN_ROLE) {
+			return null
+		}
+
+		const admins = await store.organizationMemberCount(
+			organizationId,
+			ADMIN_ROLE,
 		)
+
+		return admins <= 1 ? "last-admin" : null
 	})
-	if (!last) {
-		return
+
+	if (refusal === "last-member") {
+		throw APIError.from("FORBIDDEN", {
+			code: "LAST_ORGANIZATION_MEMBER",
+			message: "The last member of the organization cannot be deleted",
+		})
 	}
 
-	throw APIError.from("FORBIDDEN", {
-		code: "LAST_ORGANIZATION_MEMBER",
-		message: "The last member of the organization cannot be deleted",
-	})
+	if (refusal === "last-admin") {
+		throw APIError.from("FORBIDDEN", {
+			code: "LAST_ORGANIZATION_ADMIN",
+			message: "The last admin of the organization cannot be deleted",
+		})
+	}
 }
 
 // the first step of a change of address: the current address approves it,
@@ -417,7 +572,8 @@ export async function refuseLastMemberDeletion(
 // claim. The bootstrap admin's address receives no mail, so the new
 // address gets the link that completes the change instead, the one
 // better-auth sends when no approval is configured. better-auth signs its
-// tokens with the configured secret, so this one verifies like its own.
+// tokens with the configured secret, so this one verifies like its own. It
+// refuses a change token that does not name the user, so this one does.
 export async function sendChangeEmailConfirmation(
 	env: Env,
 	core: CoreClient,
@@ -425,7 +581,11 @@ export async function sendChangeEmailConfirmation(
 		user,
 		newEmail,
 		url,
-	}: { user: { email: string }; newEmail: string; url: string },
+	}: {
+		user: { id: string; email: string }
+		newEmail: string
+		url: string
+	},
 ): Promise<void> {
 	if (user.email !== bootstrapAdmin.email) {
 		await core.sendEmail("email_change_confirmation", {
@@ -444,7 +604,10 @@ export async function sendChangeEmailConfirmation(
 			user.email,
 			newEmail,
 			undefined,
-			{ requestType: "change-email-verification" },
+			{
+				requestType: "change-email-verification",
+				userId: user.id,
+			},
 		),
 	)
 
@@ -494,8 +657,28 @@ export function createAuth({
 	redis,
 	core,
 	log,
+	closeUserConnections,
 }: AuthDeps) {
-	const organizationHooks = createOrganizationHooks({ env, store, core })
+	const organizationHooks = createOrganizationHooks({
+		env,
+		store,
+		core,
+		closeUserConnections,
+		revokeUserSessions: async (userId) => {
+			const context = await auth.$context
+			await context.internalAdapter.deleteUserSessions(userId)
+		},
+	})
+
+	// what the first user of a single organization without password login
+	// needs to create that organization.
+	const firstUser: FirstUserDeps = {
+		env,
+		store,
+		createOrganization: (organization) =>
+			auth.api.createOrganization({ body: organization }),
+		random: Math.random,
+	}
 
 	function socialProvider(name: SocialProviderName) {
 		const credentials = env.socialProviders[name]
@@ -509,7 +692,7 @@ export function createAuth({
 		}
 	}
 
-	return betterAuth({
+	const auth = betterAuth({
 		// the public base URL carries the reverse proxy's
 		// /auth-realtime prefix, but a path inside baseURL becomes
 		// better-auth's basePath — and the proxy strips that prefix
@@ -558,7 +741,7 @@ export function createAuth({
 			}),
 		},
 		emailAndPassword: {
-			enabled: true,
+			enabled: env.passwordLoginEnabled,
 			// without email no verification link can arrive, so a new
 			// account is signed in straight away.
 			requireEmailVerification: env.emailEnabled,
@@ -573,22 +756,25 @@ export function createAuth({
 			revokeSessionsOnPasswordReset: true,
 			// with no sender better-auth refuses a reset request
 			// (RESET_PASSWORD_DISABLED) instead of promising a link.
-			sendResetPassword: env.emailEnabled
-				? async ({ user, url }) => {
-						await reported(() =>
-							core.sendEmail(
-								"password_reset",
-								{
-									email: user.email,
-									link: toPublicAuthUrl(
-										env,
-										url,
-									),
-								},
-							),
-						)
-					}
-				: undefined,
+			// The enabled flag above does not cover this endpoint, so a
+			// deployment without password login has no sender either.
+			sendResetPassword:
+				env.emailEnabled && env.passwordLoginEnabled
+					? async ({ user, url }) => {
+							await reported(() =>
+								core.sendEmail(
+									"password_reset",
+									{
+										email: user.email,
+										link: toPublicAuthUrl(
+											env,
+											url,
+										),
+									},
+								),
+							)
+						}
+					: undefined,
 			// where verification is required, duplicate signups get
 			// better-auth's synthetic success so the browser can't probe
 			// which emails have accounts. The real owner is told through
@@ -749,6 +935,14 @@ export function createAuth({
 				allowUserToCreateOrganization:
 					organizationHooks.canCreateOrganization,
 				disableOrganizationDeletion: true, // prevent clients from deleting the org
+				// a resend keeps the pending invitation's role, so a
+				// re-invite replaces the invitation instead.
+				cancelPendingInvitationsOnReInvite: true,
+				ac,
+				roles,
+				// better-auth keeps at least one member with the
+				// creator role, so this protects the last admin.
+				creatorRole: ADMIN_ROLE,
 				organizationLimit: 1,
 				// better-auth also passes the limit to the database
 				// as the page size of a member list, which cannot be
@@ -796,6 +990,14 @@ export function createAuth({
 						organizationHooks.afterCreateOrganization,
 					beforeDeleteOrganization:
 						organizationHooks.beforeDeleteOrganization,
+					beforeCreateInvitation:
+						organizationHooks.beforeCreateInvitation,
+					beforeUpdateMemberRole:
+						organizationHooks.beforeUpdateMemberRole,
+					afterUpdateMemberRole:
+						organizationHooks.afterUpdateMemberRole,
+					afterRemoveMember:
+						organizationHooks.afterRemoveMember,
 				},
 				sendInvitationEmail:
 					organizationHooks.sendInvitationEmail,
@@ -814,6 +1016,7 @@ export function createAuth({
 					},
 				},
 			}),
+			...oidcPlugins(env),
 			// MCP is off when no resource URL is set. Better Auth rejects
 			// a plain-http resource on a non-loopback host.
 			...(env.mcpResource === undefined
@@ -993,7 +1196,7 @@ export function createAuth({
 				const currentUser = async () =>
 					(await getSessionFromCtx(ctx))?.user
 
-				await refuseLastMemberDeletion(
+				await refuseLastMemberOrAdminDeletion(
 					env,
 					store,
 					ctx.path,
@@ -1011,9 +1214,11 @@ export function createAuth({
 					}
 				}
 
-				return electronCallbackOverride(
-					ctx,
-					env.frontendUrl,
+				return (
+					electronCallbackOverride(
+						ctx,
+						env.frontendUrl,
+					) ?? localSignOut(ctx)
 				)
 			}),
 		},
@@ -1031,6 +1236,19 @@ export function createAuth({
 							user.email,
 							Boolean(ctx),
 						)
+					},
+					// runs before the first session is
+					// created, so that session already
+					// sees the new organization.
+					after: async (user, ctx) => {
+						if (ctx) {
+							await reported(() =>
+								createFirstUserOrganization(
+									firstUser,
+									user.id,
+								),
+							)
+						}
 					},
 				},
 			},
@@ -1083,4 +1301,6 @@ export function createAuth({
 			},
 		},
 	})
+
+	return auth
 }

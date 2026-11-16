@@ -10,6 +10,13 @@ const MESSAGE_KEYS = ["msg", "message", "log"]
 // at white space.
 const LOGFMT_PAIR = /\s*([^\s="]+)=("(?:[^"\\]|\\.)*"|[^\s"]*)(?=\s|$)/y
 
+// JSON's source text API, which the TypeScript lib does not type yet. An
+// older engine has no isRawJSON and gives the reviver no source.
+const SOURCE_JSON = JSON as JSON & {
+	rawJSON: (text: string) => unknown
+	isRawJSON?: (value: unknown) => boolean
+}
+
 export type KeyValue = [key: string, value: string]
 
 // a key read from the line, or one the query's parser added
@@ -60,13 +67,15 @@ export interface TextPart {
 interface ReadLine {
 	record: Record<string, unknown>
 	format: LineFormat
+	continuation: string
 }
 
 // summarizeLog splits a log into what its row shows. A JSON or logfmt line
-// gives its message, and its other keys join the extracted fields. Any
-// other line is its own message. A known level shows in the pill, so its
-// keys stay out. An unknown one keeps them, so no part of the log goes
-// missing.
+// gives its message, and its other keys join the extracted fields. A field
+// carried beside the line, such as structured metadata, stays out when the
+// line holds that key with the same value. Any other line is its own
+// message. A known level shows in the pill, so its keys stay out. An
+// unknown one keeps them, so no part of the log goes missing.
 export function summarizeLog(log: Log, dialect: LogDialect): LogSummary {
 	const shown = (key: string) =>
 		log.level === LogLevel.Unknown || !LEVEL_KEYS.has(key)
@@ -76,8 +85,10 @@ export function summarizeLog(log: Log, dialect: LogDialect): LogSummary {
 		: undefined
 	const message = line
 		? messageKey
-			? String(line.record[messageKey])
-			: ""
+			? [String(line.record[messageKey]), line.continuation]
+					.filter(Boolean)
+					.join("\n")
+			: line.continuation
 		: log.line
 
 	return {
@@ -88,7 +99,7 @@ export function summarizeLog(log: Log, dialect: LogDialect): LogSummary {
 			.filter((f) => !(f.format && f.key === messageKey) && shown(f.key))
 			.map((f): KeyValue => [f.key, f.display]),
 		fields: sortedEntries(log.fields)
-			.filter(([k]) => shown(k))
+			.filter((pair) => shown(pair[0]) && !repeatsLine(pair, line))
 			.map(displayPair),
 		labels: sortedEntries(log.labels).map(displayPair),
 	}
@@ -243,6 +254,22 @@ function displayPair([key, value]: KeyValue): KeyValue {
 	return [key, displayValue(value)]
 }
 
+// repeatsLine tells whether a field carried beside the line holds a key of
+// the line with the same text. The row shows the pair once, from the line.
+function repeatsLine([key, value]: KeyValue, line: ReadLine | null): boolean {
+	if (!line || !Object.hasOwn(line.record, key)) {
+		return false
+	}
+
+	return lineText(line.record[key]) === value
+}
+
+// lineText reads a value of a line as text. A nested value keeps the JSON it
+// was written as.
+function lineText(value: unknown): string {
+	return typeof value === "string" ? value : JSON.stringify(value)
+}
+
 // extract leaves out the keys the source made from a nested value only when
 // nestedRepeats is true
 function extract(
@@ -253,14 +280,15 @@ function extract(
 ): ExtractedField[] {
 	const fromLine = line
 		? Object.entries(line.record).map(([key, value]): ExtractedField => {
-				const text = typeof value === "string" ? value : JSON.stringify(value)
+				const text = lineText(value)
 
 				return {
 					key: key,
 					value: text,
 					display: typeof value === "string" ? displayValue(value) : text,
 					format: line.format,
-					nested: value !== null && typeof value === "object",
+					nested:
+						value !== null && typeof value === "object" && !isNumberText(value),
 					isNull: value === null,
 				}
 			})
@@ -292,12 +320,23 @@ function extract(
 function readLine(line: string): ReadLine | null {
 	const json = parseJSONObject(line)
 	if (json) {
-		return { record: json, format: LineFormat.JSON }
+		return { record: json, format: LineFormat.JSON, continuation: "" }
 	}
 
-	const logfmt = parseLogfmt(line)
+	const newline = line.indexOf("\n")
+	const firstLine = (newline < 0 ? line : line.slice(0, newline)).replace(
+		/\r$/,
+		"",
+	)
+	const logfmt = parseLogfmt(firstLine)
 
-	return logfmt ? { record: logfmt, format: LineFormat.Logfmt } : null
+	return logfmt
+		? {
+				record: logfmt,
+				format: LineFormat.Logfmt,
+				continuation: newline < 0 ? "" : line.slice(newline + 1),
+			}
+		: null
 }
 
 function parseJSONObject(text: string): Record<string, unknown> | null {
@@ -306,7 +345,7 @@ function parseJSONObject(text: string): Record<string, unknown> | null {
 	}
 
 	try {
-		const parsed: unknown = JSON.parse(text)
+		const parsed: unknown = JSON.parse(text, keepNumberText)
 
 		return parsed && typeof parsed === "object" && !Array.isArray(parsed)
 			? (parsed as Record<string, unknown>)
@@ -314,6 +353,22 @@ function parseJSONObject(text: string): Record<string, unknown> | null {
 	} catch {
 		return null
 	}
+}
+
+// keepNumberText keeps a number as written, because Loki compares that
+// text. JSON.parse reads 25.0 as 25 and rounds integers past 2^53.
+function keepNumberText(
+	_key: string,
+	value: unknown,
+	context?: { source?: string },
+): unknown {
+	return typeof value === "number" && context?.source !== undefined
+		? SOURCE_JSON.rawJSON(context.source)
+		: value
+}
+
+export function isNumberText(value: unknown): boolean {
+	return SOURCE_JSON.isRawJSON?.(value) ?? false
 }
 
 // parseLogfmt reads a line made only of logfmt pairs. A line with any other

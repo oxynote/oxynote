@@ -1,15 +1,59 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
-import { describe, it } from "vitest"
+import { describe, it, vi } from "vitest"
 import ToastMessage from "./ToastMessage.vue"
-import { renderedIconNames } from "./test-helpers"
+import { findButtonByText, renderedIconNames, t } from "./test-helpers"
 
 describe("<ToastMessage>", () => {
+	it("runs the optional action and closes the toast when its button is pressed", async ({
+		expect,
+	}) => {
+		const onClick = vi.fn()
+		const wrapper = await mountSuspended(ToastMessage, {
+			props: {
+				type: "warning",
+				title: "Read-only",
+				action: { label: t("editor.reload-page"), onClick },
+			},
+		})
+
+		await findButtonByText(wrapper, t("editor.reload-page")).trigger("click")
+
+		expect(onClick).toHaveBeenCalledExactlyOnceWith()
+		expect(wrapper.emitted("close")).toHaveLength(1)
+	})
+
 	it("shows the title", async ({ expect }) => {
 		const wrapper = await mountSuspended(ToastMessage, {
 			props: { type: "success", title: "Workspace saved" },
 		})
 
 		expect(wrapper.text()).toContain("Workspace saved")
+	})
+
+	it("shows a translated description with its named values in bold", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSuspended(ToastMessage, {
+			props: {
+				type: "success",
+				title: "Member role changed",
+				description: {
+					keypath:
+						"settings.workspace.success-messages.role.description.viewer",
+					params: { name: "Linus", role: "Viewer" },
+				},
+			},
+		})
+
+		expect(wrapper.text()).toContain(
+			t("settings.workspace.success-messages.role.description.viewer", {
+				name: "Linus",
+				role: "Viewer",
+			}),
+		)
+		expect(
+			wrapper.findAll(".font-medium.text-foreground").map((el) => el.text()),
+		).toEqual(["Linus", "Viewer"])
 	})
 
 	it("shows the description alongside the title", async ({ expect }) => {

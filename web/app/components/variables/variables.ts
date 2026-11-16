@@ -174,9 +174,8 @@ export function optionLabel(
 	value: string,
 	t: (key: string) => string,
 ): string {
-	const interval = Object.values(RefreshInterval).find(
-		(i) => i === (value as RefreshInterval),
-	)
+	const intervals: string[] = Object.values(RefreshInterval)
+	const interval = intervals.find((i) => i === value)
 	if (!variable.builtin || !interval) {
 		return value
 	}

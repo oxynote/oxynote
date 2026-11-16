@@ -28,11 +28,25 @@ const (
 	// AttrTitle is the title of an image or a titled code block.
 	AttrTitle = "title"
 
-	// AttrWidth is the rendered width of an image or an embed.
+	// AttrWidth is the rendered width of an image or an embed, or the
+	// columns a grid block spans.
 	AttrWidth = "width"
 
-	// AttrHeight is the rendered height of an embed.
+	// AttrHeight is the rendered height of an embed, or the rows a grid
+	// block spans.
 	AttrHeight = "height"
+
+	// AttrWidePosX is a grid block's first column in the wide layout.
+	// That layout has 24 columns, and the first is column zero.
+	AttrWidePosX = "widePosX"
+
+	// AttrWidePosY is a grid block's first row in the wide layout. The
+	// first row is row zero.
+	AttrWidePosY = "widePosY"
+
+	// AttrStackPos is a grid block's place in its grid's stacked layout.
+	// The first place is zero.
+	AttrStackPos = "stackPos"
 
 	// AttrName is the file name a file block shows.
 	AttrName = "name"

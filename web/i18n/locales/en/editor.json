@@ -1,6 +1,11 @@
 {
 	"editor": {
 		"unknown-user-caret": "Unknown",
+		"reload-page": "Reload page",
+		"readonly-error": {
+			"title": "This page is read-only",
+			"description": "Your editor may be out of date. Reload the page to get the latest version and try again"
+		},
 		"realtime-error": {
 			"title": "Your latest changes could not be saved",
 			"description": "Reload the page to keep editing"
@@ -330,13 +335,22 @@
 					}
 				},
 				"grid-item": {
-					"width": "Resize",
-					"width-options": {
-						"compact": "Compact",
-						"standard": "Standard",
-						"wide": "Wide"
-					}
+					"width": "Width",
+					"height": "Height"
 				}
+			}
+		},
+		"grid-item": {
+			"width-options": {
+				"compact": "Compact",
+				"standard": "Standard",
+				"wide": "Wide",
+				"columns": "{count} column | {count} columns"
+			},
+			"height-options": {
+				"standard": "Standard",
+				"tall": "Tall",
+				"rows": "{count} row | {count} rows"
 			}
 		},
 		"link": {
@@ -383,6 +397,7 @@
 			"dismiss-in-diff": "To dismiss it, turn off {toggle}.",
 			"read-only-protected": "Read-only · change this hook on the draft branch and merge it here",
 			"read-only-mode": "Read-only · switch to edit mode to change this hook",
+			"read-only-viewer": "Read-only · viewers can't change hooks",
 			"showing-changes": "Showing changes · turn off {toggle} to edit",
 			"value-change": "{old} → {new}",
 			"subtext-detail": "{subtext} · {detail}",
@@ -871,14 +886,14 @@
 				"legend-format-placeholder": "{'{{'}some label{'}}'} {'{{'}another label{'}}'}",
 				"legend-format-empty-value-placeholder": "[empty]",
 				"data-source-empty-title": "No metric data sources",
-				"data-source-empty-description": "Connect Prometheus or a SQL database in the settings to chart its data here."
+				"data-source-empty-description": "Connect Prometheus or a SQL database in the settings to chart its data here.",
+				"data-source-empty-description-non-admin": "Ask an admin to connect Prometheus or a SQL database to chart its data here."
 			},
 			"diff": {
 				"visualization": "Visualization",
 				"legend": "Legend {index}",
 				"base-threshold-color": "Base threshold colour",
-				"custom-unit": "Custom unit",
-				"size": "Size"
+				"custom-unit": "Custom unit"
 			},
 			"simulation": {
 				"tooltip": "Showing simulated data until real data is available",
@@ -981,10 +996,8 @@
 				"add-query-button": "Add Query",
 				"delete-query-button": "Delete Query",
 				"data-source-empty-title": "No log data sources",
-				"data-source-empty-description": "Connect Loki in the settings to show its logs here."
-			},
-			"diff": {
-				"size": "Size"
+				"data-source-empty-description": "Connect Loki in the settings to show its logs here.",
+				"data-source-empty-description-non-admin": "Ask an admin to connect Loki to show its logs here."
 			},
 			"levels": {
 				"critical": "Crit",
@@ -1059,6 +1072,8 @@
 		"no-document-indicator": {
 			"heading": "Time to create something great",
 			"subheading": "Pages are where the magic happens. Create one to dive in.",
+			"heading-viewer": "No pages yet",
+			"subheading-viewer": "Pages show up here once an editor or admin creates one.",
 			"create-document-button": "Create Page"
 		},
 		"document-deletion-modal": {
@@ -1108,7 +1123,20 @@
 			"added": "+{count}",
 			"empty": "empty",
 			"auto": "auto",
-			"pixels": "{value} px"
+			"pixels": "{value} px",
+			"grid-item": {
+				"width": "Width",
+				"height": "Height",
+				"wide-layout": "Wide layout",
+				"stacked-layout": "Stacked layout",
+				"wide-place": "row {row}, column {column}",
+				"stacked-place": {
+					"one": "{place}st",
+					"two": "{place}nd",
+					"few": "{place}rd",
+					"other": "{place}th"
+				}
+			}
 		},
 		"tags": {
 			"label": "Tags",

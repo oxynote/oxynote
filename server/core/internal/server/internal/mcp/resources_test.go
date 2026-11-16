@@ -10,6 +10,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
@@ -104,11 +105,11 @@ func Test_Handler_addResources(t *testing.T) {
 			t.Parallel()
 
 			man := &ManagerMock{
-				ToolSetFunc: func(string, string) *tools.Set {
-					return stubSet(&toolsMock.DB{})
+				ToolSetFunc: func(string, string, org.Role) *tools.Set {
+					return stubSet(&toolsMock.DB{}, org.RoleEditor)
 				},
 			}
-			hdl, _ := prepHandler(t, stubSession(t, c.Scopes), man, c.DB)
+			hdl := prepHandler(t, stubRoleSession(t, c.Scopes, org.RoleEditor), man, c.DB)
 
 			code, payload := rpc(t, hdl, `{"jsonrpc":"2.0","id":1,"method":"resources/list","params":{}}`)
 			require.Equal(t, http.StatusOK, code)
@@ -249,7 +250,7 @@ func Test_Handler_readDocument(t *testing.T) {
 
 			hdl := &Handler{log: slog.New(slog.DiscardHandler)}
 
-			res, err := hdl.readDocument(stubSet(c.ToolsDB))(context.Background(), &mcp.ReadResourceRequest{
+			res, err := hdl.readDocument(stubSet(c.ToolsDB, org.RoleEditor))(context.Background(), &mcp.ReadResourceRequest{
 				Params: &mcp.ReadResourceParams{URI: c.URI},
 			})
 

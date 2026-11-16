@@ -782,6 +782,7 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 			Checks: checks(
 				func(t *testing.T, _ *DBMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
 					assert.Equal(t, http.StatusNotFound, rec.Code)
+					assert.JSONEq(t, `{"code":"general","message":"not found"}`, rec.Body.String())
 				},
 				wasFetchCalled(1),
 				wasRetrieveCalled(1),

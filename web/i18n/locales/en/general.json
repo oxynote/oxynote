@@ -91,6 +91,20 @@
 			"1h": "1h",
 			"2h": "2h",
 			"1d": "1d"
+		},
+		"errors": {
+			"role-not-allowed": "Access denied",
+			"role-not-allowed-description": "Your role in this workspace doesn't allow this action"
+		},
+		"member-roles": {
+			"admin": "Admin",
+			"editor": "Editor",
+			"viewer": "Viewer"
+		},
+		"member-role-descriptions": {
+			"admin": "Can do everything an editor can, plus manage the workspace, members, apps and data sources",
+			"editor": "Can do everything a viewer can, plus edit pages, branches, variables, tags and freshness hooks",
+			"viewer": "Can read pages and query data sources"
 		}
 	},
 	"storage-errors": {

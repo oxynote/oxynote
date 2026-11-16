@@ -6,6 +6,8 @@ import {
 	at,
 	findButtonByText,
 	mountUnderTooltipProvider,
+	seedAuthOrganization,
+	seedAuthSession,
 	t,
 } from "../test-helpers"
 import NormalList from "./NormalList.vue"
@@ -167,6 +169,24 @@ describe("<NormalList>", { concurrent: false }, () => {
 			expect(wrapper.text()).toContain(
 				t("variable.empty.builtin-only-description"),
 			)
+		})
+
+		it("tells a viewer who adds variables and offers no button for it", async ({
+			expect,
+		}) => {
+			seedAuthSession({ id: "u1" })
+			seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+
+			const wrapper = await mountList(builtinTree(), [])
+
+			expect
+				.soft(wrapper.text())
+				.toContain(t("variable.empty.builtin-only-description-viewer"))
+			expect
+				.soft(() =>
+					findButtonByText(wrapper, t("variable.empty.builtin-only-action")),
+				)
+				.toThrow()
 		})
 
 		it("asks for edit mode from the create button", async ({ expect }) => {

@@ -4,6 +4,8 @@ import {
 	disposeMockEndpoints,
 	mockEndpoint,
 	runInApp,
+	seedAuthSession,
+	seedQueryData,
 } from "./api/test-helpers"
 import useAuthAPI from "./api/useAuthAPI"
 import useAuthSession from "./useAuthSession"
@@ -37,6 +39,7 @@ const { authClientStub, createAuthClientMock, allStubFns } = vi.hoisted(() => {
 			inviteMember: vi.fn(),
 			cancelInvitation: vi.fn(),
 			removeMember: vi.fn(),
+			updateMemberRole: vi.fn(),
 		},
 	}
 
@@ -63,6 +66,7 @@ const { authClientStub, createAuthClientMock, allStubFns } = vi.hoisted(() => {
 		authClientStub.organization.inviteMember,
 		authClientStub.organization.cancelInvitation,
 		authClientStub.organization.removeMember,
+		authClientStub.organization.updateMemberRole,
 	]
 
 	return {
@@ -195,9 +199,9 @@ const DELEGATION_CASES: {
 	{
 		name: "inviteOrganizationMember",
 		invoke: (auth) =>
-			auth.inviteOrganizationMember({ email: "a@b.co", role: "member" }),
+			auth.inviteOrganizationMember({ email: "a@b.co", role: "editor" }),
 		mock: () => authClientStub.organization.inviteMember,
-		expectedArgs: [{ email: "a@b.co", role: "member" }],
+		expectedArgs: [{ email: "a@b.co", role: "editor" }],
 	},
 	{
 		name: "cancelOrganizationInvitation",
@@ -211,6 +215,13 @@ const DELEGATION_CASES: {
 			auth.removeOrganizationMember({ memberIdOrEmail: "a@b.co" }),
 		mock: () => authClientStub.organization.removeMember,
 		expectedArgs: [{ memberIdOrEmail: "a@b.co" }],
+	},
+	{
+		name: "updateOrganizationMemberRole",
+		invoke: (auth) =>
+			auth.updateOrganizationMemberRole({ memberId: "m1", role: "viewer" }),
+		mock: () => authClientStub.organization.updateMemberRole,
+		expectedArgs: [{ memberId: "m1", role: "viewer" }],
 	},
 ]
 
@@ -236,7 +247,11 @@ describe("useAuthSession", { concurrent: false }, () => {
 		expect(result.data).toEqual(sessionData)
 	})
 
-	it("fetches the organization through the auth client", async ({ expect }) => {
+	// without a limit better-auth returns at most 100 members, and the role
+	// checks need the user's own entry
+	it("fetches the organization through the auth client with every member", async ({
+		expect,
+	}) => {
 		const orgData = { data: { id: "o1", slug: "my-org" }, error: null }
 		authClientStub.organization.getFullOrganization.mockResolvedValue(
 			orgData as never,
@@ -247,7 +262,9 @@ describe("useAuthSession", { concurrent: false }, () => {
 
 		expect(
 			authClientStub.organization.getFullOrganization,
-		).toHaveBeenCalledTimes(1)
+		).toHaveBeenCalledExactlyOnceWith({
+			query: { membersLimit: Number.MAX_SAFE_INTEGER },
+		})
 		expect(result.data).toEqual(orgData)
 	})
 
@@ -284,6 +301,49 @@ describe("useAuthSession", { concurrent: false }, () => {
 			await auth.fetchAccounts.refetch()
 
 			expect(auth.hasPassword.value).toBe(false)
+		})
+	})
+
+	describe("canRoleEdit and canRoleManage", () => {
+		beforeEach(() => {
+			clearQueryCache()
+			seedAuthSession("u1")
+		})
+
+		it.for([
+			{ input: "admin", expected: { canRoleEdit: true, canRoleManage: true } },
+			{
+				input: "editor",
+				expected: { canRoleEdit: true, canRoleManage: false },
+			},
+			{
+				input: "viewer",
+				expected: { canRoleEdit: false, canRoleManage: false },
+			},
+		])(
+			"reads what the $input role allows from the user's own member entry",
+			({ input, expected }, { expect }) => {
+				seedMembers([
+					{ userId: "u2", role: "viewer" },
+					{ userId: "u1", role: input },
+				])
+
+				const { canRoleEdit, canRoleManage } = makeAuthSession()
+
+				expect({
+					canRoleEdit: canRoleEdit.value,
+					canRoleManage: canRoleManage.value,
+				}).toEqual(expected)
+			},
+		)
+
+		it("hides nothing while the member list is unknown", ({ expect }) => {
+			seedQueryData(["auth", "organization"], { data: null, error: null })
+
+			const { canRoleEdit, canRoleManage } = makeAuthSession()
+
+			expect(canRoleEdit.value).toBe(true)
+			expect(canRoleManage.value).toBe(true)
 		})
 	})
 
@@ -429,3 +489,10 @@ describe("useAuthSession", { concurrent: false }, () => {
 		},
 	)
 })
+
+function seedMembers(members: { userId: string; role: string }[]) {
+	seedQueryData(["auth", "organization"], {
+		data: { members: members },
+		error: null,
+	})
+}

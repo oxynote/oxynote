@@ -38,6 +38,8 @@ describe("DiffAttributes", () => {
 			originalIndex: null,
 			oldNode: null,
 			modifiedTextContent: null,
+			gridPlace: null,
+			stackPlace: null,
 		})
 	})
 

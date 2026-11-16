@@ -3,6 +3,8 @@ export interface VolumeBucket {
 	counts: Record<LogLevel, number>
 }
 
+const LOG_LEVELS: ReadonlySet<string> = new Set(Object.values(LogLevel))
+
 // volumeBuckets adds up the line counts of every query, one bucket for each
 // time the source counted at. The source sends every bucket of the window,
 // empty ones as zero. So the buckets are a step apart, and each bar the
@@ -11,13 +13,12 @@ export interface VolumeBucket {
 export function volumeBuckets(
 	results: (GenericQueryResult | null | undefined)[],
 ): VolumeBucket[] {
-	const levels = new Set<string>(Object.values(LogLevel))
 	const buckets = new Map<number, VolumeBucket>()
 
 	for (const result of results) {
 		for (const series of result?.data ?? []) {
 			const label = series.labels.level ?? ""
-			const level = levels.has(label) ? (label as LogLevel) : LogLevel.Unknown
+			const level = isLogLevel(label) ? label : LogLevel.Unknown
 
 			for (const [seconds, value] of series.metrics) {
 				const start = seconds * 1000
@@ -46,4 +47,8 @@ function emptyCounts(): Record<LogLevel, number> {
 		[LogLevel.Trace]: 0,
 		[LogLevel.Unknown]: 0,
 	}
+}
+
+function isLogLevel(value: string): value is LogLevel {
+	return LOG_LEVELS.has(value)
 }

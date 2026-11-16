@@ -78,12 +78,8 @@ export const DRAG_CONTAINER_NODE_TYPES = new Set([
  * Configuration for gap zones based on child node type.
  */
 export interface GapZoneConfig {
-	/** Height of the gap zone (CSS value) - used for horizontal gaps */
+	/** Height of the gap zone (CSS value) */
 	height: string
-	/** Width of the gap zone (CSS value) - used for vertical gaps (e.g., a block grid) */
-	width?: string
-	/** Whether this is a vertical gap zone (for horizontal layouts like a block grid) */
-	verticalGap?: boolean
 	/** Whether to also add a gap zone before this node if it's the first child */
 	includeBeforeFirst?: boolean
 	/** Vertical offset for the first gap decoration (before first child).
@@ -95,12 +91,6 @@ export interface GapZoneConfig {
 	/** Vertical offset for the last gap decoration (after last child)
 	 * Mostly useful in isolated contexts, like ParameterLists in SplitDocumentationLeftSide */
 	yOffsetLast?: number
-	/** Horizontal offset for the first gap decoration (before first child) - used for vertical gaps */
-	xOffsetFirst?: number
-	/** Horizontal offset for middle gap decorations (between children) - used for vertical gaps */
-	xOffsetMiddle?: number
-	/** Horizontal offset for the last gap decoration (after last child) - used for vertical gaps */
-	xOffsetLast?: number
 	/** Left inset - positive values shrink from left, negative values extend (CSS px value) */
 	leftInset?: number
 	/** Right inset - positive values shrink from right, negative values extend (CSS px value) */
@@ -114,7 +104,6 @@ export interface GapZoneConfig {
  * Gap zones are useful when trying to increase sensitivity for dropping
  * nodes between specific nodes.
  * For list items, indentation level can be provided to customize config per depth.
- * For a grid item inside a grid, returns vertical gap config.
  * Return null to skip creating a gap zone for this child.
  */
 export function gapZoneConfigByType(
@@ -122,22 +111,14 @@ export function gapZoneConfigByType(
 	indentationLevel?: number,
 	parentNodeType?: string,
 ): GapZoneConfig | null {
-	// Special case: a grid item inside a grid uses vertical gaps
+	// a grid places a dropped block where the pointer is, so its blocks
+	// get no gap zones
 	if (
 		GRID_ITEM_NAMES.has(childNodeType) &&
 		parentNodeType !== undefined &&
 		BLOCK_GRID_NAMES.has(parentNodeType)
 	) {
-		return {
-			height: "100%",
-			width: "1rem",
-			verticalGap: true,
-			includeBeforeFirst: true,
-			xOffsetFirst: 0,
-			xOffsetMiddle: 0,
-			xOffsetLast: 0,
-			debugColor: "rgba(128, 0, 200, 0.3)",
-		}
+		return null
 	}
 
 	switch (childNodeType) {

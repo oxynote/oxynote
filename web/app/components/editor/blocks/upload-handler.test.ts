@@ -16,11 +16,11 @@ import type { UploadFileHandlerOptions } from "./upload-handler"
 import { paragraph } from "~/components/editor/test-helpers"
 
 const uploadDocumentFile = vi.fn()
-const showToastMessage = vi.fn()
+const showRequestErrorToast = vi.fn()
 
 vi.mock("~/components/toast", () => ({
-	showToastMessage: (...args: unknown[]) => {
-		showToastMessage(...args)
+	showRequestErrorToast: (...args: unknown[]) => {
+		showRequestErrorToast(...args)
 	},
 }))
 
@@ -155,7 +155,7 @@ describe("createUploadFileHandler", { concurrent: false }, () => {
 	beforeEach(() => {
 		uploadDocumentFile.mockReset()
 		uploadDocumentFile.mockResolvedValue(uploaded("a.zip"))
-		showToastMessage.mockReset()
+		showRequestErrorToast.mockReset()
 		vi.stubGlobal("$t", (path: string) => path)
 	})
 
@@ -193,7 +193,7 @@ describe("createUploadFileHandler", { concurrent: false }, () => {
 			expect(uploadedFileId()).not.toBe(
 				blockUid(editor.state.doc, IMAGE_BLOCK_NAME),
 			)
-			expect(showToastMessage).toHaveBeenCalledTimes(0)
+			expect(showRequestErrorToast).toHaveBeenCalledTimes(0)
 		})
 
 		it("inserts an uploading file block after the current block for a non-image", ({
@@ -230,7 +230,7 @@ describe("createUploadFileHandler", { concurrent: false }, () => {
 			expect(uploadedFileId()).not.toBe(
 				blockUid(editor.state.doc, FILE_BLOCK_NAME),
 			)
-			expect(showToastMessage).toHaveBeenCalledTimes(0)
+			expect(showRequestErrorToast).toHaveBeenCalledTimes(0)
 		})
 
 		it.for([
@@ -272,7 +272,7 @@ describe("createUploadFileHandler", { concurrent: false }, () => {
 				"paragraph",
 				`imageBlock:/files/d1/${fileId}-a.zip:false`,
 			])
-			expect(showToastMessage).toHaveBeenCalledTimes(0)
+			expect(showRequestErrorToast).toHaveBeenCalledTimes(0)
 		})
 
 		it("records what the server stored on the file block once the upload finishes", async ({
@@ -301,7 +301,7 @@ describe("createUploadFileHandler", { concurrent: false }, () => {
 				size: 2048,
 				contentType: "application/zip",
 			})
-			expect(showToastMessage).toHaveBeenCalledTimes(0)
+			expect(showRequestErrorToast).toHaveBeenCalledTimes(0)
 		})
 
 		it("clears the upload flag and reports a failed image upload", async ({
@@ -323,9 +323,9 @@ describe("createUploadFileHandler", { concurrent: false }, () => {
 				"imageBlock:null:false",
 			])
 			expect(logged).toHaveBeenCalledWith("Failed to upload image:", error)
-			expect(showToastMessage).toHaveBeenCalledTimes(1)
-			expect(showToastMessage).toHaveBeenCalledWith(
-				"error",
+			expect(showRequestErrorToast).toHaveBeenCalledTimes(1)
+			expect(showRequestErrorToast).toHaveBeenCalledWith(
+				error,
 				"editor.image.errors.upload-failed",
 			)
 		})
@@ -351,9 +351,9 @@ describe("createUploadFileHandler", { concurrent: false }, () => {
 				"fileBlock:null:false",
 			])
 			expect(logged).toHaveBeenCalledWith("Failed to upload file:", error)
-			expect(showToastMessage).toHaveBeenCalledTimes(1)
-			expect(showToastMessage).toHaveBeenCalledWith(
-				"error",
+			expect(showRequestErrorToast).toHaveBeenCalledTimes(1)
+			expect(showRequestErrorToast).toHaveBeenCalledWith(
+				error,
 				"editor.file.errors.upload-failed",
 			)
 		})

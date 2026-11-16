@@ -73,6 +73,53 @@ describe("useEditorStore", () => {
 		})
 	})
 
+	describe("setActiveBranchReadOnly", () => {
+		it("sets the connection's read-only state", ({ expect }) => {
+			const store = makeActiveStore()
+
+			store.setActiveBranchReadOnly(true)
+
+			expect(store.activeBranchReadOnly).toBe(true)
+		})
+
+		it.for([
+			{
+				target: "branch",
+				change: (store: ReturnType<typeof makeStore>) => {
+					store.updateActiveBranchId("branch2")
+				},
+			},
+			{
+				target: "document",
+				change: (store: ReturnType<typeof makeStore>) => {
+					store.updateActiveDocumentId("doc2")
+				},
+			},
+		])(
+			"clears the read-only state when the $target changes",
+			({ change }, { expect }) => {
+				const store = makeActiveStore()
+				store.setActiveBranchReadOnly(true)
+
+				change(store)
+
+				expect(store.activeBranchReadOnly).toBe(false)
+			},
+		)
+
+		it("keeps the read-only state when the same branch and document are selected again", ({
+			expect,
+		}) => {
+			const store = makeActiveStore()
+			store.setActiveBranchReadOnly(true)
+
+			store.updateActiveDocumentId("doc1")
+			store.updateActiveBranchId("branch1")
+
+			expect(store.activeBranchReadOnly).toBe(true)
+		})
+	})
+
 	describe("updatePreloadedBranchIds", () => {
 		it("replaces the preloaded branch ids", ({ expect }) => {
 			const store = makeStore()

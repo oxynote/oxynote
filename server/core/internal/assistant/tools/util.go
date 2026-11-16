@@ -31,16 +31,16 @@ const (
 	_variableIDDescription = "The variable id, from list_variables."
 
 	// _variableDefaultDescription describes a variable's default argument.
-	_variableDefaultDescription = "What everyone sees until they set their own: a decimal, a time range preset or text. Not for a list."
+	_variableDefaultDescription = "The value everyone sees until they pick their own: a decimal, a time range preset or text. Not for a list."
 
 	// _hookIDDescription describes a hook_id argument.
 	_hookIDDescription = "The hook id, from list_hooks."
 
 	// _fromDescription describes the start of a time range.
-	_fromDescription = "Optional. Range start, RFC 3339. Defaults to an hour before to."
+	_fromDescription = "The range start, RFC 3339. Defaults to an hour before to."
 
 	// _toDescription describes the end of a time range.
-	_toDescription = "Optional. Range end, RFC 3339. Defaults to now."
+	_toDescription = "The range end, RFC 3339. Defaults to now."
 
 	// _matchersDescription describes a list of PromQL series selectors.
 	_matchersDescription = `PromQL series selectors, such as ["up", "{job=\"api\"}"].`

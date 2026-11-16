@@ -459,6 +459,134 @@ describe("loadConfig", () => {
 		})
 	})
 
+	describe("oidc login", () => {
+		const oidc = {
+			OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL:
+				"https://idp.example.com/realms/team",
+			OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_ID: "oxynote",
+			OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_SECRET: "secret",
+		}
+
+		it("is off without an issuer", ({ expect }) => {
+			const config = loadConfig(completeEnv())
+
+			expect(config.oidcLogin).toBeUndefined()
+			expect(config.passwordLoginDisabled).toBe(false)
+		})
+
+		it("registers the provider and leaves the defaults to auth-realtime", ({
+			expect,
+		}) => {
+			const config = loadConfig(completeEnv(oidc))
+
+			expect(config.oidcLogin).toEqual({
+				issuerUrl: "https://idp.example.com/realms/team",
+				clientId: "oxynote",
+				clientSecret: "secret",
+				displayName: "",
+				scopes: "",
+				caCertsPath: undefined,
+			})
+		})
+
+		it("passes the display name and scopes through", ({
+			expect,
+		}) => {
+			const config = loadConfig(
+				completeEnv({
+					...oidc,
+					OXYNOTE_SOCIAL_LOGIN_OIDC_DISPLAY_NAME:
+						"Keycloak",
+					OXYNOTE_SOCIAL_LOGIN_OIDC_SCOPES:
+						"openid email",
+				}),
+			)
+
+			expect(config.oidcLogin?.displayName).toBe("Keycloak")
+			expect(config.oidcLogin?.scopes).toBe("openid email")
+		})
+
+		it("takes the path of a private CA's certificates", ({
+			expect,
+		}) => {
+			const config = loadConfig(
+				completeEnv({
+					...oidc,
+					OXYNOTE_SOCIAL_LOGIN_OIDC_CA_CERTS:
+						"/oxynote/oidc-ca.pem",
+				}),
+			)
+
+			expect(config.oidcLogin?.caCertsPath).toBe(
+				"/oxynote/oidc-ca.pem",
+			)
+		})
+
+		it("lets password login be disabled when oidc is configured", ({
+			expect,
+		}) => {
+			const config = loadConfig(
+				completeEnv({
+					...oidc,
+					OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED:
+						"true",
+				}),
+			)
+
+			expect(config.passwordLoginDisabled).toBe(true)
+		})
+
+		it.for([
+			{
+				name: "an issuer without a client secret",
+				input: {
+					...oidc,
+					OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_SECRET:
+						undefined,
+				},
+				expected: "OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_SECRET",
+			},
+			{
+				name: "a display name without an issuer",
+				input: {
+					OXYNOTE_SOCIAL_LOGIN_OIDC_DISPLAY_NAME:
+						"SSO",
+				},
+				expected: "OXYNOTE_SOCIAL_LOGIN_OIDC_DISPLAY_NAME",
+			},
+			{
+				name: "an issuer that is not an http URL",
+				input: {
+					...oidc,
+					OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL:
+						"keycloak:8080/realms/team",
+				},
+				expected: "OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL",
+			},
+			{
+				name: "a relative CA certificates path",
+				input: {
+					...oidc,
+					OXYNOTE_SOCIAL_LOGIN_OIDC_CA_CERTS:
+						"oidc-ca.pem",
+				},
+				expected: "OXYNOTE_SOCIAL_LOGIN_OIDC_CA_CERTS",
+			},
+			{
+				name: "disabled password login with no provider",
+				input: {
+					OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED:
+						"true",
+				},
+				expected: "OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED",
+			},
+		])("rejects $name", ({ input, expected }, { expect }) => {
+			expect(() => loadConfig(completeEnv(input))).toThrow(
+				expected,
+			)
+		})
+	})
+
 	describe("tuning", () => {
 		it("passes the values through as the strings the components parse", ({
 			expect,

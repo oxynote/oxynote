@@ -16,6 +16,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/rs/xid"
@@ -545,9 +546,16 @@ func Test_cachedQuery(t *testing.T) {
 		Err    error
 		Calls  int
 
+		// TestHeld holds the data source's connection test for as long as
+		// the callers run.
+		TestHeld bool
+
 		// Sets counts the answers written to the cache, a failed write
 		// included.
 		Sets int
+
+		// Forgotten indicates whether the runner's passing test is dropped.
+		Forgotten bool
 
 		// Hits, Misses and Shared count the lookups answered each way,
 		// -1 standing for none.
@@ -671,6 +679,29 @@ func Test_cachedQuery(t *testing.T) {
 			Misses:  1,
 			Shared:  4,
 		},
+		"A data source found down is tested again": {
+			Callers:   1,
+			CallErr:   processor.ConnectionStatusUnreachable.Error(),
+			Err:       processor.ConnectionStatusUnreachable.Error(),
+			Calls:     1,
+			Hits:      -1,
+			Misses:    1,
+			Shared:    -1,
+			Forgotten: true,
+		},
+		// only the caller that ran the query waits for the test to end; the
+		// ones sharing its answer have it already.
+		"Calls sharing a failing query do not wait on the connection test": {
+			Callers:   5,
+			CallErr:   processor.ConnectionStatusUnreachable.Error(),
+			TestHeld:  true,
+			Err:       processor.ConnectionStatusUnreachable.Error(),
+			Calls:     1,
+			Hits:      -1,
+			Misses:    1,
+			Shared:    4,
+			Forgotten: true,
+		},
 	}
 
 	for cn, c := range cc {
@@ -691,9 +722,14 @@ func Test_cachedQuery(t *testing.T) {
 				w, buf := testutil.NewBuffer()
 				m.log = slog.New(slog.NewTextHandler(w, nil))
 
+				r := prepStubRunner(m, &stubClient{}, timeutil.Now())
+				r.testedAt = timeutil.Now()
+				r.tested = processor.ConnectionStatusSuccess
+
 				var (
 					mu    sync.Mutex
 					calls int
+					done  int
 				)
 
 				release := make(chan struct{})
@@ -719,12 +755,30 @@ func Test_cachedQuery(t *testing.T) {
 
 				for i := range c.Callers {
 					supv.Go(func(context.Context) {
-						results[i], errs[i] = cachedQuery(ctx, m, "key", call)
+						results[i], errs[i] = cachedQuery(ctx, m, r.ds.ID, "key", call)
+
+						mu.Lock()
+						done++
+						mu.Unlock()
 					})
 				}
 
-				synctest.Wait()
-				close(release)
+				if c.TestHeld {
+					unlock, lerr := m.tests.Lock(ctx, r.ds.ID)
+					require.NoError(t, lerr)
+
+					synctest.Wait()
+					close(release)
+					synctest.Wait()
+
+					assert.Equal(t, c.Callers-1, done)
+
+					unlock()
+				} else {
+					synctest.Wait()
+					close(release)
+				}
+
 				supv.Wait()
 
 				require.NoError(t, w.Flush())
@@ -735,6 +789,7 @@ func Test_cachedQuery(t *testing.T) {
 				}
 
 				assert.Equal(t, c.Calls, calls)
+				assert.Equal(t, c.Forgotten, r.testedAt.IsZero())
 				assert.Len(t, cache.SetCalls(), c.Sets)
 				assert.InDelta(t, c.Hits, lookups(t, rg, _lookupHit), 0.0001)
 				assert.InDelta(t, c.Misses, lookups(t, rg, _lookupMiss), 0.0001)

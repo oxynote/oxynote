@@ -1,4 +1,4 @@
-import { BASE_URL, MAILPIT_URL } from "./helpers/config"
+import { BASE_URL, MAILPIT_URL, OIDC_URL } from "./helpers/config"
 import { buildStack, startStack } from "./helpers/stack"
 
 const READY_TIMEOUT = 180_000
@@ -28,6 +28,7 @@ export default async function globalSetup(): Promise<void> {
 		Promise.all([
 			waitForService("web", `${BASE_URL}/login`),
 			waitForService("core", `${BASE_URL}/core/api/github`),
+			waitForService("OIDC core", `${OIDC_URL}/core/api/github`),
 			waitForService(
 				"auth-realtime",
 				`${BASE_URL}/auth-realtime/api/auth-config`,

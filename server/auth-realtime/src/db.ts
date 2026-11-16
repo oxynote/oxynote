@@ -1,5 +1,6 @@
 import { Pool } from "pg"
 import { Kysely, PostgresDialect } from "kysely"
+import type { Role } from "./roles.js"
 
 // the columns this service reads. Better Auth owns writing these tables and
 // core's migrations own creating them; what is declared here is only what a
@@ -31,6 +32,7 @@ export interface OrganizationsTable {
 export interface OrganizationMembersTable {
 	fk_user_id: string
 	fk_organization_id: string
+	role: string
 }
 
 export interface OrganizationInvitationsTable {
@@ -51,15 +53,18 @@ export interface OAuthConsentsTable {
 // tested against four stubbed methods instead of a mocked chain.
 export interface Store {
 	totalOrganizationCount(): Promise<number>
-	organizationMemberCount(organizationId: string): Promise<number>
+	organizationMemberCount(
+		organizationId: string,
+		role?: Role,
+	): Promise<number>
 	hasPendingInvitation(email: string): Promise<boolean>
 	credentialPasswordHash(email: string): Promise<string | null>
 	userOrganizationId(userId: string): Promise<string | null>
 	hasOAuthConsent(clientId: string, userId: string): Promise<boolean>
-	isOrganizationMember(
+	memberRole(
 		userId: string,
 		organizationId: string,
-	): Promise<boolean>
+	): Promise<string | null>
 }
 
 // better-auth needs the dialect rather than the query builder: handing it
@@ -83,14 +88,21 @@ export function createStore(db: Kysely<Database>): Store {
 			return Number(res.count)
 		},
 
-		async organizationMemberCount(organizationId) {
-			const res = await db
+		// without a role it counts every member.
+		async organizationMemberCount(organizationId, role) {
+			let query = db
 				.selectFrom("organization_members")
 				.where(
 					"fk_organization_id",
 					"=",
 					organizationId,
 				)
+
+			if (role !== undefined) {
+				query = query.where("role", "=", role)
+			}
+
+			const res = await query
 				.select(db.fn.countAll<string>().as("count"))
 				.executeTakeFirstOrThrow()
 
@@ -158,7 +170,8 @@ export function createStore(db: Kysely<Database>): Store {
 			return res !== undefined
 		},
 
-		async isOrganizationMember(userId, organizationId) {
+		// null when the user is not a member of the organization.
+		async memberRole(userId, organizationId) {
 			const res = await db
 				.selectFrom("organization_members")
 				.where("fk_user_id", "=", userId)
@@ -167,10 +180,10 @@ export function createStore(db: Kysely<Database>): Store {
 					"=",
 					organizationId,
 				)
-				.select("fk_user_id")
+				.select("role")
 				.executeTakeFirst()
 
-			return res !== undefined
+			return res ? res.role : null
 		},
 	}
 }

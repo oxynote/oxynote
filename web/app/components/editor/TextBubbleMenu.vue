@@ -34,7 +34,11 @@ const emit = defineEmits<{
 	(e: "add-thread" | "edit-link"): void
 }>()
 
+const { canRoleEdit } = useAuthSession()
 const isDiffMode = computed(() => !!props.diffContext)
+// the diff menu holds only a comment, which a viewer cannot add. So a
+// viewer gets no diff menu, and an open one empties when the role changes.
+const hasActions = computed(() => !isDiffMode.value || canRoleEdit.value)
 const showBubbleMenu = ref(false)
 const showLinkCreateMenu = ref(false)
 
@@ -93,11 +97,10 @@ function shouldShowBubbleMenuWrapped(opts: {
 	to: number
 }): boolean {
 	if (isDiffMode.value) {
-		return shouldShowDiffBubbleMenu(opts)
+		return hasActions.value && shouldShowDiffBubbleMenu(opts)
 	}
 
 	const shouldShow = shouldShowBubbleMenu(opts)
-
 	if (!shouldShow) {
 		closeLinkCreateMenu()
 	}
@@ -141,6 +144,7 @@ function hideMenu() {
 		class="z-5"
 	>
 		<div
+			v-if="hasActions"
 			:data-visible="showBubbleMenu ? '' : undefined"
 			class="flex gap-0.75 rounded-lg border border-border bg-background p-0.75 opacity-0 shadow-xs transition-opacity duration-150 data-visible:opacity-100"
 		>

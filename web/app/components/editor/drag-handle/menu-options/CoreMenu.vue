@@ -18,7 +18,9 @@ import {
 import SplitDocParameterListMenu from "./SplitDocParameterListMenu.vue"
 import SplitDocParameterListItemMenu from "./SplitDocParameterListItemMenu.vue"
 import { deleteEmptyBlockGrids } from "../../blocks/grid"
+import { stripNode } from "../../tiptap-utils/node"
 import { BLOCK_GRID_NAMES, GRID_ITEM_NAMES } from "../../blocks/grid/utils"
+import { isWideGrid } from "../../blocks/grid/screen-order"
 import GridItemMenu from "./GridItemMenu.vue"
 import { isNodeOrDescendantsBeingEditedByOther } from "../../collaboration"
 import { showToastMessage } from "~/components/toast"
@@ -43,12 +45,16 @@ const { createCurrentUrl } = useCurrentUrl()
 
 const editorStore = useEditorStore()
 const { isEditable } = useEditorMeta()
+const { canRoleEdit } = useAuthSession()
 const isEditingDisabled = computed(() => {
 	return !isEditable.value || editorStore.reviewableDiffActive
 })
 const canAddComment = computed(() => {
 	// NOTE reviewable actions checks should be removed once we start using more branches
-	return isEditable.value || editorStore.branchReviewableActionsActive
+	return (
+		canRoleEdit.value &&
+		(isEditable.value || editorStore.branchReviewableActionsActive)
+	)
 })
 
 // this is needed to keep track of the last valid hovered state
@@ -107,7 +113,11 @@ const optTypes = computed(() => {
 	} else if (
 		GRID_ITEM_NAMES.has(hoveredState.value.lastData.hovered.node.type.name)
 	) {
-		res.push("grid-item", "default")
+		if (offersSize(hoveredState.value.lastData.hovered.nodePos)) {
+			res.push("grid-item")
+		}
+
+		res.push("default")
 	} else {
 		res.push("default")
 	}
@@ -191,28 +201,6 @@ function copyLink() {
 	void navigator.clipboard.writeText(url.toString())
 }
 
-function stripNode(node: JSONContent): JSONContent {
-	const nextNode: JSONContent = { ...node }
-
-	if (nextNode.attrs && "uid" in nextNode.attrs) {
-		nextNode.attrs = { ...nextNode.attrs, uid: null }
-	}
-
-	if (nextNode.attrs && "nodeCommentId" in nextNode.attrs) {
-		nextNode.attrs = { ...nextNode.attrs, nodeCommentId: null }
-	}
-
-	if (nextNode.marks) {
-		nextNode.marks = nextNode.marks.filter((mark) => mark.type !== "comment")
-	}
-
-	if (nextNode.content) {
-		nextNode.content = nextNode.content.map(stripNode)
-	}
-
-	return nextNode
-}
-
 function duplicateBlock() {
 	if (props.hovered == null) {
 		return
@@ -239,6 +227,30 @@ function duplicateBlock() {
 	}
 
 	chain.focus().insertContentAt(insertPos, clonedNode).run()
+}
+
+// offersSize reports whether the menu offers a width and height for the
+// block at pos. A grid that stacks its blocks shows each one at full width
+// and one row tall. A size set there would only change the wide layout,
+// which is out of view. So the menu offers no size there.
+function offersSize(pos: number): boolean {
+	const { state, view } = props.editor
+
+	// the block can be gone by the time the menu opens
+	if (pos > state.doc.content.size || !state.doc.nodeAt(pos)) {
+		return false
+	}
+
+	if (!BLOCK_GRID_NAMES.has(state.doc.resolve(pos).parent.type.name)) {
+		return true
+	}
+
+	const content = view.nodeDOM(pos)?.parentElement
+
+	return (
+		!(content instanceof HTMLElement) ||
+		isWideGrid(content.getBoundingClientRect().width)
+	)
 }
 </script>
 <template>

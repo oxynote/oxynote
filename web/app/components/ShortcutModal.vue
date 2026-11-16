@@ -7,6 +7,7 @@ const open = defineModel<boolean>({ default: false })
 
 const { osType } = useDetectHost()
 const { t } = useI18n({ useScope: "global" })
+const { canRoleEdit, canRoleManage } = useAuthSession()
 
 interface Row {
 	id: string
@@ -80,21 +81,39 @@ const slashRows = allItems.map((item): Row => ({
 	mono: true,
 }))
 
-const sections = computed(() => [
-	...SHORTCUT_GROUPS.map((group) => ({
-		id: group.id,
-		title: t(group.i18nKey),
-		rows: [
-			...group.shortcuts.map(entryRow),
-			...(group.id === "markdown" ? markdownBlockRows : []),
-		],
-	})),
-	{
-		id: "slash-commands",
-		title: t("shortcuts.groups.slash-commands"),
-		rows: slashRows,
-	},
-])
+// markdown blocks and slash commands insert content, so they need an editor
+const sections = computed(() =>
+	[
+		...SHORTCUT_GROUPS.map((group) => ({
+			id: group.id,
+			title: t(group.i18nKey),
+			rows: [
+				...group.shortcuts
+					.filter((entry) => canRoleUse(entry.minimumRole))
+					.map(entryRow),
+				...(group.id === "markdown" && canRoleEdit.value
+					? markdownBlockRows
+					: []),
+			],
+		})),
+		{
+			id: "slash-commands",
+			title: t("shortcuts.groups.slash-commands"),
+			rows: canRoleEdit.value ? slashRows : [],
+		},
+	].filter((section) => section.rows.length > 0),
+)
+
+function canRoleUse(minimumRole: Role) {
+	switch (minimumRole) {
+		case "viewer":
+			return true
+		case "editor":
+			return canRoleEdit.value
+		case "admin":
+			return canRoleManage.value
+	}
+}
 </script>
 <template>
 	<ShadcnUiDialog :open="open" @update:open="(val) => (open = val)">

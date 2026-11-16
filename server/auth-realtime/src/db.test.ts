@@ -61,11 +61,26 @@ describe("createStore", () => {
 			expect(selectFrom).toHaveBeenCalledWith(
 				"organization_members",
 			)
-			expect(chain.where).toHaveBeenCalledWith(
-				"fk_organization_id",
-				"=",
-				"org-1",
-			)
+			expect(chain.where.mock.calls).toEqual([
+				["fk_organization_id", "=", "org-1"],
+			])
+		})
+
+		it("counts only the members holding the given role", async ({
+			expect,
+		}) => {
+			const { store, chain } = stubDb({ count: "1" })
+
+			expect(
+				await store.organizationMemberCount(
+					"org-1",
+					"admin",
+				),
+			).toBe(1)
+			expect(chain.where.mock.calls).toEqual([
+				["fk_organization_id", "=", "org-1"],
+				["role", "=", "admin"],
+			])
 		})
 
 		it("propagates a failed query", async ({ expect }) => {
@@ -295,23 +310,21 @@ describe("createStore", () => {
 		})
 	})
 
-	describe("isOrganizationMember", () => {
-		it("matches the membership on both the user and the organization", async ({
+	describe("memberRole", () => {
+		it("returns the role of the membership matching both the user and the organization", async ({
 			expect,
 		}) => {
 			const { store, chain, selectFrom } = stubDb({
-				fk_user_id: "user-1",
+				role: "viewer",
 			})
 
-			expect(
-				await store.isOrganizationMember(
-					"user-1",
-					"org-1",
-				),
-			).toBe(true)
+			expect(await store.memberRole("user-1", "org-1")).toBe(
+				"viewer",
+			)
 			expect(selectFrom).toHaveBeenCalledWith(
 				"organization_members",
 			)
+			expect(chain.select).toHaveBeenCalledWith("role")
 			expect(chain.where).toHaveBeenCalledWith(
 				"fk_user_id",
 				"=",
@@ -324,17 +337,14 @@ describe("createStore", () => {
 			)
 		})
 
-		it("reports no membership when the user has left", async ({
+		it("returns null when the user has left", async ({
 			expect,
 		}) => {
 			const { store } = stubDb(undefined)
 
-			expect(
-				await store.isOrganizationMember(
-					"user-1",
-					"org-1",
-				),
-			).toBe(false)
+			expect(await store.memberRole("user-1", "org-1")).toBe(
+				null,
+			)
 		})
 
 		it("propagates a failed query", async ({ expect }) => {
@@ -343,7 +353,7 @@ describe("createStore", () => {
 			chain.executeTakeFirst.mockRejectedValue(failure)
 
 			await expect(
-				store.isOrganizationMember("user-1", "org-1"),
+				store.memberRole("user-1", "org-1"),
 			).rejects.toBe(failure)
 		})
 	})

@@ -90,6 +90,7 @@ export default withNuxt([
 			"vite.electron.config.ts",
 			"vitest.config.ts",
 			"vitest.nuxt-setup.ts",
+			"vitest.nuxt-module.ts",
 			"electron/preload.d.ts",
 		],
 		languageOptions: {
@@ -150,6 +151,8 @@ export default withNuxt([
 						"/^editor\\.hooks\\.scheduled-reminder\\.(duration|when|remind-again)-options\\./",
 						"/^editor\\.metrics\\.config\\.modal-title-diff-/",
 						"/^editor\\.config-modal-utils\\.query-placeholder\\./",
+						"/^editor\\.diff-change-marker\\.grid-item\\.stacked-place\\./",
+						"/^editor\\.grid-item\\.(width|height)-options\\./",
 						"/^editor\\.logs\\.config\\.modal-title-diff-/",
 						"/^editor\\.logs\\.config\\.timestamp-format-options\\./",
 						"/^editor\\.logs\\.config\\.order-options\\./",
@@ -158,12 +161,14 @@ export default withNuxt([
 						"/^editor\\.logs\\.status\\./",
 						"/^general\\.refresh-interval-options(-short)?\\./",
 						"/^general\\.time-range-options\\./",
+						"/^general\\.member-role-descriptions\\./",
 						"/^editor\\.metrics\\.config\\.unit-options\\./",
 						"/^editor\\.metrics\\.simulation\\.preset-options\\./",
 						"/^editor\\.navbar\\.document-modes\\./",
 						"/^settings\\.action-modals\\.data-source-removal\\.title\\./",
 						"/^settings\\.action-modals\\.data-source-upsert\\./",
 						"/^settings\\.data-sources\\./",
+						"/^settings\\.workspace\\.success-messages\\.role\\.description\\./",
 						// literal keys kept in data structures and passed to
 						// t() later (the rule only tracks direct call sites)
 						"/^editor\\.ai-chat\\.tool-status\\./",

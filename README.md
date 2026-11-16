@@ -4,10 +4,10 @@
 
 **Your system, with subtitles.**
 
-A self-hosted workspace that puts live metric charts inside the pages that
-explain them. The charts run your Prometheus and SQL queries, and a change
-to a page goes through a draft, a diff and an approval, like a pull
-request. From the authors of
+A self-hosted workspace that puts live metric charts and logs inside the
+pages that explain them. They run your Prometheus, Loki and SQL queries,
+and a change to a page goes through a draft, a diff and an approval, like a
+pull request. From the authors of
 [ttlcache](https://github.com/jellydator/ttlcache).
 
 [![License](https://img.shields.io/github/license/oxynote/oxynote)](LICENSE)
@@ -17,26 +17,26 @@ request. From the authors of
 </div>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-and-explanation-dark.webp">
-  <img src="docs/images/chart-and-explanation-light.webp" alt="An Oxynote page about delayed shipments: a live Position feed latency chart with p50, p95 and p99 lines and a Stale feed threshold at 200 ms, then a paragraph on when to restart the feed and the kubectl commands that do it. The page tree and tags fill the sidebar.">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/logs-and-metrics-dark.webp">
+  <img src="docs/images/logs-and-metrics-light.webp" alt="An Oxynote page called Deploy Watch: a paragraph on how a change moves from merge to production, then a Release pipeline log with error, warning and info rows beside a Latency during rollout chart with p50, p95 and p99 lines and an SLO threshold at 300 ms. The page tree and tags fill the sidebar.">
 </picture>
 
 ## Why Oxynote Exists
 
 Keeping a service running takes several tools. You read about it in a wiki
-such as Notion and watch its metric charts in Grafana or Datadog, while the
-commands that fix it sit in a terminal history or a chat thread. When
+such as Notion and watch its metric charts and logs in Grafana or Datadog,
+while the commands that fix it sit in a terminal history or a chat thread. When
 something breaks, you connect all of that by hand, across tools with
 separate logins and separate histories.
 
-Oxynote is a new kind of tool because it puts the explanation and the live
-metric charts on one page. Each chart runs its own Prometheus or SQL query,
-and one draft carries a change to the chart and its text through the same
-review.
+Oxynote is a new kind of tool because it puts the explanation, the live
+metric charts and the logs on one page. Each chart or log block runs its
+own Prometheus, Loki or SQL query, and one draft carries a change to the
+block and its text through the same review.
 
 The goal is to watch and run the service from that same page. Its uptime
-monitor, its logs, a view into its database and its admin actions would sit
-next to the explanation, and changes to them would go through the same
+monitor, a view into its database and its admin actions would sit next to
+the explanation, and changes to them would go through the same
 review. All of them are in development.
 
 <details>
@@ -107,7 +107,7 @@ and the flag on one page, edited together, reviewed like a pull request,
 and readable by a tired person at night or by an agent. Each tool we had
 was great at one of those things and paid little attention to the others.
 So Oxynote starts with the pieces we needed most: pages people edit
-together, live metric charts, reviews and Stripe-style API docs. Uptime
+together, live metric charts and logs, reviews and Stripe-style API docs. Uptime
 monitors, AI evals, a database viewer and admin actions are in
 development.
 
@@ -128,16 +128,17 @@ password `oxynote-admin-1234`. The login page shows both until you change
 the password, so change it in the settings before anyone else can reach the
 instance.
 
-[docker/prod/README.md](docker/prod/README.md) covers the configuration,
-from a real domain to an external PostgreSQL. To run from source, see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+The [self-hosting guide](https://oxynote.io/blog/self-host-oxynote) walks
+through the install and the steps after it: Docker Compose, another port or
+domain, a first page with a metric chart, backups and upgrades. To run
+from source, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Features
 
 Oxynote keeps the pages about your systems, such as architecture notes, API
 references, on-call steps and release checklists, in one page tree. Those
-pages can query Prometheus, PostgreSQL, Supabase, MySQL or MariaDB, so the
-live metrics sit right where you write about them.
+pages can query Prometheus, Loki, PostgreSQL, Supabase, MySQL or MariaDB,
+so the live metrics and logs sit right where you write about them.
 
 ### Live Metric Charts
 
@@ -150,11 +151,34 @@ A Live Metrics block draws a time series, a bar chart or a gauge from one
 or more PromQL or SQL queries, and the editor redraws it as you type.
 Thresholds and units sit next to the query. Grafana macros such as
 `$__rate_interval` and `$__timeFilter` work too, so a query you already
-use in Grafana usually moves over with a paste.
+use there usually moves over with a paste.
 
 No metric yet? Pick a pattern such as latency or error rate, and the chart
 draws simulated data until the real series arrives. SQL sources need a
 read-only database user, so a page can never change your data.
+
+To connect your own metric data source, follow the
+[Prometheus guide](https://oxynote.io/blog/connect-prometheus) or the
+[PostgreSQL guide](https://oxynote.io/blog/connect-postgresql).
+
+### Live Logs
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/logs-dark.webp">
+  <img src="docs/images/logs-light.webp" alt="A Live Logs block titled Findings and merges: a volume strip of stacked bars across the time range, then secret scanner and pull request logs with warning, info and error levels. One error log is open, showing its raw text and its origin, metadata and content fields, each with buttons to show only or hide logs with that value.">
+</picture>
+
+A Live Logs block runs one or more queries against a log source and lists
+the newest logs, each level in its own color. A volume strip above
+them shows how many logs arrived across the time range, so a sudden spike
+is easy to spot.
+
+Click a log to open its raw text and fields. One more click on a field
+keeps only the logs with that value, or hides them, and the query stays as
+you wrote it.
+
+To connect your own logs, follow the
+[Loki guide](https://oxynote.io/blog/connect-loki).
 
 ### Variables
 
@@ -177,8 +201,8 @@ nobody else's.
 </picture>
 
 Type `/` for the block menu: headings, lists, checklists, code, callouts,
-images, files, Figma embeds, Mermaid diagrams, Stripe-style API docs and
-live metrics. Markdown shortcuts such as `##` work as you type. Two go
+images, files, Figma embeds, Mermaid diagrams, Stripe-style API docs, live
+metrics and live logs. Markdown shortcuts such as `##` work as you type. Two go
 further: `%%` adds a live metric chart, and `||` starts an API doc with the
 fields on one side and an example request on the other.
 
@@ -261,14 +285,14 @@ design follows from a few fixed choices:
 
 The goal is one place to explain, watch and run your systems. Uptime
 monitors, AI evals, a database viewer and admin actions are in development,
-along with logs, traces and alerting.
+along with traces and alerting.
 
 ## FAQ
 
-**Can it replace Grafana or Datadog?** That is the goal. Metric charts are
-covered today: Oxynote runs your Prometheus and SQL queries, Grafana's
-macros included, inside pages you can write around and review like a pull
-request. Logs, traces and alerting are in development.
+**Can it replace Grafana or Datadog?** That is the goal. Metric charts and
+logs are covered today: Oxynote runs your Prometheus, Loki and SQL queries
+inside pages you can write around and review like a pull request. Traces
+and alerting are in development.
 
 **Is there a cloud version?** Not yet. A cloud version is planned, and
 today Oxynote runs as one container on your own servers.

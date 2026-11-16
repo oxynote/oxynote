@@ -4,7 +4,7 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { flushPromises, type VueWrapper } from "@vue/test-utils"
 import { vi } from "vitest"
-import type { H3Event } from "h3"
+import { setResponseStatus, type H3Event } from "h3"
 import type { ComponentPublicInstance, VNode } from "vue"
 import { toast } from "vue-sonner"
 import {
@@ -90,6 +90,7 @@ export function seedCapabilities(capabilities: Partial<Capabilities> = {}) {
 export function seedAuthConfig(config: Partial<AuthConfig> = {}) {
 	seedQueryData(["auth", "config"], {
 		methods: ["email-password"],
+		oidcDisplayName: null,
 		emailEnabled: true,
 		singleOrganization: false,
 		maxOrganizationMembers: 5,
@@ -367,13 +368,31 @@ export function mockAuthEndpoint(
 	respond: (call: RecordedCall, event: H3Event) => unknown,
 	method: "GET" | "POST" = "POST",
 ): RecordedCall[] {
+	// a request may reach either spelling, so both record into one list
+	const calls: RecordedCall[] = []
+
+	const record = (call: RecordedCall, event: H3Event) => {
+		calls.push(call)
+
+		return respond(call, event)
+	}
+
 	mockEndpoint(
 		method,
 		`http://test.local/auth-realtime/api/auth/${endpoint}`,
-		respond,
+		record,
 	)
+	mockEndpoint(method, `/auth-realtime/api/auth/${endpoint}`, record)
 
-	return mockEndpoint(method, `/auth-realtime/api/auth/${endpoint}`, respond)
+	return calls
+}
+
+// answers a request the way core refuses one for the member's role. The
+// api client then raises its own toast for it.
+export function refuseForRole(event: H3Event) {
+	setResponseStatus(event, 403)
+
+	return { code: "member.forbidden" }
 }
 
 // components that refetch the organization after a change bypass the
@@ -391,9 +410,18 @@ export function mockAuthOrganization(organization: Record<string, unknown>) {
 // resolves a message through the same i18n instance the components
 // render with, so an assertion never carries a second copy of the
 // english text. Named placeholders take their values here, exactly as
-// the component passes them: t("sidebar.search.no-results", { query })
-export function t(key: string, params: Record<string, unknown> = {}): string {
-	const message = runInApp(() => useNuxtApp().$i18n.t(key, params))
+// the component passes them: t("sidebar.search.no-results", { query }).
+// A plural message also takes the count that picks its form.
+export function t(
+	key: string,
+	params: Record<string, unknown> = {},
+	plural?: number,
+): string {
+	const message = runInApp(() =>
+		plural === undefined
+			? useNuxtApp().$i18n.t(key, params)
+			: useNuxtApp().$i18n.t(key, params, plural),
+	)
 
 	// vue-i18n answers a miss with the key itself, which would leave an
 	// assertion comparing two identical key strings and passing

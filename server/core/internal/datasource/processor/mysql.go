@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 )
 
 const (
@@ -40,6 +41,41 @@ var _mysqlReadOnlyPrivileges = map[string]struct{}{
 	"REPLICATION SLAVE":  {},
 	"USAGE":              {},
 }
+
+// _mysqlAuthErrors are the driver error numbers that mean the server refused
+// the credentials rather than failing to answer.
+var _mysqlAuthErrors = map[uint16]bool{
+	1044: true, // access denied for user to database.
+	1045: true, // access denied for user.
+	1698: true, // access denied, authentication plugin refused.
+}
+
+// _sqlNumericTypes are the column types whose values carry a magnitude
+// rather than a name. DECIMAL is the one that matters most: the driver
+// returns it as bytes, so nothing about the value says it is a number.
+var _sqlNumericTypes = map[string]bool{
+	"TINYINT":            true,
+	"SMALLINT":           true,
+	"MEDIUMINT":          true,
+	"INT":                true,
+	"INTEGER":            true,
+	"BIGINT":             true,
+	"UNSIGNED TINYINT":   true,
+	"UNSIGNED SMALLINT":  true,
+	"UNSIGNED MEDIUMINT": true,
+	"UNSIGNED INT":       true,
+	"UNSIGNED BIGINT":    true,
+	"DECIMAL":            true,
+	"NUMERIC":            true,
+	"FLOAT":              true,
+	"DOUBLE":             true,
+	"REAL":               true,
+	"BIT":                true,
+}
+
+// _mysqlColumnList matches the parenthesized column list of a column-level
+// grant.
+var _mysqlColumnList = regexp.MustCompile(`\([^()]*\)`)
 
 // MySQL represents a MySQL data source processor. It keeps a pool of
 // connections to the data source until it is closed.
@@ -98,20 +134,12 @@ func (m *MySQL) TestConnection(ctx context.Context) (ConnectionStatus, error) {
 	return ConnectionStatusSuccess, nil
 }
 
-// _mysqlAuthErrors are the driver error numbers that mean the server refused
-// the credentials rather than failing to answer.
-var _mysqlAuthErrors = map[uint16]bool{
-	1044: true, // access denied for user to database.
-	1045: true, // access denied for user.
-	1698: true, // access denied, authentication plugin refused.
-}
-
 // mysqlConnectionStatus classifies a failed connection attempt. A refused
 // handshake is reported as unauthorized rather than unreachable: the two are
 // indistinguishable to the user otherwise, and a typo in the password is the
 // far more common of them.
 func mysqlConnectionStatus(err error) ConnectionStatus {
-	if errors.Is(err, _errInvalidCACertificate) {
+	if errors.Is(err, credentials.ErrInvalidCACertificate) {
 		return ConnectionStatusInvalidCACertificate
 	}
 
@@ -354,7 +382,7 @@ func (m *MySQL) buildConfig() (*mysql.Config, error) {
 
 	rawCreds := m.inp.Credentials()
 
-	creds, err := rawCreds.basic()
+	creds, err := rawCreds.Basic()
 	if err != nil {
 		return nil, err
 	}
@@ -385,8 +413,8 @@ func (m *MySQL) buildConfig() (*mysql.Config, error) {
 	// a CA certificate replaces whatever TLS the URL asks for, which could
 	// skip the certificate the CA is there to check. The driver checks it
 	// against the host.
-	if creds.CACertificate != "" {
-		roots, rerr := creds.rootCAs()
+	if creds.HasCACertificate() {
+		roots, rerr := creds.RootCAs()
 		if rerr != nil {
 			return nil, rerr
 		}
@@ -450,33 +478,6 @@ func (mqr *MySQLQueryResult) sql() sqlQueryResult {
 func (mqr *MySQLQueryResult) Transform(ct ChartType) (*QueryResult, error) {
 	return mqr.sql().transform(ct, mysqlParseTimestamp, mysqlParseNumericValue)
 }
-
-// _sqlNumericTypes are the column types whose values carry a magnitude
-// rather than a name. DECIMAL is the one that matters most: the driver
-// returns it as bytes, so nothing about the value says it is a number.
-var _sqlNumericTypes = map[string]bool{
-	"TINYINT":            true,
-	"SMALLINT":           true,
-	"MEDIUMINT":          true,
-	"INT":                true,
-	"INTEGER":            true,
-	"BIGINT":             true,
-	"UNSIGNED TINYINT":   true,
-	"UNSIGNED SMALLINT":  true,
-	"UNSIGNED MEDIUMINT": true,
-	"UNSIGNED INT":       true,
-	"UNSIGNED BIGINT":    true,
-	"DECIMAL":            true,
-	"NUMERIC":            true,
-	"FLOAT":              true,
-	"DOUBLE":             true,
-	"REAL":               true,
-	"BIT":                true,
-}
-
-// _mysqlColumnList matches the parenthesized column list of a column-level
-// grant.
-var _mysqlColumnList = regexp.MustCompile(`\([^()]*\)`)
 
 // mysqlCheckReadOnly checks whether the connected user has only read-only privileges
 // by parsing the output of SHOW GRANTS FOR CURRENT_USER().

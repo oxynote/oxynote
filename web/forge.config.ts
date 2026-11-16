@@ -23,7 +23,14 @@ const config: ForgeConfig = {
 			if (filePath === "") return false
 			if (filePath === "/package.json") return false
 			for (const prefix of ALLOWED) {
-				if (filePath === prefix || filePath.startsWith(prefix + "/"))
+				// the packager asks about a folder before its contents, and it
+				// skips everything inside a folder it ignores. So a parent of an
+				// allowed path, such as /.output, has to be kept too.
+				if (
+					filePath === prefix ||
+					filePath.startsWith(prefix + "/") ||
+					prefix.startsWith(filePath + "/")
+				)
 					return false
 			}
 			return true

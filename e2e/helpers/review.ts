@@ -49,10 +49,12 @@ export async function makeReviewable(page: Page): Promise<void> {
 // navbar dropdown and waits for its editor to load. For the draft it
 // also waits for the editor to become editable: the flip arrives with
 // the branch data a beat after the switch, and keystrokes sent before it
-// land in a read-only editor and are dropped.
+// land in a read-only editor and are dropped. A viewer's draft stays
+// read-only, so a viewer passes readOnly to skip that wait.
 export async function switchToBranch(
 	page: Page,
 	branch: BranchName,
+	{ readOnly = false }: { readOnly?: boolean } = {},
 ): Promise<void> {
 	await branchSwitcher(page).click()
 	await page.getByRole("menuitem", { name: branchLabel(branch) }).click()
@@ -64,7 +66,7 @@ export async function switchToBranch(
 	})
 	await waitForEditor(page)
 
-	if (branch === "draft") {
+	if (branch === "draft" && !readOnly) {
 		await expect(contentEditor(page)).toHaveAttribute("contenteditable", "true")
 	}
 }

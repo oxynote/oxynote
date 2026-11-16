@@ -16,7 +16,7 @@ func Test_MetricEnums(t *testing.T) {
 
 	got := MetricEnums()
 
-	require.Len(t, got, 6)
+	require.Len(t, got, 7)
 
 	// the chart types are the processor's, which this package does not
 	// import, so only this check keeps the two lists equal.
@@ -26,6 +26,7 @@ func Test_MetricEnums(t *testing.T) {
 		string(processor.ChartTypeGauge),
 	}, got[document.AttrVisualizationType])
 	assert.Equal(t, []string{"compact", "standard", "wide"}, got[document.AttrWidth])
+	assert.Equal(t, []string{"standard", "tall"}, got[document.AttrHeight])
 	assert.Len(t, got[document.AttrSimulationPreset], 6)
 	assert.Len(t, got[document.AttrTimeRange], 28)
 	assert.Len(t, got[document.AttrRefreshInterval], 10)
@@ -81,7 +82,7 @@ func Test_decodeMetricAttrs(t *testing.T) {
 			Text: `{"title":"Request rate","dataSourceId":"d1qbc8kv2vg000cnb6ag","visualizationType":"line_chart",` +
 				`"queries":[{"name":"Query 1","query":"up","legendFormat":"{{job}}"}],"timeRange":"last_1_hour","refreshInterval":"5m",` +
 				`"thresholds":[{"value":90,"label":"warn","color":"red"}],"baseThresholdColor":"green","decimals":2,` +
-				`"unitType":"percent0to100","unitCustom":"rps","axisBoundsMin":0,"axisBoundsMax":100.5,"width":"wide","simulationPreset":"cpu_usage"}`,
+				`"unitType":"percent0to100","unitCustom":"rps","axisBoundsMin":0,"axisBoundsMax":100.5,"width":"wide","height":"tall","simulationPreset":"cpu_usage"}`,
 			Result: document.Attributes{
 				document.AttrTitle:             "Request rate",
 				document.AttrDataSourceID:      "d1qbc8kv2vg000cnb6ag",
@@ -97,6 +98,7 @@ func Test_decodeMetricAttrs(t *testing.T) {
 				"axisBoundsMin":                0.0,
 				"axisBoundsMax":                100.5,
 				document.AttrWidth:             "wide",
+				document.AttrHeight:            "tall",
 				document.AttrSimulationPreset:  "cpu_usage",
 			},
 		},
@@ -134,6 +136,10 @@ func Test_decodeMetricAttrs(t *testing.T) {
 		"Non-string width": {
 			Text: `{"width":1}`,
 			Err:  errors.New("metric block width must be one of: compact, standard, wide"),
+		},
+		"Unknown height": {
+			Text: `{"height":"double"}`,
+			Err:  errors.New("metric block height must be one of: standard, tall"),
 		},
 		"Unknown visualization type": {
 			Text: `{"visualizationType":"pie_chart"}`,
