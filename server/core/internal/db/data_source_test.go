@@ -110,7 +110,7 @@ func Test_agent_InsertDataSource(t *testing.T) {
 			return tcase{
 				DataSource: stubDataSource(ds.OrganizationID, ds.Name),
 				Err: errutil.New(
-					http.StatusBadRequest,
+					http.StatusConflict,
 					"data_source.duplicate_name",
 					"name is already in use",
 				),

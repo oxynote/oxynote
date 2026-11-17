@@ -204,7 +204,7 @@ func Test_DetectError(t *testing.T) {
 
 			return tcase{
 				Err:    err,
-				Result: errutil.New(http.StatusBadRequest, "document_branch.duplicate_name", "branch name is already in use"),
+				Result: errutil.New(http.StatusConflict, "document_branch.duplicate_name", "branch name is already in use"),
 			}
 		},
 		"Duplicate file id": func(t *testing.T) tcase {
