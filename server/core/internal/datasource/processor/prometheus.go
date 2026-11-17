@@ -108,6 +108,7 @@ func (p *Prometheus) Metadata(ctx context.Context) (*PrometheusMetadataResult, e
 		if perr, ok := errors.AsType[*v1.Error](err); ok {
 			return nil, handlePrometheusAPIError(perr)
 		}
+
 		return nil, fmt.Errorf("error fetching metadata: %w", err)
 	}
 
@@ -137,6 +138,7 @@ func (p *Prometheus) QueryRange(ctx context.Context, q string, tr TimeRange) (*P
 		if perr, ok := errors.AsType[*v1.Error](err); ok {
 			return nil, handlePrometheusAPIError(perr)
 		}
+
 		return nil, fmt.Errorf("error performing query: %w", err)
 	}
 
@@ -171,6 +173,7 @@ func (p *Prometheus) LabelNames(ctx context.Context, matchers []string, tr TimeR
 		if perr, ok := errors.AsType[*v1.Error](err); ok {
 			return nil, handlePrometheusAPIError(perr)
 		}
+
 		return nil, fmt.Errorf("error fetching label names: %w", err)
 	}
 
@@ -210,6 +213,7 @@ func (p *Prometheus) LabelValues(ctx context.Context, label string, matchers []s
 		if perr, ok := errors.AsType[*v1.Error](err); ok {
 			return nil, handlePrometheusAPIError(perr)
 		}
+
 		return nil, fmt.Errorf("error fetching label values: %w", err)
 	}
 
@@ -248,6 +252,7 @@ func (p *Prometheus) Series(ctx context.Context, matchers []string, tr TimeRange
 		if perr, ok := errors.AsType[*v1.Error](err); ok {
 			return nil, handlePrometheusAPIError(perr)
 		}
+
 		return nil, fmt.Errorf("error fetching series: %w", err)
 	}
 
