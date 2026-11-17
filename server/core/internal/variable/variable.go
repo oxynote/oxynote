@@ -682,10 +682,13 @@ func (vi Input) Validate() error {
 	return nil
 }
 
-// sanitize returns the input with the white space around its name
-// removed.
+// sanitize returns the input with the white space around its name and
+// option values removed.
 func (vi Input) sanitize() Input {
 	vi.Name = strings.TrimSpace(vi.Name)
+	for i, option := range vi.Options {
+		vi.Options[i].Value = strings.TrimSpace(option.Value)
+	}
 
 	return vi
 }
