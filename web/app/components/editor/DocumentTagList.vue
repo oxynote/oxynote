@@ -441,9 +441,7 @@ function handleSearchEnter() {
 						<ShadcnUiAvatarFallback>
 							<Icon
 								:name="
-									canEdit || activeTags.length
-										? 'lucide:plus'
-										: 'lucide:tag'
+									canEdit || activeTags.length ? 'lucide:plus' : 'lucide:tag'
 								"
 								class="size-3.5"
 							/>
