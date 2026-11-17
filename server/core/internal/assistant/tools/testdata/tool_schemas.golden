@@ -631,7 +631,7 @@
       "properties": {
         "include_documents": {
           "default": true,
-          "description": "Omit the documents.",
+          "description": "False leaves out the documents.",
           "type": "boolean"
         }
       },

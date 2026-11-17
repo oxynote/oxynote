@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -60,6 +61,8 @@ func Test_listTags_Exec(t *testing.T) {
 	t.Parallel()
 
 	noDocs := false
+	oneDoc := []tagDocument{{ID: _testDocID, Name: _stubDocumentName, DefaultBranchID: _stubMainBranchID}}
+	noDocsList := []tagDocument{}
 	cc := map[string]struct {
 		Input  *InputMock
 		Result any
@@ -99,9 +102,9 @@ func Test_listTags_Exec(t *testing.T) {
 					ID:        _testTagID,
 					Name:      _stubTagName,
 					ColorName: _stubTagColor,
-					Documents: []tagDocument{{ID: _testDocID, Name: _stubDocumentName, DefaultBranchID: _stubMainBranchID}},
+					Documents: &oneDoc,
 				},
-				{ID: _otherTagID, Name: "Staging", ColorName: "orange", Documents: []tagDocument{}},
+				{ID: _otherTagID, Name: "Staging", ColorName: "orange", Documents: &noDocsList},
 			}},
 		},
 	}
@@ -122,6 +125,24 @@ func Test_listTags_Exec(t *testing.T) {
 			assert.Equal(t, c.Result, res)
 		})
 	}
+}
+
+func Test_listTags_Exec_documents_field_in_json(t *testing.T) {
+	t.Parallel()
+
+	defaultResult, err := listTags{}.Exec(stubTagInput())
+	require.NoError(t, err)
+	data, err := json.Marshal(defaultResult)
+	require.NoError(t, err)
+	// the default keeps today's shape: a tag with no documents has an empty list.
+	assert.Contains(t, string(data), `"documents":[]`)
+
+	noDocs := false
+	result, err := listTags{IncludeDocuments: &noDocs}.Exec(stubTagInput())
+	require.NoError(t, err)
+	data, err = json.Marshal(result)
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), `"documents"`)
 }
 
 func Test_createTag_Info(t *testing.T) {

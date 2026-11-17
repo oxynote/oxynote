@@ -28,7 +28,7 @@ func (listTags) Info() Info {
 			"include_documents": map[string]any{
 				"type":        "boolean",
 				"default":     true,
-				"description": "Omit the documents.",
+				"description": "False leaves out the documents.",
 			},
 		},
 	}
@@ -58,17 +58,17 @@ func (lt listTags) Exec(inp Input) (any, error) {
 			out.Tags = append(out.Tags, e)
 			continue
 		}
-		e.Documents = make([]tagDocument, 0, len(s.Documents))
-
+		docs := make([]tagDocument, 0, len(s.Documents))
 		// the tree lists each assigned document with its own subtree;
 		// the subtree is sidebar context, not an assignment.
 		for _, d := range s.Documents {
-			e.Documents = append(e.Documents, tagDocument{
+			docs = append(docs, tagDocument{
 				ID:              d.ID,
 				Name:            d.DocumentName,
 				DefaultBranchID: d.DefaultBranchID,
 			})
 		}
+		e.Documents = &docs
 
 		out.Tags = append(out.Tags, e)
 	}
@@ -93,9 +93,9 @@ type tagEntry struct {
 	// ColorName is the palette name of the tag's colour.
 	ColorName string `json:"color"`
 
-	// Documents is every document whose default branch carries the tag.
-	// It is omitted when include_documents=false.
-	Documents []tagDocument `json:"documents,omitempty"`
+	// Documents is every document whose default branch carries the tag. It is an
+	// empty list, not missing, by default; include_documents=false omits it.
+	Documents *[]tagDocument `json:"documents,omitempty"`
 }
 
 // tagDocument names one document carrying a tag.
