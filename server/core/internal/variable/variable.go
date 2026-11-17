@@ -686,8 +686,17 @@ func (vi Input) Validate() error {
 // option values removed.
 func (vi Input) sanitize() Input {
 	vi.Name = strings.TrimSpace(vi.Name)
-	for i, option := range vi.Options {
-		vi.Options[i].Value = strings.TrimSpace(option.Value)
+	if vi.Options != nil {
+		// The input can be shared between calls, so trim into a copy rather than
+		// writing to the caller's slice.
+		options := make([]OptionInput, len(vi.Options))
+		copy(options, vi.Options)
+
+		for i, option := range options {
+			options[i].Value = strings.TrimSpace(option.Value)
+		}
+
+		vi.Options = options
 	}
 
 	return vi
