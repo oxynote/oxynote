@@ -625,10 +625,16 @@
     "name": "list_metric_series"
   },
   "list_tags": {
-    "desc": "List the organisation's tags in sidebar order as [{id, name, color, documents}]. documents are the documents whose default branch carries the tag. A tag on another branch shows only in get_document for that branch.",
+    "desc": "List the organisation's tags in sidebar order as [{id, name, color, documents}]. documents are the documents whose default branch carries the tag; pass include_documents=false to omit them. A tag on another branch shows only in get_document for that branch.",
     "has_params_one_of": true,
     "json_schema": {
-      "properties": {},
+      "properties": {
+        "include_documents": {
+          "default": true,
+          "description": "Omit the documents.",
+          "type": "boolean"
+        }
+      },
       "type": "object"
     },
     "name": "list_tags"
