@@ -58,6 +58,7 @@ func (lt listTags) Exec(inp Input) (any, error) {
 			out.Tags = append(out.Tags, e)
 			continue
 		}
+
 		docs := make([]tagDocument, 0, len(s.Documents))
 		// the tree lists each assigned document with its own subtree;
 		// the subtree is sidebar context, not an assignment.
@@ -68,8 +69,8 @@ func (lt listTags) Exec(inp Input) (any, error) {
 				DefaultBranchID: d.DefaultBranchID,
 			})
 		}
-		e.Documents = &docs
 
+		e.Documents = &docs
 		out.Tags = append(out.Tags, e)
 	}
 
