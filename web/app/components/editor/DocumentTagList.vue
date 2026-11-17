@@ -374,7 +374,11 @@ function handleSearchEnter() {
 				-->
 				<div
 					ref="tag-trigger"
-					:title="$t('editor.tags.trigger-title')"
+					:title="
+						canEdit || activeTags.length
+							? $t('editor.tags.trigger-title')
+							: $t('editor.tags.search-only-placeholder')
+					"
 					class="flex h-6 min-w-0 cursor-pointer items-center gap-1.25 overflow-hidden"
 				>
 					<!-- the same height as the pills beside it -->
@@ -435,7 +439,14 @@ function handleSearchEnter() {
 					</template>
 					<ShadcnUiAvatar v-else class="size-6 border">
 						<ShadcnUiAvatarFallback>
-							<Icon name="lucide:plus" class="size-3.5" />
+							<Icon
+								:name="
+									canEdit || activeTags.length
+										? 'lucide:plus'
+										: 'lucide:tag'
+								"
+								class="size-3.5"
+							/>
 						</ShadcnUiAvatarFallback>
 					</ShadcnUiAvatar>
 				</div>

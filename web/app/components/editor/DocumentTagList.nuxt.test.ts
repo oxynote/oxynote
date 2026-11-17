@@ -384,6 +384,19 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		expect(renderedIconNames(wrapper)).toContain("lucide:plus")
 	})
 
+	it("does not offer a plus on a read-only document with no tags", async ({
+		expect,
+	}) => {
+		useEditorStore().setActiveBranchProtected(true)
+		stubTags([makeTag(TAG_A, "Production", "green")])
+
+		const wrapper = await mountTags()
+
+		expect(wrapper.findAllComponents(TagPill)).toHaveLength(0)
+		expect(renderedIconNames(wrapper)).not.toContain("lucide:plus")
+		expect(renderedIconNames(wrapper)).toContain("lucide:tag")
+	})
+
 	it("fills up to the ceiling when the row has room", async ({ expect }) => {
 		// the row sizes to its content, so its own width is narrower than the
 		// pills need — the space up to the group's edge is what counts
