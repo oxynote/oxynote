@@ -321,10 +321,10 @@ func Test_CreateInput_Validate(t *testing.T) {
 			Input: CreateInput{Type: TypePrometheus, Name: "Demo", URL: demo.URL},
 		},
 		"PostgreSQL URL": {
-			Input: CreateInput{Type: TypePostgreSQL, Name: "DB", URL: "postgres://user:pass@db.test:5432/oxynote?sslmode=disable"},
+			Input: CreateInput{Type: TypePostgreSQL, Name: "DB", URL: "postgres://user:pass@db.test:5432/oxynote?sslmode=disable"}, //nolint:gosec // static test credentials
 		},
 		"MySQL URL": {
-			Input: CreateInput{Type: TypeMySQL, Name: "DB", URL: "mysql://user:pass@db.test:3306/oxynote"},
+			Input: CreateInput{Type: TypeMySQL, Name: "DB", URL: "mysql://user:pass@db.test:3306/oxynote"}, //nolint:gosec // static test credentials
 		},
 	}
 
