@@ -326,6 +326,22 @@ func Test_Prometheus_LabelNames(t *testing.T) {
 			Handler: http.NewServeMux(),
 			Err:     assert.AnError,
 		},
+		"Bad data from Prometheus": {
+			Handler: testutil.JSONHandler("/api/v1/labels", http.StatusBadRequest, `{"status":"error","errorType":"bad_data","error":"parse error"}`),
+			Err:     NewInvalidQueryError("parse error"),
+		},
+		"Unauthorized data source": {
+			Handler: testutil.JSONHandler("/api/v1/labels", http.StatusUnauthorized, `<html>unauthorized</html>`),
+			Err:     ConnectionStatusUnauthorized.Error(),
+		},
+		"Rate limited data source": {
+			Handler: testutil.JSONHandler("/api/v1/labels", http.StatusTooManyRequests, `too many requests`),
+			Err:     _errRateLimited,
+		},
+		"Data source that is down": {
+			Handler: testutil.JSONHandler("/api/v1/labels", http.StatusServiceUnavailable, `<html>upstream down</html>`),
+			Err:     ConnectionStatusUnreachable.Error(),
+		},
 		"Successful label names retrieval": {
 			Handler: testutil.JSONHandler("/api/v1/labels", http.StatusOK, `{"status":"success","data":["__name__","job"]}`),
 			Result: &PrometheusLabelNamesResult{
@@ -374,6 +390,22 @@ func Test_Prometheus_LabelValues(t *testing.T) {
 			Handler: http.NewServeMux(),
 			Err:     assert.AnError,
 		},
+		"Bad data from Prometheus": {
+			Handler: testutil.JSONHandler("/api/v1/label/instance/values", http.StatusBadRequest, `{"status":"error","errorType":"bad_data","error":"parse error"}`),
+			Err:     NewInvalidQueryError("parse error"),
+		},
+		"Unauthorized data source": {
+			Handler: testutil.JSONHandler("/api/v1/label/instance/values", http.StatusUnauthorized, `<html>unauthorized</html>`),
+			Err:     ConnectionStatusUnauthorized.Error(),
+		},
+		"Rate limited data source": {
+			Handler: testutil.JSONHandler("/api/v1/label/instance/values", http.StatusTooManyRequests, `too many requests`),
+			Err:     _errRateLimited,
+		},
+		"Data source that is down": {
+			Handler: testutil.JSONHandler("/api/v1/label/instance/values", http.StatusServiceUnavailable, `<html>upstream down</html>`),
+			Err:     ConnectionStatusUnreachable.Error(),
+		},
 		"Successful label values retrieval": {
 			Handler: testutil.JSONHandler("/api/v1/label/instance/values", http.StatusOK, `{"status":"success","data":["a","b"]}`),
 			Result: &PrometheusLabelValuesResult{
@@ -421,6 +453,22 @@ func Test_Prometheus_Series(t *testing.T) {
 		"Error returned by client.Series": {
 			Handler: http.NewServeMux(),
 			Err:     assert.AnError,
+		},
+		"Bad data from Prometheus": {
+			Handler: testutil.JSONHandler("/api/v1/series", http.StatusBadRequest, `{"status":"error","errorType":"bad_data","error":"parse error"}`),
+			Err:     NewInvalidQueryError("parse error"),
+		},
+		"Unauthorized data source": {
+			Handler: testutil.JSONHandler("/api/v1/series", http.StatusUnauthorized, `<html>unauthorized</html>`),
+			Err:     ConnectionStatusUnauthorized.Error(),
+		},
+		"Rate limited data source": {
+			Handler: testutil.JSONHandler("/api/v1/series", http.StatusTooManyRequests, `too many requests`),
+			Err:     _errRateLimited,
+		},
+		"Data source that is down": {
+			Handler: testutil.JSONHandler("/api/v1/series", http.StatusServiceUnavailable, `<html>upstream down</html>`),
+			Err:     ConnectionStatusUnreachable.Error(),
 		},
 		"Successful series retrieval": {
 			Handler: testutil.JSONHandler("/api/v1/series", http.StatusOK, `{"status":"success","data":[{"__name__":"up","job":"prometheus"}]}`),
