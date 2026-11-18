@@ -23,6 +23,11 @@ import {
 	type Operation,
 } from "./operations.js"
 
+// the packaged desktop app loads its pages from this origin. It is trusted
+// here and not through the env, because that list also feeds Better Auth's
+// checks, and the app reaches Better Auth only from its main process.
+const DESKTOP_ORIGIN = "oxynote://app"
+
 // the two things the routes ask of better-auth: the request handler
 // mounted under /auth/**, and the local JWKS the MCP session endpoint
 // verifies bearer tokens against.
@@ -213,7 +218,7 @@ export function createRoutes({
 	app.use(
 		"*",
 		cors({
-			origin: env.trustedOrigins,
+			origin: [...env.trustedOrigins, DESKTOP_ORIGIN],
 			allowMethods: [
 				"GET",
 				"POST",

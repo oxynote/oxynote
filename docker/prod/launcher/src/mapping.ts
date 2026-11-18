@@ -160,7 +160,7 @@ export function buildChildEnvs(
 		OXYNOTE_CORE_SERVER_PUBLIC_URL: publicCoreUrl,
 		OXYNOTE_CORE_BASE_APP_URL: config.publicOrigin,
 		OXYNOTE_CORE_SERVER_MCP_RESOURCE_URL: mcpResourceUrl,
-		OXYNOTE_CORE_ORIGINS: `${config.publicOrigin},${config.publicHostPort}`,
+		OXYNOTE_CORE_ORIGINS: `${config.publicOrigin},${config.publicHostPort},oxynote://app`,
 		OXYNOTE_CORE_GITHUB_APP_ID: config.githubApp?.appId ?? "",
 		OXYNOTE_CORE_GITHUB_APP_SLUG: config.githubApp?.appSlug ?? "",
 		OXYNOTE_CORE_GITHUB_SIGNATURE_SECRET:
