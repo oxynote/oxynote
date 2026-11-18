@@ -45,12 +45,16 @@ const { createCurrentUrl } = useCurrentUrl()
 
 const editorStore = useEditorStore()
 const { isEditable } = useEditorMeta()
+const { canRoleEdit } = useAuthSession()
 const isEditingDisabled = computed(() => {
 	return !isEditable.value || editorStore.reviewableDiffActive
 })
 const canAddComment = computed(() => {
 	// NOTE reviewable actions checks should be removed once we start using more branches
-	return isEditable.value || editorStore.branchReviewableActionsActive
+	return (
+		canRoleEdit.value &&
+		(isEditable.value || editorStore.branchReviewableActionsActive)
+	)
 })
 
 // this is needed to keep track of the last valid hovered state

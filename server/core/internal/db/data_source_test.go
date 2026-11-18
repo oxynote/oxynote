@@ -11,7 +11,9 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
@@ -33,7 +35,7 @@ func prepDataSources(t *testing.T, db *DB, count int, fn func(int, *datasource.D
 			Name:        "Data Source " + strconv.Itoa(i),
 			Type:        datasource.TypePrometheus,
 			URL:         "http://prometheus-" + strconv.Itoa(i) + ".test",
-			Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+			Credentials: stubCredentials(`{"kind":"basic","username":"user","password":"pass"}`),
 			Status:      processor.ConnectionStatusSuccess,
 			// distinct timestamps keep the fetch order deterministic.
 			CreatedAt: now.Add(-time.Duration(i) * time.Second),
@@ -80,7 +82,7 @@ func Test_agent_InsertDataSource(t *testing.T) {
 			Name:           name,
 			Type:           datasource.TypePrometheus,
 			URL:            "http://prometheus.test",
-			Credentials:    processor.NewCredentials([]byte(`{"token":"secret"}`)),
+			Credentials:    stubCredentials(`{"token":"secret"}`),
 			Status:         processor.ConnectionStatusSuccess,
 			CreatedAt:      timeutil.Now().Truncate(time.Second),
 		}
@@ -94,7 +96,7 @@ func Test_agent_InsertDataSource(t *testing.T) {
 	cc := map[string]func(*testing.T, *DB) tcase{
 		"Credentials that could not be read are refused": func(t *testing.T, db *DB) tcase {
 			ds := stubDataSource(prepOrganizations(t, db, 1)[0], "Data Source 1")
-			ds.Credentials = processor.NewCredentials([]byte("garbage"))
+			ds.Credentials = stubCredentials("garbage")
 			require.Error(t, ds.Credentials.Decrypt(_dataSourceKeys, ds.ID.Bytes()))
 
 			return tcase{
@@ -108,7 +110,7 @@ func Test_agent_InsertDataSource(t *testing.T) {
 			return tcase{
 				DataSource: stubDataSource(ds.OrganizationID, ds.Name),
 				Err: errutil.New(
-					http.StatusBadRequest,
+					http.StatusConflict,
 					"data_source.duplicate_name",
 					"name is already in use",
 				),
@@ -158,7 +160,7 @@ func Test_agent_UpdateDataSource(t *testing.T) {
 			ds := prepDataSources(t, db, 1, nil)[0]
 			ds.Name = "Updated Data Source"
 			ds.URL = "http://updated.test"
-			ds.Credentials = processor.NewCredentials([]byte(`{"token":"rotated"}`))
+			ds.Credentials = stubCredentials(`{"token":"rotated"}`)
 			ds.Status = processor.ConnectionStatusSuccess
 			ds.UpdatedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))
 
@@ -209,7 +211,7 @@ func Test_agent_UpdateDataSource(t *testing.T) {
 			// what the user re-enters becomes the whole pair: there was nothing
 			// readable left to merge onto.
 			updated, err := broken.ApplyUpdate(datasource.UpdateInput{
-				Credentials: null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user","password":"pass"}`)),
+				Credentials: null.ValueFrom(credentials.UpdateInput(`{"kind":"basic","username":"user","password":"pass"}`)),
 			})
 			require.NoError(t, err)
 
@@ -223,7 +225,7 @@ func Test_agent_UpdateDataSource(t *testing.T) {
 					assert.True(t, res.Credentials.IsValid())
 					assert.Equal(
 						t,
-						processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+						stubCredentials(`{"username":"user","password":"pass","kind":"basic"}`),
 						res.Credentials,
 					)
 					assert.Equal(t, processor.ConnectionStatusSuccess, res.Status)
@@ -583,11 +585,11 @@ func fetchDataSourceCredentials(t *testing.T, db *DB, id xid.ID) []byte {
 		}).
 		MustSql()
 
-	var credentials []byte
+	var sealed []byte
 
-	require.NoError(t, db.sql.Get(&credentials, q, args...))
+	require.NoError(t, db.sql.Get(&sealed, q, args...))
 
-	return credentials
+	return sealed
 }
 
 func Test_agent_FetchDataSource(t *testing.T) {
@@ -855,4 +857,25 @@ func Test_agent_markCredentialsUndecryptable(t *testing.T) {
 			assert.Equal(t, c.Status, fetchDataSourceStatus(t, db, c.DataSource.ID))
 		})
 	}
+}
+
+// decryptDataSourceCredentials reads the credentials straight off the row
+// and opens them with the given keys.
+func decryptDataSourceCredentials(t *testing.T, db *DB, keys *cryptoutil.Keyring, id xid.ID) string {
+	t.Helper()
+
+	plaintext, err := keys.Decrypt(fetchDataSourceCredentials(t, db, id), id.Bytes())
+	require.NoError(t, err)
+
+	return string(plaintext)
+}
+
+// stubCredentials returns credentials holding the given JSON.
+func stubCredentials(data string) credentials.Credentials {
+	var creds credentials.Credentials
+	if err := creds.UnmarshalJSON([]byte(data)); err != nil {
+		panic("cannot set test credentials: " + err.Error())
+	}
+
+	return creds
 }

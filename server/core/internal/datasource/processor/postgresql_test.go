@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
@@ -589,7 +590,7 @@ func Test_PostgreSQL_Close(t *testing.T) {
 func Test_PostgreSQL_TestConnection(t *testing.T) {
 	cc := map[string]struct {
 		URL              string
-		Creds            Credentials
+		Creds            credentials.Credentials
 		Result           ConnectionStatus
 		CredentialsCalls int
 	}{
@@ -641,7 +642,7 @@ func Test_PostgreSQL_TestConnection(t *testing.T) {
 
 			inp := &InputMock{
 				URLFunc:         func() string { return c.URL },
-				CredentialsFunc: func() Credentials { return c.Creds },
+				CredentialsFunc: func() credentials.Credentials { return c.Creds },
 			}
 
 			p := NewPostgreSQL(inp)
@@ -663,7 +664,7 @@ func Test_pgConnectionStatus(t *testing.T) {
 		Result ConnectionStatus
 	}{
 		"Invalid CA certificate": {
-			Err:    fmt.Errorf("connecting: %w", _errInvalidCACertificate),
+			Err:    fmt.Errorf("connecting: %w", credentials.ErrInvalidCACertificate),
 			Result: ConnectionStatusInvalidCACertificate,
 		},
 		"Error that is not from the server": {
@@ -1091,7 +1092,7 @@ func Test_PostgreSQL_Query(t *testing.T) {
 func Test_PostgreSQL_connect(t *testing.T) {
 	cc := map[string]struct {
 		URL              string
-		Creds            Credentials
+		Creds            credentials.Credentials
 		Closed           bool
 		Err              error
 		CredentialsCalls int
@@ -1102,8 +1103,14 @@ func Test_PostgreSQL_connect(t *testing.T) {
 	}{
 		"Error returned by Credentials.basic": {
 			URL:              "postgres://127.0.0.1:1/db",
-			Creds:            NewCredentials([]byte(`{`)),
+			Creds:            stubCredentials(`{`),
 			Err:              assert.AnError,
+			CredentialsCalls: 1,
+		},
+		"Token credentials": {
+			URL:              "postgres://127.0.0.1:1/db",
+			Creds:            stubCredentials(`{"kind":"token","token":"secret"}`),
+			Err:              credentials.ErrInvalid,
 			CredentialsCalls: 1,
 		},
 		"Error returned by buildConnectionString": {
@@ -1111,10 +1118,10 @@ func Test_PostgreSQL_connect(t *testing.T) {
 			Err:              assert.AnError,
 			CredentialsCalls: 1,
 		},
-		"Error returned by BasicCredentials.rootCAs": {
+		"Error returned by rootCAs": {
 			URL:              "postgres://127.0.0.1:1/db",
 			Creds:            caCredentials("not a certificate"),
-			Err:              _errInvalidCACertificate,
+			Err:              credentials.ErrInvalidCACertificate,
 			CredentialsCalls: 1,
 		},
 		// a URL without a host falls back to a Unix socket directory such
@@ -1122,13 +1129,13 @@ func Test_PostgreSQL_connect(t *testing.T) {
 		"CA certificate on a Unix socket": {
 			URL:              "postgres:///db",
 			Creds:            caCredentials(_testCA),
-			Err:              _errInvalidCACertificate,
+			Err:              credentials.ErrInvalidCACertificate,
 			CredentialsCalls: 1,
 		},
 		"CA certificate on a host list ending in a Unix socket": {
 			URL:              "postgres:///db?host=db1.test,/var/run/postgresql",
 			Creds:            caCredentials(_testCA),
-			Err:              _errInvalidCACertificate,
+			Err:              credentials.ErrInvalidCACertificate,
 			CredentialsCalls: 1,
 		},
 		"Closed processor": {
@@ -1179,7 +1186,7 @@ func Test_PostgreSQL_connect(t *testing.T) {
 
 			inp := &InputMock{
 				URLFunc:         func() string { return c.URL },
-				CredentialsFunc: func() Credentials { return c.Creds },
+				CredentialsFunc: func() credentials.Credentials { return c.Creds },
 			}
 
 			p := NewPostgreSQL(inp)
@@ -1227,7 +1234,7 @@ func Test_PostgreSQL_connect(t *testing.T) {
 func Test_PostgreSQL_buildConnectionString(t *testing.T) {
 	cc := map[string]struct {
 		URL    string
-		Creds  BasicCredentials
+		Creds  credentials.Basic
 		Result string
 		Err    error
 	}{
@@ -1237,7 +1244,7 @@ func Test_PostgreSQL_buildConnectionString(t *testing.T) {
 		},
 		"Credentials override url user": { //nolint:gosec // static test credentials
 			URL: "postgres://olduser:oldpass@dbhost:5432/mydb",
-			Creds: BasicCredentials{
+			Creds: credentials.Basic{
 				Username: "credsuser",
 				Password: "credspass",
 			},
@@ -1245,12 +1252,12 @@ func Test_PostgreSQL_buildConnectionString(t *testing.T) {
 		},
 		"Password keeps the url user": { //nolint:gosec // static test credentials
 			URL:    "postgres://reader.ref@dbhost:6543/postgres",
-			Creds:  BasicCredentials{Password: "credspass"},
+			Creds:  credentials.Basic{Password: "credspass"},
 			Result: "postgres://reader.ref:credspass@dbhost:6543/postgres",
 		},
 		"Username keeps the url password": { //nolint:gosec // static test credentials
 			URL:    "postgres://olduser:oldpass@dbhost:5432/mydb",
-			Creds:  BasicCredentials{Username: "credsuser"},
+			Creds:  credentials.Basic{Username: "credsuser"},
 			Result: "postgres://credsuser:oldpass@dbhost:5432/mydb",
 		},
 		"Empty credentials keep url user": { //nolint:gosec // static test credentials
@@ -1259,7 +1266,7 @@ func Test_PostgreSQL_buildConnectionString(t *testing.T) {
 		},
 		"CA certificate forces verify-full": { //nolint:gosec // static test credentials
 			URL:    "postgres://user:pass@dbhost:5432/mydb?connect_timeout=5&sslmode=disable",
-			Creds:  BasicCredentials{CACertificate: "pem"},
+			Creds:  credentials.Basic{TLS: credentials.TLS{CACertificate: "pem"}},
 			Result: "postgres://user:pass@dbhost:5432/mydb?connect_timeout=5&sslmode=verify-full",
 		},
 	}

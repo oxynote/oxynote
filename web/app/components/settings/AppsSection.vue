@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { showToastMessage } from "../toast"
+import { showRequestErrorToast } from "../toast"
 
 const {
 	fetchGitHubConnectionStatus,
@@ -13,6 +13,7 @@ const {
 	fetchSlackInstallURL,
 	disconnectSlack,
 } = useSlackAPI()
+const { canRoleManage } = useAuthSession()
 const { t } = useI18n({ useScope: "global" })
 const { openExternalLink } = useExternalLinks()
 
@@ -20,9 +21,9 @@ async function installGitHub() {
 	try {
 		const result = await fetchGitHubInstallURL()
 		openExternalLink(result.url)
-	} catch {
-		showToastMessage(
-			"error",
+	} catch (err) {
+		showRequestErrorToast(
+			err,
 			t("settings.apps.github.errors.install.title"),
 			t("settings.apps.github.errors.install.description"),
 		)
@@ -33,9 +34,9 @@ async function installSlack() {
 	try {
 		const result = await fetchSlackInstallURL()
 		openExternalLink(result.url)
-	} catch {
-		showToastMessage(
-			"error",
+	} catch (err) {
+		showRequestErrorToast(
+			err,
 			t("settings.apps.slack.errors.install.title"),
 			t("settings.apps.slack.errors.install.description"),
 		)
@@ -45,9 +46,9 @@ async function installSlack() {
 async function disconnectGitHubApp() {
 	try {
 		await disconnectGitHub.mutateAsync()
-	} catch {
-		showToastMessage(
-			"error",
+	} catch (err) {
+		showRequestErrorToast(
+			err,
 			t("settings.apps.github.errors.disconnect.title"),
 			t("settings.apps.github.errors.disconnect.description"),
 		)
@@ -58,9 +59,9 @@ async function disconnectGitHubApp() {
 async function disconnectSlackApp() {
 	try {
 		await disconnectSlack.mutateAsync()
-	} catch {
-		showToastMessage(
-			"error",
+	} catch (err) {
+		showRequestErrorToast(
+			err,
 			t("settings.apps.slack.errors.disconnect.title"),
 			t("settings.apps.slack.errors.disconnect.description"),
 		)
@@ -96,6 +97,7 @@ async function disconnectSlackApp() {
 						{{ $t("settings.apps.github.connected") }}
 					</div>
 					<ShadcnUiButton
+						v-if="canRoleManage"
 						type="button"
 						variant="ghost-plain"
 						size="custom"
@@ -106,7 +108,7 @@ async function disconnectSlackApp() {
 					</ShadcnUiButton>
 				</div>
 				<ShadcnUiButton
-					v-else
+					v-else-if="canRoleManage"
 					type="button"
 					variant="ghost-plain"
 					class="gap-1.5 p-0 text-sm"
@@ -115,6 +117,9 @@ async function disconnectSlackApp() {
 					<Icon name="lucide:external-link" />
 					{{ $t("settings.apps.github.connect") }}
 				</ShadcnUiButton>
+				<div v-else class="text-sm whitespace-nowrap text-muted-foreground">
+					{{ $t("settings.apps.github.not-connected") }}
+				</div>
 			</div>
 		</div>
 		<div
@@ -147,6 +152,7 @@ async function disconnectSlackApp() {
 						{{ $t("settings.apps.slack.connected") }}
 					</div>
 					<ShadcnUiButton
+						v-if="canRoleManage"
 						type="button"
 						variant="ghost-plain"
 						size="custom"
@@ -157,7 +163,7 @@ async function disconnectSlackApp() {
 					</ShadcnUiButton>
 				</div>
 				<ShadcnUiButton
-					v-else
+					v-else-if="canRoleManage"
 					type="button"
 					variant="ghost-plain"
 					class="gap-1.5 p-0 text-sm"
@@ -166,6 +172,9 @@ async function disconnectSlackApp() {
 					<Icon name="lucide:external-link" />
 					{{ $t("settings.apps.slack.connect") }}
 				</ShadcnUiButton>
+				<div v-else class="text-sm whitespace-nowrap text-muted-foreground">
+					{{ $t("settings.apps.slack.not-connected") }}
+				</div>
 			</div>
 		</div>
 	</div>

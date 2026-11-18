@@ -3,7 +3,7 @@ import TagPill from "./TagPill.vue"
 import { availableRowWidth, stepTagFit } from "./tag-fit"
 import ColorSelect from "../ColorSelect.vue"
 import { cn } from "#layers/ui/app/lib/utils"
-import { showToastMessage } from "../toast"
+import { showRequestErrorToast } from "../toast"
 import { TAG_QUERY_KEYS } from "~/composables/api/useTagAPI"
 import { DiffStatus } from "./diff/position-map"
 
@@ -293,8 +293,8 @@ async function toggleTag(tag: TagTreeElement) {
 			branchId: branchId,
 			tagId: tag.id,
 		})
-	} catch {
-		showToastMessage("error", t("editor.tags.errors.toggle-failed"))
+	} catch (err) {
+		showRequestErrorToast(err, t("editor.tags.errors.toggle-failed"))
 	}
 }
 
@@ -331,8 +331,8 @@ async function createAndAssign() {
 			branchId: branchId,
 			tagId: created.id,
 		})
-	} catch {
-		showToastMessage("error", t("editor.tags.errors.create-failed"))
+	} catch (err) {
+		showRequestErrorToast(err, t("editor.tags.errors.create-failed"))
 	}
 }
 

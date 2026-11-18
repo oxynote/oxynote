@@ -12,24 +12,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 )
 
-// DB is an interface that should be implemented by all
-// database managers.
-type DB interface {
-	// BeginTx should begin a transaction. Callers use the package-level
-	// BeginTx to get it as their own transaction type.
-	BeginTx(ctx context.Context) (Tx, error)
-}
-
-// Tx is an interface that should be implemented by all
-// transactions created by any database manager.
-type Tx interface {
-	// Commit should commit the active transaction.
-	Commit() error
-
-	// Rollback should rollback the active transaction.
-	Rollback() error
-}
-
 // BeginTx begins a transaction on db and returns it as T, the caller's
 // own transaction interface. It rolls the transaction back and fails when
 // the transaction does not implement T.
@@ -166,4 +148,22 @@ func WrapTx(ctx context.Context, agent any, fn func(*sqlx.Tx) error) (err error)
 	}
 
 	return fn(tx)
+}
+
+// DB is an interface that should be implemented by all
+// database managers.
+type DB interface {
+	// BeginTx should begin a transaction. Callers use the package-level
+	// BeginTx to get it as their own transaction type.
+	BeginTx(ctx context.Context) (Tx, error)
+}
+
+// Tx is an interface that should be implemented by all
+// transactions created by any database manager.
+type Tx interface {
+	// Commit should commit the active transaction.
+	Commit() error
+
+	// Rollback should rollback the active transaction.
+	Rollback() error
 }

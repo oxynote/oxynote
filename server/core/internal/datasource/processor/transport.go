@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 )
 
 const (
@@ -33,9 +35,9 @@ type ownTransport struct {
 func (ot *ownTransport) roundTripper(
 	shared http.RoundTripper,
 	rawURL string,
-	creds BasicCredentials,
+	auth credentials.Auth,
 ) (http.RoundTripper, error) {
-	if creds.CACertificate == "" {
+	if auth == nil || !auth.HasCACertificate() {
 		return shared, nil
 	}
 
@@ -54,10 +56,10 @@ func (ot *ownTransport) roundTripper(
 	// a CA certificate verifies a TLS server. Over plain HTTP it would
 	// verify nothing while the data source looked protected.
 	if u.Scheme != "https" {
-		return nil, _errInvalidCACertificate
+		return nil, credentials.ErrInvalidCACertificate
 	}
 
-	pool, err := creds.rootCAs()
+	pool, err := auth.RootCAs()
 	if err != nil {
 		return nil, err
 	}

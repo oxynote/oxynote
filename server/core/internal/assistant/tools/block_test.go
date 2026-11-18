@@ -238,7 +238,7 @@ func Test_insertBlocks_Validate(t *testing.T) {
 		Err  error
 	}{
 		"Document id is required": {
-			Tool: insertBlocks{Position: positionEnd, Content: "<p>x</p>"},
+			Tool: insertBlocks{Position: _positionEnd, Content: "<p>x</p>"},
 			Err:  errors.New("document_id is required"),
 		},
 		"Position is required": {
@@ -246,20 +246,20 @@ func Test_insertBlocks_Validate(t *testing.T) {
 			Err:  errors.New("position is required"),
 		},
 		"Reference block uid is required": {
-			Tool: insertBlocks{DocumentID: _testDocID, BranchID: _stubMainBranchID, Position: positionAfter, Content: "<p>x</p>"},
+			Tool: insertBlocks{DocumentID: _testDocID, BranchID: _stubMainBranchID, Position: _positionAfter, Content: "<p>x</p>"},
 			Err:  errors.New("reference_block_uid is required"),
 		},
 		// a reference only means something beside a block.
 		"Reference block uid at an end of the document": {
-			Tool: insertBlocks{DocumentID: _testDocID, BranchID: _stubMainBranchID, Position: positionEnd, ReferenceBlockUID: "a", Content: "<p>x</p>"},
+			Tool: insertBlocks{DocumentID: _testDocID, BranchID: _stubMainBranchID, Position: _positionEnd, ReferenceBlockUID: "a", Content: "<p>x</p>"},
 			Err:  assert.AnError,
 		},
 		"Content is required": {
-			Tool: insertBlocks{DocumentID: _testDocID, BranchID: _stubMainBranchID, Position: positionEnd},
+			Tool: insertBlocks{DocumentID: _testDocID, BranchID: _stubMainBranchID, Position: _positionEnd},
 			Err:  errors.New("content is required"),
 		},
 		"Valid arguments": {
-			Tool: insertBlocks{DocumentID: _testDocID, BranchID: _stubMainBranchID, Position: positionEnd, Content: "<p>x</p>"},
+			Tool: insertBlocks{DocumentID: _testDocID, BranchID: _stubMainBranchID, Position: _positionEnd, Content: "<p>x</p>"},
 		},
 	}
 
@@ -285,29 +285,29 @@ func Test_insertBlocks_Summary(t *testing.T) {
 	}{
 		"At the start": {
 			Input:  stubDocumentInput(),
-			Tool:   insertBlocks{docTarget: target, Position: positionStart, Content: "<p>a</p><p>b</p>"},
+			Tool:   insertBlocks{docTarget: target, Position: _positionStart, Content: "<p>a</p><p>b</p>"},
 			Result: "Insert 2 blocks at the start of Runbook",
 		},
 		"At the end": {
 			Input:  stubDocumentInput(),
-			Tool:   insertBlocks{docTarget: target, Position: positionEnd, Content: "<p>a</p>"},
+			Tool:   insertBlocks{docTarget: target, Position: _positionEnd, Content: "<p>a</p>"},
 			Result: "Insert 1 block at the end of Runbook",
 		},
 		"Beside a block": {
 			Input:  stubDocumentInput(),
-			Tool:   insertBlocks{docTarget: target, Position: positionAfter, ReferenceBlockUID: "a", Content: "<p>a</p>"},
+			Tool:   insertBlocks{docTarget: target, Position: _positionAfter, ReferenceBlockUID: "a", Content: "<p>a</p>"},
 			Result: "Insert 1 block after a block in Runbook",
 		},
 		"Malformed content": {
 			Input: stubDocumentInput(),
-			Tool:  insertBlocks{docTarget: target, Position: positionEnd, Content: "<p>a"},
+			Tool:  insertBlocks{docTarget: target, Position: _positionEnd, Content: "<p>a"},
 			Err:   assert.AnError,
 		},
 		"Error returned by Input.FetchBranch": {
 			Input: &InputMock{
 				FetchBranchFunc: func(xid.ID, xid.ID) (*document.Document, error) { return nil, assert.AnError },
 			},
-			Tool: insertBlocks{docTarget: target, Position: positionEnd, Content: "<p>a</p>"},
+			Tool: insertBlocks{docTarget: target, Position: _positionEnd, Content: "<p>a</p>"},
 			Err:  assert.AnError,
 		},
 	}
@@ -343,26 +343,26 @@ func Test_insertBlocks_Exec(t *testing.T) {
 
 	cc := map[string]blockCase{
 		"Malformed content": {
-			Tool: insertBlocks{docTarget: target, Position: positionEnd, Content: "<p>x"},
+			Tool: insertBlocks{docTarget: target, Position: _positionEnd, Content: "<p>x"},
 			Err:  assert.AnError,
 		},
 		// an insert writes new blocks, so an id names nothing.
 		"Element with an id": {
-			Tool: insertBlocks{docTarget: target, Position: positionEnd, Content: `<p id="a">x</p>`},
+			Tool: insertBlocks{docTarget: target, Position: _positionEnd, Content: `<p id="a">x</p>`},
 			Err:  assert.AnError,
 		},
 		"Content holding no block": {
-			Tool: insertBlocks{docTarget: target, Position: positionEnd, Content: "  \n "},
+			Tool: insertBlocks{docTarget: target, Position: _positionEnd, Content: "  \n "},
 			Err:  assert.AnError,
 		},
 		"Error returned by Input.CheckDataSources": {
-			Tool:       insertBlocks{docTarget: target, Position: positionEnd, Content: two},
+			Tool:       insertBlocks{docTarget: target, Position: _positionEnd, Content: two},
 			CheckErr:   assert.AnError,
 			CheckCalls: 1,
 			Err:        assert.AnError,
 		},
 		"Error returned by Input.ApplyEdit": {
-			Tool:       insertBlocks{docTarget: target, Position: positionEnd, Content: two},
+			Tool:       insertBlocks{docTarget: target, Position: _positionEnd, Content: two},
 			ApplyErr:   assert.AnError,
 			CheckCalls: 1,
 			ApplyCalls: 1,
@@ -371,32 +371,32 @@ func Test_insertBlocks_Exec(t *testing.T) {
 		// the rest go after the first, since each append would land
 		// before an empty paragraph the write itself put last.
 		"Appended in order": {
-			Tool:       insertBlocks{docTarget: target, Position: positionEnd, Content: two},
+			Tool:       insertBlocks{docTarget: target, Position: _positionEnd, Content: two},
 			Content:    []string{">one</p>\n<p id=", ">two</p>"},
 			Ops:        []string{`"kind":"append"`, `"kind":"insert","position":"after"`},
 			CheckCalls: 1,
 			ApplyCalls: 1,
 		},
 		"Prepended with the rest chained after the first": {
-			Tool:       insertBlocks{docTarget: target, Position: positionStart, Content: two},
+			Tool:       insertBlocks{docTarget: target, Position: _positionStart, Content: two},
 			Ops:        []string{`"kind":"prepend"`, `"kind":"insert","position":"after"`},
 			CheckCalls: 1,
 			ApplyCalls: 1,
 		},
 		"Inserted before a block": {
-			Tool:       insertBlocks{docTarget: target, Position: positionBefore, ReferenceBlockUID: "a", Content: two},
+			Tool:       insertBlocks{docTarget: target, Position: _positionBefore, ReferenceBlockUID: "a", Content: two},
 			Ops:        []string{`"position":"before","reference_uid":"a"`, `"position":"after"`},
 			CheckCalls: 1,
 			ApplyCalls: 1,
 		},
 		"Inserted after a block": {
-			Tool:       insertBlocks{docTarget: target, Position: positionAfter, ReferenceBlockUID: "a", Content: "<p>x</p>"},
+			Tool:       insertBlocks{docTarget: target, Position: _positionAfter, ReferenceBlockUID: "a", Content: "<p>x</p>"},
 			Ops:        []string{`"position":"after","reference_uid":"a"`},
 			CheckCalls: 1,
 			ApplyCalls: 1,
 		},
 		"Inserted below a block in a grid": {
-			Tool:       insertBlocks{docTarget: target, Position: positionBelow, ReferenceBlockUID: _stubMetricUID, Content: "<metrics>{}</metrics>"},
+			Tool:       insertBlocks{docTarget: target, Position: _positionBelow, ReferenceBlockUID: _stubMetricUID, Content: "<metrics>{}</metrics>"},
 			Ops:        []string{`"kind":"insert","position":"below","reference_uid":"m"`},
 			CheckCalls: 1,
 			ApplyCalls: 1,
@@ -425,10 +425,10 @@ func Test_insertBlocks_insertOps(t *testing.T) {
 		ReferenceBlockUID string
 		Result            []string
 	}{
-		"Before a block": {Position: positionBefore, ReferenceBlockUID: "r", Result: []string{"insert before r", "insert after x"}},
-		"After a block":  {Position: positionAfter, ReferenceBlockUID: "r", Result: []string{"insert after r", "insert after x"}},
-		"At the start":   {Position: positionStart, Result: []string{"prepend  ", "insert after x"}},
-		"At the end":     {Position: positionEnd, Result: []string{"append  ", "insert after x"}},
+		"Before a block": {Position: _positionBefore, ReferenceBlockUID: "r", Result: []string{"insert before r", "insert after x"}},
+		"After a block":  {Position: _positionAfter, ReferenceBlockUID: "r", Result: []string{"insert after r", "insert after x"}},
+		"At the start":   {Position: _positionStart, Result: []string{"prepend  ", "insert after x"}},
+		"At the end":     {Position: _positionEnd, Result: []string{"append  ", "insert after x"}},
 	}
 
 	for cn, c := range cc {
@@ -804,11 +804,11 @@ func Test_moveBlock_Validate(t *testing.T) {
 		Err  error
 	}{
 		"Document id is required": {
-			Tool: moveBlock{BlockUID: "b", Position: positionAfter, ReferenceBlockUID: "r"},
+			Tool: moveBlock{BlockUID: "b", Position: _positionAfter, ReferenceBlockUID: "r"},
 			Err:  errors.New("document_id is required"),
 		},
 		"Block uid is required": {
-			Tool: moveBlock{DocumentID: _testDocID, BranchID: _stubMainBranchID, Position: positionAfter, ReferenceBlockUID: "r"},
+			Tool: moveBlock{DocumentID: _testDocID, BranchID: _stubMainBranchID, Position: _positionAfter, ReferenceBlockUID: "r"},
 			Err:  errors.New("block_uid is required"),
 		},
 		"Position is required": {
@@ -816,21 +816,21 @@ func Test_moveBlock_Validate(t *testing.T) {
 			Err:  errors.New("position is required"),
 		},
 		"Reference block uid is required": {
-			Tool: moveBlock{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Position: positionAfter},
+			Tool: moveBlock{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Position: _positionAfter},
 			Err:  errors.New("reference_block_uid is required"),
 		},
 		// a block cannot be moved relative to itself.
 		"Reference block uid naming the block": {
-			Tool: moveBlock{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Position: positionAfter, ReferenceBlockUID: "b"},
+			Tool: moveBlock{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Position: _positionAfter, ReferenceBlockUID: "b"},
 			Err:  errors.New("reference_block_uid must differ from block_uid"),
 		},
 		// a move lands beside a block, never at an end of the document.
 		"Position at an end of the document": {
-			Tool: moveBlock{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Position: positionEnd, ReferenceBlockUID: "r"},
+			Tool: moveBlock{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Position: _positionEnd, ReferenceBlockUID: "r"},
 			Err:  errors.New(`position must be "before", "after", "above" or "below" for a move, got "end"`),
 		},
 		"Valid arguments": {
-			Tool: moveBlock{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Position: positionAfter, ReferenceBlockUID: "r"},
+			Tool: moveBlock{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Position: _positionAfter, ReferenceBlockUID: "r"},
 		},
 	}
 
@@ -849,7 +849,7 @@ func Test_moveBlock_Summary(t *testing.T) {
 	tool := moveBlock{
 		DocumentID: _testDocID, BranchID: _stubMainBranchID,
 		BlockUID:          "a",
-		Position:          positionAfter,
+		Position:          _positionAfter,
 		ReferenceBlockUID: "c",
 	}
 
@@ -870,7 +870,7 @@ func Test_moveBlock_Summary(t *testing.T) {
 		},
 		"Successful summary of a stacked move": {
 			Input:  stubDocumentInput(),
-			Layout: layoutStacked,
+			Layout: _layoutStacked,
 			Result: ActionSummary{
 				Tool:         NameMoveBlock,
 				DocumentID:   _testDocID,
@@ -921,39 +921,39 @@ func Test_moveBlock_Exec(t *testing.T) {
 
 	cc := map[string]blockCase{
 		"Error returned by Input.FetchDocumentBlock": {
-			Tool:       tool("a", positionAfter),
+			Tool:       tool("a", _positionAfter),
 			FetchErr:   assert.AnError,
 			FetchCalls: 1,
 			Err:        assert.AnError,
 		},
 		"Block uid the document does not hold": {
-			Tool:       tool("zzz", positionAfter),
+			Tool:       tool("zzz", _positionAfter),
 			FetchCalls: 1,
 			Err:        fmt.Errorf("block zzz: %w", _errUnknownBlock),
 		},
 		"Error returned by Input.ApplyEdit": {
-			Tool:       tool("a", positionAfter),
+			Tool:       tool("a", _positionAfter),
 			ApplyErr:   assert.AnError,
 			FetchCalls: 1,
 			ApplyCalls: 1,
 			Err:        assert.AnError,
 		},
 		"Moved before": {
-			Tool:       tool("a", positionBefore),
+			Tool:       tool("a", _positionBefore),
 			Content:    []string{`<p id="a">hello</p>`},
 			Ops:        []string{`"kind":"move","position":"before","reference_uid":"c","block_uid":"a"`},
 			FetchCalls: 1,
 			ApplyCalls: 1,
 		},
 		"Moved after": {
-			Tool:       tool("a", positionAfter),
+			Tool:       tool("a", _positionAfter),
 			Content:    []string{`<p id="a">hello</p>`},
 			Ops:        []string{`"kind":"move","position":"after","reference_uid":"c","block_uid":"a"`},
 			FetchCalls: 1,
 			ApplyCalls: 1,
 		},
 		"Moved above": {
-			Tool:       tool("a", positionAbove),
+			Tool:       tool("a", _positionAbove),
 			Content:    []string{`<p id="a">hello</p>`},
 			Ops:        []string{`"kind":"move","position":"above","reference_uid":"c","block_uid":"a"`},
 			FetchCalls: 1,
@@ -963,9 +963,9 @@ func Test_moveBlock_Exec(t *testing.T) {
 			Tool: moveBlock{
 				DocumentID: _testDocID, BranchID: _stubMainBranchID,
 				BlockUID:          "a",
-				Position:          positionBefore,
+				Position:          _positionBefore,
 				ReferenceBlockUID: "c",
-				Layout:            layoutStacked,
+				Layout:            _layoutStacked,
 			},
 			Content:    []string{`<p id="a">hello</p>`},
 			Ops:        []string{`"kind":"move","position":"before","reference_uid":"c","block_uid":"a","layout":"stacked"`},
@@ -1042,8 +1042,8 @@ func Test_position_UnmarshalText(t *testing.T) {
 		Result position
 		Err    error
 	}{
-		"Known position":   {Text: "before", Result: positionBefore},
-		"Grid position":    {Text: "below", Result: positionBelow},
+		"Known position":   {Text: "before", Result: _positionBefore},
+		"Grid position":    {Text: "below", Result: _positionBelow},
 		"Unknown position": {Text: "sideways", Err: assert.AnError},
 	}
 
@@ -1073,8 +1073,8 @@ func Test_layout_UnmarshalText(t *testing.T) {
 		Result layout
 		Err    error
 	}{
-		"Wide layout":    {Text: "wide", Result: layoutWide},
-		"Stacked layout": {Text: "stacked", Result: layoutStacked},
+		"Wide layout":    {Text: "wide", Result: _layoutWide},
+		"Stacked layout": {Text: "stacked", Result: _layoutStacked},
 		"Unknown layout": {Text: "narrow", Err: errors.New(`layout must be "wide" or "stacked", got "narrow"`)},
 	}
 
@@ -1103,12 +1103,12 @@ func Test_position_relative(t *testing.T) {
 		Position position
 		Result   bool
 	}{
-		"Before": {Position: positionBefore, Result: true},
-		"After":  {Position: positionAfter, Result: true},
-		"Above":  {Position: positionAbove, Result: true},
-		"Below":  {Position: positionBelow, Result: true},
-		"Start":  {Position: positionStart},
-		"End":    {Position: positionEnd},
+		"Before": {Position: _positionBefore, Result: true},
+		"After":  {Position: _positionAfter, Result: true},
+		"Above":  {Position: _positionAbove, Result: true},
+		"Below":  {Position: _positionBelow, Result: true},
+		"Start":  {Position: _positionStart},
+		"End":    {Position: _positionEnd},
 	}
 
 	for cn, c := range cc {

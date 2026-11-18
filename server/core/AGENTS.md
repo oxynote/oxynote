@@ -90,8 +90,8 @@ embedded fields first. Tiny stateless embeds are the mixin mechanism.
 ## Errors
 
 - User-facing: `errutil.New(httpStatus, "domain.reason", "lowercase
-  message, no punctuation")` (plus `Wrap`, `NewWithData`, `StatusCode`,
-  `InternalCode`, `ErrNotFound`); codes are dotted literals written inline.
+  message, no punctuation")` (plus `StatusCode`, `ErrNotFound`); codes are
+  dotted literals written inline.
   Internal: `errors.New("lowercase message")`.
 - Sentinels are `Err*` vars documented `// ErrX is returned when ...`.
   Sentinel handling nests inside a single `if err != nil`; `errors.Is` never

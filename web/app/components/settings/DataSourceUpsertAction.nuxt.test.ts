@@ -13,6 +13,8 @@ import {
 	findButtonByText,
 	clearTeleportedOverlays,
 	mountWithFrozenClock,
+	raisedToasts,
+	refuseForRole,
 	settleActionSubmit,
 	t,
 } from "../test-helpers"
@@ -33,12 +35,28 @@ const EXISTING: DataSource = {
 
 const EXISTING_WITH_LOGIN: DataSource = {
 	...EXISTING,
-	configured: { username: true, password: true },
+	credentials: {
+		kind: "basic",
+		configured: { username: true, password: true },
+	},
 }
 
 const EXISTING_WITH_CA: DataSource = {
 	...EXISTING,
-	configured: { caCertificate: true },
+	credentials: { kind: "basic", configured: { caCertificate: true } },
+}
+
+const EXISTING_WITH_TOKEN: DataSource = {
+	...EXISTING,
+	credentials: { kind: "token", configured: { token: true } },
+}
+
+const EXISTING_WITH_LOGIN_AND_CA: DataSource = {
+	...EXISTING,
+	credentials: {
+		kind: "basic",
+		configured: { username: true, password: true, caCertificate: true },
+	},
 }
 
 const UPSERT = "settings.action-modals.data-source-upsert"
@@ -62,6 +80,25 @@ function fields(wrapper: Awaited<ReturnType<typeof mountAction>>) {
 		password: at(inputs, 3),
 		caCertificate: wrapper.get("textarea"),
 	}
+}
+
+// name, url and token, in template order, once the token kind is picked
+function tokenFields(wrapper: Awaited<ReturnType<typeof mountAction>>) {
+	const inputs = wrapper.findAll("input")
+
+	return {
+		name: at(inputs, 0),
+		url: at(inputs, 1),
+		token: at(inputs, 2),
+		caCertificate: wrapper.get("textarea"),
+	}
+}
+
+function kindButton(
+	wrapper: Awaited<ReturnType<typeof mountAction>>,
+	kind: DataSourceCredentialsKind,
+) {
+	return findButtonByText(wrapper, t(`${UPSERT}.auth-kind-field.${kind}`))
 }
 
 async function submit(wrapper: Awaited<ReturnType<typeof mountAction>>) {
@@ -149,7 +186,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 				type: DataSourceType.Prometheus,
 				name: "Prod metrics",
 				url: "http://prometheus.test",
-				credentials: { username: "reader", password: "secret" },
+				credentials: { kind: "basic", username: "reader", password: "secret" },
 			})
 		})
 
@@ -176,6 +213,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 				name: "Prod logs",
 				url: "https://loki.test",
 				credentials: {
+					kind: "basic",
 					username: "reader",
 					password: "secret",
 					caCertificate: CA_CERTIFICATE,
@@ -325,6 +363,26 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			expect(wrapper.emitted("close")).toBeUndefined()
 		})
 
+		it("shows only the access denied toast for a refused creation", async ({
+			expect,
+		}) => {
+			mockEndpoint("POST", "/api/data-sources", (_call, event) =>
+				refuseForRole(event),
+			)
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Prometheus,
+			})
+			await fields(wrapper).name.setValue("Prod metrics")
+			await fields(wrapper).url.setValue("http://prometheus.test")
+
+			await submit(wrapper)
+
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
+			])
+			expect(wrapper.emitted("close")).toBeUndefined()
+		})
+
 		it("closes without connecting anything when cancelled", async ({
 			expect,
 		}) => {
@@ -408,7 +466,9 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 
 			expect(fields(wrapper).password.attributes("disabled")).toBeUndefined()
 			expect(fields(wrapper).username.attributes("disabled")).toBeDefined()
-			expect(calls[0]?.body).toEqual({ credentials: { password: "" } })
+			expect(calls[0]?.body).toEqual({
+				credentials: { kind: "basic", password: "" },
+			})
 		})
 
 		it("replaces a stored username after a reset", async ({ expect }) => {
@@ -423,7 +483,9 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 
 			await submit(wrapper)
 
-			expect(calls[0]?.body).toEqual({ credentials: { username: "reader" } })
+			expect(calls[0]?.body).toEqual({
+				credentials: { kind: "basic", username: "reader" },
+			})
 		})
 
 		it("warns that a new url clears the stored credentials", async ({
@@ -470,7 +532,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			await submit(wrapper)
 
 			expect(calls[0]?.body).toEqual({
-				credentials: { password: "new-secret" },
+				credentials: { kind: "basic", password: "new-secret" },
 			})
 		})
 
@@ -486,7 +548,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			await submit(wrapper)
 
 			expect(calls[0]?.body).toEqual({
-				credentials: { caCertificate: CA_CERTIFICATE },
+				credentials: { kind: "basic", caCertificate: CA_CERTIFICATE },
 			})
 		})
 
@@ -518,7 +580,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			).toBeUndefined()
 			expect(resetButtons(wrapper)).toHaveLength(0)
 			expect(calls[0]?.body).toEqual({
-				credentials: { caCertificate: "" },
+				credentials: { kind: "basic", caCertificate: "" },
 			})
 		})
 
@@ -537,7 +599,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			await submit(wrapper)
 
 			expect(calls[0]?.body).toEqual({
-				credentials: { caCertificate: CA_CERTIFICATE },
+				credentials: { kind: "basic", caCertificate: CA_CERTIFICATE },
 			})
 		})
 
@@ -571,7 +633,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 
 			expect(calls[0]?.body).toEqual({
 				url: "http://other.test",
-				credentials: { password: "new-secret" },
+				credentials: { kind: "basic", password: "new-secret" },
 			})
 		})
 
@@ -632,6 +694,309 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 
 			expect(toast.custom).toHaveBeenCalledTimes(1)
 			expect(wrapper.emitted("close")).toBeUndefined()
+		})
+
+		it("shows only the access denied toast for a refused update", async ({
+			expect,
+		}) => {
+			mockEndpoint("PUT", `/api/data-sources/${EXISTING.id}`, (_call, event) =>
+				refuseForRole(event),
+			)
+			const wrapper = await mountAction({ updateTarget: EXISTING })
+			await fields(wrapper).name.setValue("Staging metrics")
+
+			await submit(wrapper)
+
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("general.errors.role-not-allowed") },
+			])
+			expect(wrapper.emitted("close")).toBeUndefined()
+		})
+	})
+
+	describe("authentication kind", { concurrent: false }, () => {
+		beforeEach(clearTeleportedOverlays)
+
+		it.for([DataSourceType.Prometheus, DataSourceType.Loki])(
+			"offers a %s data source a token, starting on username and password",
+			async (type, { expect }) => {
+				const wrapper = await mountAction({ creationType: type })
+
+				expect(wrapper.text()).toContain(t(`${UPSERT}.auth-kind-field.label`))
+				expect(kindButton(wrapper, "basic").attributes("aria-pressed")).toBe(
+					"true",
+				)
+				expect(kindButton(wrapper, "token").attributes("aria-pressed")).toBe(
+					"false",
+				)
+				expect(fields(wrapper).username.exists()).toBe(true)
+			},
+		)
+
+		it.for([
+			DataSourceType.PostgreSQL,
+			DataSourceType.Supabase,
+			DataSourceType.MySQL,
+			DataSourceType.MariaDB,
+		])("offers a %s data source no token", async (type, { expect }) => {
+			const wrapper = await mountAction({ creationType: type })
+
+			expect(wrapper.text()).not.toContain(t(`${UPSERT}.auth-kind-field.label`))
+			expect(() => kindButton(wrapper, "token")).toThrow()
+		})
+
+		it("sends basic credentials for a sql data source", async ({ expect }) => {
+			const calls = mockEndpoint("POST", "/api/data-sources", () => ({
+				id: EXISTING.id,
+			}))
+			const wrapper = await mountAction({
+				creationType: DataSourceType.PostgreSQL,
+			})
+			await fields(wrapper).name.setValue("Prod db")
+			await fields(wrapper).url.setValue("postgresql://db.test:5432/main")
+			await fields(wrapper).username.setValue("reader")
+
+			await submit(wrapper)
+
+			expect(calls[0]?.body).toMatchObject({
+				credentials: { kind: "basic", username: "reader", password: "" },
+			})
+		})
+
+		it("sends a token in place of a username and password", async ({
+			expect,
+		}) => {
+			const calls = mockEndpoint("POST", "/api/data-sources", () => ({
+				id: EXISTING.id,
+			}))
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Loki,
+			})
+			await kindButton(wrapper, "token").trigger("click")
+			await tokenFields(wrapper).name.setValue("Prod logs")
+			await tokenFields(wrapper).url.setValue("https://loki.test")
+			await tokenFields(wrapper).token.setValue("secret")
+			await tokenFields(wrapper).caCertificate.setValue(CA_CERTIFICATE)
+
+			await submit(wrapper)
+
+			expect(kindButton(wrapper, "token").attributes("aria-pressed")).toBe(
+				"true",
+			)
+			expect(tokenFields(wrapper).token.attributes("type")).toBe("password")
+			expect(calls[0]?.body).toEqual({
+				type: DataSourceType.Loki,
+				name: "Prod logs",
+				url: "https://loki.test",
+				credentials: {
+					kind: "token",
+					token: "secret",
+					caCertificate: CA_CERTIFICATE,
+				},
+			})
+		})
+
+		it("keeps the authentication kind while the submit is in flight", async ({
+			expect,
+		}) => {
+			const calls = mockEndpoint("POST", "/api/data-sources", () => ({
+				id: EXISTING.id,
+			}))
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Prometheus,
+			})
+			await fields(wrapper).name.setValue("Prod metrics")
+			await fields(wrapper).url.setValue("http://prometheus.test")
+			await fields(wrapper).username.setValue("reader")
+
+			await wrapper.get("form").trigger("submit")
+			// validation has run and the submit waits out its spinner delay
+			await vi.advanceTimersByTimeAsync(100)
+
+			expect(kindButton(wrapper, "token").attributes("disabled")).toBeDefined()
+
+			await kindButton(wrapper, "token").trigger("click")
+			await settleActionSubmit()
+
+			expect(calls[0]?.body).toMatchObject({
+				credentials: { kind: "basic", username: "reader" },
+			})
+		})
+
+		it("rejects an empty token", async ({ expect }) => {
+			const calls = mockEndpoint("POST", "/api/data-sources", () => ({
+				id: EXISTING.id,
+			}))
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Prometheus,
+			})
+			await kindButton(wrapper, "token").trigger("click")
+			await tokenFields(wrapper).name.setValue("Prod metrics")
+			await tokenFields(wrapper).url.setValue("http://prometheus.test")
+
+			await submit(wrapper)
+
+			expect(calls).toHaveLength(0)
+			expect(wrapper.text()).toContain(
+				t(`${UPSERT}.creds-token-field.required`),
+			)
+		})
+
+		it("explains how the token is sent", async ({ expect }) => {
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Prometheus,
+			})
+			await kindButton(wrapper, "token").trigger("click")
+
+			await openPopover(at(helpButtons(wrapper), 0))
+
+			expect(document.body.textContent).toContain(
+				t(`${UPSERT}.creds-token-field.help`),
+			)
+		})
+
+		it("opens on a stored token, locked until it is reset", async ({
+			expect,
+		}) => {
+			const wrapper = await mountAction({ updateTarget: EXISTING_WITH_TOKEN })
+
+			expect(kindButton(wrapper, "token").attributes("aria-pressed")).toBe(
+				"true",
+			)
+			expect(tokenFields(wrapper).token.attributes("disabled")).toBeDefined()
+			expect(tokenFields(wrapper).token.attributes("placeholder")).toBe(
+				t(`${UPSERT}.hidden-placeholder`),
+			)
+			expect(resetButtons(wrapper)).toHaveLength(1)
+		})
+
+		it("keeps a stored token when only the name changes", async ({
+			expect,
+		}) => {
+			const calls = mockEndpoint(
+				"PUT",
+				`/api/data-sources/${EXISTING.id}`,
+				() => ({ id: EXISTING.id }),
+			)
+			const wrapper = await mountAction({ updateTarget: EXISTING_WITH_TOKEN })
+			await tokenFields(wrapper).name.setValue("Staging metrics")
+
+			await submit(wrapper)
+
+			expect(calls[0]?.body).toEqual({ name: "Staging metrics" })
+		})
+
+		it("replaces a stored token after a reset", async ({ expect }) => {
+			const calls = mockEndpoint(
+				"PUT",
+				`/api/data-sources/${EXISTING.id}`,
+				() => ({ id: EXISTING.id }),
+			)
+			const wrapper = await mountAction({ updateTarget: EXISTING_WITH_TOKEN })
+			await at(resetButtons(wrapper), 0).trigger("click")
+			await tokenFields(wrapper).token.setValue("rotated")
+
+			await submit(wrapper)
+
+			expect(calls[0]?.body).toEqual({
+				credentials: { kind: "token", token: "rotated" },
+			})
+		})
+
+		it("switches a stored login to a token, keeping the CA certificate", async ({
+			expect,
+		}) => {
+			const calls = mockEndpoint(
+				"PUT",
+				`/api/data-sources/${EXISTING.id}`,
+				() => ({ id: EXISTING.id }),
+			)
+			const wrapper = await mountAction({
+				updateTarget: EXISTING_WITH_LOGIN_AND_CA,
+			})
+			await kindButton(wrapper, "token").trigger("click")
+
+			expect(tokenFields(wrapper).token.attributes("disabled")).toBeUndefined()
+			expect(
+				tokenFields(wrapper).caCertificate.attributes("disabled"),
+			).toBeDefined()
+
+			await tokenFields(wrapper).token.setValue("secret")
+
+			await submit(wrapper)
+
+			expect(calls[0]?.body).toEqual({
+				credentials: { kind: "token", token: "secret" },
+			})
+		})
+
+		it("switches a stored token to username and password", async ({
+			expect,
+		}) => {
+			const calls = mockEndpoint(
+				"PUT",
+				`/api/data-sources/${EXISTING.id}`,
+				() => ({ id: EXISTING.id }),
+			)
+			const wrapper = await mountAction({ updateTarget: EXISTING_WITH_TOKEN })
+			await kindButton(wrapper, "basic").trigger("click")
+			await fields(wrapper).username.setValue("reader")
+
+			await submit(wrapper)
+
+			expect(calls[0]?.body).toEqual({
+				credentials: { kind: "basic", username: "reader" },
+			})
+		})
+
+		it("sends the token kind with a new url", async ({ expect }) => {
+			const calls = mockEndpoint(
+				"PUT",
+				`/api/data-sources/${EXISTING.id}`,
+				() => ({ id: EXISTING.id }),
+			)
+			const wrapper = await mountAction({ updateTarget: EXISTING_WITH_TOKEN })
+			await tokenFields(wrapper).url.setValue("http://other.test")
+			await tokenFields(wrapper).token.setValue("secret")
+
+			await submit(wrapper)
+
+			expect(calls[0]?.body).toEqual({
+				url: "http://other.test",
+				credentials: { kind: "token", token: "secret" },
+			})
+		})
+	})
+
+	describe("labels", { concurrent: false }, () => {
+		it.for(Object.values(DataSourceType))(
+			"labels the %s fields plainly",
+			async (type, { expect }) => {
+				const wrapper = await mountAction({ creationType: type })
+				const labels = wrapper.findAll("label").map((l) => l.text())
+
+				expect(labels).toEqual([
+					"Name",
+					"URL",
+					expect.stringMatching(/^Username/),
+					expect.stringMatching(/^Password/),
+					expect.stringMatching(/^Trusted Certificate/),
+				])
+			},
+		)
+
+		it("labels the token field plainly", async ({ expect }) => {
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Prometheus,
+			})
+			await kindButton(wrapper, "token").trigger("click")
+
+			expect(wrapper.findAll("label").map((l) => l.text())).toEqual([
+				"Name",
+				"URL",
+				"Token",
+				expect.stringMatching(/^Trusted Certificate/),
+			])
 		})
 	})
 

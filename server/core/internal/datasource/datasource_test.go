@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/demo"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
@@ -24,13 +25,13 @@ func TestMain(m *testing.M) {
 
 // undecryptableCredentials returns credentials in the state a failed decrypt
 // leaves behind, which is the only way they reach it.
-func undecryptableCredentials(t *testing.T) processor.Credentials {
+func undecryptableCredentials(t *testing.T) credentials.Credentials {
 	t.Helper()
 
 	keys, err := cryptoutil.ParseKeyring(base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
 	require.NoError(t, err)
 
-	creds := processor.NewCredentials([]byte("ciphertext"))
+	creds := stubCredentials("ciphertext")
 	require.Error(t, creds.Decrypt(keys, nil))
 
 	return creds
@@ -59,6 +60,49 @@ func Test_Type_Validate(t *testing.T) {
 			t.Parallel()
 
 			testutil.AssertEqualError(t, c.Err, c.Type.Validate())
+		})
+	}
+}
+
+func Test_Type_credentialsKinds(t *testing.T) {
+	cc := map[string]struct {
+		Type   Type
+		Result []credentials.Kind
+	}{
+		"Unknown type": {
+			Type: "graphite",
+		},
+		"Prometheus": {
+			Type:   TypePrometheus,
+			Result: []credentials.Kind{credentials.KindBasic, credentials.KindToken},
+		},
+		"Loki": {
+			Type:   TypeLoki,
+			Result: []credentials.Kind{credentials.KindBasic, credentials.KindToken},
+		},
+		"PostgreSQL": {
+			Type:   TypePostgreSQL,
+			Result: []credentials.Kind{credentials.KindBasic},
+		},
+		"Supabase": {
+			Type:   TypeSupabase,
+			Result: []credentials.Kind{credentials.KindBasic},
+		},
+		"MariaDB": {
+			Type:   TypeMariaDB,
+			Result: []credentials.Kind{credentials.KindBasic},
+		},
+		"MySQL": {
+			Type:   TypeMySQL,
+			Result: []credentials.Kind{credentials.KindBasic},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Type.credentialsKinds())
 		})
 	}
 }
@@ -99,7 +143,7 @@ func Test_Type_UnmarshalText(t *testing.T) {
 func Test_NewDataSource(t *testing.T) {
 	t.Parallel()
 
-	creds := processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`))
+	creds := stubCredentials(`{"username":"user","password":"pass","kind":"basic"}`)
 
 	cc := map[string]struct {
 		Input  CreateInput
@@ -111,8 +155,8 @@ func Test_NewDataSource(t *testing.T) {
 			Err:   ErrInvalidName,
 		},
 		"Invalid credentials": {
-			Input: CreateInput{Type: TypePrometheus, Name: "test-source", Credentials: processor.NewCredentials([]byte(`[1]`))},
-			Err:   ErrInvalidCredentials,
+			Input: CreateInput{Type: TypePrometheus, Name: "test-source", Credentials: stubCredentials(`[1]`)},
+			Err:   credentials.ErrInvalid,
 		},
 		"Successful creation": {
 			Input: CreateInput{
@@ -173,7 +217,7 @@ func Test_NewDemoDataSources(t *testing.T) {
 		assert.Equal(t, exp.Name, ds.Name)
 		assert.Equal(t, exp.Type, ds.Type)
 		assert.Equal(t, demo.URL, ds.URL)
-		assert.Equal(t, processor.NewCredentials([]byte(`{}`)), ds.Credentials)
+		assert.Equal(t, credentials.Credentials{}, ds.Credentials)
 	}
 
 	assert.NotEqual(t, dd[0].ID, dd[1].ID)
@@ -207,7 +251,7 @@ func Test_CreateInput_Validate(t *testing.T) {
 		// the name and credentials are invalid too, so only a type checked
 		// first gives this error.
 		"Unknown type": {
-			Input: CreateInput{Type: "graphite", Credentials: processor.NewCredentials([]byte(`[1]`))},
+			Input: CreateInput{Type: "graphite", Credentials: stubCredentials(`[1]`)},
 			Err:   ErrInvalidType,
 		},
 		"Empty name": {
@@ -223,12 +267,23 @@ func Test_CreateInput_Validate(t *testing.T) {
 			Err:   ErrNameTooLong,
 		},
 		"Credentials that are not an object": {
-			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: processor.NewCredentials([]byte(`[1]`))},
-			Err:   ErrInvalidCredentials,
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: stubCredentials(`[1]`)},
+			Err:   credentials.ErrInvalid,
 		},
 		"Credentials holding a number": {
-			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: processor.NewCredentials([]byte(`{"username":1}`))},
-			Err:   ErrInvalidCredentials,
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: stubCredentials(`{"username":1,"kind":"basic"}`)},
+			Err:   credentials.ErrInvalid,
+		},
+		"Credentials without a kind": {
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: stubCredentials(`{"username":"user"}`)},
+			Err:   credentials.ErrInvalid,
+		},
+		"Token credentials for a SQL type": {
+			Input: CreateInput{Type: TypePostgreSQL, Name: "DB", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
+			Err:   credentials.ErrInvalid,
+		},
+		"Token credentials for Loki": {
+			Input: CreateInput{Type: TypeLoki, Name: "Logs", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
 		},
 		"No credentials": {
 			Input: CreateInput{Type: TypePrometheus, Name: "Metrics"},
@@ -237,7 +292,7 @@ func Test_CreateInput_Validate(t *testing.T) {
 			Input: CreateInput{Type: TypePrometheus, Name: " " + strings.Repeat("é", _maxNameLength) + " "},
 		},
 		"Valid credentials": {
-			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`))},
+			Input: CreateInput{Type: TypePrometheus, Name: "Metrics", Credentials: stubCredentials(`{"username":"user","password":"pass","kind":"basic"}`)},
 		},
 	}
 
@@ -282,7 +337,7 @@ func Test_DataSource_ApplyUpdate(t *testing.T) {
 		Inp        UpdateInput
 		Name       string
 		URL        string
-		Creds      processor.Credentials
+		Creds      credentials.Credentials
 		Err        error
 	}{
 		"Name of white space only": {
@@ -303,7 +358,7 @@ func Test_DataSource_ApplyUpdate(t *testing.T) {
 				URL:  "http://old.test",
 			},
 			Inp: UpdateInput{
-				Credentials: null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
+				Credentials: null.ValueFrom(credentials.UpdateInput(`{"kind":"basic","username":"user"}`)),
 			},
 			Err: assert.AnError,
 		},
@@ -335,7 +390,7 @@ func Test_DataSource_ApplyUpdate(t *testing.T) {
 				Type:        TypePrometheus,
 				Name:        "old",
 				URL:         "http://old.test",
-				Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+				Credentials: stubCredentials(`{"username":"user","password":"pass","kind":"basic"}`),
 			},
 			Inp: UpdateInput{
 				URL: null.StringFrom("http://new.test"),
@@ -348,29 +403,29 @@ func Test_DataSource_ApplyUpdate(t *testing.T) {
 				Type:        TypePrometheus,
 				Name:        "old",
 				URL:         "http://old.test",
-				Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+				Credentials: stubCredentials(`{"username":"user","password":"pass","kind":"basic"}`),
 			},
 			Inp: UpdateInput{
 				URL:         null.StringFrom("http://new.test"),
-				Credentials: null.ValueFrom(processor.CredentialsUpdateInput(`{"password":"new"}`)),
+				Credentials: null.ValueFrom(credentials.UpdateInput(`{"kind":"basic","password":"new"}`)),
 			},
 			Name:  "old",
 			URL:   "http://new.test",
-			Creds: processor.NewCredentials([]byte(`{"username":"","password":"new"}`)),
+			Creds: stubCredentials(`{"username":"","password":"new","kind":"basic"}`),
 		},
 		"Unchanged url keeps credentials": {
 			DataSource: &DataSource{
 				Type:        TypePrometheus,
 				Name:        "old",
 				URL:         "http://old.test",
-				Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+				Credentials: stubCredentials(`{"username":"user","password":"pass","kind":"basic"}`),
 			},
 			Inp: UpdateInput{
 				URL: null.StringFrom("http://old.test"),
 			},
 			Name:  "old",
 			URL:   "http://old.test",
-			Creds: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+			Creds: stubCredentials(`{"username":"user","password":"pass","kind":"basic"}`),
 		},
 		"Successful update of credentials": {
 			DataSource: &DataSource{
@@ -379,11 +434,11 @@ func Test_DataSource_ApplyUpdate(t *testing.T) {
 				URL:  "http://old.test",
 			},
 			Inp: UpdateInput{
-				Credentials: null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
+				Credentials: null.ValueFrom(credentials.UpdateInput(`{"kind":"basic","username":"user"}`)),
 			},
 			Name:  "old",
 			URL:   "http://old.test",
-			Creds: processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
+			Creds: stubCredentials(`{"username":"user","password":"","kind":"basic"}`),
 		},
 		"Successful update of undecryptable credentials": {
 			DataSource: &DataSource{
@@ -393,11 +448,11 @@ func Test_DataSource_ApplyUpdate(t *testing.T) {
 				Credentials: undecryptableCredentials(t),
 			},
 			Inp: UpdateInput{
-				Credentials: null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user","password":"pass"}`)),
+				Credentials: null.ValueFrom(credentials.UpdateInput(`{"kind":"basic","username":"user","password":"pass"}`)),
 			},
 			Name:  "old",
 			URL:   "http://old.test",
-			Creds: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+			Creds: stubCredentials(`{"username":"user","password":"pass","kind":"basic"}`),
 		},
 	}
 
@@ -426,65 +481,88 @@ func Test_DataSource_ApplyUpdate(t *testing.T) {
 func Test_DataSource_updatedCredentials(t *testing.T) {
 	cc := map[string]struct {
 		DataSource *DataSource
-		Inp        null.Value[processor.CredentialsUpdateInput]
-		Creds      processor.Credentials
+		Inp        null.Value[credentials.UpdateInput]
+		Creds      credentials.Credentials
 		Err        error
 	}{
 		"Skipped update without valid input": {
 			DataSource: &DataSource{
 				Type:        TypePrometheus,
-				Credentials: processor.NewCredentials([]byte(`{"username":"old","password":""}`)),
+				Credentials: stubCredentials(`{"username":"old","password":"","kind":"basic"}`),
 			},
-			Creds: processor.NewCredentials([]byte(`{"username":"old","password":""}`)),
+			Creds: stubCredentials(`{"username":"old","password":"","kind":"basic"}`),
 		},
-		"Error returned by processor.UpdateBasicCredentials for prometheus": {
+		"Error returned by processor.UpdateCredentials for prometheus": {
 			DataSource: &DataSource{Type: TypePrometheus},
-			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{`)),
+			Inp:        null.ValueFrom(credentials.UpdateInput(`{`)),
 			Err:        assert.AnError,
 		},
 		"Successful prometheus update": {
 			DataSource: &DataSource{Type: TypePrometheus},
-			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
-			Creds:      processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
+			Inp:        null.ValueFrom(credentials.UpdateInput(`{"kind":"basic","username":"user"}`)),
+			Creds:      stubCredentials(`{"username":"user","password":"","kind":"basic"}`),
 		},
-		"Error returned by processor.UpdateBasicCredentials for postgresql": {
+		"Error returned by processor.UpdateCredentials for postgresql": {
 			DataSource: &DataSource{Type: TypePostgreSQL},
-			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{`)),
+			Inp:        null.ValueFrom(credentials.UpdateInput(`{`)),
 			Err:        assert.AnError,
 		},
 		"Successful postgresql update": {
 			DataSource: &DataSource{Type: TypePostgreSQL},
-			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
-			Creds:      processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
+			Inp:        null.ValueFrom(credentials.UpdateInput(`{"kind":"basic","username":"user"}`)),
+			Creds:      stubCredentials(`{"username":"user","password":"","kind":"basic"}`),
 		},
 		"Successful supabase update": {
 			DataSource: &DataSource{Type: TypeSupabase},
-			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
-			Creds:      processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
+			Inp:        null.ValueFrom(credentials.UpdateInput(`{"kind":"basic","username":"user"}`)),
+			Creds:      stubCredentials(`{"username":"user","password":"","kind":"basic"}`),
 		},
-		"Error returned by processor.UpdateBasicCredentials for mariadb": {
+		"Error returned by processor.UpdateCredentials for mariadb": {
 			DataSource: &DataSource{Type: TypeMariaDB},
-			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{`)),
+			Inp:        null.ValueFrom(credentials.UpdateInput(`{`)),
 			Err:        assert.AnError,
 		},
 		"Successful mariadb update": {
 			DataSource: &DataSource{Type: TypeMariaDB},
-			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
-			Creds:      processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
+			Inp:        null.ValueFrom(credentials.UpdateInput(`{"kind":"basic","username":"user"}`)),
+			Creds:      stubCredentials(`{"username":"user","password":"","kind":"basic"}`),
 		},
 		"Successful mysql update": {
 			DataSource: &DataSource{Type: TypeMySQL},
-			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
-			Creds:      processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
+			Inp:        null.ValueFrom(credentials.UpdateInput(`{"kind":"basic","username":"user"}`)),
+			Creds:      stubCredentials(`{"username":"user","password":"","kind":"basic"}`),
 		},
 		"Successful loki update": {
 			DataSource: &DataSource{Type: TypeLoki},
-			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
-			Creds:      processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
+			Inp:        null.ValueFrom(credentials.UpdateInput(`{"kind":"basic","username":"user"}`)),
+			Creds:      stubCredentials(`{"username":"user","password":"","kind":"basic"}`),
+		},
+		"Update without a kind and nothing stored": {
+			DataSource: &DataSource{Type: TypeLoki},
+			Inp:        null.ValueFrom(credentials.UpdateInput(`{"username":"user"}`)),
+			Err:        credentials.ErrInvalidKind,
+		},
+		"Token refused for mysql": {
+			DataSource: &DataSource{Type: TypeMySQL},
+			Inp:        null.ValueFrom(credentials.UpdateInput(`{"kind":"token","token":"secret"}`)),
+			Err:        credentials.ErrInvalid,
+		},
+		"Successful loki token update": {
+			DataSource: &DataSource{Type: TypeLoki},
+			Inp:        null.ValueFrom(credentials.UpdateInput(`{"kind":"token","token":"secret"}`)),
+			Creds:      stubCredentials(`{"token":"secret","kind":"token"}`),
+		},
+		"Successful prometheus switch to a token": {
+			DataSource: &DataSource{
+				Type:        TypePrometheus,
+				Credentials: stubCredentials(`{"caCertificate":"pem","username":"user","password":"pass","kind":"basic"}`),
+			},
+			Inp:   null.ValueFrom(credentials.UpdateInput(`{"kind":"token","token":"secret"}`)),
+			Creds: stubCredentials(`{"caCertificate":"pem","token":"secret","kind":"token"}`),
 		},
 		"Invalid data source type": {
 			DataSource: &DataSource{Type: Type("bogus")},
-			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
+			Inp:        null.ValueFrom(credentials.UpdateInput(`{"kind":"basic","username":"user"}`)),
 			Err:        assert.AnError,
 		},
 		"Skipped update leaves undecryptable credentials as they are": {
@@ -499,8 +577,8 @@ func Test_DataSource_updatedCredentials(t *testing.T) {
 				Type:        TypePrometheus,
 				Credentials: undecryptableCredentials(t),
 			},
-			Inp:   null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
-			Creds: processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
+			Inp:   null.ValueFrom(credentials.UpdateInput(`{"kind":"basic","username":"user"}`)),
+			Creds: stubCredentials(`{"username":"user","password":"","kind":"basic"}`),
 		},
 	}
 
@@ -604,4 +682,14 @@ func Test_validateName(t *testing.T) {
 			testutil.AssertEqualError(t, c.Err, validateName(c.Name))
 		})
 	}
+}
+
+// stubCredentials returns credentials holding the given JSON.
+func stubCredentials(data string) credentials.Credentials {
+	var creds credentials.Credentials
+	if err := creds.UnmarshalJSON([]byte(data)); err != nil {
+		panic("cannot set test credentials: " + err.Error())
+	}
+
+	return creds
 }

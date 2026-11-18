@@ -21,6 +21,9 @@ interface BranchProviderEntry {
 }
 
 let unsubWsHooksChange: (() => void) | null | undefined = null
+// the read of the role that a reconnect started. It is resolved while
+// there is none.
+let roleRead: Promise<unknown> = Promise.resolve()
 
 // NOTE: this component is remounted every time the document ID
 // is changed (page change)
@@ -39,7 +42,7 @@ const emit = defineEmits<{
 const config = useRuntimeConfig()
 const documentHookAPI = useDocumentHookAPI()
 const { t } = useI18n({ useScope: "global" })
-const { fetchAuthSession } = useAuthSession()
+const { fetchAuthSession, fetchOrganization, canRoleEdit } = useAuthSession()
 const editorStore = useEditorStore()
 const { useFetchDocumentBranchesByDocId } = useDocumentAPI()
 const fetchBranches = useFetchDocumentBranchesByDocId(
@@ -92,8 +95,11 @@ const activeBranchProvider = computed<BranchProviderEntry | null>(() => {
 const activeBranchReadOnly = computed(
 	() => activeBranchProvider.value?.readOnly.value ?? false,
 )
+// a viewer's connection is always read-only, so only an editor's can be
+// unexpected
 const unexpectedReadOnly = computed(
 	() =>
+		canRoleEdit.value &&
 		!!activeBranch.value &&
 		!activeBranch.value.protected &&
 		activeBranchReadOnly.value,
@@ -295,20 +301,43 @@ watchImmediate(
 	},
 )
 
-watch(unexpectedReadOnly, (readOnly) => {
-	if (readOnly) {
-		showToastMessage(
-			"warning",
-			t("editor.readonly-error.title"),
-			t("editor.readonly-error.description"),
-			{
-				label: t("editor.reload-page"),
-				onClick: () => {
-					reloadNuxtApp({ force: true })
-				},
-			},
-		)
+watch(unexpectedReadOnly, async (readOnly, _, onCleanup) => {
+	if (!readOnly) {
+		return
 	}
+
+	// a branch switch while the wait below runs starts a second wait. Only
+	// the latest one may warn.
+	const latest = new AbortController()
+	onCleanup(() => {
+		latest.abort()
+	})
+
+	// a demoted editor's connection comes back read-only before the role
+	// read that its reconnect started has answered. So the warning waits for
+	// that read, and shows only if the user may still edit. Another
+	// reconnect can replace the read while it runs, so wait for the latest.
+	let read: Promise<unknown>
+	do {
+		read = roleRead
+		await read
+	} while (read !== roleRead)
+
+	if (latest.signal.aborted || !unexpectedReadOnly.value) {
+		return
+	}
+
+	showToastMessage(
+		"warning",
+		t("editor.readonly-error.title"),
+		t("editor.readonly-error.description"),
+		{
+			label: t("editor.reload-page"),
+			onClick: () => {
+				reloadNuxtApp({ force: true })
+			},
+		},
+	)
 })
 
 watchImmediate([isEditable, nameEditor, contentEditor], () => {
@@ -337,12 +366,20 @@ function createBranchProvider(
 	const ydoc = new Y.Doc()
 	const synced = ref(false)
 	const readOnly = ref(false)
+	let authenticated = false
 	const provider = new HocuspocusProvider({
 		url: `${config.public.authRealtimeAPIBaseWsURL}?schemaVersion=${EDITOR_SCHEMA_VERSION}`,
 		name: streamName,
 		document: ydoc,
 		token: "notoken",
 		onAuthenticated({ scope }) {
+			// a role change drops the user's connections, and each one comes
+			// back under the new role. So a reconnect reads the role again.
+			if (authenticated) {
+				roleRead = fetchOrganization.refetch()
+			}
+
+			authenticated = true
 			readOnly.value = scope === "readonly"
 		},
 		onAuthenticationFailed() {

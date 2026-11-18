@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -22,6 +21,8 @@ import (
 	"github.com/lann/builder"
 	"github.com/orlangure/gnomock"
 	pgDocker "github.com/orlangure/gnomock/preset/postgres"
+	"github.com/oxynote/oxynote/server/core/internal/datasource"
+	"github.com/oxynote/oxynote/server/core/internal/db/migrations"
 	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
@@ -33,7 +34,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
-	migr "github.com/rubenv/sql-migrate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -204,7 +204,7 @@ func Test_DetectError(t *testing.T) {
 
 			return tcase{
 				Err:    err,
-				Result: errutil.New(http.StatusBadRequest, "document_branch.duplicate_name", "branch name is already in use"),
+				Result: errutil.New(http.StatusConflict, "document_branch.duplicate_name", "branch name is already in use"),
 			}
 		},
 		"Duplicate file id": func(t *testing.T) tcase {
@@ -274,16 +274,7 @@ func Test_DB_migrateUp(t *testing.T) {
 	// rolling back to before the variables migration (008) and up again
 	// runs its backfill over an organization that existed before it, and
 	// the palette name migration (010) over tags stored as hex.
-	fsys, err := fs.Sub(_migrations, "migrations")
-	require.NoError(t, err)
-
-	_, err = db.migrations.ExecVersion(
-		db.sql.DB,
-		"postgres",
-		&migr.HttpFileSystemMigrationSource{FileSystem: http.FS(fsys)},
-		migr.Down,
-		7,
-	)
+	_, err := db.migrations.DownTo(context.Background(), 7)
 	require.NoError(t, err)
 
 	// the member roles migration (012) turns every owner into an admin and
@@ -318,6 +309,13 @@ func Test_DB_migrateUp(t *testing.T) {
 
 	_, err = db.sql.Exec(q, args...)
 	require.NoError(t, err)
+
+	// the credentials kind migration (013) adds the basic kind to
+	// credentials stored before it.
+	source := prepDataSources(t, db, 1, func(_ int, ds *datasource.DataSource) {
+		ds.OrganizationID = organizationID
+		ds.Credentials = stubCredentials(`{"username":"user","password":"pass"}`)
+	})[0]
 
 	hexes := []string{"#f54a00", "#e7010c", "#155DFC", "rgb(1, 2, 3)"}
 
@@ -367,6 +365,340 @@ func Test_DB_migrateUp(t *testing.T) {
 
 	require.NoError(t, db.sql.Get(&invitationRole, "SELECT role FROM organization_invitations WHERE id = 'inv-1'"))
 	assert.Equal(t, "admin", invitationRole)
+
+	assert.JSONEq(t, `{"kind":"basic","username":"user","password":"pass"}`, decryptDataSourceCredentials(t, db, _dataSourceKeys, source.ID))
+}
+
+func Test_migrateDataSourceCredentialsKind(t *testing.T) {
+	// the keyring holds a retired key besides the newest one, so a row
+	// sealed under the retired key is still read.
+	keys := mustParseKeys(_dataSourceKey + "," + _retiredDataSourceKey)
+
+	type tcase struct {
+		CancelledContext bool
+		Down             bool
+		Err              error
+		// Check inspects the rows the migration left behind.
+		Check func(t *testing.T, db *DB)
+	}
+
+	// prep stores one data source holding the given credentials JSON,
+	// sealed under the database's keys.
+	prep := func(t *testing.T, db *DB, creds string) *datasource.DataSource {
+		t.Helper()
+
+		return prepDataSources(t, db, 1, func(_ int, ds *datasource.DataSource) {
+			ds.Credentials = stubCredentials(creds)
+		})[0]
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(t *testing.T, db *DB) tcase {
+			prep(t, db, `{"username":"user"}`)
+
+			return tcase{
+				CancelledContext: true,
+				Err:              assert.AnError,
+			}
+		},
+		"Basic credentials gain the basic kind": func(t *testing.T, db *DB) tcase {
+			ds := prep(t, db, `{"username":"user","password":"pass","caCertificate":"pem"}`)
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					assert.JSONEq(t,
+						`{"kind":"basic","username":"user","password":"pass","caCertificate":"pem"}`,
+						decryptDataSourceCredentials(t, db, keys, ds.ID),
+					)
+				},
+			}
+		},
+		"Credentials under a retired key move to the newest key": func(t *testing.T, db *DB) tcase {
+			db.opts.DataSourceCredentialsKeys = mustParseKeys(_retiredDataSourceKey)
+			ds := prep(t, db, `{"username":"user"}`)
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					assert.True(t, keys.IsCurrent(fetchDataSourceCredentials(t, db, ds.ID)))
+					assert.JSONEq(t, `{"kind":"basic","username":"user"}`, decryptDataSourceCredentials(t, db, keys, ds.ID))
+				},
+			}
+		},
+		"Credentials with a kind are left alone": func(t *testing.T, db *DB) tcase {
+			ds := prep(t, db, `{"kind":"token","token":"secret"}`)
+			before := fetchDataSourceCredentials(t, db, ds.ID)
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					assert.Equal(t, before, fetchDataSourceCredentials(t, db, ds.ID))
+				},
+			}
+		},
+		"Unreadable credentials are reset": func(t *testing.T, db *DB) tcase {
+			ds := prep(t, db, `{"username":"user"}`)
+			poisonDataSourceCredentials(t, db, ds.ID)
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					assert.Empty(t, decryptDataSourceCredentials(t, db, keys, ds.ID))
+				},
+			}
+		},
+		"Empty credentials are left alone": func(t *testing.T, db *DB) tcase {
+			ds := prep(t, db, ``)
+			before := fetchDataSourceCredentials(t, db, ds.ID)
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					assert.Equal(t, before, fetchDataSourceCredentials(t, db, ds.ID))
+				},
+			}
+		},
+		"Credentials that are not an object are reset": func(t *testing.T, db *DB) tcase {
+			array := prep(t, db, `[1]`)
+			nullCreds := prep(t, db, `null`)
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					assert.Empty(t, decryptDataSourceCredentials(t, db, keys, array.ID))
+					assert.Empty(t, decryptDataSourceCredentials(t, db, keys, nullCreds.ID))
+				},
+			}
+		},
+		"Down removes the basic kind": func(t *testing.T, db *DB) tcase {
+			ds := prep(t, db, `{"kind":"basic","username":"user","password":"pass"}`)
+
+			return tcase{
+				Down: true,
+				Check: func(t *testing.T, db *DB) {
+					assert.JSONEq(t, `{"username":"user","password":"pass"}`, decryptDataSourceCredentials(t, db, keys, ds.ID))
+				},
+			}
+		},
+		"Down removes the token and keeps the CA certificate": func(t *testing.T, db *DB) tcase {
+			ds := prep(t, db, `{"kind":"token","token":"secret","caCertificate":"pem"}`)
+
+			return tcase{
+				Down: true,
+				Check: func(t *testing.T, db *DB) {
+					assert.JSONEq(t, `{"caCertificate":"pem"}`, decryptDataSourceCredentials(t, db, keys, ds.ID))
+				},
+			}
+		},
+		"Down leaves credentials without a kind alone": func(t *testing.T, db *DB) tcase {
+			ds := prep(t, db, `{"username":"user"}`)
+			before := fetchDataSourceCredentials(t, db, ds.ID)
+
+			return tcase{
+				Down: true,
+				Check: func(t *testing.T, db *DB) {
+					assert.Equal(t, before, fetchDataSourceCredentials(t, db, ds.ID))
+				},
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			tx, err := db.sql.BeginTx(ctx, nil)
+			require.NoError(t, err)
+
+			t.Cleanup(func() {
+				tx.Rollback() //nolint:errcheck,gosec // the transaction is committed or the test failed
+			})
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			m := migrations.Go(migrations.Deps{DataSourceKeys: keys})[0]
+			require.Equal(t, int64(13), m.Version)
+
+			run := m.UpFnContext
+			if c.Down {
+				run = m.DownFnContext
+			}
+
+			err = run(ctx, tx)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			require.NoError(t, tx.Commit())
+
+			c.Check(t, db)
+		})
+	}
+}
+
+func Test_DB_moveSQLMigrateHistory(t *testing.T) {
+	// sql-migrate recorded these ids before goose replaced it, so its
+	// history can never list anything newer.
+	ids := []string{
+		"001_initial.sql",
+		"002_history_entry_snapshot.sql",
+		"003_document_hook_cross_branch_id.sql",
+		"004_history_entry_updated_at.sql",
+		"005_hook_status.sql",
+		"006_document_branch_views.sql",
+		"007_document_branch_view_from.sql",
+		"008_personal_variables.sql",
+		"009_drop_search_jobs.sql",
+		"010_palette_color_names.sql",
+		"011_hook_triggered.sql",
+		"012_member_roles.sql",
+	}
+
+	type tcase struct {
+		// DB, when set, replaces the database the case was given.
+		DB       *DB
+		Versions []int64
+		Err      error
+		// Check, when set, inspects the database after a failed move.
+		Check func(t *testing.T, db *DB)
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"No sql-migrate table": func(_ *testing.T, db *DB) tcase {
+			return tcase{
+				Versions: allVersions(db),
+			}
+		},
+		"Full history": func(t *testing.T, db *DB) tcase {
+			_, err := db.sql.Exec("DROP TABLE goose_db_version")
+			require.NoError(t, err)
+
+			prepSQLMigrateHistory(t, db, ids...)
+
+			return tcase{
+				Versions: []int64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
+			}
+		},
+		"History behind the migrations": func(t *testing.T, db *DB) tcase {
+			_, err := db.migrations.DownTo(context.Background(), 10)
+			require.NoError(t, err)
+
+			_, err = db.sql.Exec("DROP TABLE goose_db_version")
+			require.NoError(t, err)
+
+			prepSQLMigrateHistory(t, db, ids[:10]...)
+
+			return tcase{
+				Versions: []int64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+			}
+		},
+		"History outside the public schema": func(t *testing.T, db *DB) tcase {
+			_, err := db.sql.Exec("DROP TABLE goose_db_version")
+			require.NoError(t, err)
+
+			prepSQLMigrateHistory(t, db, ids...)
+
+			_, err = db.sql.Exec("ALTER SCHEMA public RENAME TO oxynote")
+			require.NoError(t, err)
+
+			var name string
+
+			require.NoError(t, db.sql.Get(&name, "SELECT current_database()"))
+
+			// New moves the history itself, so the move below finds nothing
+			// left to do. New fails when the move misses the history,
+			// because 001_initial runs again over the existing tables.
+			sdb, err := New(slog.New(slog.DiscardHandler), metricutil.NewFactory("test", nil), Options{
+				DSN:                       fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&search_path=oxynote", _pgUser, _pgPass, _pgDSN, name),
+				DataSourceCredentialsKeys: _dataSourceKeys,
+			})
+			require.NoError(t, err)
+
+			t.Cleanup(func() {
+				sdb.Close() //nolint:errcheck,gosec // error provides no meaningful info
+			})
+
+			return tcase{
+				DB:       sdb,
+				Versions: allVersions(sdb),
+			}
+		},
+		"History already in the goose table": func(t *testing.T, db *DB) tcase {
+			prepSQLMigrateHistory(t, db, ids...)
+
+			return tcase{
+				Versions: allVersions(db),
+			}
+		},
+		"Error returned by BeginTx": func(t *testing.T, db *DB) tcase {
+			require.NoError(t, db.Close())
+
+			return tcase{
+				Err: assert.AnError,
+			}
+		},
+		"Id without a version": func(t *testing.T, db *DB) tcase {
+			_, err := db.sql.Exec("DROP TABLE goose_db_version")
+			require.NoError(t, err)
+
+			prepSQLMigrateHistory(t, db, "initial.sql")
+
+			return tcase{
+				Err: assert.AnError,
+				Check: func(t *testing.T, db *DB) {
+					t.Helper()
+
+					var hasHistory, hasVersionTable bool
+
+					require.NoError(t, db.sql.QueryRow(
+						"SELECT to_regclass('migrations') IS NOT NULL, to_regclass('goose_db_version') IS NOT NULL",
+					).Scan(&hasHistory, &hasVersionTable))
+					assert.True(t, hasHistory)
+					assert.False(t, hasVersionTable)
+				},
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			if c.DB != nil {
+				db = c.DB
+			}
+
+			err := db.moveSQLMigrateHistory(context.Background())
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				if c.Check != nil {
+					c.Check(t, db)
+				}
+
+				return
+			}
+
+			var hasHistory bool
+
+			require.NoError(t, db.sql.Get(&hasHistory, "SELECT to_regclass('migrations') IS NOT NULL"))
+			assert.False(t, hasHistory)
+			assert.Equal(t, c.Versions, recordedVersions(t, db))
+
+			// the first migration fails on its existing tables, so a clean
+			// run proves that no recorded migration runs again.
+			require.NoError(t, db.migrateUp())
+			assert.Equal(t, allVersions(db), recordedVersions(t, db))
+		})
+	}
 }
 
 func Test_DB_BeginTx(t *testing.T) {
@@ -484,4 +816,43 @@ func prepTempDB(t *testing.T) *DB {
 	})
 
 	return db
+}
+
+// prepSQLMigrateHistory creates the migrations table that rubenv/sql-migrate
+// kept and records the given ids in it.
+func prepSQLMigrateHistory(t *testing.T, db *DB, ids ...string) {
+	t.Helper()
+
+	_, err := db.sql.Exec("CREATE TABLE migrations (id text PRIMARY KEY, applied_at timestamptz)")
+	require.NoError(t, err)
+
+	for _, id := range ids {
+		_, err = db.sql.Exec("INSERT INTO migrations (id, applied_at) VALUES ($1, now())", id)
+		require.NoError(t, err)
+	}
+}
+
+// recordedVersions returns the versions in the goose version table, in
+// ascending order and with any duplicate kept.
+func recordedVersions(t *testing.T, db *DB) []int64 {
+	t.Helper()
+
+	var versions []int64
+
+	require.NoError(t, db.sql.Select(&versions, "SELECT version_id FROM goose_db_version ORDER BY version_id"))
+
+	return versions
+}
+
+// allVersions returns version 0 followed by the version of every migration
+// goose knows, which is what the version table holds once all are applied.
+func allVersions(db *DB) []int64 {
+	sources := db.migrations.ListSources()
+	versions := make([]int64, 1, 1+len(sources))
+
+	for _, s := range sources {
+		versions = append(versions, s.Version)
+	}
+
+	return versions
 }

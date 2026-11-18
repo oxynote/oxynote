@@ -9,7 +9,7 @@ import {
 	redirectToLogin,
 	redirectToOrgRoot,
 } from "~/plugins/03.api-fetch"
-import { showToastMessage } from "~/components/toast"
+import { showRequestErrorToast, showToastMessage } from "~/components/toast"
 import type { Editor } from "@tiptap/core"
 
 const DOC_CREATION_MIN_SPINNER_TIME_MS = 500
@@ -646,8 +646,8 @@ async function handleDocumentCreation(
 			await until(fetchDocumentTree.isLoading).toBe(false)
 			await redirectToFirst(null, fetchOrganization, fetchDocumentTree, null)
 		}
-	} catch {
-		showToastMessage("error", t("sidebar.errors.create-document-failed"))
+	} catch (err) {
+		showRequestErrorToast(err, t("sidebar.errors.create-document-failed"))
 		return
 	} finally {
 		createLoading.value = false
@@ -687,8 +687,8 @@ function handleDocumentDeletion(id: string | null | undefined) {
 					"success",
 					t("editor.document-deletion-modal.deletion-success", { name }),
 				)
-			} catch {
-				showToastMessage("error", t("editor.errors.deletion-failed"))
+			} catch (err) {
+				showRequestErrorToast(err, t("editor.errors.deletion-failed"))
 			}
 		},
 	}
@@ -700,8 +700,8 @@ function handleTagDeletion(tag: { id: string; name: string }) {
 		deleteTag: async () => {
 			try {
 				await deleteTag.mutateAsync(tag.id)
-			} catch {
-				showToastMessage("error", t("sidebar.errors.delete-tag-failed"))
+			} catch (err) {
+				showRequestErrorToast(err, t("sidebar.errors.delete-tag-failed"))
 			}
 		},
 	}
@@ -723,8 +723,8 @@ async function handleDocumentDuplication(id?: string) {
 		if (doc) {
 			await redirectToDocId(doc.id, fetchOrganization)
 		}
-	} catch {
-		showToastMessage("error", t("editor.errors.duplication-failed"))
+	} catch (err) {
+		showRequestErrorToast(err, t("editor.errors.duplication-failed"))
 	} finally {
 		createLoading.value = false
 	}

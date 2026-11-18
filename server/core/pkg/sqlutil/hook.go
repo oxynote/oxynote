@@ -10,14 +10,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type contextKey int
-
-const timeKey contextKey = iota + 1
-
 const (
 	// _queryLabel specifies a constant raw query label.
 	_queryLabel = "query"
 )
+
+// _placeholderListRe matches a run of two or more positional placeholders,
+// which is the one part of a squirrel query that varies with the data.
+var _placeholderListRe = regexp.MustCompile(`\$\d+(\s*,\s*\$\d+)+`)
+
+type contextKey int
+
+// _timeKey is the context key of the time a query started.
+const _timeKey contextKey = iota + 1
 
 // Hooks specifies custom database querying hooks and implements
 // sqlhook.hooks interface.
@@ -107,7 +112,7 @@ func (h *Hooks) Before(
 		_queryLabel: normalizeQuery(query),
 	}).Inc()
 
-	return context.WithValue(ctx, timeKey, timeutil.Now()), nil
+	return context.WithValue(ctx, _timeKey, timeutil.Now()), nil
 }
 
 // OnError executes on error.
@@ -125,7 +130,7 @@ func (h *Hooks) After(
 	query string,
 	_ ...any,
 ) (context.Context, error) {
-	startedAt, ok := ctx.Value(timeKey).(time.Time)
+	startedAt, ok := ctx.Value(_timeKey).(time.Time)
 	if ok && time.Since(startedAt) > h.durationThreshold {
 		h.queriesDuration.With(prometheus.Labels{
 			_queryLabel: normalizeQuery(query),
@@ -134,10 +139,6 @@ func (h *Hooks) After(
 
 	return ctx, nil
 }
-
-// _placeholderListRe matches a run of two or more positional placeholders,
-// which is the one part of a squirrel query that varies with the data.
-var _placeholderListRe = regexp.MustCompile(`\$\d+(\s*,\s*\$\d+)+`)
 
 // normalizeQuery collapses the parts of a query that vary per call, so an IN
 // clause over a slice mints one label value instead of one per slice length.

@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
-	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 )
 
@@ -53,7 +53,7 @@ func (p *Prometheus) TestConnection(ctx context.Context) (ConnectionStatus, erro
 
 	client, err := p.client()
 	if err != nil {
-		if errors.Is(err, _errInvalidCACertificate) {
+		if errors.Is(err, credentials.ErrInvalidCACertificate) {
 			return ConnectionStatusInvalidCACertificate, nil
 		}
 
@@ -78,6 +78,21 @@ func (p *Prometheus) TestConnection(ctx context.Context) (ConnectionStatus, erro
 	return ConnectionStatusSuccess, nil
 }
 
+// handlePrometheusError sorts a Prometheus client error into the same
+// categories QueryRange uses, so every lookup answers consistently.
+func handlePrometheusAPIError(perr *v1.Error) error {
+	switch {
+	case perr.Type == v1.ErrServer:
+		return ConnectionStatusUnreachable.Error()
+	case perr.Type == v1.ErrClient && (perr.Msg == "client error: 401" || perr.Msg == "client error: 403"):
+		return ConnectionStatusUnauthorized.Error()
+	case perr.Type == v1.ErrClient && perr.Msg == "client error: 429":
+		return _errRateLimited
+	}
+
+	return NewInvalidQueryError(perr.Msg)
+}
+
 // Metadata retrieves metadata from the Prometheus data source.
 func (p *Prometheus) Metadata(ctx context.Context) (*PrometheusMetadataResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
@@ -90,6 +105,10 @@ func (p *Prometheus) Metadata(ctx context.Context) (*PrometheusMetadataResult, e
 
 	v, err := client.Metadata(ctx, "", _metadataLimit)
 	if err != nil {
+		if perr, ok := errors.AsType[*v1.Error](err); ok {
+			return nil, handlePrometheusAPIError(perr)
+		}
+
 		return nil, fmt.Errorf("error fetching metadata: %w", err)
 	}
 
@@ -116,26 +135,11 @@ func (p *Prometheus) QueryRange(ctx context.Context, q string, tr TimeRange) (*P
 		Step:  ntr.QueryStep(),
 	}, v1.WithLimit(_queryLimit))
 	if err != nil {
-		perr, ok := errors.AsType[*v1.Error](err)
-		if !ok {
-			return nil, fmt.Errorf("error performing query: %w", err)
+		if perr, ok := errors.AsType[*v1.Error](err); ok {
+			return nil, handlePrometheusAPIError(perr)
 		}
 
-		// the client keeps no status code. For a status Prometheus did
-		// not describe itself, it builds the message from the code, so
-		// that message tells an outage, a refused login or a rate limit
-		// from an error about the query.
-		switch {
-		case perr.Type == v1.ErrServer:
-			return nil, ConnectionStatusUnreachable.Error()
-		case perr.Type == v1.ErrClient &&
-			(perr.Msg == "client error: 401" || perr.Msg == "client error: 403"):
-			return nil, ConnectionStatusUnauthorized.Error()
-		case perr.Type == v1.ErrClient && perr.Msg == "client error: 429":
-			return nil, _errRateLimited
-		}
-
-		return nil, NewInvalidQueryError(perr.Msg)
+		return nil, fmt.Errorf("error performing query: %w", err)
 	}
 
 	return &PrometheusQueryResult{
@@ -166,6 +170,10 @@ func (p *Prometheus) LabelNames(ctx context.Context, matchers []string, tr TimeR
 		v1.WithLimit(_labelLimit),
 	)
 	if err != nil {
+		if perr, ok := errors.AsType[*v1.Error](err); ok {
+			return nil, handlePrometheusAPIError(perr)
+		}
+
 		return nil, fmt.Errorf("error fetching label names: %w", err)
 	}
 
@@ -181,7 +189,7 @@ func (p *Prometheus) LabelNames(ctx context.Context, matchers []string, tr TimeR
 }
 
 // LabelValues retrieves all values for a specific label from the Prometheus data source.
-// The matchers parameter can be used to filter label values by series selectors.
+// The matchers parameter specifies label values by series selectors.
 func (p *Prometheus) LabelValues(ctx context.Context, label string, matchers []string, tr TimeRange) (*PrometheusLabelValuesResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
@@ -202,6 +210,10 @@ func (p *Prometheus) LabelValues(ctx context.Context, label string, matchers []s
 		v1.WithLimit(_labelLimit),
 	)
 	if err != nil {
+		if perr, ok := errors.AsType[*v1.Error](err); ok {
+			return nil, handlePrometheusAPIError(perr)
+		}
+
 		return nil, fmt.Errorf("error fetching label values: %w", err)
 	}
 
@@ -237,6 +249,10 @@ func (p *Prometheus) Series(ctx context.Context, matchers []string, tr TimeRange
 		v1.WithLimit(_labelLimit),
 	)
 	if err != nil {
+		if perr, ok := errors.AsType[*v1.Error](err); ok {
+			return nil, handlePrometheusAPIError(perr)
+		}
+
 		return nil, fmt.Errorf("error fetching series: %w", err)
 	}
 
@@ -251,25 +267,20 @@ func (p *Prometheus) Series(ctx context.Context, matchers []string, tr TimeRange
 func (p *Prometheus) client() (v1.API, error) {
 	rawCreds := p.inp.Credentials()
 
-	creds, err := rawCreds.basic()
+	auth, err := rawCreds.Read()
 	if err != nil {
 		return nil, err
 	}
 
 	address := p.inp.URL()
 
-	roundTripper, err := p.transport.roundTripper(api.DefaultRoundTripper, address, creds)
+	roundTripper, err := p.transport.roundTripper(api.DefaultRoundTripper, address, auth)
 	if err != nil {
 		return nil, err
 	}
 
-	// credentials holding only a CA certificate authenticate nobody.
-	if creds.Username != "" || creds.Password != "" {
-		roundTripper = config.NewBasicAuthRoundTripper(
-			config.NewInlineSecret(creds.Username),
-			config.NewInlineSecret(creds.Password),
-			roundTripper,
-		)
+	if auth != nil {
+		roundTripper = auth.Authorize(roundTripper)
 	}
 
 	client, err := api.NewClient(api.Config{

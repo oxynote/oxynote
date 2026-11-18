@@ -46,6 +46,17 @@ func (d discarder) Add(_ float64) {}
 // Observe implements Observer.
 func (d discarder) Observe(_ float64) {}
 
+// histogramBuckets returns custom buckets if non-empty, otherwise
+// the package default. Bucket boundaries must be strictly
+// ascending; the prometheus client validates that itself.
+func histogramBuckets(custom []float64) []float64 {
+	if len(custom) > 0 {
+		return custom
+	}
+
+	return _defaultHistogramBuckets
+}
+
 // CounterVec is a counter vector.
 type CounterVec interface {
 	// With returns a counter with the given labels.
@@ -95,15 +106,4 @@ type Gauge interface {
 	// Sub should subtract the given value from the Gauge. (The value can
 	// be negative, resulting in an increase of the Gauge.)
 	Sub(value float64)
-}
-
-// histogramBuckets returns custom buckets if non-empty, otherwise
-// the package default. Bucket boundaries must be strictly
-// ascending; the prometheus client validates that itself.
-func histogramBuckets(custom []float64) []float64 {
-	if len(custom) > 0 {
-		return custom
-	}
-
-	return _defaultHistogramBuckets
 }

@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,12 +42,12 @@ func Test_ownTransport_roundTripper(t *testing.T) {
 		"URL without TLS": {
 			URL:           "http://127.0.0.1",
 			CACertificate: srvCA,
-			Err:           _errInvalidCACertificate,
+			Err:           credentials.ErrInvalidCACertificate,
 		},
-		"Error returned by BasicCredentials.rootCAs": {
+		"Error returned by rootCAs": {
 			URL:           srv.URL,
 			CACertificate: "not a certificate",
-			Err:           _errInvalidCACertificate,
+			Err:           credentials.ErrInvalidCACertificate,
 		},
 		"Server the CA did not sign": {
 			URL:           srv.URL,
@@ -68,9 +69,8 @@ func Test_ownTransport_roundTripper(t *testing.T) {
 			t.Cleanup(ot.close)
 
 			shared := &http.Transport{}
-			creds := BasicCredentials{CACertificate: c.CACertificate}
 
-			rt, err := ot.roundTripper(shared, c.URL, creds)
+			rt, err := ot.roundTripper(shared, c.URL, credentials.Basic{CACertificate: c.CACertificate})
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -86,7 +86,7 @@ func Test_ownTransport_roundTripper(t *testing.T) {
 			}
 
 			// the transport is built once and handed to every later call.
-			again, err := ot.roundTripper(shared, c.URL, creds)
+			again, err := ot.roundTripper(shared, c.URL, credentials.Basic{CACertificate: c.CACertificate})
 			require.NoError(t, err)
 			assert.Same(t, rt, again)
 
@@ -127,8 +127,6 @@ func Test_ownTransport_close(t *testing.T) {
 
 			t.Cleanup(ot.close)
 
-			creds := BasicCredentials{CACertificate: srvCA}
-
 			if !c.Used {
 				ot.close()
 				assert.Nil(t, ot.transport)
@@ -136,7 +134,7 @@ func Test_ownTransport_close(t *testing.T) {
 				return
 			}
 
-			rt, err := ot.roundTripper(nil, srv.URL, creds)
+			rt, err := ot.roundTripper(nil, srv.URL, credentials.Basic{CACertificate: srvCA})
 			require.NoError(t, err)
 			require.NoError(t, roundTrip(rt, srv.URL))
 
@@ -198,6 +196,6 @@ func prepTLSInput(t *testing.T, h http.Handler, ca string) *InputMock {
 
 	return &InputMock{
 		URLFunc:         func() string { return srv.URL },
-		CredentialsFunc: func() Credentials { return creds },
+		CredentialsFunc: func() credentials.Credentials { return creds },
 	}
 }

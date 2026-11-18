@@ -4,7 +4,7 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { flushPromises, type VueWrapper } from "@vue/test-utils"
 import { vi } from "vitest"
-import type { H3Event } from "h3"
+import { setResponseStatus, type H3Event } from "h3"
 import type { ComponentPublicInstance, VNode } from "vue"
 import { toast } from "vue-sonner"
 import {
@@ -385,6 +385,14 @@ export function mockAuthEndpoint(
 	mockEndpoint(method, `/auth-realtime/api/auth/${endpoint}`, record)
 
 	return calls
+}
+
+// answers a request the way core refuses one for the member's role. The
+// api client then raises its own toast for it.
+export function refuseForRole(event: H3Event) {
+	setResponseStatus(event, 403)
+
+	return { code: "member.forbidden" }
 }
 
 // components that refetch the organization after a change bypass the

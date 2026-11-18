@@ -12,32 +12,32 @@ import (
 )
 
 const (
-	// positionBefore places ahead of the reference block.
-	positionBefore position = "before"
+	// _positionBefore places ahead of the reference block.
+	_positionBefore position = "before"
 
-	// positionAfter places behind the reference block.
-	positionAfter position = "after"
+	// _positionAfter places behind the reference block.
+	_positionAfter position = "after"
 
-	// positionAbove places above a reference block in a grid.
-	positionAbove position = "above"
+	// _positionAbove places above a reference block in a grid.
+	_positionAbove position = "above"
 
-	// positionBelow places below a reference block in a grid.
-	positionBelow position = "below"
+	// _positionBelow places below a reference block in a grid.
+	_positionBelow position = "below"
 
-	// positionStart places at the start of the document.
-	positionStart position = "start"
+	// _positionStart places at the start of the document.
+	_positionStart position = "start"
 
-	// positionEnd places at the end of the document.
-	positionEnd position = "end"
+	// _positionEnd places at the end of the document.
+	_positionEnd position = "end"
 )
 
 const (
-	// layoutWide places a block on the columns of its grid.
-	layoutWide layout = "wide"
+	// _layoutWide places a block on the columns of its grid.
+	_layoutWide layout = "wide"
 
-	// layoutStacked places a block in the one-column order narrow pages
+	// _layoutStacked places a block in the one-column order narrow pages
 	// show a grid in.
-	layoutStacked layout = "stacked"
+	_layoutStacked layout = "stacked"
 )
 
 // _contentDescription describes the XML a block write takes. Only
@@ -96,7 +96,7 @@ func (insertBlocks) Info() Info {
 			"reference_block_uid": map[string]any{"type": "string", "description": "The id of the block to insert beside. Give it with before, after, above and below, and leave it out with start and end."},
 			"position": map[string]any{
 				"type":        "string",
-				"enum":        []string{string(positionBefore), string(positionAfter), string(positionAbove), string(positionBelow), string(positionStart), string(positionEnd)},
+				"enum":        []string{string(_positionBefore), string(_positionAfter), string(_positionAbove), string(_positionBelow), string(_positionStart), string(_positionEnd)},
 				"description": "Where the blocks land. before, after, above and below are taken against the reference block, and start and end against the whole document. " + _gridPositionDescription,
 			},
 			"content": map[string]any{"type": "string", "description": _contentDescription},
@@ -145,9 +145,9 @@ func (ib insertBlocks) Summary(inp DescribeInput) (ActionSummary, error) {
 	var summary string
 
 	switch what := countPhrase(len(blocks), "block"); ib.Position {
-	case positionStart:
+	case _positionStart:
 		summary = fmt.Sprintf("Insert %s at the start of %s", what, doc.Title())
-	case positionEnd:
+	case _positionEnd:
 		summary = fmt.Sprintf("Insert %s at the end of %s", what, doc.Title())
 	default:
 		summary = fmt.Sprintf("Insert %s %s a block in %s", what, ib.Position, doc.Title())
@@ -190,7 +190,7 @@ func (ib insertBlocks) insertOps(blocks []document.Block) []edit.Operation {
 	switch {
 	case ib.Position.relative():
 		first = edit.Insert(edit.Position(ib.Position), ib.ReferenceBlockUID, blocks[0])
-	case ib.Position == positionStart:
+	case ib.Position == _positionStart:
 		first = edit.Prepend(blocks[0])
 	default:
 	}
@@ -399,14 +399,14 @@ func (moveBlock) Info() Info {
 			"block_uid":   map[string]any{"type": "string", "description": "The id of the block to move."},
 			"position": map[string]any{
 				"type":        "string",
-				"enum":        []string{string(positionBefore), string(positionAfter), string(positionAbove), string(positionBelow)},
+				"enum":        []string{string(_positionBefore), string(_positionAfter), string(_positionAbove), string(_positionBelow)},
 				"description": "Which side of the reference block it lands on. " + _gridPositionDescription,
 			},
 			"reference_block_uid": map[string]any{"type": "string", "description": "The id of the block it lands beside."},
 			"layout": map[string]any{
 				"type":        "string",
-				"enum":        []string{string(layoutWide), string(layoutStacked)},
-				"default":     string(layoutWide),
+				"enum":        []string{string(_layoutWide), string(_layoutStacked)},
+				"default":     string(_layoutWide),
 				"description": "Which layout of a <grid> the move changes. wide moves the block on the columns, and narrow pages follow until a stacked move gives them their own one-column order. stacked moves it only in that order, where above means before and below means after.",
 			},
 		},
@@ -437,7 +437,7 @@ func (mb moveBlock) Validate() error {
 	}
 
 	if !mb.Position.relative() {
-		return fmt.Errorf("position must be %q, %q, %q or %q for a move, got %q", positionBefore, positionAfter, positionAbove, positionBelow, mb.Position)
+		return fmt.Errorf("position must be %q, %q, %q or %q for a move, got %q", _positionBefore, _positionAfter, _positionAbove, _positionBelow, mb.Position)
 	}
 
 	return nil
@@ -451,7 +451,7 @@ func (mb moveBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 	}
 
 	summary := fmt.Sprintf("Move a block %s another block in %s", mb.Position, doc.Title())
-	if mb.Layout == layoutStacked {
+	if mb.Layout == _layoutStacked {
 		summary += " on narrow pages"
 	}
 
@@ -468,7 +468,7 @@ func (mb moveBlock) Exec(inp Input) (any, error) {
 	var op edit.Operation
 
 	switch mb.Layout {
-	case layoutStacked:
+	case _layoutStacked:
 		op = edit.MoveStacked(mb.BlockUID, edit.Position(mb.Position), mb.ReferenceBlockUID)
 	default:
 		// an omitted layout is the wide one
@@ -542,20 +542,20 @@ type position string
 // is where a value outside it gets reported, named by argument.
 func (p *position) UnmarshalText(text []byte) error {
 	switch v := position(text); v {
-	case positionBefore, positionAfter, positionAbove, positionBelow, positionStart, positionEnd:
+	case _positionBefore, _positionAfter, _positionAbove, _positionBelow, _positionStart, _positionEnd:
 		*p = v
 
 		return nil
 	default:
 		return fmt.Errorf("position must be one of %q, %q, %q, %q, %q or %q, got %q",
-			positionBefore, positionAfter, positionAbove, positionBelow, positionStart, positionEnd, text)
+			_positionBefore, _positionAfter, _positionAbove, _positionBelow, _positionStart, _positionEnd, text)
 	}
 }
 
 // relative reports whether the position is taken against a reference
 // block rather than an end of the document.
 func (p position) relative() bool {
-	return p != positionStart && p != positionEnd
+	return p != _positionStart && p != _positionEnd
 }
 
 // layout is the grid layout a move changes. The zero value is wide.
@@ -565,11 +565,11 @@ type layout string
 // values.
 func (l *layout) UnmarshalText(text []byte) error {
 	switch v := layout(text); v {
-	case layoutWide, layoutStacked:
+	case _layoutWide, _layoutStacked:
 		*l = v
 
 		return nil
 	default:
-		return fmt.Errorf("layout must be %q or %q, got %q", layoutWide, layoutStacked, text)
+		return fmt.Errorf("layout must be %q or %q, got %q", _layoutWide, _layoutStacked, text)
 	}
 }

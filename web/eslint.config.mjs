@@ -161,12 +161,14 @@ export default withNuxt([
 						"/^editor\\.logs\\.status\\./",
 						"/^general\\.refresh-interval-options(-short)?\\./",
 						"/^general\\.time-range-options\\./",
+						"/^general\\.member-role-descriptions\\./",
 						"/^editor\\.metrics\\.config\\.unit-options\\./",
 						"/^editor\\.metrics\\.simulation\\.preset-options\\./",
 						"/^editor\\.navbar\\.document-modes\\./",
 						"/^settings\\.action-modals\\.data-source-removal\\.title\\./",
 						"/^settings\\.action-modals\\.data-source-upsert\\./",
 						"/^settings\\.data-sources\\./",
+						"/^settings\\.workspace\\.success-messages\\.role\\.description\\./",
 						// literal keys kept in data structures and passed to
 						// t() later (the rule only tracks direct call sites)
 						"/^editor\\.ai-chat\\.tool-status\\./",

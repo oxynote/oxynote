@@ -32,7 +32,7 @@ import {
 } from "./comment-mark"
 import { isChangeOrigin } from "@tiptap/extension-collaboration"
 import { compareAsc, formatDistanceToNowStrict } from "date-fns"
-import { showToastMessage } from "~/components/toast"
+import { showRequestErrorToast } from "~/components/toast"
 import {
 	findNodeCommentAtPos,
 	findNodeCommentById,
@@ -110,7 +110,7 @@ const editor = useEditor({
 	content: "",
 })
 
-const { fetchOrganization, fetchAuthSession } = useAuthSession()
+const { fetchOrganization, fetchAuthSession, canRoleEdit } = useAuthSession()
 const commentAPI = useDocumentCommentAPI()
 const editorStore = useEditorStore()
 const fetchComments = commentAPI.useFetchDocumentCommentsByDocId(
@@ -981,8 +981,11 @@ async function saveComment() {
 					branchId: editorStore.activeBranchId,
 				},
 			})
-		} catch {
-			showToastMessage("error", t("editor.comment-thread.errors.update-failed"))
+		} catch (err) {
+			showRequestErrorToast(
+				err,
+				t("editor.comment-thread.errors.update-failed"),
+			)
 			return
 		}
 	} else {
@@ -1007,8 +1010,11 @@ async function saveComment() {
 			if (res) {
 				updateNewSelectedCommentId(res)
 			}
-		} catch {
-			showToastMessage("error", t("editor.comment-thread.errors.create-failed"))
+		} catch (err) {
+			showRequestErrorToast(
+				err,
+				t("editor.comment-thread.errors.create-failed"),
+			)
 			return
 		} finally {
 			savingDiffComment = false
@@ -1041,8 +1047,8 @@ async function deleteSelectedComment() {
 			branchId: editorStore.activeBranchId,
 			commentId: commentId,
 		})
-	} catch {
-		showToastMessage("error", t("editor.comment-thread.errors.delete-failed"))
+	} catch (err) {
+		showRequestErrorToast(err, t("editor.comment-thread.errors.delete-failed"))
 		return
 	}
 }
@@ -1068,8 +1074,8 @@ async function resolveComment() {
 			commentId: commentId,
 			req: { resolved: true },
 		})
-	} catch {
-		showToastMessage("error", t("editor.comment-thread.errors.delete-failed"))
+	} catch (err) {
+		showRequestErrorToast(err, t("editor.comment-thread.errors.delete-failed"))
 		return
 	}
 
@@ -1113,9 +1119,9 @@ async function saveReply() {
 			// Reset immediately after optimistic update (onMutate runs synchronously)
 			resetEditor()
 			await mutationPromise
-		} catch {
-			showToastMessage(
-				"error",
+		} catch (err) {
+			showRequestErrorToast(
+				err,
 				t("editor.comment-thread.errors.reply-update-failed"),
 			)
 			return
@@ -1133,9 +1139,9 @@ async function saveReply() {
 			scrollToBottom()
 			resetEditor()
 			await mutationPromise
-		} catch {
-			showToastMessage(
-				"error",
+		} catch (err) {
+			showRequestErrorToast(
+				err,
 				t("editor.comment-thread.errors.reply-create-failed"),
 			)
 			return
@@ -1159,9 +1165,9 @@ async function deleteReply(id: string) {
 			commentId: selectedComment.value.id,
 			replyId: id,
 		})
-	} catch {
-		showToastMessage(
-			"error",
+	} catch (err) {
+		showRequestErrorToast(
+			err,
 			t("editor.comment-thread.errors.reply-delete-failed"),
 		)
 		return
@@ -1886,7 +1892,9 @@ function updateNodeCommentIdInEditor(
 										</div>
 									</div>
 									<div>
-										<ShadcnUiDropdownMenu v-if="item.author.self">
+										<ShadcnUiDropdownMenu
+											v-if="item.author.self && canRoleEdit"
+										>
 											<ShadcnUiDropdownMenuTrigger as-child>
 												<ShadcnUiButton
 													variant="ghost-plain"
@@ -1964,6 +1972,7 @@ function updateNodeCommentIdInEditor(
 				</Transition>
 			</div>
 			<div
+				v-if="canRoleEdit"
 				:data-has-comments="!!loadedCommentThread.length"
 				:class="
 					cn(
@@ -2076,7 +2085,11 @@ function updateNodeCommentIdInEditor(
 					</ShadcnUiButton>
 				</div>
 			</div>
-			<div ref="editor-container" class="flex w-full flex-col gap-2 p-2">
+			<div
+				v-if="canRoleEdit"
+				ref="editor-container"
+				class="flex w-full flex-col gap-2 p-2"
+			>
 				<template v-if="editor">
 					<LinkBubbleMenu
 						ref="link-bubble-menu"

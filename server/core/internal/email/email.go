@@ -18,6 +18,18 @@ import (
 	"github.com/wneessen/go-mail"
 )
 
+// _sendTimeout is the maximum allowed time for sending an email.
+const _sendTimeout = 30 * time.Second
+
+// _linkKey is the template argument carrying the action URL.
+const _linkKey = "link"
+
+// _hostKey is the template argument carrying the instance's host.
+const _hostKey = "host"
+
+// _maxSendRetries caps the retries of one delivery.
+const _maxSendRetries = 3
+
 // TLSMode describes how the SMTP connection is secured.
 type TLSMode string
 
@@ -33,15 +45,6 @@ const (
 	// TLSModeTLS connects over implicit TLS.
 	TLSModeTLS TLSMode = "tls"
 )
-
-// _sendTimeout is the maximum allowed time for sending an email.
-const _sendTimeout = 30 * time.Second
-
-// _linkKey is the template argument carrying the action URL.
-const _linkKey = "link"
-
-// _hostKey is the template argument carrying the instance's host.
-const _hostKey = "host"
 
 // Config holds SMTP connection settings for the email sender.
 type Config struct {
@@ -71,9 +74,6 @@ type Config struct {
 	// footer of every email.
 	PublicURL string
 }
-
-// _maxSendRetries caps the retries of one delivery.
-const _maxSendRetries = 3
 
 // Sender holds dependencies required for email sending.
 type Sender struct {
@@ -277,16 +277,6 @@ func (s *Sender) Send(tmpl Template, d Data) error {
 	return nil
 }
 
-// client is an interface that handles communication with the SMTP
-// server.
-//
-//go:generate ../../scripts/codegen/mock -t internal client
-type client interface {
-	// DialAndSendWithContext should establish a connection to the SMTP
-	// server and send the provided messages.
-	DialAndSendWithContext(ctx context.Context, msgs ...*mail.Msg) error
-}
-
 // Close waits for the deliveries still in flight and releases the sender.
 func (s *Sender) Close() error {
 	// the deliveries must finish on a live context, so the wait precedes
@@ -296,4 +286,14 @@ func (s *Sender) Close() error {
 	s.supv.Close()
 
 	return nil
+}
+
+// client is an interface that handles communication with the SMTP
+// server.
+//
+//go:generate ../../scripts/codegen/mock -t internal client
+type client interface {
+	// DialAndSendWithContext should establish a connection to the SMTP
+	// server and send the provided messages.
+	DialAndSendWithContext(ctx context.Context, msgs ...*mail.Msg) error
 }

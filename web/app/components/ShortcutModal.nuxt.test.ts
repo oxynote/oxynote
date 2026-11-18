@@ -2,7 +2,14 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { beforeEach, describe, it } from "vitest"
 import { allItems } from "./editor/slash/items"
 import ShortcutModal from "./ShortcutModal.vue"
-import { clearTeleportedOverlays, t, teleportedButton } from "./test-helpers"
+import { clearQueryCache } from "~/composables/api/test-helpers"
+import {
+	clearTeleportedOverlays,
+	seedAuthOrganization,
+	seedAuthSession,
+	t,
+	teleportedButton,
+} from "./test-helpers"
 import { SHORTCUT_GROUPS } from "~/utils/shortcuts"
 
 function mountModal(open = true) {
@@ -154,5 +161,32 @@ describe("<ShortcutModal>", { concurrent: false }, () => {
 		await nextTick()
 
 		expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual([false])
+	})
+
+	describe("for a viewer", { concurrent: false }, () => {
+		beforeEach(() => {
+			clearQueryCache()
+			seedAuthSession({ id: "u1" })
+			seedAuthOrganization({ members: [{ userId: "u1", role: "viewer" }] })
+		})
+
+		it("lists only the shortcuts that change nothing", async ({ expect }) => {
+			await mountModal()
+
+			expect(
+				Array.from(document.body.querySelectorAll("[data-shortcut-row]")).map(
+					(el) => el.getAttribute("data-shortcut-row"),
+				),
+			).toEqual(
+				[
+					"toggle-settings",
+					"toggle-shortcuts",
+					"toggle-sidebar",
+					"toggle-inbox",
+					"toggle-variables",
+					"search-for-documents",
+				].map(entryId),
+			)
+		})
 	})
 })

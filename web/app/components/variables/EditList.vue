@@ -4,7 +4,7 @@ import type {
 	VariableTreeElement,
 	VariableTreeResponse,
 } from "~/utils"
-import { showToastMessage } from "../toast"
+import { showRequestErrorToast } from "../toast"
 import {
 	VARIABLE_DRAG_GROUPS,
 	draggableItem,
@@ -84,8 +84,8 @@ async function handleGroupMove(id: string, insertBeforeId: string | null) {
 
 	try {
 		await moveVariableGroup.mutateAsync({ id: id, sortIndex: sortIndex })
-	} catch {
-		showToastMessage("error", t("variable.errors.move-failed"))
+	} catch (err) {
+		showRequestErrorToast(err, t("variable.errors.move-failed"))
 	}
 }
 
@@ -109,8 +109,8 @@ async function handleVariableMove(
 
 	try {
 		await moveVariable.mutateAsync(req)
-	} catch {
-		showToastMessage("error", t("variable.errors.move-failed"))
+	} catch (err) {
+		showRequestErrorToast(err, t("variable.errors.move-failed"))
 	}
 }
 

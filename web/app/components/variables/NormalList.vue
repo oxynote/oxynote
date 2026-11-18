@@ -17,6 +17,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n({ useScope: "global" })
+const { canRoleEdit } = useAuthSession()
 
 const sections = computed<VariableSection[]>(() =>
 	props.byPage
@@ -96,10 +97,14 @@ function sectionLabel(id: VariableSection["id"]) {
 						{{ t("variable.empty.builtin-only-title") }}
 					</ShadcnUiEmptyTitle>
 					<ShadcnUiEmptyDescription>
-						{{ t("variable.empty.builtin-only-description") }}
+						{{
+							canRoleEdit
+								? t("variable.empty.builtin-only-description")
+								: t("variable.empty.builtin-only-description-viewer")
+						}}
 					</ShadcnUiEmptyDescription>
 				</ShadcnUiEmptyHeader>
-				<ShadcnUiEmptyContent>
+				<ShadcnUiEmptyContent v-if="canRoleEdit">
 					<ShadcnUiButton size="sm" class="text-2sm" @click="emit('edit')">
 						<Icon name="mingcute:add-line" />
 						{{ t("variable.empty.builtin-only-action") }}

@@ -1,7 +1,11 @@
 <script lang="ts" setup>
 import { nodeViewProps, NodeViewWrapper } from "@tiptap/vue-3"
 import { nanoid } from "nanoid"
-import { showProgressToast, showToastMessage } from "~/components/toast"
+import {
+	showProgressToast,
+	showRequestErrorToast,
+	showToastMessage,
+} from "~/components/toast"
 import type { ProgressToast } from "~/components/toast"
 import { cn } from "#layers/ui/app/lib/utils"
 import { DiffStatus } from "~/components/editor/diff/position-map"
@@ -126,8 +130,7 @@ async function handleFileChange(event: Event) {
 			contentType: null,
 		})
 		if (!handleStorageError(error, t)) {
-			console.error("Failed to upload file:", error)
-			showToastMessage("error", t("editor.file.errors.upload-failed"))
+			showRequestErrorToast(error, t("editor.file.errors.upload-failed"))
 		}
 	} finally {
 		target.value = ""

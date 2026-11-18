@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -69,6 +70,9 @@ func Test_Prometheus_TestConnection(t *testing.T) {
 		URLPath     string
 		CloseServer bool
 
+		// Creds is the credentials JSON the data source is given.
+		Creds string
+
 		Result ConnectionStatus
 		Err    error
 	}{
@@ -78,8 +82,10 @@ func Test_Prometheus_TestConnection(t *testing.T) {
 		},
 		"Invalid CA certificate": {
 			Inp: &InputMock{
-				URLFunc:         func() string { return "https://prometheus.test" },
-				CredentialsFunc: func() Credentials { return NewCredentials([]byte(`{"caCertificate":"not a certificate"}`)) },
+				URLFunc: func() string { return "https://prometheus.test" },
+				CredentialsFunc: func() credentials.Credentials {
+					return stubCredentials(`{"kind":"basic","caCertificate":"not a certificate"}`)
+				},
 			},
 			Result: ConnectionStatusInvalidCACertificate,
 		},
@@ -101,6 +107,16 @@ func Test_Prometheus_TestConnection(t *testing.T) {
 		"Forbidden data source": {
 			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusForbidden, `{}`),
 			Result:  ConnectionStatusUnauthorized,
+		},
+		"Rejected token": { //nolint:gosec // static test credentials
+			Handler: tokenHandler(testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusOK, `{"status":"success","data":{"version":"2.50.0"}}`)),
+			Creds:   `{"kind":"token","token":"bad"}`,
+			Result:  ConnectionStatusUnauthorized,
+		},
+		"Successful connection with a token": {
+			Handler: tokenHandler(testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusOK, `{"status":"success","data":{"version":"2.50.0"}}`)),
+			Creds:   `{"kind":"token","token":"` + _testToken + `"}`,
+			Result:  ConnectionStatusSuccess,
 		},
 		"Unreachable data source": {
 			Handler: testutil.JSONHandler("/api/v1/status/buildinfo", http.StatusInternalServerError, `{}`),
@@ -145,6 +161,10 @@ func Test_Prometheus_TestConnection(t *testing.T) {
 				inp = prepPrometheusInput(t, c.Handler)
 			}
 
+			if c.Creds != "" {
+				inp.CredentialsFunc = func() credentials.Credentials { return stubCredentials(c.Creds) }
+			}
+
 			p := NewPrometheus(inp)
 
 			t.Cleanup(func() { assert.NoError(t, p.Close()) })
@@ -177,6 +197,22 @@ func Test_Prometheus_Metadata(t *testing.T) {
 		"Error returned by client.Metadata": {
 			Handler: http.NewServeMux(),
 			Err:     assert.AnError,
+		},
+		"Bad data from Prometheus": {
+			Handler: testutil.JSONHandler("/api/v1/metadata", http.StatusBadRequest, `{"status":"error","errorType":"bad_data","error":"parse error"}`),
+			Err:     NewInvalidQueryError("parse error"),
+		},
+		"Unauthorized data source": {
+			Handler: testutil.JSONHandler("/api/v1/metadata", http.StatusUnauthorized, `<html>unauthorized</html>`),
+			Err:     ConnectionStatusUnauthorized.Error(),
+		},
+		"Rate limited data source": {
+			Handler: testutil.JSONHandler("/api/v1/metadata", http.StatusTooManyRequests, `too many requests`),
+			Err:     _errRateLimited,
+		},
+		"Data source that is down": {
+			Handler: testutil.JSONHandler("/api/v1/metadata", http.StatusServiceUnavailable, `<html>upstream down</html>`),
+			Err:     ConnectionStatusUnreachable.Error(),
 		},
 		"Successful metadata retrieval": {
 			Handler: testutil.JSONHandler("/api/v1/metadata", http.StatusOK, `{"status":"success","data":{"go_goroutines":[{"type":"gauge","help":"Number of goroutines.","unit":""}]}}`),
@@ -310,6 +346,22 @@ func Test_Prometheus_LabelNames(t *testing.T) {
 			Handler: http.NewServeMux(),
 			Err:     assert.AnError,
 		},
+		"Bad data from Prometheus": {
+			Handler: testutil.JSONHandler("/api/v1/labels", http.StatusBadRequest, `{"status":"error","errorType":"bad_data","error":"parse error"}`),
+			Err:     NewInvalidQueryError("parse error"),
+		},
+		"Unauthorized data source": {
+			Handler: testutil.JSONHandler("/api/v1/labels", http.StatusUnauthorized, `<html>unauthorized</html>`),
+			Err:     ConnectionStatusUnauthorized.Error(),
+		},
+		"Rate limited data source": {
+			Handler: testutil.JSONHandler("/api/v1/labels", http.StatusTooManyRequests, `too many requests`),
+			Err:     _errRateLimited,
+		},
+		"Data source that is down": {
+			Handler: testutil.JSONHandler("/api/v1/labels", http.StatusServiceUnavailable, `<html>upstream down</html>`),
+			Err:     ConnectionStatusUnreachable.Error(),
+		},
 		"Successful label names retrieval": {
 			Handler: testutil.JSONHandler("/api/v1/labels", http.StatusOK, `{"status":"success","data":["__name__","job"]}`),
 			Result: &PrometheusLabelNamesResult{
@@ -358,6 +410,22 @@ func Test_Prometheus_LabelValues(t *testing.T) {
 			Handler: http.NewServeMux(),
 			Err:     assert.AnError,
 		},
+		"Bad data from Prometheus": {
+			Handler: testutil.JSONHandler("/api/v1/label/instance/values", http.StatusBadRequest, `{"status":"error","errorType":"bad_data","error":"parse error"}`),
+			Err:     NewInvalidQueryError("parse error"),
+		},
+		"Unauthorized data source": {
+			Handler: testutil.JSONHandler("/api/v1/label/instance/values", http.StatusUnauthorized, `<html>unauthorized</html>`),
+			Err:     ConnectionStatusUnauthorized.Error(),
+		},
+		"Rate limited data source": {
+			Handler: testutil.JSONHandler("/api/v1/label/instance/values", http.StatusTooManyRequests, `too many requests`),
+			Err:     _errRateLimited,
+		},
+		"Data source that is down": {
+			Handler: testutil.JSONHandler("/api/v1/label/instance/values", http.StatusServiceUnavailable, `<html>upstream down</html>`),
+			Err:     ConnectionStatusUnreachable.Error(),
+		},
 		"Successful label values retrieval": {
 			Handler: testutil.JSONHandler("/api/v1/label/instance/values", http.StatusOK, `{"status":"success","data":["a","b"]}`),
 			Result: &PrometheusLabelValuesResult{
@@ -405,6 +473,22 @@ func Test_Prometheus_Series(t *testing.T) {
 		"Error returned by client.Series": {
 			Handler: http.NewServeMux(),
 			Err:     assert.AnError,
+		},
+		"Bad data from Prometheus": {
+			Handler: testutil.JSONHandler("/api/v1/series", http.StatusBadRequest, `{"status":"error","errorType":"bad_data","error":"parse error"}`),
+			Err:     NewInvalidQueryError("parse error"),
+		},
+		"Unauthorized data source": {
+			Handler: testutil.JSONHandler("/api/v1/series", http.StatusUnauthorized, `<html>unauthorized</html>`),
+			Err:     ConnectionStatusUnauthorized.Error(),
+		},
+		"Rate limited data source": {
+			Handler: testutil.JSONHandler("/api/v1/series", http.StatusTooManyRequests, `too many requests`),
+			Err:     _errRateLimited,
+		},
+		"Data source that is down": {
+			Handler: testutil.JSONHandler("/api/v1/series", http.StatusServiceUnavailable, `<html>upstream down</html>`),
+			Err:     ConnectionStatusUnreachable.Error(),
 		},
 		"Successful series retrieval": {
 			Handler: testutil.JSONHandler("/api/v1/series", http.StatusOK, `{"status":"success","data":[{"__name__":"up","job":"prometheus"}]}`),
@@ -455,24 +539,33 @@ func Test_Prometheus_client(t *testing.T) {
 
 		Err error
 	}{
-		"Error returned by Credentials.basic": {
+		"Error returned by Credentials.read": {
 			URL:   "http://prometheus.test",
 			Creds: `{`,
 			Err:   assert.AnError,
 		},
-		"Error returned by ownTransport.roundTripper": {
+		"Credentials without a kind": {
 			URL:   "http://prometheus.test",
-			Creds: `{"caCertificate":"not a certificate"}`,
-			Err:   _errInvalidCACertificate,
+			Creds: `{"username":"user","password":"pass"}`,
+			Err:   credentials.ErrInvalidKind,
+		},
+		"Error returned by ownTransport.roundTripper": { //nolint:gosec // static test credentials
+			URL:   "http://prometheus.test",
+			Creds: `{"kind":"basic","caCertificate":"not a certificate"}`,
+			Err:   credentials.ErrInvalidCACertificate,
 		},
 		"Error returned by api.NewClient": {
 			URL: "://",
 			Err: assert.AnError,
 		},
 		"No credentials": {},
-		"Username and password": {
-			Creds: `{"username":"user","password":"pass"}`,
+		"Username and password": { //nolint:gosec // static test credentials
+			Creds: `{"kind":"basic","username":"user","password":"pass"}`,
 			Auth:  "Basic dXNlcjpwYXNz",
+		},
+		"Token": { //nolint:gosec // static test credentials
+			Creds: `{"kind":"token","token":"secret"}`,
+			Auth:  "Bearer secret",
 		},
 		// credentials holding only a CA certificate authenticate nobody.
 		"Only a CA certificate": {
@@ -504,7 +597,7 @@ func Test_Prometheus_client(t *testing.T) {
 			}
 
 			if c.Creds != "" {
-				inp.CredentialsFunc = func() Credentials { return NewCredentials([]byte(c.Creds)) }
+				inp.CredentialsFunc = func() credentials.Credentials { return stubCredentials(c.Creds) }
 			}
 
 			p := NewPrometheus(inp)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import IconStack from "./IconStack.vue"
-import { showToastMessage } from "../toast"
+import { showRequestErrorToast, showToastMessage } from "../toast"
 
 interface ReviewerEntry {
 	id: string
@@ -22,7 +22,7 @@ const { t } = useI18n({ useScope: "global" })
 const editorStore = useEditorStore()
 const { useFetchBranchReviewers, inviteBranchReviewer, removeBranchReviewer } =
 	useDocumentAPI()
-const { fetchOrganization, fetchAuthSession } = useAuthSession()
+const { fetchOrganization, fetchAuthSession, canRoleEdit } = useAuthSession()
 const fetchActiveBranchReviewers = useFetchBranchReviewers(
 	() => editorStore.activeDocumentId,
 	() => editorStore.activeBranchId,
@@ -34,6 +34,11 @@ const fetchTargetBranchReviewers = useFetchBranchReviewers(
 
 const wsState = useWebSocketStateStore()
 let unsubWsReviewersChange: (() => void) | null | undefined = null
+
+// a viewer sees who reviews the branch, but asks and removes nobody
+const canChangeReviewers = computed(
+	() => editorStore.branchReviewableActionsActive && canRoleEdit.value,
+)
 
 // reviewers that have approved the branch or are invited to review (but
 // haven't approved yet)
@@ -171,9 +176,9 @@ async function requestReview(member: ReviewerInviteEntry) {
 				"editor.name-editor.reviewer-popover.request-review-success.description",
 			),
 		)
-	} catch {
-		showToastMessage(
-			"error",
+	} catch (err) {
+		showRequestErrorToast(
+			err,
 			t("editor.name-editor.reviewer-popover.request-review-error"),
 		)
 	}
@@ -194,9 +199,9 @@ async function handleRemoveInvite(reviewer: ReviewerEntry) {
 			"success",
 			t("editor.name-editor.reviewer-popover.invite-remove-success"),
 		)
-	} catch {
-		showToastMessage(
-			"error",
+	} catch (err) {
+		showRequestErrorToast(
+			err,
 			t("editor.name-editor.reviewer-popover.invite-remove-error"),
 		)
 	}
@@ -205,10 +210,7 @@ async function handleRemoveInvite(reviewer: ReviewerEntry) {
 
 <template>
 	<ShadcnUiPopover
-		v-if="
-			editorStore.branchReviewableActionsActive ||
-			participatingReviewers.length > 0
-		"
+		v-if="canChangeReviewers || participatingReviewers.length > 0"
 	>
 		<ShadcnUiPopoverTrigger as-child>
 			<div class="flex">
@@ -255,7 +257,7 @@ async function handleRemoveInvite(reviewer: ReviewerEntry) {
 								</span>
 							</div>
 							<ShadcnUiButton
-								v-if="editorStore.branchReviewableActionsActive"
+								v-if="canChangeReviewers"
 								size="icon-xsm"
 								variant="ghost-plain"
 								class="text-muted-foreground"
@@ -303,7 +305,7 @@ async function handleRemoveInvite(reviewer: ReviewerEntry) {
 								</span>
 							</div>
 							<ShadcnUiButton
-								v-if="editorStore.branchReviewableActionsActive"
+								v-if="canChangeReviewers"
 								size="icon-xsm"
 								variant="ghost-plain"
 								class="text-muted-foreground"
@@ -321,7 +323,7 @@ async function handleRemoveInvite(reviewer: ReviewerEntry) {
 						</li>
 					</ul>
 				</div>
-				<template v-if="editorStore.branchReviewableActionsActive">
+				<template v-if="canChangeReviewers">
 					<ShadcnUiDropdownMenuSeparator
 						v-if="participatingReviewers.length"
 						class="-mx-2 my-0"

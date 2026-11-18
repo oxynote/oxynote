@@ -17,36 +17,6 @@ const _hostLabel = "host"
 // Ensure factory implements Factory.
 var _ Factory = (*factory)(nil)
 
-// Factory is a metrics factory.
-type Factory interface {
-	RegistererGatherer
-
-	// CollectRuntimeMetrics collects runtime metrics. It blocks
-	// until the context is canceled.
-	CollectRuntimeMetrics(ctx context.Context, dur time.Duration)
-
-	// NewHistogram creates a new histogram.
-	NewHistogram(opts Options) Observer
-
-	// NewGauge creates a new gauge.
-	NewGauge(opts Options) Gauge
-
-	// NewCounterVec creates a new counter vector.
-	NewCounterVec(opts Options, labels []string) CounterVec
-
-	// NewHistogramVec creates a new histogram vector.
-	NewHistogramVec(opts Options, labels []string) HistogramVec
-
-	// NewGaugeVec creates a new gauge vector.
-	NewGaugeVec(opts Options, labels []string) GaugeVec
-}
-
-// RegistererGatherer is a registerer and gatherer.
-type RegistererGatherer interface {
-	prometheus.Registerer
-	prometheus.Gatherer
-}
-
 // factory is a metrics factory.
 type factory struct {
 	RegistererGatherer
@@ -282,4 +252,34 @@ func withHost(labels prometheus.Labels, host string) prometheus.Labels {
 	out[_hostLabel] = host
 
 	return out
+}
+
+// Factory is a metrics factory.
+type Factory interface {
+	RegistererGatherer
+
+	// CollectRuntimeMetrics collects runtime metrics. It blocks
+	// until the context is canceled.
+	CollectRuntimeMetrics(ctx context.Context, dur time.Duration)
+
+	// NewHistogram creates a new histogram.
+	NewHistogram(opts Options) Observer
+
+	// NewGauge creates a new gauge.
+	NewGauge(opts Options) Gauge
+
+	// NewCounterVec creates a new counter vector.
+	NewCounterVec(opts Options, labels []string) CounterVec
+
+	// NewHistogramVec creates a new histogram vector.
+	NewHistogramVec(opts Options, labels []string) HistogramVec
+
+	// NewGaugeVec creates a new gauge vector.
+	NewGaugeVec(opts Options, labels []string) GaugeVec
+}
+
+// RegistererGatherer is a registerer and gatherer.
+type RegistererGatherer interface {
+	prometheus.Registerer
+	prometheus.Gatherer
 }

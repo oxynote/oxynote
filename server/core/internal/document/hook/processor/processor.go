@@ -93,20 +93,6 @@ func active(triggered bool, state any) (Result, error) {
 	}, nil
 }
 
-// Input represents an input that provides state information
-// for processing freshness hooks.
-type Input interface {
-	// State should return the state of the input in JSON format, or nil
-	// for a hook that was never set up.
-	State() State
-
-	// Github should return a GitHub client interface.
-	Github(ctx context.Context) (Github, error)
-
-	// ChangeDetection should return a ChangeDetection client interface.
-	ChangeDetection() ChangeDetection
-}
-
 // State represents the state of a processor in JSON format.
 type State json.RawMessage
 
@@ -195,6 +181,25 @@ func rawJSONBytes(src any) ([]byte, bool) {
 	}
 }
 
+// unreachable marks err, a failed call to the service a processor checks.
+func unreachable(err error) error {
+	return fmt.Errorf("%w: %w", ErrUnreachable, err)
+}
+
+// Input represents an input that provides state information
+// for processing freshness hooks.
+type Input interface {
+	// State should return the state of the input in JSON format, or nil
+	// for a hook that was never set up.
+	State() State
+
+	// Github should return a GitHub client interface.
+	Github(ctx context.Context) (Github, error)
+
+	// ChangeDetection should return a ChangeDetection client interface.
+	ChangeDetection() ChangeDetection
+}
+
 // Github represents a GitHub client interface.
 type Github interface {
 	// FetchRepositoryTree fetches the file tree of a repository at a specific branch.
@@ -214,9 +219,4 @@ type ChangeDetection interface {
 
 	// DeleteWatcher deletes the watcher with the given watch ID.
 	DeleteWatcher(ctx context.Context, watchID string) error
-}
-
-// unreachable marks err, a failed call to the service a processor checks.
-func unreachable(err error) error {
-	return fmt.Errorf("%w: %w", ErrUnreachable, err)
 }
