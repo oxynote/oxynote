@@ -431,11 +431,6 @@ export function createDocumentHooks({
 			return reportedAsMessage(async () => {
 				const { documentId, branchIdentifier } =
 					parseDocumentName(documentName)
-				if (documentId === "dbtul1p8cq1c7aecjqug") {
-					throw new Error(
-						"Test onLoadDocument failure",
-					)
-				}
 
 				const branchId = await resolveBranchId(
 					core,
