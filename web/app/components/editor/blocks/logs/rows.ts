@@ -327,7 +327,7 @@ function readLine(log: Log, dialect: LogDialect): ReadLine | null {
 
 	// a strict parser stops at its first error, so later fields cannot
 	// be offered as filters even when they look valid locally.
-	if (log.parsed?.__error__ === "LogfmtParserErr") {
+	if (dialect.logfmtParseFailed(log)) {
 		return null
 	}
 
@@ -336,10 +336,7 @@ function readLine(log: Log, dialect: LogDialect): ReadLine | null {
 		/\r$/,
 		"",
 	)
-	const logfmt = parseLogfmt(
-		firstLine,
-		(key) => log.parsed?.[dialect.lineKeyName(key, log)] === "",
-	)
+	const logfmt = parseLogfmt(firstLine, log, dialect)
 
 	return logfmt
 		? {
@@ -371,8 +368,8 @@ function parseJSONObject(text: string): Record<string, unknown> | null {
 	}
 }
 
-// keepNumberText keeps a number as written, because Loki compares that
-// text. JSON.parse reads 25.0 as 25 and rounds integers past 2^53.
+// keepNumberText keeps a number as written for sources that use its text.
+// JSON.parse reads 25.0 as 25 and rounds integers past 2^53.
 function keepNumberText(
 	_key: string,
 	value: unknown,
@@ -391,7 +388,8 @@ export function isNumberText(value: unknown): boolean {
 // be replaced unless the source's parser explicitly retained one.
 function parseLogfmt(
 	line: string,
-	keepEmpty: (key: string) => boolean,
+	log: Log,
+	dialect: LogDialect,
 ): { record: Record<string, string>; rejected: string } | null {
 	const values = new Map<string, string>()
 	const rejected: string[] = []
@@ -405,19 +403,16 @@ function parseLogfmt(
 		}
 
 		const [, key = "", raw = ""] = match
-		const value = raw.startsWith('"')
-			? unquote(raw)
-			: raw.includes("=")
-				? null
-				: raw
+		const value = dialect.decodeLogfmtValue(raw)
 
 		if (value === null) {
 			rejected.push(match[0].trimStart())
 		} else if (
 			!values.has(key) ||
-			(values.get(key) === "" && !keepEmpty(key))
+			(values.get(key) === "" &&
+				log.parsed?.[dialect.lineKeyName(key, log)] !== "")
 		) {
-			values.set(key, value.toWellFormed().replaceAll("\uFFFD", " "))
+			values.set(key, value)
 		}
 
 		at = LOGFMT_PAIR.lastIndex
@@ -426,22 +421,4 @@ function parseLogfmt(
 	return values.size
 		? { record: Object.fromEntries(values), rejected: rejected.join(" ") }
 		: null
-}
-
-// unquote reads Loki's JSON-style escapes, which also allow an escaped
-// apostrophe. Invalid escapes must not hide a later valid duplicate.
-function unquote(quoted: string): string | null {
-	const json = quoted.replace(/\\[\s\S]|\p{Cc}/gu, (escape) =>
-		escape === "\\'"
-			? "'"
-			: escape.length === 1
-				? JSON.stringify(escape).slice(1, -1)
-				: escape,
-	)
-
-	try {
-		return String(JSON.parse(json))
-	} catch {
-		return null
-	}
 }

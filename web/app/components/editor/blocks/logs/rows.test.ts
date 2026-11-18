@@ -1,4 +1,4 @@
-import { describe, it } from "vitest"
+import { describe, it, vi } from "vitest"
 import {
 	displayValue,
 	extractedFields,
@@ -13,7 +13,6 @@ import {
 	type LogSummary,
 } from "./rows"
 import { LineFormat, type LogDialect } from "./dialect"
-import { lokiDialect } from "./loki"
 
 const NOON_MILLIS = BigInt(Date.UTC(2026, 0, 1, 12, 0, 0))
 const MULTILINE_LOGFMT = [
@@ -27,6 +26,8 @@ const EXACT_DIALECT: LogDialect = {
 	withViewFilters: (query) => query,
 	canFilterLineKey: () => true,
 	lineKeyName: (key) => key,
+	logfmtParseFailed: () => false,
+	decodeLogfmtValue,
 	repeatsLineKey: ([key, value], lineKey, lineValue) =>
 		key === lineKey && (typeof lineValue !== "string" || lineValue === value),
 }
@@ -156,7 +157,7 @@ describe("summarizeLog", () => {
 			},
 		},
 		{
-			name: "skips an empty value of a repeated logfmt key, as Loki does",
+			name: "skips an empty value of a repeated logfmt key",
 			input: {
 				line: 'component= component=billing attempt="" attempt=1',
 				labels: {},
@@ -173,7 +174,7 @@ describe("summarizeLog", () => {
 			},
 		},
 		{
-			name: "keeps the first value of a repeated logfmt key, as Loki does",
+			name: "keeps the first value of a repeated logfmt key",
 			input: {
 				line: "component=billing component=stripe-client attempt=1 attempt=2",
 				labels: {},
@@ -394,10 +395,46 @@ describe("summarizeLog", () => {
 				labels: [],
 			},
 		},
+		{
+			name: "keeps a wholly invalid logfmt line visible as plain text",
+			input: { line: String.raw`component="bad\q"`, labels: {}, fields: {} },
+			expected: {
+				message: String.raw`component="bad\q"`,
+				extracted: [],
+				fields: [],
+				labels: [],
+			},
+		},
+		{
+			name: "keeps rejected message text visible beside accepted fields",
+			input: {
+				line: "level=info msg=retry=failed component=billing",
+				labels: {},
+				fields: {},
+			},
+			expected: {
+				message: "msg=retry=failed",
+				extracted: [["component", "billing"]],
+				fields: [],
+				labels: [],
+			},
+		},
 	])("$name", ({ input, expected }, { expect }) => {
 		expect(
 			summarizeLog(makeLog({ id: "l1", ...input }), EXACT_DIALECT),
 		).toEqual(expected)
+	})
+
+	it("keeps the original message when the dialect reports a logfmt parse failure", ({
+		expect,
+	}) => {
+		const log = makeLog({ id: "strict", line: "msg=partial status=ok" })
+		const logfmtParseFailed = vi.fn(() => true)
+
+		expect(
+			summarizeLog(log, { ...EXACT_DIALECT, logfmtParseFailed }).message,
+		).toBe(log.line)
+		expect(logfmtParseFailed).toHaveBeenCalledExactlyOnceWith(log)
 	})
 })
 
@@ -535,9 +572,7 @@ describe("extractedFields", () => {
 			},
 		])
 	})
-})
 
-describe("logfmt duplicate values", () => {
 	it.for([
 		{
 			name: "skips an invalid bare value before choosing a duplicate",
@@ -550,30 +585,6 @@ describe("logfmt duplicate values", () => {
 			line: String.raw`component="bad\q" component=billing`,
 			parsed: undefined,
 			expected: [["component", "billing"]],
-		},
-		{
-			name: "decodes an escaped apostrophe before choosing a duplicate",
-			line: String.raw`component="a\'b" component=other`,
-			parsed: undefined,
-			expected: [["component", "a'b"]],
-		},
-		{
-			name: "decodes a quoted value with an escaped backslash before an apostrophe",
-			line: String.raw`component="a\\'b" component=other`,
-			parsed: undefined,
-			expected: [["component", String.raw`a\'b`]],
-		},
-		{
-			name: "decodes an unescaped tab inside a quoted value as Loki does",
-			line: 'component="a	b" component=other',
-			parsed: undefined,
-			expected: [["component", "a	b"]],
-		},
-		{
-			name: "replaces an invalid surrogate with a space as Loki does",
-			line: String.raw`component="a\ud800b" component=other`,
-			parsed: undefined,
-			expected: [["component", "a b"]],
 		},
 		{
 			name: "keeps an empty first value retained by the source parser",
@@ -595,67 +606,49 @@ describe("logfmt duplicate values", () => {
 		).toEqual(expected)
 	})
 
-	it("uses the source's empty value when Loki renames a clashing key", ({
+	it("uses the source's empty value when the dialect renames the line key", ({
 		expect,
 	}) => {
 		const log = makeLog({
 			id: "clashing-empty",
 			line: 'component="" component=billing',
-			labels: { component: "stream" },
-			parsed: { component_extracted: "" },
+			parsed: { renamed: "" },
 		})
 
-		expect(
-			extractedFields(log, lokiDialect).map((f) => [f.key, f.value]),
-		).toEqual([["component", ""]])
+		const lineKeyName = vi.fn(() => "renamed")
+		const fields = extractedFields(log, { ...EXACT_DIALECT, lineKeyName })
+
+		expect(fields[0]).toMatchObject({ key: "component", value: "" })
+		expect(lineKeyName).toHaveBeenCalledExactlyOnceWith("component", log)
 	})
 
-	it("keeps a wholly invalid logfmt line visible as plain text", ({
-		expect,
-	}) => {
+	it("extracts no fields from a wholly invalid logfmt line", ({ expect }) => {
 		const log = makeLog({ id: "invalid", line: String.raw`component="bad\q"` })
 
-		expect(summarizeLog(log, EXACT_DIALECT).message).toBe(log.line)
 		expect(extractedFields(log, EXACT_DIALECT)).toEqual([])
 	})
 
-	it("does not infer filterable fields after a strict parser error", ({
+	it("keeps only source fields when the dialect reports a logfmt parse failure", ({
 		expect,
 	}) => {
 		const log = makeLog({
 			id: "strict",
 			line: "service=api component=bad=value component=billing",
-			parsed: { service: "api", __error__: "LogfmtParserErr" },
+			parsed: { service: "api" },
+		})
+		const logfmtParseFailed = vi.fn(() => true)
+		const decodeLogfmtValue = vi.fn()
+		const fields = extractedFields(log, {
+			...EXACT_DIALECT,
+			logfmtParseFailed,
+			decodeLogfmtValue,
 		})
 
-		expect(summarizeLog(log, EXACT_DIALECT).message).toBe(log.line)
 		expect(
-			extractedFields(log, EXACT_DIALECT).map((f) => [
-				f.key,
-				f.value,
-				f.format,
-			]),
-		).toEqual([
-			["__error__", "LogfmtParserErr", null],
-			["service", "api", null],
-		])
-	})
-
-	it("keeps rejected message text visible beside accepted fields", ({
-		expect,
-	}) => {
-		const log = makeLog({
-			id: "invalid-message",
-			line: "level=info msg=retry=failed component=billing",
-			level: LogLevel.Info,
-		})
-
-		expect(summarizeLog(log, EXACT_DIALECT)).toEqual({
-			message: "msg=retry=failed",
-			extracted: [["component", "billing"]],
-			fields: [],
-			labels: [],
-		})
+			fields.map((field) => [field.key, field.value, field.format]),
+		).toEqual([["service", "api", null]])
+		expect(logfmtParseFailed).toHaveBeenCalledExactlyOnceWith(log)
+		expect(decodeLogfmtValue).not.toHaveBeenCalled()
 	})
 })
 
@@ -1066,4 +1059,16 @@ function makeLog(overrides: Partial<Log> & { id: string }): Log {
 
 function line(id: string, clock: string): Log {
 	return makeLog({ id, time: `2026-01-01T${clock}` })
+}
+
+function decodeLogfmtValue(raw: string): string | null {
+	if (!raw.startsWith('"')) {
+		return raw.includes("=") ? null : raw
+	}
+
+	try {
+		return String(JSON.parse(raw))
+	} catch {
+		return null
+	}
 }
