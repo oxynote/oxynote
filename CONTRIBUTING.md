@@ -212,22 +212,25 @@ welcome.
 
 ### Good First Issues
 
-Issues labeled `good first issue` are for first-time contributors, meaning
+Issues labeled `good first issue` are reserved for newcomers, meaning
 people who haven't had a pull request merged into Oxynote yet. Each one is
 small and usually comes with step-by-step instructions. We want Oxynote
 to be easy to start contributing to, so these issues let you learn the
 codebase and our review process on an easy change. We help as much as we
 can with that first pull request, even when Go, Nuxt, Node.js, or Vue is new to you.
 
-If one of them interests you, we strongly encourage you to comment on it
-first and wait to be assigned, as [Claiming an Issue](#claiming-an-issue)
-describes. That way nobody else starts on the same issue, and your work
-doesn't go to waste.
+To work on one, comment on it, ask to be assigned and wait until we assign
+you, as [Claiming an Issue](#claiming-an-issue) describes. For these
+issues, the assignment is required. We close a pull request for a good
+first issue from anyone who isn't assigned to it, however good the code
+is. That way nobody else starts on the same issue, and your work doesn't
+go to waste.
 
-Each contributor gets one good first issue. Once your pull request for one
-is merged, or open and waiting for review, please leave the others to the
-next newcomer. We close further pull requests for them, however good the
-code is. We have plenty of other
+Each newcomer gets one good first issue. Once your pull request for one is
+merged, or open and waiting for review, please leave the others to the
+next newcomer. As an existing contributor, you can still work on one, but
+only if you ask in a comment and we assign it to you. We have plenty of
+other
 [bug](https://github.com/oxynote/oxynote/issues?q=is%3Aissue+state%3Aopen+type%3ABug)
 and
 [improvement](https://github.com/oxynote/oxynote/issues?q=is%3Aissue+state%3Aopen+type%3AImprovement)
@@ -256,9 +259,8 @@ We close a pull request when it:
   ([Discuss First](#discuss-first))
 - targets an issue labeled `maintainers only` and isn't from a maintainer
   ([Claiming an Issue](#claiming-an-issue))
-- targets a `good first issue` and comes from someone whose pull request
-  for another one is already merged or waiting for review
-  ([Good First Issues](#good-first-issues))
+- targets a `good first issue` and comes from someone who isn't assigned to
+  it ([Good First Issues](#good-first-issues))
 - targets the same issue as a pull request with higher priority
   ([Duplicate Pull Requests](#duplicate-pull-requests))
 - changes more than its issue asks for, such as by reformatting or
