@@ -9,6 +9,7 @@ export interface Logger {
 	info(message: string): void
 	warn(message: string): void
 	error(message: string): void
+	error(fields: Record<string, unknown>, message: string): void
 }
 
 // the record shape matches core's slog output, so both services in a

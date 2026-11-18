@@ -238,6 +238,63 @@ function encodeState(doc: Y.Doc): string {
 	return Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64")
 }
 
+function documentNameFrom(payload: unknown): string | undefined {
+	if (
+		typeof payload === "object" &&
+		payload !== null &&
+		"documentName" in payload &&
+		typeof payload.documentName === "string"
+	) {
+		return payload.documentName
+	}
+
+	return undefined
+}
+
+function withLoggedHookErrors<
+	T extends Record<string, (...args: never[]) => unknown>,
+>(hooks: T, log: ServiceLogger): T {
+	const wrapped: Record<string, unknown> = {}
+
+	for (const [name, fn] of Object.entries(hooks)) {
+		wrapped[name] = async (...args: never[]) => {
+			try {
+				return await fn(...args)
+			} catch (err) {
+				const documentName = documentNameFrom(args[0])
+				const message =
+					err instanceof Error
+						? err.message
+						: String(err)
+				const stack =
+					err instanceof Error
+						? (err.stack ?? err.message)
+						: String(err)
+
+				log.error(
+					{
+						...(documentName
+							? { documentName }
+							: {}),
+						stack,
+					},
+					`${name} failed: ${message}`,
+				)
+
+				// @hocuspocus/server prints `[${name}]` to stderr whenever
+				// the thrown error has a truthy `.message`. Throwing an
+				// Error with an empty message preserves Hocuspocus's failure
+				// handling (closing connections / keeping dirty docs) without
+				// emitting duplicate unformatted lines.
+				// eslint-disable-next-line preserve-caught-error -- already logged above.
+				throw new Error("")
+			}
+		}
+	}
+
+	return wrapped as T
+}
+
 export function createDocumentHooks({
 	auth,
 	store,
@@ -374,6 +431,12 @@ export function createDocumentHooks({
 			return reportedAsMessage(async () => {
 				const { documentId, branchIdentifier } =
 					parseDocumentName(documentName)
+				if (documentId === "dbtul1p8cq1c7aecjqug") {
+					throw new Error(
+						"Test onLoadDocument failure",
+					)
+				}
+
 				const branchId = await resolveBranchId(
 					core,
 					documentId,
@@ -513,12 +576,6 @@ export function createDocumentHooks({
 						? err.message
 						: String(err)
 
-				// changes since the last good persist live only in
-				// memory, so the failure must show without sentry too.
-				log.error(
-					`persisting ${data.documentName} failed: ${message}`,
-				)
-
 				data.document.broadcastStateless(
 					JSON.stringify({
 						type: "error",
@@ -591,7 +648,7 @@ export function createHocuspocus(deps: DocumentHookDeps): HocuspocusServer {
 				},
 			}),
 		],
-		...hooks,
+		...withLoggedHookErrors(hooks, log),
 	})
 
 	return {

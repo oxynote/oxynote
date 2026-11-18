@@ -23,10 +23,14 @@ export async function reportedAsMessage<T>(run: () => Promise<T>): Promise<T> {
 		return await run()
 	} catch (err) {
 		Sentry.captureException(err)
-		// eslint-disable-next-line preserve-caught-error -- a cause prints too.
-		throw new Error(
+		const out = new Error(
 			err instanceof Error ? err.message : String(err),
 		)
+		if (err instanceof Error && err.stack) {
+			out.stack = err.stack
+		}
+		// eslint-disable-next-line preserve-caught-error -- a cause prints too.
+		throw out
 	}
 }
 
