@@ -295,12 +295,7 @@ function withLoggedHookErrors<
 	return wrapped as T
 }
 
-export function createDocumentHooks({
-	auth,
-	store,
-	core,
-	log,
-}: DocumentHookDeps) {
+export function createDocumentHooks({ auth, store, core }: DocumentHookDeps) {
 	// who edited each open document since its last persist. Held per
 	// hooks instance so nothing carries over between servers — or, in a
 	// test, between cases.
@@ -570,6 +565,10 @@ export function createDocumentHooks({
 					err instanceof Error
 						? err.message
 						: String(err)
+				const out = new Error(message)
+				if (err instanceof Error && err.stack) {
+					out.stack = err.stack
+				}
 
 				data.document.broadcastStateless(
 					JSON.stringify({
@@ -583,8 +582,7 @@ export function createDocumentHooks({
 				// It also prints what was thrown in full, so only the
 				// message goes back. The flush still gets the original
 				// through lastPersist.
-				// eslint-disable-next-line preserve-caught-error -- a cause is printed too.
-				throw new Error(message)
+				throw out
 			}
 		},
 

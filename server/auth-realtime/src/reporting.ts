@@ -29,7 +29,6 @@ export async function reportedAsMessage<T>(run: () => Promise<T>): Promise<T> {
 		if (err instanceof Error && err.stack) {
 			out.stack = err.stack
 		}
-		// eslint-disable-next-line preserve-caught-error -- a cause prints too.
 		throw out
 	}
 }
