@@ -1,0 +1,25 @@
+name: Labeler
+
+# pull_request_target lets this job label pull requests from forks too.
+# It has write access, so it must never run code from the pull request.
+on:
+  pull_request_target:
+
+jobs:
+  label:
+    name: Labeling the pull request
+    # a fork's pull request is labeled only when it targets main. A branch
+    # in this repository can only be pushed by someone with write access
+    # (a maintainer), so its pull requests are labeled whatever they target
+    if: >-
+      github.event.pull_request.base.ref == 'main' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Add area labels
+        uses: actions/labeler@v7
+        with:
+          sync-labels: true
