@@ -110,7 +110,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			name: "Acme",
 			slug: "acme-corp",
 			logo: "",
-			members: [member("u1", "ada")],
+			members: [member("u1", "ada", "admin")],
 			invitations: [],
 		})
 		await nextTick()
@@ -131,7 +131,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			name: "Acme-Renamed",
 			slug: "acme-corp",
 			logo: "",
-			members: [member("u1", "ada")],
+			members: [member("u1", "ada", "admin")],
 			invitations: [],
 		})
 		await nextTick()
@@ -152,7 +152,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			name: "Acme-Renamed",
 			slug: "acme-corp",
 			logo: "",
-			members: [member("u1", "ada")],
+			members: [member("u1", "ada", "admin")],
 			invitations: [],
 		})
 		await nextTick()
@@ -226,7 +226,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			name: "Acme",
 			slug: "acme-corp",
 			logo: "",
-			members: [member("u1", "ada")],
+			members: [member("u1", "ada", "admin")],
 			invitations: [],
 		}
 		mockAuthOrganization(org)
@@ -269,7 +269,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			name: "Acme",
 			slug: "acme-corp",
 			logo: "",
-			members: [member("u1", "ada")],
+			members: [member("u1", "ada", "admin")],
 			invitations: [],
 		}
 		mockAuthOrganization(org)
