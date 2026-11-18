@@ -1178,13 +1178,16 @@ describe("createDocumentHooks", () => {
 			expect,
 		}) => {
 			const core = stubCore()
-			core.storeBranchContent.mockRejectedValue(
-				new Error("core unreachable"),
-			)
+			const failure = new Error("core unreachable")
+			failure.stack =
+				"Error: core unreachable\n    at originalStoreFailure"
+			core.storeBranchContent.mockRejectedValue(failure)
 			const log = stubLog()
+			const auth = stubAuth()
+			const store = stubStore()
 			const { instance } = createHocuspocus({
-				store: stubStore(),
-				auth: stubAuth(),
+				store,
+				auth,
 				core,
 				log,
 			})
@@ -1195,20 +1198,45 @@ describe("createDocumentHooks", () => {
 					document: ConnectedDocument
 				}) => Promise<void>
 
-			await expect(
-				onStoreDocument({
-					documentName: "doc1-branch1",
-					document,
-				}),
-			).rejects.toThrow()
+			const rejection = await onStoreDocument({
+				documentName: "doc1-branch1",
+				document,
+			}).then(
+				() => undefined,
+				(error: unknown) => error,
+			)
+			expect(rejection).toBeInstanceOf(Error)
+			expect(rejection).toHaveProperty("message", "")
 
+			expect(log.error).toHaveBeenCalledTimes(1)
 			expect(log.error).toHaveBeenCalledWith(
 				expect.objectContaining({
 					documentName: "doc1-branch1",
-					stack: expect.stringContaining("core unreachable"),
+					stack: failure.stack,
 				}),
 				"onStoreDocument failed: core unreachable",
 			)
+			expect(core.storeBranchContent).toHaveBeenCalledTimes(1)
+			expect(core.storeBranchContent).toHaveBeenCalledWith(
+				"doc1",
+				"branch1",
+				expect.objectContaining({
+					name: "Runbook",
+					icon: "lucide:file",
+					content: transformer.fromYdoc(
+						document,
+						"content",
+					),
+					maintainers: [],
+					rawContent: Buffer.from(
+						Y.encodeStateAsUpdate(document),
+					).toString("base64"),
+					system: false,
+				}),
+			)
+			expect(core.fetchBranches).not.toHaveBeenCalled()
+			expect(auth.getSession).not.toHaveBeenCalled()
+			expect(store.memberRole).not.toHaveBeenCalled()
 
 			expect(
 				document.broadcastStateless,
@@ -1226,9 +1254,11 @@ describe("createDocumentHooks", () => {
 			const core = stubCore()
 			core.storeBranchContent.mockRejectedValue("core gone")
 			const log = stubLog()
+			const auth = stubAuth()
+			const store = stubStore()
 			const { instance } = createHocuspocus({
-				store: stubStore(),
-				auth: stubAuth(),
+				store,
+				auth,
 				core,
 				log,
 			})
@@ -1238,13 +1268,18 @@ describe("createDocumentHooks", () => {
 					document: ConnectedDocument
 				}) => Promise<void>
 
-			await expect(
-				onStoreDocument({
-					documentName: "doc1-branch1",
-					document: seededDocument(),
-				}),
-			).rejects.toThrow()
+			const document = seededDocument()
+			const rejection = await onStoreDocument({
+				documentName: "doc1-branch1",
+				document,
+			}).then(
+				() => undefined,
+				(error: unknown) => error,
+			)
+			expect(rejection).toBeInstanceOf(Error)
+			expect(rejection).toHaveProperty("message", "")
 
+			expect(log.error).toHaveBeenCalledTimes(1)
 			expect(log.error).toHaveBeenCalledWith(
 				expect.objectContaining({
 					documentName: "doc1-branch1",
@@ -1252,6 +1287,27 @@ describe("createDocumentHooks", () => {
 				}),
 				"onStoreDocument failed: core gone",
 			)
+			expect(core.storeBranchContent).toHaveBeenCalledTimes(1)
+			expect(core.storeBranchContent).toHaveBeenCalledWith(
+				"doc1",
+				"branch1",
+				expect.objectContaining({
+					name: "Runbook",
+					icon: "lucide:file",
+					content: transformer.fromYdoc(
+						document,
+						"content",
+					),
+					maintainers: [],
+					rawContent: Buffer.from(
+						Y.encodeStateAsUpdate(document),
+					).toString("base64"),
+					system: false,
+				}),
+			)
+			expect(core.fetchBranches).not.toHaveBeenCalled()
+			expect(auth.getSession).not.toHaveBeenCalled()
+			expect(store.memberRole).not.toHaveBeenCalled()
 		})
 
 		it("warns the connected editors when the branch cannot be resolved", async ({
