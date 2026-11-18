@@ -1174,7 +1174,7 @@ describe("createDocumentHooks", () => {
 
 		// rethrowing is what makes hocuspocus keep the document, and its
 		// unsaved changes, in memory
-		it("warns the connected editors, logs and rethrows when the persist fails", async ({
+		it("warns connected editors and logs when the persist fails", async ({
 			expect,
 		}) => {
 			const core = stubCore()
@@ -1182,26 +1182,33 @@ describe("createDocumentHooks", () => {
 				new Error("core unreachable"),
 			)
 			const log = stubLog()
-			const hooks = createDocumentHooks({
+			const { instance } = createHocuspocus({
 				store: stubStore(),
 				auth: stubAuth(),
 				core,
 				log,
 			})
 			const document = seededDocument()
+			const onStoreDocument = instance.configuration
+				.onStoreDocument as (data: {
+					documentName: string
+					document: ConnectedDocument
+				}) => Promise<void>
 
 			await expect(
-				hooks.onStoreDocument({
+				onStoreDocument({
 					documentName: "doc1-branch1",
 					document,
 				}),
-			).rejects.toThrow("core unreachable")
+			).rejects.toThrow()
 
-			expect(log.error.mock.calls).toEqual([
-				[
-					"persisting doc1-branch1 failed: core unreachable",
-				],
-			])
+			expect(log.error).toHaveBeenCalledWith(
+				expect.objectContaining({
+					documentName: "doc1-branch1",
+					stack: expect.stringContaining("core unreachable"),
+				}),
+				"onStoreDocument failed: core unreachable",
+			)
 
 			expect(
 				document.broadcastStateless,
@@ -1219,23 +1226,32 @@ describe("createDocumentHooks", () => {
 			const core = stubCore()
 			core.storeBranchContent.mockRejectedValue("core gone")
 			const log = stubLog()
-			const hooks = createDocumentHooks({
+			const { instance } = createHocuspocus({
 				store: stubStore(),
 				auth: stubAuth(),
 				core,
 				log,
 			})
+			const onStoreDocument = instance.configuration
+				.onStoreDocument as (data: {
+					documentName: string
+					document: ConnectedDocument
+				}) => Promise<void>
 
 			await expect(
-				hooks.onStoreDocument({
+				onStoreDocument({
 					documentName: "doc1-branch1",
 					document: seededDocument(),
 				}),
-			).rejects.toStrictEqual(new Error("core gone"))
+			).rejects.toThrow()
 
-			expect(log.error.mock.calls).toEqual([
-				["persisting doc1-branch1 failed: core gone"],
-			])
+			expect(log.error).toHaveBeenCalledWith(
+				expect.objectContaining({
+					documentName: "doc1-branch1",
+					stack: expect.stringContaining("core gone"),
+				}),
+				"onStoreDocument failed: core gone",
+			)
 		})
 
 		it("warns the connected editors when the branch cannot be resolved", async ({
