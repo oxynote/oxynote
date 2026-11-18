@@ -53,6 +53,7 @@ func Test_Type_Validate(t *testing.T) {
 		"MariaDB":           {Type: TypeMariaDB},
 		"MySQL":             {Type: TypeMySQL},
 		"Loki":              {Type: TypeLoki},
+		"VictoriaLogs":      {Type: TypeVictoriaLogs},
 	}
 
 	for cn, c := range cc {
@@ -78,6 +79,10 @@ func Test_Type_credentialsKinds(t *testing.T) {
 		},
 		"Loki": {
 			Type:   TypeLoki,
+			Result: []credentials.Kind{credentials.KindBasic, credentials.KindToken},
+		},
+		"VictoriaLogs": {
+			Type:   TypeVictoriaLogs,
 			Result: []credentials.Kind{credentials.KindBasic, credentials.KindToken},
 		},
 		"PostgreSQL": {
@@ -284,6 +289,9 @@ func Test_CreateInput_Validate(t *testing.T) {
 		},
 		"Token credentials for Loki": {
 			Input: CreateInput{Type: TypeLoki, Name: "Logs", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
+		},
+		"Token credentials for VictoriaLogs": {
+			Input: CreateInput{Type: TypeVictoriaLogs, Name: "Logs", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
 		},
 		"No credentials": {
 			Input: CreateInput{Type: TypePrometheus, Name: "Metrics"},
@@ -551,6 +559,11 @@ func Test_DataSource_updatedCredentials(t *testing.T) {
 			DataSource: &DataSource{Type: TypeLoki},
 			Inp:        null.ValueFrom(credentials.UpdateInput(`{"kind":"token","token":"secret"}`)),
 			Creds:      stubCredentials(`{"token":"secret","kind":"token"}`),
+		},
+		"Successful victorialogs basic update": {
+			DataSource: &DataSource{Type: TypeVictoriaLogs},
+			Inp:        null.ValueFrom(credentials.UpdateInput(`{"kind":"basic","username":"user"}`)),
+			Creds:      stubCredentials(`{"username":"user","password":"","kind":"basic"}`),
 		},
 		"Successful prometheus switch to a token": {
 			DataSource: &DataSource{

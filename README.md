@@ -5,9 +5,9 @@
 **Your system, with subtitles.**
 
 A self-hosted workspace that puts live metric charts and logs inside the
-pages that explain them. They run your Prometheus, Loki and SQL queries,
-and a change to a page goes through a draft, a diff and an approval, like a
-pull request. From the authors of
+pages that explain them. They run your Prometheus, Loki, VictoriaLogs and
+SQL queries, and a change to a page goes through a draft, a diff and an
+approval, like a pull request. From the authors of
 [ttlcache](https://github.com/jellydator/ttlcache).
 
 [![License](https://img.shields.io/github/license/oxynote/oxynote)](LICENSE)
@@ -31,8 +31,8 @@ separate logins and separate histories.
 
 Oxynote is a new kind of tool because it puts the explanation, the live
 metric charts and the logs on one page. Each chart or log block runs its
-own Prometheus, Loki or SQL query, and one draft carries a change to the
-block and its text through the same review.
+own Prometheus, Loki, VictoriaLogs or SQL query, and one draft carries a
+change to the block and its text through the same review.
 
 The goal is to watch and run the service from that same page. Its uptime
 monitor, a view into its database and its admin actions would sit next to
@@ -137,8 +137,9 @@ from source, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Oxynote keeps the pages about your systems, such as architecture notes, API
 references, on-call steps and release checklists, in one page tree. Those
-pages can query Prometheus, Loki, PostgreSQL, Supabase, MySQL or MariaDB,
-so the live metrics and logs sit right where you write about them.
+pages can query Prometheus, Loki, VictoriaLogs, PostgreSQL, Supabase, MySQL
+or MariaDB, so the live metrics and logs sit right where you write about
+them.
 
 ### Live Metric Charts
 
@@ -290,9 +291,9 @@ along with traces and alerting.
 ## FAQ
 
 **Can it replace Grafana or Datadog?** That is the goal. Metric charts and
-logs are covered today: Oxynote runs your Prometheus, Loki and SQL queries
-inside pages you can write around and review like a pull request. Traces
-and alerting are in development.
+logs are covered today: Oxynote runs your Prometheus, Loki, VictoriaLogs and
+SQL queries inside pages you can write around and review like a pull
+request. Traces and alerting are in development.
 
 **Is there a cloud version?** Not yet. A cloud version is planned, and
 today Oxynote runs as one container on your own servers.

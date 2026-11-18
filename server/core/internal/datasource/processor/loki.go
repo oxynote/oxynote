@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"net/http"
 	"net/url"
@@ -17,7 +16,6 @@ import (
 	"unicode"
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
-	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/prometheus/common/model"
 )
 
@@ -64,54 +62,21 @@ const (
 	// _lokiLevel is where Loki 3.0 stores a line's level, and a common
 	// label name.
 	_lokiLevel = "level"
-
-	// _maxErrorMessageSize caps how much of an error body is shown.
-	_maxErrorMessageSize = 1024
-
-	// _maxLokiResponseSize caps the bytes read from one answer: Loki lines
-	// may be up to 256 KiB each, and a page may ask for thousands.
-	_maxLokiResponseSize = 32 << 20
-)
-
-// _errLokiEndpointNotFound is returned when the server has no route for a
-// request, which is what a URL that is not Loki, or a Loki too old for
-// the endpoint, answers.
-var _errLokiEndpointNotFound = errutil.New(
-	http.StatusBadRequest,
-	"data_source.endpoint_not_found",
-	"the data source does not serve this request; check that its url points at loki 3.0 or newer",
-)
-
-// _errLokiRedirected is returned when the server answers with a redirect,
-// which the client does not follow.
-var _errLokiRedirected = errutil.New(
-	http.StatusBadRequest,
-	"data_source.redirected",
-	"the data source answered with a redirect; set its url to the address it redirects to",
-)
-
-// _errLokiResponseTooLarge is returned when an answer holds more than
-// _maxLokiResponseSize bytes.
-var _errLokiResponseTooLarge = NewInvalidQueryError(
-	"the data source answered with more than 32 MiB; narrow the query or lower the limit",
 )
 
 // Loki represents a Loki data source processor.
 type Loki struct {
-	inp       Input
-	transport ownTransport
+	httpClient
 }
 
 // NewLoki creates a new Loki data source processor.
 func NewLoki(inp Input) *Loki {
 	return &Loki{
-		inp: inp,
+		httpClient{inp: inp},
 	}
 }
 
 // Close closes the idle connections of the data source's own transport.
-// Without a CA certificate its connections belong to the transport every
-// client shares.
 func (l *Loki) Close() error {
 	l.transport.close()
 
@@ -126,7 +91,7 @@ func (l *Loki) TestConnection(ctx context.Context) (ConnectionStatus, error) {
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	client, err := l.client()
+	client, err := l.authClient()
 	if err != nil {
 		if errors.Is(err, credentials.ErrInvalidCACertificate) {
 			return ConnectionStatusInvalidCACertificate, nil
@@ -135,7 +100,7 @@ func (l *Loki) TestConnection(ctx context.Context) (ConnectionStatus, error) {
 		return "", err
 	}
 
-	status, body, err := l.request(ctx, client, _lokiBuildInfoPath, nil, nil)
+	status, body, err := l.doRequest(ctx, client, _lokiBuildInfoPath, nil, nil)
 	if err != nil {
 		return ConnectionStatusUnreachable, nil
 	}
@@ -206,9 +171,8 @@ func (l *Loki) LogsVolume(ctx context.Context, q string, tr TimeRange) (*QueryRe
 		"step":  {strconv.FormatInt(stepSeconds, 10)},
 	}
 
-	var res lokiQueryResponse
-
-	if err := l.get(ctx, _lokiQueryRangePath, params, nil, &res); err != nil {
+	res, err := l.fetchJSON[lokiQueryResponse](ctx, _lokiQueryRangePath, params, nil)
+	if err != nil {
 		return nil, err
 	}
 
@@ -242,9 +206,8 @@ func (l *Loki) LogFields(ctx context.Context, q string, tr TimeRange) (*LogField
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	var labels lokiListResponse
-
-	if err := l.get(ctx, _lokiLabelsPath, lokiWindowParams(LokiStreamSelector(q), tr), nil, &labels); err != nil {
+	labels, err := l.fetchJSON[lokiListResponse](ctx, _lokiLabelsPath, createLokiWindowParams(LokiStreamSelector(q), tr), nil)
+	if err != nil {
 		return nil, err
 	}
 
@@ -260,15 +223,8 @@ func (l *Loki) LogFields(ctx context.Context, q string, tr TimeRange) (*LogField
 		return res, nil
 	}
 
-	var detected struct {
-		// Fields specifies the names Loki found.
-		Fields []struct {
-			// Label specifies the name.
-			Label string `json:"label"`
-		} `json:"fields"`
-	}
-
-	if err := l.get(ctx, _lokiDetectedFieldsPath, lokiWindowParams(q, tr), nil, &detected); err != nil {
+	detected, err := l.fetchJSON[lokiDetectedFieldsResponse](ctx, _lokiDetectedFieldsPath, createLokiWindowParams(q, tr), nil)
+	if err != nil {
 		return nil, err
 	}
 
@@ -295,24 +251,21 @@ func (l *Loki) LogFieldValues(ctx context.Context, field, q string, tr TimeRange
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	var values lokiListResponse
-
 	path := "/loki/api/v1/label/" + url.PathEscape(field) + "/values"
-	if err := l.get(ctx, path, lokiWindowParams(LokiStreamSelector(q), tr), nil, &values); err != nil {
+
+	values, err := l.fetchJSON[lokiListResponse](ctx, path, createLokiWindowParams(LokiStreamSelector(q), tr), nil)
+	if err != nil {
 		return nil, err
 	}
 
 	if len(values.Data) == 0 && q != "" {
-		var detected struct {
-			// Values specifies the values Loki found.
-			Values []string `json:"values"`
-		}
-
 		path = "/loki/api/v1/detected_field/" + url.PathEscape(field) + "/values"
-		if err := l.get(ctx, path, lokiWindowParams(q, tr), nil, &detected); err != nil {
+
+		detected, err := l.fetchJSON[lokiDetectedValuesResponse](ctx, path, createLokiWindowParams(q, tr), nil)
+		if err != nil {
 			// a Loki older than 3.3 has no such endpoint, which leaves the
 			// field without suggestions rather than failing them.
-			if !errors.Is(err, _errLokiEndpointNotFound) {
+			if !errors.Is(err, _errEndpointNotFound) {
 				return nil, err
 			}
 		}
@@ -339,10 +292,10 @@ func (l *Loki) fetchLines(q string) LogsFetcher {
 			"direction": {direction},
 		}
 
-		var res lokiQueryResponse
-
 		header := http.Header{_lokiEncodingFlagsHeader: {_lokiCategorizeLabels}}
-		if err := l.get(ctx, _lokiQueryRangePath, params, header, &res); err != nil {
+
+		res, err := l.fetchJSON[lokiQueryResponse](ctx, _lokiQueryRangePath, params, header)
+		if err != nil {
 			return nil, err
 		}
 
@@ -378,136 +331,6 @@ func (l *Loki) fetchLines(q string) LogsFetcher {
 	}
 }
 
-// get sends a GET to the path and decodes the JSON answer into dst. An
-// answer other than 200 is the error it describes.
-func (l *Loki) get(ctx context.Context, path string, params url.Values, header http.Header, dst any) error {
-	client, err := l.client()
-	if err != nil {
-		return err
-	}
-
-	status, body, err := l.request(ctx, client, path, params, header)
-	if err != nil {
-		return err
-	}
-
-	switch {
-	case status == http.StatusUnauthorized || status == http.StatusForbidden:
-		return ConnectionStatusUnauthorized.Error()
-	case status >= http.StatusMultipleChoices && status < http.StatusBadRequest:
-		return _errLokiRedirected
-	case status == http.StatusNotFound:
-		return _errLokiEndpointNotFound
-	case status == http.StatusTooManyRequests:
-		return _errRateLimited
-	case status >= http.StatusInternalServerError:
-		return ConnectionStatusUnreachable.Error()
-	}
-
-	// Loki answers an error in plain text, but the proxies of hosted Loki
-	// services wrap it as JSON. Either is cut to _maxErrorMessageSize.
-	if status != http.StatusOK {
-		var wrapped struct {
-			// Message specifies the error, as proxies write it.
-			Message string `json:"message"`
-
-			// Error specifies the error, as Prometheus-style APIs write it.
-			Error string `json:"error"`
-		}
-
-		msg := strings.TrimSpace(string(body))
-
-		if json.Unmarshal(body, &wrapped) == nil {
-			msg = cmp.Or(wrapped.Message, wrapped.Error, msg)
-		}
-
-		if len(msg) > _maxErrorMessageSize {
-			msg = msg[:_maxErrorMessageSize]
-		}
-
-		return NewInvalidQueryError(cmp.Or(msg, "the data source rejected the query"))
-	}
-
-	if err := json.Unmarshal(body, dst); err != nil {
-		return fmt.Errorf("decoding loki response: %w", err)
-	}
-
-	return nil
-}
-
-// request sends a GET to the path through client and returns the
-// status and body.
-func (l *Loki) request(
-	ctx context.Context,
-	client *http.Client,
-	path string,
-	params url.Values,
-	header http.Header,
-) (int, []byte, error) {
-	target, err := url.JoinPath(l.inp.URL(), path)
-	if err != nil {
-		return 0, nil, fmt.Errorf("building loki url: %w", err)
-	}
-
-	if len(params) > 0 {
-		target += "?" + params.Encode()
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
-	if err != nil {
-		// NOCOV: url.JoinPath already parsed the same target.
-		return 0, nil, fmt.Errorf("creating loki request: %w", err)
-	}
-
-	maps.Copy(req.Header, header)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, nil, fmt.Errorf("querying loki: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, _maxLokiResponseSize+1))
-	if err != nil {
-		return 0, nil, fmt.Errorf("reading loki response: %w", err)
-	}
-
-	if len(body) > _maxLokiResponseSize {
-		return 0, nil, _errLokiResponseTooLarge
-	}
-
-	return resp.StatusCode, body, nil
-}
-
-// client returns the HTTP client that authenticates with the data
-// source's credentials and stays on the data source's own address.
-func (l *Loki) client() (*http.Client, error) {
-	rawCreds := l.inp.Credentials()
-
-	auth, err := rawCreds.Read()
-	if err != nil {
-		return nil, err
-	}
-
-	transport, err := l.transport.roundTripper(http.DefaultTransport, l.inp.URL(), auth)
-	if err != nil {
-		return nil, err
-	}
-
-	if auth != nil {
-		transport = auth.Authorize(transport)
-	}
-
-	return &http.Client{
-		Transport: transport,
-		// a followed redirect could lead to any host, whose error answers
-		// would then reach the user.
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}, nil
-}
-
 // lokiQueryResponse is the answer to a query_range request.
 type lokiQueryResponse struct {
 	// Data specifies the result.
@@ -529,6 +352,23 @@ type lokiQueryResponse struct {
 type lokiListResponse struct {
 	// Data specifies the names or values.
 	Data []string `json:"data"`
+}
+
+// lokiDetectedFieldsResponse is the answer of the detected fields
+// endpoint.
+type lokiDetectedFieldsResponse struct {
+	// Fields specifies the names Loki found.
+	Fields []struct {
+		// Label specifies the name.
+		Label string `json:"label"`
+	} `json:"fields"`
+}
+
+// lokiDetectedValuesResponse is the answer of the detected field values
+// endpoint.
+type lokiDetectedValuesResponse struct {
+	// Values specifies the values Loki found.
+	Values []string `json:"values"`
 }
 
 // lokiStream is one stream of a streams result.
@@ -668,9 +508,9 @@ func LokiStreamSelector(q string) string {
 	return ""
 }
 
-// lokiWindowParams returns the params that scope a discovery request to
+// createLokiWindowParams returns the params that scope a discovery request to
 // the window and, when given, the query.
-func lokiWindowParams(q string, tr TimeRange) url.Values {
+func createLokiWindowParams(q string, tr TimeRange) url.Values {
 	params := url.Values{
 		"start": {strconv.FormatInt(tr.From.UnixNano(), 10)},
 		"end":   {strconv.FormatInt(tr.To.UnixNano(), 10)},

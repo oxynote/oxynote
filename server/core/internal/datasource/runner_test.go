@@ -172,6 +172,25 @@ func lokiAPIHandler() http.Handler {
 	return mux
 }
 
+// victoriaLogsAPIHandler answers every VictoriaLogs endpoint a log client
+// reads with one log of the stream {app="api"}.
+func victoriaLogsAPIHandler() http.Handler {
+	respond := func(body string) http.HandlerFunc {
+		return func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(body)) //nolint:errcheck,gosec // error provides no meaningful info
+		}
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/select/logsql/query", respond(`{"_time":"2024-01-01T00:00:00Z","_stream":"{app=\"api\"}","_msg":"started","app":"api"}`))
+	mux.HandleFunc("/select/logsql/hits", respond(`{"hits":[{"fields":{"level":"info"},"timestamps":["2024-01-01T00:01:00Z"],"values":[3]}]}`))
+	mux.HandleFunc("/select/logsql/field_names", respond(`{"values":[{"value":"app","hits":1}]}`))
+	mux.HandleFunc("/select/logsql/stream_field_names", respond(`{"values":[{"value":"app","hits":1}]}`))
+	mux.HandleFunc("/select/logsql/field_values", respond(`{"values":[{"value":"api","hits":1}]}`))
+
+	return mux
+}
+
 // prepLokiServer starts a fake Loki serving the provided handler, counting
 // in conns the connections clients open to it. Its cleanup also drops the
 // shared transport's keep-alive connections so goleak stays clean.
@@ -190,11 +209,20 @@ func prepLokiServer(t *testing.T, h http.Handler, conns *atomic.Int32) *httptest
 	return srv
 }
 
-// countBuildinfo wraps h, counting in hits the connection tests it
-// answers.
-func countBuildinfo(h http.Handler, hits *atomic.Int32) http.Handler {
+// countConnectionTests wraps h, counting in hits the connection tests it
+// answers. VictoriaLogs is tested by listing the field names of the last
+// five minutes.
+func countConnectionTests(h http.Handler, hits *atomic.Int32) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/status/buildinfo") {
+		params := r.URL.Query()
+		start, serr := time.Parse(time.RFC3339Nano, params.Get("start"))
+		end, eerr := time.Parse(time.RFC3339Nano, params.Get("end"))
+		window := serr == nil && eerr == nil && end.Sub(start) == 5*time.Minute
+
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/status/buildinfo"):
+			hits.Add(1)
+		case strings.HasSuffix(r.URL.Path, "/select/logsql/field_names") && window:
 			hits.Add(1)
 		}
 
@@ -812,12 +840,18 @@ func Test_Manager_newClient(t *testing.T) {
 		"Demo Prometheus":     {Type: TypePrometheus, URL: demo.URL, Client: &demo.Client{}},
 		"Unknown demo source": {Type: TypePrometheus, URL: demo.Scheme + "nope", Err: demo.ErrUnknownSource},
 		"PostgreSQL":          {Type: TypePostgreSQL, Client: &processor.PostgreSQL{}},
+		"Demo PostgreSQL":     {Type: TypePostgreSQL, URL: demo.URL, Err: _errNoDemo},
 		"Supabase":            {Type: TypeSupabase, Client: &processor.PostgreSQL{}},
+		"Demo Supabase":       {Type: TypeSupabase, URL: demo.URL, Err: _errNoDemo},
 		"MySQL":               {Type: TypeMySQL, Client: &processor.MySQL{}},
+		"Demo MySQL":          {Type: TypeMySQL, URL: demo.URL, Err: _errNoDemo},
 		"MariaDB":             {Type: TypeMariaDB, Client: &processor.MySQL{}},
+		"Demo MariaDB":        {Type: TypeMariaDB, URL: demo.URL, Err: _errNoDemo},
 		"Loki":                {Type: TypeLoki, Client: &processor.Loki{}},
 		"Demo Loki":           {Type: TypeLoki, URL: demo.URL, Client: &demo.Client{}},
 		"Unknown demo Loki":   {Type: TypeLoki, URL: demo.Scheme + "nope", Err: demo.ErrUnknownSource},
+		"VictoriaLogs":        {Type: TypeVictoriaLogs, Client: &processor.VictoriaLogs{}},
+		"Demo VictoriaLogs":   {Type: TypeVictoriaLogs, URL: demo.URL, Err: _errNoDemo},
 		"Unknown type":        {Type: Type("bogus"), Err: assert.AnError},
 	}
 
@@ -1005,7 +1039,7 @@ func Test_runner_TestConnection(t *testing.T) {
 
 			url := c.URL
 			if c.Handler != nil {
-				url = prepPrometheusServer(t, countBuildinfo(c.Handler, &hits), &atomic.Int32{}).URL
+				url = prepPrometheusServer(t, countConnectionTests(c.Handler, &hits), &atomic.Int32{}).URL
 			}
 
 			store := &StatusStoreMock{}
@@ -1114,7 +1148,7 @@ func Test_runner_Prometheus(t *testing.T) {
 
 			var url string
 			if c.Handler != nil {
-				url = prepPrometheusServer(t, countBuildinfo(c.Handler, &hits), &conns).URL
+				url = prepPrometheusServer(t, countConnectionTests(c.Handler, &hits), &conns).URL
 			}
 
 			store := &StatusStoreMock{}
@@ -1209,6 +1243,12 @@ func Test_runner_Logs(t *testing.T) {
 			Tests:   1,
 			Conns:   1,
 		},
+		"A VictoriaLogs data source hands out its client": {
+			Type:    TypeVictoriaLogs,
+			Handler: victoriaLogsAPIHandler(),
+			Tests:   1,
+			Conns:   1,
+		},
 		"The demo answers as Loki": {
 			Type: TypeLoki,
 			URL:  demo.URL,
@@ -1238,7 +1278,7 @@ func Test_runner_Logs(t *testing.T) {
 
 			url := c.URL
 			if c.Handler != nil {
-				url = prepLokiServer(t, countBuildinfo(c.Handler, &hits), &conns).URL
+				url = prepLokiServer(t, countConnectionTests(c.Handler, &hits), &conns).URL
 			}
 
 			store := &StatusStoreMock{}

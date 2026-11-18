@@ -302,8 +302,8 @@ func Test_listDataSources_Info(t *testing.T) {
 	assert.Equal(t, NameListDataSources, info.Name)
 	assert.Empty(t, info.Required)
 	assert.Empty(t, info.Properties)
-	assert.Contains(t, info.Description, "prometheus, loki, postgresql")
-	assert.Contains(t, info.Description, "loki holds logs")
+	assert.Contains(t, info.Description, "prometheus, loki, victorialogs, postgresql")
+	assert.Contains(t, info.Description, "loki and victorialogs hold logs")
 }
 
 func Test_listDataSources_Validate(t *testing.T) {
@@ -468,6 +468,20 @@ func Test_getDataSourceMetadata_Exec(t *testing.T) {
 		// them.
 		"Fields of a Loki data source": {
 			Type: datasource.TypeLoki,
+			Tool: tool,
+			Logs: &datasourceMock.Logs{
+				LogFieldsFunc: func(_ context.Context, q string, tr processor.TimeRange) (*processor.LogFieldsResult, error) {
+					assert.Empty(t, q)
+					assert.Equal(t, time.Hour, tr.To.Sub(tr.From))
+
+					return logsResult, nil
+				},
+			},
+			Result: logsResult,
+			Calls:  dataSourceCalls{Runner: 1, Type: 1, Logs: 1, LogFields: 1},
+		},
+		"Fields of a VictoriaLogs data source": {
+			Type: datasource.TypeVictoriaLogs,
 			Tool: tool,
 			Logs: &datasourceMock.Logs{
 				LogFieldsFunc: func(_ context.Context, q string, tr processor.TimeRange) (*processor.LogFieldsResult, error) {
@@ -1019,6 +1033,13 @@ func Test_listLogFields_Exec(t *testing.T) {
 			Result: fields("app"),
 			Calls:  dataSourceCalls{Runner: 1, Substitute: 1, Logs: 1, LogFields: 1},
 		},
+		"The field names of a VictoriaLogs data source": {
+			Type:   datasource.TypeVictoriaLogs,
+			Tool:   tool("", ""),
+			Logs:   client(),
+			Result: fields("app"),
+			Calls:  dataSourceCalls{Runner: 1, Substitute: 1, Logs: 1, LogFields: 1},
+		},
 		"The field names of the logs a query matches": {
 			Type:   datasource.TypeLoki,
 			Tool:   tool("", `{region="$region"}`),
@@ -1377,10 +1398,27 @@ func Test_queryDataSource_Exec(t *testing.T) {
 			},
 			Calls: dataSourceCalls{Runner: 1, Values: 1, Type: 1, Logs: 1, LogsLogs: 1},
 		},
+		"VictoriaLogs substituted variables": {
+			Type: datasource.TypeVictoriaLogs,
+			Tool: query(`region:="$region"`, ""),
+			Logs: logs(),
+			Result: rawLogs{
+				Status: processor.QueryStatusOK,
+				Logs:   []rawLog{{Level: processor.LogLevelError, Message: `region:="eu-west-1"`}},
+			},
+			Calls: dataSourceCalls{Runner: 1, Values: 1, Type: 1, Logs: 1, LogsLogs: 1},
+		},
 		// no chart draws logs, so the check is refused before any read.
 		"A Loki chart check is refused": {
 			Type:  datasource.TypeLoki,
 			Tool:  query(`{app="api"}`, processor.ChartTypeLine),
+			Logs:  logs(),
+			Err:   _errLogsChartType,
+			Calls: dataSourceCalls{Runner: 1, Values: 1, Type: 1},
+		},
+		"A VictoriaLogs chart check is refused": {
+			Type:  datasource.TypeVictoriaLogs,
+			Tool:  query(`app:="api"`, processor.ChartTypeLine),
 			Logs:  logs(),
 			Err:   _errLogsChartType,
 			Calls: dataSourceCalls{Runner: 1, Values: 1, Type: 1},
@@ -1498,6 +1536,8 @@ func Test_queryLogs(t *testing.T) {
 			switch q {
 			case "boom":
 				return nil, assert.AnError
+			case "huge":
+				return nil, processor.ErrResponseTooLarge
 			case "down":
 				return nil, processor.ConnectionStatusUnreachable.Error()
 			case "empty":
@@ -1512,6 +1552,7 @@ func Test_queryLogs(t *testing.T) {
 	}
 
 	cc := map[string]struct {
+		Type     datasource.Type
 		NoClient bool
 		Query    string
 		Result   any
@@ -1536,8 +1577,19 @@ func Test_queryLogs(t *testing.T) {
 		// a metric query fails in the client, so the hint names what the
 		// tool runs.
 		"Error returned by Logs.Logs": {
+			Type:  datasource.TypeLoki,
 			Query: "boom",
 			Err:   fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since metric queries such as rate() are not supported", assert.AnError),
+		},
+		"Error returned by Logs.Logs of VictoriaLogs": {
+			Type:  datasource.TypeVictoriaLogs,
+			Query: "boom",
+			Err:   fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since stats pipes are not supported", assert.AnError),
+		},
+		"Logs.Logs that answered too much": {
+			Type:  datasource.TypeVictoriaLogs,
+			Query: "huge",
+			Err:   fmt.Errorf("%w; narrow the query or the range", processor.ErrResponseTooLarge),
 		},
 		"Logs.Logs that could not serve the query": {
 			Query: "down",
@@ -1550,6 +1602,7 @@ func Test_queryLogs(t *testing.T) {
 			t.Parallel()
 
 			runner := &datasourceMock.Runner{
+				TypeFunc: func() datasource.Type { return c.Type },
 				LogsFunc: func(context.Context) (datasource.Logs, error) {
 					if c.NoClient {
 						return nil, assert.AnError

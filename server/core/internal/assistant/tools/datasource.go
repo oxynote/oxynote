@@ -34,7 +34,7 @@ const (
 	// _maxRawRows caps the rows of a raw SQL answer.
 	_maxRawRows = 200
 
-	// _maxRawLogs caps the logs of a raw Loki answer, keeping the newest.
+	// _maxRawLogs caps the logs of a raw logs answer, keeping the newest.
 	_maxRawLogs = 100
 )
 
@@ -54,9 +54,9 @@ var _errUnknownDataSource = errors.New("no data source with that id in this orga
 // once either absent end has been defaulted.
 var _errInvertedTimeRange = errors.New("'from' is after 'to'; the range start must be the earlier timestamp")
 
-// _errLogsChartType is returned when a chart check is asked of a Loki
+// _errLogsChartType is returned when a chart check is asked of a logs
 // data source, whose logs no chart draws.
-var _errLogsChartType = errors.New("a loki data source draws no chart; omit chart_type, and show the logs in a <logs> block")
+var _errLogsChartType = errors.New("a logs data source draws no chart; omit chart_type, and show the logs in a <logs> block")
 
 // _timeRangeProps are the from and to arguments every ranged read takes.
 var _timeRangeProps = map[string]any{
@@ -72,7 +72,7 @@ func (listDataSources) Info() Info {
 	return Info{
 		Name:        NameListDataSources,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
-		Description: "List the organisation's data sources as {id, name, type, status}. type is prometheus, loki, postgresql, supabase, mariadb or mysql. It decides the query language and which tools serve it, and loki holds logs. Start here, since the other data source tools take an id from this list.",
+		Description: "List the organisation's data sources as {id, name, type, status}. type is prometheus, loki, victorialogs, postgresql, supabase, mariadb or mysql. It decides the query language and which tools serve it, and loki and victorialogs hold logs. Start here, since the other data source tools take an id from this list.",
 		Properties:  map[string]any{},
 	}
 }
@@ -121,8 +121,9 @@ type dataSourceInfo struct {
 	// Name is the data source's display name.
 	Name string `json:"name"`
 
-	// Type is what the data source speaks (prometheus, loki, postgresql,
-	// supabase, mariadb, mysql), which decides the tools that serve it.
+	// Type is what the data source speaks (prometheus, loki, victorialogs,
+	// postgresql, supabase, mariadb, mysql), which decides the tools that
+	// serve it.
 	Type datasource.Type `json:"type"`
 
 	// Status is the connection status recorded for it.
@@ -141,7 +142,7 @@ func (getDataSourceMetadata) Info() Info {
 	return Info{
 		Name:        NameGetDataSourceMetadata,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
-		Description: "Describe what a data source holds. Prometheus gives each metric with its type, help and unit. Loki gives the labels its logs carried over the last hour, and list_log_fields with a query finds their other fields. SQL gives {default_schema, tables: {table: [columns]}}. Read it before writing a query, so the names in it are real.",
+		Description: "Describe what a data source holds. Prometheus gives each metric with its type, help and unit. Loki gives the labels its logs carried over the last hour and VictoriaLogs all their fields, and list_log_fields with a query finds the rest. SQL gives {default_schema, tables: {table: [columns]}}. Read it before writing a query, so the names in it are real.",
 		Properties:  map[string]any{"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription}},
 		Required:    []string{"data_source_id"},
 	}
@@ -189,7 +190,7 @@ func (gm getDataSourceMetadata) Exec(inp Input) (any, error) {
 		return res, nil
 	}
 
-	if typ == datasource.TypeLoki {
+	if typ == datasource.TypeLoki || typ == datasource.TypeVictoriaLogs {
 		logs, lerr := runner.Logs(inp.Context())
 		if lerr != nil {
 			return nil, lerr
@@ -419,12 +420,12 @@ func (lps listPrometheusSeries) Exec(inp Input) (any, error) {
 	return res, nil
 }
 
-// listLogFields lists the field names the logs of a Loki data source
+// listLogFields lists the field names the logs of a logs data source
 // carry, or the values one field takes.
 type listLogFields struct {
 	timeRange
 
-	// DataSourceID names the Loki data source.
+	// DataSourceID names the logs data source.
 	DataSourceID xid.ID `json:"data_source_id"`
 
 	// Field, when set, asks for the values of that field instead of the
@@ -440,11 +441,11 @@ func (listLogFields) Info() Info {
 	return Info{
 		Name:        NameListLogFields,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
-		Description: "List the field names the logs of a Loki data source carry. With field, it lists that field's values instead, counted when the source counts them. Without query only labels and their values come back. A LogQL query narrows either list to the logs it matches and adds their other fields. Use it to find what a log query should filter on. A filter on a field parsed from a log needs a parser stage first: | json for JSON logs, | logfmt for key=value logs. detected_level and other structured metadata need no parser, but they are not labels, so filter them after the selector, as in | detected_level=\"error\".",
+		Description: "List the field names the logs of a Loki or VictoriaLogs data source carry. With field, it lists that field's values instead, counted when the source counts them. Without query Loki gives only labels and their values. A query narrows either list to the logs it matches and adds their other fields. Use it to find what a log query should filter on. In LogsQL, filter a field as level:=\"error\". In LogQL, a filter on a field parsed from a log needs a parser stage first: | json for JSON logs, | logfmt for key=value logs. detected_level and other structured metadata need no parser, but they are not labels, so filter them after the selector, as in | detected_level=\"error\".",
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
 			"field":          map[string]any{"type": "string", "description": "A field, such as detected_level, whose values to list."},
-			"query":          map[string]any{"type": "string", "description": "A LogQL log query, such as {app=\"api\"}, whose logs to read the fields from."},
+			"query":          map[string]any{"type": "string", "description": "A LogQL query, such as {app=\"api\"}, or a LogsQL query, such as app:=\"api\", whose logs to read the fields from."},
 			"from":           _timeRangeProps["from"],
 			"to":             _timeRangeProps["to"],
 		},
@@ -523,7 +524,7 @@ type queryDataSource struct {
 	// DataSourceID names the data source.
 	DataSourceID xid.ID `json:"data_source_id"`
 
-	// Query is the PromQL, LogQL or SQL to run. Required.
+	// Query is the PromQL, LogQL, LogsQL or SQL to run. Required.
 	Query string `json:"query"`
 
 	// ChartType, when set, asks for what a metric block of that chart
@@ -536,14 +537,14 @@ func (queryDataSource) Info() Info {
 	return Info{
 		Name:        NameQueryDataSource,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
-		Description: fmt.Sprintf("Run a query over a time range. Use PromQL for Prometheus, a LogQL log query for Loki and read-only SQL for the others. In SQL, $__ macros such as $__timeFilter expand against the range. Without chart_type it returns the raw answer: at most %d series of %d points, %d rows, or the newest %d logs. Each log has its time, level, message, labels and fields. has_more says older logs matched, so narrow the query or the range to see them. With chart_type it returns what a metric block would draw: status, series count, and each series' labels, point count and endpoints. Check a query that way before you put it in a block.", _maxRawSeries, _maxRawPoints, _maxRawRows, _maxRawLogs),
+		Description: fmt.Sprintf("Run a query over a time range. Use PromQL for Prometheus, a LogQL log query for Loki, LogsQL for VictoriaLogs and read-only SQL for the others. In SQL, $__ macros such as $__timeFilter expand against the range. Without chart_type it returns the raw answer: at most %d series of %d points, %d rows, or the newest %d logs. Each log has its time, level, message, labels and fields. has_more says older logs matched, so narrow the query or the range to see them. With chart_type it returns what a metric block would draw: status, series count, and each series' labels, point count and endpoints. Check a query that way before you put it in a block.", _maxRawSeries, _maxRawPoints, _maxRawRows, _maxRawLogs),
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
-			"query":          map[string]any{"type": "string", "description": "The PromQL, LogQL or SQL to run. In LogQL, only labels go inside {}. A field parsed from the line needs | json or | logfmt before its filter, and detected_level goes after the selector, as in | detected_level=\"error\". For a SQL chart, select a time column aliased time and one or more numeric columns."},
+			"query":          map[string]any{"type": "string", "description": "The PromQL, LogQL, LogsQL or SQL to run. In LogQL, only labels go inside {}. A field parsed from the line needs | json or | logfmt before its filter, and detected_level goes after the selector, as in | detected_level=\"error\". For a SQL chart, select a time column aliased time and one or more numeric columns."},
 			"chart_type": map[string]any{
 				"type":        "string",
 				"enum":        []processor.ChartType{processor.ChartTypeLine, processor.ChartTypeBar, processor.ChartTypeGauge},
-				"description": "The chart to check the query against. Leave it out for the values themselves. Not for Loki.",
+				"description": "The chart to check the query against. Leave it out for the values themselves. Not for Loki or VictoriaLogs.",
 			},
 			"from": _timeRangeProps["from"],
 			"to":   _timeRangeProps["to"],
@@ -618,7 +619,7 @@ func (qd queryDataSource) Exec(inp Input) (any, error) {
 		default:
 			return newChartPreview(res.Transform(qd.ChartType)), nil
 		}
-	case datasource.TypeLoki:
+	case datasource.TypeLoki, datasource.TypeVictoriaLogs:
 		if qd.ChartType != "" {
 			return nil, _errLogsChartType
 		}
@@ -675,8 +676,8 @@ func (qd queryDataSource) Exec(inp Input) (any, error) {
 	}
 }
 
-// queryLogs reads the newest logs a LogQL query matches, as
-// query_data_source answers for a Loki data source.
+// queryLogs reads the newest logs a log query matches, as
+// query_data_source answers for a logs data source.
 func queryLogs(inp Input, runner datasource.Runner, q string, tr processor.TimeRange) (any, error) {
 	logs, err := runner.Logs(inp.Context())
 	if err != nil {
@@ -692,7 +693,15 @@ func queryLogs(inp Input, runner datasource.Runner, q string, tr processor.TimeR
 			return nil, err
 		}
 
-		return nil, fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since metric queries such as rate() are not supported", err)
+		if errors.Is(err, processor.ErrResponseTooLarge) {
+			return nil, fmt.Errorf("%w; narrow the query or the range", err)
+		}
+
+		if runner.Type() == datasource.TypeLoki {
+			return nil, fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since metric queries such as rate() are not supported", err)
+		}
+
+		return nil, fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since stats pipes are not supported", err)
 	}
 
 	if !res.HasData() {
@@ -760,7 +769,7 @@ func newRawSeries(res *processor.PrometheusQueryResult) rawSeries {
 	return out
 }
 
-// rawLogs is a raw Loki answer, cut down to its newest _maxRawLogs logs.
+// rawLogs is a raw logs answer, cut down to its newest _maxRawLogs logs.
 type rawLogs struct {
 	// Status is whether the query matched any log.
 	Status processor.QueryStatus `json:"status"`
@@ -772,7 +781,7 @@ type rawLogs struct {
 	HasMore bool `json:"has_more"`
 }
 
-// rawLog is one log of a raw Loki answer.
+// rawLog is one log of a raw logs answer.
 type rawLog struct {
 	// Time is when the log was written, in UTC.
 	Time time.Time `json:"time"`
