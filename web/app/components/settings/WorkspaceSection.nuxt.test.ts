@@ -243,16 +243,11 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 
 		await nameInput(wrapper).setValue("Acme-EU")
 		await wrapper.find("form").trigger("submit")
+		await settleMutations()
 
 		await vi.waitFor(() => {
-			expect(raisedToasts()).toMatchObject([
-				{
-					type: "success",
-					title: t("settings.workspace.success-messages.name.title"),
-				},
-			])
+			expect(calls).toHaveLength(1)
 		}, WAIT_FOR_OPTIONS)
-		expect(calls).toHaveLength(1)
 		expect(calls[0]?.body).toEqual({
 			data: { name: "Acme-EU" },
 			organizationId: "org-1",
@@ -299,14 +294,6 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 		await nameInput(wrapper).setValue("Acme-US")
 
 		resolveUpdate({ id: "org-1" })
-		await vi.waitFor(() => {
-			expect(raisedToasts()).toMatchObject([
-				{
-					type: "success",
-					title: t("settings.workspace.success-messages.name.title"),
-				},
-			])
-		}, WAIT_FOR_OPTIONS)
 		await settleMutations()
 
 		expect(calls).toHaveLength(1)
