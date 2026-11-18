@@ -60,7 +60,7 @@ describe("buildChildEnvs", () => {
 			"https://notes.example.com",
 		)
 		expect(envs.core.OXYNOTE_CORE_ORIGINS).toBe(
-			"https://notes.example.com,notes.example.com",
+			"https://notes.example.com,notes.example.com,oxynote://app",
 		)
 		expect(envs.core.OXYNOTE_CORE_SLACK_REDIRECT_URL).toBe(
 			"https://notes.example.com/slack",
