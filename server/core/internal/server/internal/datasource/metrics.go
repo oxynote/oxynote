@@ -8,11 +8,11 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 )
 
-// _prometheusMatchersQuery is the HTTP query param used to pass matchers for Prometheus label queries.
-const _prometheusMatchersQuery = "matchers"
+// _metricMatchersQuery is the HTTP query param used to pass matchers for metric label queries.
+const _metricMatchersQuery = "matchers"
 
-// FetchPrometheusDataSourceMetadata handles retrieving metadata from a data source.
-func (h *Handler) FetchPrometheusDataSourceMetadata(w http.ResponseWriter, r *http.Request) {
+// FetchDataSourceMetricMetadata handles retrieving metadata from a metrics data source.
+func (h *Handler) FetchDataSourceMetricMetadata(w http.ResponseWriter, r *http.Request) {
 	session, ok := auth.RequireSession(h.log, w, r)
 	if !ok {
 		return
@@ -45,8 +45,8 @@ func (h *Handler) FetchPrometheusDataSourceMetadata(w http.ResponseWriter, r *ht
 	httpserver.Respond(h.log, w, result, http.StatusOK)
 }
 
-// FetchPrometheusDataSourceLabelNames handles retrieving label names from a data source.
-func (h *Handler) FetchPrometheusDataSourceLabelNames(w http.ResponseWriter, r *http.Request) {
+// FetchDataSourceMetricLabelNames handles retrieving label names from a metrics data source.
+func (h *Handler) FetchDataSourceMetricLabelNames(w http.ResponseWriter, r *http.Request) {
 	session, ok := auth.RequireSession(h.log, w, r)
 	if !ok {
 		return
@@ -70,7 +70,7 @@ func (h *Handler) FetchPrometheusDataSourceLabelNames(w http.ResponseWriter, r *
 		return
 	}
 
-	matchers, err := h.substitute(r, session, r.URL.Query()[_prometheusMatchersQuery]...)
+	matchers, err := h.substitute(r, session, r.URL.Query()[_metricMatchersQuery]...)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -91,8 +91,8 @@ func (h *Handler) FetchPrometheusDataSourceLabelNames(w http.ResponseWriter, r *
 	httpserver.Respond(h.log, w, result, http.StatusOK)
 }
 
-// FetchPrometheusDataSourceLabelValues handles retrieving label values from a data source.
-func (h *Handler) FetchPrometheusDataSourceLabelValues(w http.ResponseWriter, r *http.Request) {
+// FetchDataSourceMetricLabelValues handles retrieving label values from a metrics data source.
+func (h *Handler) FetchDataSourceMetricLabelValues(w http.ResponseWriter, r *http.Request) {
 	session, ok := auth.RequireSession(h.log, w, r)
 	if !ok {
 		return
@@ -122,7 +122,7 @@ func (h *Handler) FetchPrometheusDataSourceLabelValues(w http.ResponseWriter, r 
 		return
 	}
 
-	matchers, err := h.substitute(r, session, r.URL.Query()[_prometheusMatchersQuery]...)
+	matchers, err := h.substitute(r, session, r.URL.Query()[_metricMatchersQuery]...)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -143,8 +143,8 @@ func (h *Handler) FetchPrometheusDataSourceLabelValues(w http.ResponseWriter, r 
 	httpserver.Respond(h.log, w, result, http.StatusOK)
 }
 
-// FetchPrometheusDataSourceSeries handles retrieving series from a data source.
-func (h *Handler) FetchPrometheusDataSourceSeries(w http.ResponseWriter, r *http.Request) {
+// FetchDataSourceMetricSeries handles retrieving series from a metrics data source.
+func (h *Handler) FetchDataSourceMetricSeries(w http.ResponseWriter, r *http.Request) {
 	session, ok := auth.RequireSession(h.log, w, r)
 	if !ok {
 		return
@@ -168,7 +168,7 @@ func (h *Handler) FetchPrometheusDataSourceSeries(w http.ResponseWriter, r *http
 		return
 	}
 
-	matchers, err := h.substitute(r, session, r.URL.Query()[_prometheusMatchersQuery]...)
+	matchers, err := h.substitute(r, session, r.URL.Query()[_metricMatchersQuery]...)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
