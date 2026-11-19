@@ -346,11 +346,13 @@ func (ui UpdateInput) Validate() error {
 		}
 	}
 
-	if !sanitized.URL.Valid {
-		return nil
+	if sanitized.URL.Valid {
+		if err := validateURL(sanitized.URL.String); err != nil {
+			return err
+		}
 	}
 
-	return validateURL(sanitized.URL.String)
+	return nil
 }
 
 // sanitize returns the input with the white space around its name and URL
