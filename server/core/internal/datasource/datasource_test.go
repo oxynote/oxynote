@@ -291,7 +291,7 @@ func Test_CreateInput_Validate(t *testing.T) {
 			Input: CreateInput{Type: TypeLoki, Name: "Logs", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
 		},
 		"Token credentials for VictoriaLogs": {
-			Input: CreateInput{Type: TypeVictoriaLogs, Name: "Logs", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
+			Input: CreateInput{Type: TypeVictoriaLogs, Name: "Logs", URL: "http://victorialogs.test", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
 		},
 		"No credentials": {
 			Input: CreateInput{Type: TypePrometheus, Name: "Metrics"},
