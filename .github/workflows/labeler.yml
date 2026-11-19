@@ -4,6 +4,11 @@ name: Labeler
 # It has write access, so it must never run code from the pull request.
 on:
   pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - edited
 
 jobs:
   label:
