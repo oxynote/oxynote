@@ -391,6 +391,12 @@ func Test_VictoriaLogs_Logs(t *testing.T) {
 			Match:     func(corpusLine) bool { return true },
 			WalkLimit: _maxLogsLimit,
 		},
+		"Relative time filter": {
+			Query:     "_time:15m",
+			Range:     _logsWindow,
+			Match:     func(l corpusLine) bool { return !l.Time.Before(lastQuarter.From) },
+			WalkLimit: 100,
+		},
 		"First page of a hundred": {
 			Range: _logsWindow,
 			Page:  LogsPage{Limit: 100},
@@ -480,10 +486,10 @@ func Test_VictoriaLogs_Logs(t *testing.T) {
 					}
 
 					page := LogsPage{Limit: c.WalkLimit, Order: c.Page.Order}
-					lines, last := walkLogs(t, vl.fetchLines(c.Query), c.Range, page, time.Nanosecond)
+					lines, last := walkLogs(t, vl.fetchLines(c.Query, c.Range.To), c.Range, page, time.Nanosecond)
 					assertCorpusLines(t, c.Page.Order, want, lines)
 
-					back := walkLogsBack(t, vl.fetchLines(c.Query), c.Range, c.Page.Order, c.WalkLimit, last, time.Nanosecond)
+					back := walkLogsBack(t, vl.fetchLines(c.Query, c.Range.To), c.Range, c.Page.Order, c.WalkLimit, last, time.Nanosecond)
 					assertCorpusLines(t, oppositeLogsOrder(c.Page.Order), want, back)
 				})
 			}
@@ -535,6 +541,7 @@ func Test_VictoriaLogs_LogsVolume(t *testing.T) {
 				assert.Equal(t, "1s", params.Get("step"))
 				assert.Equal(t, "1970-01-01T00:01:00Z", params.Get("start"))
 				assert.Equal(t, "1970-01-01T00:01:20Z", params.Get("end"))
+				assert.Equal(t, "1970-01-01T00:01:20Z", params.Get("time"))
 
 				_, err := w.Write([]byte(`{"hits":[` +
 					`{"fields":{"level":"","severity":"WARN"},"timestamps":["1970-01-01T00:01:06Z"],"values":[2]},` +
@@ -838,6 +845,7 @@ func Test_VictoriaLogs_fetchLines(t *testing.T) {
 				"query": {"error"},
 				"start": {"1970-01-01T00:00:00Z"},
 				"end":   {"1970-01-01T00:00:00.00000001Z"},
+				"time":  {"1970-01-01T00:00:00.00000001Z"},
 				"limit": {"2"},
 			},
 			Result: []LogLine{
@@ -855,6 +863,7 @@ func Test_VictoriaLogs_fetchLines(t *testing.T) {
 				"query": {"*\n| sort by (_time asc) limit 2"},
 				"start": {"1970-01-01T00:00:00Z"},
 				"end":   {"1970-01-01T00:00:00.00000001Z"},
+				"time":  {"1970-01-01T00:00:00.00000001Z"},
 			},
 			Result: []LogLine{
 				{Time: time.Unix(0, 1).UTC(), Level: LogLevelUnknown, Line: "a", Labels: map[string]string{}, Fields: map[string]string{}},
@@ -903,7 +912,7 @@ func Test_VictoriaLogs_fetchLines(t *testing.T) {
 			})
 
 			lines, err := NewVictoriaLogs(prepHTTPInput(t, target, h)).
-				fetchLines(c.Query)(context.Background(), c.Range.From, c.Range.To, c.Limit, c.Order)
+				fetchLines(c.Query, c.Range.To)(context.Background(), c.Range.From, c.Range.To, c.Limit, c.Order)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -968,17 +977,17 @@ func Test_victoriaLogsRow_logLine(t *testing.T) {
 				Fields: map[string]string{"lvl": "debug", "trace_id": "t"},
 			},
 		},
-		"Level in a stream field wins over a field": {
+		"Level field order holds across stream fields and fields": {
 			Row: victoriaLogsRow{
-				"_time":    "1970-01-01T00:00:00Z",
-				"_stream":  `{level="error"}`,
-				"severity": "INFO",
+				"_time":   "1970-01-01T00:00:00Z",
+				"_stream": `{severity="INFO"}`,
+				"level":   "error",
 			},
 			Result: LogLine{
 				Time:   time.Unix(0, 0).UTC(),
 				Level:  LogLevelError,
-				Labels: map[string]string{"level": "error"},
-				Fields: map[string]string{"severity": "INFO"},
+				Labels: map[string]string{"severity": "INFO"},
+				Fields: map[string]string{"level": "error"},
 			},
 		},
 		"OpenTelemetry severity number": {
@@ -1050,6 +1059,7 @@ func Test_parseVictoriaLogsStream(t *testing.T) {
 
 func Test_parseVictoriaLogsLevel(t *testing.T) {
 	cc := map[string]struct {
+		Labels map[string]string
 		Fields map[string]string
 		Result string
 	}{
@@ -1071,13 +1081,23 @@ func Test_parseVictoriaLogsLevel(t *testing.T) {
 			Fields: map[string]string{"lvl": "c", "loglevel": "d"},
 			Result: "c",
 		},
+		"Order holds across maps": {
+			Labels: map[string]string{"severity": "e"},
+			Fields: map[string]string{"level": "a"},
+			Result: "a",
+		},
+		"Earlier map wins for the same field": {
+			Labels: map[string]string{"level": "a"},
+			Fields: map[string]string{"level": "b"},
+			Result: "a",
+		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, c.Result, parseVictoriaLogsLevel(c.Fields))
+			assert.Equal(t, c.Result, parseVictoriaLogsLevel(c.Labels, c.Fields))
 		})
 	}
 }

@@ -1584,7 +1584,7 @@ func Test_queryLogs(t *testing.T) {
 		"Error returned by Logs.Logs of VictoriaLogs": {
 			Type:  datasource.TypeVictoriaLogs,
 			Query: "boom",
-			Err:   fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since stats pipes are not supported", assert.AnError),
+			Err:   fmt.Errorf("%w; check the fields with list_log_fields, and use a log query that keeps _time, since stats pipes are not supported", assert.AnError),
 		},
 		"Logs.Logs that answered too much": {
 			Type:  datasource.TypeVictoriaLogs,

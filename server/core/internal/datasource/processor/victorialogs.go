@@ -140,7 +140,7 @@ func (vl *VictoriaLogs) Logs(ctx context.Context, q string, tr TimeRange, page L
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	return PageLogs(ctx, vl.fetchLines(q), tr, page, time.Nanosecond)
+	return PageLogs(ctx, vl.fetchLines(q, tr.To), tr, page, time.Nanosecond)
 }
 
 // LogsVolume counts the logs a LogsQL query matches per time bucket,
@@ -160,6 +160,9 @@ func (vl *VictoriaLogs) LogsVolume(ctx context.Context, q string, tr TimeRange) 
 		From: time.Unix(first, 0),
 		To:   time.Unix(last+stepSeconds, 0),
 	})
+	// the whole buckets can end past the window, so time keeps relative
+	// filters on the window's end, as the lines do.
+	params.Set("time", tr.To.UTC().Format(time.RFC3339Nano))
 	params.Set("step", formatInterval(step))
 
 	for _, f := range _victoriaLogsLevelFields {
@@ -255,15 +258,20 @@ func (vl *VictoriaLogs) LogFieldValues(ctx context.Context, field, q string, tr 
 	return res, nil
 }
 
-// fetchLines returns the fetcher that reads q's logs from VictoriaLogs.
+// fetchLines returns the fetcher that reads q's logs from VictoriaLogs,
+// with relative filters such as _time:5m counted back from at.
 //
 // The limit arg picks the newest logs. Only v1.54.0 can pick the oldest
 // with it, so an asc read picks them with a sort pipe after q instead.
 // The pipe goes on its own line, because a # comment at the end of q
 // would hide it.
-func (vl *VictoriaLogs) fetchLines(q string) LogsFetcher {
+func (vl *VictoriaLogs) fetchLines(q string, at time.Time) LogsFetcher {
 	return func(ctx context.Context, from, end time.Time, limit int, order LogsOrder) ([]LogLine, error) {
 		params := createVictoriaLogsWindowParams(q, TimeRange{From: from, To: end})
+
+		// relative filters count back from the time arg, which is end when
+		// unset. A page moves end, so time stays at the window's end.
+		params.Set("time", at.UTC().Format(time.RFC3339Nano))
 
 		if order == LogsOrderAsc {
 			params.Set("query", fmt.Sprintf("%s\n| sort by (%s asc) limit %d", params.Get("query"), _victoriaLogsTime, limit))
@@ -390,7 +398,7 @@ func (vr victoriaLogsRow) logLine() (LogLine, error) {
 
 	return LogLine{
 		Time:   t.UTC(),
-		Level:  newLogLevel(cmp.Or(parseVictoriaLogsLevel(labels), parseVictoriaLogsLevel(fields))),
+		Level:  newLogLevel(parseVictoriaLogsLevel(labels, fields)),
 		Line:   vr[_victoriaLogsMsg],
 		Labels: labels,
 		Fields: fields,
@@ -441,11 +449,14 @@ func parseVictoriaLogsStream(raw string) (map[string]string, error) {
 	return labels, nil
 }
 
-// parseVictoriaLogsLevel returns the first non-empty level field in m.
-func parseVictoriaLogsLevel(m map[string]string) string {
+// parseVictoriaLogsLevel returns the first non-empty level field in mm,
+// taking the fields in their order across every map.
+func parseVictoriaLogsLevel(mm ...map[string]string) string {
 	for _, f := range _victoriaLogsLevelFields {
-		if v := m[f]; v != "" {
-			return v
+		for _, m := range mm {
+			if v := m[f]; v != "" {
+				return v
+			}
 		}
 	}
 

@@ -73,11 +73,11 @@ metrics one.
 ## Processor tests
 
 `processor/` starts throwaway MariaDB, Postgres, Loki and VictoriaLogs
-(oldest supported and newest of each) containers (gnomock) to cover real
-connection, query and read-only-check paths; docker is a unit-test
-dependency here, as in `internal/db`. Loki and VictoriaLogs hold a
-6000-line corpus built to break paging (one timestamp holding more lines
-than a page); Loki's config keeps backfilled lines in the ingesters, which
+containers (gnomock) to cover real connection, query and read-only-check
+paths; docker is a unit-test dependency here, as in `internal/db`. Loki
+and VictoriaLogs run on their oldest supported and newest release, and
+hold a 6000-line corpus built to break paging (one timestamp holding more
+lines than a page); Loki's config keeps backfilled lines in the ingesters, which
 otherwise flush them out of query reach.
 
 VictoriaLogs v1.39.0 is the oldest supported release, because before it

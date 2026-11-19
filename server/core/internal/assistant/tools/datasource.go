@@ -701,7 +701,7 @@ func queryLogs(inp Input, runner datasource.Runner, q string, tr processor.TimeR
 			return nil, fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since metric queries such as rate() are not supported", err)
 		}
 
-		return nil, fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since stats pipes are not supported", err)
+		return nil, fmt.Errorf("%w; check the fields with list_log_fields, and use a log query that keeps _time, since stats pipes are not supported", err)
 	}
 
 	if !res.HasData() {

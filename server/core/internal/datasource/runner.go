@@ -57,7 +57,7 @@ var _errDataSourceChanged = errutil.New(
 var _errNoDemo = errutil.New(
 	http.StatusBadRequest,
 	"data_source.no_demo",
-	"This data source type has no demo.",
+	"this data source type has no demo",
 )
 
 // Manager hands out the runner for a data source.
