@@ -562,6 +562,15 @@ func Test_Handler_CreateDataSource(t *testing.T) {
 				wasDBInsertDataSourceCalled(0),
 			),
 		},
+		"Error returned by CreateInput.Validate for a URL that does not parse": {
+			Body: `{"type":"prometheus","name":"test-source","url":"http://source.test/%","credentials":{"kind":"basic","username":"user"}}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"data_source.invalid_url","message":"invalid data source URL"}`),
+				wasRunnersRunnerCalled(0),
+				wasExecutorTestConnectionCalled(0),
+				wasDBInsertDataSourceCalled(0),
+			),
+		},
 		"Successful creation with padded upper case type": {
 			Clients: &clientMocks{status: processor.ConnectionStatusSuccess, statusErr: nil},
 			Body:    `{"type":" Prometheus ","name":"test-source","url":"http://source.test","credentials":{"kind":"basic","username":"user"}}`,
