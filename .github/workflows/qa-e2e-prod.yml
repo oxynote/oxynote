@@ -31,7 +31,7 @@ defaults:
 jobs:
   test:
     name: Testing e2e (prod image)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
       - name: Check out the code
