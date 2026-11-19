@@ -52,6 +52,14 @@ var _errDataSourceChanged = errutil.New(
 	"The data source changed while it was being read. Try again.",
 )
 
+// _errNoDemo is returned when a data source names a demo URL but its type
+// has no demo.
+var _errNoDemo = errutil.New(
+	http.StatusBadRequest,
+	"data_source.no_demo",
+	"this data source type has no demo",
+)
+
 // Manager hands out the runner for a data source.
 //
 // It keeps one runner per data source, so the connections a runner opens
@@ -317,6 +325,11 @@ func (m *Manager) release(r *runner) {
 
 // newClient builds the processor the data source's type calls for.
 func (m *Manager) newClient(ds DataSource) (ownedClient, error) {
+	// only Prometheus and Loki have a demo.
+	if ds.Type != TypePrometheus && ds.Type != TypeLoki && strings.HasPrefix(ds.URL, demo.Scheme) {
+		return nil, _errNoDemo
+	}
+
 	switch ds.Type {
 	case TypePrometheus:
 		return m.prometheusClient(ds)
@@ -328,6 +341,8 @@ func (m *Manager) newClient(ds DataSource) (ownedClient, error) {
 		return processor.NewMySQL(newStateInput(ds.URL, ds.Credentials)), nil
 	case TypeLoki:
 		return m.lokiClient(ds)
+	case TypeVictoriaLogs:
+		return processor.NewVictoriaLogs(newStateInput(ds.URL, ds.Credentials)), nil
 	default:
 		return nil, errors.New("invalid data source type")
 	}
@@ -467,7 +482,7 @@ func (r *runner) SQL(ctx context.Context) (SQL, error) {
 // Logs returns the data source's log client, whose reads are answered out
 // of the query cache.
 func (r *runner) Logs(ctx context.Context) (Logs, error) {
-	client, err := connect[Logs](ctx, r, TypeLoki)
+	client, err := connect[Logs](ctx, r, TypeLoki, TypeVictoriaLogs)
 	if err != nil {
 		return nil, err
 	}

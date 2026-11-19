@@ -75,6 +75,9 @@ const (
 
 	// TypeLoki represents a Loki data source.
 	TypeLoki Type = "loki"
+
+	// TypeVictoriaLogs represents a VictoriaLogs data source.
+	TypeVictoriaLogs Type = "victorialogs"
 )
 
 // Type represents the type of the data source.
@@ -83,7 +86,7 @@ type Type string
 // Validate reports whether the type is a known one.
 func (ty Type) Validate() error {
 	switch ty {
-	case TypePrometheus, TypePostgreSQL, TypeSupabase, TypeMariaDB, TypeMySQL, TypeLoki:
+	case TypePrometheus, TypePostgreSQL, TypeSupabase, TypeMariaDB, TypeMySQL, TypeLoki, TypeVictoriaLogs:
 		return nil
 	default:
 		return ErrInvalidType
@@ -94,7 +97,7 @@ func (ty Type) Validate() error {
 // unknown type accepts none.
 func (ty Type) credentialsKinds() []credentials.Kind {
 	switch ty {
-	case TypePrometheus, TypeLoki:
+	case TypePrometheus, TypeLoki, TypeVictoriaLogs:
 		return []credentials.Kind{credentials.KindBasic, credentials.KindToken}
 	case TypePostgreSQL, TypeSupabase, TypeMariaDB, TypeMySQL:
 		return []credentials.Kind{credentials.KindBasic}

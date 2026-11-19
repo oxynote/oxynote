@@ -215,6 +215,24 @@ func TestMain(m *testing.M) {
 		_lokiAddrs[v] = lokiContainer.DefaultAddress()
 	}
 
+	victoriaLogsContainers := make([]*gnomock.Container, 0, len(_victoriaLogsVersions))
+
+	defer func() {
+		if serr := gnomock.Stop(victoriaLogsContainers...); serr != nil {
+			panic("cannot clean up victorialogs: " + serr.Error())
+		}
+	}()
+
+	for _, v := range _victoriaLogsVersions {
+		vlContainer, verr := startVictoriaLogs(v, _logsCorpus)
+		if verr != nil {
+			panic("cannot set up victorialogs " + v + ": " + verr.Error())
+		}
+
+		victoriaLogsContainers = append(victoriaLogsContainers, vlContainer)
+		_victoriaLogsAddrs[v] = vlContainer.DefaultAddress()
+	}
+
 	// goleak.VerifyTestMain ends in os.Exit, which skips the deferred
 	// container stops. Returning runs them, and the test binary then exits
 	// with the code from m.Run.
