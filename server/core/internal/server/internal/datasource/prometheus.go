@@ -30,7 +30,7 @@ func (h *Handler) FetchPrometheusDataSourceMetadata(w http.ResponseWriter, r *ht
 		return
 	}
 
-	client, err := h.runners.Runner(*ds).Prometheus(r.Context())
+	client, err := h.runners.Runner(*ds).Metrics(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -76,7 +76,7 @@ func (h *Handler) FetchPrometheusDataSourceLabelNames(w http.ResponseWriter, r *
 		return
 	}
 
-	client, err := h.runners.Runner(*ds).Prometheus(r.Context())
+	client, err := h.runners.Runner(*ds).Metrics(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -128,7 +128,7 @@ func (h *Handler) FetchPrometheusDataSourceLabelValues(w http.ResponseWriter, r 
 		return
 	}
 
-	client, err := h.runners.Runner(*ds).Prometheus(r.Context())
+	client, err := h.runners.Runner(*ds).Metrics(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -174,7 +174,7 @@ func (h *Handler) FetchPrometheusDataSourceSeries(w http.ResponseWriter, r *http
 		return
 	}
 
-	client, err := h.runners.Runner(*ds).Prometheus(r.Context())
+	client, err := h.runners.Runner(*ds).Metrics(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return

@@ -46,7 +46,7 @@ func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 	stubClients := func(cs processor.ConnectionStatus, result *processor.PrometheusMetadataResult, err error) *clientMocks {
 		return &clientMocks{
 			err: cs.Error(),
-			prometheus: &datasourceMock.Prometheus{
+			prometheus: &datasourceMock.Metrics{
 				MetadataFunc: func(_ context.Context) (*processor.PrometheusMetadataResult, error) {
 					return result, err
 				},
@@ -92,7 +92,7 @@ func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 				wasExecutorPrometheusMetadataCalled(0),
 			),
 		},
-		"Error returned by Prometheus.Metadata": {
+		"Error returned by Metrics.Metadata": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients("", nil, assert.AnError),
 			ID:      _testID.String(),
@@ -105,7 +105,7 @@ func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 				wasExecutorPrometheusMetadataCalled(1),
 			),
 		},
-		"Error returned by Runner.Prometheus": {
+		"Error returned by Runner.Metrics": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
 			ID:      _testID.String(),
@@ -171,7 +171,7 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 	stubClients := func(cs processor.ConnectionStatus, result *processor.PrometheusLabelNamesResult, err error) *clientMocks {
 		return &clientMocks{
 			err: cs.Error(),
-			prometheus: &datasourceMock.Prometheus{
+			prometheus: &datasourceMock.Metrics{
 				LabelNamesFunc: func(_ context.Context, _ []string, _ processor.TimeRange) (*processor.PrometheusLabelNamesResult, error) {
 					return result, err
 				},
@@ -238,7 +238,7 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 				wasExecutorPrometheusLabelNamesCalled(0),
 			),
 		},
-		"Error returned by Prometheus.LabelNames": {
+		"Error returned by Metrics.LabelNames": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients("", nil, assert.AnError),
 			Target:  "http://test.com/?matchers=up",
@@ -253,7 +253,7 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 				wasExecutorPrometheusLabelNamesCalled(1),
 			),
 		},
-		"Error returned by Runner.Prometheus": {
+		"Error returned by Runner.Metrics": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
 			Target:  "http://test.com/?matchers=up",
@@ -354,7 +354,7 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 	stubClients := func(cs processor.ConnectionStatus, result *processor.PrometheusLabelValuesResult, err error) *clientMocks {
 		return &clientMocks{
 			err: cs.Error(),
-			prometheus: &datasourceMock.Prometheus{
+			prometheus: &datasourceMock.Metrics{
 				LabelValuesFunc: func(_ context.Context, _ string, _ []string, _ processor.TimeRange) (*processor.PrometheusLabelValuesResult, error) {
 					return result, err
 				},
@@ -435,7 +435,7 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 				wasExecutorPrometheusLabelValuesCalled(0),
 			),
 		},
-		"Error returned by Prometheus.LabelValues": {
+		"Error returned by Metrics.LabelValues": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients("", nil, assert.AnError),
 			Target:  "http://test.com/?matchers=up",
@@ -450,7 +450,7 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 				wasExecutorPrometheusLabelValuesCalled(1),
 			),
 		},
-		"Error returned by Runner.Prometheus": {
+		"Error returned by Runner.Metrics": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
 			Target:  "http://test.com/?matchers=up",
@@ -555,7 +555,7 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 	stubClients := func(cs processor.ConnectionStatus, result *processor.PrometheusSeriesResult, err error) *clientMocks {
 		return &clientMocks{
 			err: cs.Error(),
-			prometheus: &datasourceMock.Prometheus{
+			prometheus: &datasourceMock.Metrics{
 				SeriesFunc: func(_ context.Context, _ []string, _ processor.TimeRange) (*processor.PrometheusSeriesResult, error) {
 					return result, err
 				},
@@ -622,7 +622,7 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 				wasExecutorPrometheusSeriesCalled(0),
 			),
 		},
-		"Error returned by Prometheus.Series": {
+		"Error returned by Metrics.Series": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients("", nil, assert.AnError),
 			Target:  "http://test.com/?matchers=up",
@@ -637,7 +637,7 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 				wasExecutorPrometheusSeriesCalled(1),
 			),
 		},
-		"Error returned by Runner.Prometheus": {
+		"Error returned by Runner.Metrics": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
 			Target:  "http://test.com/?matchers=up",

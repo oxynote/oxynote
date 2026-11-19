@@ -11,16 +11,16 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 )
 
-// Ensure, that Prometheus does implement datasource.Prometheus.
+// Ensure, that Metrics does implement datasource.Metrics.
 // If this is not the case, regenerate this file with moq.
-var _ datasource.Prometheus = &Prometheus{}
+var _ datasource.Metrics = &Metrics{}
 
-// Prometheus is a mock implementation of datasource.Prometheus.
+// Metrics is a mock implementation of datasource.Metrics.
 //
-//	func TestSomethingThatUsesPrometheus(t *testing.T) {
+//	func TestSomethingThatUsesMetrics(t *testing.T) {
 //
-//		// make and configure a mocked datasource.Prometheus
-//		mockedPrometheus := &Prometheus{
+//		// make and configure a mocked datasource.Metrics
+//		mockedMetrics := &Metrics{
 //			LabelNamesFunc: func(ctx context.Context, matchers []string, tr processor.TimeRange) (*processor.PrometheusLabelNamesResult, error) {
 //				panic("mock out the LabelNames method")
 //			},
@@ -41,11 +41,11 @@ var _ datasource.Prometheus = &Prometheus{}
 //			},
 //		}
 //
-//		// use mockedPrometheus in code that requires datasource.Prometheus
+//		// use mockedMetrics in code that requires datasource.Metrics
 //		// and then make assertions.
 //
 //	}
-type Prometheus struct {
+type Metrics struct {
 	// LabelNamesFunc mocks the LabelNames method.
 	LabelNamesFunc func(ctx context.Context, matchers []string, tr processor.TimeRange) (*processor.PrometheusLabelNamesResult, error)
 
@@ -124,7 +124,7 @@ type Prometheus struct {
 }
 
 // LabelNames calls LabelNamesFunc.
-func (mock *Prometheus) LabelNames(ctx context.Context, matchers []string, tr processor.TimeRange) (*processor.PrometheusLabelNamesResult, error) {
+func (mock *Metrics) LabelNames(ctx context.Context, matchers []string, tr processor.TimeRange) (*processor.PrometheusLabelNamesResult, error) {
 	callInfo := struct {
 		Ctx      context.Context
 		Matchers []string
@@ -150,8 +150,8 @@ func (mock *Prometheus) LabelNames(ctx context.Context, matchers []string, tr pr
 // LabelNamesCalls gets all the calls that were made to LabelNames.
 // Check the length with:
 //
-//	len(mockedPrometheus.LabelNamesCalls())
-func (mock *Prometheus) LabelNamesCalls() []struct {
+//	len(mockedMetrics.LabelNamesCalls())
+func (mock *Metrics) LabelNamesCalls() []struct {
 	Ctx      context.Context
 	Matchers []string
 	Tr       processor.TimeRange
@@ -168,7 +168,7 @@ func (mock *Prometheus) LabelNamesCalls() []struct {
 }
 
 // LabelValues calls LabelValuesFunc.
-func (mock *Prometheus) LabelValues(ctx context.Context, label string, matchers []string, tr processor.TimeRange) (*processor.PrometheusLabelValuesResult, error) {
+func (mock *Metrics) LabelValues(ctx context.Context, label string, matchers []string, tr processor.TimeRange) (*processor.PrometheusLabelValuesResult, error) {
 	callInfo := struct {
 		Ctx      context.Context
 		Label    string
@@ -196,8 +196,8 @@ func (mock *Prometheus) LabelValues(ctx context.Context, label string, matchers 
 // LabelValuesCalls gets all the calls that were made to LabelValues.
 // Check the length with:
 //
-//	len(mockedPrometheus.LabelValuesCalls())
-func (mock *Prometheus) LabelValuesCalls() []struct {
+//	len(mockedMetrics.LabelValuesCalls())
+func (mock *Metrics) LabelValuesCalls() []struct {
 	Ctx      context.Context
 	Label    string
 	Matchers []string
@@ -216,7 +216,7 @@ func (mock *Prometheus) LabelValuesCalls() []struct {
 }
 
 // Metadata calls MetadataFunc.
-func (mock *Prometheus) Metadata(ctx context.Context) (*processor.PrometheusMetadataResult, error) {
+func (mock *Metrics) Metadata(ctx context.Context) (*processor.PrometheusMetadataResult, error) {
 	callInfo := struct {
 		Ctx context.Context
 	}{
@@ -238,8 +238,8 @@ func (mock *Prometheus) Metadata(ctx context.Context) (*processor.PrometheusMeta
 // MetadataCalls gets all the calls that were made to Metadata.
 // Check the length with:
 //
-//	len(mockedPrometheus.MetadataCalls())
-func (mock *Prometheus) MetadataCalls() []struct {
+//	len(mockedMetrics.MetadataCalls())
+func (mock *Metrics) MetadataCalls() []struct {
 	Ctx context.Context
 } {
 	var calls []struct {
@@ -252,7 +252,7 @@ func (mock *Prometheus) MetadataCalls() []struct {
 }
 
 // QueryRange calls QueryRangeFunc.
-func (mock *Prometheus) QueryRange(ctx context.Context, q string, tr processor.TimeRange) (*processor.PrometheusQueryResult, error) {
+func (mock *Metrics) QueryRange(ctx context.Context, q string, tr processor.TimeRange) (*processor.PrometheusQueryResult, error) {
 	callInfo := struct {
 		Ctx context.Context
 		Q   string
@@ -278,8 +278,8 @@ func (mock *Prometheus) QueryRange(ctx context.Context, q string, tr processor.T
 // QueryRangeCalls gets all the calls that were made to QueryRange.
 // Check the length with:
 //
-//	len(mockedPrometheus.QueryRangeCalls())
-func (mock *Prometheus) QueryRangeCalls() []struct {
+//	len(mockedMetrics.QueryRangeCalls())
+func (mock *Metrics) QueryRangeCalls() []struct {
 	Ctx context.Context
 	Q   string
 	Tr  processor.TimeRange
@@ -296,7 +296,7 @@ func (mock *Prometheus) QueryRangeCalls() []struct {
 }
 
 // Series calls SeriesFunc.
-func (mock *Prometheus) Series(ctx context.Context, matchers []string, tr processor.TimeRange) (*processor.PrometheusSeriesResult, error) {
+func (mock *Metrics) Series(ctx context.Context, matchers []string, tr processor.TimeRange) (*processor.PrometheusSeriesResult, error) {
 	callInfo := struct {
 		Ctx      context.Context
 		Matchers []string
@@ -322,8 +322,8 @@ func (mock *Prometheus) Series(ctx context.Context, matchers []string, tr proces
 // SeriesCalls gets all the calls that were made to Series.
 // Check the length with:
 //
-//	len(mockedPrometheus.SeriesCalls())
-func (mock *Prometheus) SeriesCalls() []struct {
+//	len(mockedMetrics.SeriesCalls())
+func (mock *Metrics) SeriesCalls() []struct {
 	Ctx      context.Context
 	Matchers []string
 	Tr       processor.TimeRange
@@ -340,7 +340,7 @@ func (mock *Prometheus) SeriesCalls() []struct {
 }
 
 // TestConnection calls TestConnectionFunc.
-func (mock *Prometheus) TestConnection(ctx context.Context) (processor.ConnectionStatus, error) {
+func (mock *Metrics) TestConnection(ctx context.Context) (processor.ConnectionStatus, error) {
 	callInfo := struct {
 		Ctx context.Context
 	}{
@@ -362,8 +362,8 @@ func (mock *Prometheus) TestConnection(ctx context.Context) (processor.Connectio
 // TestConnectionCalls gets all the calls that were made to TestConnection.
 // Check the length with:
 //
-//	len(mockedPrometheus.TestConnectionCalls())
-func (mock *Prometheus) TestConnectionCalls() []struct {
+//	len(mockedMetrics.TestConnectionCalls())
+func (mock *Metrics) TestConnectionCalls() []struct {
 	Ctx context.Context
 } {
 	var calls []struct {

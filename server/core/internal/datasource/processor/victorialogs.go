@@ -17,12 +17,14 @@ import (
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/credentials"
-	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
 const (
 	// _victoriaLogsQueryPath returns the logs a query matches.
 	_victoriaLogsQueryPath = "/select/logsql/query"
+
+	// _victoriaLogsBuildinfoPath reports the VictoriaLogs version.
+	_victoriaLogsBuildinfoPath = "/select/buildinfo"
 
 	// _victoriaLogsHitsPath counts the logs a query matches per time
 	// bucket.
@@ -56,9 +58,6 @@ const (
 
 	// _victoriaLogsStreamID is the field holding a log's stream ID.
 	_victoriaLogsStreamID = "_stream_id"
-
-	// _victoriaLogsTestWindow is how far back the connection test looks.
-	_victoriaLogsTestWindow = 5 * time.Minute
 )
 
 // _victoriaLogsLevelFields are the fields a log's level is read from, the
@@ -90,8 +89,7 @@ func (vl *VictoriaLogs) Close() error {
 }
 
 // TestConnection tests the connection to the VictoriaLogs data source by
-// listing the field names of its newest logs. VictoriaLogs reports no
-// version, so any server that answers in its shape passes.
+// reading its version.
 func (vl *VictoriaLogs) TestConnection(ctx context.Context) (ConnectionStatus, error) {
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
@@ -105,10 +103,7 @@ func (vl *VictoriaLogs) TestConnection(ctx context.Context) (ConnectionStatus, e
 		return "", err
 	}
 
-	to := timeutil.Now()
-	params := createVictoriaLogsWindowParams("", TimeRange{From: to.Add(-_victoriaLogsTestWindow), To: to})
-
-	status, body, err := vl.doRequest(ctx, client, _victoriaLogsFieldNamesPath, params, nil)
+	status, body, err := vl.doRequest(ctx, client, _victoriaLogsBuildinfoPath, nil, nil)
 	if err != nil {
 		return ConnectionStatusUnreachable, nil
 	}
@@ -121,14 +116,16 @@ func (vl *VictoriaLogs) TestConnection(ctx context.Context) (ConnectionStatus, e
 	}
 
 	var res struct {
-		// Values specifies the field names. It is nil when the answer is
-		// not a list of values.
-		Values *[]victoriaLogsValue `json:"values"`
+		// Data specifies the build VictoriaLogs reports.
+		Data struct {
+			// Version specifies the VictoriaLogs version.
+			Version string `json:"version"`
+		} `json:"data"`
 	}
 
-	// a 200 that is not a list of values comes from something other than
+	// a 200 without a version comes from something other than
 	// VictoriaLogs.
-	if json.Unmarshal(body, &res) != nil || res.Values == nil {
+	if json.Unmarshal(body, &res) != nil || res.Data.Version == "" {
 		return ConnectionStatusUnreachable, nil
 	}
 

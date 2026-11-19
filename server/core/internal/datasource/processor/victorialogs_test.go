@@ -34,7 +34,7 @@ const (
 
 // _victoriaLogsVersions are the VictoriaLogs image tags the integration
 // tests run against: the oldest supported release and the newest.
-var _victoriaLogsVersions = []string{"v1.39.0", "v1.54.0"}
+var _victoriaLogsVersions = []string{"v1.40.0", "v1.54.0"}
 
 // _victoriaLogsAddrs maps a VictoriaLogs version to the address of its
 // container.
@@ -48,7 +48,7 @@ func startVictoriaLogs(version string, corpus []corpusLine) (*gnomock.Container,
 		gnomock.DefaultTCP(9428),
 		gnomock.WithTimeout(3*time.Minute),
 		gnomock.WithHealthCheck(func(ctx context.Context, c *gnomock.Container) error {
-			_, err := victoriaLogsRequest(ctx, http.MethodGet, "http://"+c.DefaultAddress()+"/health", nil)
+			_, err := containerRequest(ctx, http.MethodGet, "http://"+c.DefaultAddress()+"/health", "", nil)
 
 			return err
 		}),
@@ -83,7 +83,9 @@ func pushVictoriaLogsCorpus(ctx context.Context, addr string, corpus []corpusLin
 	}
 
 	target := "http://" + addr + "/insert/jsonline?_stream_fields=service_name,env&_time_field=time&_msg_field=msg"
-	if _, err := victoriaLogsRequest(ctx, http.MethodPost, target, body.Bytes()); err != nil {
+	// a form content type would make VictoriaLogs read the logs as form
+	// values.
+	if _, err := containerRequest(ctx, http.MethodPost, target, "application/stream+json", body.Bytes()); err != nil {
 		return err
 	}
 
@@ -97,7 +99,7 @@ func pushVictoriaLogsCorpus(ctx context.Context, addr string, corpus []corpusLin
 	// the pushed logs become readable once VictoriaLogs flushes them,
 	// which takes about a second.
 	return backoff.Retry(func() error {
-		res, err := victoriaLogsRequest(ctx, http.MethodGet, "http://"+addr+_victoriaLogsQueryPath+"?"+params.Encode(), nil)
+		res, err := containerRequest(ctx, http.MethodGet, "http://"+addr+_victoriaLogsQueryPath+"?"+params.Encode(), "", nil)
 		if err != nil {
 			return backoff.Permanent(err)
 		}
@@ -108,37 +110,6 @@ func pushVictoriaLogsCorpus(ctx context.Context, addr string, corpus []corpusLin
 
 		return nil
 	}, backoff.WithContext(backoff.NewConstantBackOff(_victoriaLogsReadyInterval), ctx))
-}
-
-// victoriaLogsRequest sends a request to a test VictoriaLogs and returns
-// the body. It fails unless VictoriaLogs answers 200.
-func victoriaLogsRequest(ctx context.Context, method, target string, body []byte) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-
-	// a form content type would make VictoriaLogs read the logs as form
-	// values.
-	req.Header.Set("Content-Type", "application/stream+json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
-
-	var res bytes.Buffer
-
-	if _, err := res.ReadFrom(resp.Body); err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("victorialogs answered %d: %s", resp.StatusCode, res.String())
-	}
-
-	return res.Bytes(), nil
 }
 
 // victoriaLogsCorpusWhere returns the corpus lines in the window that
@@ -182,7 +153,7 @@ func Test_VictoriaLogs_Close(t *testing.T) {
 }
 
 func Test_VictoriaLogs_TestConnection(t *testing.T) {
-	values := `{"values":[{"value":"_msg","hits":1}]}`
+	buildinfo := `{"status":"success","data":{"version":"v1.40.0"}}`
 
 	cc := map[string]struct {
 		Inp     *InputMock
@@ -218,16 +189,16 @@ func Test_VictoriaLogs_TestConnection(t *testing.T) {
 			Result: ConnectionStatusUnreachable,
 		},
 		"Successful connection verified with a CA certificate": {
-			Handler: testutil.JSONHandler(_victoriaLogsFieldNamesPath, http.StatusOK, values),
+			Handler: testutil.JSONHandler(_victoriaLogsBuildinfoPath, http.StatusOK, buildinfo),
 			TLS:     true,
 			Result:  ConnectionStatusSuccess,
 		},
 		"Unauthorized data source": {
-			Handler: testutil.JSONHandler(_victoriaLogsFieldNamesPath, http.StatusUnauthorized, `Unauthorized`),
+			Handler: testutil.JSONHandler(_victoriaLogsBuildinfoPath, http.StatusUnauthorized, `Unauthorized`),
 			Result:  ConnectionStatusUnauthorized,
 		},
 		"Forbidden data source": {
-			Handler: testutil.JSONHandler(_victoriaLogsFieldNamesPath, http.StatusForbidden, `{}`),
+			Handler: testutil.JSONHandler(_victoriaLogsBuildinfoPath, http.StatusForbidden, `{}`),
 			Result:  ConnectionStatusUnauthorized,
 		},
 		"Redirecting data source": {
@@ -235,12 +206,12 @@ func Test_VictoriaLogs_TestConnection(t *testing.T) {
 			Result:  ConnectionStatusUnreachable,
 		},
 		"Rejected token": { //nolint:gosec // static test credentials
-			Handler: tokenHandler(testutil.JSONHandler(_victoriaLogsFieldNamesPath, http.StatusOK, values)),
+			Handler: tokenHandler(testutil.JSONHandler(_victoriaLogsBuildinfoPath, http.StatusOK, buildinfo)),
 			Creds:   `{"kind":"token","token":"bad"}`,
 			Result:  ConnectionStatusUnauthorized,
 		},
 		"Successful connection with a token": {
-			Handler: tokenHandler(testutil.JSONHandler(_victoriaLogsFieldNamesPath, http.StatusOK, values)),
+			Handler: tokenHandler(testutil.JSONHandler(_victoriaLogsBuildinfoPath, http.StatusOK, buildinfo)),
 			Creds:   `{"kind":"token","token":"` + _testToken + `"}`,
 			Result:  ConnectionStatusSuccess,
 		},
@@ -252,23 +223,21 @@ func Test_VictoriaLogs_TestConnection(t *testing.T) {
 					return
 				}
 
-				assert.Equal(t, _victoriaLogsMatchAll, r.URL.Query().Get("query"))
-
-				_, err := w.Write([]byte(`{"values":[]}`))
+				_, err := w.Write([]byte(buildinfo))
 				assert.NoError(t, err)
 			}),
 			Result: ConnectionStatusSuccess,
 		},
 		"Server that has no such endpoint": {
-			Handler: testutil.JSONHandler("/elsewhere", http.StatusOK, values),
+			Handler: testutil.JSONHandler("/elsewhere", http.StatusOK, buildinfo),
 			Result:  ConnectionStatusUnreachable,
 		},
 		"Answer that is not JSON": {
-			Handler: testutil.JSONHandler(_victoriaLogsFieldNamesPath, http.StatusOK, `<html>`),
+			Handler: testutil.JSONHandler(_victoriaLogsBuildinfoPath, http.StatusOK, `<html>`),
 			Result:  ConnectionStatusUnreachable,
 		},
-		"Answer without values": {
-			Handler: testutil.JSONHandler(_victoriaLogsFieldNamesPath, http.StatusOK, `{"status":"success"}`),
+		"Answer without a version": {
+			Handler: testutil.JSONHandler(_victoriaLogsBuildinfoPath, http.StatusOK, `{"status":"success"}`),
 			Result:  ConnectionStatusUnreachable,
 		},
 		"Successful connection to the oldest supported VictoriaLogs": {

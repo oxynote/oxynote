@@ -343,6 +343,8 @@ func (m *Manager) newClient(ds DataSource) (ownedClient, error) {
 		return m.lokiClient(ds)
 	case TypeVictoriaLogs:
 		return processor.NewVictoriaLogs(newStateInput(ds.URL, ds.Credentials)), nil
+	case TypeVictoriaMetrics:
+		return processor.NewVictoriaMetrics(newStateInput(ds.URL, ds.Credentials)), nil
 	default:
 		return nil, errors.New("invalid data source type")
 	}
@@ -441,15 +443,15 @@ func (r *runner) TestConnection(ctx context.Context) (processor.ConnectionStatus
 	return client.TestConnection(ctx)
 }
 
-// Prometheus returns the data source's Prometheus client, whose range
-// queries are answered out of the query cache.
-func (r *runner) Prometheus(ctx context.Context) (Prometheus, error) {
-	client, err := connect[Prometheus](ctx, r, TypePrometheus)
+// Metrics returns the data source's metrics client, whose range queries
+// are answered out of the query cache.
+func (r *runner) Metrics(ctx context.Context) (Metrics, error) {
+	client, err := connect[Metrics](ctx, r, TypePrometheus, TypeVictoriaMetrics)
 	if err != nil {
 		return nil, err
 	}
 
-	return cachedPrometheus{Prometheus: client, m: r.m, ds: r.ds}, nil
+	return cachedMetrics{Metrics: client, m: r.m, ds: r.ds}, nil
 }
 
 // PostgreSQL returns the data source's PostgreSQL client, whose queries are
@@ -647,8 +649,8 @@ type Runner interface {
 	// found, without recording it.
 	TestConnection(ctx context.Context) (processor.ConnectionStatus, error)
 
-	// Prometheus should return the data source's Prometheus client.
-	Prometheus(ctx context.Context) (Prometheus, error)
+	// Metrics should return the data source's metrics client.
+	Metrics(ctx context.Context) (Metrics, error)
 
 	// PostgreSQL should return the data source's PostgreSQL client.
 	PostgreSQL(ctx context.Context) (PostgreSQL, error)
@@ -672,10 +674,11 @@ type StatusStore interface {
 	UpdateDataSourceStatus(ctx context.Context, id xid.ID, organizationID string, status processor.ConnectionStatus) error
 }
 
-// Prometheus represents a Prometheus data source processor.
+// Metrics represents a processor of a data source that serves the
+// Prometheus HTTP API.
 //
-//go:generate ../../scripts/codegen/mock Prometheus
-type Prometheus interface {
+//go:generate ../../scripts/codegen/mock Metrics
+type Metrics interface {
 	connectionTester
 
 	// Metadata retrieves metadata about the data source.

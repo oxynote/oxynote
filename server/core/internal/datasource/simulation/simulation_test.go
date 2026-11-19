@@ -96,8 +96,8 @@ func Test_Checker_Check(t *testing.T) {
 
 	// answers with one sample, which is what "the real data has arrived"
 	// looks like.
-	sampled := func() *datasourceMock.Prometheus {
-		return &datasourceMock.Prometheus{
+	sampled := func() *datasourceMock.Metrics {
+		return &datasourceMock.Metrics{
 			QueryRangeFunc: func(context.Context, string, processor.TimeRange) (*processor.PrometheusQueryResult, error) {
 				return &processor.PrometheusQueryResult{
 					Type: model.ValMatrix,
@@ -114,8 +114,8 @@ func Test_Checker_Check(t *testing.T) {
 
 	// answers only the query with $env substituted, so a raw reference
 	// keeps the block simulating.
-	substituted := func() *datasourceMock.Prometheus {
-		return &datasourceMock.Prometheus{
+	substituted := func() *datasourceMock.Metrics {
+		return &datasourceMock.Metrics{
 			QueryRangeFunc: func(_ context.Context, q string, _ processor.TimeRange) (*processor.PrometheusQueryResult, error) {
 				if q != `up{env="prod"}` {
 					return nil, assert.AnError
@@ -140,7 +140,7 @@ func Test_Checker_Check(t *testing.T) {
 
 	type tcase struct {
 		Attrs                  document.Attributes
-		Prometheus             *datasourceMock.Prometheus
+		Metrics                *datasourceMock.Metrics
 		PostgreSQL             *datasourceMock.PostgreSQL
 		MySQL                  *datasourceMock.MySQL
 		Runner                 *datasourceMock.Runner
@@ -155,7 +155,7 @@ func Test_Checker_Check(t *testing.T) {
 		FetchVariableTreeCalls int
 		RunnerCalls            int
 		TypeCalls              int
-		PrometheusCalls        int
+		MetricsCalls           int
 		PostgreSQLCalls        int
 		MySQLCalls             int
 		ApplyCalls             int
@@ -167,19 +167,19 @@ func Test_Checker_Check(t *testing.T) {
 	cc := map[string]tcase{
 		"The real data has arrived": {
 			Attrs:                metricAttrs(),
-			Prometheus:           sampled(),
+			Metrics:              sampled(),
 			Cleared:              true,
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			ApplyCalls:           1,
 			QueryCalls:           1,
 			AssertClearOp:        true,
 		},
 		"A query is probed with the default values of its variables": {
-			Attrs:      referencing,
-			Prometheus: substituted(),
+			Attrs:   referencing,
+			Metrics: substituted(),
 			// holds $env only for the block's organization and no user,
 			// which is how the probe fetches the defaults.
 			Variables: func(_ context.Context, organizationID, userID string) (variable.Tree, error) {
@@ -196,13 +196,13 @@ func Test_Checker_Check(t *testing.T) {
 			FetchVariableTreeCalls: 1,
 			RunnerCalls:            1,
 			TypeCalls:              1,
-			PrometheusCalls:        1,
+			MetricsCalls:           1,
 			ApplyCalls:             1,
 			QueryCalls:             1,
 		},
 		"Error returned by DB.FetchVariableTree": {
-			Attrs:      referencing,
-			Prometheus: substituted(),
+			Attrs:   referencing,
+			Metrics: substituted(),
 			Variables: func(context.Context, string, string) (variable.Tree, error) {
 				return nil, assert.AnError
 			},
@@ -211,7 +211,7 @@ func Test_Checker_Check(t *testing.T) {
 		},
 		"A scalar answers as well as a range": {
 			Attrs: metricAttrs(),
-			Prometheus: &datasourceMock.Prometheus{
+			Metrics: &datasourceMock.Metrics{
 				QueryRangeFunc: func(context.Context, string, processor.TimeRange) (*processor.PrometheusQueryResult, error) {
 					return &processor.PrometheusQueryResult{
 						Type:   model.ValScalar,
@@ -223,13 +223,13 @@ func Test_Checker_Check(t *testing.T) {
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			ApplyCalls:           1,
 			QueryCalls:           1,
 		},
 		"An instant vector answers as well as a range": {
 			Attrs: metricAttrs(),
-			Prometheus: &datasourceMock.Prometheus{
+			Metrics: &datasourceMock.Metrics{
 				QueryRangeFunc: func(context.Context, string, processor.TimeRange) (*processor.PrometheusQueryResult, error) {
 					return &processor.PrometheusQueryResult{
 						Type: model.ValVector,
@@ -247,7 +247,7 @@ func Test_Checker_Check(t *testing.T) {
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			ApplyCalls:           1,
 			QueryCalls:           1,
 		},
@@ -256,12 +256,12 @@ func Test_Checker_Check(t *testing.T) {
 		// span and gives up the past.
 		"A past window is probed over its span ending now": {
 			Attrs:                withAttr(document.AttrTimeRange, "previous_week"),
-			Prometheus:           sampled(),
+			Metrics:              sampled(),
 			Cleared:              true,
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			ApplyCalls:           1,
 			QueryCalls:           1,
 			ProbeSpan:            7 * 24 * time.Hour,
@@ -271,31 +271,31 @@ func Test_Checker_Check(t *testing.T) {
 		// the span over a hundred points.
 		"A short window is probed over minutes so new data is visible at once": {
 			Attrs:                withAttr(document.AttrTimeRange, "last_5_minutes"),
-			Prometheus:           sampled(),
+			Metrics:              sampled(),
 			Cleared:              true,
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			ApplyCalls:           1,
 			QueryCalls:           1,
 			ProbeSpan:            5 * time.Minute,
 		},
 		"A block naming no window is probed over a day": {
 			Attrs:                withoutAttr(document.AttrTimeRange),
-			Prometheus:           sampled(),
+			Metrics:              sampled(),
 			Cleared:              true,
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			ApplyCalls:           1,
 			QueryCalls:           1,
 			ProbeSpan:            24 * time.Hour,
 		},
 		"A window following the built-in variable is probed over its default": {
-			Attrs:      withAttr(document.AttrTimeRange, "$metric_range"),
-			Prometheus: sampled(),
+			Attrs:   withAttr(document.AttrTimeRange, "$metric_range"),
+			Metrics: sampled(),
 			Variables: func(context.Context, string, string) (variable.Tree, error) {
 				return variable.Tree{{Variables: []variable.Entry{
 					{Key: "metric_range", Type: variable.TypeTimeRange, DefaultValue: null.StringFrom("last_7_days")},
@@ -306,14 +306,14 @@ func Test_Checker_Check(t *testing.T) {
 			FetchVariableTreeCalls: 1,
 			RunnerCalls:            1,
 			TypeCalls:              1,
-			PrometheusCalls:        1,
+			MetricsCalls:           1,
 			ApplyCalls:             1,
 			QueryCalls:             1,
 			ProbeSpan:              7 * 24 * time.Hour,
 		},
 		"Error returned by DB.FetchVariableTree for the window": {
-			Attrs:      withAttr(document.AttrTimeRange, "$metric_range"),
-			Prometheus: sampled(),
+			Attrs:   withAttr(document.AttrTimeRange, "$metric_range"),
+			Metrics: sampled(),
 			Variables: func(context.Context, string, string) (variable.Tree, error) {
 				return nil, assert.AnError
 			},
@@ -322,12 +322,12 @@ func Test_Checker_Check(t *testing.T) {
 		},
 		"A window this build does not know is probed over a day": {
 			Attrs:                withAttr(document.AttrTimeRange, "since_forever"),
-			Prometheus:           sampled(),
+			Metrics:              sampled(),
 			Cleared:              true,
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			ApplyCalls:           1,
 			QueryCalls:           1,
 			ProbeSpan:            24 * time.Hour,
@@ -398,7 +398,7 @@ func Test_Checker_Check(t *testing.T) {
 		}(),
 		"The queries answer with nothing": {
 			Attrs: metricAttrs(),
-			Prometheus: &datasourceMock.Prometheus{
+			Metrics: &datasourceMock.Metrics{
 				QueryRangeFunc: func(context.Context, string, processor.TimeRange) (*processor.PrometheusQueryResult, error) {
 					return &processor.PrometheusQueryResult{
 						Type:   model.ValMatrix,
@@ -409,12 +409,12 @@ func Test_Checker_Check(t *testing.T) {
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			QueryCalls:           1,
 		},
 		"The answering series carries no points": {
 			Attrs: metricAttrs(),
-			Prometheus: &datasourceMock.Prometheus{
+			Metrics: &datasourceMock.Metrics{
 				QueryRangeFunc: func(context.Context, string, processor.TimeRange) (*processor.PrometheusQueryResult, error) {
 					return &processor.PrometheusQueryResult{
 						Type: model.ValMatrix,
@@ -427,12 +427,12 @@ func Test_Checker_Check(t *testing.T) {
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			QueryCalls:           1,
 		},
 		"The data source answers with nothing at all": {
 			Attrs: metricAttrs(),
-			Prometheus: &datasourceMock.Prometheus{
+			Metrics: &datasourceMock.Metrics{
 				//nolint:nilnil // a client that found nothing answers exactly this
 				QueryRangeFunc: func(context.Context, string, processor.TimeRange) (*processor.PrometheusQueryResult, error) {
 					return nil, nil
@@ -441,12 +441,12 @@ func Test_Checker_Check(t *testing.T) {
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			QueryCalls:           1,
 		},
-		"Error returned by Prometheus.QueryRange": {
+		"Error returned by Metrics.QueryRange": {
 			Attrs: metricAttrs(),
-			Prometheus: &datasourceMock.Prometheus{
+			Metrics: &datasourceMock.Metrics{
 				QueryRangeFunc: func(context.Context, string, processor.TimeRange) (*processor.PrometheusQueryResult, error) {
 					return nil, assert.AnError
 				},
@@ -454,25 +454,25 @@ func Test_Checker_Check(t *testing.T) {
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			QueryCalls:           1,
 		},
-		"Error returned by Runner.Prometheus": {
+		"Error returned by Runner.Metrics": {
 			Attrs: metricAttrs(),
 			Runner: &datasourceMock.Runner{
 				TypeFunc: func() datasourceCore.Type { return datasourceCore.TypePrometheus },
-				PrometheusFunc: func(context.Context) (datasourceCore.Prometheus, error) {
+				MetricsFunc: func(context.Context) (datasourceCore.Metrics, error) {
 					return nil, assert.AnError
 				},
 			},
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 		},
 		"Error returned by DB.FetchDataSource": {
 			Attrs:                metricAttrs(),
-			Prometheus:           sampled(),
+			Metrics:              sampled(),
 			DataSourceErr:        true,
 			FetchDataSourceCalls: 1,
 		},
@@ -486,69 +486,69 @@ func Test_Checker_Check(t *testing.T) {
 			TypeCalls:            1,
 		},
 		"The block names no data source": {
-			Attrs:      withoutAttr(document.AttrDataSourceID),
-			Prometheus: sampled(),
+			Attrs:   withoutAttr(document.AttrDataSourceID),
+			Metrics: sampled(),
 		},
 		"The data source id is not an id": {
-			Attrs:      withAttr(document.AttrDataSourceID, "not-an-xid"),
-			Prometheus: sampled(),
+			Attrs:   withAttr(document.AttrDataSourceID, "not-an-xid"),
+			Metrics: sampled(),
 		},
 		"The data source id is not a string": {
-			Attrs:      withAttr(document.AttrDataSourceID, 42),
-			Prometheus: sampled(),
+			Attrs:   withAttr(document.AttrDataSourceID, 42),
+			Metrics: sampled(),
 		},
 		"The queries attribute is not an array": {
 			Attrs:                withAttr(document.AttrQueries, "up"),
-			Prometheus:           sampled(),
+			Metrics:              sampled(),
 			FetchDataSourceCalls: 1,
 		},
 		"A query row is not an object": {
 			Attrs:                withAttr(document.AttrQueries, []any{"up"}),
-			Prometheus:           sampled(),
+			Metrics:              sampled(),
 			FetchDataSourceCalls: 1,
 		},
 		"The block carries no queries at all": {
 			Attrs:                withoutAttr(document.AttrQueries),
-			Prometheus:           sampled(),
+			Metrics:              sampled(),
 			FetchDataSourceCalls: 1,
 		},
 		"No query has been written yet": {
 			Attrs: withAttr(document.AttrQueries, []any{
 				map[string]any{"name": "Query 1", "query": "", "legendFormat": ""},
 			}),
-			Prometheus:           sampled(),
+			Metrics:              sampled(),
 			FetchDataSourceCalls: 1,
 		},
 		"The block names no preset": {
-			Attrs:      withoutAttr(document.AttrSimulationPreset),
-			Prometheus: sampled(),
-			Err:        ErrNotSimulated,
+			Attrs:   withoutAttr(document.AttrSimulationPreset),
+			Metrics: sampled(),
+			Err:     ErrNotSimulated,
 		},
 		"The simulation is switched off": {
-			Attrs:      withAttr(document.AttrSimulationActive, false),
-			Prometheus: sampled(),
-			Err:        ErrNotSimulated,
+			Attrs:   withAttr(document.AttrSimulationActive, false),
+			Metrics: sampled(),
+			Err:     ErrNotSimulated,
 		},
 		"The block carries a preset and no flag": {
-			Attrs:      withoutAttr(document.AttrSimulationActive),
-			Prometheus: sampled(),
-			Err:        ErrNotSimulated,
+			Attrs:   withoutAttr(document.AttrSimulationActive),
+			Metrics: sampled(),
+			Err:     ErrNotSimulated,
 		},
 		"The flag is not a boolean": {
-			Attrs:      withAttr(document.AttrSimulationActive, "true"),
-			Prometheus: sampled(),
-			Err:        ErrNotSimulated,
+			Attrs:   withAttr(document.AttrSimulationActive, "true"),
+			Metrics: sampled(),
+			Err:     ErrNotSimulated,
 		},
 		"The block carries no uid": {
-			Attrs:      withoutAttr(document.AttrUID),
-			Prometheus: sampled(),
-			Err:        ErrNotSimulated,
+			Attrs:   withoutAttr(document.AttrUID),
+			Metrics: sampled(),
+			Err:     ErrNotSimulated,
 		},
 		// the window is what bounds how often a data source is reached,
 		// however many readers are looking at the block.
 		"A second reader within the window is answered from the verdict": {
 			Attrs: metricAttrs(),
-			Prometheus: &datasourceMock.Prometheus{
+			Metrics: &datasourceMock.Metrics{
 				QueryRangeFunc: func(context.Context, string, processor.TimeRange) (*processor.PrometheusQueryResult, error) {
 					return &processor.PrometheusQueryResult{
 						Type:   model.ValMatrix,
@@ -560,42 +560,42 @@ func Test_Checker_Check(t *testing.T) {
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			QueryCalls:           1,
 		},
 		"A cleared verdict is not cleared again": {
 			Attrs:                metricAttrs(),
-			Prometheus:           sampled(),
+			Metrics:              sampled(),
 			Calls:                2,
 			Cleared:              true,
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			ApplyCalls:           1,
 			QueryCalls:           1,
 		},
 		"Error returned by Applier.Apply": {
 			Attrs:                metricAttrs(),
-			Prometheus:           sampled(),
+			Metrics:              sampled(),
 			ApplyErr:             assert.AnError,
 			Err:                  assert.AnError,
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			ApplyCalls:           1,
 			QueryCalls:           1,
 		},
 		"The operation is refused": {
 			Attrs:                metricAttrs(),
-			Prometheus:           sampled(),
+			Metrics:              sampled(),
 			ApplyResult:          edit.Result{Errors: []edit.OpError{{Index: 0, Message: "block_uid not found"}}},
 			Err:                  assert.AnError,
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			ApplyCalls:           1,
 			QueryCalls:           1,
 		},
@@ -605,13 +605,13 @@ func Test_Checker_Check(t *testing.T) {
 		// the failure is reported once rather than on every tick.
 		"Error returned by Applier.Apply is not retried within the window": {
 			Attrs:                metricAttrs(),
-			Prometheus:           sampled(),
+			Metrics:              sampled(),
 			ApplyErr:             assert.AnError,
 			Calls:                2,
 			FetchDataSourceCalls: 1,
 			RunnerCalls:          1,
 			TypeCalls:            1,
-			PrometheusCalls:      1,
+			MetricsCalls:         1,
 			ApplyCalls:           1,
 			QueryCalls:           1,
 		},
@@ -625,8 +625,8 @@ func Test_Checker_Check(t *testing.T) {
 			if runner == nil {
 				runner = &datasourceMock.Runner{
 					TypeFunc: func() datasourceCore.Type { return datasourceCore.TypePrometheus },
-					PrometheusFunc: func(context.Context) (datasourceCore.Prometheus, error) {
-						return c.Prometheus, nil
+					MetricsFunc: func(context.Context) (datasourceCore.Metrics, error) {
+						return c.Metrics, nil
 					},
 				}
 			}
@@ -682,14 +682,14 @@ func Test_Checker_Check(t *testing.T) {
 			assert.Len(t, db.FetchVariableTreeCalls(), c.FetchVariableTreeCalls)
 			assert.Len(t, runners.RunnerCalls(), c.RunnerCalls)
 			assert.Len(t, runner.TypeCalls(), c.TypeCalls)
-			assert.Len(t, runner.PrometheusCalls(), c.PrometheusCalls)
+			assert.Len(t, runner.MetricsCalls(), c.MetricsCalls)
 			assert.Len(t, runner.PostgreSQLCalls(), c.PostgreSQLCalls)
 			assert.Len(t, runner.MySQLCalls(), c.MySQLCalls)
 			assert.Len(t, applier.ApplyCalls(), c.ApplyCalls)
 
 			switch {
-			case c.Prometheus != nil:
-				assert.Len(t, c.Prometheus.QueryRangeCalls(), c.QueryCalls)
+			case c.Metrics != nil:
+				assert.Len(t, c.Metrics.QueryRangeCalls(), c.QueryCalls)
 			case c.PostgreSQL != nil:
 				assert.Len(t, c.PostgreSQL.QueryCalls(), c.QueryCalls)
 			case c.MySQL != nil:
@@ -716,7 +716,7 @@ func Test_Checker_Check(t *testing.T) {
 
 			if c.ProbeSpan > 0 {
 				now := timeutil.Now()
-				probed := c.Prometheus.QueryRangeCalls()[0].Tr
+				probed := c.Metrics.QueryRangeCalls()[0].Tr
 
 				assert.WithinDuration(t, now, probed.To, time.Minute)
 				assert.WithinDuration(

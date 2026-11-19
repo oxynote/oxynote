@@ -182,6 +182,7 @@ func victoriaLogsAPIHandler() http.Handler {
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/select/buildinfo", respond(`{"status":"success","data":{"version":"v1.40.0"}}`))
 	mux.HandleFunc("/select/logsql/query", respond(`{"_time":"2024-01-01T00:00:00Z","_stream":"{app=\"api\"}","_msg":"started","app":"api"}`))
 	mux.HandleFunc("/select/logsql/hits", respond(`{"hits":[{"fields":{"level":"info"},"timestamps":["2024-01-01T00:01:00Z"],"values":[3]}]}`))
 	mux.HandleFunc("/select/logsql/field_names", respond(`{"values":[{"value":"app","hits":1}]}`))
@@ -210,19 +211,10 @@ func prepLokiServer(t *testing.T, h http.Handler, conns *atomic.Int32) *httptest
 }
 
 // countConnectionTests wraps h, counting in hits the connection tests it
-// answers. VictoriaLogs is tested by listing the field names of the last
-// five minutes.
+// answers, which are the buildinfo requests.
 func countConnectionTests(h http.Handler, hits *atomic.Int32) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		params := r.URL.Query()
-		start, serr := time.Parse(time.RFC3339Nano, params.Get("start"))
-		end, eerr := time.Parse(time.RFC3339Nano, params.Get("end"))
-		window := serr == nil && eerr == nil && end.Sub(start) == 5*time.Minute
-
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/status/buildinfo"):
-			hits.Add(1)
-		case strings.HasSuffix(r.URL.Path, "/select/logsql/field_names") && window:
+		if strings.HasSuffix(r.URL.Path, "/buildinfo") {
 			hits.Add(1)
 		}
 
@@ -836,23 +828,25 @@ func Test_Manager_newClient(t *testing.T) {
 		Client ownedClient
 		Err    error
 	}{
-		"Prometheus":          {Type: TypePrometheus, Client: &processor.Prometheus{}},
-		"Demo Prometheus":     {Type: TypePrometheus, URL: demo.URL, Client: &demo.Client{}},
-		"Unknown demo source": {Type: TypePrometheus, URL: demo.Scheme + "nope", Err: demo.ErrUnknownSource},
-		"PostgreSQL":          {Type: TypePostgreSQL, Client: &processor.PostgreSQL{}},
-		"Demo PostgreSQL":     {Type: TypePostgreSQL, URL: demo.URL, Err: _errNoDemo},
-		"Supabase":            {Type: TypeSupabase, Client: &processor.PostgreSQL{}},
-		"Demo Supabase":       {Type: TypeSupabase, URL: demo.URL, Err: _errNoDemo},
-		"MySQL":               {Type: TypeMySQL, Client: &processor.MySQL{}},
-		"Demo MySQL":          {Type: TypeMySQL, URL: demo.URL, Err: _errNoDemo},
-		"MariaDB":             {Type: TypeMariaDB, Client: &processor.MySQL{}},
-		"Demo MariaDB":        {Type: TypeMariaDB, URL: demo.URL, Err: _errNoDemo},
-		"Loki":                {Type: TypeLoki, Client: &processor.Loki{}},
-		"Demo Loki":           {Type: TypeLoki, URL: demo.URL, Client: &demo.Client{}},
-		"Unknown demo Loki":   {Type: TypeLoki, URL: demo.Scheme + "nope", Err: demo.ErrUnknownSource},
-		"VictoriaLogs":        {Type: TypeVictoriaLogs, Client: &processor.VictoriaLogs{}},
-		"Demo VictoriaLogs":   {Type: TypeVictoriaLogs, URL: demo.URL, Err: _errNoDemo},
-		"Unknown type":        {Type: Type("bogus"), Err: assert.AnError},
+		"Prometheus":           {Type: TypePrometheus, Client: &processor.Prometheus{}},
+		"Demo Prometheus":      {Type: TypePrometheus, URL: demo.URL, Client: &demo.Client{}},
+		"Unknown demo source":  {Type: TypePrometheus, URL: demo.Scheme + "nope", Err: demo.ErrUnknownSource},
+		"PostgreSQL":           {Type: TypePostgreSQL, Client: &processor.PostgreSQL{}},
+		"Demo PostgreSQL":      {Type: TypePostgreSQL, URL: demo.URL, Err: _errNoDemo},
+		"Supabase":             {Type: TypeSupabase, Client: &processor.PostgreSQL{}},
+		"Demo Supabase":        {Type: TypeSupabase, URL: demo.URL, Err: _errNoDemo},
+		"MySQL":                {Type: TypeMySQL, Client: &processor.MySQL{}},
+		"Demo MySQL":           {Type: TypeMySQL, URL: demo.URL, Err: _errNoDemo},
+		"MariaDB":              {Type: TypeMariaDB, Client: &processor.MySQL{}},
+		"Demo MariaDB":         {Type: TypeMariaDB, URL: demo.URL, Err: _errNoDemo},
+		"Loki":                 {Type: TypeLoki, Client: &processor.Loki{}},
+		"Demo Loki":            {Type: TypeLoki, URL: demo.URL, Client: &demo.Client{}},
+		"Unknown demo Loki":    {Type: TypeLoki, URL: demo.Scheme + "nope", Err: demo.ErrUnknownSource},
+		"VictoriaLogs":         {Type: TypeVictoriaLogs, Client: &processor.VictoriaLogs{}},
+		"Demo VictoriaLogs":    {Type: TypeVictoriaLogs, URL: demo.URL, Err: _errNoDemo},
+		"VictoriaMetrics":      {Type: TypeVictoriaMetrics, Client: &processor.VictoriaMetrics{}},
+		"Demo VictoriaMetrics": {Type: TypeVictoriaMetrics, URL: demo.URL, Err: _errNoDemo},
+		"Unknown type":         {Type: Type("bogus"), Err: assert.AnError},
 	}
 
 	for cn, c := range cc {
@@ -1082,11 +1076,11 @@ func Test_runner_TestConnection(t *testing.T) {
 	}
 }
 
-// Test_runner_Prometheus runs its cases one after another, and Go finishes
+// Test_runner_Metrics runs its cases one after another, and Go finishes
 // it before resuming any parallel test: the clients keep idle connections
 // in a transport every test shares, and another test's cleanup closing
 // them would throw off the connection count.
-func Test_runner_Prometheus(t *testing.T) {
+func Test_runner_Metrics(t *testing.T) {
 	cc := map[string]struct {
 		Type    Type
 		Handler http.Handler
@@ -1102,6 +1096,12 @@ func Test_runner_Prometheus(t *testing.T) {
 		// every read, and the next call's, shares one connection.
 		"A Prometheus data source hands out its client": {
 			Type:    TypePrometheus,
+			Handler: prometheusAPIHandler(),
+			Tests:   1,
+			Conns:   1,
+		},
+		"A VictoriaMetrics data source hands out its client": {
+			Type:    TypeVictoriaMetrics,
 			Handler: prometheusAPIHandler(),
 			Tests:   1,
 			Conns:   1,
@@ -1154,7 +1154,7 @@ func Test_runner_Prometheus(t *testing.T) {
 			store := &StatusStoreMock{}
 			r := prepRunner(t, c.Type, url, store)
 
-			client, err := r.Prometheus(context.Background())
+			client, err := r.Metrics(context.Background())
 
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Len(t, store.UpdateDataSourceStatusCalls(), c.Written)
@@ -1164,7 +1164,7 @@ func Test_runner_Prometheus(t *testing.T) {
 				assert.Nil(t, client)
 
 				// the next call gets the same answer without a new login.
-				_, aerr := r.m.Runner(r.ds).Prometheus(context.Background())
+				_, aerr := r.m.Runner(r.ds).Metrics(context.Background())
 				testutil.AssertEqualError(t, c.Err, aerr)
 				assert.Len(t, store.UpdateDataSourceStatusCalls(), c.Written)
 				assert.Equal(t, c.Tests, hits.Load())
@@ -1174,7 +1174,7 @@ func Test_runner_Prometheus(t *testing.T) {
 			}
 
 			require.NotNil(t, client)
-			assert.IsType(t, cachedPrometheus{}, client)
+			assert.IsType(t, cachedMetrics{}, client)
 
 			// the client the accessor hands back is the live one: every
 			// read it offers reaches the data source.
@@ -1182,7 +1182,7 @@ func Test_runner_Prometheus(t *testing.T) {
 			testutil.AssertEqualError(t, c.QueryErr, qerr)
 
 			if qerr != nil {
-				_, aerr := r.m.Runner(r.ds).Prometheus(context.Background())
+				_, aerr := r.m.Runner(r.ds).Metrics(context.Background())
 				require.NoError(t, aerr)
 				assert.Equal(t, c.Tests+1, hits.Load())
 				assert.Equal(t, c.Conns, conns.Load())
@@ -1210,7 +1210,7 @@ func Test_runner_Prometheus(t *testing.T) {
 
 			// the next call for the data source gets the same client, and a
 			// test that passed a moment ago is not run again.
-			again, aerr := r.m.Runner(r.ds).Prometheus(context.Background())
+			again, aerr := r.m.Runner(r.ds).Metrics(context.Background())
 			require.NoError(t, aerr)
 			assert.Equal(t, client, again)
 
@@ -1225,7 +1225,7 @@ func Test_runner_Prometheus(t *testing.T) {
 }
 
 // Test_runner_Logs runs its cases one after another for the reason
-// Test_runner_Prometheus does.
+// Test_runner_Metrics does.
 func Test_runner_Logs(t *testing.T) {
 	cc := map[string]struct {
 		Type    Type
@@ -1584,13 +1584,13 @@ func Test_connect(t *testing.T) {
 				rival, ok := r.m.Runner(r.ds).(*runner)
 				require.True(t, ok)
 
-				_, rerr := connect[Prometheus](context.Background(), rival, c.Allowed...)
+				_, rerr := connect[Metrics](context.Background(), rival, c.Allowed...)
 				require.NoError(t, rerr)
 
 				kept = rival
 			}
 
-			client, err := connect[Prometheus](context.Background(), r, c.Allowed...)
+			client, err := connect[Metrics](context.Background(), r, c.Allowed...)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			ff := store.UpdateDataSourceStatusCalls()

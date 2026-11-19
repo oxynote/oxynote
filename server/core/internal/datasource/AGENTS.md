@@ -52,7 +52,7 @@ metrics one.
 
 ## Query cache
 
-- `Prometheus`, `PostgreSQL`, `MySQL` and `Logs` hand out clients whose
+- `Metrics`, `PostgreSQL`, `MySQL` and `Logs` hand out clients whose
   query methods answer from a 10s cache: Valkey when core has a pool,
   memkit capped at 64 MiB otherwise. Metadata, labels and `SQL()` are not
   cached.
@@ -72,16 +72,21 @@ metrics one.
 
 ## Processor tests
 
-`processor/` starts throwaway MariaDB, Postgres, Loki and VictoriaLogs
-containers (gnomock) to cover real connection, query and read-only-check
-paths; docker is a unit-test dependency here, as in `internal/db`. Loki
-and VictoriaLogs run on their oldest supported and newest release, and
-hold a 6000-line corpus built to break paging (one timestamp holding more
-lines than a page); Loki's config keeps backfilled lines in the ingesters, which
-otherwise flush them out of query reach.
+`processor/` starts throwaway MariaDB, Postgres, Loki, VictoriaLogs and
+VictoriaMetrics containers (gnomock) to cover real connection, query and
+read-only-check paths; docker is a unit-test dependency here, as in
+`internal/db`. The last three run on their oldest supported and newest
+release. Loki and VictoriaLogs hold a 6000-line corpus built to break
+paging (one timestamp holding more lines than a page); Loki's config keeps
+backfilled lines in the ingesters, which otherwise flush them out of query
+reach.
 
-VictoriaLogs v1.39.0 is the oldest supported release, because before it
-the `limit` arg does not pick the newest logs. Only v1.54.0 can pick the
-oldest with it, so an asc read adds a sort pipe after the user's query, on
-its own line so a `#` comment cannot hide it. Keep v1.39.0 in the test
-matrix.
+VictoriaLogs v1.40.0 is the oldest supported release, the first with
+`/select/buildinfo`, which the connection test reads. The `limit` arg
+picks the newest logs, but only v1.54.0 can pick the oldest with it, so an
+asc read adds a sort pipe after the user's query, on its own line so a `#`
+comment cannot hide it. Keep v1.40.0 in the test matrix.
+
+VictoriaMetrics v1.130.0 is the oldest supported release, the first that
+can keep metric metadata. A server without metadata gets the metric names
+from `Metadata` instead.
