@@ -51,6 +51,7 @@ docker:
   - changed-files:
       - any-glob-to-any-file:
           - docker/**
+          - "**/Dockerfile*"
           - "**/.goreleaser.yml"
 
 dev-env:
@@ -65,7 +66,7 @@ dev-env:
           - "**/.dockerignore"
           - "**/Dockerfile.dev"
 
-github_actions:
+github-actions:
   - changed-files:
       - any-glob-to-any-file:
           - .github/workflows/**
@@ -81,6 +82,43 @@ docs:
           - LICENSE
           - .github/ISSUE_TEMPLATE/**
           - .github/pull_request_template.md
+
+# languages
+
+# dependabot adds these labels to its own pull requests. The labeler removes
+# a label whose rule does not match, so each rule also covers the manifest
+# and lock files that a dependency update changes.
+
+go:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.go"
+          - "**/go.{mod,sum}"
+
+typescript:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.{ts,vue,js,mjs}"
+          - "**/package.json"
+          - "**/pnpm-{lock,workspace}.yaml"
+
+docker-compose:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/docker-compose*.yaml"
+
+# a pull request gets this label in two ways. It comes from dependabot, whose
+# branches all start with "dependabot/". Or it changes a manifest or lock file.
+# Dockerfiles, compose files and workflows are not listed, because most
+# changes to them are not dependency updates.
+dependencies:
+  - head-branch:
+      - ^dependabot/
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/package.json"
+          - "**/pnpm-{lock,workspace}.yaml"
+          - "**/go.{mod,sum}"
 
 # features
 
