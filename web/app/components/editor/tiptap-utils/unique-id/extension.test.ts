@@ -1,5 +1,5 @@
 import type { JSONContent } from "@tiptap/core"
-import { Editor } from "@tiptap/core"
+import { Editor, Extension } from "@tiptap/core"
 import Blockquote from "@tiptap/extension-blockquote"
 import Document from "@tiptap/extension-document"
 import Heading from "@tiptap/extension-heading"
@@ -349,6 +349,89 @@ describe("UniqueID", () => {
 			pluginView.destroy?.()
 
 			expect(removeEventListener).toHaveBeenCalledWith("dragstart", dragstart)
+		})
+	})
+
+	describe("collaboration lifecycle", () => {
+		function createMockProvider() {
+			const listeners: Record<string, ((...args: unknown[]) => void)[]> = {}
+
+			return {
+				on(event: string, cb: (...args: unknown[]) => void) {
+					;(listeners[event] ??= []).push(cb)
+				},
+				off(event: string, cb: (...args: unknown[]) => void) {
+					listeners[event] = (listeners[event] ?? []).filter((fn) => fn !== cb)
+				},
+				emit(event: string) {
+					;(listeners[event] ?? []).slice().forEach((fn) => {
+						fn()
+					})
+				},
+				listenerCount(event: string) {
+					return (listeners[event] ?? []).length
+				},
+			}
+		}
+
+		function createCollabEditor(
+			provider: ReturnType<typeof createMockProvider>,
+		) {
+			let counter = 0
+
+			const editor = new Editor({
+				extensions: [
+					Document,
+					Paragraph,
+					Text,
+					UniqueID.configure({
+						attributeName: "id",
+						types: ["paragraph"],
+						generateID: () => `gen-${++counter}`,
+					}),
+					Extension.create({ name: "collaboration" }),
+					Extension.create({ name: "collaborationCaret" }).configure({
+						provider,
+					}),
+				],
+				content: {
+					type: "doc",
+					content: [paragraph("hello")],
+				},
+			})
+			editor.emit("create", { editor })
+			return editor
+		}
+
+		it("detaches the provider synced listener when destroyed before syncing", ({
+			expect,
+		}) => {
+			const provider = createMockProvider()
+			const editor = createCollabEditor(provider)
+
+			expect(provider.listenerCount("synced")).toBe(1)
+
+			editor.destroy()
+
+			expect(provider.listenerCount("synced")).toBe(0)
+		})
+
+		it("detaches the provider synced listener after the provider syncs", ({
+			expect,
+		}) => {
+			const provider = createMockProvider()
+			const editor = createCollabEditor(provider)
+
+			expect(provider.listenerCount("synced")).toBe(1)
+
+			provider.emit("synced")
+			expect(provider.listenerCount("synced")).toBe(0)
+
+			const paragraphNode = editor.state.doc.child(0)
+			expect(paragraphNode.attrs.id).toBe("gen-1")
+
+			editor.destroy()
+			expect(provider.listenerCount("synced")).toBe(0)
 		})
 	})
 })
