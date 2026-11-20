@@ -1725,7 +1725,7 @@ describe("Hocuspocus hook error logging", () => {
 			throw new Error("onAuthenticate is not configured")
 		}
 
-		await onAuthenticate({
+		const rejection = await onAuthenticate({
 			connectionConfig: { readOnly: false },
 			documentName: "doc1-branch1",
 			request: {},
@@ -1734,9 +1734,11 @@ describe("Hocuspocus hook error logging", () => {
 			token: "token",
 		} as never).then(
 			() => undefined,
-			() => undefined,
+			(error: unknown) => error,
 		)
 
+		expect(rejection).toBeInstanceOf(Error)
+		expect(rejection).toHaveProperty("message", "")
 		expect(log.error).toHaveBeenCalledTimes(1)
 		expect(log.error).toHaveBeenCalledWith(
 			{
