@@ -11,6 +11,7 @@ import DataSourceUpsertAction from "./DataSourceUpsertAction.vue"
 import {
 	at,
 	findButtonByText,
+	menuItem,
 	clearTeleportedOverlays,
 	mountWithFrozenClock,
 	raisedToasts,
@@ -94,11 +95,34 @@ function tokenFields(wrapper: Awaited<ReturnType<typeof mountAction>>) {
 	}
 }
 
-function kindButton(
+function kindTrigger(wrapper: Awaited<ReturnType<typeof mountAction>>) {
+	return wrapper.get("[data-slot='dropdown-menu-trigger']")
+}
+
+// reka opens a dropdown on the pointerdown and click a user's click sends
+async function openKindMenu(wrapper: Awaited<ReturnType<typeof mountAction>>) {
+	await kindTrigger(wrapper).trigger("pointerdown", { button: 0 })
+	await kindTrigger(wrapper).trigger("click")
+	await nextTick()
+}
+
+async function pickKind(
 	wrapper: Awaited<ReturnType<typeof mountAction>>,
 	kind: DataSourceCredentialsKind,
 ) {
-	return findButtonByText(wrapper, t(`${UPSERT}.auth-kind-field.${kind}`))
+	await openKindMenu(wrapper)
+	menuItem(kindTitle(kind)).click()
+	await nextTick()
+}
+
+function kindMenuItems(): HTMLElement[] {
+	return Array.from(
+		document.body.querySelectorAll<HTMLElement>("[role^='menuitem']"),
+	)
+}
+
+function kindTitle(kind: DataSourceCredentialsKind) {
+	return t(`${UPSERT}.auth-kind-field.${kind}.title`)
 }
 
 async function submit(wrapper: Awaited<ReturnType<typeof mountAction>>) {
@@ -723,15 +747,82 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 				const wrapper = await mountAction({ creationType: type })
 
 				expect(wrapper.text()).toContain(t(`${UPSERT}.auth-kind-field.label`))
-				expect(kindButton(wrapper, "basic").attributes("aria-pressed")).toBe(
-					"true",
-				)
-				expect(kindButton(wrapper, "token").attributes("aria-pressed")).toBe(
-					"false",
-				)
+				expect(kindTrigger(wrapper).text()).toBe(kindTitle("basic"))
 				expect(fields(wrapper).username.exists()).toBe(true)
 			},
 		)
+
+		it("offers both kinds with their descriptions, the current one checked", async ({
+			expect,
+		}) => {
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Prometheus,
+			})
+
+			await openKindMenu(wrapper)
+
+			const items = kindMenuItems()
+
+			expect(
+				items.map((item) =>
+					Array.from(item.querySelectorAll(":scope > div > div"), (line) =>
+						line.textContent.trim(),
+					),
+				),
+			).toEqual([
+				[kindTitle("basic"), t(`${UPSERT}.auth-kind-field.basic.description`)],
+				[kindTitle("token"), t(`${UPSERT}.auth-kind-field.token.description`)],
+			])
+			expect(
+				items.map(
+					(item) => item.querySelector('[class~="i-lucide:check"]') !== null,
+				),
+			).toEqual([true, false])
+		})
+
+		it("keeps typed credentials when the kind is switched and back", async ({
+			expect,
+		}) => {
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Prometheus,
+			})
+			await fields(wrapper).username.setValue("reader")
+			await pickKind(wrapper, "token")
+			await tokenFields(wrapper).token.setValue("secret")
+			await pickKind(wrapper, "basic")
+
+			expect((fields(wrapper).username.element as HTMLInputElement).value).toBe(
+				"reader",
+			)
+
+			await pickKind(wrapper, "token")
+
+			expect(
+				(tokenFields(wrapper).token.element as HTMLInputElement).value,
+			).toBe("secret")
+		})
+
+		it("saves with a token when the hidden username is too long", async ({
+			expect,
+		}) => {
+			const calls = mockEndpoint("POST", "/api/data-sources", () => ({
+				id: EXISTING.id,
+			}))
+			const wrapper = await mountAction({
+				creationType: DataSourceType.Prometheus,
+			})
+			await fields(wrapper).username.setValue("u".repeat(129))
+			await pickKind(wrapper, "token")
+			await tokenFields(wrapper).name.setValue("Prod metrics")
+			await tokenFields(wrapper).url.setValue("http://prometheus.test")
+			await tokenFields(wrapper).token.setValue("secret")
+
+			await submit(wrapper)
+
+			expect(calls[0]?.body).toMatchObject({
+				credentials: { kind: "token", token: "secret" },
+			})
+		})
 
 		it.for([
 			DataSourceType.PostgreSQL,
@@ -742,7 +833,9 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			const wrapper = await mountAction({ creationType: type })
 
 			expect(wrapper.text()).not.toContain(t(`${UPSERT}.auth-kind-field.label`))
-			expect(() => kindButton(wrapper, "token")).toThrow()
+			expect(wrapper.find("[data-slot='dropdown-menu-trigger']").exists()).toBe(
+				false,
+			)
 		})
 
 		it("sends basic credentials for a sql data source", async ({ expect }) => {
@@ -772,7 +865,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			const wrapper = await mountAction({
 				creationType: DataSourceType.Loki,
 			})
-			await kindButton(wrapper, "token").trigger("click")
+			await pickKind(wrapper, "token")
 			await tokenFields(wrapper).name.setValue("Prod logs")
 			await tokenFields(wrapper).url.setValue("https://loki.test")
 			await tokenFields(wrapper).token.setValue("secret")
@@ -780,9 +873,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 
 			await submit(wrapper)
 
-			expect(kindButton(wrapper, "token").attributes("aria-pressed")).toBe(
-				"true",
-			)
+			expect(kindTrigger(wrapper).text()).toBe(kindTitle("token"))
 			expect(tokenFields(wrapper).token.attributes("type")).toBe("password")
 			expect(calls[0]?.body).toEqual({
 				type: DataSourceType.Loki,
@@ -813,9 +904,12 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			// validation has run and the submit waits out its spinner delay
 			await vi.advanceTimersByTimeAsync(100)
 
-			expect(kindButton(wrapper, "token").attributes("disabled")).toBeDefined()
+			expect(kindTrigger(wrapper).attributes("disabled")).toBeDefined()
 
-			await kindButton(wrapper, "token").trigger("click")
+			await openKindMenu(wrapper)
+
+			expect(kindMenuItems()).toHaveLength(0)
+
 			await settleActionSubmit()
 
 			expect(calls[0]?.body).toMatchObject({
@@ -830,7 +924,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			const wrapper = await mountAction({
 				creationType: DataSourceType.Prometheus,
 			})
-			await kindButton(wrapper, "token").trigger("click")
+			await pickKind(wrapper, "token")
 			await tokenFields(wrapper).name.setValue("Prod metrics")
 			await tokenFields(wrapper).url.setValue("http://prometheus.test")
 
@@ -846,7 +940,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			const wrapper = await mountAction({
 				creationType: DataSourceType.Prometheus,
 			})
-			await kindButton(wrapper, "token").trigger("click")
+			await pickKind(wrapper, "token")
 
 			await openPopover(at(helpButtons(wrapper), 0))
 
@@ -860,9 +954,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 		}) => {
 			const wrapper = await mountAction({ updateTarget: EXISTING_WITH_TOKEN })
 
-			expect(kindButton(wrapper, "token").attributes("aria-pressed")).toBe(
-				"true",
-			)
+			expect(kindTrigger(wrapper).text()).toBe(kindTitle("token"))
 			expect(tokenFields(wrapper).token.attributes("disabled")).toBeDefined()
 			expect(tokenFields(wrapper).token.attributes("placeholder")).toBe(
 				t(`${UPSERT}.hidden-placeholder`),
@@ -914,7 +1006,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			const wrapper = await mountAction({
 				updateTarget: EXISTING_WITH_LOGIN_AND_CA,
 			})
-			await kindButton(wrapper, "token").trigger("click")
+			await pickKind(wrapper, "token")
 
 			expect(tokenFields(wrapper).token.attributes("disabled")).toBeUndefined()
 			expect(
@@ -939,7 +1031,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 				() => ({ id: EXISTING.id }),
 			)
 			const wrapper = await mountAction({ updateTarget: EXISTING_WITH_TOKEN })
-			await kindButton(wrapper, "basic").trigger("click")
+			await pickKind(wrapper, "basic")
 			await fields(wrapper).username.setValue("reader")
 
 			await submit(wrapper)
@@ -989,7 +1081,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			const wrapper = await mountAction({
 				creationType: DataSourceType.Prometheus,
 			})
-			await kindButton(wrapper, "token").trigger("click")
+			await pickKind(wrapper, "token")
 
 			expect(wrapper.findAll("label").map((l) => l.text())).toEqual([
 				"Name",

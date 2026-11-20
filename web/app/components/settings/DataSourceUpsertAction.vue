@@ -7,6 +7,11 @@ import { FormField as ShadcnUiFormField } from "#layers/ui/app/components/shadcn
 import { cn } from "#layers/ui/app/lib/utils"
 import { showRequestErrorToast, showToastMessage } from "../toast"
 
+const KIND_FIELDS = {
+	basic: ["username", "password"],
+	token: ["token"],
+} as const satisfies Record<DataSourceCredentialsKind, string[]>
+
 const props = defineProps<{
 	creationType?: DataSourceType
 	updateTarget?: DataSource
@@ -59,6 +64,9 @@ const credentialsKind = ref<DataSourceCredentialsKind>(
 	props.updateTarget?.credentials?.kind ?? "basic",
 )
 const credentialsKindLabelId = useId()
+const hiddenCredentials: Partial<
+	Record<"username" | "password" | "token", string>
+> = {}
 // stored credentials belong to the stored URL, and a new URL clears them
 const urlChanged = computed(
 	() =>
@@ -322,6 +330,19 @@ const onSubmit = form.handleSubmit(async (values) => {
 	emit("close")
 })
 
+// the fields of the other authentication kind unmount and leave the form,
+// so validation never sees them. What was typed there waits here instead,
+// and comes back when the kind is switched back.
+watch(credentialsKind, (kind, previous) => {
+	for (const key of KIND_FIELDS[previous]) {
+		hiddenCredentials[key] = form.values[key]
+	}
+
+	for (const key of KIND_FIELDS[kind]) {
+		form.setFieldValue(key, hiddenCredentials[key])
+	}
+})
+
 // the server says which credentials are stored but never sends them, so a
 // stored one stays locked until it is reset
 function isCredentialLocked(key: DataSourceCredentialKey): boolean {
@@ -503,33 +524,61 @@ function resetCredential(key: DataSourceCredentialKey) {
 						)
 					}}
 				</span>
-				<div
-					role="group"
-					:aria-labelledby="credentialsKindLabelId"
-					class="grid grid-cols-2 gap-0.5 rounded-md border bg-muted p-0.5"
-				>
-					<button
-						v-for="kind in ['basic', 'token'] as const"
-						:key="kind"
-						type="button"
-						:disabled="loading"
-						:aria-pressed="credentialsKind === kind"
-						:class="
-							cn(
-								'h-7 cursor-pointer rounded-sm text-2sm font-medium text-muted-foreground transition-colors duration-150',
-								credentialsKind === kind &&
-									'bg-background text-foreground shadow-xs',
-							)
-						"
-						@click="credentialsKind = kind"
+				<ShadcnUiDropdownMenu>
+					<ShadcnUiDropdownMenuTrigger as-child :disabled="loading">
+						<button
+							type="button"
+							:aria-labelledby="credentialsKindLabelId"
+							class="flex h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md border border-input bg-transparent px-3 py-1 text-2sm disabled:pointer-events-none disabled:opacity-50"
+						>
+							<span class="min-w-0 flex-1 truncate text-left">
+								{{
+									$t(
+										`settings.action-modals.data-source-upsert.auth-kind-field.${credentialsKind}.title`,
+									)
+								}}
+							</span>
+							<Icon name="lucide:chevron-down" class="size-4 shrink-0" />
+						</button>
+					</ShadcnUiDropdownMenuTrigger>
+					<ShadcnUiDropdownMenuContent
+						class="w-(--reka-dropdown-menu-trigger-width) min-w-0"
+						inside-modal
+						side="bottom"
+						align="start"
+						loop
 					>
-						{{
-							$t(
-								`settings.action-modals.data-source-upsert.auth-kind-field.${kind}`,
-							)
-						}}
-					</button>
-				</div>
+						<ShadcnUiDropdownMenuItem
+							v-for="kind in ['basic', 'token'] as const"
+							:key="kind"
+							:value="kind"
+							:active="kind === credentialsKind"
+							class="min-w-0"
+							@click="credentialsKind = kind"
+						>
+							<div class="flex min-w-0 flex-1 flex-col">
+								<div
+									class="min-w-0 truncate text-2sm whitespace-nowrap text-popover-foreground"
+								>
+									{{
+										$t(
+											`settings.action-modals.data-source-upsert.auth-kind-field.${kind}.title`,
+										)
+									}}
+								</div>
+								<div
+									class="min-w-0 truncate text-xs whitespace-nowrap text-muted-foreground"
+								>
+									{{
+										$t(
+											`settings.action-modals.data-source-upsert.auth-kind-field.${kind}.description`,
+										)
+									}}
+								</div>
+							</div>
+						</ShadcnUiDropdownMenuItem>
+					</ShadcnUiDropdownMenuContent>
+				</ShadcnUiDropdownMenu>
 			</div>
 			<template v-if="credentialsKind === 'basic'">
 				<ShadcnUiFormField
