@@ -44,25 +44,9 @@ const form = useForm({
 	validationSchema: formSchema,
 })
 
-// the organization arrives asynchronously, so the form follows it rather
-// than reading it once during setup. A dialog mounted before the query
-// settles would keep showing an empty name, and one reopened after a save
-// would show the value from before it. Resetting only while the form is clean
-// leaves a half-typed edit alone.
+const logoInput = useTemplateRef<HTMLInputElement>("logoInput")
+const loading = ref<"logo" | null>(null)
 const organization = computed(() => fetchOrganization.state.value.data?.data)
-
-watchImmediate(organization, (org) => {
-	if (!org || form.meta.value.dirty) {
-		return
-	}
-
-	form.resetForm({
-		values: {
-			logoUrl: org.logo || "",
-			name: org.name,
-		},
-	})
-})
 const members = computed<OrganizationMember[]>(() => {
 	const organization = fetchOrganization.state.value.data?.data
 	const members: OrganizationMember[] =
@@ -104,11 +88,27 @@ const members = computed<OrganizationMember[]>(() => {
 
 	return members.concat(invs)
 })
-const loading = ref<"logo" | null>(null)
-const logoInput = useTemplateRef<HTMLInputElement>("logoInput")
+
+// the organization arrives asynchronously, so the form follows it rather
+// than reading it once during setup. A dialog mounted before the query
+// settles would keep showing an empty name, and one reopened after a save
+// would show the value from before it. Resetting only while the form is clean
+// leaves a half-typed edit alone.
+watchImmediate(organization, (org) => {
+	if (!org || form.meta.value.dirty) {
+		return
+	}
+
+	form.resetForm({
+		values: {
+			logoUrl: org.logo || "",
+			name: org.name,
+		},
+	})
+})
 
 const onSubmit = form.handleSubmit(async (values) => {
-	const submittedValues = { ...form.values }
+	const submittedValues = { ...values }
 
 	const data: { logo?: string; name?: string } = {}
 	if (values.logoUrl !== fetchOrganization.state.value.data?.data?.logo) {
