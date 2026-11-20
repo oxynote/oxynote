@@ -1,0 +1,238 @@
+# labels for actions/labeler. A pull request gets every label whose rule
+# matches at least one changed file. Under all-globs-to-any-file, one file
+# must match every glob, so a "!" glob carves a folder out of a wider one.
+# Feature globs match folder names at any depth, so a new package or handler
+# under an existing feature name is labeled without a change here.
+
+# components
+
+web:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/**
+
+electron:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/electron/**
+          - web/forge.config.ts
+          - web/vite.electron.config.ts
+          - web/app/plugins/{electron-auth.client,host.client,01.process-user-agent}.ts
+          - web/app/composables/useDetectHost.ts
+          - web/app/pages/desktop-auth.vue
+
+server/core:
+  - changed-files:
+      - any-glob-to-any-file:
+          - server/core/**
+
+server/auth-realtime:
+  - changed-files:
+      - any-glob-to-any-file:
+          - server/auth-realtime/**
+
+packages/common:
+  - changed-files:
+      - any-glob-to-any-file:
+          - packages/common/**
+
+datagen:
+  - changed-files:
+      - any-glob-to-any-file:
+          - datagen/**
+          - docker/demo/**
+
+e2e:
+  - changed-files:
+      - any-glob-to-any-file:
+          - e2e/**
+
+docker:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docker/**
+          - "**/.goreleaser.yml"
+
+dev-env:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/Makefile"
+          - scripts/**
+          - server/core/scripts/**
+          - .vscode/**
+          - .gitignore
+          - .gitattributes
+          - "**/.dockerignore"
+          - "**/Dockerfile.dev"
+
+github_actions:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/workflows/**
+          - .github/dependabot.yml
+          - .github/labeler.yml
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/**
+          - "**/README.md"
+          - "{CONTRIBUTING,SECURITY}.md"
+          - LICENSE
+          - .github/ISSUE_TEMPLATE/**
+          - .github/pull_request_template.md
+
+# features
+
+editor:
+  - changed-files:
+      - all-globs-to-any-file:
+          - web/app/components/editor/**
+          - "!web/app/components/editor/{hooks,diff,comments,ai}/**"
+      - any-glob-to-any-file:
+          - web/app/stores/editor.ts
+          - web/app/composables/useEditorMeta.ts
+          - web/app/utils/{tiptap,block-icon}.ts
+          - server/core/internal/document/{node,attribute}*
+          - server/auth-realtime/src/schema/**
+          - packages/common/src/grid*
+          - e2e/*/{editor,grid,collaboration}*
+
+document-branches:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/app/components/editor/{diff,comments}/**
+          - web/app/components/editor/ReviewerList.vue
+          - web/app/components/{BranchViewers,DisableReviewabilityModal}.vue
+          - web/app/composables/useDiff*.ts
+          - web/app/composables/api/useDocumentCommentAPI.ts
+          - web/app/utils/api/comment.ts
+          - server/core/internal/**/{comment,history}/**
+          - server/core/internal/**/branch*
+          - server/core/internal/document/{reviewer,view}.go
+          - server/core/internal/db/document_{branch,comment,reviewers}*
+          - server/auth-realtime/src/ydocument*
+          - e2e/*/{review,comments}*
+
+freshness-hooks:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/app/components/editor/hooks/**
+          - web/app/composables/api/useDocumentHookAPI.ts
+          - server/core/internal/**/hook/**
+          - server/core/internal/apps/{webchange,registry}/**
+          - server/core/internal/db/document_hook*
+
+assistant-mcp:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/app/components/editor/ai/**
+          - web/app/components/AIChatSidebar.vue
+          - web/app/components/settings/McpSection.vue
+          - web/app/composables/useAIChat.ts
+          - web/app/composables/api/useMCPAPI.ts
+          - web/app/utils/api/{ai,mcp}.ts
+          - server/core/internal/**/{assistant,mcp}/**
+          - server/auth-realtime/src/operations*
+          - docs/ai.md
+          - e2e/*/mcp*
+
+data-sources:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/app/components/editor/blocks/{metrics,logs,traces,config-modal-utils}/**
+          - web/app/components/**/*DataSource*
+          - web/app/composables/api/*{DataSource,prometheus}*
+          - web/app/utils/api/data-source/**
+          - web/app/utils/promql.ts
+          - web/app/assets/custom-icons/{loki,prometheus,tempo}*
+          - server/core/internal/**/datasource/**
+          - server/core/internal/{server/internal/block,document/blockrun}/**
+          - server/core/internal/document/metric*
+          - server/core/internal/db/data_source*
+          - server/auth-realtime/src/schema/{metric,log,trace}*
+          - e2e/*/{logs,traces}*
+
+variables:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/app/components/variables/**
+          - web/app/components/editor/blocks/variables*
+          - web/app/composables/{useVariableUsage,api/useVariableAPI}.ts
+          - web/app/utils/{variable,time-range,api/variable}.ts
+          - web/i18n/locales/*/variable.json
+          - server/core/internal/**/variable/**
+          - server/core/internal/db/variable*
+
+document-tags:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/app/components/**/{Tag,DocumentTag,SidebarTag}*
+          - web/app/components/editor/tag-fit*
+          - web/app/composables/api/useTagAPI.ts
+          - web/app/utils/{tag-color,api/tag}.ts
+          - server/core/internal/**/tag/**
+          - server/core/internal/db/tag*
+          - e2e/*/tags*
+
+files:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/app/components/editor/blocks/{file,image}/**
+          - web/app/components/editor/blocks/upload-handler*
+          - web/app/composables/api/{useDocumentFileAPI,file-utils}.ts
+          - server/core/internal/storage/**
+          - server/core/internal/**/{file,files}/**
+          - server/core/internal/db/document_file*
+          - e2e/*/files*
+
+notifications:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/app/components/{Notification,notification}*
+          - web/app/composables/api/useNotificationAPI.ts
+          - web/app/utils/api/notification.ts
+          - web/i18n/locales/*/notification.json
+          - server/core/internal/**/{notification,email}/**
+          - server/core/internal/db/notification*
+          - e2e/*/{inbox,mailpit}*
+
+search:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/app/components/Search*.vue
+          - server/core/internal/**/search/**
+          - e2e/*/search*
+
+auth:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/app/pages/{login,signup,reset-password,verify-email,accept-invite,oauth-consent,desktop-auth,auth-error}.vue
+          - web/app/components/settings/{PasswordChange,EmailChange,AccountDeletion,WorkspaceInvitation,WorkspaceMemberRemoval}Action.vue
+          - web/app/plugins/{02.auth,electron-auth.client}.ts
+          - web/app/composables/{useAuthSession,api/useAuthAPI}.ts
+          - web/app/utils/{auth,member-roles,api/auth}.ts
+          - web/i18n/locales/*/oauth.json
+          - server/auth-realtime/src/{auth,roles}.ts
+          - server/core/internal/**/auth/**
+          - server/core/internal/org/role*
+          - docker/docker-compose.oidc.yaml
+          - e2e/*/{login,logout,signup,password-reset,*oidc*,keycloak,invitation,roles,access,auth}*
+
+# changes that need a closer look
+
+migration:
+  - changed-files:
+      - any-glob-to-any-file:
+          - server/core/internal/db/migrations/**
+          - server/auth-realtime/sql/**
+
+editor-schema-version:
+  - changed-files:
+      - any-glob-to-any-file:
+          - packages/common/src/schema-version.ts
+
+caddy-config:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/Caddyfile"

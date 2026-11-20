@@ -23,14 +23,14 @@ const _testGenericQueryTarget = "http://test.com/?q=up&chartType=line_chart&from
 // variable that stubVariables resolves to up.
 const _testVariableQueryTarget = "http://test.com/?q=$metric&chartType=line_chart&from=2024-01-01T00:00:00Z&to=2024-01-02T00:00:00Z"
 
-// stubPrometheusQueryClients returns the clients a runner hands out,
-// whose Prometheus query yields the provided values. A status the
+// stubMetricsQueryClients returns the clients a runner hands out,
+// whose metrics query yields the provided values. A status the
 // connection refused is how the accessor fails rather than something the
 // query returns.
-func stubPrometheusQueryClients(cs processor.ConnectionStatus, result *processor.PrometheusQueryResult, err error) *clientMocks {
+func stubMetricsQueryClients(cs processor.ConnectionStatus, result *processor.PrometheusQueryResult, err error) *clientMocks {
 	return &clientMocks{
 		err: cs.Error(),
-		prometheus: &datasourceMock.Prometheus{
+		metrics: &datasourceMock.Metrics{
 			QueryRangeFunc: func(_ context.Context, _ string, _ processor.TimeRange) (*processor.PrometheusQueryResult, error) {
 				return result, err
 			},
@@ -65,13 +65,13 @@ func stubPostgreSQLQueryClients(cs processor.ConnectionStatus, result *processor
 }
 
 func Test_Handler_QueryDataSource(t *testing.T) {
-	wasExecutorQueryCalled := func(prometheus, mysql, postgresql int) check {
+	wasExecutorQueryCalled := func(metrics, mysql, postgresql int) check {
 		return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
-			assert.Len(t, exec.prometheus.QueryRangeCalls(), prometheus)
+			assert.Len(t, exec.metrics.QueryRangeCalls(), metrics)
 			assert.Len(t, exec.mySQL.QueryCalls(), mysql)
 			assert.Len(t, exec.postgreSQL.QueryCalls(), postgresql)
 
-			for _, f := range exec.prometheus.QueryRangeCalls() {
+			for _, f := range exec.metrics.QueryRangeCalls() {
 				assert.Equal(t, "up", f.Q)
 			}
 
@@ -91,9 +91,9 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 		}
 	}
 
-	wasExecutorClientCalled := func(prometheus, mysql, postgresql int) check {
+	wasExecutorClientCalled := func(metrics, mysql, postgresql int) check {
 		return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
-			assert.Len(t, exec.runner.PrometheusCalls(), prometheus)
+			assert.Len(t, exec.runner.MetricsCalls(), metrics)
 			assert.Len(t, exec.runner.MySQLCalls(), mysql)
 			assert.Len(t, exec.runner.PostgreSQLCalls(), postgresql)
 		}
@@ -204,9 +204,9 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 				wasExecutorClientCalled(0, 0, 0),
 			),
 		},
-		"Error returned by Prometheus.QueryRange": {
+		"Error returned by Metrics.QueryRange": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Clients: stubPrometheusQueryClients("", nil, assert.AnError),
+			Clients: stubMetricsQueryClients("", nil, assert.AnError),
 			Target:  _testGenericQueryTarget,
 			ID:      _testID.String(),
 			Checks: checks(
@@ -219,9 +219,9 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 				wasExecutorClientCalled(1, 0, 0),
 			),
 		},
-		"Error returned by Runner.Prometheus": {
+		"Error returned by Runner.Metrics": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Clients: stubPrometheusQueryClients(processor.ConnectionStatusUnreachable, nil, nil),
+			Clients: stubMetricsQueryClients(processor.ConnectionStatusUnreachable, nil, nil),
 			Target:  _testGenericQueryTarget,
 			ID:      _testID.String(),
 			Checks: checks(
@@ -236,7 +236,7 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 		},
 		"Successful query": {
 			DB: stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Clients: stubPrometheusQueryClients(processor.ConnectionStatusSuccess, &processor.PrometheusQueryResult{
+			Clients: stubMetricsQueryClients(processor.ConnectionStatusSuccess, &processor.PrometheusQueryResult{
 				Type: model.ValMatrix,
 				Result: model.Matrix{
 					&model.SampleStream{
@@ -261,7 +261,7 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 		},
 		"Prometheus dispatch": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Clients: stubPrometheusQueryClients(processor.ConnectionStatusSuccess, nil, nil),
+			Clients: stubMetricsQueryClients(processor.ConnectionStatusSuccess, nil, nil),
 			Target:  _testGenericQueryTarget,
 			ID:      _testID.String(),
 			Checks: checks(
@@ -351,7 +351,7 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 		},
 		"Prometheus substituted variables": {
 			DB:        stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Clients:   stubPrometheusQueryClients(processor.ConnectionStatusSuccess, nil, nil),
+			Clients:   stubMetricsQueryClients(processor.ConnectionStatusSuccess, nil, nil),
 			Variables: stubVariables(nil),
 			Target:    _testVariableQueryTarget,
 			ID:        _testID.String(),

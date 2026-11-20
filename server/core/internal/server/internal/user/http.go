@@ -9,6 +9,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
 	userCore "github.com/oxynote/oxynote/server/core/internal/user"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 )
@@ -56,7 +57,7 @@ func (h *Handler) RetrieveUserImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !found {
-		http.NotFound(w, r)
+		httpserver.RespondError(h.log, w, errutil.ErrNotFound)
 		return
 	}
 

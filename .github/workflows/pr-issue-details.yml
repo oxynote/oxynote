@@ -1,0 +1,100 @@
+name: Issue details
+
+# pull_request_target lets this job update pull requests from forks too.
+# It has write access, so it must never run code from the pull request.
+on:
+  pull_request_target:
+    types:
+      - opened
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  copy:
+    name: Copying the assignees and milestone of the linked issue
+    runs-on: ubuntu-latest
+    permissions:
+      issues: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      # GitHub itself reads keywords like "Fixes #123" in the description
+      # and reports the issues they name, so the description is never
+      # parsed here. An issue counts only when the pull request's author is
+      # one of its assignees. Otherwise anyone could name an issue and get
+      # its assignees and milestone on their own pull request. The milestone
+      # has one exception: a branch in this repository can only be pushed
+      # by someone with write access, so its pull request takes the
+      # milestone of any linked issue. An issue in another repository is
+      # dropped, because its milestone does not exist in this one. gh
+      # replaces {owner} and {repo} with the two halves of GH_REPO.
+      - name: Find the linked issues
+        run: |
+          gh api graphql \
+            -F owner='{owner}' -F repo='{repo}' -F number="$PR_NUMBER" \
+            -f query='
+              query ($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    author { login }
+                    isCrossRepository
+                    assignees { totalCount }
+                    milestone { number }
+                    closingIssuesReferences(first: 10) {
+                      nodes {
+                        repository { nameWithOwner }
+                        milestone { number }
+                        assignees(first: 10) { nodes { login } }
+                      }
+                    }
+                  }
+                }
+              }' \
+            --jq '
+              .data.repository.pullRequest
+              | .author.login as $author
+              | [
+                  .closingIssuesReferences.nodes[]
+                  | select(.repository.nameWithOwner == env.GH_REPO)
+                ] as $issues
+              | .assigneeIssues = [
+                  $issues[]
+                  | select(any(.assignees.nodes[]; .login == $author))
+                ]
+              | .milestoneIssues =
+                  if .isCrossRepository then .assigneeIssues else $issues end
+              | del(.closingIssuesReferences)' \
+            > pull-request.json
+
+      # assignees and a milestone chosen while opening the pull request are
+      # kept, so each one is copied only when the pull request has none.
+      - name: Copy the assignees
+        run: |
+          current=$(jq '.assignees.totalCount' pull-request.json)
+          jq \
+            '{assignees: [.assigneeIssues[].assignees.nodes[].login] | unique}' \
+            pull-request.json > linked-assignees.json
+          linked=$(jq '.assignees | length' linked-assignees.json)
+
+          if [[ "$current" == "0" && "$linked" != "0" ]]; then
+            gh api --silent --method POST \
+              "repos/{owner}/{repo}/issues/$PR_NUMBER/assignees" \
+              --input linked-assignees.json
+          fi
+
+      - name: Copy the milestone
+        run: |
+          current=$(jq '.milestone.number' pull-request.json)
+          linked=$(jq '[.milestoneIssues[].milestone.number | values] | first' \
+            pull-request.json)
+
+          if [[ "$current" == "null" && "$linked" != "null" ]]; then
+            gh api --silent --method PATCH \
+              "repos/{owner}/{repo}/issues/$PR_NUMBER" \
+              -F milestone="$linked"
+          fi

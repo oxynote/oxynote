@@ -150,11 +150,17 @@ void app.whenReady().then(() => {
 	// to the API. The cookie value lives in main's electron-store (encrypted
 	// via safeStorage); Chromium's network stack runs in main, so injection
 	// happens before the request crosses into the renderer's world — the
-	// renderer never holds the cookie in its JS heap. /api/auth/* is carved
-	// out so renderer code can't accidentally use the session against the
-	// auth endpoints (those must keep going through main's IPC bridge).
+	// renderer never holds the cookie in its JS heap. The auth endpoints are
+	// carved out so renderer code can't use the session against them (those
+	// must keep going through main's IPC bridge). The reverse proxy serves
+	// them in two places: under the API base path, which it strips only after
+	// this check, and at the origin root.
 	const apiOrigin = new URL(__API_BASE_URL__).origin
 	const apiWsOrigin = apiOrigin.replace(/^http/, "ws")
+	const authPathPrefixes = [
+		`${new URL(__API_BASE_URL__).pathname.replace(/\/$/, "")}/api/auth/`,
+		"/api/auth/",
+	]
 
 	registerFileDownloadIpcHandler(apiOrigin)
 
@@ -195,7 +201,7 @@ void app.whenReady().then(() => {
 		{ urls: [`${apiOrigin}/*`, `${apiWsOrigin}/*`] },
 		(details, callback) => {
 			const url = new URL(details.url)
-			if (url.pathname.startsWith("/api/auth/")) {
+			if (authPathPrefixes.some((prefix) => url.pathname.startsWith(prefix))) {
 				callback({ requestHeaders: details.requestHeaders })
 				return
 			}

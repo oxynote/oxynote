@@ -24,14 +24,14 @@ var _ datasource.Runner = &Runner{}
 //			LogsFunc: func(ctx context.Context) (datasource.Logs, error) {
 //				panic("mock out the Logs method")
 //			},
+//			MetricsFunc: func(ctx context.Context) (datasource.Metrics, error) {
+//				panic("mock out the Metrics method")
+//			},
 //			MySQLFunc: func(ctx context.Context) (datasource.MySQL, error) {
 //				panic("mock out the MySQL method")
 //			},
 //			PostgreSQLFunc: func(ctx context.Context) (datasource.PostgreSQL, error) {
 //				panic("mock out the PostgreSQL method")
-//			},
-//			PrometheusFunc: func(ctx context.Context) (datasource.Prometheus, error) {
-//				panic("mock out the Prometheus method")
 //			},
 //			SQLFunc: func(ctx context.Context) (datasource.SQL, error) {
 //				panic("mock out the SQL method")
@@ -52,14 +52,14 @@ type Runner struct {
 	// LogsFunc mocks the Logs method.
 	LogsFunc func(ctx context.Context) (datasource.Logs, error)
 
+	// MetricsFunc mocks the Metrics method.
+	MetricsFunc func(ctx context.Context) (datasource.Metrics, error)
+
 	// MySQLFunc mocks the MySQL method.
 	MySQLFunc func(ctx context.Context) (datasource.MySQL, error)
 
 	// PostgreSQLFunc mocks the PostgreSQL method.
 	PostgreSQLFunc func(ctx context.Context) (datasource.PostgreSQL, error)
-
-	// PrometheusFunc mocks the Prometheus method.
-	PrometheusFunc func(ctx context.Context) (datasource.Prometheus, error)
 
 	// SQLFunc mocks the SQL method.
 	SQLFunc func(ctx context.Context) (datasource.SQL, error)
@@ -77,6 +77,11 @@ type Runner struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 		}
+		// Metrics holds details about calls to the Metrics method.
+		Metrics []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+		}
 		// MySQL holds details about calls to the MySQL method.
 		MySQL []struct {
 			// Ctx is the ctx argument value.
@@ -84,11 +89,6 @@ type Runner struct {
 		}
 		// PostgreSQL holds details about calls to the PostgreSQL method.
 		PostgreSQL []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-		}
-		// Prometheus holds details about calls to the Prometheus method.
-		Prometheus []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 		}
@@ -107,9 +107,9 @@ type Runner struct {
 		}
 	}
 	lockLogs           sync.RWMutex
+	lockMetrics        sync.RWMutex
 	lockMySQL          sync.RWMutex
 	lockPostgreSQL     sync.RWMutex
-	lockPrometheus     sync.RWMutex
 	lockSQL            sync.RWMutex
 	lockTestConnection sync.RWMutex
 	lockType           sync.RWMutex
@@ -148,6 +148,42 @@ func (mock *Runner) LogsCalls() []struct {
 	mock.lockLogs.RLock()
 	calls = mock.calls.Logs
 	mock.lockLogs.RUnlock()
+	return calls
+}
+
+// Metrics calls MetricsFunc.
+func (mock *Runner) Metrics(ctx context.Context) (datasource.Metrics, error) {
+	callInfo := struct {
+		Ctx context.Context
+	}{
+		Ctx: ctx,
+	}
+	mock.lockMetrics.Lock()
+	mock.calls.Metrics = append(mock.calls.Metrics, callInfo)
+	mock.lockMetrics.Unlock()
+	if mock.MetricsFunc == nil {
+		var (
+			metricsOut datasource.Metrics
+			errOut     error
+		)
+		return metricsOut, errOut
+	}
+	return mock.MetricsFunc(ctx)
+}
+
+// MetricsCalls gets all the calls that were made to Metrics.
+// Check the length with:
+//
+//	len(mockedRunner.MetricsCalls())
+func (mock *Runner) MetricsCalls() []struct {
+	Ctx context.Context
+} {
+	var calls []struct {
+		Ctx context.Context
+	}
+	mock.lockMetrics.RLock()
+	calls = mock.calls.Metrics
+	mock.lockMetrics.RUnlock()
 	return calls
 }
 
@@ -220,42 +256,6 @@ func (mock *Runner) PostgreSQLCalls() []struct {
 	mock.lockPostgreSQL.RLock()
 	calls = mock.calls.PostgreSQL
 	mock.lockPostgreSQL.RUnlock()
-	return calls
-}
-
-// Prometheus calls PrometheusFunc.
-func (mock *Runner) Prometheus(ctx context.Context) (datasource.Prometheus, error) {
-	callInfo := struct {
-		Ctx context.Context
-	}{
-		Ctx: ctx,
-	}
-	mock.lockPrometheus.Lock()
-	mock.calls.Prometheus = append(mock.calls.Prometheus, callInfo)
-	mock.lockPrometheus.Unlock()
-	if mock.PrometheusFunc == nil {
-		var (
-			prometheusOut datasource.Prometheus
-			errOut        error
-		)
-		return prometheusOut, errOut
-	}
-	return mock.PrometheusFunc(ctx)
-}
-
-// PrometheusCalls gets all the calls that were made to Prometheus.
-// Check the length with:
-//
-//	len(mockedRunner.PrometheusCalls())
-func (mock *Runner) PrometheusCalls() []struct {
-	Ctx context.Context
-} {
-	var calls []struct {
-		Ctx context.Context
-	}
-	mock.lockPrometheus.RLock()
-	calls = mock.calls.Prometheus
-	mock.lockPrometheus.RUnlock()
 	return calls
 }
 

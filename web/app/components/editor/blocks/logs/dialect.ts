@@ -31,6 +31,11 @@ export interface LogDialect {
 	// lineKeyName names a key read from the log's line the way the source
 	// names it once parsed
 	lineKeyName(key: string, log: Log): string
+	// logfmtParseFailed reports whether the source stopped parsing the line
+	logfmtParseFailed(log: Log): boolean
+	// decodeLogfmtValue reads a value as the source does, or gives null
+	// when the source would reject it
+	decodeLogfmtValue(raw: string): string | null
 	// repeatsLineKey tells whether a key the source parsed repeats a key of
 	// the line. A key the source made from a nested value counts only when
 	// nested is true.

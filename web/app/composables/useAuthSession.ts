@@ -208,9 +208,8 @@ export default function () {
 		return $authClient.resetPassword(...args)
 	}
 
-	// signup also rides the IPC bridge on desktop: the packaged renderer's
-	// oxynote:// origin is not CORS-trusted by the auth server, so a direct
-	// renderer call would only work in hybrid dev.
+	// signup also rides the IPC bridge on desktop: it signs the user in,
+	// and the session must land in main's store, never in the renderer.
 	function signUpEmailPassword(
 		...args: Parameters<typeof $authClient.signUp.email>
 	) {

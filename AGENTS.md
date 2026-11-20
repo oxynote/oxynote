@@ -105,6 +105,9 @@ components:
   auth-realtime both run (grid layout, editor schema version). No DOM or
   Node code; imported only through subpaths (`@oxynote/common/grid`).
 - `scripts/` — helpers the root Makefile calls.
+- `.github/labeler.yml` — labels pull requests by the paths they change.
+  A change that adds, moves or renames a feature's files (a data source,
+  block type or package) updates its globs too.
 
 One `.gitignore`, at the repository root. Nested rules carry their path
 (`e2e/test-results/`).

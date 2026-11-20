@@ -79,7 +79,7 @@ interface ReadLine {
 export function summarizeLog(log: Log, dialect: LogDialect): LogSummary {
 	const shown = (key: string) =>
 		log.level === LogLevel.Unknown || !LEVEL_KEYS.has(key)
-	const line = readLine(log.line)
+	const line = readLine(log, dialect)
 	const messageKey = line
 		? MESSAGE_KEYS.find((k) => typeof line.record[k] === "string")
 		: undefined
@@ -113,7 +113,7 @@ export function extractedFields(
 	log: Log,
 	dialect: LogDialect,
 ): ExtractedField[] {
-	return extract(log, readLine(log.line), dialect, false)
+	return extract(log, readLine(log, dialect), dialect, false)
 }
 
 // displayValue quotes a value when it is empty or holds white space, so the
@@ -317,10 +317,18 @@ function extract(
 
 // readLine reads a JSON or logfmt line key by key, or gives null for any
 // other line
-function readLine(line: string): ReadLine | null {
+function readLine(log: Log, dialect: LogDialect): ReadLine | null {
+	const line = log.line
+
 	const json = parseJSONObject(line)
 	if (json) {
 		return { record: json, format: LineFormat.JSON, continuation: "" }
+	}
+
+	// a strict parser stops at its first error, so later fields cannot
+	// be offered as filters even when they look valid locally.
+	if (dialect.logfmtParseFailed(log)) {
+		return null
 	}
 
 	const newline = line.indexOf("\n")
@@ -328,13 +336,18 @@ function readLine(line: string): ReadLine | null {
 		/\r$/,
 		"",
 	)
-	const logfmt = parseLogfmt(firstLine)
+	const logfmt = parseLogfmt(firstLine, log, dialect)
 
 	return logfmt
 		? {
-				record: logfmt,
+				record: logfmt.record,
 				format: LineFormat.Logfmt,
-				continuation: newline < 0 ? "" : line.slice(newline + 1),
+				continuation: [
+					logfmt.rejected,
+					newline < 0 ? "" : line.slice(newline + 1),
+				]
+					.filter(Boolean)
+					.join("\n"),
 			}
 		: null
 }
@@ -355,8 +368,8 @@ function parseJSONObject(text: string): Record<string, unknown> | null {
 	}
 }
 
-// keepNumberText keeps a number as written, because Loki compares that
-// text. JSON.parse reads 25.0 as 25 and rounds integers past 2^53.
+// keepNumberText keeps a number as written for sources that use its text.
+// JSON.parse reads 25.0 as 25 and rounds integers past 2^53.
 function keepNumberText(
 	_key: string,
 	value: unknown,
@@ -371,10 +384,15 @@ export function isNumberText(value: unknown): boolean {
 	return SOURCE_JSON.isRawJSON?.(value) ?? false
 }
 
-// parseLogfmt reads a line made only of logfmt pairs. A line with any other
-// word is plain text, so it gives null.
-function parseLogfmt(line: string): Record<string, string> | null {
-	const pairs: KeyValue[] = []
+// parseLogfmt keeps the first valid value of each key. Empty values may
+// be replaced unless the source's parser explicitly retained one.
+function parseLogfmt(
+	line: string,
+	log: Log,
+	dialect: LogDialect,
+): { record: Record<string, string>; rejected: string } | null {
+	const values = new Map<string, string>()
+	const rejected: string[] = []
 	let at = 0
 
 	while (/\S/.test(line.slice(at))) {
@@ -384,20 +402,23 @@ function parseLogfmt(line: string): Record<string, string> | null {
 			return null
 		}
 
-		const [, key = "", value = ""] = match
-		pairs.push([key, value.startsWith('"') ? unquote(value) : value])
+		const [, key = "", raw = ""] = match
+		const value = dialect.decodeLogfmtValue(raw)
+
+		if (value === null) {
+			rejected.push(match[0].trimStart())
+		} else if (
+			!values.has(key) ||
+			(values.get(key) === "" &&
+				log.parsed?.[dialect.lineKeyName(key, log)] !== "")
+		) {
+			values.set(key, value)
+		}
+
 		at = LOGFMT_PAIR.lastIndex
 	}
 
-	return pairs.length ? Object.fromEntries(pairs) : null
-}
-
-// unquote reads a quoted logfmt value. An escape JSON does not know, such
-// as Go's \x, leaves the text between the quotes as written.
-function unquote(quoted: string): string {
-	try {
-		return String(JSON.parse(quoted))
-	} catch {
-		return quoted.slice(1, -1)
-	}
+	return values.size
+		? { record: Object.fromEntries(values), rejected: rejected.join(" ") }
+		: null
 }

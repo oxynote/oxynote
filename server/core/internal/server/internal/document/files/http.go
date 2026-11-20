@@ -201,7 +201,7 @@ func (h *Handler) RetrieveDocumentFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !found {
-		http.NotFound(w, r)
+		httpserver.RespondError(h.log, w, errutil.ErrNotFound)
 		return
 	}
 

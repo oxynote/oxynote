@@ -36,8 +36,8 @@ const (
 const (
 	NameListDataSources       Name = "list_data_sources"
 	NameGetDataSourceMetadata Name = "get_data_source_metadata"
-	NameListPrometheusLabels  Name = "list_prometheus_labels"
-	NameListPrometheusSeries  Name = "list_prometheus_series"
+	NameListMetricLabels      Name = "list_metric_labels"
+	NameListMetricSeries      Name = "list_metric_series"
 	NameListLogFields         Name = "list_log_fields"
 	NameQueryDataSource       Name = "query_data_source"
 )
@@ -122,8 +122,8 @@ func New(deps *Deps, role org.Role) *Set {
 		register[searchDocuments](),
 		register[listDataSources](),
 		register[getDataSourceMetadata](),
-		register[listPrometheusLabels](),
-		register[listPrometheusSeries](),
+		register[listMetricLabels](),
+		register[listMetricSeries](),
 		register[listLogFields](),
 		register[queryDataSource](),
 

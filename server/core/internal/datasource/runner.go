@@ -52,6 +52,14 @@ var _errDataSourceChanged = errutil.New(
 	"The data source changed while it was being read. Try again.",
 )
 
+// _errNoDemo is returned when a data source names a demo URL but its type
+// has no demo.
+var _errNoDemo = errutil.New(
+	http.StatusBadRequest,
+	"data_source.no_demo",
+	"this data source type has no demo",
+)
+
 // Manager hands out the runner for a data source.
 //
 // It keeps one runner per data source, so the connections a runner opens
@@ -317,6 +325,11 @@ func (m *Manager) release(r *runner) {
 
 // newClient builds the processor the data source's type calls for.
 func (m *Manager) newClient(ds DataSource) (ownedClient, error) {
+	// only Prometheus and Loki have a demo.
+	if ds.Type != TypePrometheus && ds.Type != TypeLoki && strings.HasPrefix(ds.URL, demo.Scheme) {
+		return nil, _errNoDemo
+	}
+
 	switch ds.Type {
 	case TypePrometheus:
 		return m.prometheusClient(ds)
@@ -328,6 +341,10 @@ func (m *Manager) newClient(ds DataSource) (ownedClient, error) {
 		return processor.NewMySQL(newStateInput(ds.URL, ds.Credentials)), nil
 	case TypeLoki:
 		return m.lokiClient(ds)
+	case TypeVictoriaLogs:
+		return processor.NewVictoriaLogs(newStateInput(ds.URL, ds.Credentials)), nil
+	case TypeVictoriaMetrics:
+		return processor.NewVictoriaMetrics(newStateInput(ds.URL, ds.Credentials)), nil
 	default:
 		return nil, errors.New("invalid data source type")
 	}
@@ -426,15 +443,15 @@ func (r *runner) TestConnection(ctx context.Context) (processor.ConnectionStatus
 	return client.TestConnection(ctx)
 }
 
-// Prometheus returns the data source's Prometheus client, whose range
-// queries are answered out of the query cache.
-func (r *runner) Prometheus(ctx context.Context) (Prometheus, error) {
-	client, err := connect[Prometheus](ctx, r, TypePrometheus)
+// Metrics returns the data source's metrics client, whose range queries
+// are answered out of the query cache.
+func (r *runner) Metrics(ctx context.Context) (Metrics, error) {
+	client, err := connect[Metrics](ctx, r, TypePrometheus, TypeVictoriaMetrics)
 	if err != nil {
 		return nil, err
 	}
 
-	return cachedPrometheus{Prometheus: client, m: r.m, ds: r.ds}, nil
+	return cachedMetrics{Metrics: client, m: r.m, ds: r.ds}, nil
 }
 
 // PostgreSQL returns the data source's PostgreSQL client, whose queries are
@@ -467,7 +484,7 @@ func (r *runner) SQL(ctx context.Context) (SQL, error) {
 // Logs returns the data source's log client, whose reads are answered out
 // of the query cache.
 func (r *runner) Logs(ctx context.Context) (Logs, error) {
-	client, err := connect[Logs](ctx, r, TypeLoki)
+	client, err := connect[Logs](ctx, r, TypeLoki, TypeVictoriaLogs)
 	if err != nil {
 		return nil, err
 	}
@@ -632,8 +649,8 @@ type Runner interface {
 	// found, without recording it.
 	TestConnection(ctx context.Context) (processor.ConnectionStatus, error)
 
-	// Prometheus should return the data source's Prometheus client.
-	Prometheus(ctx context.Context) (Prometheus, error)
+	// Metrics should return the data source's metrics client.
+	Metrics(ctx context.Context) (Metrics, error)
 
 	// PostgreSQL should return the data source's PostgreSQL client.
 	PostgreSQL(ctx context.Context) (PostgreSQL, error)
@@ -657,10 +674,11 @@ type StatusStore interface {
 	UpdateDataSourceStatus(ctx context.Context, id xid.ID, organizationID string, status processor.ConnectionStatus) error
 }
 
-// Prometheus represents a Prometheus data source processor.
+// Metrics represents a processor of a data source that serves the
+// Prometheus HTTP API.
 //
-//go:generate ../../scripts/codegen/mock Prometheus
-type Prometheus interface {
+//go:generate ../../scripts/codegen/mock Metrics
+type Metrics interface {
 	connectionTester
 
 	// Metadata retrieves metadata about the data source.

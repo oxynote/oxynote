@@ -212,21 +212,29 @@ welcome.
 
 ### Good First Issues
 
-Issues labeled `good first issue` are for first-time contributors, meaning
+Issues labeled `good first issue` are reserved for newcomers, meaning
 people who haven't had a pull request merged into Oxynote yet. Each one is
-small and usually comes with step-by-step instructions. We set these
-issues aside so someone new can learn the codebase and our review process
-on an easy change. We help as much as we can with that first pull request,
-even when Go or Vue is new to you.
+small and usually comes with step-by-step instructions. We want Oxynote
+to be easy to start contributing to, so these issues let you learn the
+codebase and our review process on an easy change. We help as much as we
+can with that first pull request, even when Go, Nuxt, Node.js, or Vue is new to you.
 
-We prefer that each first-time contributor works on only one good first
-issue. After that, you can still work on one, but newcomers get priority. If a
-first-time contributor also opens a pull request for it, we merge theirs
-instead of yours. We have plenty of other
+To work on one, comment on it, ask to be assigned and wait until we assign
+you, as [Claiming an Issue](#claiming-an-issue) describes. For these
+issues, the assignment is required. We close a pull request for a good
+first issue from anyone who isn't assigned to it, however good the code
+is. That way nobody else starts on the same issue, and your work doesn't
+go to waste.
+
+Each newcomer gets one good first issue. Once your pull request for one is
+merged, or open and waiting for review, please leave the others to the
+next newcomer. As an existing contributor, you can still work on one, but
+only if you ask in a comment and we assign it to you. We have plenty of
+other
 [bug](https://github.com/oxynote/oxynote/issues?q=is%3Aissue+state%3Aopen+type%3ABug)
 and
 [improvement](https://github.com/oxynote/oxynote/issues?q=is%3Aissue+state%3Aopen+type%3AImprovement)
-issues you can work on.
+issues you can work on, and we'd be glad to have your help there.
 
 ### Duplicate Pull Requests
 
@@ -240,10 +248,7 @@ close the others. We review them in the order of this list, from highest
 priority to lowest, and merge the first one that meets our requirements:
 
 1. The pull request from the person assigned to the issue.
-2. On a good first issue, pull requests from first-time contributors, in
-   the order they were opened. They take priority over pull requests from
-   returning contributors, even ones opened earlier.
-3. All other pull requests, in the order they were opened.
+2. All other pull requests, in the order they were opened.
 
 ### When We Close a Pull Request
 
@@ -254,6 +259,8 @@ We close a pull request when it:
   ([Discuss First](#discuss-first))
 - targets an issue labeled `maintainers only` and isn't from a maintainer
   ([Claiming an Issue](#claiming-an-issue))
+- targets a `good first issue` and comes from someone who isn't assigned to
+  it ([Good First Issues](#good-first-issues))
 - targets the same issue as a pull request with higher priority
   ([Duplicate Pull Requests](#duplicate-pull-requests))
 - changes more than its issue asks for, such as by reformatting or
@@ -261,6 +268,15 @@ We close a pull request when it:
 - contains code its author can't explain in review
   ([Code Standards and AGENTS.md](#code-standards-and-agentsmd))
 - doesn't fit Oxynote's direction, even when the code is good
+- looks like one of many automated pull requests, opened without a person
+  checking the result
+
+On that last point: a lot of automated bots open pull requests for issues
+labeled `good first issue`, and those take the issues away from the
+newcomers they're meant for. You're welcome to use AI tools, as long as
+you've read the change yourself and can answer questions about it. We only
+want to keep review time for pull requests that a person stands behind. If
+we closed yours by mistake, tell us in a comment and we'll reopen it.
 
 ## Naming Commits and Pull Requests
 

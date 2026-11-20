@@ -22,6 +22,7 @@ func Test_Ellipsize(t *testing.T) {
 		"Negative limit":         {Input: "abcdef", MaxLen: -1, Result: "abcdef"},
 		"Multibyte runes":        {Input: "ąčęėįš", MaxLen: 3, Result: "ąčę…"},
 		"Empty input":            {Input: "", MaxLen: 3, Result: ""},
+		"Multibyte at limit":     {Input: "ąčę", MaxLen: 3, Result: "ąčę"},
 	}
 
 	for cn, c := range cc {

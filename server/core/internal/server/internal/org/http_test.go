@@ -1066,6 +1066,7 @@ func Test_Handler_RetrieveOrganizationLogo(t *testing.T) {
 			Checks: checks(
 				func(t *testing.T, _ *StorerMock, rec *httptest.ResponseRecorder) {
 					assert.Equal(t, http.StatusNotFound, rec.Code)
+					assert.JSONEq(t, `{"code":"general","message":"not found"}`, rec.Body.String())
 				},
 				wasRetrieveCalled(1),
 			),
