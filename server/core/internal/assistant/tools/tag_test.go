@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -46,7 +47,7 @@ func Test_listTags_Info(t *testing.T) {
 
 	assert.Equal(t, NameListTags, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Empty(t, info.Properties)
+	assert.Contains(t, info.Properties, "include_documents")
 	assert.Empty(t, info.Required)
 }
 
@@ -59,10 +60,15 @@ func Test_listTags_Validate(t *testing.T) {
 func Test_listTags_Exec(t *testing.T) {
 	t.Parallel()
 
+	noDocs := null.NewValue(false, true)
+	oneDoc := []tagDocument{{ID: _testDocID, Name: _stubDocumentName, DefaultBranchID: _stubMainBranchID}}
+	noDocsList := []tagDocument{}
 	cc := map[string]struct {
 		Input  *InputMock
 		Result any
 		Err    error
+		Tool   listTags
+		Check  func(t *testing.T, got any)
 	}{
 		"Error returned by Input.FetchTagTree": {
 			Input: &InputMock{
@@ -82,6 +88,19 @@ func Test_listTags_Exec(t *testing.T) {
 		},
 		// the tree lists the nested children of an assigned document as
 		// sidebar context. Only the assigned document itself is listed.
+		"Tags without their documents": {
+			Input: stubTagInput(),
+			Result: listTagsResult{Tags: []tagEntry{
+				{ID: _testTagID, Name: _stubTagName, ColorName: _stubTagColor},
+				{ID: _otherTagID, Name: "Staging", ColorName: "orange"},
+			}},
+			Tool: listTags{IncludeDocuments: noDocs},
+			Check: func(t *testing.T, got any) {
+				data, err := json.Marshal(got)
+				require.NoError(t, err)
+				assert.NotContains(t, string(data), `"documents"`)
+			},
+		},
 		"Tags with their documents": {
 			Input: stubTagInput(),
 			Result: listTagsResult{Tags: []tagEntry{
@@ -89,10 +108,16 @@ func Test_listTags_Exec(t *testing.T) {
 					ID:        _testTagID,
 					Name:      _stubTagName,
 					ColorName: _stubTagColor,
-					Documents: []tagDocument{{ID: _testDocID, Name: _stubDocumentName, DefaultBranchID: _stubMainBranchID}},
+					Documents: oneDoc,
 				},
-				{ID: _otherTagID, Name: "Staging", ColorName: "orange", Documents: []tagDocument{}},
+				{ID: _otherTagID, Name: "Staging", ColorName: "orange", Documents: noDocsList},
 			}},
+			Check: func(t *testing.T, got any) {
+				data, err := json.Marshal(got)
+				require.NoError(t, err)
+				// an unassigned tag keeps an empty array, not a missing key.
+				assert.Contains(t, string(data), `"documents":[]`)
+			},
 		},
 	}
 
@@ -100,7 +125,7 @@ func Test_listTags_Exec(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := listTags{}.Exec(c.Input)
+			res, err := c.Tool.Exec(c.Input)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, c.Input.FetchTagTreeCalls(), 1)
@@ -110,6 +135,10 @@ func Test_listTags_Exec(t *testing.T) {
 			}
 
 			assert.Equal(t, c.Result, res)
+
+			if c.Check != nil {
+				c.Check(t, res)
+			}
 		})
 	}
 }

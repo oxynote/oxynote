@@ -10,17 +10,27 @@ import (
 	"github.com/rs/xid"
 )
 
-// listTags returns the organisation's tags with the documents carrying
-// them.
-type listTags struct{}
+// listTags returns the organisation's tags, optionally with the documents
+// carrying them.
+type listTags struct {
+	// IncludeDocuments asks for the documents each tag is on. Unset keeps
+	// today's shape and includes them.
+	IncludeDocuments null.Value[bool] `json:"include_documents"`
+}
 
 // Info returns the tool's model-facing description.
 func (listTags) Info() Info {
 	return Info{
 		Name:        NameListTags,
 		Traits:      Traits{Group: GroupTags, Role: org.RoleViewer},
-		Description: "List the organisation's tags in sidebar order as [{id, name, color, documents}]. documents are the documents whose default branch carries the tag. A tag on another branch shows only in get_document for that branch.",
-		Properties:  map[string]any{},
+		Description: "List the organisation's tags in sidebar order as [{id, name, color, documents}]. documents are the documents whose default branch carries the tag. Pass include_documents=false to omit them. A tag on another branch shows only in get_document for that branch.",
+		Properties: map[string]any{
+			"include_documents": map[string]any{
+				"type":        "boolean",
+				"default":     true,
+				"description": "Include the documents carrying each tag.",
+			},
+		},
 	}
 }
 
@@ -30,7 +40,7 @@ func (listTags) Validate() error {
 }
 
 // Exec lists every tag with the documents carrying it.
-func (listTags) Exec(inp Input) (any, error) {
+func (lt listTags) Exec(inp Input) (any, error) {
 	tree, err := inp.FetchTagTree()
 	if err != nil {
 		return nil, fmt.Errorf("fetching tags: %w", err)
@@ -43,19 +53,24 @@ func (listTags) Exec(inp Input) (any, error) {
 			ID:        s.ID,
 			Name:      s.TagName,
 			ColorName: s.Color,
-			Documents: make([]tagDocument, 0, len(s.Documents)),
+		}
+		if lt.IncludeDocuments.Valid && !lt.IncludeDocuments.V {
+			out.Tags = append(out.Tags, e)
+			continue
 		}
 
+		docs := make([]tagDocument, 0, len(s.Documents))
 		// the tree lists each assigned document with its own subtree;
 		// the subtree is sidebar context, not an assignment.
 		for _, d := range s.Documents {
-			e.Documents = append(e.Documents, tagDocument{
+			docs = append(docs, tagDocument{
 				ID:              d.ID,
 				Name:            d.DocumentName,
 				DefaultBranchID: d.DefaultBranchID,
 			})
 		}
 
+		e.Documents = docs
 		out.Tags = append(out.Tags, e)
 	}
 
@@ -79,8 +94,9 @@ type tagEntry struct {
 	// ColorName is the palette name of the tag's colour.
 	ColorName string `json:"color"`
 
-	// Documents is every document whose default branch carries the tag.
-	Documents []tagDocument `json:"documents"`
+	// Documents is every document whose default branch carries the tag. It is an
+	// empty list, not missing, by default; include_documents=false leaves it out.
+	Documents any `json:"documents,omitempty"`
 }
 
 // tagDocument names one document carrying a tag.
