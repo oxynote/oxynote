@@ -28,24 +28,24 @@ import (
 // boundaries so a few seconds later still falls in the same step.
 var _testCacheFrom = time.Date(2024, 1, 1, 12, 0, 10, 0, time.UTC)
 
-// recordingPrometheus answers range queries with res, recording the ranges
+// recordingMetrics answers range queries with res, recording the ranges
 // it was asked for, and counts the label name reads it passes through.
-type recordingPrometheus struct {
-	Prometheus
+type recordingMetrics struct {
+	Metrics
 
 	res        *processor.PrometheusQueryResult
 	ranges     []processor.TimeRange
 	labelReads int
 }
 
-func (rp *recordingPrometheus) QueryRange(_ context.Context, _ string, tr processor.TimeRange) (*processor.PrometheusQueryResult, error) {
-	rp.ranges = append(rp.ranges, tr)
+func (rm *recordingMetrics) QueryRange(_ context.Context, _ string, tr processor.TimeRange) (*processor.PrometheusQueryResult, error) {
+	rm.ranges = append(rm.ranges, tr)
 
-	return rp.res, nil
+	return rm.res, nil
 }
 
-func (rp *recordingPrometheus) LabelNames(context.Context, []string, processor.TimeRange) (*processor.PrometheusLabelNamesResult, error) {
-	rp.labelReads++
+func (rm *recordingMetrics) LabelNames(context.Context, []string, processor.TimeRange) (*processor.PrometheusLabelNamesResult, error) {
+	rm.labelReads++
 
 	return &processor.PrometheusLabelNamesResult{}, nil
 }
@@ -181,10 +181,10 @@ func lookups(t *testing.T, rg *prometheus.Registry, result string) float64 {
 	return testutil.MetricValue(t, rg, "test_datasource_cache_lookups_total", map[string]string{_resultLabel: result})
 }
 
-func Test_cachedPrometheus_QueryRange(t *testing.T) {
+func Test_cachedMetrics_QueryRange(t *testing.T) {
 	t.Parallel()
 
-	inner := &recordingPrometheus{
+	inner := &recordingMetrics{
 		res: &processor.PrometheusQueryResult{
 			Type: model.ValMatrix,
 			Result: model.Matrix{
@@ -197,7 +197,7 @@ func Test_cachedPrometheus_QueryRange(t *testing.T) {
 	}
 
 	m, _ := prepCacheManager(t, stubCache(nil, nil, nil))
-	cp := cachedPrometheus{Prometheus: inner, m: m, ds: DataSource{ID: xid.New()}}
+	cp := cachedMetrics{Metrics: inner, m: m, ds: DataSource{ID: xid.New()}}
 
 	tr := processor.TimeRange{From: _testCacheFrom, To: _testCacheFrom.Add(time.Hour)}
 

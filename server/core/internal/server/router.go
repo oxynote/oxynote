@@ -316,12 +316,12 @@ func (s *Server) router() chi.Router {
 					ssssr.Get("/{field}/values", s.handlers.datasource.FetchDataSourceLogFieldValues)
 				})
 			})
-			ssr.Route("/prometheus", func(sssr chi.Router) {
-				sssr.Get("/metadata", s.handlers.datasource.FetchPrometheusDataSourceMetadata)
-				sssr.Get("/series", s.handlers.datasource.FetchPrometheusDataSourceSeries)
+			ssr.Route("/metrics", func(sssr chi.Router) {
+				sssr.Get("/metadata", s.handlers.datasource.FetchDataSourceMetricMetadata)
+				sssr.Get("/series", s.handlers.datasource.FetchDataSourceMetricSeries)
 				sssr.Route("/labels", func(ssssr chi.Router) {
-					ssssr.Get("/", s.handlers.datasource.FetchPrometheusDataSourceLabelNames)
-					ssssr.Get("/{label}/values", s.handlers.datasource.FetchPrometheusDataSourceLabelValues)
+					ssssr.Get("/", s.handlers.datasource.FetchDataSourceMetricLabelNames)
+					ssssr.Get("/{label}/values", s.handlers.datasource.FetchDataSourceMetricLabelValues)
 				})
 			})
 			ssr.Route("/sql", func(sssr chi.Router) {

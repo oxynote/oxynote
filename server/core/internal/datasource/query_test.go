@@ -30,7 +30,7 @@ type stubRunner struct {
 // stubCalls counts the calls made to a stubRunner and its clients.
 type stubCalls struct {
 	Type            int
-	Prometheus      int
+	Metrics         int
 	PostgreSQL      int
 	MySQL           int
 	QueryRange      int
@@ -44,14 +44,14 @@ func (s stubRunner) Type() Type {
 	return s.typ
 }
 
-func (s stubRunner) Prometheus(context.Context) (Prometheus, error) {
-	s.calls.Prometheus++
+func (s stubRunner) Metrics(context.Context) (Metrics, error) {
+	s.calls.Metrics++
 
 	if s.clientErr != nil {
 		return nil, s.clientErr
 	}
 
-	return stubPrometheus{res: s.prometheus, err: s.err, calls: s.calls}, nil
+	return stubMetrics{res: s.prometheus, err: s.err, calls: s.calls}, nil
 }
 
 func (s stubRunner) PostgreSQL(context.Context) (PostgreSQL, error) {
@@ -74,15 +74,15 @@ func (s stubRunner) MySQL(context.Context) (MySQL, error) {
 	return stubMySQL{res: s.mySQL, err: s.err, calls: s.calls}, nil
 }
 
-type stubPrometheus struct {
-	Prometheus
+type stubMetrics struct {
+	Metrics
 
 	res   *processor.PrometheusQueryResult
 	err   error
 	calls *stubCalls
 }
 
-func (s stubPrometheus) QueryRange(context.Context, string, processor.TimeRange) (*processor.PrometheusQueryResult, error) {
+func (s stubMetrics) QueryRange(context.Context, string, processor.TimeRange) (*processor.PrometheusQueryResult, error) {
 	s.calls.QueryRange++
 
 	return s.res, s.err
@@ -140,10 +140,10 @@ func Test_Query(t *testing.T) {
 			Err:    ErrTypeNotSupported,
 			Calls:  stubCalls{Type: 1},
 		},
-		"Error returned by Runner.Prometheus": {
+		"Error returned by Runner.Metrics": {
 			Runner: stubRunner{typ: TypePrometheus, clientErr: assert.AnError},
 			Err:    assert.AnError,
-			Calls:  stubCalls{Type: 1, Prometheus: 1},
+			Calls:  stubCalls{Type: 1, Metrics: 1},
 		},
 		"Error returned by Runner.PostgreSQL": {
 			Runner: stubRunner{typ: TypePostgreSQL, clientErr: assert.AnError},
@@ -155,10 +155,10 @@ func Test_Query(t *testing.T) {
 			Err:    assert.AnError,
 			Calls:  stubCalls{Type: 1, MySQL: 1},
 		},
-		"Error returned by Prometheus.QueryRange": {
+		"Error returned by Metrics.QueryRange": {
 			Runner: stubRunner{typ: TypePrometheus, err: assert.AnError},
 			Err:    assert.AnError,
-			Calls:  stubCalls{Type: 1, Prometheus: 1, QueryRange: 1},
+			Calls:  stubCalls{Type: 1, Metrics: 1, QueryRange: 1},
 		},
 		"Error returned by PostgreSQL.Query": {
 			Runner: stubRunner{typ: TypePostgreSQL, err: assert.AnError},
@@ -173,7 +173,7 @@ func Test_Query(t *testing.T) {
 		"Prometheus answered nothing": {
 			Runner: stubRunner{typ: TypePrometheus},
 			Result: &processor.QueryResult{Status: processor.QueryStatusNoData},
-			Calls:  stubCalls{Type: 1, Prometheus: 1, QueryRange: 1},
+			Calls:  stubCalls{Type: 1, Metrics: 1, QueryRange: 1},
 		},
 		"PostgreSQL answered nothing": {
 			Runner: stubRunner{typ: TypePostgreSQL},
@@ -184,6 +184,11 @@ func Test_Query(t *testing.T) {
 			Runner: stubRunner{typ: TypeMySQL},
 			Result: &processor.QueryResult{Status: processor.QueryStatusNoData},
 			Calls:  stubCalls{Type: 1, MySQL: 1, MySQLQuery: 1},
+		},
+		"VictoriaMetrics answered nothing": {
+			Runner: stubRunner{typ: TypeVictoriaMetrics},
+			Result: &processor.QueryResult{Status: processor.QueryStatusNoData},
+			Calls:  stubCalls{Type: 1, Metrics: 1, QueryRange: 1},
 		},
 		"Prometheus result transformed": {
 			Runner: stubRunner{typ: TypePrometheus, prometheus: &processor.PrometheusQueryResult{
@@ -201,7 +206,7 @@ func Test_Query(t *testing.T) {
 					{Labels: map[string]string{"job": "a"}, Metrics: [][2]any{{int64(1700000000), 10.0}}},
 				},
 			},
-			Calls: stubCalls{Type: 1, Prometheus: 1, QueryRange: 1},
+			Calls: stubCalls{Type: 1, Metrics: 1, QueryRange: 1},
 		},
 		"PostgreSQL result transformed": {
 			Runner: stubRunner{typ: TypePostgreSQL, postgreSQL: rows},

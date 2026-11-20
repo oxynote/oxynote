@@ -1,7 +1,6 @@
 package processor
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -171,7 +170,9 @@ func startLoki(version string, corpus []corpusLine) (*gnomock.Container, error) 
 		),
 		gnomock.WithTimeout(3*time.Minute),
 		gnomock.WithHealthCheck(func(ctx context.Context, c *gnomock.Container) error {
-			return lokiRequest(ctx, http.MethodGet, "http://"+c.DefaultAddress()+"/ready", nil, http.StatusOK)
+			_, err := containerRequest(ctx, http.MethodGet, "http://"+c.DefaultAddress()+"/ready", "", nil)
+
+			return err
 		}),
 		gnomock.WithInit(func(ctx context.Context, c *gnomock.Container) error {
 			return pushLokiCorpus(ctx, c.DefaultAddress(), corpus)
@@ -217,30 +218,9 @@ func pushLokiCorpus(ctx context.Context, addr string, corpus []corpusLine) error
 		return err
 	}
 
-	return lokiRequest(ctx, http.MethodPost, "http://"+addr+"/loki/api/v1/push", raw, http.StatusNoContent)
-}
+	_, err = containerRequest(ctx, http.MethodPost, "http://"+addr+"/loki/api/v1/push", "application/json", raw)
 
-// lokiRequest sends a request to a test Loki and fails unless it answers
-// with the wanted status.
-func lokiRequest(ctx context.Context, method, target string, body []byte, want int) error {
-	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
-
-	if resp.StatusCode != want {
-		return fmt.Errorf("loki answered %d, want %d", resp.StatusCode, want)
-	}
-
-	return nil
+	return err
 }
 
 // corpusWhere returns the corpus lines in the window that match.

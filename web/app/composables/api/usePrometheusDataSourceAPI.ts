@@ -61,7 +61,7 @@ export default function () {
 				}
 
 				return await $coreAPIClient<PrometheusMetadataResult>(
-					`/api/data-sources/${dataSourceId}/prometheus/metadata`,
+					`/api/data-sources/${dataSourceId}/metrics/metadata`,
 					{ method: "GET" },
 				)
 			},
@@ -109,8 +109,8 @@ export default function () {
 				}
 
 				const url = queryParams.toString()
-					? `/api/data-sources/${dataSourceId}/prometheus/labels?${queryParams.toString()}`
-					: `/api/data-sources/${dataSourceId}/prometheus/labels`
+					? `/api/data-sources/${dataSourceId}/metrics/labels?${queryParams.toString()}`
+					: `/api/data-sources/${dataSourceId}/metrics/labels`
 
 				return await $coreAPIClient<PrometheusLabelNamesResult>(url, {
 					method: "GET",
@@ -164,8 +164,8 @@ export default function () {
 				}
 
 				const url = queryParams.toString()
-					? `/api/data-sources/${dataSourceId}/prometheus/labels/${params.label}/values?${queryParams.toString()}`
-					: `/api/data-sources/${dataSourceId}/prometheus/labels/${params.label}/values`
+					? `/api/data-sources/${dataSourceId}/metrics/labels/${params.label}/values?${queryParams.toString()}`
+					: `/api/data-sources/${dataSourceId}/metrics/labels/${params.label}/values`
 
 				return await $coreAPIClient<PrometheusLabelValuesResult>(url, {
 					method: "GET",
@@ -227,7 +227,7 @@ export default function () {
 				}
 
 				return await $coreAPIClient<PrometheusSeriesResult>(
-					`/api/data-sources/${dataSourceId}/prometheus/series?${queryParams.toString()}`,
+					`/api/data-sources/${dataSourceId}/metrics/series?${queryParams.toString()}`,
 					{ method: "GET" },
 				)
 			},

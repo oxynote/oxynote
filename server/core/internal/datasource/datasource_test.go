@@ -54,6 +54,7 @@ func Test_Type_Validate(t *testing.T) {
 		"MySQL":             {Type: TypeMySQL},
 		"Loki":              {Type: TypeLoki},
 		"VictoriaLogs":      {Type: TypeVictoriaLogs},
+		"VictoriaMetrics":   {Type: TypeVictoriaMetrics},
 	}
 
 	for cn, c := range cc {
@@ -83,6 +84,10 @@ func Test_Type_credentialsKinds(t *testing.T) {
 		},
 		"VictoriaLogs": {
 			Type:   TypeVictoriaLogs,
+			Result: []credentials.Kind{credentials.KindBasic, credentials.KindToken},
+		},
+		"VictoriaMetrics": {
+			Type:   TypeVictoriaMetrics,
 			Result: []credentials.Kind{credentials.KindBasic, credentials.KindToken},
 		},
 		"PostgreSQL": {
@@ -309,6 +314,9 @@ func Test_CreateInput_Validate(t *testing.T) {
 		},
 		"Token credentials for Loki": {
 			Input: CreateInput{Type: TypeLoki, Name: "Logs", URL: "http://loki.test", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
+		},
+		"Token credentials for VictoriaMetrics": {
+			Input: CreateInput{Type: TypeVictoriaMetrics, Name: "Metrics", URL: "http://victoriametrics.test", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
 		},
 		"Token credentials for VictoriaLogs": {
 			Input: CreateInput{Type: TypeVictoriaLogs, Name: "Logs", URL: "http://victorialogs.test", Credentials: stubCredentials(`{"token":"secret","kind":"token"}`)},
