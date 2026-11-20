@@ -748,6 +748,12 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 
 				expect(wrapper.text()).toContain(t(`${UPSERT}.auth-kind-field.label`))
 				expect(kindTrigger(wrapper).text()).toBe(kindTitle("basic"))
+				expect(
+					kindTrigger(wrapper)
+						.attributes("aria-labelledby")
+						?.split(" ")
+						.map((id) => wrapper.get(`[id="${id}"]`).text()),
+				).toEqual([t(`${UPSERT}.auth-kind-field.label`), kindTitle("basic")])
 				expect(fields(wrapper).username.exists()).toBe(true)
 			},
 		)

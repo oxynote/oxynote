@@ -64,6 +64,7 @@ const credentialsKind = ref<DataSourceCredentialsKind>(
 	props.updateTarget?.credentials?.kind ?? "basic",
 )
 const credentialsKindLabelId = useId()
+const credentialsKindValueId = useId()
 const hiddenCredentials: Partial<
 	Record<"username" | "password" | "token", string>
 > = {}
@@ -528,10 +529,13 @@ function resetCredential(key: DataSourceCredentialKey) {
 					<ShadcnUiDropdownMenuTrigger as-child :disabled="loading">
 						<button
 							type="button"
-							:aria-labelledby="credentialsKindLabelId"
+							:aria-labelledby="`${credentialsKindLabelId} ${credentialsKindValueId}`"
 							class="flex h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md border border-input bg-transparent px-3 py-1 text-2sm disabled:pointer-events-none disabled:opacity-50"
 						>
-							<span class="min-w-0 flex-1 truncate text-left">
+							<span
+								:id="credentialsKindValueId"
+								class="min-w-0 flex-1 truncate text-left"
+							>
 								{{
 									$t(
 										`settings.action-modals.data-source-upsert.auth-kind-field.${credentialsKind}.title`,
