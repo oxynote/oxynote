@@ -13,9 +13,9 @@ import (
 // listTags returns the organisation's tags, optionally with the documents
 // carrying them.
 type listTags struct {
-	// IncludeDocuments asks for the documents each tag is on. Left out, the
-	// result keeps today's shape and includes them.
-	IncludeDocuments *bool `json:"include_documents,omitempty"`
+	// IncludeDocuments asks for the documents each tag is on. Unset keeps
+	// today's shape and includes them.
+	IncludeDocuments null.Value[bool] `json:"include_documents"`
 }
 
 // Info returns the tool's model-facing description.
@@ -23,12 +23,12 @@ func (listTags) Info() Info {
 	return Info{
 		Name:        NameListTags,
 		Traits:      Traits{Group: GroupTags, Role: org.RoleViewer},
-		Description: "List the organisation's tags in sidebar order as [{id, name, color, documents}]. documents are the documents whose default branch carries the tag; pass include_documents=false to omit them. A tag on another branch shows only in get_document for that branch.",
+		Description: "List the organisation's tags in sidebar order as [{id, name, color, documents}]. documents are the documents whose default branch carries the tag. Pass include_documents=false to omit them. A tag on another branch shows only in get_document for that branch.",
 		Properties: map[string]any{
 			"include_documents": map[string]any{
 				"type":        "boolean",
 				"default":     true,
-				"description": "False leaves out the documents.",
+				"description": "Include the documents carrying each tag.",
 			},
 		},
 	}
@@ -54,7 +54,7 @@ func (lt listTags) Exec(inp Input) (any, error) {
 			Name:      s.TagName,
 			ColorName: s.Color,
 		}
-		if lt.IncludeDocuments != nil && !*lt.IncludeDocuments {
+		if lt.IncludeDocuments.Valid && !lt.IncludeDocuments.V {
 			out.Tags = append(out.Tags, e)
 			continue
 		}
@@ -70,7 +70,7 @@ func (lt listTags) Exec(inp Input) (any, error) {
 			})
 		}
 
-		e.Documents = &docs
+		e.Documents = docs
 		out.Tags = append(out.Tags, e)
 	}
 
@@ -95,8 +95,8 @@ type tagEntry struct {
 	ColorName string `json:"color"`
 
 	// Documents is every document whose default branch carries the tag. It is an
-	// empty list, not missing, by default; include_documents=false omits it.
-	Documents *[]tagDocument `json:"documents,omitempty"`
+	// empty list, not missing, by default; include_documents=false leaves it out.
+	Documents any `json:"documents,omitempty"`
 }
 
 // tagDocument names one document carrying a tag.
