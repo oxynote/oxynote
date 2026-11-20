@@ -273,9 +273,15 @@
 					}
 				},
 				"auth-kind-field": {
-					"label": "Authentication",
-					"basic": "Username and password",
-					"token": "Token"
+					"label": "Authentication Type",
+					"basic": {
+						"title": "Username and password",
+						"description": "Basic auth. Used by most servers that limit access"
+					},
+					"token": {
+						"title": "Token",
+						"description": "Bearer token. Sent in the Authorization header"
+					}
 				},
 				"creds-username-field": {
 					"prometheus": {
