@@ -826,8 +826,15 @@ describe("<DataView>", { concurrent: false }, () => {
 				"mingcute:layout-top-close-line",
 			)
 			expect(volumeSeries(wrapper)).toEqual([
-				{ id: "error", data: [3, 0, 1] },
-				{ id: "empty", data: [null, 0, null] },
+				{
+					id: "error",
+					data: [
+						{ value: 36, count: 3 },
+						{ value: 0, count: 0 },
+						{ value: 12, count: 1 },
+					],
+				},
+				{ id: "empty", data: [null, 2, null] },
 			])
 		})
 
@@ -858,7 +865,7 @@ describe("<DataView>", { concurrent: false }, () => {
 			await volumeToggle(wrapper).trigger("click")
 			await settleLogRequests()
 
-			expect(volumeSeries(wrapper)).toEqual([{ id: "empty", data: [0, 0, 0] }])
+			expect(volumeSeries(wrapper)).toEqual([{ id: "empty", data: [2, 2, 2] }])
 		})
 	})
 
@@ -1573,7 +1580,10 @@ function volumeToggle(wrapper: VueWrapper) {
 
 function volumeSeries(wrapper: VueWrapper) {
 	const option = wrapper.findComponent({ name: "VChart" }).props("option") as {
-		series: { id: string; data: (number | null)[] }[]
+		series: {
+			id: string
+			data: (number | null | { value: number; count: number })[]
+		}[]
 	}
 
 	return option.series.map(({ id, data }) => ({ id, data }))
