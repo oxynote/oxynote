@@ -13,6 +13,9 @@ updates:
     directory: "/web"
     schedule:
       interval: "monthly"
+    labels:
+      - "dependencies"
+      - "typescript"
     commit-message:
       prefix: "deps(web)"
     ignore:
@@ -58,6 +61,9 @@ updates:
     directory: "/server/auth-realtime"
     schedule:
       interval: "monthly"
+    labels:
+      - "dependencies"
+      - "typescript"
     commit-message:
       prefix: "deps(auth-realtime)"
     ignore:
@@ -95,6 +101,9 @@ updates:
     directory: "/e2e"
     schedule:
       interval: "monthly"
+    labels:
+      - "dependencies"
+      - "typescript"
     commit-message:
       prefix: "deps(e2e)"
     ignore:
@@ -124,6 +133,9 @@ updates:
     directory: "/server/core"
     schedule:
       interval: "monthly"
+    labels:
+      - "dependencies"
+      - "go"
     commit-message:
       prefix: "deps(core)"
     groups:
@@ -143,6 +155,9 @@ updates:
     directory: "/datagen"
     schedule:
       interval: "monthly"
+    labels:
+      - "dependencies"
+      - "go"
     commit-message:
       prefix: "deps(datagen)"
     groups:
@@ -162,6 +177,9 @@ updates:
     directory: "/docker/prod/launcher"
     schedule:
       interval: "monthly"
+    labels:
+      - "dependencies"
+      - "typescript"
     commit-message:
       prefix: "deps(launcher)"
     ignore:
@@ -191,6 +209,9 @@ updates:
     directory: "/packages/common"
     schedule:
       interval: "monthly"
+    labels:
+      - "dependencies"
+      - "typescript"
     commit-message:
       prefix: "deps(common)"
     ignore:
@@ -216,6 +237,9 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    labels:
+      - "dependencies"
+      - "github-actions"
     commit-message:
       prefix: "deps(actions)"
     groups:
@@ -243,6 +267,9 @@ updates:
       - "/docker/prod"
     schedule:
       interval: "monthly"
+    labels:
+      - "dependencies"
+      - "docker"
     commit-message:
       prefix: "deps(docker)"
     ignore:
@@ -274,6 +301,9 @@ updates:
       - "/e2e"
     schedule:
       interval: "monthly"
+    labels:
+      - "dependencies"
+      - "docker-compose"
     commit-message:
       prefix: "deps(docker)"
     groups:
