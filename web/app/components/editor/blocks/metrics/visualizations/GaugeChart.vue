@@ -50,6 +50,7 @@ const {
 } = useChartSize(containerRef, chartElem, () => option.value)
 
 const scrollLeft = ref(0)
+const themeVersion = ref(0)
 
 const MIN_GAUGE_SIZE = 180 // minimum size for a single gauge in pixels
 const SIDE_PADDING = 10 // padding on each side in pixels
@@ -94,37 +95,6 @@ const gaugeLayout = computed(() => {
 
 	return { gaugeSize, totalWidth, scale }
 })
-
-const themeVersion = ref(0)
-watch(
-	() => color.value.theme,
-	async () => {
-		// track theme changes with nextTick/setTimeout to ensure CSS
-		// variables are applied
-		await nextTick()
-		setTimeout(() => {
-			themeVersion.value++
-		}, 30)
-	},
-)
-
-// the canvas host is as wide as the gauges need, which changes with their
-// count while the container keeps its size
-watch(
-	() => gaugeLayout.value.totalWidth,
-	() => {
-		scrollLeft.value = containerRef.value?.scrollLeft ?? 0
-		redraw()
-	},
-	{ flush: "post" },
-)
-watch(
-	containerWidth,
-	() => {
-		scrollLeft.value = containerRef.value?.scrollLeft ?? 0
-	},
-	{ flush: "post" },
-)
 
 const hasMoreGauges = computed(() => {
 	const maxScrollLeft = gaugeLayout.value.totalWidth - containerWidth.value
@@ -390,6 +360,36 @@ const chartStyle = computed(() => {
 		height: `${height}px`,
 	}
 })
+
+watch(
+	() => color.value.theme,
+	async () => {
+		// track theme changes with nextTick/setTimeout to ensure CSS
+		// variables are applied
+		await nextTick()
+		setTimeout(() => {
+			themeVersion.value++
+		}, 30)
+	},
+)
+
+// the canvas host is as wide as the gauges need, which changes with their
+// count while the container keeps its size
+watch(
+	() => gaugeLayout.value.totalWidth,
+	() => {
+		scrollLeft.value = containerRef.value?.scrollLeft ?? 0
+		redraw()
+	},
+	{ flush: "post" },
+)
+watch(
+	containerWidth,
+	() => {
+		scrollLeft.value = containerRef.value?.scrollLeft ?? 0
+	},
+	{ flush: "post" },
+)
 </script>
 
 <template>
@@ -402,7 +402,7 @@ const chartStyle = computed(() => {
 			role="region"
 			tabindex="0"
 			:aria-label="$t('editor.metrics.gauge-scroll-label')"
-			class="size-full min-w-0 overflow-x-auto overflow-y-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none print:overflow-hidden"
+			class="size-full min-w-0 overflow-x-auto overflow-y-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring print:overflow-hidden"
 			@scroll="updateScrollPosition"
 		>
 			<VChart

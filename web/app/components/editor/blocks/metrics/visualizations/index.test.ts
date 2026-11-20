@@ -1058,6 +1058,18 @@ describe("calculateYAxisBounds", () => {
 			bounds: { max: 0.8 },
 			expected: { min: 0, max: 0.8 },
 		},
+		{
+			name: "honours manual bounds beyond the percentage defaults",
+			unit: VisualizationMiscUnit.Percent0to100,
+			bounds: { min: 80, max: 120 },
+			expected: { min: 80, max: 120 },
+		},
+		{
+			name: "honours manual bounds beyond the fraction defaults",
+			unit: VisualizationMiscUnit.Percent0to1,
+			bounds: { min: -0.2, max: 1.2 },
+			expected: { min: -0.2, max: 1.2 },
+		},
 	])("$name", ({ unit, bounds, expected }, { expect }) => {
 		expect(
 			calculateYAxisBounds(bars(0.29, 1.2), undefined, 0.1, bounds, unit),
@@ -1226,6 +1238,18 @@ describe("calculateGaugeAxisBounds", () => {
 			unit: VisualizationMiscUnit.Percent0to1,
 			bounds: { max: 0.8 },
 			expected: { min: 0, max: 0.8 },
+		},
+		{
+			name: "honours manual bounds beyond the percentage defaults",
+			unit: VisualizationMiscUnit.Percent0to100,
+			bounds: { min: 80, max: 120 },
+			expected: { min: 80, max: 120 },
+		},
+		{
+			name: "honours manual bounds beyond the fraction defaults",
+			unit: VisualizationMiscUnit.Percent0to1,
+			bounds: { min: -0.2, max: 1.2 },
+			expected: { min: -0.2, max: 1.2 },
 		},
 	])("$name", ({ unit, bounds, expected }, { expect }) => {
 		expect(
