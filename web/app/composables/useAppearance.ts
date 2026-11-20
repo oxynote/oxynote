@@ -39,10 +39,8 @@ export default function () {
 				// SSR, fall back to last auto (or light by default).
 				return lastAutoColorCookie.value
 			}
-			return mode.system.value === "dark" &&
-				window.matchMedia("(prefers-color-scheme: dark)").matches
-				? "dark"
-				: "light"
+			// on client, use system preference from useColorMode
+			return mode.system.value === "dark" ? "dark" : "light"
 		}
 
 		return mode.store.value
@@ -51,8 +49,8 @@ export default function () {
 	if (import.meta.client) {
 		watchImmediate([mode.store, mode.system], () => {
 			if (mode.store.value === "auto") {
-				lastAutoColorCookie.value = resolvedMode.value
-
+				lastAutoColorCookie.value =
+					mode.system.value === "dark" ? "dark" : "light"
 				return
 			}
 
