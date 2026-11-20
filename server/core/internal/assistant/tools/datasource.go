@@ -34,7 +34,7 @@ const (
 	// _maxRawRows caps the rows of a raw SQL answer.
 	_maxRawRows = 200
 
-	// _maxRawLogs caps the logs of a raw Loki answer, keeping the newest.
+	// _maxRawLogs caps the logs of a raw logs answer, keeping the newest.
 	_maxRawLogs = 100
 )
 
@@ -54,9 +54,9 @@ var _errUnknownDataSource = errors.New("no data source with that id in this orga
 // once either absent end has been defaulted.
 var _errInvertedTimeRange = errors.New("'from' is after 'to'; the range start must be the earlier timestamp")
 
-// _errLogsChartType is returned when a chart check is asked of a Loki
+// _errLogsChartType is returned when a chart check is asked of a logs
 // data source, whose logs no chart draws.
-var _errLogsChartType = errors.New("a loki data source draws no chart; omit chart_type, and show the logs in a <logs> block")
+var _errLogsChartType = errors.New("a logs data source draws no chart; omit chart_type, and show the logs in a <logs> block")
 
 // _timeRangeProps are the from and to arguments every ranged read takes.
 var _timeRangeProps = map[string]any{
@@ -72,7 +72,7 @@ func (listDataSources) Info() Info {
 	return Info{
 		Name:        NameListDataSources,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
-		Description: "List the organisation's data sources as {id, name, type, status}. type is prometheus, loki, postgresql, supabase, mariadb or mysql. It decides the query language and which tools serve it, and loki holds logs. Start here, since the other data source tools take an id from this list.",
+		Description: "List the organisation's data sources as {id, name, type, status}. type is prometheus, victoriametrics, loki, victorialogs, postgresql, supabase, mariadb or mysql. It decides the query language and which tools serve it, and loki and victorialogs hold logs. Start here, since the other data source tools take an id from this list.",
 		Properties:  map[string]any{},
 	}
 }
@@ -121,8 +121,9 @@ type dataSourceInfo struct {
 	// Name is the data source's display name.
 	Name string `json:"name"`
 
-	// Type is what the data source speaks (prometheus, loki, postgresql,
-	// supabase, mariadb, mysql), which decides the tools that serve it.
+	// Type is what the data source speaks (prometheus, loki, victorialogs,
+	// postgresql, supabase, mariadb, mysql), which decides the tools that
+	// serve it.
 	Type datasource.Type `json:"type"`
 
 	// Status is the connection status recorded for it.
@@ -130,7 +131,8 @@ type dataSourceInfo struct {
 }
 
 // getDataSourceMetadata describes what a data source holds: the metrics
-// of a Prometheus one, the tables and columns of a SQL one.
+// of a Prometheus or VictoriaMetrics one, the tables and columns of a SQL
+// one.
 type getDataSourceMetadata struct {
 	// DataSourceID names the data source.
 	DataSourceID xid.ID `json:"data_source_id"`
@@ -141,7 +143,7 @@ func (getDataSourceMetadata) Info() Info {
 	return Info{
 		Name:        NameGetDataSourceMetadata,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
-		Description: "Describe what a data source holds. Prometheus gives each metric with its type, help and unit. Loki gives the labels its logs carried over the last hour, and list_log_fields with a query finds their other fields. SQL gives {default_schema, tables: {table: [columns]}}. Read it before writing a query, so the names in it are real.",
+		Description: "Describe what a data source holds. Prometheus and VictoriaMetrics give each metric with its type, help and unit. Loki gives the labels its logs carried over the last hour and VictoriaLogs all their fields, and list_log_fields with a query finds the rest. SQL gives {default_schema, tables: {table: [columns]}}. Read it before writing a query, so the names in it are real.",
 		Properties:  map[string]any{"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription}},
 		Required:    []string{"data_source_id"},
 	}
@@ -175,13 +177,13 @@ func (gm getDataSourceMetadata) Exec(inp Input) (any, error) {
 	}
 
 	typ := runner.Type()
-	if typ == datasource.TypePrometheus {
-		prom, perr := runner.Prometheus(inp.Context())
+	if typ == datasource.TypePrometheus || typ == datasource.TypeVictoriaMetrics {
+		metrics, perr := runner.Metrics(inp.Context())
 		if perr != nil {
 			return nil, perr
 		}
 
-		res, merr := prom.Metadata(inp.Context())
+		res, merr := metrics.Metadata(inp.Context())
 		if merr != nil {
 			return nil, merr
 		}
@@ -189,7 +191,7 @@ func (gm getDataSourceMetadata) Exec(inp Input) (any, error) {
 		return res, nil
 	}
 
-	if typ == datasource.TypeLoki {
+	if typ == datasource.TypeLoki || typ == datasource.TypeVictoriaLogs {
 		logs, lerr := runner.Logs(inp.Context())
 		if lerr != nil {
 			return nil, lerr
@@ -243,12 +245,12 @@ type sqlMetadataResult struct {
 	Tables map[string][]string `json:"tables"`
 }
 
-// listPrometheusLabels lists the label names of a Prometheus data
-// source, or the values one label takes.
-type listPrometheusLabels struct {
+// listMetricLabels lists the label names of a metrics data source, or
+// the values one label takes.
+type listMetricLabels struct {
 	timeRange
 
-	// DataSourceID names the Prometheus data source.
+	// DataSourceID names the metrics data source.
 	DataSourceID xid.ID `json:"data_source_id"`
 
 	// Label, when set, asks for the values of that label instead of
@@ -260,11 +262,11 @@ type listPrometheusLabels struct {
 }
 
 // Info returns the tool's model-facing description.
-func (listPrometheusLabels) Info() Info {
+func (listMetricLabels) Info() Info {
 	return Info{
-		Name:        NameListPrometheusLabels,
+		Name:        NameListMetricLabels,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
-		Description: "List the label names of a Prometheus data source or, with label, that label's values. matchers narrows either list to the series they select. Use it to find what a query should filter on.",
+		Description: "List the label names of a metrics data source or, with label, that label's values. matchers narrows either list to the series they select. Use it to find what a query should filter on.",
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
 			"label":          map[string]any{"type": "string", "description": "A label, such as job, whose values to list."},
@@ -277,8 +279,8 @@ func (listPrometheusLabels) Info() Info {
 }
 
 // Validate checks the arguments are complete.
-func (lpl listPrometheusLabels) Validate() error {
-	if lpl.DataSourceID.IsNil() {
+func (lml listMetricLabels) Validate() error {
+	if lml.DataSourceID.IsNil() {
 		return errRequired("data_source_id")
 	}
 
@@ -287,43 +289,43 @@ func (lpl listPrometheusLabels) Validate() error {
 
 // Title announces the data source being read, and the label when one
 // was named.
-func (lpl listPrometheusLabels) Title(inp DescribeInput) string {
-	ds, err := inp.FetchDataSource(lpl.DataSourceID)
+func (lml listMetricLabels) Title(inp DescribeInput) string {
+	ds, err := inp.FetchDataSource(lml.DataSourceID)
 	if err != nil {
 		return ""
 	}
 
-	if lpl.Label != "" {
-		return fmt.Sprintf("Listing values of label %q in %q", lpl.Label, ds.Name)
+	if lml.Label != "" {
+		return fmt.Sprintf("Listing values of label %q in %q", lml.Label, ds.Name)
 	}
 
 	return fmt.Sprintf("Listing labels of %q", ds.Name)
 }
 
 // Exec fetches the label names, or the named label's values.
-func (lpl listPrometheusLabels) Exec(inp Input) (any, error) {
-	tr, err := lpl.resolve()
+func (lml listMetricLabels) Exec(inp Input) (any, error) {
+	tr, err := lml.resolve()
 	if err != nil {
 		return nil, err
 	}
 
-	runner, err := inp.DataSourceRunner(lpl.DataSourceID)
+	runner, err := inp.DataSourceRunner(lml.DataSourceID)
 	if err != nil {
 		return nil, err
 	}
 
-	matchers, err := inp.SubstituteVariables(lpl.Matchers...)
+	matchers, err := inp.SubstituteVariables(lml.Matchers...)
 	if err != nil {
 		return nil, err
 	}
 
-	prom, err := runner.Prometheus(inp.Context())
+	metrics, err := runner.Metrics(inp.Context())
 	if err != nil {
 		return nil, err
 	}
 
-	if lpl.Label != "" {
-		res, verr := prom.LabelValues(inp.Context(), lpl.Label, matchers, tr)
+	if lml.Label != "" {
+		res, verr := metrics.LabelValues(inp.Context(), lml.Label, matchers, tr)
 		if verr != nil {
 			return nil, verr
 		}
@@ -331,7 +333,7 @@ func (lpl listPrometheusLabels) Exec(inp Input) (any, error) {
 		return res, nil
 	}
 
-	res, err := prom.LabelNames(inp.Context(), matchers, tr)
+	res, err := metrics.LabelNames(inp.Context(), matchers, tr)
 	if err != nil {
 		return nil, err
 	}
@@ -339,11 +341,11 @@ func (lpl listPrometheusLabels) Exec(inp Input) (any, error) {
 	return res, nil
 }
 
-// listPrometheusSeries lists the series matching a set of selectors.
-type listPrometheusSeries struct {
+// listMetricSeries lists the series matching a set of selectors.
+type listMetricSeries struct {
 	timeRange
 
-	// DataSourceID names the Prometheus data source.
+	// DataSourceID names the metrics data source.
 	DataSourceID xid.ID `json:"data_source_id"`
 
 	// Matchers select the series to return. Required.
@@ -351,11 +353,11 @@ type listPrometheusSeries struct {
 }
 
 // Info returns the tool's model-facing description.
-func (listPrometheusSeries) Info() Info {
+func (listMetricSeries) Info() Info {
 	return Info{
-		Name:        NameListPrometheusSeries,
+		Name:        NameListMetricSeries,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
-		Description: "List the series that matchers select in a Prometheus data source, each as its full label set. Use it to see which label combinations a metric has before querying it.",
+		Description: "List the series that matchers select in a metrics data source, each as its full label set. Use it to see which label combinations a metric has before querying it.",
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
 			"matchers":       map[string]any{"type": "array", "description": _matchersDescription, "items": map[string]any{"type": "string"}, "minItems": 1},
@@ -367,12 +369,12 @@ func (listPrometheusSeries) Info() Info {
 }
 
 // Validate checks the arguments are complete.
-func (lps listPrometheusSeries) Validate() error {
-	if lps.DataSourceID.IsNil() {
+func (lms listMetricSeries) Validate() error {
+	if lms.DataSourceID.IsNil() {
 		return errRequired("data_source_id")
 	}
 
-	if len(lps.Matchers) == 0 {
+	if len(lms.Matchers) == 0 {
 		return errRequired("matchers")
 	}
 
@@ -380,8 +382,8 @@ func (lps listPrometheusSeries) Validate() error {
 }
 
 // Title announces the data source being read.
-func (lps listPrometheusSeries) Title(inp DescribeInput) string {
-	ds, err := inp.FetchDataSource(lps.DataSourceID)
+func (lms listMetricSeries) Title(inp DescribeInput) string {
+	ds, err := inp.FetchDataSource(lms.DataSourceID)
 	if err != nil {
 		return ""
 	}
@@ -390,28 +392,28 @@ func (lps listPrometheusSeries) Title(inp DescribeInput) string {
 }
 
 // Exec fetches the matching series.
-func (lps listPrometheusSeries) Exec(inp Input) (any, error) {
-	tr, err := lps.resolve()
+func (lms listMetricSeries) Exec(inp Input) (any, error) {
+	tr, err := lms.resolve()
 	if err != nil {
 		return nil, err
 	}
 
-	runner, err := inp.DataSourceRunner(lps.DataSourceID)
+	runner, err := inp.DataSourceRunner(lms.DataSourceID)
 	if err != nil {
 		return nil, err
 	}
 
-	matchers, err := inp.SubstituteVariables(lps.Matchers...)
+	matchers, err := inp.SubstituteVariables(lms.Matchers...)
 	if err != nil {
 		return nil, err
 	}
 
-	prom, err := runner.Prometheus(inp.Context())
+	metrics, err := runner.Metrics(inp.Context())
 	if err != nil {
 		return nil, err
 	}
 
-	res, err := prom.Series(inp.Context(), matchers, tr)
+	res, err := metrics.Series(inp.Context(), matchers, tr)
 	if err != nil {
 		return nil, err
 	}
@@ -419,12 +421,12 @@ func (lps listPrometheusSeries) Exec(inp Input) (any, error) {
 	return res, nil
 }
 
-// listLogFields lists the field names the logs of a Loki data source
+// listLogFields lists the field names the logs of a logs data source
 // carry, or the values one field takes.
 type listLogFields struct {
 	timeRange
 
-	// DataSourceID names the Loki data source.
+	// DataSourceID names the logs data source.
 	DataSourceID xid.ID `json:"data_source_id"`
 
 	// Field, when set, asks for the values of that field instead of the
@@ -440,11 +442,11 @@ func (listLogFields) Info() Info {
 	return Info{
 		Name:        NameListLogFields,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
-		Description: "List the field names the logs of a Loki data source carry. With field, it lists that field's values instead, counted when the source counts them. Without query only labels and their values come back. A LogQL query narrows either list to the logs it matches and adds their other fields. Use it to find what a log query should filter on. A filter on a field parsed from a log needs a parser stage first: | json for JSON logs, | logfmt for key=value logs. detected_level and other structured metadata need no parser, but they are not labels, so filter them after the selector, as in | detected_level=\"error\".",
+		Description: "List the field names the logs of a Loki or VictoriaLogs data source carry. With field, it lists that field's values instead, counted when the source counts them. Without query Loki gives only labels and their values. A query narrows either list to the logs it matches and adds their other fields. Use it to find what a log query should filter on. In LogsQL, filter a field as level:=\"error\". In LogQL, a filter on a field parsed from a log needs a parser stage first: | json for JSON logs, | logfmt for key=value logs. detected_level and other structured metadata need no parser, but they are not labels, so filter them after the selector, as in | detected_level=\"error\".",
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
 			"field":          map[string]any{"type": "string", "description": "A field, such as detected_level, whose values to list."},
-			"query":          map[string]any{"type": "string", "description": "A LogQL log query, such as {app=\"api\"}, whose logs to read the fields from."},
+			"query":          map[string]any{"type": "string", "description": "A LogQL query, such as {app=\"api\"}, or a LogsQL query, such as app:=\"api\", whose logs to read the fields from."},
 			"from":           _timeRangeProps["from"],
 			"to":             _timeRangeProps["to"],
 		},
@@ -523,7 +525,8 @@ type queryDataSource struct {
 	// DataSourceID names the data source.
 	DataSourceID xid.ID `json:"data_source_id"`
 
-	// Query is the PromQL, LogQL or SQL to run. Required.
+	// Query is the PromQL, MetricsQL, LogQL, LogsQL or SQL to run.
+	// Required.
 	Query string `json:"query"`
 
 	// ChartType, when set, asks for what a metric block of that chart
@@ -536,14 +539,14 @@ func (queryDataSource) Info() Info {
 	return Info{
 		Name:        NameQueryDataSource,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
-		Description: fmt.Sprintf("Run a query over a time range. Use PromQL for Prometheus, a LogQL log query for Loki and read-only SQL for the others. In SQL, $__ macros such as $__timeFilter expand against the range. Without chart_type it returns the raw answer: at most %d series of %d points, %d rows, or the newest %d logs. Each log has its time, level, message, labels and fields. has_more says older logs matched, so narrow the query or the range to see them. With chart_type it returns what a metric block would draw: status, series count, and each series' labels, point count and endpoints. Check a query that way before you put it in a block.", _maxRawSeries, _maxRawPoints, _maxRawRows, _maxRawLogs),
+		Description: fmt.Sprintf("Run a query over a time range. Use PromQL for Prometheus, MetricsQL for VictoriaMetrics, a LogQL log query for Loki, LogsQL for VictoriaLogs and read-only SQL for the others. In SQL, $__ macros such as $__timeFilter expand against the range. Without chart_type it returns the raw answer: at most %d series of %d points, %d rows, or the newest %d logs. Each log has its time, level, message, labels and fields. has_more says older logs matched, so narrow the query or the range to see them. With chart_type it returns what a metric block would draw: status, series count, and each series' labels, point count and endpoints. Check a query that way before you put it in a block.", _maxRawSeries, _maxRawPoints, _maxRawRows, _maxRawLogs),
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
-			"query":          map[string]any{"type": "string", "description": "The PromQL, LogQL or SQL to run. In LogQL, only labels go inside {}. A field parsed from the line needs | json or | logfmt before its filter, and detected_level goes after the selector, as in | detected_level=\"error\". For a SQL chart, select a time column aliased time and one or more numeric columns."},
+			"query":          map[string]any{"type": "string", "description": "The PromQL, MetricsQL, LogQL, LogsQL or SQL to run. In LogQL, only labels go inside {}. A field parsed from the line needs | json or | logfmt before its filter, and detected_level goes after the selector, as in | detected_level=\"error\". For a SQL chart, select a time column aliased time and one or more numeric columns."},
 			"chart_type": map[string]any{
 				"type":        "string",
 				"enum":        []processor.ChartType{processor.ChartTypeLine, processor.ChartTypeBar, processor.ChartTypeGauge},
-				"description": "The chart to check the query against. Leave it out for the values themselves. Not for Loki.",
+				"description": "The chart to check the query against. Leave it out for the values themselves. Not for Loki or VictoriaLogs.",
 			},
 			"from": _timeRangeProps["from"],
 			"to":   _timeRangeProps["to"],
@@ -599,13 +602,13 @@ func (qd queryDataSource) Exec(inp Input) (any, error) {
 	// each dialect answers in its own shape, so this is the one place a
 	// tool has to know which one it is talking to.
 	switch runner.Type() {
-	case datasource.TypePrometheus:
-		prom, err := runner.Prometheus(inp.Context())
+	case datasource.TypePrometheus, datasource.TypeVictoriaMetrics:
+		metrics, err := runner.Metrics(inp.Context())
 		if err != nil {
 			return nil, err
 		}
 
-		res, err := prom.QueryRange(inp.Context(), variable.Substitute(vars, q)[0], tr)
+		res, err := metrics.QueryRange(inp.Context(), variable.Substitute(vars, q)[0], tr)
 		if err != nil {
 			return nil, queryError(err)
 		}
@@ -618,7 +621,7 @@ func (qd queryDataSource) Exec(inp Input) (any, error) {
 		default:
 			return newChartPreview(res.Transform(qd.ChartType)), nil
 		}
-	case datasource.TypeLoki:
+	case datasource.TypeLoki, datasource.TypeVictoriaLogs:
 		if qd.ChartType != "" {
 			return nil, _errLogsChartType
 		}
@@ -675,8 +678,8 @@ func (qd queryDataSource) Exec(inp Input) (any, error) {
 	}
 }
 
-// queryLogs reads the newest logs a LogQL query matches, as
-// query_data_source answers for a Loki data source.
+// queryLogs reads the newest logs a log query matches, as
+// query_data_source answers for a logs data source.
 func queryLogs(inp Input, runner datasource.Runner, q string, tr processor.TimeRange) (any, error) {
 	logs, err := runner.Logs(inp.Context())
 	if err != nil {
@@ -692,7 +695,15 @@ func queryLogs(inp Input, runner datasource.Runner, q string, tr processor.TimeR
 			return nil, err
 		}
 
-		return nil, fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since metric queries such as rate() are not supported", err)
+		if errors.Is(err, processor.ErrResponseTooLarge) {
+			return nil, fmt.Errorf("%w; narrow the query or the range", err)
+		}
+
+		if runner.Type() == datasource.TypeLoki {
+			return nil, fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since metric queries such as rate() are not supported", err)
+		}
+
+		return nil, fmt.Errorf("%w; check the fields with list_log_fields, and use a log query that keeps _time, since stats pipes are not supported", err)
 	}
 
 	if !res.HasData() {
@@ -760,7 +771,7 @@ func newRawSeries(res *processor.PrometheusQueryResult) rawSeries {
 	return out
 }
 
-// rawLogs is a raw Loki answer, cut down to its newest _maxRawLogs logs.
+// rawLogs is a raw logs answer, cut down to its newest _maxRawLogs logs.
 type rawLogs struct {
 	// Status is whether the query matched any log.
 	Status processor.QueryStatus `json:"status"`
@@ -772,7 +783,7 @@ type rawLogs struct {
 	HasMore bool `json:"has_more"`
 }
 
-// rawLog is one log of a raw Loki answer.
+// rawLog is one log of a raw logs answer.
 type rawLog struct {
 	// Time is when the log was written, in UTC.
 	Time time.Time `json:"time"`

@@ -1,19 +1,16 @@
 package processor
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -173,7 +170,9 @@ func startLoki(version string, corpus []corpusLine) (*gnomock.Container, error) 
 		),
 		gnomock.WithTimeout(3*time.Minute),
 		gnomock.WithHealthCheck(func(ctx context.Context, c *gnomock.Container) error {
-			return lokiRequest(ctx, http.MethodGet, "http://"+c.DefaultAddress()+"/ready", nil, http.StatusOK)
+			_, err := containerRequest(ctx, http.MethodGet, "http://"+c.DefaultAddress()+"/ready", "", nil)
+
+			return err
 		}),
 		gnomock.WithInit(func(ctx context.Context, c *gnomock.Container) error {
 			return pushLokiCorpus(ctx, c.DefaultAddress(), corpus)
@@ -219,52 +218,9 @@ func pushLokiCorpus(ctx context.Context, addr string, corpus []corpusLine) error
 		return err
 	}
 
-	return lokiRequest(ctx, http.MethodPost, "http://"+addr+"/loki/api/v1/push", raw, http.StatusNoContent)
-}
+	_, err = containerRequest(ctx, http.MethodPost, "http://"+addr+"/loki/api/v1/push", "application/json", raw)
 
-// lokiRequest sends a request to a test Loki and fails unless it answers
-// with the wanted status.
-func lokiRequest(ctx context.Context, method, target string, body []byte, want int) error {
-	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
-
-	if resp.StatusCode != want {
-		return fmt.Errorf("loki answered %d, want %d", resp.StatusCode, want)
-	}
-
-	return nil
-}
-
-// prepLokiInput returns an input pointing at the given URL, or at a fake
-// Loki serving h when the URL is empty. The cleanup drops the shared
-// transport's keep-alive connections so goleak stays clean.
-func prepLokiInput(t *testing.T, target string, h http.Handler) *InputMock {
-	t.Helper()
-
-	if target == "" {
-		srv := httptest.NewServer(h)
-		t.Cleanup(srv.Close)
-
-		target = srv.URL
-	}
-
-	t.Cleanup(func() {
-		http.DefaultTransport.(*http.Transport).CloseIdleConnections()
-	})
-
-	return &InputMock{
-		URLFunc: func() string { return target },
-	}
+	return err
 }
 
 // corpusWhere returns the corpus lines in the window that match.
@@ -452,7 +408,7 @@ func Test_Loki_TestConnection(t *testing.T) {
 
 				creds := cmp.Or(c.Creds, `{"kind":"basic","username":"user","password":"pass"}`)
 
-				inp = prepLokiInput(t, target, c.Handler)
+				inp = prepHTTPInput(t, target, c.Handler)
 				inp.CredentialsFunc = func() credentials.Credentials { return stubCredentials(creds) }
 			}
 
@@ -604,7 +560,7 @@ func Test_Loki_Logs(t *testing.T) {
 			t.Parallel()
 
 			if c.Handler != nil {
-				res, err := NewLoki(prepLokiInput(t, "", c.Handler)).Logs(context.Background(), c.Query, c.Range, c.Page)
+				res, err := NewLoki(prepHTTPInput(t, "", c.Handler)).Logs(context.Background(), c.Query, c.Range, c.Page)
 				testutil.AssertEqualError(t, c.Err, err)
 
 				if err != nil {
@@ -624,7 +580,7 @@ func Test_Loki_Logs(t *testing.T) {
 				t.Run(v, func(t *testing.T) {
 					t.Parallel()
 
-					l := NewLoki(prepLokiInput(t, "http://"+_lokiAddrs[v], nil))
+					l := NewLoki(prepHTTPInput(t, "http://"+_lokiAddrs[v], nil))
 					want := corpusWhere(c.Range, c.Match)
 
 					if c.WalkLimit == 0 {
@@ -725,7 +681,7 @@ func Test_Loki_fetchLines(t *testing.T) {
 				c.Handler.ServeHTTP(w, r)
 			})
 
-			fetch := NewLoki(prepLokiInput(t, "", h)).fetchLines(`{a="b"}`)
+			fetch := NewLoki(prepHTTPInput(t, "", h)).fetchLines(`{a="b"}`)
 
 			lines, err := fetch(context.Background(), time.Unix(0, 0), time.Unix(0, 10), c.Limit, c.Order)
 
@@ -833,7 +789,7 @@ func Test_Loki_LogsVolume(t *testing.T) {
 			t.Parallel()
 
 			if c.Handler != nil {
-				res, err := NewLoki(prepLokiInput(t, "", c.Handler)).LogsVolume(context.Background(), `{a="b"}`, c.Range)
+				res, err := NewLoki(prepHTTPInput(t, "", c.Handler)).LogsVolume(context.Background(), `{a="b"}`, c.Range)
 				testutil.AssertEqualError(t, c.Err, err)
 
 				if err != nil {
@@ -855,7 +811,7 @@ func Test_Loki_LogsVolume(t *testing.T) {
 				t.Run(v, func(t *testing.T) {
 					t.Parallel()
 
-					res, err := NewLoki(prepLokiInput(t, "http://"+_lokiAddrs[v], nil)).
+					res, err := NewLoki(prepHTTPInput(t, "http://"+_lokiAddrs[v], nil)).
 						LogsVolume(context.Background(), `{env="prod"}`, c.Range)
 					require.NoError(t, err)
 
@@ -952,7 +908,7 @@ func Test_Loki_LogFields(t *testing.T) {
 			t.Parallel()
 
 			if c.Handler != nil {
-				res, err := NewLoki(prepLokiInput(t, "", c.Handler)).LogFields(context.Background(), c.Query, _logsWindow)
+				res, err := NewLoki(prepHTTPInput(t, "", c.Handler)).LogFields(context.Background(), c.Query, _logsWindow)
 				testutil.AssertEqualError(t, c.Err, err)
 
 				if err != nil {
@@ -968,7 +924,7 @@ func Test_Loki_LogFields(t *testing.T) {
 				t.Run(v, func(t *testing.T) {
 					t.Parallel()
 
-					res, err := NewLoki(prepLokiInput(t, "http://"+_lokiAddrs[v], nil)).
+					res, err := NewLoki(prepHTTPInput(t, "http://"+_lokiAddrs[v], nil)).
 						LogFields(context.Background(), c.Query, _logsWindow)
 					require.NoError(t, err)
 					assert.Subset(t, res.Fields, c.Contain[v])
@@ -1071,7 +1027,7 @@ func Test_Loki_LogFieldValues(t *testing.T) {
 			t.Parallel()
 
 			if c.Handler != nil {
-				res, err := NewLoki(prepLokiInput(t, "", c.Handler)).
+				res, err := NewLoki(prepHTTPInput(t, "", c.Handler)).
 					LogFieldValues(context.Background(), c.Field, c.Query, _logsWindow)
 				testutil.AssertEqualError(t, c.Err, err)
 
@@ -1094,7 +1050,7 @@ func Test_Loki_LogFieldValues(t *testing.T) {
 				t.Run(v, func(t *testing.T) {
 					t.Parallel()
 
-					res, err := NewLoki(prepLokiInput(t, "http://"+_lokiAddrs[v], nil)).
+					res, err := NewLoki(prepHTTPInput(t, "http://"+_lokiAddrs[v], nil)).
 						LogFieldValues(context.Background(), c.Field, c.Query, _logsWindow)
 					require.NoError(t, err)
 
@@ -1113,282 +1069,6 @@ func Test_Loki_LogFieldValues(t *testing.T) {
 					assert.ElementsMatch(t, c.Contains[v], values)
 				})
 			}
-		})
-	}
-}
-
-func Test_Loki_get(t *testing.T) {
-	cc := map[string]struct {
-		Inp     *InputMock
-		Handler http.Handler
-		Result  lokiListResponse
-		Err     error
-	}{
-		"Error returned by Loki.client": {
-			Inp: &InputMock{
-				CredentialsFunc: func() credentials.Credentials { return stubCredentials(`{`) },
-			},
-			Err: assert.AnError,
-		},
-		"Error returned by Loki.request": {
-			Inp: &InputMock{URLFunc: func() string { return "http://127.0.0.1:1" }},
-			Err: assert.AnError,
-		},
-		"Unauthorized": {
-			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusUnauthorized, `no org id`),
-			Err:     ConnectionStatusUnauthorized.Error(),
-		},
-		"Endpoint not found": {
-			Handler: testutil.JSONHandler("/elsewhere", http.StatusOK, `{}`),
-			Err:     _errLokiEndpointNotFound,
-		},
-		"Redirect is not followed": {
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != _lokiLabelsPath {
-					assert.Fail(t, "the redirect was followed")
-				}
-
-				http.Redirect(w, r, "/internal/admin", http.StatusFound)
-			}),
-			Err: _errLokiRedirected,
-		},
-		"Rate limited": {
-			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusTooManyRequests, `{"message":"too many requests"}`),
-			Err:     _errRateLimited,
-		},
-		"Server error": {
-			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusGatewayTimeout, "request timed out\n"),
-			Err:     ConnectionStatusUnreachable.Error(),
-		},
-		"Rejected request in plain text": {
-			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusBadRequest, "parse error\n"),
-			Err:     NewInvalidQueryError("parse error"),
-		},
-		"Rejected request wrapped by a proxy": {
-			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusBadRequest, `{"message":"parse error"}`),
-			Err:     NewInvalidQueryError("parse error"),
-		},
-		"Rejected request in the Prometheus shape": {
-			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusBadRequest, `{"status":"error","error":"bad step"}`),
-			Err:     NewInvalidQueryError("bad step"),
-		},
-		"Rejected request as JSON without a message": {
-			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusBadRequest, `{"status":"error"}`),
-			Err:     NewInvalidQueryError(`{"status":"error"}`),
-		},
-		"Rejected request without a body": {
-			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusBadRequest, ``),
-			Err:     NewInvalidQueryError("the data source rejected the query"),
-		},
-		"Rejected request longer than the cap": {
-			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusBadRequest, strings.Repeat("x", _maxErrorMessageSize+10)),
-			Err:     NewInvalidQueryError(strings.Repeat("x", _maxErrorMessageSize)),
-		},
-		"Proxy message longer than the cap": {
-			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusBadRequest, `{"message":"`+strings.Repeat("y", _maxErrorMessageSize+10)+`"}`),
-			Err:     NewInvalidQueryError(strings.Repeat("y", _maxErrorMessageSize)),
-		},
-		"Body that does not decode": {
-			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusOK, `{`),
-			Err:     assert.AnError,
-		},
-		"Successful request": {
-			Handler: testutil.JSONHandler(_lokiLabelsPath, http.StatusOK, `{"data":["env"]}`),
-			Result:  lokiListResponse{Data: []string{"env"}},
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			inp := c.Inp
-			if inp == nil {
-				inp = prepLokiInput(t, "", c.Handler)
-			} else {
-				t.Cleanup(http.DefaultTransport.(*http.Transport).CloseIdleConnections)
-			}
-
-			var res lokiListResponse
-
-			err := NewLoki(inp).get(context.Background(), _lokiLabelsPath, nil, nil, &res)
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			assert.Equal(t, c.Result, res)
-		})
-	}
-}
-
-func Test_Loki_request(t *testing.T) {
-	cc := map[string]struct {
-		URL     string
-		Handler http.Handler
-		Status  int
-		Body    string
-		Err     error
-	}{
-		"Invalid URL": {
-			URL: "://",
-			Err: assert.AnError,
-		},
-		"Unreachable server": {
-			URL: "http://127.0.0.1:1",
-			Err: assert.AnError,
-		},
-		"Answer over the size cap": {
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				_, err := w.Write(bytes.Repeat([]byte("x"), _maxLokiResponseSize+1))
-				assert.NoError(t, err)
-			}),
-			Err: _errLokiResponseTooLarge,
-		},
-		"Body cut short": {
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Length", "10")
-
-				_, err := w.Write([]byte("abc"))
-				assert.NoError(t, err)
-			}),
-			Err: assert.AnError,
-		},
-		"Path prefix params and header reach the server": {
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				assert.Equal(t, "/proxy"+_lokiLabelsPath, r.URL.Path)
-				assert.Equal(t, "1", r.URL.Query().Get("start"))
-				assert.Equal(t, "yes", r.Header.Get("X-Test"))
-				w.WriteHeader(http.StatusTeapot)
-
-				_, err := w.Write([]byte("body"))
-				assert.NoError(t, err)
-			}),
-			Status: http.StatusTeapot,
-			Body:   "body",
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			inp := prepLokiInput(t, c.URL, c.Handler)
-			if c.Handler != nil {
-				base := inp.URL()
-				inp.URLFunc = func() string { return base + "/proxy" }
-			}
-
-			status, body, err := NewLoki(inp).request(
-				context.Background(),
-				&http.Client{},
-				_lokiLabelsPath,
-				map[string][]string{"start": {"1"}},
-				http.Header{"X-Test": {"yes"}},
-			)
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			assert.Equal(t, c.Status, status)
-			assert.Equal(t, c.Body, string(body))
-		})
-	}
-}
-
-func Test_Loki_client(t *testing.T) {
-	cc := map[string]struct {
-		URL         string
-		Credentials credentials.Credentials
-
-		// TLS indicates whether the data source is served over TLS, with
-		// its own certificate as the credentials' CA.
-		TLS bool
-
-		// Auth is the Authorization header the data source receives.
-		Auth string
-
-		Err error
-	}{
-		"Credentials that do not decode": {
-			URL:         "http://loki.test",
-			Credentials: stubCredentials(`{`),
-			Err:         assert.AnError,
-		},
-		"Credentials without a kind": {
-			URL:         "http://loki.test",
-			Credentials: stubCredentials(`{"username":"user","password":"pass"}`),
-			Err:         credentials.ErrInvalidKind,
-		},
-		"Error returned by ownTransport.roundTripper": {
-			URL:         "http://loki.test",
-			Credentials: caCredentials("not a certificate"),
-			Err:         credentials.ErrInvalidCACertificate,
-		},
-		"No credentials": {},
-		"Basic credentials": {
-			Credentials: stubCredentials(`{"kind":"basic","username":"user","password":"pass"}`),
-			Auth:        "Basic dXNlcjpwYXNz",
-		},
-		"Token credentials": {
-			Credentials: stubCredentials(`{"kind":"token","token":"secret"}`),
-			Auth:        "Bearer secret",
-		},
-		// credentials holding only a CA certificate authenticate nobody.
-		"Only a CA certificate": {
-			TLS: true,
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			var auth atomic.Value
-
-			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				auth.Store(r.Header.Get("Authorization"))
-				w.WriteHeader(http.StatusNoContent)
-			})
-
-			var inp *InputMock
-
-			switch {
-			case c.URL != "":
-				inp = &InputMock{URLFunc: func() string { return c.URL }}
-			case c.TLS:
-				inp = prepTLSInput(t, h, "")
-			default:
-				inp = prepLokiInput(t, "", h)
-			}
-
-			if !c.TLS {
-				inp.CredentialsFunc = func() credentials.Credentials { return c.Credentials }
-			}
-
-			l := NewLoki(inp)
-
-			t.Cleanup(func() { assert.NoError(t, l.Close()) })
-
-			client, err := l.client()
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			require.NotNil(t, client.CheckRedirect)
-
-			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, inp.URL(), http.NoBody)
-			require.NoError(t, err)
-
-			resp, err := client.Do(req)
-			require.NoError(t, err)
-			require.NoError(t, resp.Body.Close())
-			assert.Equal(t, c.Auth, auth.Load())
 		})
 	}
 }
@@ -1531,7 +1211,7 @@ func Test_LokiStreamSelector(t *testing.T) {
 	}
 }
 
-func Test_lokiWindowParams(t *testing.T) {
+func Test_createLokiWindowParams(t *testing.T) {
 	tr := TimeRange{From: time.Unix(0, 1), To: time.Unix(0, 2)}
 
 	cc := map[string]struct {
@@ -1551,7 +1231,7 @@ func Test_lokiWindowParams(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, c.Result, map[string][]string(lokiWindowParams(c.Query, tr)))
+			assert.Equal(t, c.Result, map[string][]string(createLokiWindowParams(c.Query, tr)))
 		})
 	}
 }

@@ -146,6 +146,80 @@ describe("<RowDetails>", { concurrent: false }, () => {
 		])
 	})
 
+	it.for(
+		[
+			{
+				name: "first duplicate",
+				line: "component=billing component=stripe-client",
+				parsed: undefined,
+				value: "billing",
+			},
+			{
+				name: "first non-empty duplicate",
+				line: 'component="" component=billing component=other',
+				parsed: undefined,
+				value: "billing",
+			},
+			{
+				name: "keep-empty duplicate",
+				line: 'component="" component=billing',
+				parsed: { component: "" },
+				value: "",
+			},
+			{
+				name: "invalid bare duplicate",
+				line: "component=bad=value component=billing",
+				parsed: undefined,
+				value: "billing",
+			},
+			{
+				name: "invalid quoted duplicate",
+				line: String.raw`component="bad\q" component=billing`,
+				parsed: undefined,
+				value: "billing",
+			},
+			{
+				name: "escaped apostrophe",
+				line: String.raw`component="a\'b" component=other`,
+				parsed: undefined,
+				value: "a'b",
+			},
+		].flatMap((input) => [
+			{ ...input, exclude: false },
+			{ ...input, exclude: true },
+		]),
+	)(
+		"filters the $name value with exclude=$exclude",
+		async ({ line, parsed, value, exclude }, { expect }) => {
+			const wrapper = await mountDetails(
+				makeLog({ line, parsed, labels: {}, fields: {} }),
+			)
+			const action = exclude ? "exclude-value" : "include-value"
+			const button = wrapper
+				.findAll("button")
+				.find(
+					(b) =>
+						b.text() === t(`editor.logs.view.${action}`, { key: "component" }),
+				)
+
+			expect(tableRows(wrapper).at(-1)).toEqual([["component", value]])
+			expect(button).toBeDefined()
+			await button?.trigger("click")
+
+			expect(wrapper.emitted("filter")).toEqual([
+				[
+					{
+						key: "component",
+						value,
+						exclude,
+						indexed: false,
+						format: LineFormat.Logfmt,
+					},
+				],
+			])
+		},
+	)
+
 	it.for([
 		{
 			name: "turns off the filter of a line key the query cannot filter",

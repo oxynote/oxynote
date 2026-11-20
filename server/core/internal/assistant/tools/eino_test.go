@@ -211,7 +211,7 @@ func Test_einoTool_InvokableRun(t *testing.T) {
 		},
 		// the same holds for a data source that rejected the model's
 		// query.
-		"Error returned by Prometheus.QueryRange": {
+		"Error returned by Metrics.QueryRange": {
 			Tool: register[queryDataSource](),
 			QueryRange: func(context.Context, string, processor.TimeRange) (*processor.PrometheusQueryResult, error) {
 				return nil, errors.New("parse error: unexpected character")
@@ -226,10 +226,10 @@ func Test_einoTool_InvokableRun(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			prom := &datasourceMock.Prometheus{QueryRangeFunc: c.QueryRange}
+			prom := &datasourceMock.Metrics{QueryRangeFunc: c.QueryRange}
 			runner := &datasourceMock.Runner{
 				TypeFunc: func() datasource.Type { return datasource.TypePrometheus },
-				PrometheusFunc: func(context.Context) (datasource.Prometheus, error) {
+				MetricsFunc: func(context.Context) (datasource.Metrics, error) {
 					return prom, nil
 				},
 			}
@@ -248,7 +248,7 @@ func Test_einoTool_InvokableRun(t *testing.T) {
 			assert.Len(t, d.runners.(*DataSourceRunnersMock).RunnerCalls(), c.QueryCalls)
 			assert.Empty(t, d.variableMan.(*VariableManagerMock).FetchTreeCalls())
 			assert.Len(t, runner.TypeCalls(), c.QueryCalls)
-			assert.Len(t, runner.PrometheusCalls(), c.QueryCalls)
+			assert.Len(t, runner.MetricsCalls(), c.QueryCalls)
 			assert.Empty(t, runner.PostgreSQLCalls())
 			assert.Empty(t, runner.MySQLCalls())
 			assert.Len(t, prom.QueryRangeCalls(), c.QueryCalls)
@@ -413,7 +413,7 @@ func Test_Info_toEino(t *testing.T) {
 
 	// every session sends the whole tool list, and an MCP client keeps
 	// it in context, so it stays under about 7k tokens.
-	assert.Less(t, len(data), 31500, "the tool list has grown past its budget")
+	assert.Less(t, len(data), 31700, "the tool list has grown past its budget")
 
 	// a description change is meant to be reviewed as a golden diff, so
 	// the file is rewritten on request rather than by hand.

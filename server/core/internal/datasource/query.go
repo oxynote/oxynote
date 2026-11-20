@@ -27,8 +27,8 @@ func Query(
 	ct processor.ChartType,
 ) (*processor.QueryResult, error) {
 	switch r.Type() {
-	case TypePrometheus:
-		client, err := r.Prometheus(ctx)
+	case TypePrometheus, TypeVictoriaMetrics:
+		client, err := r.Metrics(ctx)
 		if err != nil {
 			return nil, err
 		}

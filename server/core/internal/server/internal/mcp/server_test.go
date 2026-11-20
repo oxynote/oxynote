@@ -54,8 +54,8 @@ var _writeToolNames = []string{
 var _dataSourceToolNames = []string{
 	"list_data_sources",
 	"get_data_source_metadata",
-	"list_prometheus_labels",
-	"list_prometheus_series",
+	"list_metric_labels",
+	"list_metric_series",
 	"list_log_fields",
 	"query_data_source",
 }

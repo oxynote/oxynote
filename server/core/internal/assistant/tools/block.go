@@ -92,7 +92,7 @@ func (insertBlocks) Info() Info {
 	return Info{
 		Name:        NameInsertBlocks,
 		Traits:      Traits{Write: true, Role: org.RoleEditor},
-		Description: "Insert new blocks as XML at a document's start or end or beside reference_block_uid. Omit id. Use replace_blocks for existing ones. A <metrics> or <logs> belongs in a <grid>. Invalid placement is refused, naming the allowed blocks. Returns {block_uids: [id]} in document order, including nested blocks, or {content: normalised XML} when return_content is true.",
+		Description: "Insert XML blocks at the start, end, or beside reference_block_uid. Omit id. Use replace_blocks for existing ones. A <metrics> or <logs> belongs in a <grid>. Invalid placement lists allowed blocks. Returns {block_uids: [id]} in document order, including nested blocks, or {content: normalised XML} when return_content is true.",
 		Properties: map[string]any{
 			"document_id":         map[string]any{"type": "string", "description": _documentIDDescription},
 			"branch_id":           map[string]any{"type": "string", "description": _writeBranchIDDescription},
@@ -221,7 +221,7 @@ func (replaceBlocks) Info() Info {
 	return Info{
 		Name:        NameReplaceBlocks,
 		Traits:      Traits{Write: true, Overwrites: true, Role: org.RoleEditor},
-		Description: "Replace one block with content, in the XML insert_blocks describes. Read it with get_document. Keep ids to preserve comments, hooks and files. Unchanged content stays as stored. Omit id for a new block. Ids outside the replaced block and replacing a whole <grid> are refused. Returns {block_uids: [id]} in document order, including nested blocks, or {content: normalised XML} when return_content is true.",
+		Description: "Replace one block using the insert_blocks XML format. Read via get_document. Keep ids to preserve comments, hooks and files. Unchanged content stays as stored. Omit id for a new block. Ids outside the replaced block and replacing a whole <grid> are refused. Returns {block_uids: [id]} in document order, including nested blocks, or {content: normalised XML} when return_content is true.",
 		Properties: map[string]any{
 			"document_id":    map[string]any{"type": "string", "description": _documentIDDescription},
 			"branch_id":      map[string]any{"type": "string", "description": _writeBranchIDDescription},

@@ -34,6 +34,8 @@ export const lokiDialect: LogDialect = {
 	withViewFilters,
 	canFilterLineKey,
 	lineKeyName,
+	logfmtParseFailed,
+	decodeLogfmtValue,
 	repeatsLineKey,
 }
 
@@ -108,6 +110,39 @@ function lineKeyName(key: string, log: Log): string {
 	return Object.hasOwn(log.labels, safe) || Object.hasOwn(log.fields, safe)
 		? `${safe}${CLASH_SUFFIX}`
 		: safe
+}
+
+function logfmtParseFailed(log: Log): boolean {
+	return log.parsed?.__error__ === "LogfmtParserErr"
+}
+
+// decodeLogfmtValue applies the same value rules as Loki's logfmt parser
+function decodeLogfmtValue(raw: string): string | null {
+	const value = raw.startsWith('"')
+		? unquote(raw)
+		: raw.includes("=")
+			? null
+			: raw
+
+	return value?.toWellFormed().replaceAll("\uFFFD", " ") ?? null
+}
+
+// unquote reads Loki's JSON-style escapes, which also allow an escaped
+// apostrophe and literal control characters
+function unquote(quoted: string): string | null {
+	const json = quoted.replace(/\\[\s\S]|\p{Cc}/gu, (escape) =>
+		escape === "\\'"
+			? "'"
+			: escape.length === 1
+				? JSON.stringify(escape).slice(1, -1)
+				: escape,
+	)
+
+	try {
+		return String(JSON.parse(json))
+	} catch {
+		return null
+	}
 }
 
 // repeatsLineKey tells whether a key Loki parsed is a line key under Loki's

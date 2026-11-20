@@ -168,11 +168,11 @@ func wasRunnersEvictCalled(count int) check {
 	}
 }
 
-// wasExecutorPrometheusCalled returns a check asserting the number of
-// Runner.Prometheus calls.
-func wasExecutorPrometheusCalled(count int) check {
+// wasExecutorMetricsCalled returns a check asserting the number of
+// Runner.Metrics calls.
+func wasExecutorMetricsCalled(count int) check {
 	return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
-		require.Len(t, exec.runner.PrometheusCalls(), count)
+		require.Len(t, exec.runner.MetricsCalls(), count)
 	}
 }
 
@@ -254,10 +254,10 @@ func prepRequest(method, target, body string, session bool, id string) *http.Req
 // refusal that stands in for a data source that cannot serve any of
 // them.
 type clientMocks struct {
-	// prometheus, sql, postgreSQL, mySQL and logSource are the clients
+	// metrics, sql, postgreSQL, mySQL and logSource are the clients
 	// the accessors return. A check reads back what the handler asked
 	// them.
-	prometheus *datasourceMock.Prometheus
+	metrics    *datasourceMock.Metrics
 	sql        *datasourceMock.SQL
 	postgreSQL *datasourceMock.PostgreSQL
 	mySQL      *datasourceMock.MySQL
@@ -339,8 +339,8 @@ func prepHandler(db *DBMock, clients *clientMocks, vars *VariableManagerMock) (*
 		clients = &clientMocks{}
 	}
 
-	if clients.prometheus == nil {
-		clients.prometheus = &datasourceMock.Prometheus{}
+	if clients.metrics == nil {
+		clients.metrics = &datasourceMock.Metrics{}
 	}
 
 	if clients.sql == nil {
@@ -372,12 +372,12 @@ func prepHandler(db *DBMock, clients *clientMocks, vars *VariableManagerMock) (*
 		TestConnectionFunc: func(context.Context) (processor.ConnectionStatus, error) {
 			return clients.status, clients.statusErr
 		},
-		PrometheusFunc: func(context.Context) (datasourceCore.Prometheus, error) {
+		MetricsFunc: func(context.Context) (datasourceCore.Metrics, error) {
 			if clients.err != nil {
 				return nil, clients.err
 			}
 
-			return clients.prometheus, nil
+			return clients.metrics, nil
 		},
 		SQLFunc: func(context.Context) (datasourceCore.SQL, error) {
 			if clients.err != nil {
@@ -557,6 +557,15 @@ func Test_Handler_CreateDataSource(t *testing.T) {
 			Body: `{"type":"graphite","name":"test-source","url":"http://source.test","credentials":{"username":"user"}}`,
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.invalid_type","message":"invalid data source type"}`),
+				wasRunnersRunnerCalled(0),
+				wasExecutorTestConnectionCalled(0),
+				wasDBInsertDataSourceCalled(0),
+			),
+		},
+		"Error returned by CreateInput.Validate for a URL that does not parse": {
+			Body: `{"type":"prometheus","name":"test-source","url":"http://source.test/%","credentials":{"kind":"basic","username":"user"}}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"data_source.invalid_url","message":"invalid data source URL"}`),
 				wasRunnersRunnerCalled(0),
 				wasExecutorTestConnectionCalled(0),
 				wasDBInsertDataSourceCalled(0),

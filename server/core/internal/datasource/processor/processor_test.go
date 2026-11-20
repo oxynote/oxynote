@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -88,6 +89,29 @@ var (
 	// _pgAddr is the address of the throwaway PostgreSQL container.
 	_pgAddr string
 )
+
+// startVersions starts a container of each version with start and keeps
+// its address in addrs. It returns the containers it started, also when a
+// later one fails, so the caller can stop them.
+func startVersions(
+	versions []string,
+	addrs map[string]string,
+	start func(version string) (*gnomock.Container, error),
+) ([]*gnomock.Container, error) {
+	containers := make([]*gnomock.Container, 0, len(versions))
+
+	for _, v := range versions {
+		c, err := start(v)
+		if err != nil {
+			return containers, fmt.Errorf("starting %s: %w", v, err)
+		}
+
+		containers = append(containers, c)
+		addrs[v] = c.DefaultAddress()
+	}
+
+	return containers, nil
+}
 
 func TestMain(m *testing.M) {
 	// silence the driver's connection noise while the MariaDB container
@@ -197,7 +221,9 @@ func TestMain(m *testing.M) {
 	_logsWindow.To = _logsWindow.From.Add(time.Hour)
 	_logsCorpus = newLogsCorpus(_logsWindow.From)
 
-	lokiContainers := make([]*gnomock.Container, 0, len(_lokiVersions))
+	lokiContainers, lerr := startVersions(_lokiVersions, _lokiAddrs, func(v string) (*gnomock.Container, error) {
+		return startLoki(v, _logsCorpus)
+	})
 
 	defer func() {
 		if serr := gnomock.Stop(lokiContainers...); serr != nil {
@@ -205,14 +231,34 @@ func TestMain(m *testing.M) {
 		}
 	}()
 
-	for _, v := range _lokiVersions {
-		lokiContainer, lerr := startLoki(v, _logsCorpus)
-		if lerr != nil {
-			panic("cannot set up loki " + v + ": " + lerr.Error())
-		}
+	if lerr != nil {
+		panic("cannot set up loki: " + lerr.Error())
+	}
 
-		lokiContainers = append(lokiContainers, lokiContainer)
-		_lokiAddrs[v] = lokiContainer.DefaultAddress()
+	victoriaLogsContainers, verr := startVersions(_victoriaLogsVersions, _victoriaLogsAddrs, func(v string) (*gnomock.Container, error) {
+		return startVictoriaLogs(v, _logsCorpus)
+	})
+
+	defer func() {
+		if serr := gnomock.Stop(victoriaLogsContainers...); serr != nil {
+			panic("cannot clean up victorialogs: " + serr.Error())
+		}
+	}()
+
+	if verr != nil {
+		panic("cannot set up victorialogs: " + verr.Error())
+	}
+
+	victoriaMetricsContainers, merr := startVersions(_victoriaMetricsVersions, _victoriaMetricsAddrs, startVictoriaMetrics)
+
+	defer func() {
+		if serr := gnomock.Stop(victoriaMetricsContainers...); serr != nil {
+			panic("cannot clean up victoriametrics: " + serr.Error())
+		}
+	}()
+
+	if merr != nil {
+		panic("cannot set up victoriametrics: " + merr.Error())
 	}
 
 	// goleak.VerifyTestMain ends in os.Exit, which skips the deferred
@@ -281,6 +327,34 @@ func Test_ConnectionStatus_Error(t *testing.T) {
 			assert.Equal(t, c.Err, c.Status.Error())
 		})
 	}
+}
+
+// containerRequest sends a request to a test container and returns the
+// body. It fails unless the container answers 2xx.
+func containerRequest(ctx context.Context, method, target, contentType string, body []byte) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", contentType)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
+
+	res, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("%s answered %d: %s", target, resp.StatusCode, res)
+	}
+
+	return res, nil
 }
 
 // tokenHandler answers 401 to a request that does not carry _testToken as

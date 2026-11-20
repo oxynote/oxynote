@@ -113,9 +113,9 @@ type dataSourceCase struct {
 	// answer from stubVariableTree.
 	VariablesErr error
 
-	// Prometheus, SQL, PostgreSQL, MySQL and Logs are the clients the
+	// Metrics, SQL, PostgreSQL, MySQL and Logs are the clients the
 	// runner hands out. Nil is a don't-care client.
-	Prometheus *datasourceMock.Prometheus
+	Metrics    *datasourceMock.Metrics
 	SQL        *datasourceMock.SQL
 	PostgreSQL *datasourceMock.PostgreSQL
 	MySQL      *datasourceMock.MySQL
@@ -141,26 +141,26 @@ type dataSourceCase struct {
 // runner's accessors take the name of the client they hand out, and a
 // method two clients share is prefixed with its client.
 type dataSourceCalls struct {
-	Runner             int
-	Values             int
-	Substitute         int
-	Type               int
-	Prometheus         int
-	SQL                int
-	PostgreSQL         int
-	MySQL              int
-	Logs               int
-	PrometheusMetadata int
-	LabelNames         int
-	LabelValues        int
-	Series             int
-	QueryRange         int
-	SQLMetadata        int
-	PostgreSQLQuery    int
-	MySQLQuery         int
-	LogFields          int
-	LogFieldValues     int
-	LogsLogs           int
+	Runner          int
+	Values          int
+	Substitute      int
+	Type            int
+	Metrics         int
+	SQL             int
+	PostgreSQL      int
+	MySQL           int
+	Logs            int
+	MetricsMetadata int
+	LabelNames      int
+	LabelValues     int
+	Series          int
+	QueryRange      int
+	SQLMetadata     int
+	PostgreSQLQuery int
+	MySQLQuery      int
+	LogFields       int
+	LogFieldValues  int
+	LogsLogs        int
 }
 
 // runDataSourceCase runs a data-source tool over a stub input and
@@ -168,7 +168,7 @@ type dataSourceCalls struct {
 func runDataSourceCase(t *testing.T, c dataSourceCase) {
 	t.Helper()
 
-	prom := cmp.Or(c.Prometheus, &datasourceMock.Prometheus{})
+	prom := cmp.Or(c.Metrics, &datasourceMock.Metrics{})
 	sql := cmp.Or(c.SQL, &datasourceMock.SQL{})
 	pg := cmp.Or(c.PostgreSQL, &datasourceMock.PostgreSQL{})
 	my := cmp.Or(c.MySQL, &datasourceMock.MySQL{})
@@ -176,7 +176,7 @@ func runDataSourceCase(t *testing.T, c dataSourceCase) {
 
 	runner := &datasourceMock.Runner{
 		TypeFunc: func() datasource.Type { return c.Type },
-		PrometheusFunc: func(context.Context) (datasource.Prometheus, error) {
+		MetricsFunc: func(context.Context) (datasource.Metrics, error) {
 			if c.NoClient {
 				return nil, assert.AnError
 			}
@@ -247,26 +247,26 @@ func runDataSourceCase(t *testing.T, c dataSourceCase) {
 	testutil.AssertEqualError(t, c.Err, err)
 
 	calls := dataSourceCalls{
-		Runner:             len(inp.DataSourceRunnerCalls()),
-		Values:             len(inp.VariableValuesCalls()),
-		Substitute:         len(inp.SubstituteVariablesCalls()),
-		Type:               len(runner.TypeCalls()),
-		Prometheus:         len(runner.PrometheusCalls()),
-		SQL:                len(runner.SQLCalls()),
-		PostgreSQL:         len(runner.PostgreSQLCalls()),
-		MySQL:              len(runner.MySQLCalls()),
-		Logs:               len(runner.LogsCalls()),
-		PrometheusMetadata: len(prom.MetadataCalls()),
-		LabelNames:         len(prom.LabelNamesCalls()),
-		LabelValues:        len(prom.LabelValuesCalls()),
-		Series:             len(prom.SeriesCalls()),
-		QueryRange:         len(prom.QueryRangeCalls()),
-		SQLMetadata:        len(sql.MetadataCalls()),
-		PostgreSQLQuery:    len(pg.QueryCalls()),
-		MySQLQuery:         len(my.QueryCalls()),
-		LogFields:          len(logs.LogFieldsCalls()),
-		LogFieldValues:     len(logs.LogFieldValuesCalls()),
-		LogsLogs:           len(logs.LogsCalls()),
+		Runner:          len(inp.DataSourceRunnerCalls()),
+		Values:          len(inp.VariableValuesCalls()),
+		Substitute:      len(inp.SubstituteVariablesCalls()),
+		Type:            len(runner.TypeCalls()),
+		Metrics:         len(runner.MetricsCalls()),
+		SQL:             len(runner.SQLCalls()),
+		PostgreSQL:      len(runner.PostgreSQLCalls()),
+		MySQL:           len(runner.MySQLCalls()),
+		Logs:            len(runner.LogsCalls()),
+		MetricsMetadata: len(prom.MetadataCalls()),
+		LabelNames:      len(prom.LabelNamesCalls()),
+		LabelValues:     len(prom.LabelValuesCalls()),
+		Series:          len(prom.SeriesCalls()),
+		QueryRange:      len(prom.QueryRangeCalls()),
+		SQLMetadata:     len(sql.MetadataCalls()),
+		PostgreSQLQuery: len(pg.QueryCalls()),
+		MySQLQuery:      len(my.QueryCalls()),
+		LogFields:       len(logs.LogFieldsCalls()),
+		LogFieldValues:  len(logs.LogFieldValuesCalls()),
+		LogsLogs:        len(logs.LogsCalls()),
 	}
 
 	assert.Equal(t, c.Calls, calls)
@@ -302,8 +302,8 @@ func Test_listDataSources_Info(t *testing.T) {
 	assert.Equal(t, NameListDataSources, info.Name)
 	assert.Empty(t, info.Required)
 	assert.Empty(t, info.Properties)
-	assert.Contains(t, info.Description, "prometheus, loki, postgresql")
-	assert.Contains(t, info.Description, "loki holds logs")
+	assert.Contains(t, info.Description, "prometheus, victoriametrics, loki, victorialogs, postgresql")
+	assert.Contains(t, info.Description, "loki and victorialogs hold logs")
 }
 
 func Test_listDataSources_Validate(t *testing.T) {
@@ -442,11 +442,20 @@ func Test_getDataSourceMetadata_Exec(t *testing.T) {
 		"Metrics of a Prometheus data source": {
 			Type: datasource.TypePrometheus,
 			Tool: tool,
-			Prometheus: &datasourceMock.Prometheus{
+			Metrics: &datasourceMock.Metrics{
 				MetadataFunc: func(context.Context) (*processor.PrometheusMetadataResult, error) { return promResult, nil },
 			},
 			Result: promResult,
-			Calls:  dataSourceCalls{Runner: 1, Type: 1, Prometheus: 1, PrometheusMetadata: 1},
+			Calls:  dataSourceCalls{Runner: 1, Type: 1, Metrics: 1, MetricsMetadata: 1},
+		},
+		"Metrics of a VictoriaMetrics data source": {
+			Type: datasource.TypeVictoriaMetrics,
+			Tool: tool,
+			Metrics: &datasourceMock.Metrics{
+				MetadataFunc: func(context.Context) (*processor.PrometheusMetadataResult, error) { return promResult, nil },
+			},
+			Result: promResult,
+			Calls:  dataSourceCalls{Runner: 1, Type: 1, Metrics: 1, MetricsMetadata: 1},
 		},
 		"Tables of a SQL data source each with its column names": {
 			Type: datasource.TypePostgreSQL,
@@ -480,6 +489,20 @@ func Test_getDataSourceMetadata_Exec(t *testing.T) {
 			Result: logsResult,
 			Calls:  dataSourceCalls{Runner: 1, Type: 1, Logs: 1, LogFields: 1},
 		},
+		"Fields of a VictoriaLogs data source": {
+			Type: datasource.TypeVictoriaLogs,
+			Tool: tool,
+			Logs: &datasourceMock.Logs{
+				LogFieldsFunc: func(_ context.Context, q string, tr processor.TimeRange) (*processor.LogFieldsResult, error) {
+					assert.Empty(t, q)
+					assert.Equal(t, time.Hour, tr.To.Sub(tr.From))
+
+					return logsResult, nil
+				},
+			},
+			Result: logsResult,
+			Calls:  dataSourceCalls{Runner: 1, Type: 1, Logs: 1, LogFields: 1},
+		},
 		"Error returned by Input.DataSourceRunner": {
 			Type:      datasource.TypePrometheus,
 			Tool:      tool,
@@ -487,12 +510,12 @@ func Test_getDataSourceMetadata_Exec(t *testing.T) {
 			Err:       assert.AnError,
 			Calls:     dataSourceCalls{Runner: 1},
 		},
-		"Error returned by Runner.Prometheus": {
+		"Error returned by Runner.Metrics": {
 			Type:     datasource.TypePrometheus,
 			Tool:     tool,
 			NoClient: true,
 			Err:      assert.AnError,
-			Calls:    dataSourceCalls{Runner: 1, Type: 1, Prometheus: 1},
+			Calls:    dataSourceCalls{Runner: 1, Type: 1, Metrics: 1},
 		},
 		"Error returned by Runner.Logs": {
 			Type:     datasource.TypeLoki,
@@ -519,14 +542,14 @@ func Test_getDataSourceMetadata_Exec(t *testing.T) {
 			Err:      assert.AnError,
 			Calls:    dataSourceCalls{Runner: 1, Type: 1, SQL: 1},
 		},
-		"Error returned by Prometheus.Metadata": {
+		"Error returned by Metrics.Metadata": {
 			Type: datasource.TypePrometheus,
 			Tool: tool,
-			Prometheus: &datasourceMock.Prometheus{
+			Metrics: &datasourceMock.Metrics{
 				MetadataFunc: func(context.Context) (*processor.PrometheusMetadataResult, error) { return nil, assert.AnError },
 			},
 			Err:   assert.AnError,
-			Calls: dataSourceCalls{Runner: 1, Type: 1, Prometheus: 1, PrometheusMetadata: 1},
+			Calls: dataSourceCalls{Runner: 1, Type: 1, Metrics: 1, MetricsMetadata: 1},
 		},
 		"Error returned by SQL.Metadata": {
 			Type: datasource.TypePostgreSQL,
@@ -548,33 +571,33 @@ func Test_getDataSourceMetadata_Exec(t *testing.T) {
 	}
 }
 
-func Test_listPrometheusLabels_Info(t *testing.T) {
+func Test_listMetricLabels_Info(t *testing.T) {
 	t.Parallel()
 
-	info := listPrometheusLabels{}.Info()
+	info := listMetricLabels{}.Info()
 
 	assert.Equal(t, Traits{DataSource: true, Group: GroupDataSources, Role: org.RoleViewer}, info.Traits)
 
-	assert.Equal(t, NameListPrometheusLabels, info.Name)
+	assert.Equal(t, NameListMetricLabels, info.Name)
 	assert.Equal(t, []string{"data_source_id"}, info.Required)
 	assert.Contains(t, info.Properties, "label")
 	assert.Contains(t, info.Properties, "matchers")
 	assert.Contains(t, info.Properties, "from")
 }
 
-func Test_listPrometheusLabels_Validate(t *testing.T) {
+func Test_listMetricLabels_Validate(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Tool listPrometheusLabels
+		Tool listMetricLabels
 		Err  error
 	}{
 		"Data source id is required": {
-			Tool: listPrometheusLabels{Label: "job"},
+			Tool: listMetricLabels{Label: "job"},
 			Err:  errors.New("data_source_id is required"),
 		},
 		"Valid arguments": {
-			Tool: listPrometheusLabels{DataSourceID: _testDataSourceID},
+			Tool: listMetricLabels{DataSourceID: _testDataSourceID},
 		},
 	}
 
@@ -587,27 +610,27 @@ func Test_listPrometheusLabels_Validate(t *testing.T) {
 	}
 }
 
-func Test_listPrometheusLabels_Title(t *testing.T) {
+func Test_listMetricLabels_Title(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
 		Input  *InputMock
-		Tool   listPrometheusLabels
+		Tool   listMetricLabels
 		Result string
 	}{
 		"Label names": {
 			Input:  stubDataSourceInput(nil),
-			Tool:   listPrometheusLabels{DataSourceID: _testDataSourceID},
+			Tool:   listMetricLabels{DataSourceID: _testDataSourceID},
 			Result: `Listing labels of "prod"`,
 		},
 		"Values of one label": {
 			Input:  stubDataSourceInput(nil),
-			Tool:   listPrometheusLabels{DataSourceID: _testDataSourceID, Label: "job"},
+			Tool:   listMetricLabels{DataSourceID: _testDataSourceID, Label: "job"},
 			Result: `Listing values of label "job" in "prod"`,
 		},
 		"Error returned by Input.FetchDataSource": {
 			Input:  stubDataSourceInput(assert.AnError),
-			Tool:   listPrometheusLabels{DataSourceID: _testDataSourceID},
+			Tool:   listMetricLabels{DataSourceID: _testDataSourceID},
 			Result: "",
 		},
 	}
@@ -625,14 +648,14 @@ func Test_listPrometheusLabels_Title(t *testing.T) {
 	}
 }
 
-func Test_listPrometheusLabels_Exec(t *testing.T) {
+func Test_listMetricLabels_Exec(t *testing.T) {
 	t.Parallel()
 
 	names := &processor.PrometheusLabelNamesResult{Result: []string{"job"}}
 	values := &processor.PrometheusLabelValuesResult{Result: []string{"api"}}
 
-	client := func() *datasourceMock.Prometheus {
-		return &datasourceMock.Prometheus{
+	client := func() *datasourceMock.Metrics {
+		return &datasourceMock.Metrics{
 			LabelNamesFunc: func(_ context.Context, matchers []string, tr processor.TimeRange) (*processor.PrometheusLabelNamesResult, error) {
 				if len(matchers) > 0 && (matchers[0] == "boom" || strings.Contains(matchers[0], "$")) {
 					return nil, assert.AnError
@@ -652,38 +675,38 @@ func Test_listPrometheusLabels_Exec(t *testing.T) {
 		}
 	}
 
-	tool := func(label string, matchers ...string) listPrometheusLabels {
-		return listPrometheusLabels{DataSourceID: _testDataSourceID, Label: label, Matchers: matchers}
+	tool := func(label string, matchers ...string) listMetricLabels {
+		return listMetricLabels{DataSourceID: _testDataSourceID, Label: label, Matchers: matchers}
 	}
 
 	// a $ left in a matcher fails the read, so the substitution cases pass
 	// only when every reference was replaced.
 	cc := map[string]dataSourceCase{
 		"The label names with variables substituted": {
-			Type:       datasource.TypePrometheus,
-			Tool:       tool("", `up{region="$region"}`),
-			Prometheus: client(),
-			Result:     names,
-			Calls:      dataSourceCalls{Runner: 1, Substitute: 1, Prometheus: 1, LabelNames: 1},
+			Type:    datasource.TypePrometheus,
+			Tool:    tool("", `up{region="$region"}`),
+			Metrics: client(),
+			Result:  names,
+			Calls:   dataSourceCalls{Runner: 1, Substitute: 1, Metrics: 1, LabelNames: 1},
 		},
 		"The label values with variables substituted": {
-			Type:       datasource.TypePrometheus,
-			Tool:       tool("job", `up{region="$region"}`),
-			Prometheus: client(),
-			Result:     values,
-			Calls:      dataSourceCalls{Runner: 1, Substitute: 1, Prometheus: 1, LabelValues: 1},
+			Type:    datasource.TypePrometheus,
+			Tool:    tool("job", `up{region="$region"}`),
+			Metrics: client(),
+			Result:  values,
+			Calls:   dataSourceCalls{Runner: 1, Substitute: 1, Metrics: 1, LabelValues: 1},
 		},
 		"Error returned by Input.SubstituteVariables": {
 			Type:         datasource.TypePrometheus,
 			Tool:         tool("", `up{region="$region"}`),
 			VariablesErr: assert.AnError,
-			Prometheus:   client(),
+			Metrics:      client(),
 			Err:          assert.AnError,
 			Calls:        dataSourceCalls{Runner: 1, Substitute: 1},
 		},
 		"An inverted range": {
 			Type: datasource.TypePrometheus,
-			Tool: func() listPrometheusLabels {
+			Tool: func() listMetricLabels {
 				tl := tool("")
 				tl.timeRange = invertedRange()
 
@@ -705,21 +728,21 @@ func Test_listPrometheusLabels_Exec(t *testing.T) {
 			Tool:     tool(""),
 			NoClient: true,
 			Err:      assert.AnError,
-			Calls:    dataSourceCalls{Runner: 1, Substitute: 1, Prometheus: 1},
+			Calls:    dataSourceCalls{Runner: 1, Substitute: 1, Metrics: 1},
 		},
-		"Error returned by Prometheus.LabelNames": {
-			Type:       datasource.TypePrometheus,
-			Tool:       tool("", "boom"),
-			Prometheus: client(),
-			Err:        assert.AnError,
-			Calls:      dataSourceCalls{Runner: 1, Substitute: 1, Prometheus: 1, LabelNames: 1},
+		"Error returned by Metrics.LabelNames": {
+			Type:    datasource.TypePrometheus,
+			Tool:    tool("", "boom"),
+			Metrics: client(),
+			Err:     assert.AnError,
+			Calls:   dataSourceCalls{Runner: 1, Substitute: 1, Metrics: 1, LabelNames: 1},
 		},
-		"Error returned by Prometheus.LabelValues": {
-			Type:       datasource.TypePrometheus,
-			Tool:       tool("boom"),
-			Prometheus: client(),
-			Err:        assert.AnError,
-			Calls:      dataSourceCalls{Runner: 1, Substitute: 1, Prometheus: 1, LabelValues: 1},
+		"Error returned by Metrics.LabelValues": {
+			Type:    datasource.TypePrometheus,
+			Tool:    tool("boom"),
+			Metrics: client(),
+			Err:     assert.AnError,
+			Calls:   dataSourceCalls{Runner: 1, Substitute: 1, Metrics: 1, LabelValues: 1},
 		},
 	}
 
@@ -732,34 +755,34 @@ func Test_listPrometheusLabels_Exec(t *testing.T) {
 	}
 }
 
-func Test_listPrometheusSeries_Info(t *testing.T) {
+func Test_listMetricSeries_Info(t *testing.T) {
 	t.Parallel()
 
-	info := listPrometheusSeries{}.Info()
+	info := listMetricSeries{}.Info()
 
 	assert.Equal(t, Traits{DataSource: true, Group: GroupDataSources, Role: org.RoleViewer}, info.Traits)
 
-	assert.Equal(t, NameListPrometheusSeries, info.Name)
+	assert.Equal(t, NameListMetricSeries, info.Name)
 	assert.Equal(t, []string{"data_source_id", "matchers"}, info.Required)
 }
 
-func Test_listPrometheusSeries_Validate(t *testing.T) {
+func Test_listMetricSeries_Validate(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Tool listPrometheusSeries
+		Tool listMetricSeries
 		Err  error
 	}{
 		"Data source id is required": {
-			Tool: listPrometheusSeries{Matchers: []string{"up"}},
+			Tool: listMetricSeries{Matchers: []string{"up"}},
 			Err:  errors.New("data_source_id is required"),
 		},
 		"Matchers are required": {
-			Tool: listPrometheusSeries{DataSourceID: _testDataSourceID},
+			Tool: listMetricSeries{DataSourceID: _testDataSourceID},
 			Err:  errors.New("matchers is required"),
 		},
 		"Valid arguments": {
-			Tool: listPrometheusSeries{DataSourceID: _testDataSourceID, Matchers: []string{"up"}},
+			Tool: listMetricSeries{DataSourceID: _testDataSourceID, Matchers: []string{"up"}},
 		},
 	}
 
@@ -772,22 +795,22 @@ func Test_listPrometheusSeries_Validate(t *testing.T) {
 	}
 }
 
-func Test_listPrometheusSeries_Title(t *testing.T) {
+func Test_listMetricSeries_Title(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
 		Input  *InputMock
-		Tool   listPrometheusSeries
+		Tool   listMetricSeries
 		Result string
 	}{
 		"Data source that resolves is named": {
 			Input:  stubDataSourceInput(nil),
-			Tool:   listPrometheusSeries{DataSourceID: _testDataSourceID, Matchers: []string{"up"}},
+			Tool:   listMetricSeries{DataSourceID: _testDataSourceID, Matchers: []string{"up"}},
 			Result: `Listing series of "prod"`,
 		},
 		"Error returned by Input.FetchDataSource": {
 			Input:  stubDataSourceInput(assert.AnError),
-			Tool:   listPrometheusSeries{DataSourceID: _testDataSourceID, Matchers: []string{"up"}},
+			Tool:   listMetricSeries{DataSourceID: _testDataSourceID, Matchers: []string{"up"}},
 			Result: "",
 		},
 	}
@@ -805,13 +828,13 @@ func Test_listPrometheusSeries_Title(t *testing.T) {
 	}
 }
 
-func Test_listPrometheusSeries_Exec(t *testing.T) {
+func Test_listMetricSeries_Exec(t *testing.T) {
 	t.Parallel()
 
 	series := &processor.PrometheusSeriesResult{Result: []model.LabelSet{{"job": "api"}}}
 
-	client := func() *datasourceMock.Prometheus {
-		return &datasourceMock.Prometheus{
+	client := func() *datasourceMock.Metrics {
+		return &datasourceMock.Metrics{
 			SeriesFunc: func(_ context.Context, matchers []string, _ processor.TimeRange) (*processor.PrometheusSeriesResult, error) {
 				if matchers[0] == "boom" || strings.Contains(matchers[0], "$") {
 					return nil, assert.AnError
@@ -822,31 +845,31 @@ func Test_listPrometheusSeries_Exec(t *testing.T) {
 		}
 	}
 
-	tool := func(matchers ...string) listPrometheusSeries {
-		return listPrometheusSeries{DataSourceID: _testDataSourceID, Matchers: matchers}
+	tool := func(matchers ...string) listMetricSeries {
+		return listMetricSeries{DataSourceID: _testDataSourceID, Matchers: matchers}
 	}
 
 	// a $ left in a matcher fails the read, so the substitution case
 	// passes only when every reference was replaced.
 	cc := map[string]dataSourceCase{
 		"The series with variables substituted": {
-			Type:       datasource.TypePrometheus,
-			Tool:       tool(`{region="$region"}`),
-			Prometheus: client(),
-			Result:     series,
-			Calls:      dataSourceCalls{Runner: 1, Substitute: 1, Prometheus: 1, Series: 1},
+			Type:    datasource.TypePrometheus,
+			Tool:    tool(`{region="$region"}`),
+			Metrics: client(),
+			Result:  series,
+			Calls:   dataSourceCalls{Runner: 1, Substitute: 1, Metrics: 1, Series: 1},
 		},
 		"Error returned by Input.SubstituteVariables": {
 			Type:         datasource.TypePrometheus,
 			Tool:         tool(`{region="$region"}`),
 			VariablesErr: assert.AnError,
-			Prometheus:   client(),
+			Metrics:      client(),
 			Err:          assert.AnError,
 			Calls:        dataSourceCalls{Runner: 1, Substitute: 1},
 		},
 		"An inverted range": {
 			Type: datasource.TypePrometheus,
-			Tool: func() listPrometheusSeries {
+			Tool: func() listMetricSeries {
 				tl := tool("up")
 				tl.timeRange = invertedRange()
 
@@ -861,19 +884,19 @@ func Test_listPrometheusSeries_Exec(t *testing.T) {
 			Err:       assert.AnError,
 			Calls:     dataSourceCalls{Runner: 1},
 		},
-		"Error returned by Runner.Prometheus": {
+		"Error returned by Runner.Metrics": {
 			Type:     datasource.TypePostgreSQL,
 			Tool:     tool("up"),
 			NoClient: true,
 			Err:      assert.AnError,
-			Calls:    dataSourceCalls{Runner: 1, Substitute: 1, Prometheus: 1},
+			Calls:    dataSourceCalls{Runner: 1, Substitute: 1, Metrics: 1},
 		},
-		"Error returned by Prometheus.Series": {
-			Type:       datasource.TypePrometheus,
-			Tool:       tool("boom"),
-			Prometheus: client(),
-			Err:        assert.AnError,
-			Calls:      dataSourceCalls{Runner: 1, Substitute: 1, Prometheus: 1, Series: 1},
+		"Error returned by Metrics.Series": {
+			Type:    datasource.TypePrometheus,
+			Tool:    tool("boom"),
+			Metrics: client(),
+			Err:     assert.AnError,
+			Calls:   dataSourceCalls{Runner: 1, Substitute: 1, Metrics: 1, Series: 1},
 		},
 	}
 
@@ -1014,6 +1037,13 @@ func Test_listLogFields_Exec(t *testing.T) {
 	cc := map[string]dataSourceCase{
 		"The field names": {
 			Type:   datasource.TypeLoki,
+			Tool:   tool("", ""),
+			Logs:   client(),
+			Result: fields("app"),
+			Calls:  dataSourceCalls{Runner: 1, Substitute: 1, Logs: 1, LogFields: 1},
+		},
+		"The field names of a VictoriaLogs data source": {
+			Type:   datasource.TypeVictoriaLogs,
 			Tool:   tool("", ""),
 			Logs:   client(),
 			Result: fields("app"),
@@ -1180,8 +1210,8 @@ func Test_queryDataSource_Title(t *testing.T) {
 func Test_queryDataSource_Exec(t *testing.T) {
 	t.Parallel()
 
-	prom := func(res *processor.PrometheusQueryResult) *datasourceMock.Prometheus {
-		return &datasourceMock.Prometheus{
+	prom := func(res *processor.PrometheusQueryResult) *datasourceMock.Metrics {
+		return &datasourceMock.Metrics{
 			QueryRangeFunc: func(_ context.Context, q string, _ processor.TimeRange) (*processor.PrometheusQueryResult, error) {
 				switch {
 				case q == "boom", strings.Contains(q, "$"):
@@ -1289,11 +1319,18 @@ func Test_queryDataSource_Exec(t *testing.T) {
 	// tool's own dispatch decides which one is reached.
 	cc := map[string]dataSourceCase{
 		"Prometheus substituted variables": {
-			Type:       datasource.TypePrometheus,
-			Tool:       query(`up{region="$region",range="$metric_range"}`, ""),
-			Prometheus: prom(matrix),
-			Result:     newRawSeries(matrix),
-			Calls:      dataSourceCalls{Runner: 1, Values: 1, Type: 1, Prometheus: 1, QueryRange: 1},
+			Type:    datasource.TypePrometheus,
+			Tool:    query(`up{region="$region",range="$metric_range"}`, ""),
+			Metrics: prom(matrix),
+			Result:  newRawSeries(matrix),
+			Calls:   dataSourceCalls{Runner: 1, Values: 1, Type: 1, Metrics: 1, QueryRange: 1},
+		},
+		"VictoriaMetrics substituted variables": {
+			Type:    datasource.TypeVictoriaMetrics,
+			Tool:    query(`up{region="$region",range="$metric_range"}`, ""),
+			Metrics: prom(matrix),
+			Result:  newRawSeries(matrix),
+			Calls:   dataSourceCalls{Runner: 1, Values: 1, Type: 1, Metrics: 1, QueryRange: 1},
 		},
 		"PostgreSQL substituted variables": {
 			Type:       datasource.TypePostgreSQL,
@@ -1320,20 +1357,20 @@ func Test_queryDataSource_Exec(t *testing.T) {
 			Calls:        dataSourceCalls{Runner: 1, Values: 1},
 		},
 		"Prometheus charted": {
-			Type:       datasource.TypePrometheus,
-			Tool:       query("up", processor.ChartTypeLine),
-			Prometheus: prom(matrix),
-			Result:     newChartPreview(matrix.Transform(processor.ChartTypeLine)),
-			Calls:      dataSourceCalls{Runner: 1, Values: 1, Type: 1, Prometheus: 1, QueryRange: 1},
+			Type:    datasource.TypePrometheus,
+			Tool:    query("up", processor.ChartTypeLine),
+			Metrics: prom(matrix),
+			Result:  newChartPreview(matrix.Transform(processor.ChartTypeLine)),
+			Calls:   dataSourceCalls{Runner: 1, Values: 1, Type: 1, Metrics: 1, QueryRange: 1},
 		},
 		// a query that returned nothing has no result to transform, and
 		// the metric block renders it as no-data.
 		"A Prometheus query with no result at all is no-data": {
-			Type:       datasource.TypePrometheus,
-			Tool:       query("up", processor.ChartTypeGauge),
-			Prometheus: prom(nil),
-			Result:     noData,
-			Calls:      dataSourceCalls{Runner: 1, Values: 1, Type: 1, Prometheus: 1, QueryRange: 1},
+			Type:    datasource.TypePrometheus,
+			Tool:    query("up", processor.ChartTypeGauge),
+			Metrics: prom(nil),
+			Result:  noData,
+			Calls:   dataSourceCalls{Runner: 1, Values: 1, Type: 1, Metrics: 1, QueryRange: 1},
 		},
 		"Supabase charted": {
 			Type:       datasource.TypeSupabase,
@@ -1377,10 +1414,27 @@ func Test_queryDataSource_Exec(t *testing.T) {
 			},
 			Calls: dataSourceCalls{Runner: 1, Values: 1, Type: 1, Logs: 1, LogsLogs: 1},
 		},
+		"VictoriaLogs substituted variables": {
+			Type: datasource.TypeVictoriaLogs,
+			Tool: query(`region:="$region"`, ""),
+			Logs: logs(),
+			Result: rawLogs{
+				Status: processor.QueryStatusOK,
+				Logs:   []rawLog{{Level: processor.LogLevelError, Message: `region:="eu-west-1"`}},
+			},
+			Calls: dataSourceCalls{Runner: 1, Values: 1, Type: 1, Logs: 1, LogsLogs: 1},
+		},
 		// no chart draws logs, so the check is refused before any read.
 		"A Loki chart check is refused": {
 			Type:  datasource.TypeLoki,
 			Tool:  query(`{app="api"}`, processor.ChartTypeLine),
+			Logs:  logs(),
+			Err:   _errLogsChartType,
+			Calls: dataSourceCalls{Runner: 1, Values: 1, Type: 1},
+		},
+		"A VictoriaLogs chart check is refused": {
+			Type:  datasource.TypeVictoriaLogs,
+			Tool:  query(`app:="api"`, processor.ChartTypeLine),
 			Logs:  logs(),
 			Err:   _errLogsChartType,
 			Calls: dataSourceCalls{Runner: 1, Values: 1, Type: 1},
@@ -1402,12 +1456,12 @@ func Test_queryDataSource_Exec(t *testing.T) {
 			Err:       assert.AnError,
 			Calls:     dataSourceCalls{Runner: 1},
 		},
-		"Error returned by Runner.Prometheus": {
+		"Error returned by Runner.Metrics": {
 			Type:     datasource.TypePrometheus,
 			Tool:     query("up", ""),
 			NoClient: true,
 			Err:      assert.AnError,
-			Calls:    dataSourceCalls{Runner: 1, Values: 1, Type: 1, Prometheus: 1},
+			Calls:    dataSourceCalls{Runner: 1, Values: 1, Type: 1, Metrics: 1},
 		},
 		"Error returned by Runner.PostgreSQL": {
 			Type:     datasource.TypePostgreSQL,
@@ -1423,12 +1477,12 @@ func Test_queryDataSource_Exec(t *testing.T) {
 			Err:      assert.AnError,
 			Calls:    dataSourceCalls{Runner: 1, Values: 1, Type: 1, MySQL: 1},
 		},
-		"Error returned by Prometheus.QueryRange": {
-			Type:       datasource.TypePrometheus,
-			Tool:       query("boom", ""),
-			Prometheus: prom(nil),
-			Err:        assert.AnError,
-			Calls:      dataSourceCalls{Runner: 1, Values: 1, Type: 1, Prometheus: 1, QueryRange: 1},
+		"Error returned by Metrics.QueryRange": {
+			Type:    datasource.TypePrometheus,
+			Tool:    query("boom", ""),
+			Metrics: prom(nil),
+			Err:     assert.AnError,
+			Calls:   dataSourceCalls{Runner: 1, Values: 1, Type: 1, Metrics: 1, QueryRange: 1},
 		},
 		"Error returned by PostgreSQLQueryResult.Transform": {
 			Type:       datasource.TypePostgreSQL,
@@ -1447,18 +1501,18 @@ func Test_queryDataSource_Exec(t *testing.T) {
 			Calls:      dataSourceCalls{Runner: 1, Values: 1, Type: 1, MySQL: 1, MySQLQuery: 1},
 		},
 		"A Prometheus query the data source rejected": {
-			Type:       datasource.TypePrometheus,
-			Tool:       query("rejected", ""),
-			Prometheus: prom(nil),
-			Err:        fmt.Errorf("%w; check the query against get_data_source_metadata", processor.NewInvalidQueryError("parse error")),
-			Calls:      dataSourceCalls{Runner: 1, Values: 1, Type: 1, Prometheus: 1, QueryRange: 1},
+			Type:    datasource.TypePrometheus,
+			Tool:    query("rejected", ""),
+			Metrics: prom(nil),
+			Err:     fmt.Errorf("%w; check the query against get_data_source_metadata", processor.NewInvalidQueryError("parse error")),
+			Calls:   dataSourceCalls{Runner: 1, Values: 1, Type: 1, Metrics: 1, QueryRange: 1},
 		},
 		"A Prometheus query the data source could not serve": {
-			Type:       datasource.TypePrometheus,
-			Tool:       query("down", ""),
-			Prometheus: prom(nil),
-			Err:        processor.ConnectionStatusUnreachable.Error(),
-			Calls:      dataSourceCalls{Runner: 1, Values: 1, Type: 1, Prometheus: 1, QueryRange: 1},
+			Type:    datasource.TypePrometheus,
+			Tool:    query("down", ""),
+			Metrics: prom(nil),
+			Err:     processor.ConnectionStatusUnreachable.Error(),
+			Calls:   dataSourceCalls{Runner: 1, Values: 1, Type: 1, Metrics: 1, QueryRange: 1},
 		},
 		"Error returned by PostgreSQL.Query": {
 			Type:       datasource.TypePostgreSQL,
@@ -1498,6 +1552,8 @@ func Test_queryLogs(t *testing.T) {
 			switch q {
 			case "boom":
 				return nil, assert.AnError
+			case "huge":
+				return nil, processor.ErrResponseTooLarge
 			case "down":
 				return nil, processor.ConnectionStatusUnreachable.Error()
 			case "empty":
@@ -1512,6 +1568,7 @@ func Test_queryLogs(t *testing.T) {
 	}
 
 	cc := map[string]struct {
+		Type     datasource.Type
 		NoClient bool
 		Query    string
 		Result   any
@@ -1536,8 +1593,19 @@ func Test_queryLogs(t *testing.T) {
 		// a metric query fails in the client, so the hint names what the
 		// tool runs.
 		"Error returned by Logs.Logs": {
+			Type:  datasource.TypeLoki,
 			Query: "boom",
 			Err:   fmt.Errorf("%w; check the fields with list_log_fields, and use a log query, since metric queries such as rate() are not supported", assert.AnError),
+		},
+		"Error returned by Logs.Logs of VictoriaLogs": {
+			Type:  datasource.TypeVictoriaLogs,
+			Query: "boom",
+			Err:   fmt.Errorf("%w; check the fields with list_log_fields, and use a log query that keeps _time, since stats pipes are not supported", assert.AnError),
+		},
+		"Logs.Logs that answered too much": {
+			Type:  datasource.TypeVictoriaLogs,
+			Query: "huge",
+			Err:   fmt.Errorf("%w; narrow the query or the range", processor.ErrResponseTooLarge),
 		},
 		"Logs.Logs that could not serve the query": {
 			Query: "down",
@@ -1550,6 +1618,7 @@ func Test_queryLogs(t *testing.T) {
 			t.Parallel()
 
 			runner := &datasourceMock.Runner{
+				TypeFunc: func() datasource.Type { return c.Type },
 				LogsFunc: func(context.Context) (datasource.Logs, error) {
 					if c.NoClient {
 						return nil, assert.AnError

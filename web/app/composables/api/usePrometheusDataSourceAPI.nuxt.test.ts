@@ -34,7 +34,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 		it("returns null without a data source id", async ({ expect }) => {
 			const metadataCalls = mockEndpoint(
 				"GET",
-				"/api/data-sources/ds1/prometheus/metadata",
+				"/api/data-sources/ds1/metrics/metadata",
 				() => ({ result: {} }),
 			)
 			const api = makePrometheusDataSourceAPI()
@@ -52,7 +52,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 			}
 			const metadataCalls = mockEndpoint(
 				"GET",
-				"/api/data-sources/ds1/prometheus/metadata",
+				"/api/data-sources/ds1/metrics/metadata",
 				() => metadataResult,
 			)
 			const api = makePrometheusDataSourceAPI()
@@ -70,7 +70,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 		it("returns null without matchers", async ({ expect }) => {
 			const labelCalls = mockEndpoint(
 				"GET",
-				"/api/data-sources/ds1/prometheus/labels",
+				"/api/data-sources/ds1/metrics/labels",
 				() => ({ result: [] }),
 			)
 			const api = makePrometheusDataSourceAPI()
@@ -87,7 +87,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 		it("fetches the label names matching the matchers", async ({ expect }) => {
 			const labelCalls = mockEndpoint(
 				"GET",
-				"/api/data-sources/ds1/prometheus/labels",
+				"/api/data-sources/ds1/metrics/labels",
 				() => ({ result: ["job", "instance"] }),
 			)
 			const api = makePrometheusDataSourceAPI()
@@ -113,7 +113,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 		it("asks again for other variable values", async ({ expect }) => {
 			const calls = mockEndpoint(
 				"GET",
-				"/api/data-sources/ds1/prometheus/labels",
+				"/api/data-sources/ds1/metrics/labels",
 				() => ({ result: [] }),
 			)
 			const params = ref({
@@ -145,7 +145,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 		it("returns null without a label", async ({ expect }) => {
 			const valueCalls = mockEndpoint(
 				"GET",
-				"/api/data-sources/ds1/prometheus/labels/job/values",
+				"/api/data-sources/ds1/metrics/labels/job/values",
 				() => ({ result: [] }),
 			)
 			const api = makePrometheusDataSourceAPI()
@@ -162,7 +162,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 		it("fetches the values of the label", async ({ expect }) => {
 			const valueCalls = mockEndpoint(
 				"GET",
-				"/api/data-sources/ds1/prometheus/labels/job/values",
+				"/api/data-sources/ds1/metrics/labels/job/values",
 				() => ({ result: ["web", "worker"] }),
 			)
 			const api = makePrometheusDataSourceAPI()
@@ -186,7 +186,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 		}) => {
 			const valueCalls = mockEndpoint(
 				"GET",
-				"/api/data-sources/ds1/prometheus/labels/job/values",
+				"/api/data-sources/ds1/metrics/labels/job/values",
 				() => ({ result: ["web"] }),
 			)
 			const api = makePrometheusDataSourceAPI()
@@ -212,7 +212,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 		it("asks again for other variable values", async ({ expect }) => {
 			const calls = mockEndpoint(
 				"GET",
-				"/api/data-sources/ds1/prometheus/labels/job/values",
+				"/api/data-sources/ds1/metrics/labels/job/values",
 				() => ({ result: [] }),
 			)
 			const params = ref({
@@ -245,7 +245,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 		it("returns null without matchers", async ({ expect }) => {
 			const seriesCalls = mockEndpoint(
 				"GET",
-				"/api/data-sources/ds1/prometheus/series",
+				"/api/data-sources/ds1/metrics/series",
 				() => ({ result: [] }),
 			)
 			const api = makePrometheusDataSourceAPI()
@@ -265,7 +265,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 			}
 			const seriesCalls = mockEndpoint(
 				"GET",
-				"/api/data-sources/ds1/prometheus/series",
+				"/api/data-sources/ds1/metrics/series",
 				() => seriesResult,
 			)
 			const api = makePrometheusDataSourceAPI()
@@ -291,7 +291,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 		it("asks again for other variable values", async ({ expect }) => {
 			const calls = mockEndpoint(
 				"GET",
-				"/api/data-sources/ds1/prometheus/series",
+				"/api/data-sources/ds1/metrics/series",
 				() => ({ result: [] }),
 			)
 			const params = ref({

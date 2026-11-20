@@ -27,10 +27,10 @@ var _testParsedTimeRange = processor.TimeRange{
 	To:   time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
 }
 
-func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
-	wasExecutorPrometheusMetadataCalled := func(count int) check {
+func Test_Handler_FetchDataSourceMetricMetadata(t *testing.T) {
+	wasExecutorMetricsMetadataCalled := func(count int) check {
 		return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
-			ff := exec.prometheus.MetadataCalls()
+			ff := exec.metrics.MetadataCalls()
 			require.Len(t, ff, count)
 
 			if count == 0 {
@@ -42,11 +42,11 @@ func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 	}
 
 	// stubClients returns clients whose accessors fail with the error of cs
-	// and whose Prometheus Metadata returns the given values.
+	// and whose Metadata returns the given values.
 	stubClients := func(cs processor.ConnectionStatus, result *processor.PrometheusMetadataResult, err error) *clientMocks {
 		return &clientMocks{
 			err: cs.Error(),
-			prometheus: &datasourceMock.Prometheus{
+			metrics: &datasourceMock.Metrics{
 				MetadataFunc: func(_ context.Context) (*processor.PrometheusMetadataResult, error) {
 					return result, err
 				},
@@ -68,8 +68,8 @@ func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
 				wasDBFetchDataSourceCalled(0),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusMetadataCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsMetadataCalled(0),
 			),
 		},
 		"Missing data source id": {
@@ -77,8 +77,8 @@ func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
 				wasDBFetchDataSourceCalled(0),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusMetadataCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsMetadataCalled(0),
 			),
 		},
 		"Error returned by db.FetchDataSource": {
@@ -88,11 +88,11 @@ func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBFetchDataSourceCalled(1),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusMetadataCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsMetadataCalled(0),
 			),
 		},
-		"Error returned by Prometheus.Metadata": {
+		"Error returned by Metrics.Metadata": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients("", nil, assert.AnError),
 			ID:      _testID.String(),
@@ -101,11 +101,11 @@ func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 				wasDBUpdateDataSourceCalled(0),
 				wasDBFetchDataSourceCalled(1),
 				wasRunnersRunnerCalled(1),
-				wasExecutorPrometheusCalled(1),
-				wasExecutorPrometheusMetadataCalled(1),
+				wasExecutorMetricsCalled(1),
+				wasExecutorMetricsMetadataCalled(1),
 			),
 		},
-		"Error returned by Runner.Prometheus": {
+		"Error returned by Runner.Metrics": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
 			ID:      _testID.String(),
@@ -114,8 +114,8 @@ func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 				wasDBUpdateDataSourceCalled(0),
 				wasDBFetchDataSourceCalled(1),
 				wasRunnersRunnerCalled(1),
-				wasExecutorPrometheusCalled(1),
-				wasExecutorPrometheusMetadataCalled(0),
+				wasExecutorMetricsCalled(1),
+				wasExecutorMetricsMetadataCalled(0),
 			),
 		},
 		"Successful metadata retrieval": {
@@ -127,8 +127,8 @@ func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 				wasDBUpdateDataSourceCalled(0),
 				wasDBFetchDataSourceCalled(1),
 				wasRunnersRunnerCalled(1),
-				wasExecutorPrometheusCalled(1),
-				wasExecutorPrometheusMetadataCalled(1),
+				wasExecutorMetricsCalled(1),
+				wasExecutorMetricsMetadataCalled(1),
 			),
 		},
 	}
@@ -142,7 +142,7 @@ func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 			req := prepRequest("GET", "http://test.com/", "", !c.OmitSession, c.ID)
 			rec := httptest.NewRecorder()
 
-			hdl.FetchPrometheusDataSourceMetadata(rec, req)
+			hdl.FetchDataSourceMetricMetadata(rec, req)
 
 			for _, ch := range c.Checks {
 				ch(t, db, exec, vars, rec, logs)
@@ -151,10 +151,10 @@ func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 	}
 }
 
-func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
-	wasExecutorPrometheusLabelNamesCalled := func(count int) check {
+func Test_Handler_FetchDataSourceMetricLabelNames(t *testing.T) {
+	wasExecutorMetricsLabelNamesCalled := func(count int) check {
 		return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
-			ff := exec.prometheus.LabelNamesCalls()
+			ff := exec.metrics.LabelNamesCalls()
 			require.Len(t, ff, count)
 
 			if count == 0 {
@@ -171,7 +171,7 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 	stubClients := func(cs processor.ConnectionStatus, result *processor.PrometheusLabelNamesResult, err error) *clientMocks {
 		return &clientMocks{
 			err: cs.Error(),
-			prometheus: &datasourceMock.Prometheus{
+			metrics: &datasourceMock.Metrics{
 				LabelNamesFunc: func(_ context.Context, _ []string, _ processor.TimeRange) (*processor.PrometheusLabelNamesResult, error) {
 					return result, err
 				},
@@ -197,8 +197,8 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 				wasDBFetchDataSourceCalled(0),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusLabelNamesCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsLabelNamesCalled(0),
 			),
 		},
 		"Missing data source id": {
@@ -208,8 +208,8 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 				wasDBFetchDataSourceCalled(0),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusLabelNamesCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsLabelNamesCalled(0),
 			),
 		},
 		"Error returned by db.FetchDataSource": {
@@ -221,8 +221,8 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusLabelNamesCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsLabelNamesCalled(0),
 			),
 		},
 		"Invalid time range": {
@@ -234,11 +234,11 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusLabelNamesCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsLabelNamesCalled(0),
 			),
 		},
-		"Error returned by Prometheus.LabelNames": {
+		"Error returned by Metrics.LabelNames": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients("", nil, assert.AnError),
 			Target:  "http://test.com/?matchers=up",
@@ -249,11 +249,11 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(1),
-				wasExecutorPrometheusCalled(1),
-				wasExecutorPrometheusLabelNamesCalled(1),
+				wasExecutorMetricsCalled(1),
+				wasExecutorMetricsLabelNamesCalled(1),
 			),
 		},
-		"Error returned by Runner.Prometheus": {
+		"Error returned by Runner.Metrics": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
 			Target:  "http://test.com/?matchers=up",
@@ -264,8 +264,8 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(1),
-				wasExecutorPrometheusCalled(1),
-				wasExecutorPrometheusLabelNamesCalled(0),
+				wasExecutorMetricsCalled(1),
+				wasExecutorMetricsLabelNamesCalled(0),
 			),
 		},
 		"Successful label names retrieval": {
@@ -276,11 +276,11 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusOK, `{"result":["__name__"]}`),
 				wasDBUpdateDataSourceCalled(0),
-				wasExecutorPrometheusLabelNamesCalled(1),
+				wasExecutorMetricsLabelNamesCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasDBFetchDataSourceCalled(1),
 				wasRunnersRunnerCalled(1),
-				wasExecutorPrometheusCalled(1),
+				wasExecutorMetricsCalled(1),
 			),
 		},
 		"Error returned by VariableManager.FetchTree": {
@@ -290,11 +290,11 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 			ID:        _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
-				wasExecutorPrometheusLabelNamesCalled(0),
+				wasExecutorMetricsLabelNamesCalled(0),
 				wasVariableManagerFetchTreeCalled(1),
 				wasDBFetchDataSourceCalled(1),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
+				wasExecutorMetricsCalled(0),
 			),
 		},
 		"Substituted variables": {
@@ -306,11 +306,11 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusOK, `{"result":["__name__"]}`),
 				wasDBUpdateDataSourceCalled(0),
-				wasExecutorPrometheusLabelNamesCalled(1),
+				wasExecutorMetricsLabelNamesCalled(1),
 				wasVariableManagerFetchTreeCalled(1),
 				wasDBFetchDataSourceCalled(1),
 				wasRunnersRunnerCalled(1),
-				wasExecutorPrometheusCalled(1),
+				wasExecutorMetricsCalled(1),
 			),
 		},
 	}
@@ -324,7 +324,7 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 			req := prepRequest("GET", c.Target, "", !c.OmitSession, c.ID)
 			rec := httptest.NewRecorder()
 
-			hdl.FetchPrometheusDataSourceLabelNames(rec, req)
+			hdl.FetchDataSourceMetricLabelNames(rec, req)
 
 			for _, ch := range c.Checks {
 				ch(t, db, exec, vars, rec, logs)
@@ -333,10 +333,10 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 	}
 }
 
-func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
-	wasExecutorPrometheusLabelValuesCalled := func(count int) check {
+func Test_Handler_FetchDataSourceMetricLabelValues(t *testing.T) {
+	wasExecutorMetricsLabelValuesCalled := func(count int) check {
 		return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
-			ff := exec.prometheus.LabelValuesCalls()
+			ff := exec.metrics.LabelValuesCalls()
 			require.Len(t, ff, count)
 
 			if count == 0 {
@@ -354,7 +354,7 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 	stubClients := func(cs processor.ConnectionStatus, result *processor.PrometheusLabelValuesResult, err error) *clientMocks {
 		return &clientMocks{
 			err: cs.Error(),
-			prometheus: &datasourceMock.Prometheus{
+			metrics: &datasourceMock.Metrics{
 				LabelValuesFunc: func(_ context.Context, _ string, _ []string, _ processor.TimeRange) (*processor.PrometheusLabelValuesResult, error) {
 					return result, err
 				},
@@ -381,8 +381,8 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 				wasDBFetchDataSourceCalled(0),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusLabelValuesCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsLabelValuesCalled(0),
 			),
 		},
 		"Missing data source id": {
@@ -392,8 +392,8 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 				wasDBFetchDataSourceCalled(0),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusLabelValuesCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsLabelValuesCalled(0),
 			),
 		},
 		"Missing label parameter": {
@@ -405,8 +405,8 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 				wasDBFetchDataSourceCalled(0),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusLabelValuesCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsLabelValuesCalled(0),
 			),
 		},
 		"Error returned by db.FetchDataSource": {
@@ -418,8 +418,8 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusLabelValuesCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsLabelValuesCalled(0),
 			),
 		},
 		"Invalid time range": {
@@ -431,11 +431,11 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusLabelValuesCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsLabelValuesCalled(0),
 			),
 		},
-		"Error returned by Prometheus.LabelValues": {
+		"Error returned by Metrics.LabelValues": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients("", nil, assert.AnError),
 			Target:  "http://test.com/?matchers=up",
@@ -446,11 +446,11 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(1),
-				wasExecutorPrometheusCalled(1),
-				wasExecutorPrometheusLabelValuesCalled(1),
+				wasExecutorMetricsCalled(1),
+				wasExecutorMetricsLabelValuesCalled(1),
 			),
 		},
-		"Error returned by Runner.Prometheus": {
+		"Error returned by Runner.Metrics": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
 			Target:  "http://test.com/?matchers=up",
@@ -461,8 +461,8 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(1),
-				wasExecutorPrometheusCalled(1),
-				wasExecutorPrometheusLabelValuesCalled(0),
+				wasExecutorMetricsCalled(1),
+				wasExecutorMetricsLabelValuesCalled(0),
 			),
 		},
 		"Successful label values retrieval": {
@@ -473,11 +473,11 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusOK, `{"result":["a","b"]}`),
 				wasDBUpdateDataSourceCalled(0),
-				wasExecutorPrometheusLabelValuesCalled(1),
+				wasExecutorMetricsLabelValuesCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasDBFetchDataSourceCalled(1),
 				wasRunnersRunnerCalled(1),
-				wasExecutorPrometheusCalled(1),
+				wasExecutorMetricsCalled(1),
 			),
 		},
 		"Error returned by VariableManager.FetchTree": {
@@ -487,11 +487,11 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 			ID:        _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
-				wasExecutorPrometheusLabelValuesCalled(0),
+				wasExecutorMetricsLabelValuesCalled(0),
 				wasVariableManagerFetchTreeCalled(1),
 				wasDBFetchDataSourceCalled(1),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
+				wasExecutorMetricsCalled(0),
 			),
 		},
 		"Substituted variables": {
@@ -503,11 +503,11 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusOK, `{"result":["a","b"]}`),
 				wasDBUpdateDataSourceCalled(0),
-				wasExecutorPrometheusLabelValuesCalled(1),
+				wasExecutorMetricsLabelValuesCalled(1),
 				wasVariableManagerFetchTreeCalled(1),
 				wasDBFetchDataSourceCalled(1),
 				wasRunnersRunnerCalled(1),
-				wasExecutorPrometheusCalled(1),
+				wasExecutorMetricsCalled(1),
 			),
 		},
 	}
@@ -526,7 +526,7 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 
-			hdl.FetchPrometheusDataSourceLabelValues(rec, req)
+			hdl.FetchDataSourceMetricLabelValues(rec, req)
 
 			for _, ch := range c.Checks {
 				ch(t, db, exec, vars, rec, logs)
@@ -535,10 +535,10 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 	}
 }
 
-func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
-	wasExecutorPrometheusSeriesCalled := func(count int) check {
+func Test_Handler_FetchDataSourceMetricSeries(t *testing.T) {
+	wasExecutorMetricsSeriesCalled := func(count int) check {
 		return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *VariableManagerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
-			ff := exec.prometheus.SeriesCalls()
+			ff := exec.metrics.SeriesCalls()
 			require.Len(t, ff, count)
 
 			if count == 0 {
@@ -555,7 +555,7 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 	stubClients := func(cs processor.ConnectionStatus, result *processor.PrometheusSeriesResult, err error) *clientMocks {
 		return &clientMocks{
 			err: cs.Error(),
-			prometheus: &datasourceMock.Prometheus{
+			metrics: &datasourceMock.Metrics{
 				SeriesFunc: func(_ context.Context, _ []string, _ processor.TimeRange) (*processor.PrometheusSeriesResult, error) {
 					return result, err
 				},
@@ -581,8 +581,8 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 				wasDBFetchDataSourceCalled(0),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusSeriesCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsSeriesCalled(0),
 			),
 		},
 		"Missing data source id": {
@@ -592,8 +592,8 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 				wasDBFetchDataSourceCalled(0),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusSeriesCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsSeriesCalled(0),
 			),
 		},
 		"Error returned by db.FetchDataSource": {
@@ -605,8 +605,8 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusSeriesCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsSeriesCalled(0),
 			),
 		},
 		"Invalid time range": {
@@ -618,11 +618,11 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
-				wasExecutorPrometheusSeriesCalled(0),
+				wasExecutorMetricsCalled(0),
+				wasExecutorMetricsSeriesCalled(0),
 			),
 		},
-		"Error returned by Prometheus.Series": {
+		"Error returned by Metrics.Series": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients("", nil, assert.AnError),
 			Target:  "http://test.com/?matchers=up",
@@ -633,11 +633,11 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(1),
-				wasExecutorPrometheusCalled(1),
-				wasExecutorPrometheusSeriesCalled(1),
+				wasExecutorMetricsCalled(1),
+				wasExecutorMetricsSeriesCalled(1),
 			),
 		},
-		"Error returned by Runner.Prometheus": {
+		"Error returned by Runner.Metrics": {
 			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
 			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
 			Target:  "http://test.com/?matchers=up",
@@ -648,8 +648,8 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 				wasDBFetchDataSourceCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasRunnersRunnerCalled(1),
-				wasExecutorPrometheusCalled(1),
-				wasExecutorPrometheusSeriesCalled(0),
+				wasExecutorMetricsCalled(1),
+				wasExecutorMetricsSeriesCalled(0),
 			),
 		},
 		"Successful series retrieval": {
@@ -660,11 +660,11 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusOK, `{"result":[{"job":"prometheus"}]}`),
 				wasDBUpdateDataSourceCalled(0),
-				wasExecutorPrometheusSeriesCalled(1),
+				wasExecutorMetricsSeriesCalled(1),
 				wasVariableManagerFetchTreeCalled(0),
 				wasDBFetchDataSourceCalled(1),
 				wasRunnersRunnerCalled(1),
-				wasExecutorPrometheusCalled(1),
+				wasExecutorMetricsCalled(1),
 			),
 		},
 		"Error returned by VariableManager.FetchTree": {
@@ -674,11 +674,11 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 			ID:        _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
-				wasExecutorPrometheusSeriesCalled(0),
+				wasExecutorMetricsSeriesCalled(0),
 				wasVariableManagerFetchTreeCalled(1),
 				wasDBFetchDataSourceCalled(1),
 				wasRunnersRunnerCalled(0),
-				wasExecutorPrometheusCalled(0),
+				wasExecutorMetricsCalled(0),
 			),
 		},
 		"Substituted variables": {
@@ -690,11 +690,11 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusOK, `{"result":[{"job":"prometheus"}]}`),
 				wasDBUpdateDataSourceCalled(0),
-				wasExecutorPrometheusSeriesCalled(1),
+				wasExecutorMetricsSeriesCalled(1),
 				wasVariableManagerFetchTreeCalled(1),
 				wasDBFetchDataSourceCalled(1),
 				wasRunnersRunnerCalled(1),
-				wasExecutorPrometheusCalled(1),
+				wasExecutorMetricsCalled(1),
 			),
 		},
 	}
@@ -708,7 +708,7 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 			req := prepRequest("GET", c.Target, "", !c.OmitSession, c.ID)
 			rec := httptest.NewRecorder()
 
-			hdl.FetchPrometheusDataSourceSeries(rec, req)
+			hdl.FetchDataSourceMetricSeries(rec, req)
 
 			for _, ch := range c.Checks {
 				ch(t, db, exec, vars, rec, logs)

@@ -102,6 +102,25 @@ describe("<Row>", () => {
 				"value out of range · value=+Inf unit=ms · trace_id=abc · app=chaos",
 		},
 		{
+			name: "shows Loki's first duplicate values in the summary",
+			input: {
+				line: 'msg="retrying charge" component=billing component=stripe-client attempt=1 attempt=2',
+				labels: {},
+				parsed: undefined,
+			},
+			expected: "retrying charge · component=billing attempt=1",
+		},
+		{
+			name: "keeps an invalid message visible beside accepted logfmt fields",
+			input: {
+				line: "level=info msg=retry=failed component=billing",
+				labels: {},
+				level: LogLevel.Info,
+				parsed: undefined,
+			},
+			expected: "msg=retry=failed · component=billing",
+		},
+		{
 			name: "starts with the labels of a line of only white space",
 			input: { line: "  ", labels: { app: "chaos" } },
 			expected: "app=chaos",

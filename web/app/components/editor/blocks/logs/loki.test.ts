@@ -277,6 +277,76 @@ describe("lokiDialect.lineKeyName", () => {
 	})
 })
 
+describe("lokiDialect.logfmtParseFailed", () => {
+	it.for([
+		{
+			name: "detects a logfmt parser error",
+			parsed: { __error__: "LogfmtParserErr" },
+			expected: true,
+		},
+		{
+			name: "ignores an error from another parser",
+			parsed: { __error__: "JSONParserErr" },
+			expected: false,
+		},
+		{
+			name: "reports success without parsed fields",
+			parsed: undefined,
+			expected: false,
+		},
+	])("$name", ({ parsed, expected }, { expect }) => {
+		const log: Log = {
+			id: "l1",
+			time: "2026-01-01T12:00:00Z",
+			level: LogLevel.Info,
+			line: "",
+			labels: {},
+			fields: {},
+			parsed,
+		}
+
+		expect(lokiDialect.logfmtParseFailed(log)).toBe(expected)
+	})
+})
+
+describe("lokiDialect.decodeLogfmtValue", () => {
+	it.for([
+		{ name: "keeps a valid bare value", input: "billing", expected: "billing" },
+		{
+			name: "rejects an equals sign in a bare value",
+			input: "bad=value",
+			expected: null,
+		},
+		{
+			name: "rejects an invalid quoted escape",
+			input: String.raw`"bad\q"`,
+			expected: null,
+		},
+		{
+			name: "decodes an escaped apostrophe",
+			input: String.raw`"a\'b"`,
+			expected: "a'b",
+		},
+		{
+			name: "decodes an escaped backslash before an apostrophe",
+			input: String.raw`"a\\'b"`,
+			expected: String.raw`a\'b`,
+		},
+		{
+			name: "accepts a literal tab in a quoted value",
+			input: '"a\tb"',
+			expected: "a\tb",
+		},
+		{
+			name: "replaces a lone surrogate with a space",
+			input: String.raw`"a\ud800b"`,
+			expected: "a b",
+		},
+	])("$name", ({ input, expected }, { expect }) => {
+		expect(lokiDialect.decodeLogfmtValue(input)).toBe(expected)
+	})
+})
+
 describe("lokiDialect.repeatsLineKey", () => {
 	it.for([
 		{

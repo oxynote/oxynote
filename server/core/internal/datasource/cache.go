@@ -36,9 +36,9 @@ const (
 	_cacheKeyPrefix = "datasource:query:"
 )
 
-// cachedPrometheus answers range queries out of the manager's query cache.
-type cachedPrometheus struct {
-	Prometheus
+// cachedMetrics answers range queries out of the manager's query cache.
+type cachedMetrics struct {
+	Metrics
 
 	m  *Manager
 	ds DataSource
@@ -48,9 +48,9 @@ type cachedPrometheus struct {
 // moment ago. The client aligns the range to the query step itself, so the
 // key does the same and the client is given the range as asked: aligning
 // twice can widen the window.
-func (cp cachedPrometheus) QueryRange(ctx context.Context, q string, tr processor.TimeRange) (*processor.PrometheusQueryResult, error) {
-	return cachedQuery(ctx, cp.m, cp.ds.ID, cacheKey(cp.ds, "query_range", tr.Normalize(), q), func(ctx context.Context) (*processor.PrometheusQueryResult, error) {
-		return cp.Prometheus.QueryRange(ctx, q, tr)
+func (cm cachedMetrics) QueryRange(ctx context.Context, q string, tr processor.TimeRange) (*processor.PrometheusQueryResult, error) {
+	return cachedQuery(ctx, cm.m, cm.ds.ID, cacheKey(cm.ds, "query_range", tr.Normalize(), q), func(ctx context.Context) (*processor.PrometheusQueryResult, error) {
+		return cm.Metrics.QueryRange(ctx, q, tr)
 	})
 }
 

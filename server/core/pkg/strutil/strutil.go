@@ -13,12 +13,22 @@ func Ellipsize(s string, maxLen int) string {
 		return s
 	}
 
-	runes := []rune(s)
-	if len(runes) <= maxLen {
+	if len(s) <= maxLen {
 		return s
 	}
 
-	return string(runes[:maxLen]) + "…"
+	// walk only up to the cut, since s may be large.
+	n := 0
+
+	for i := range s {
+		if n == maxLen {
+			return s[:i] + "…"
+		}
+
+		n++
+	}
+
+	return s
 }
 
 // Preview returns at most maxLen runes of s, collapsed to a single line
