@@ -40,6 +40,7 @@ const STACK_ORDER = [
 ]
 // the series that marks an interval without lines on the baseline
 const EMPTY_SERIES_ID = "empty"
+// both minima use axis units so they resize with the chart container
 const CHART_HEIGHT = 36
 const MIN_BAR_HEIGHT = 2
 // how many times the axis names, spread evenly from start to end
@@ -114,17 +115,14 @@ const option = computed<ECOption>(() => {
 					count: counts[level],
 				})),
 			})),
-			// echarts draws a zero at barMinHeight, which leaves a dash on the
-			// baseline, and skips a null
 			{
 				id: EMPTY_SERIES_ID,
 				type: "bar" as const,
 				stack: "volume",
 				barCategoryGap: "15%",
-				barMinHeight: MIN_BAR_HEIGHT,
 				itemStyle: { color: st.logVolumeEmpty },
 				emphasis: { disabled: true },
-				data: props.buckets.map((bucket) => (isEmpty(bucket) ? 0 : null)),
+				data: bars.map(({ total }) => (total === 0 ? MIN_BAR_HEIGHT : null)),
 			},
 		],
 	}
@@ -202,7 +200,7 @@ function tooltipTime(params: unknown): string {
 		:aria-label="$t('editor.logs.view.volume-label')"
 		class="flex shrink-0 flex-col gap-1.5 px-2.5 pt-1"
 	>
-		<div :style="{ height: `${CHART_HEIGHT}px` }">
+		<div class="h-9">
 			<VChart class="size-full" :option="option" autoresize>
 				<template #tooltip="params">
 					<div class="flex flex-col">

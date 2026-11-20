@@ -38,7 +38,6 @@ interface Series {
 	name: string
 	stack: string
 	itemStyle: { color: string }
-	barMinHeight?: number
 	data: (number | null | { value: number; count: number })[]
 }
 
@@ -118,8 +117,7 @@ describe("<VolumeStrip>", { concurrent: false }, () => {
 		const [error, info, empty] = chartSeries(wrapper)
 		expect(empty?.id).toBe("empty")
 		expect(empty?.stack).toBe("volume")
-		expect(empty?.barMinHeight).toBe(2)
-		expect(empty?.data).toEqual([0, null, null, null])
+		expect(empty?.data).toEqual([2, null, null, null])
 		expect(error?.data[2]).toEqual({ value: 0.5, count: 1 })
 		expect(info?.data).toEqual([
 			{ value: 0, count: 0 },
