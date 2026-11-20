@@ -39,7 +39,7 @@ interface Series {
 	stack: string
 	itemStyle: { color: string }
 	barMinHeight?: number
-	data: (number | null)[]
+	data: (number | null | { value: number; count: number })[]
 }
 
 // the tooltip params are module state, and chartStyles paints colours
@@ -63,7 +63,7 @@ describe("<VolumeStrip>", { concurrent: false }, () => {
 	}) => {
 		const wrapper = await mountStrip([
 			bucket(0, { info: 2, error: 1 }),
-			bucket(1, { error: 3, unknown: 4 }),
+			bucket(1, { error: 3, unknown: 33 }),
 		])
 
 		expect(
@@ -78,38 +78,55 @@ describe("<VolumeStrip>", { concurrent: false }, () => {
 				id: "error",
 				name: t("editor.logs.level-names.error"),
 				stack: "volume",
-				data: [1, 3],
+				data: [
+					{ value: 1, count: 1 },
+					{ value: 3, count: 3 },
+				],
 			},
 			{
 				id: "info",
 				name: t("editor.logs.level-names.info"),
 				stack: "volume",
-				data: [2, 0],
+				data: [
+					{ value: 2, count: 2 },
+					{ value: 0, count: 0 },
+				],
 			},
 			{
 				id: "unknown",
 				name: t("editor.logs.level-names.unknown"),
 				stack: "volume",
-				data: [0, 4],
+				data: [
+					{ value: 0, count: 0 },
+					{ value: 33, count: 33 },
+				],
 			},
 			{ id: "empty", name: undefined, stack: "volume", data: [null, null] },
 		])
 	})
 
-	it("marks each interval without lines with a dash on the baseline", async ({
+	it("uses the same minimum for empty and low-volume bars", async ({
 		expect,
 	}) => {
 		const wrapper = await mountStrip([
 			bucket(0),
-			bucket(1, { info: 2 }),
-			bucket(2),
+			bucket(1, { info: 1 }),
+			bucket(2, { error: 1, info: 3 }),
+			bucket(3, { info: 360 }),
 		])
 
-		const empty = chartSeries(wrapper).at(-1)
+		const [error, info, empty] = chartSeries(wrapper)
 		expect(empty?.id).toBe("empty")
 		expect(empty?.stack).toBe("volume")
 		expect(empty?.barMinHeight).toBe(2)
-		expect(empty?.data).toEqual([0, null, 0])
+		expect(empty?.data).toEqual([0, null, null, null])
+		expect(error?.data[2]).toEqual({ value: 0.5, count: 1 })
+		expect(info?.data).toEqual([
+			{ value: 0, count: 0 },
+			{ value: 2, count: 1 },
+			{ value: 1.5, count: 3 },
+			{ value: 36, count: 360 },
+		])
 	})
 
 	it("says an interval under the pointer has no lines", async ({ expect }) => {
@@ -234,7 +251,7 @@ function tooltipParam(level: LogLevel, dataIndex: number, value: number) {
 		seriesId: level,
 		seriesName: t(`editor.logs.level-names.${level}`),
 		marker: "",
-		value,
+		data: { count: value },
 		dataIndex,
 	}
 }
