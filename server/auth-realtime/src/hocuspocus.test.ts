@@ -1192,16 +1192,19 @@ describe("createDocumentHooks", () => {
 				log,
 			})
 			const document = seededDocument()
-			const onStoreDocument = instance.configuration
-				.onStoreDocument as (data: {
-					documentName: string
-					document: ConnectedDocument
-				}) => Promise<void>
-
+			const onStoreDocument =
+				instance.configuration.onStoreDocument?.bind(
+					instance.configuration,
+				)
+			if (onStoreDocument === undefined) {
+				throw new Error(
+					"onStoreDocument is not configured",
+				)
+			}
 			const rejection = await onStoreDocument({
 				documentName: "doc1-branch1",
 				document,
-			}).then(
+			} as never).then(
 				() => undefined,
 				(error: unknown) => error,
 			)
@@ -1226,7 +1229,7 @@ describe("createDocumentHooks", () => {
 					content: transformer.fromYdoc(
 						document,
 						"content",
-					),
+					) as unknown,
 					maintainers: [],
 					rawContent: Buffer.from(
 						Y.encodeStateAsUpdate(document),
@@ -1238,6 +1241,9 @@ describe("createDocumentHooks", () => {
 			expect(auth.getSession).not.toHaveBeenCalled()
 			expect(store.memberRole).not.toHaveBeenCalled()
 
+			expect(
+				document.broadcastStateless,
+			).toHaveBeenCalledTimes(1)
 			expect(
 				document.broadcastStateless,
 			).toHaveBeenCalledWith(
@@ -1262,17 +1268,20 @@ describe("createDocumentHooks", () => {
 				core,
 				log,
 			})
-			const onStoreDocument = instance.configuration
-				.onStoreDocument as (data: {
-					documentName: string
-					document: ConnectedDocument
-				}) => Promise<void>
-
 			const document = seededDocument()
+			const onStoreDocument =
+				instance.configuration.onStoreDocument?.bind(
+					instance.configuration,
+				)
+			if (onStoreDocument === undefined) {
+				throw new Error(
+					"onStoreDocument is not configured",
+				)
+			}
 			const rejection = await onStoreDocument({
 				documentName: "doc1-branch1",
 				document,
-			}).then(
+			} as never).then(
 				() => undefined,
 				(error: unknown) => error,
 			)
@@ -1283,7 +1292,6 @@ describe("createDocumentHooks", () => {
 			expect(log.error).toHaveBeenCalledWith(
 				expect.objectContaining({
 					documentName: "doc1-branch1",
-					stack: expect.stringContaining("core gone"),
 				}),
 				"onStoreDocument failed: core gone",
 			)
@@ -1297,7 +1305,7 @@ describe("createDocumentHooks", () => {
 					content: transformer.fromYdoc(
 						document,
 						"content",
-					),
+					) as unknown,
 					maintainers: [],
 					rawContent: Buffer.from(
 						Y.encodeStateAsUpdate(document),
@@ -1308,6 +1316,17 @@ describe("createDocumentHooks", () => {
 			expect(core.fetchBranches).not.toHaveBeenCalled()
 			expect(auth.getSession).not.toHaveBeenCalled()
 			expect(store.memberRole).not.toHaveBeenCalled()
+			expect(
+				document.broadcastStateless,
+			).toHaveBeenCalledTimes(1)
+			expect(
+				document.broadcastStateless,
+			).toHaveBeenCalledWith(
+				JSON.stringify({
+					type: "error",
+					code: "hocuspocus.store_failed",
+				}),
+			)
 		})
 
 		it("warns the connected editors when the branch cannot be resolved", async ({
@@ -1682,6 +1701,50 @@ describe("closeUserConnections", () => {
 
 		expect(direct.webSocket.close).toHaveBeenCalledTimes(0)
 		expect(direct.readOnly).toBe(false)
+	})
+})
+
+describe("Hocuspocus hook error logging", () => {
+	it("logs a plain string rejection with its value as the stack", async ({
+		expect,
+	}) => {
+		const auth = stubAuth()
+		auth.getSession.mockRejectedValue("plain string failure")
+		const log = stubLog()
+		const { instance } = createHocuspocus({
+			store: stubStore(),
+			auth,
+			core: stubCore(),
+			log,
+		})
+		const onAuthenticate =
+			instance.configuration.onAuthenticate?.bind(
+				instance.configuration,
+			)
+		if (onAuthenticate === undefined) {
+			throw new Error("onAuthenticate is not configured")
+		}
+
+		await onAuthenticate({
+			connectionConfig: { readOnly: false },
+			documentName: "doc1-branch1",
+			request: {},
+			requestHeaders: {},
+			requestParameters: currentClient(),
+			token: "token",
+		} as never).then(
+			() => undefined,
+			() => undefined,
+		)
+
+		expect(log.error).toHaveBeenCalledTimes(1)
+		expect(log.error).toHaveBeenCalledWith(
+			{
+				documentName: "doc1-branch1",
+				stack: "plain string failure",
+			},
+			"onAuthenticate failed: plain string failure",
+		)
 	})
 })
 
