@@ -148,7 +148,7 @@ services:
   # the tests read verification links out of mailpit's REST API, so its
   # http port is published rather than proxied through caddy.
   mailpit:
-    image: axllent/mailpit:v1.33.1
+    image: axllent/mailpit:v1.34.0
     environment:
       - MP_QUIET=true
     ports:
@@ -289,7 +289,7 @@ services:
   # and keys through keycloak:8080, while every token still names the
   # browser's address as its issuer.
   keycloak:
-    image: quay.io/keycloak/keycloak:26.8.0
+    image: quay.io/keycloak/keycloak:26.8.2-3
     command: ["start-dev", "--import-realm"]
     environment:
       - KC_BOOTSTRAP_ADMIN_USERNAME=admin

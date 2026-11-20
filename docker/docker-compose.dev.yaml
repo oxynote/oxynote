@@ -160,7 +160,7 @@ services:
         max-file: "3"
   mailpit:
     container_name: mailpit
-    image: axllent/mailpit:v1.33.1
+    image: axllent/mailpit:v1.34.0
     environment:
       - MP_QUIET=true
     restart: unless-stopped
@@ -190,7 +190,7 @@ services:
         max-file: "3"
   changedetection:
     container_name: changedetection
-    image: dgtlmoon/changedetection.io:0.70.2
+    image: dgtlmoon/changedetection.io:0.70.3
     volumes:
       - changedetection_data:/datastore
     environment:
@@ -224,7 +224,7 @@ services:
       - MAX_CONCURRENT_CHROME_PROCESSES=10
       - LOG_LEVEL=WARNING
   grafana:
-    image: grafana/grafana:13.3.0
+    image: grafana/grafana:13.3.1
     container_name: grafana
     ports:
       - "8083:3000"
