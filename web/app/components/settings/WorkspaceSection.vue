@@ -108,8 +108,6 @@ watchImmediate(organization, (org) => {
 })
 
 const onSubmit = form.handleSubmit(async (values) => {
-	const submittedValues = { ...values }
-
 	const data: { logo?: string; name?: string } = {}
 	if (values.logoUrl !== fetchOrganization.state.value.data?.data?.logo) {
 		data.logo = values.logoUrl
@@ -150,20 +148,6 @@ const onSubmit = form.handleSubmit(async (values) => {
 	}
 
 	await fetchOrganization.refetch()
-
-	const refreshedOrg = fetchOrganization.state.value.data?.data
-	if (
-		refreshedOrg &&
-		form.values.name === submittedValues.name &&
-		form.values.logoUrl === submittedValues.logoUrl
-	) {
-		form.resetForm({
-			values: {
-				logoUrl: refreshedOrg.logo || "",
-				name: refreshedOrg.name,
-			},
-		})
-	}
 
 	loading.value = null
 
