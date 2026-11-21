@@ -1,7 +1,7 @@
 // compare the chart's env names with the variables the launcher declares.
 // extraEnv accepts every declared name except OXYNOTE_PUBLIC_URL, which the
-// chart sets from publicUrl. env accepts the non-secret ones only, so no
-// name in it may look like a secret. Print what differs and exit 1 when
+// chart sets from publicUrl. env accepts exactly the ones that do not look
+// like a secret. Print what differs and exit 1 when
 // they drift apart.
 //
 // usage: node scripts/check-chart-env.mjs
@@ -37,6 +37,10 @@ const problems = []
 for (const name of declared) {
 	if (!all.includes(name)) {
 		problems.push(`${name} is declared in ${envPath} but missing from extraEnv`)
+	}
+
+	if (!looksSecret.test(name) && !plain.includes(name)) {
+		problems.push(`${name} is not a secret, so it belongs in env too`)
 	}
 }
 
