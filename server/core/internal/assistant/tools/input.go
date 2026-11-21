@@ -483,6 +483,13 @@ func (i *input) CreateDocument(doc document.Document) error {
 		return fmt.Errorf("inserting document: %w", err)
 	}
 
+	// mirror the HTTP create path: the new branch gets its "created"
+	// boundary entry in the same transaction, so its history does not
+	// start at the first save.
+	if err := tx.RecordDocumentBranchHistoryEntry(i.ctx, doc.BranchID, i.orgID, null.StringFrom(i.userID), true); err != nil {
+		return fmt.Errorf("recording branch history entry: %w", err)
+	}
+
 	// mirror the HTTP create path: whoever asked for the document
 	// becomes its first maintainer so they own it from the start.
 	if err := tx.UpsertDocumentMaintainers(i.ctx, doc.ID, i.orgID, []string{i.userID}); err != nil {
@@ -1369,6 +1376,16 @@ type Tx interface {
 
 	// InsertDocument should create a new document. Used by create_document.
 	InsertDocument(ctx context.Context, doc document.Document) error
+
+	// RecordDocumentBranchHistoryEntry should record the branch as it
+	// stands, with its hooks. Used by create_document.
+	RecordDocumentBranchHistoryEntry(
+		ctx context.Context,
+		branchID xid.ID,
+		organizationID string,
+		by null.String,
+		boundary bool,
+	) error
 
 	// UpsertDocumentMaintainers should add the given user ids to a
 	// document's maintainer set. Used by create_document.
