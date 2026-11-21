@@ -31,6 +31,7 @@ export default function () {
 			// disable automatic class handling
 		},
 	})
+
 	const resolvedMode = computed<"light" | "dark">(() => {
 		if (mode.store.value === "auto") {
 			if (import.meta.server) {
@@ -38,7 +39,6 @@ export default function () {
 				// SSR, fall back to last auto (or light by default).
 				return lastAutoColorCookie.value
 			}
-
 			// on client, use system preference from useColorMode
 			return mode.system.value === "dark" ? "dark" : "light"
 		}
