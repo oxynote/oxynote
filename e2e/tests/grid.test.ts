@@ -237,8 +237,9 @@ test.describe("grid layout", () => {
 		expect(inserted.isError, JSON.stringify(inserted.content)).toBeFalsy()
 		const written = JSON.parse(
 			(inserted.content as { text: string }[])[0]?.text ?? "{}",
-		) as { content?: string }
-		const c = /<logs id="([^"]+)"/.exec(written.content ?? "")?.[1] ?? ""
+		) as { block_uids: string[] }
+		expect(written.block_uids).toHaveLength(1)
+		const [c = ""] = written.block_uids
 
 		await expect
 			.poll(async () => {
