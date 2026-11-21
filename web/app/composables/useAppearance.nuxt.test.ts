@@ -54,13 +54,10 @@ describe("useAppearance", { concurrent: false }, () => {
 		appearance.changeColorTheme("dark")
 		await nextTick()
 
-		useCookie("last-auto-resolved-color-mode").value = "dark"
-		document.documentElement.classList.add("dark")
-
 		appearance.changeColorTheme("auto")
 		await nextTick()
 
-		// the dom should update the value of cookie "last-auto-resolved-color-mode" from dark to light
+		// The watcher should reconcile the cookie back to "light" in auto mode.
 		expect(appearance.color.value).toEqual({ system: true, theme: "light" })
 		expect(appearance.isDark.value).toBe(false)
 		expect(useCookie("last-auto-resolved-color-mode").value).toBe("light")
