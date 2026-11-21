@@ -9,6 +9,7 @@ metadata:
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
 spec:
   restartPolicy: Never
+  serviceAccountName: {{ include "oxynote.serviceAccountName" . }}
   automountServiceAccountToken: false
   enableServiceLinks: false
   securityContext:

@@ -300,7 +300,7 @@ it, and then its title becomes the commit subject on `main`.
 | `deps` | dependency updates, mostly opened by Dependabot |
 
 The scope names the component: `web`, `core`, `auth-realtime`, `e2e`,
-`datagen`, `launcher` or `docker`. These are the same scopes Dependabot
+`datagen`, `launcher`, `docker` or `chart`. These are the same scopes Dependabot
 uses. Leave the scope out when a change spans several components, as in
 `docs: update CONTRIBUTING.md`.
 

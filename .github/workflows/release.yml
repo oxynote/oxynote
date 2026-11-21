@@ -194,11 +194,15 @@ jobs:
       # cosign signs without a key, with this workflow's own identity.
       id-token: write
     steps:
+      - name: Log in to the container registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Set up cosign
         uses: sigstore/cosign-installer@v4
 
-      # cosign takes its ghcr login from GITHUB_TOKEN.
       - name: Sign the chart
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cosign sign --yes "ghcr.io/oxynote/charts/oxynote@${{ needs.publish-chart.outputs.digest }}"

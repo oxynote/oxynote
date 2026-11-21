@@ -48,3 +48,12 @@ tests:
           value: dedicated
       - exists:
           path: spec.affinity.nodeAffinity
+
+  - it: runs as the app's ServiceAccount
+    set:
+      serviceAccount.create: false
+      serviceAccount.name: oxynote-pull
+    asserts:
+      - equal:
+          path: spec.serviceAccountName
+          value: oxynote-pull

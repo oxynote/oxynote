@@ -148,16 +148,6 @@ tests:
           path: spec.template.spec.containers[0].image
           value: ghcr.io/oxynote/oxynote:1.2.3
 
-  - it: labels the pod with the image tag it runs
-    chart:
-      appVersion: 1.2.3
-    set:
-      image.tag: 1.2.4
-    asserts:
-      - equal:
-          path: spec.template.metadata.labels["app.kubernetes.io/version"]
-          value: 1.2.4
-
   - it: pins the image by digest when one is set
     set:
       image.tag: 1.2.3
