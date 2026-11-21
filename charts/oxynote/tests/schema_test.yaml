@@ -93,3 +93,16 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: /extraEnv/0/name
+
+  - it: rejects an undeclared name in extraEnv
+    set:
+      publicUrl: https://docs.example.com
+      extraEnv:
+        - name: OXYNOTE_DB_DNS
+          valueFrom:
+            secretKeyRef:
+              name: db
+              key: uri
+    asserts:
+      - failedTemplate:
+          errorPattern: /extraEnv/0/name

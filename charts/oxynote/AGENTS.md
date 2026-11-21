@@ -16,9 +16,9 @@ root [AGENTS.md](../../AGENTS.md).
 - **The chart never generates or looks up a secret.** Two renders of the
   same values must be identical, or Argo CD and Flux see drift. Credentials
   reach the pod only through `envFromSecret`.
-- **`env` takes only the launcher's declared, non-secret names.** The
-  schema lists them under `env`, and `scripts/check-chart-env.mjs` keeps
-  the secret-bearing ones. It compares both lists with
+- **`env` and `extraEnv` take only names the launcher declares.** The
+  schema lists every name under `extraEnv` and the non-secret ones under
+  `env`. `scripts/check-chart-env.mjs` compares both with
   `docker/prod/launcher/src/env.ts`.
 - **`version: 0.0.0` stays in git.** The release sets the chart version and
   the app version to the tag (`scripts/chart-publish.sh`), so chart 1.2.3
