@@ -55,6 +55,14 @@ describe("loadConfig", () => {
 			name: "an internal auth-realtime variable",
 			input: "OXYNOTE_AUTH_REALTIME_ADDRESS",
 		},
+		{
+			name: "the rate limiter flag",
+			input: "OXYNOTE_RATE_LIMIT_DISABLED",
+		},
+		{
+			name: "the trusted proxy list",
+			input: "OXYNOTE_TRUSTED_PROXIES",
+		},
 	])("rejects $name by name", ({ input }, { expect }) => {
 		expect(() =>
 			loadConfig(completeEnv({ [input]: "value" })),
@@ -595,7 +603,6 @@ describe("loadConfig", () => {
 				completeEnv({
 					OXYNOTE_MAX_ORGANIZATIONS: "10",
 					OXYNOTE_MAX_ORGANIZATION_MEMBERS: "25",
-					OXYNOTE_RATE_LIMIT_DISABLED: "true",
 					OXYNOTE_MAX_DOCUMENT_HISTORY_ENTRIES:
 						"0",
 					OXYNOTE_DOCUMENT_HISTORY_RETENTION:
@@ -606,7 +613,6 @@ describe("loadConfig", () => {
 
 			expect(config.maxOrganizations).toBe("10")
 			expect(config.maxOrganizationMembers).toBe("25")
-			expect(config.rateLimitDisabled).toBe(true)
 			expect(config.maxDocumentHistoryEntries).toBe("0")
 			expect(config.documentHistoryRetention).toBe("2160h")
 			expect(config.logLevel).toBe("DEBUG")
@@ -663,60 +669,15 @@ describe("loadConfig", () => {
 			},
 			{
 				name: "a flag spelled 1",
-				input: { OXYNOTE_RATE_LIMIT_DISABLED: "1" },
-				expected: "OXYNOTE_RATE_LIMIT_DISABLED",
+				input: {
+					OXYNOTE_CRASH_REPORTING_DISABLED: "1",
+				},
+				expected: "OXYNOTE_CRASH_REPORTING_DISABLED",
 			},
 		])("rejects $name", ({ input, expected }, { expect }) => {
 			expect(() => loadConfig(completeEnv(input))).toThrow(
 				expected,
 			)
-		})
-	})
-
-	describe("trusted proxies", () => {
-		it("trusts no proxy when unset", ({ expect }) => {
-			const config = loadConfig(completeEnv())
-
-			expect(config.trustedProxies).toEqual([])
-		})
-
-		it.for([
-			{
-				name: "IPv4 ranges and addresses",
-				input: "10.0.0.0/8, 192.168.1.4",
-				expected: ["10.0.0.0/8", "192.168.1.4"],
-			},
-			{
-				name: "IPv6 ranges and addresses",
-				input: "fd00::/8,::1",
-				expected: ["fd00::/8", "::1"],
-			},
-		])("accepts $name", ({ input, expected }, { expect }) => {
-			const config = loadConfig(
-				completeEnv({ OXYNOTE_TRUSTED_PROXIES: input }),
-			)
-
-			expect(config.trustedProxies).toEqual(expected)
-		})
-
-		it.for([
-			{
-				name: "a prefix longer than the address",
-				input: "10.0.0.0/33",
-			},
-			{ name: "a hostname", input: "proxy.example.com" },
-			{
-				name: "an empty entry",
-				input: "10.0.0.0/8,,192.168.1.4",
-			},
-		])("rejects $name", ({ input }, { expect }) => {
-			expect(() =>
-				loadConfig(
-					completeEnv({
-						OXYNOTE_TRUSTED_PROXIES: input,
-					}),
-				),
-			).toThrow("OXYNOTE_TRUSTED_PROXIES")
 		})
 	})
 

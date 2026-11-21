@@ -91,10 +91,6 @@ export interface Config {
 	aiAssistant: Record<string, string>
 	maxOrganizations: string
 	maxOrganizationMembers: string
-	rateLimitDisabled: boolean
-	// the proxies in front of the image, as IPs or CIDR ranges. Empty
-	// when unset, so no proxy is trusted.
-	trustedProxies: string[]
 	maxDocumentHistoryEntries: string
 	documentHistoryRetention: string
 	logLevel: string
@@ -135,20 +131,6 @@ function limit() {
 		.regex(/^(-1|[1-9]\d*)$/, "must be -1 or a positive integer")
 		.optional()
 }
-
-// a comma-separated list of IPs and CIDR ranges, each checked here because
-// caddy would only fail on it after every other service has started.
-const trustedProxies = z
-	.string()
-	.transform((value) => value.split(",").map((entry) => entry.trim()))
-	.pipe(
-		z.array(
-			z.union([z.ipv4(), z.ipv6(), z.cidrv4(), z.cidrv6()], {
-				error: "must be an IP address or a CIDR range",
-			}),
-		),
-	)
-	.optional()
 
 // what the public origin falls back to. Caddy listens on 8080 inside the
 // container, so a container published as 8080:8080 is reachable here with
@@ -446,8 +428,6 @@ const baseSchema = z.object({
 	OXYNOTE_AI_ASSISTANT_VERTEX_SERVICE_ACCOUNT_JSON: z.string().optional(),
 	OXYNOTE_MAX_ORGANIZATIONS: limit(),
 	OXYNOTE_MAX_ORGANIZATION_MEMBERS: limit(),
-	OXYNOTE_RATE_LIMIT_DISABLED: flag(),
-	OXYNOTE_TRUSTED_PROXIES: trustedProxies,
 	OXYNOTE_MAX_DOCUMENT_HISTORY_ENTRIES: count(),
 	OXYNOTE_DOCUMENT_HISTORY_RETENTION: goDuration,
 	OXYNOTE_LOG_LEVEL: z
@@ -729,8 +709,6 @@ export function loadConfig(source: Record<string, string | undefined>): Config {
 		maxOrganizations: values.OXYNOTE_MAX_ORGANIZATIONS ?? "",
 		maxOrganizationMembers:
 			values.OXYNOTE_MAX_ORGANIZATION_MEMBERS ?? "",
-		rateLimitDisabled: values.OXYNOTE_RATE_LIMIT_DISABLED,
-		trustedProxies: values.OXYNOTE_TRUSTED_PROXIES ?? [],
 		maxDocumentHistoryEntries:
 			values.OXYNOTE_MAX_DOCUMENT_HISTORY_ENTRIES ?? "",
 		documentHistoryRetention:

@@ -86,10 +86,6 @@ services:
       # left up for a day of iteration would hit the dev default of 50
       # and start failing signups with a full-house message.
       - OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATIONS=100000
-      # every request in a run arrives from one address, and better-auth
-      # gives sign-in and sign-up three per ten seconds between them, so
-      # the limiter would fail the suite rather than the code under test.
-      - OXYNOTE_AUTH_REALTIME_RATE_LIMIT_DISABLED=true
     depends_on:
       postgres:
         condition: service_healthy
@@ -215,7 +211,6 @@ services:
       - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SECRET=e2esecret
       - OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATION_MEMBERS=5
       - OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATIONS=100000
-      - OXYNOTE_AUTH_REALTIME_RATE_LIMIT_DISABLED=true
       - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_ISSUER_URL=http://keycloak:8080/realms/oxynote
       - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_ID=oxynote
       - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_CLIENT_SECRET=oxynote-e2e-secret

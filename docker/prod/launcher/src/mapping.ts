@@ -215,8 +215,6 @@ export function buildChildEnvs(
 			config.maxOrganizations,
 		OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATION_MEMBERS:
 			config.maxOrganizationMembers,
-		OXYNOTE_AUTH_REALTIME_RATE_LIMIT_DISABLED:
-			config.rateLimitDisabled ? "true" : "false",
 		// core sends every email, so without a relay nothing auth-realtime
 		// asks for can arrive; it has to know at boot, because
 		// better-auth's verification options are fixed then.
@@ -272,13 +270,11 @@ export function buildChildEnvs(
 	}
 
 	// caddy wants writable storage even with TLS off; /tmp is the only
-	// scratch path the image allows. The Caddyfile reads the proxy list as
-	// separate words, so it is joined with spaces.
+	// scratch path the image allows.
 	const caddy: Record<string, string> = {
 		...inheritedEnv,
 		XDG_DATA_HOME: "/tmp/caddy/data",
 		XDG_CONFIG_HOME: "/tmp/caddy/config",
-		OXYNOTE_CADDY_TRUSTED_PROXIES: config.trustedProxies.join(" "),
 	}
 
 	return { core, authRealtime, web, caddy }
