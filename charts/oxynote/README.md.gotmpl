@@ -15,7 +15,7 @@ documents every `OXYNOTE_*` variable.
 ## Install
 
 ```sh
-helm install oxynote oci://ghcr.io/oxynote/charts/oxynote \
+helm install oxynote oci://ghcr.io/oxynote/helm/oxynote \
   --namespace oxynote --create-namespace \
   --set publicUrl=https://docs.example.com
 ```
@@ -31,7 +31,7 @@ command the install prints.
 Each release is signed in its release workflow. Check it before you install:
 
 ```sh
-cosign verify ghcr.io/oxynote/charts/oxynote:1.2.3 \
+cosign verify ghcr.io/oxynote/helm/oxynote:1.2.3 \
   --certificate-identity-regexp '^https://github.com/oxynote/oxynote/\.github/workflows/release\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```

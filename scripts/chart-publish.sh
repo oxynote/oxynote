@@ -9,7 +9,7 @@ set -eu
 cd "$(dirname "$0")/.."
 
 version=${1:?usage: scripts/chart-publish.sh VERSION}
-registry=oci://ghcr.io/oxynote/charts
+registry=oci://ghcr.io/oxynote/helm
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 

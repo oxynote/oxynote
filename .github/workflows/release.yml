@@ -205,4 +205,4 @@ jobs:
         uses: sigstore/cosign-installer@v4
 
       - name: Sign the chart
-        run: cosign sign --yes "ghcr.io/oxynote/charts/oxynote@${{ needs.publish-chart.outputs.digest }}"
+        run: cosign sign --yes "ghcr.io/oxynote/helm/oxynote@${{ needs.publish-chart.outputs.digest }}"
