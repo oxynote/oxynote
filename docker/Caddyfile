@@ -9,6 +9,15 @@
 	log {
 		level WARN
 	}
+
+	# the proxies in front of the front door. An empty list trusts none.
+	# Strict mode takes the right-most address that is not a trusted
+	# proxy, so a client cannot choose its own address.
+	servers {
+		trusted_proxies static {$OXYNOTE_CADDY_TRUSTED_PROXIES}
+		client_ip_headers X-Forwarded-For
+		trusted_proxies_strict
+	}
 }
 
 (common) {
@@ -17,6 +26,14 @@
 	}
 
 	header -Server
+}
+
+# once a proxy is trusted, caddy appends it to X-Forwarded-For, but core
+# reads the last entry. So every upstream gets the client address alone.
+(upstream) {
+	reverse_proxy {args[0]} {
+		header_up X-Forwarded-For {client_ip}
+	}
 }
 
 :8080 {
@@ -45,17 +62,17 @@
 	# served by the mcp plugin's request hook, which matches the original
 	# root-anchored path — no rewrite.
 	handle /.well-known/oauth-protected-resource* {
-		reverse_proxy auth-realtime:8081
+		import upstream auth-realtime:8081
 	}
 
 	handle /.well-known/oauth-authorization-server* {
 		rewrite * /api/auth/.well-known/oauth-authorization-server
-		reverse_proxy auth-realtime:8081
+		import upstream auth-realtime:8081
 	}
 
 	handle /.well-known/openid-configuration* {
 		rewrite * /api/auth/.well-known/openid-configuration
-		reverse_proxy auth-realtime:8081
+		import upstream auth-realtime:8081
 	}
 
 	# better-auth builds its OAuth endpoint URLs from the bare origin plus
@@ -64,30 +81,30 @@
 	# auth-realtime as-is (no path strip — the service serves /api/auth
 	# natively).
 	handle /api/auth/* {
-		reverse_proxy auth-realtime:8081
+		import upstream auth-realtime:8081
 	}
 
 	handle_path /core/* {
-		reverse_proxy core:8080
+		import upstream core:8080
 	}
 
 	handle_path /auth-realtime/* {
-		reverse_proxy auth-realtime:8081
+		import upstream auth-realtime:8081
 	}
 
 	handle {
-		reverse_proxy web:3000
+		import upstream web:3000
 	}
 }
 
 :8082 {
 	import common
 
-	reverse_proxy changedetection:5000
+	import upstream changedetection:5000
 }
 
 :8084 {
 	import common
 
-	reverse_proxy mailpit:8025
+	import upstream mailpit:8025
 }

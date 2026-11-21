@@ -673,6 +673,53 @@ describe("loadConfig", () => {
 		})
 	})
 
+	describe("trusted proxies", () => {
+		it("trusts no proxy when unset", ({ expect }) => {
+			const config = loadConfig(completeEnv())
+
+			expect(config.trustedProxies).toEqual([])
+		})
+
+		it.for([
+			{
+				name: "IPv4 ranges and addresses",
+				input: "10.0.0.0/8, 192.168.1.4",
+				expected: ["10.0.0.0/8", "192.168.1.4"],
+			},
+			{
+				name: "IPv6 ranges and addresses",
+				input: "fd00::/8,::1",
+				expected: ["fd00::/8", "::1"],
+			},
+		])("accepts $name", ({ input, expected }, { expect }) => {
+			const config = loadConfig(
+				completeEnv({ OXYNOTE_TRUSTED_PROXIES: input }),
+			)
+
+			expect(config.trustedProxies).toEqual(expected)
+		})
+
+		it.for([
+			{
+				name: "a prefix longer than the address",
+				input: "10.0.0.0/33",
+			},
+			{ name: "a hostname", input: "proxy.example.com" },
+			{
+				name: "an empty entry",
+				input: "10.0.0.0/8,,192.168.1.4",
+			},
+		])("rejects $name", ({ input }, { expect }) => {
+			expect(() =>
+				loadConfig(
+					completeEnv({
+						OXYNOTE_TRUSTED_PROXIES: input,
+					}),
+				),
+			).toThrow("OXYNOTE_TRUSTED_PROXIES")
+		})
+	})
+
 	describe("secret overrides", () => {
 		it("carries the overrides through unset by default", ({
 			expect,
