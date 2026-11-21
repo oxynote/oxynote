@@ -143,21 +143,32 @@ onUnmounted(() => {
 async function logInWithProvider(provider: ProviderAuthMethod) {
 	loading.value = provider
 
-	const res = (await signInSocial({
-		provider,
-		callbackURL:
-			oauthContinueUrl.value ??
-			postAuthDocumentUrl(config.public.appBaseURL, nextUrl.value),
-		newUserCallbackURL: postAuthDocumentUrl(
-			config.public.appBaseURL,
-			nextUrl.value,
-			"/welcome",
-		),
-		...(provider === "oidc" && {
-			errorCallbackURL: oidcErrorCallbackUrl(config.public.appBaseURL),
-		}),
-		fetchOptions: { query: route.query },
-	})) as AuthResponse
+	let res: AuthResponse
+
+	try {
+		res = await signInSocial({
+			provider,
+			callbackURL:
+				oauthContinueUrl.value ??
+				postAuthDocumentUrl(config.public.appBaseURL, nextUrl.value),
+			newUserCallbackURL: postAuthDocumentUrl(
+				config.public.appBaseURL,
+				nextUrl.value,
+				"/welcome",
+			),
+			...(provider === "oidc" && {
+				errorCallbackURL: oidcErrorCallbackUrl(config.public.appBaseURL),
+			}),
+			fetchOptions: { query: route.query },
+		})
+	} catch {
+		// a request the browser blocks, such as a cross-origin one, rejects
+		// instead of answering with an error.
+		showToastMessage("error", t("onboarding.login.errors.login-failed"))
+		loading.value = null
+
+		return
+	}
 
 	if (res.error) {
 		showToastMessage("error", t("onboarding.login.errors.login-failed"))

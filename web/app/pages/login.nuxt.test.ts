@@ -29,25 +29,34 @@ vi.mock("vue-sonner", () => ({
 
 // route.query is a readonly proxy, so the route itself is what a test
 // arranges
-const { useRouteMock, navigateToMock, signInEmailPasswordMock } = vi.hoisted(
-	() => ({
-		useRouteMock: vi.fn(),
-		navigateToMock: vi.fn(),
-		signInEmailPasswordMock: vi.fn(),
-	}),
-)
+const {
+	useRouteMock,
+	navigateToMock,
+	signInEmailPasswordMock,
+	signInSocialMock,
+} = vi.hoisted(() => ({
+	useRouteMock: vi.fn(),
+	navigateToMock: vi.fn(),
+	signInEmailPasswordMock: vi.fn(),
+	signInSocialMock: vi.fn(),
+}))
 
 mockNuxtImport("useRoute", () => useRouteMock)
 mockNuxtImport("navigateTo", () => navigateToMock)
 
 // better-auth keeps the fetch it saw when the client was created, so a
-// test cannot make the request itself fail. Instead the sign-in call is
-// wrapped here. It runs the real call unless a test says otherwise.
+// test cannot make the request itself fail. Instead the sign-in calls are
+// wrapped here. They run the real call unless a test says otherwise.
 mockNuxtImport<typeof useAuthSession>("useAuthSession", (original) => () => {
 	const session = original()
 	signInEmailPasswordMock.mockImplementation(session.signInEmailPassword)
+	signInSocialMock.mockImplementation(session.signInSocial)
 
-	return { ...session, signInEmailPassword: signInEmailPasswordMock }
+	return {
+		...session,
+		signInEmailPassword: signInEmailPasswordMock,
+		signInSocial: signInSocialMock,
+	}
 })
 
 // the query cache and the vue-sonner, useRoute and navigateTo module mocks
@@ -63,6 +72,7 @@ describe("<login>", { concurrent: false }, () => {
 		navigateToMock.mockReset()
 		useRouteMock.mockReset()
 		signInEmailPasswordMock.mockReset()
+		signInSocialMock.mockReset()
 		arrangeRoute()
 	})
 
@@ -327,6 +337,42 @@ describe("<login>", { concurrent: false }, () => {
 			.toMatchObject([
 				{ type: "error", title: t("onboarding.login.errors.login-failed") },
 			])
+		expect
+			.soft(
+				findButtonByText(
+					wrapper,
+					t("onboarding.login.login-google"),
+				).attributes("disabled"),
+			)
+			.toBeUndefined()
+	})
+
+	it("reports a social sign-in the browser could not send", async ({
+		expect,
+	}) => {
+		seedAuthConfig({ methods: ["google"] })
+		const wrapper = await mountSuspended(Login)
+		// a request the browser blocks makes better-auth reject with this
+		signInSocialMock.mockRejectedValueOnce(new TypeError("Failed to fetch"))
+
+		await findButtonByText(wrapper, t("onboarding.login.login-google")).trigger(
+			"click",
+		)
+
+		// the page signals the end of neither the request nor its failure
+		await vi.waitFor(() => {
+			expect(toast.custom).toHaveBeenCalledTimes(1)
+		}, WAIT_FOR_OPTIONS)
+		expect.soft(signInSocialMock).toHaveBeenCalledTimes(1)
+		expect
+			.soft(signInSocialMock)
+			.toHaveBeenCalledWith(expect.objectContaining({ provider: "google" }))
+		expect
+			.soft(raisedToasts())
+			.toMatchObject([
+				{ type: "error", title: t("onboarding.login.errors.login-failed") },
+			])
+		expect.soft(navigateToMock).not.toHaveBeenCalled()
 		expect
 			.soft(
 				findButtonByText(
