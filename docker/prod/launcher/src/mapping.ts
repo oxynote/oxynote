@@ -272,11 +272,13 @@ export function buildChildEnvs(
 	}
 
 	// caddy wants writable storage even with TLS off; /tmp is the only
-	// scratch path the image allows.
+	// scratch path the image allows. The Caddyfile reads the proxy list as
+	// separate words, so it is joined with spaces.
 	const caddy: Record<string, string> = {
 		...inheritedEnv,
 		XDG_DATA_HOME: "/tmp/caddy/data",
 		XDG_CONFIG_HOME: "/tmp/caddy/config",
+		OXYNOTE_CADDY_TRUSTED_PROXIES: config.trustedProxies.join(" "),
 	}
 
 	return { core, authRealtime, web, caddy }
