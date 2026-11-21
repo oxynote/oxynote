@@ -1,0 +1,137 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Oxynote chart values",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["publicUrl"],
+  "properties": {
+    "global": {"type": "object"},
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "tag": {"type": "string"},
+        "digest": {"type": "string", "pattern": "^(sha256:[a-f0-9]{64})?$"},
+        "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}
+      }
+    },
+    "publicUrl": {
+      "type": "string",
+      "pattern": "^https?://[^/?#]+/?$",
+      "description": "Origin users open Oxynote at, without a path."
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Non-secret OXYNOTE_* variables. Secret ones go in envFromSecret.",
+      "properties": {
+        "OXYNOTE_AI_ASSISTANT_AZURE_API_VERSION": {"type": "string"},
+        "OXYNOTE_AI_ASSISTANT_BASE_URL": {"type": "string"},
+        "OXYNOTE_AI_ASSISTANT_BEDROCK_REGION": {"type": "string"},
+        "OXYNOTE_AI_ASSISTANT_MAX_TOKENS": {"type": "string"},
+        "OXYNOTE_AI_ASSISTANT_MODEL": {"type": "string"},
+        "OXYNOTE_AI_ASSISTANT_PROVIDER": {"type": "string"},
+        "OXYNOTE_AI_ASSISTANT_REQUEST_TIMEOUT": {"type": "string"},
+        "OXYNOTE_AI_ASSISTANT_SUMMARY_MODEL": {"type": "string"},
+        "OXYNOTE_AI_ASSISTANT_VERTEX_PROJECT_ID": {"type": "string"},
+        "OXYNOTE_AI_ASSISTANT_VERTEX_REGION": {"type": "string"},
+        "OXYNOTE_CHANGE_DETECTION_URL": {"type": "string"},
+        "OXYNOTE_CRASH_REPORTING_DISABLED": {"type": "string"},
+        "OXYNOTE_DOCUMENT_HISTORY_RETENTION": {"type": "string"},
+        "OXYNOTE_EMAIL_FROM_ADDRESS": {"type": "string"},
+        "OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED": {"type": "string"},
+        "OXYNOTE_GITHUB_APP_ID": {"type": "string"},
+        "OXYNOTE_GITHUB_APP_SLUG": {"type": "string"},
+        "OXYNOTE_LOG_LEVEL": {"type": "string"},
+        "OXYNOTE_MAX_DOCUMENT_HISTORY_ENTRIES": {"type": "string"},
+        "OXYNOTE_MAX_ORGANIZATIONS": {"type": "string"},
+        "OXYNOTE_MAX_ORGANIZATION_MEMBERS": {"type": "string"},
+        "OXYNOTE_PRIVACY_POLICY_URL": {"type": "string"},
+        "OXYNOTE_SLACK_APP_CLIENT_ID": {"type": "string"},
+        "OXYNOTE_SOCIAL_LOGIN_GITHUB_CLIENT_ID": {"type": "string"},
+        "OXYNOTE_SOCIAL_LOGIN_GOOGLE_CLIENT_ID": {"type": "string"},
+        "OXYNOTE_SOCIAL_LOGIN_OIDC_CA_CERTS": {"type": "string"},
+        "OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_ID": {"type": "string"},
+        "OXYNOTE_SOCIAL_LOGIN_OIDC_DISPLAY_NAME": {"type": "string"},
+        "OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL": {"type": "string"},
+        "OXYNOTE_SOCIAL_LOGIN_OIDC_SCOPES": {"type": "string"},
+        "OXYNOTE_SOCIAL_LOGIN_SLACK_CLIENT_ID": {"type": "string"},
+        "OXYNOTE_TERMS_OF_SERVICE_URL": {"type": "string"}
+      }
+    },
+    "envFromSecret": {"type": "string"},
+    "githubAppSecret": {"type": "string"},
+    "persistence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "existingClaim": {"type": "string"},
+        "size": {"type": "string", "minLength": 1},
+        "storageClass": {"type": "string"},
+        "annotations": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {"enum": ["ClusterIP", "NodePort", "LoadBalancer"]},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "annotations": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "className": {"type": "string"},
+        "annotations": {"type": "object", "additionalProperties": {"type": "string"}},
+        "hosts": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "tls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "secretName": {"type": "string"},
+              "hosts": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        }
+      },
+      "if": {"properties": {"enabled": {"const": true}}},
+      "then": {"properties": {"hosts": {"minItems": 1}}}
+    },
+    "httpRoute": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "parentRefs": {"type": "array", "items": {"type": "object"}},
+        "hostnames": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "annotations": {"type": "object", "additionalProperties": {"type": "string"}}
+      },
+      "if": {"properties": {"enabled": {"const": true}}},
+      "then": {"properties": {"parentRefs": {"minItems": 1}}}
+    },
+    "resources": {"type": "object"},
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {"type": "boolean"},
+        "name": {"type": "string"},
+        "annotations": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "extraVolumes": {"type": "array", "items": {"type": "object"}},
+    "extraVolumeMounts": {"type": "array", "items": {"type": "object"}},
+    "nodeSelector": {"type": "object", "additionalProperties": {"type": "string"}},
+    "tolerations": {"type": "array", "items": {"type": "object"}},
+    "affinity": {"type": "object"},
+    "podAnnotations": {"type": "object", "additionalProperties": {"type": "string"}},
+    "podLabels": {"type": "object", "additionalProperties": {"type": "string"}}
+  }
+}

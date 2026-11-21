@@ -1,0 +1,72 @@
+suite: schema
+templates:
+  - templates/statefulset.yaml
+tests:
+  - it: requires publicUrl
+    asserts:
+      - failedTemplate:
+          errorPattern: missing property 'publicUrl'
+
+  - it: rejects a publicUrl with a path
+    set:
+      publicUrl: https://example.com/docs
+    asserts:
+      - failedTemplate:
+          errorPattern: /publicUrl
+
+  - it: rejects an undeclared variable
+    set:
+      publicUrl: https://docs.example.com
+      env.OXYNOTE_TYPO: x
+    asserts:
+      - failedTemplate:
+          errorPattern: additional properties 'OXYNOTE_TYPO' not allowed
+
+  - it: rejects a secret in env
+    set:
+      publicUrl: https://docs.example.com
+      env.OXYNOTE_SMTP_DSN: smtp://user:pass@mail
+    asserts:
+      - failedTemplate:
+          errorPattern: additional properties 'OXYNOTE_SMTP_DSN' not allowed
+
+  - it: rejects a number or a boolean that is not quoted
+    set:
+      publicUrl: https://docs.example.com
+      env.OXYNOTE_MAX_ORGANIZATIONS: 5
+      env.OXYNOTE_CRASH_REPORTING_DISABLED: true
+    asserts:
+      - failedTemplate:
+          errorPattern: /env/OXYNOTE_
+
+  - it: has no way to turn persistence off
+    set:
+      publicUrl: https://docs.example.com
+      persistence.enabled: false
+    asserts:
+      - failedTemplate:
+          errorPattern: additional properties 'enabled' not allowed
+
+  - it: has no replica count
+    set:
+      publicUrl: https://docs.example.com
+      replicaCount: 2
+    asserts:
+      - failedTemplate:
+          errorPattern: additional properties 'replicaCount' not allowed
+
+  - it: requires parentRefs for an HTTPRoute
+    set:
+      publicUrl: https://docs.example.com
+      httpRoute.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: /httpRoute/parentRefs
+
+  - it: requires a host for an Ingress
+    set:
+      publicUrl: https://docs.example.com
+      ingress.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: /ingress/hosts

@@ -1,0 +1,47 @@
+suite: pvc
+templates:
+  - templates/pvc.yaml
+set:
+  publicUrl: https://docs.example.com
+tests:
+  - it: creates a kept ReadWriteOnce claim by default
+    asserts:
+      - isKind:
+          of: PersistentVolumeClaim
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-oxynote-data
+      - equal:
+          path: metadata.annotations["helm.sh/resource-policy"]
+          value: keep
+      - equal:
+          path: spec.accessModes
+          value:
+            - ReadWriteOnce
+      - equal:
+          path: spec.resources.requests.storage
+          value: 10Gi
+      - notExists:
+          path: spec.storageClassName
+
+  - it: takes a class and extra annotations
+    set:
+      persistence.storageClass: fast
+      persistence.annotations:
+        backup: daily
+    asserts:
+      - equal:
+          path: spec.storageClassName
+          value: fast
+      - equal:
+          path: metadata.annotations
+          value:
+            helm.sh/resource-policy: keep
+            backup: daily
+
+  - it: creates no claim when an existing one is named
+    set:
+      persistence.existingClaim: my-data
+    asserts:
+      - hasDocuments:
+          count: 0

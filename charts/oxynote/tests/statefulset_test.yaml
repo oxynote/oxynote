@@ -1,0 +1,251 @@
+suite: statefulset
+templates:
+  - templates/statefulset.yaml
+set:
+  publicUrl: https://docs.example.com
+tests:
+  - it: runs exactly one pod from a StatefulSet
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.serviceName
+          value: RELEASE-NAME-oxynote
+
+  - it: turns off service links and the API token, and waits for shutdown
+    asserts:
+      - equal:
+          path: spec.template.spec.enableServiceLinks
+          value: false
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+      - equal:
+          path: spec.template.spec.terminationGracePeriodSeconds
+          value: 60
+
+  - it: meets the restricted Pod Security Standard
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+  - it: mounts the data PVC and an emptyDir on /tmp
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: data
+            mountPath: /oxynote/data
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            persistentVolumeClaim:
+              claimName: RELEASE-NAME-oxynote-data
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir: {}
+
+  - it: mounts an existing claim instead
+    set:
+      persistence.existingClaim: my-data
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            persistentVolumeClaim:
+              claimName: my-data
+
+  - it: passes publicUrl and env as strings, sorted by name
+    set:
+      env:
+        OXYNOTE_MAX_ORGANIZATIONS: "5"
+        OXYNOTE_CRASH_REPORTING_DISABLED: "true"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: OXYNOTE_PUBLIC_URL
+              value: https://docs.example.com
+            - name: OXYNOTE_CRASH_REPORTING_DISABLED
+              value: "true"
+            - name: OXYNOTE_MAX_ORGANIZATIONS
+              value: "5"
+      - notExists:
+          path: spec.template.spec.containers[0].envFrom
+
+  - it: loads every key of envFromSecret as a variable
+    set:
+      envFromSecret: oxynote-secrets
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom
+          value:
+            - secretRef:
+                name: oxynote-secrets
+
+  - it: mounts the GitHub App key read-only at the path the image reads
+    set:
+      githubAppSecret: github-app
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: github-app
+            mountPath: /oxynote/github
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: github-app
+            secret:
+              secretName: github-app
+              items:
+                - key: private-key.pem
+                  path: private-key.pem
+
+  - it: mounts no GitHub App key by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: github-app
+            mountPath: /oxynote/github
+            readOnly: true
+
+  - it: defaults the image tag to the appVersion
+    chart:
+      appVersion: 1.2.3
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/oxynote/oxynote:1.2.3
+
+  - it: labels the pod with the image tag it runs
+    chart:
+      appVersion: 1.2.3
+    set:
+      image.tag: 1.2.4
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/version"]
+          value: 1.2.4
+
+  - it: pins the image by digest when one is set
+    set:
+      image.tag: 1.2.3
+      image.digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/oxynote/oxynote@sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+  - it: checks every service at startup and readiness, and the front door for liveness
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe
+          value:
+            exec:
+              command: ["/usr/bin/node", "/oxynote/prod/healthcheck.mjs"]
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 60
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.exec.command
+          value: ["/usr/bin/node", "/oxynote/prod/healthcheck.mjs"]
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet
+          value:
+            path: /auth-realtime/api/auth-config
+            port: http
+
+  - it: passes the extras through
+    set:
+      resources:
+        requests:
+          memory: 1Gi
+      extraVolumes:
+        - name: oidc-ca
+          configMap:
+            name: company-ca
+      extraVolumeMounts:
+        - name: oidc-ca
+          mountPath: /oxynote/oidc-ca.pem
+          subPath: ca.pem
+      nodeSelector:
+        disk: ssd
+      tolerations:
+        - key: dedicated
+          operator: Exists
+      affinity:
+        nodeAffinity: {}
+      podAnnotations:
+        a: b
+      podLabels:
+        team: docs
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources
+          value:
+            requests:
+              memory: 1Gi
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: oidc-ca
+            configMap:
+              name: company-ca
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: oidc-ca
+            mountPath: /oxynote/oidc-ca.pem
+            subPath: ca.pem
+      - equal:
+          path: spec.template.spec.nodeSelector
+          value:
+            disk: ssd
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: dedicated
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity
+      - equal:
+          path: spec.template.metadata.annotations
+          value:
+            a: b
+      - equal:
+          path: spec.template.metadata.labels.team
+          value: docs
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: oxynote
+            app.kubernetes.io/instance: RELEASE-NAME

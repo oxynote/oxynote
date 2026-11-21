@@ -54,6 +54,16 @@ docker:
           - "**/Dockerfile*"
           - "**/.goreleaser.yml"
 
+chart:
+  - changed-files:
+      - any-glob-to-any-file:
+          - charts/**
+          - e2e/kind/**
+          - e2e/tests/kind-*
+          - e2e/playwright.kind.config.ts
+          - scripts/chart-*
+          - scripts/check-chart-env.mjs
+
 dev-env:
   - changed-files:
       - any-glob-to-any-file:

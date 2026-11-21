@@ -1,0 +1,5 @@
+publicUrl: http://localhost:8080
+env:
+  OXYNOTE_MAX_ORGANIZATIONS: "100000"
+persistence:
+  size: 2Gi

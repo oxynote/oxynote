@@ -1,0 +1,23 @@
+suite: service
+templates:
+  - templates/service.yaml
+set:
+  publicUrl: https://docs.example.com
+tests:
+  - it: exposes the front door on 8080 as a ClusterIP
+    asserts:
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.ports
+          value:
+            - name: http
+              port: 8080
+              targetPort: http
+              protocol: TCP
+      - equal:
+          path: spec.selector
+          value:
+            app.kubernetes.io/name: oxynote
+            app.kubernetes.io/instance: RELEASE-NAME

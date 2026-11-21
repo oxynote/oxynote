@@ -1,0 +1,17 @@
+apiVersion: v2
+name: oxynote
+description: Oxynote, the collaborative documentation product, as one all-in-one pod.
+type: application
+# the release workflow sets both versions from the app tag. Keep 0.0.0 here.
+version: 0.0.0
+appVersion: "0.0.0"
+kubeVersion: ">=1.29.0-0"
+home: https://github.com/oxynote/oxynote
+sources:
+  - https://github.com/oxynote/oxynote
+icon: https://raw.githubusercontent.com/oxynote/oxynote/main/web/public/favicon.svg
+keywords:
+  - documentation
+  - wiki
+  - runbooks
+  - collaboration

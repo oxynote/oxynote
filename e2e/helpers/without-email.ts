@@ -8,15 +8,17 @@ import { newWorkspace, submitWorkspaceForm, type Workspace } from "./workspace"
 // port means changing that service.
 export const WITHOUT_EMAIL_URL = "http://localhost:19081"
 
-// signUpWithWorkspaceWithoutEmail is signUpWithWorkspace for that instance.
-// Signup signs the new account straight in, so there is no link to follow
-// and no login step before the workspace is created.
+// signUpWithWorkspaceWithoutEmail is signUpWithWorkspace for an instance
+// with no email sender, by default the one above. Signup signs the new
+// account straight in, so there is no link to follow and no login step
+// before the workspace is created.
 export async function signUpWithWorkspaceWithoutEmail(
 	page: Page,
+	origin = WITHOUT_EMAIL_URL,
 ): Promise<{ credentials: Credentials; workspace: Workspace }> {
 	const credentials = newCredentials()
-	await submitSignupForm(page, credentials, WITHOUT_EMAIL_URL)
-	await expect(page).toHaveURL(`${WITHOUT_EMAIL_URL}/welcome`, {
+	await submitSignupForm(page, credentials, origin)
+	await expect(page).toHaveURL(`${origin}/welcome`, {
 		timeout: 15_000,
 	})
 

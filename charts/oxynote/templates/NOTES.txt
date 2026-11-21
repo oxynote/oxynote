@@ -1,0 +1,25 @@
+{{- if .Release.IsInstall }}
+Oxynote is starting. The first boot creates the database, so it can take a
+few minutes.
+
+{{ end -}}
+Watch the rollout with:
+
+  kubectl --namespace {{ .Release.Namespace }} rollout status statefulset/{{ include "oxynote.fullname" . }}
+{{- if eq (trimSuffix "/" .Values.publicUrl) "http://localhost:8080" }}
+
+Then run:
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward service/{{ include "oxynote.fullname" . }} 8080:{{ .Values.service.port }}
+{{- end }}
+
+Open {{ .Values.publicUrl }}
+{{- $maxOrgs := index .Values.env "OXYNOTE_MAX_ORGANIZATIONS" | default "" }}
+{{- $passwordLogin := ne (index .Values.env "OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED" | default "") "true" }}
+{{- if and .Release.IsInstall $passwordLogin (or (eq $maxOrgs "") (eq $maxOrgs "1")) }}
+
+WARNING: the first boot creates the admin admin@example.com with the
+password oxynote-admin-1234. Change it right away.
+{{- end }}
+
+Oxynote does not rate-limit sign-in. See "Exposing it" in the chart README.

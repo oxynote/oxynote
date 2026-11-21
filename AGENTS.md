@@ -70,11 +70,10 @@ check per step and loop until every check passes.
   Before adding a line, check that it is not already stated, not readable
   from the code it describes, and not the story of one change. Write the
   rule; a reason only where the rule would otherwise look arbitrary.
-- Some tools load at most 32 KiB of AGENTS.md per session: this file plus
-  every AGENTS.md on the path to the working directory. This file plus any
-  component's file stay under 32 KiB together; a package-level file below a
-  component stays under 5 KiB (`wc -c`). When a file grows, cut before
-  adding.
+- A session loads this file plus every AGENTS.md on the path to the
+  working directory. This file plus any component's file stay under 40 KiB
+  together; a package-level file below a component stays under 5 KiB
+  (`wc -c`). When a file grows, cut before adding.
 
 ---
 
@@ -101,6 +100,8 @@ components:
   `*.local.env` the stack reads), `demo/` data configs.
 - `docker/prod/` — the production all-in-one image, its Caddyfile, the TS
   launcher and the example compose. [docker/prod/AGENTS.md](docker/prod/AGENTS.md).
+- `charts/oxynote/` — the all-in-one image's Helm chart.
+  [charts/oxynote/AGENTS.md](charts/oxynote/AGENTS.md).
 - `packages/common/` — `@oxynote/common`: plain TypeScript that web and
   auth-realtime both run (grid layout, editor schema version). No DOM or
   Node code; imported only through subpaths (`@oxynote/common/grid`).

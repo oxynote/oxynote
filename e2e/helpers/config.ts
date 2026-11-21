@@ -13,7 +13,18 @@ const PORTS =
 		? { frontDoor: "19080", mailpit: "19025", oidc: "19083", keycloak: "19180" }
 		: { frontDoor: "18080", mailpit: "18025", oidc: "18083", keycloak: "18180" }
 
-export const BASE_URL = `http://localhost:${PORTS.frontDoor}`
+// the kind stack (kind/run.sh) serves each Helm release on its own host,
+// so its run passes the release's address instead.
+const KIND = process.env.E2E_STACK === "kind"
+if (KIND && !process.env.E2E_BASE_URL) {
+	throw new Error(
+		"E2E_BASE_URL is unset. Run the kind tests through kind/run.sh.",
+	)
+}
+
+export const BASE_URL = KIND
+	? (process.env.E2E_BASE_URL ?? "")
+	: `http://localhost:${PORTS.frontDoor}`
 export const MAILPIT_URL = `http://localhost:${PORTS.mailpit}`
 // the instance that signs in through keycloak, and keycloak itself.
 export const OIDC_URL = `http://localhost:${PORTS.oidc}`

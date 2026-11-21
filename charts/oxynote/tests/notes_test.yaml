@@ -1,0 +1,53 @@
+suite: notes
+templates:
+  - templates/NOTES.txt
+set:
+  publicUrl: https://docs.example.com
+tests:
+  - it: prints the URL, the admin warning and the rate-limit pointer
+    asserts:
+      - matchRegexRaw:
+          pattern: Open https://docs.example.com
+      - matchRegexRaw:
+          pattern: admin@example.com
+      - matchRegexRaw:
+          pattern: See "Exposing it" in the chart README
+      - notMatchRegexRaw:
+          pattern: port-forward
+
+  - it: prints only what stays true on an upgrade
+    release:
+      upgrade: true
+    asserts:
+      - notMatchRegexRaw:
+          pattern: first boot
+      - matchRegexRaw:
+          pattern: rollout status statefulset/RELEASE-NAME-oxynote
+
+  - it: prints the port-forward for a localhost publicUrl
+    set:
+      publicUrl: http://localhost:8080
+    asserts:
+      - matchRegexRaw:
+          pattern: port-forward service/RELEASE-NAME-oxynote 8080:8080
+
+  - it: warns about the default admin with one workspace
+    set:
+      env.OXYNOTE_MAX_ORGANIZATIONS: "1"
+    asserts:
+      - matchRegexRaw:
+          pattern: admin@example.com
+
+  - it: does not warn when many workspaces are allowed
+    set:
+      env.OXYNOTE_MAX_ORGANIZATIONS: "100"
+    asserts:
+      - notMatchRegexRaw:
+          pattern: admin@example.com
+
+  - it: does not warn when password login is off
+    set:
+      env.OXYNOTE_EMAIL_PASSWORD_LOGIN_DISABLED: "true"
+    asserts:
+      - notMatchRegexRaw:
+          pattern: admin@example.com

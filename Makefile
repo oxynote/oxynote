@@ -29,8 +29,9 @@ PROD_IMAGE_TAG ?= prod
 # target it so the stacks run natively instead of under emulation.
 DOCKER_ARCH ?= $(shell docker version --format '{{.Server.Arch}}' 2>/dev/null)
 
-# the version a published image is tagged with, without a leading v. Set
-# only by the release workflow; prod-publish refuses to run without it.
+# the version a release publishes the image and the chart at, without a
+# leading v. Set only by the release workflow; prod-publish and
+# chart-publish refuse to run without it.
 RELEASE_VERSION ?=
 
 QUIET := scripts/run-quietly.sh
@@ -102,6 +103,16 @@ e2e-prod-stack-build:
 e2e-prod-stack-stop:
 	@$(QUIET) "stopping the stack" $(E2E_PROD_COMPOSE) down -v
 
+# the Helm chart on kind (e2e/kind/run.sh), against published images. Set
+# KIND_IMAGE_TAG to test another release than the latest.
+.PHONY: e2e-kind
+e2e-kind:
+	@e2e/kind/run.sh $(KIND_IMAGE_TAG)
+
+.PHONY: e2e-kind-stack-stop
+e2e-kind-stack-stop:
+	@$(QUIET) "deleting the cluster" kind delete cluster --name oxynote-chart
+
 # lint gates of every component, from one place. Fixing and checking mirror
 # each component's own vocabulary: web, auth-realtime and e2e pair
 # lint/check-lint, and core and datagen wrap golangci-lint.
@@ -125,6 +136,7 @@ check-lint:
 	@$(QUIET) "lint-checking launcher" sh -c 'cd docker/prod/launcher && pnpm run check-lint'
 	@$(QUIET) "lint-checking packages/common" sh -c 'cd packages/common && pnpm run check-lint'
 	@$(QUIET) "checking icon lists" node scripts/check-icons.mjs
+	@$(QUIET) "checking chart env names" node scripts/check-chart-env.mjs
 
 # unit tests of every component, with the coverage gates CI applies.
 .PHONY: test
@@ -240,6 +252,18 @@ prod-run-no-email: prod-build
 .PHONY: prod-stop
 prod-stop:
 	$(PROD_COMPOSE) down
+
+# every render-only check of the Helm chart.
+.PHONY: chart-check
+chart-check:
+	scripts/chart-check.sh
+
+# release-only, like prod-publish: package the chart at RELEASE_VERSION and
+# push it to ghcr.
+.PHONY: chart-publish
+chart-publish:
+	@test -n "$(RELEASE_VERSION)" || { echo "RELEASE_VERSION is required, e.g. 1.2.3"; exit 1; }
+	scripts/chart-publish.sh $(RELEASE_VERSION)
 
 # changedetection.io generates its API key on first boot; start it alone and
 # copy the key into core.local.env before the rest of the stack (core reads

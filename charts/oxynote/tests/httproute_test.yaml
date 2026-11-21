@@ -1,0 +1,36 @@
+suite: httproute
+templates:
+  - templates/httproute.yaml
+set:
+  publicUrl: https://docs.example.com
+tests:
+  - it: renders nothing by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: attaches to the given Gateway and routes every path
+    set:
+      httpRoute.enabled: true
+      httpRoute.parentRefs:
+        - name: public
+          namespace: gateways
+      httpRoute.hostnames:
+        - docs.example.com
+    asserts:
+      - isAPIVersion:
+          of: gateway.networking.k8s.io/v1
+      - equal:
+          path: spec.parentRefs
+          value:
+            - name: public
+              namespace: gateways
+      - equal:
+          path: spec.hostnames
+          value:
+            - docs.example.com
+      - equal:
+          path: spec.rules[0].backendRefs
+          value:
+            - name: RELEASE-NAME-oxynote
+              port: 8080

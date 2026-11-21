@@ -1,0 +1,50 @@
+# the external database for ci/external-postgres-values.yaml. It lives
+# outside the chart's namespace, which enforces the restricted Pod Security
+# Standard that this image does not meet.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ci-deps
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: ci-deps
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:18-alpine@sha256:ff64c9e3bdf8e2120107d3559de8db314e8305f7e38c5105903c6295876738ff
+          env:
+            - name: POSTGRES_USER
+              value: oxynote
+            - name: POSTGRES_PASSWORD
+              value: oxynote
+            - name: POSTGRES_DB
+              value: oxynote
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "oxynote"]
+            periodSeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: ci-deps
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
