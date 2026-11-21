@@ -238,12 +238,64 @@ function encodeState(doc: Y.Doc): string {
 	return Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64")
 }
 
-export function createDocumentHooks({
-	auth,
-	store,
-	core,
-	log,
-}: DocumentHookDeps) {
+function documentNameFrom(payload: unknown): string | undefined {
+	if (
+		typeof payload === "object" &&
+		payload !== null &&
+		"documentName" in payload &&
+		typeof payload.documentName === "string"
+	) {
+		return payload.documentName
+	}
+
+	return undefined
+}
+
+function withLoggedHookErrors<
+	T extends Record<string, (...args: never[]) => unknown>,
+>(hooks: T, log: ServiceLogger): T {
+	const wrapped: Record<string, unknown> = {}
+
+	for (const [name, fn] of Object.entries(hooks)) {
+		wrapped[name] = async (...args: never[]) => {
+			try {
+				return await fn(...args)
+			} catch (err) {
+				const documentName = documentNameFrom(args[0])
+				const message =
+					err instanceof Error
+						? err.message
+						: String(err)
+				const stack =
+					err instanceof Error
+						? (err.stack ?? err.message)
+						: String(err)
+
+				log.error(
+					{
+						...(documentName
+							? { documentName }
+							: {}),
+						stack,
+					},
+					`${name} failed: ${message}`,
+				)
+
+				// @hocuspocus/server prints `[${name}]` to stderr whenever
+				// the thrown error has a truthy `.message`. Throwing an
+				// Error with an empty message preserves Hocuspocus's failure
+				// handling (closing connections / keeping dirty docs) without
+				// emitting duplicate unformatted lines.
+				// eslint-disable-next-line preserve-caught-error -- already logged above.
+				throw new Error("")
+			}
+		}
+	}
+
+	return wrapped as T
+}
+
+export function createDocumentHooks({ auth, store, core }: DocumentHookDeps) {
 	// who edited each open document since its last persist. Held per
 	// hooks instance so nothing carries over between servers — or, in a
 	// test, between cases.
@@ -374,6 +426,7 @@ export function createDocumentHooks({
 			return reportedAsMessage(async () => {
 				const { documentId, branchIdentifier } =
 					parseDocumentName(documentName)
+
 				const branchId = await resolveBranchId(
 					core,
 					documentId,
@@ -512,12 +565,10 @@ export function createDocumentHooks({
 					err instanceof Error
 						? err.message
 						: String(err)
-
-				// changes since the last good persist live only in
-				// memory, so the failure must show without sentry too.
-				log.error(
-					`persisting ${data.documentName} failed: ${message}`,
-				)
+				const out = new Error(message)
+				if (err instanceof Error && err.stack) {
+					out.stack = err.stack
+				}
 
 				data.document.broadcastStateless(
 					JSON.stringify({
@@ -531,8 +582,7 @@ export function createDocumentHooks({
 				// It also prints what was thrown in full, so only the
 				// message goes back. The flush still gets the original
 				// through lastPersist.
-				// eslint-disable-next-line preserve-caught-error -- a cause is printed too.
-				throw new Error(message)
+				throw out
 			}
 		},
 
@@ -591,7 +641,7 @@ export function createHocuspocus(deps: DocumentHookDeps): HocuspocusServer {
 				},
 			}),
 		],
-		...hooks,
+		...withLoggedHookErrors(hooks, log),
 	})
 
 	return {

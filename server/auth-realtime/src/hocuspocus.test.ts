@@ -1174,35 +1174,76 @@ describe("createDocumentHooks", () => {
 
 		// rethrowing is what makes hocuspocus keep the document, and its
 		// unsaved changes, in memory
-		it("warns the connected editors, logs and rethrows when the persist fails", async ({
+		it("warns connected editors and logs when the persist fails", async ({
 			expect,
 		}) => {
 			const core = stubCore()
-			core.storeBranchContent.mockRejectedValue(
-				new Error("core unreachable"),
-			)
+			const failure = new Error("core unreachable")
+			failure.stack =
+				"Error: core unreachable\n    at originalStoreFailure"
+			core.storeBranchContent.mockRejectedValue(failure)
 			const log = stubLog()
-			const hooks = createDocumentHooks({
-				store: stubStore(),
-				auth: stubAuth(),
+			const auth = stubAuth()
+			const store = stubStore()
+			const { instance } = createHocuspocus({
+				store,
+				auth,
 				core,
 				log,
 			})
 			const document = seededDocument()
+			const onStoreDocument =
+				instance.configuration.onStoreDocument?.bind(
+					instance.configuration,
+				)
+			if (onStoreDocument === undefined) {
+				throw new Error(
+					"onStoreDocument is not configured",
+				)
+			}
+			const rejection = await onStoreDocument({
+				documentName: "doc1-branch1",
+				document,
+			} as never).then(
+				() => undefined,
+				(error: unknown) => error,
+			)
+			expect(rejection).toBeInstanceOf(Error)
+			expect(rejection).toHaveProperty("message", "")
 
-			await expect(
-				hooks.onStoreDocument({
+			expect(log.error).toHaveBeenCalledTimes(1)
+			expect(log.error).toHaveBeenCalledWith(
+				expect.objectContaining({
 					documentName: "doc1-branch1",
-					document,
+					stack: failure.stack,
 				}),
-			).rejects.toThrow("core unreachable")
+				"onStoreDocument failed: core unreachable",
+			)
+			expect(core.storeBranchContent).toHaveBeenCalledTimes(1)
+			expect(core.storeBranchContent).toHaveBeenCalledWith(
+				"doc1",
+				"branch1",
+				expect.objectContaining({
+					name: "Runbook",
+					icon: "lucide:file",
+					content: transformer.fromYdoc(
+						document,
+						"content",
+					) as unknown,
+					maintainers: [],
+					rawContent: Buffer.from(
+						Y.encodeStateAsUpdate(document),
+					).toString("base64"),
+					system: false,
+				}),
+			)
+			expect(core.fetchBranches).not.toHaveBeenCalled()
+			expect(auth.getSession).not.toHaveBeenCalled()
+			expect(store.memberRole).not.toHaveBeenCalled()
 
-			expect(log.error.mock.calls).toEqual([
-				[
-					"persisting doc1-branch1 failed: core unreachable",
-				],
-			])
-
+			expect(
+				document.broadcastStateless,
+			).toHaveBeenCalledTimes(1)
 			expect(
 				document.broadcastStateless,
 			).toHaveBeenCalledWith(
@@ -1219,23 +1260,73 @@ describe("createDocumentHooks", () => {
 			const core = stubCore()
 			core.storeBranchContent.mockRejectedValue("core gone")
 			const log = stubLog()
-			const hooks = createDocumentHooks({
-				store: stubStore(),
-				auth: stubAuth(),
+			const auth = stubAuth()
+			const store = stubStore()
+			const { instance } = createHocuspocus({
+				store,
+				auth,
 				core,
 				log,
 			})
+			const document = seededDocument()
+			const onStoreDocument =
+				instance.configuration.onStoreDocument?.bind(
+					instance.configuration,
+				)
+			if (onStoreDocument === undefined) {
+				throw new Error(
+					"onStoreDocument is not configured",
+				)
+			}
+			const rejection = await onStoreDocument({
+				documentName: "doc1-branch1",
+				document,
+			} as never).then(
+				() => undefined,
+				(error: unknown) => error,
+			)
+			expect(rejection).toBeInstanceOf(Error)
+			expect(rejection).toHaveProperty("message", "")
 
-			await expect(
-				hooks.onStoreDocument({
+			expect(log.error).toHaveBeenCalledTimes(1)
+			expect(log.error).toHaveBeenCalledWith(
+				expect.objectContaining({
 					documentName: "doc1-branch1",
-					document: seededDocument(),
 				}),
-			).rejects.toStrictEqual(new Error("core gone"))
-
-			expect(log.error.mock.calls).toEqual([
-				["persisting doc1-branch1 failed: core gone"],
-			])
+				"onStoreDocument failed: core gone",
+			)
+			expect(core.storeBranchContent).toHaveBeenCalledTimes(1)
+			expect(core.storeBranchContent).toHaveBeenCalledWith(
+				"doc1",
+				"branch1",
+				expect.objectContaining({
+					name: "Runbook",
+					icon: "lucide:file",
+					content: transformer.fromYdoc(
+						document,
+						"content",
+					) as unknown,
+					maintainers: [],
+					rawContent: Buffer.from(
+						Y.encodeStateAsUpdate(document),
+					).toString("base64"),
+					system: false,
+				}),
+			)
+			expect(core.fetchBranches).not.toHaveBeenCalled()
+			expect(auth.getSession).not.toHaveBeenCalled()
+			expect(store.memberRole).not.toHaveBeenCalled()
+			expect(
+				document.broadcastStateless,
+			).toHaveBeenCalledTimes(1)
+			expect(
+				document.broadcastStateless,
+			).toHaveBeenCalledWith(
+				JSON.stringify({
+					type: "error",
+					code: "hocuspocus.store_failed",
+				}),
+			)
 		})
 
 		it("warns the connected editors when the branch cannot be resolved", async ({
@@ -1610,6 +1701,52 @@ describe("closeUserConnections", () => {
 
 		expect(direct.webSocket.close).toHaveBeenCalledTimes(0)
 		expect(direct.readOnly).toBe(false)
+	})
+})
+
+describe("Hocuspocus hook error logging", () => {
+	it("logs a plain string rejection with its value as the stack", async ({
+		expect,
+	}) => {
+		const auth = stubAuth()
+		auth.getSession.mockRejectedValue("plain string failure")
+		const log = stubLog()
+		const { instance } = createHocuspocus({
+			store: stubStore(),
+			auth,
+			core: stubCore(),
+			log,
+		})
+		const onAuthenticate =
+			instance.configuration.onAuthenticate?.bind(
+				instance.configuration,
+			)
+		if (onAuthenticate === undefined) {
+			throw new Error("onAuthenticate is not configured")
+		}
+
+		const rejection = await onAuthenticate({
+			connectionConfig: { readOnly: false },
+			documentName: "doc1-branch1",
+			request: {},
+			requestHeaders: {},
+			requestParameters: currentClient(),
+			token: "token",
+		} as never).then(
+			() => undefined,
+			(error: unknown) => error,
+		)
+
+		expect(rejection).toBeInstanceOf(Error)
+		expect(rejection).toHaveProperty("message", "")
+		expect(log.error).toHaveBeenCalledTimes(1)
+		expect(log.error).toHaveBeenCalledWith(
+			{
+				documentName: "doc1-branch1",
+				stack: "plain string failure",
+			},
+			"onAuthenticate failed: plain string failure",
+		)
 	})
 })
 
