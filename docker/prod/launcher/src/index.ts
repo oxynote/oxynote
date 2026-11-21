@@ -1,5 +1,5 @@
 import { execFile, spawn, spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs"
 import net from "node:net"
 import os from "node:os"
 import { join } from "node:path"
@@ -243,6 +243,7 @@ async function main(): Promise<void> {
 						mode: 0o700,
 					})
 				},
+				chmod: chmodSync,
 				run: (command, args, input) => {
 					runToCompletion(
 						command,
