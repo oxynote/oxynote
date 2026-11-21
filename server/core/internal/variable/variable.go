@@ -682,10 +682,17 @@ func (vi Input) Validate() error {
 	return nil
 }
 
-// sanitize returns the input with the white space around its name
-// removed.
+// sanitize returns the input with the white space around its name and
+// around each option's value removed. The options are cloned first, so
+// Validate stays free of side effects.
 func (vi Input) sanitize() Input {
 	vi.Name = strings.TrimSpace(vi.Name)
+
+	vi.Options = slices.Clone(vi.Options)
+
+	for i := range vi.Options {
+		vi.Options[i].Value = strings.TrimSpace(vi.Options[i].Value)
+	}
 
 	return vi
 }
