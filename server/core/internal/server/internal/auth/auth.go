@@ -8,21 +8,12 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/wetsocks/wsserver"
 	"github.com/rs/xid"
 )
-
-// _errRateLimited is returned when the Better Auth server rate limits the
-// session check, so the caller is told to retry instead of to sign in again.
-var _errRateLimited = errutil.New(http.StatusTooManyRequests, "request.rate_limited", "too many requests")
-
-// _headerForwardedFor is the header that carries the client address to the
-// Better Auth server.
-const _headerForwardedFor = "X-Forwarded-For"
 
 // _contextKey is a custom type for context keys to avoid collisions.
 type _contextKey int
@@ -191,8 +182,6 @@ func HasActiveOrganization(userID, organizationID string) bool {
 }
 
 // getSession forwards the request to the Better Auth server to retrieve session information.
-// The client address from the context goes along, so Better Auth rate limits
-// each client on its own instead of all of them in one shared bucket.
 func getSession(ctx context.Context, client *http.Client, url string, cookies []*http.Cookie) (Session, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
@@ -203,22 +192,11 @@ func getSession(ctx context.Context, client *http.Client, url string, cookies []
 		req.AddCookie(reqCookie)
 	}
 
-	// Better Auth only trusts a single-value X-Forwarded-For unless it is
-	// configured with trustedProxies, so only the one address chi's client IP
-	// middleware picked (the last entry, set by Caddy) is sent.
-	if ip := middleware.GetClientIP(ctx); ip != "" {
-		req.Header.Set(_headerForwardedFor, ip)
-	}
-
 	resp, err := client.Do(req)
 	if err != nil {
 		return Session{}, err
 	}
 	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
-
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return Session{}, _errRateLimited
-	}
 
 	if resp.StatusCode != http.StatusOK {
 		return Session{}, httpserver.ErrNotAuthenticated

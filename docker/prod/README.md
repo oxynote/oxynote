@@ -170,9 +170,7 @@ nobody may be left who can manage the workspace.
 
 ### Tuning
 
-`OXYNOTE_RATE_LIMIT_DISABLED` (`true`/`false`; the built-in limiter buckets
-by client IP — disable it behind a proxy that hides the original IP and rate
-limit there instead), `OXYNOTE_MAX_DOCUMENT_HISTORY_ENTRIES`,
+`OXYNOTE_MAX_DOCUMENT_HISTORY_ENTRIES`,
 `OXYNOTE_DOCUMENT_HISTORY_RETENTION` (Go duration, e.g. `2160h`),
 `OXYNOTE_LOG_LEVEL` (`DEBUG`/`INFO`/`WARN`/`ERROR`; the floor for both core
 and auth-realtime, `WARN` by default, so the container logs carry the

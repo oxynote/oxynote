@@ -60,7 +60,6 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
 		},
 		maxOrganizations: "",
 		maxOrganizationMembers: "",
-		rateLimitDisabled: false,
 		maxDocumentHistoryEntries: "",
 		documentHistoryRetention: "",
 		logLevel: "WARN",

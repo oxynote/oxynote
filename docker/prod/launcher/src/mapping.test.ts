@@ -369,7 +369,6 @@ describe("buildChildEnvs", () => {
 					PROVIDER: "anthropic",
 					API_KEY: "sk-ant",
 				},
-				rateLimitDisabled: true,
 				maxOrganizations: "10",
 			}),
 		)
@@ -394,10 +393,6 @@ describe("buildChildEnvs", () => {
 			envs.authRealtime
 				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_ID,
 		).toBe("gid")
-		expect(
-			envs.authRealtime
-				.OXYNOTE_AUTH_REALTIME_RATE_LIMIT_DISABLED,
-		).toBe("true")
 		expect(envs.authRealtime).toMatchObject({
 			OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_ISSUER_URL:
 				"https://idp.example.com/realms/team",

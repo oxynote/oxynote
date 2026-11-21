@@ -91,7 +91,6 @@ export interface Config {
 	aiAssistant: Record<string, string>
 	maxOrganizations: string
 	maxOrganizationMembers: string
-	rateLimitDisabled: boolean
 	maxDocumentHistoryEntries: string
 	documentHistoryRetention: string
 	logLevel: string
@@ -429,7 +428,6 @@ const baseSchema = z.object({
 	OXYNOTE_AI_ASSISTANT_VERTEX_SERVICE_ACCOUNT_JSON: z.string().optional(),
 	OXYNOTE_MAX_ORGANIZATIONS: limit(),
 	OXYNOTE_MAX_ORGANIZATION_MEMBERS: limit(),
-	OXYNOTE_RATE_LIMIT_DISABLED: flag(),
 	OXYNOTE_MAX_DOCUMENT_HISTORY_ENTRIES: count(),
 	OXYNOTE_DOCUMENT_HISTORY_RETENTION: goDuration,
 	OXYNOTE_LOG_LEVEL: z
@@ -711,7 +709,6 @@ export function loadConfig(source: Record<string, string | undefined>): Config {
 		maxOrganizations: values.OXYNOTE_MAX_ORGANIZATIONS ?? "",
 		maxOrganizationMembers:
 			values.OXYNOTE_MAX_ORGANIZATION_MEMBERS ?? "",
-		rateLimitDisabled: values.OXYNOTE_RATE_LIMIT_DISABLED,
 		maxDocumentHistoryEntries:
 			values.OXYNOTE_MAX_DOCUMENT_HISTORY_ENTRIES ?? "",
 		documentHistoryRetention:

@@ -92,7 +92,7 @@ func (insertBlocks) Info() Info {
 	return Info{
 		Name:        NameInsertBlocks,
 		Traits:      Traits{Write: true, Role: org.RoleEditor},
-		Description: "Insert XML blocks at the start, end, or beside reference_block_uid. Omit id. Use replace_blocks for existing ones. A <metrics> or <logs> belongs in a <grid>. Invalid placement lists allowed blocks. Returns {block_uids: [id]} in document order, including nested blocks, or {content: normalised XML} when return_content is true.",
+		Description: "Insert new blocks, written as XML, at a document's start or end or beside the block reference_block_uid names. Returns block_uids in XML order, or the written XML if return_content is true. Every element is a new block, so leave out id, and use replace_blocks to change existing ones. A <metrics> or <logs> goes in a <grid>, beside one of its blocks or as a new grid. A block not allowed where it lands is refused, naming what that place takes.",
 		Properties: map[string]any{
 			"document_id":         map[string]any{"type": "string", "description": _documentIDDescription},
 			"branch_id":           map[string]any{"type": "string", "description": _writeBranchIDDescription},
@@ -103,7 +103,7 @@ func (insertBlocks) Info() Info {
 				"description": "Where the blocks land. before, after, above and below are taken against the reference block, and start and end against the whole document. " + _gridPositionDescription,
 			},
 			"content":        map[string]any{"type": "string", "description": _contentDescription},
-			"return_content": map[string]any{"type": "boolean", "description": "Return the written XML instead of block_uids.", "default": false},
+			"return_content": map[string]any{"type": "boolean", "description": "Return XML instead of ids.", "default": false},
 		},
 		Required: []string{"document_id", "branch_id", "position", "content"},
 	}
@@ -221,13 +221,13 @@ func (replaceBlocks) Info() Info {
 	return Info{
 		Name:        NameReplaceBlocks,
 		Traits:      Traits{Write: true, Overwrites: true, Role: org.RoleEditor},
-		Description: "Replace one block using the insert_blocks XML format. Read via get_document. Keep ids to preserve comments, hooks and files. Unchanged content stays as stored. Omit id for a new block. Ids outside the replaced block and replacing a whole <grid> are refused. Returns {block_uids: [id]} in document order, including nested blocks, or {content: normalised XML} when return_content is true.",
+		Description: "Replace one block with the blocks in content, in the XML insert_blocks describes. Returns block_uids in XML order, or the written XML if return_content is true. Read the block with get_document first, with block_uid to narrow the read, then edit the XML and send it back. Keep the id of every element that stays, so it keeps its comments, hooks and files, and unchanged content stays as stored. An element without an id is new. An id from outside the replaced block is refused, and so is a <grid>.",
 		Properties: map[string]any{
 			"document_id":    map[string]any{"type": "string", "description": _documentIDDescription},
 			"branch_id":      map[string]any{"type": "string", "description": _writeBranchIDDescription},
 			"block_uid":      map[string]any{"type": "string", "description": "The id of the block being replaced."},
 			"content":        map[string]any{"type": "string", "description": "The blocks that take its place, in the XML insert_blocks describes."},
-			"return_content": map[string]any{"type": "boolean", "default": false, "description": "Return the written XML instead of block_uids."},
+			"return_content": map[string]any{"type": "boolean", "default": false, "description": "Return XML instead of ids."},
 		},
 		Required: []string{"document_id", "branch_id", "block_uid", "content"},
 	}
@@ -497,7 +497,7 @@ func (mb moveBlock) Exec(inp Input) (any, error) {
 
 // blockWriteResult reports the written block ids or their full markup.
 type blockWriteResult struct {
-	// BlockUIDs are the written block ids in document order.
+	// BlockUIDs are the written block ids in rendered order.
 	BlockUIDs []string `json:"block_uids,omitempty"`
 
 	// Content is the blocks as markup, ids included, when requested.
@@ -510,23 +510,7 @@ func writtenBlocks(blocks []document.Block, returnContent bool) blockWriteResult
 		return blockWriteResult{Content: markup.Render(blocks)}
 	}
 
-	var ids []string
-
-	var visit func([]document.Block)
-
-	visit = func(bb []document.Block) {
-		for _, b := range bb {
-			if uid, ok := b.UID(); ok {
-				ids = append(ids, uid)
-			}
-
-			visit(b.Content)
-		}
-	}
-
-	visit(blocks)
-
-	return blockWriteResult{BlockUIDs: ids}
+	return blockWriteResult{BlockUIDs: markup.RenderedBlockUIDs(blocks)}
 }
 
 // insertAfterPrevious returns first, the operation that writes the first

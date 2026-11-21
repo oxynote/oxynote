@@ -22,6 +22,7 @@ export interface DatabaseDeps {
 	remove(path: string): void
 	rename(from: string, to: string): void
 	makeDir(path: string): void
+	chmod(path: string, mode: number): void
 	// runs a command to completion with the given standard input and
 	// throws when it fails.
 	run(command: string, args: string[], input: string): void
@@ -33,7 +34,11 @@ export interface DatabaseDeps {
 export function prepareDatabase(deps: DatabaseDeps, password: string): boolean {
 	deps.makeDir(postgresSocketDir)
 
+	// the volume can gain group permissions outside the image, as kubelet's
+	// fsGroup does. Postgres then refuses to start, so reset the mode.
 	if (deps.exists(join(postgresDataDir, "PG_VERSION"))) {
+		deps.chmod(postgresDataDir, 0o700)
+
 		return false
 	}
 

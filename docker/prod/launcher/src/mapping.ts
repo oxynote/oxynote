@@ -215,8 +215,6 @@ export function buildChildEnvs(
 			config.maxOrganizations,
 		OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATION_MEMBERS:
 			config.maxOrganizationMembers,
-		OXYNOTE_AUTH_REALTIME_RATE_LIMIT_DISABLED:
-			config.rateLimitDisabled ? "true" : "false",
 		// core sends every email, so without a relay nothing auth-realtime
 		// asks for can arrive; it has to know at boot, because
 		// better-auth's verification options are fixed then.

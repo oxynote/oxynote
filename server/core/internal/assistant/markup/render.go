@@ -41,6 +41,60 @@ func Render(blocks []document.Block) string {
 	return r.sb.String()
 }
 
+// RenderedBlockUIDs returns the ids that Render exposes, in the same order.
+func RenderedBlockUIDs(blocks []document.Block) []string {
+	var ids []string
+
+	for _, b := range blocks {
+		ids = appendRenderedBlockUIDs(ids, b)
+	}
+
+	return ids
+}
+
+// appendRenderedBlockUIDs visits only the nodes that render as elements.
+func appendRenderedBlockUIDs(ids []string, b document.Block) []string {
+	switch b.Type {
+	case document.BlockNodeParamListHeader:
+		return ids
+	case document.BlockNodeSplitDocLeft, document.BlockNodeSplitDocRight:
+		// the sides render without ids.
+	default:
+		if uid, _ := b.UID(); uid != "" {
+			ids = append(ids, uid)
+		}
+	}
+
+	if b.Type == document.BlockNodeBlockGrid || b.Type == document.BlockNodeMetricGrid {
+		for _, box := range readingBoxes(b.Content) {
+			ids = appendRenderedBlockUIDs(ids, b.Content[box.id])
+		}
+
+		return ids
+	}
+
+	children := b.Content
+	switch b.Type {
+	case document.BlockNodeListItem, document.BlockNodeTaskItem:
+		if len(children) > 0 && children[0].Type == document.BlockNodeParagraph {
+			children = children[1:]
+		}
+	case document.BlockNodeCalloutBlock, document.BlockNodeOrderedList,
+		document.BlockNodeSplitDoc, document.BlockNodeSplitDocLeft,
+		document.BlockNodeSplitDocRight, document.BlockNodeParamList:
+	default:
+		if _, container := _plainContainers[b.Type]; !container {
+			return ids
+		}
+	}
+
+	for _, child := range children {
+		ids = appendRenderedBlockUIDs(ids, child)
+	}
+
+	return ids
+}
+
 // renderer accumulates rendered markup.
 type renderer struct {
 	// sb holds the markup written so far.

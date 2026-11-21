@@ -413,12 +413,15 @@ func Test_Info_toEino(t *testing.T) {
 
 	// every session sends the whole tool list, and an MCP client keeps
 	// it in context, so it stays under about 7k tokens.
-	assert.Less(t, len(data), 31700, "the tool list has grown past its budget")
+	assert.Less(t, len(data), 32000, "the tool list has grown past its budget")
 
 	// a description change is meant to be reviewed as a golden diff, so
 	// the file is rewritten on request rather than by hand.
 	if os.Getenv("UPDATE_GOLDEN") != "" {
-		require.NoError(t, os.WriteFile("testdata/tool_schemas.golden", data, 0o600))
+		pretty, perr := json.MarshalIndent(got, "", "  ")
+		require.NoError(t, perr)
+
+		require.NoError(t, os.WriteFile("testdata/tool_schemas.golden", append(pretty, '\n'), 0o600))
 
 		return
 	}

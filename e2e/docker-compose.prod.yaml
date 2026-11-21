@@ -44,10 +44,6 @@ services:
       # up for a day of iteration would hit a lower cap and start failing
       # signups with a full-house message.
       - OXYNOTE_MAX_ORGANIZATIONS=100000
-      # every request in a run arrives from one address, and better-auth
-      # gives sign-in and sign-up three per ten seconds between them, so the
-      # limiter would fail the suite rather than the code under test.
-      - OXYNOTE_RATE_LIMIT_DISABLED=true
     # the image ships its own layered probe (every internal service plus the
     # front door), which is what the probe container and the tests wait on.
     # Its start period is three minutes; compose inherits that.
@@ -67,9 +63,8 @@ services:
     environment:
       - OXYNOTE_PUBLIC_URL=http://localhost:19081
       - OXYNOTE_MAX_ORGANIZATION_MEMBERS=5
-      # the same two allowances as the instance above, for the same reasons.
+      # the same allowance as the instance above, for the same reason.
       - OXYNOTE_MAX_ORGANIZATIONS=100000
-      - OXYNOTE_RATE_LIMIT_DISABLED=true
     stop_grace_period: 60s
 
   # the same image with the workspace limits left at their defaults: one
@@ -85,8 +80,6 @@ services:
       - OXYNOTE_PUBLIC_URL=http://localhost:19082
       - OXYNOTE_SMTP_DSN=smtp://mailpit:1025?tls=none
       - OXYNOTE_EMAIL_FROM_ADDRESS=Oxynote <team@oxynote.io>
-      # the same limiter allowance as the instance above.
-      - OXYNOTE_RATE_LIMIT_DISABLED=true
     stop_grace_period: 60s
 
   # the same image signing in through keycloak, with any number of
@@ -105,7 +98,6 @@ services:
       - OXYNOTE_EMAIL_FROM_ADDRESS=Oxynote <team@oxynote.io>
       - OXYNOTE_MAX_ORGANIZATION_MEMBERS=5
       - OXYNOTE_MAX_ORGANIZATIONS=100000
-      - OXYNOTE_RATE_LIMIT_DISABLED=true
       - OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL=http://keycloak:8080/realms/oxynote
       - OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_ID=oxynote
       - OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_SECRET=oxynote-e2e-secret
@@ -127,7 +119,6 @@ services:
       - OXYNOTE_PUBLIC_URL=http://localhost:19084
       - OXYNOTE_SMTP_DSN=smtp://mailpit:1025?tls=none
       - OXYNOTE_EMAIL_FROM_ADDRESS=Oxynote <team@oxynote.io>
-      - OXYNOTE_RATE_LIMIT_DISABLED=true
       - OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL=http://keycloak:8080/realms/oxynote
       - OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_ID=oxynote
       - OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_SECRET=oxynote-e2e-secret
@@ -148,7 +139,7 @@ services:
   # lets the instances fetch tokens and keys through keycloak:8080, while
   # every token still names the browser's address as its issuer.
   keycloak:
-    image: quay.io/keycloak/keycloak:26.8.0
+    image: quay.io/keycloak/keycloak:26.8.2-3
     command: ["start-dev", "--import-realm"]
     environment:
       - KC_BOOTSTRAP_ADMIN_USERNAME=admin
@@ -192,7 +183,7 @@ services:
   # port is published rather than proxied through the image's front door —
   # which routes nothing but the product.
   mailpit:
-    image: axllent/mailpit:v1.33.1
+    image: axllent/mailpit:v1.34.0
     environment:
       - MP_QUIET=true
     ports:

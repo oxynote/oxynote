@@ -23,6 +23,9 @@ function recorder(existing: string[] = [], failing?: string) {
 		makeDir: (path) => {
 			steps.push(`makeDir ${path}`)
 		},
+		chmod: (path, mode) => {
+			steps.push(`chmod ${path} ${mode.toString(8)}`)
+		},
 		run: (command, args, input) => {
 			steps.push(`run ${command} ${args.join(" ")}`)
 			inputs.push(input)
@@ -94,13 +97,20 @@ describe("prepareDatabase", () => {
 		expect(r.steps[3]).toContain("-c log_min_error_statement=panic")
 	})
 
-	it("leaves an existing cluster alone", ({ expect }) => {
+	// kubelet's fsGroup adds group permissions to the volume, and Postgres
+	// refuses to start on a group-writable data directory
+	it("leaves an existing cluster alone apart from its mode", ({
+		expect,
+	}) => {
 		const r = recorder(["/oxynote/data/postgres/PG_VERSION"])
 
 		const created = prepareDatabase(r.deps, "generated-password")
 
 		expect(created).toBe(false)
-		expect(r.steps).toEqual(["makeDir /tmp/postgresql"])
+		expect(r.steps).toEqual([
+			"makeDir /tmp/postgresql",
+			"chmod /oxynote/data/postgres 700",
+		])
 	})
 
 	it("never moves a cluster that failed to build into place", ({

@@ -160,7 +160,7 @@ services:
         max-file: "3"
   mailpit:
     container_name: mailpit
-    image: axllent/mailpit:v1.33.1
+    image: axllent/mailpit:v1.34.0
     environment:
       - MP_QUIET=true
     restart: unless-stopped
@@ -190,7 +190,7 @@ services:
         max-file: "3"
   changedetection:
     container_name: changedetection
-    image: dgtlmoon/changedetection.io:0.70.2
+    image: dgtlmoon/changedetection.io:0.70.3
     volumes:
       - changedetection_data:/datastore
     environment:
@@ -213,7 +213,7 @@ services:
     # upstream publishes no per-release tags (its version tags lag latest by
     # months), so latest is pinned by digest instead; dependabot bumps the
     # digest when a new latest is published.
-    image: dgtlmoon/sockpuppetbrowser:latest@sha256:1d8f72d2ce2085faed4232e5ae1e65c02efe5b831a18e127829b267c260b4fb2
+    image: dgtlmoon/sockpuppetbrowser:latest@sha256:6f681d418f1fb4215ce3720968790b63fdd2385a087bafd90e37a812f16e66da
     cap_add:
       - SYS_ADMIN # TODO: Recommended in their docker-compose example, need to double-check this.
     restart: unless-stopped
@@ -224,7 +224,7 @@ services:
       - MAX_CONCURRENT_CHROME_PROCESSES=10
       - LOG_LEVEL=WARNING
   grafana:
-    image: grafana/grafana:13.3.0
+    image: grafana/grafana:13.3.1
     container_name: grafana
     ports:
       - "8083:3000"

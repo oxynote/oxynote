@@ -238,41 +238,6 @@ describe("loadEnv", () => {
 		)
 	})
 
-	describe("rate limiting", () => {
-		it.for([
-			{ name: "unset", input: undefined, expected: true },
-			{ name: '"false"', input: "false", expected: true },
-			{ name: '"true"', input: "true", expected: false },
-		])(
-			"is enabled=$expected when the disable flag is $name",
-			({ input, expected }, { expect }) => {
-				const env = loadEnv(
-					completeEnv({
-						OXYNOTE_AUTH_REALTIME_RATE_LIMIT_DISABLED:
-							input,
-					}),
-				)
-
-				expect(env.rateLimitEnabled).toBe(expected)
-			},
-		)
-
-		// a flag spelled any other way would read as false and leave
-		// the limiter on while the operator believes it is off
-		it("rejects a flag that is neither true nor false", ({
-			expect,
-		}) => {
-			expect(() =>
-				loadEnv(
-					completeEnv({
-						OXYNOTE_AUTH_REALTIME_RATE_LIMIT_DISABLED:
-							"1",
-					}),
-				),
-			).toThrow("OXYNOTE_AUTH_REALTIME_RATE_LIMIT_DISABLED")
-		})
-	})
-
 	describe("email", () => {
 		it.for([
 			{ name: "unset", input: undefined, expected: true },

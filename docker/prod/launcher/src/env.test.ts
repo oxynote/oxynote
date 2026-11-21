@@ -55,6 +55,14 @@ describe("loadConfig", () => {
 			name: "an internal auth-realtime variable",
 			input: "OXYNOTE_AUTH_REALTIME_ADDRESS",
 		},
+		{
+			name: "the rate limiter flag",
+			input: "OXYNOTE_RATE_LIMIT_DISABLED",
+		},
+		{
+			name: "the trusted proxy list",
+			input: "OXYNOTE_TRUSTED_PROXIES",
+		},
 	])("rejects $name by name", ({ input }, { expect }) => {
 		expect(() =>
 			loadConfig(completeEnv({ [input]: "value" })),
@@ -595,7 +603,6 @@ describe("loadConfig", () => {
 				completeEnv({
 					OXYNOTE_MAX_ORGANIZATIONS: "10",
 					OXYNOTE_MAX_ORGANIZATION_MEMBERS: "25",
-					OXYNOTE_RATE_LIMIT_DISABLED: "true",
 					OXYNOTE_MAX_DOCUMENT_HISTORY_ENTRIES:
 						"0",
 					OXYNOTE_DOCUMENT_HISTORY_RETENTION:
@@ -606,7 +613,6 @@ describe("loadConfig", () => {
 
 			expect(config.maxOrganizations).toBe("10")
 			expect(config.maxOrganizationMembers).toBe("25")
-			expect(config.rateLimitDisabled).toBe(true)
 			expect(config.maxDocumentHistoryEntries).toBe("0")
 			expect(config.documentHistoryRetention).toBe("2160h")
 			expect(config.logLevel).toBe("DEBUG")
@@ -663,8 +669,10 @@ describe("loadConfig", () => {
 			},
 			{
 				name: "a flag spelled 1",
-				input: { OXYNOTE_RATE_LIMIT_DISABLED: "1" },
-				expected: "OXYNOTE_RATE_LIMIT_DISABLED",
+				input: {
+					OXYNOTE_CRASH_REPORTING_DISABLED: "1",
+				},
+				expected: "OXYNOTE_CRASH_REPORTING_DISABLED",
 			},
 		])("rejects $name", ({ input, expected }, { expect }) => {
 			expect(() => loadConfig(completeEnv(input))).toThrow(

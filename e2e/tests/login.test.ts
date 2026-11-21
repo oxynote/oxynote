@@ -6,6 +6,7 @@ import {
 	submitLoginForm,
 	submitSignupForm,
 } from "../helpers/auth"
+import { BASE_URL } from "../helpers/config"
 import { contentEditor, createDocument, waitForEditor } from "../helpers/editor"
 import { t } from "../helpers/i18n"
 import { visit } from "../helpers/page"
@@ -72,6 +73,26 @@ test.describe("login", () => {
 			page.getByText(t("onboarding.login.errors.invalid-credentials")),
 		).toBeVisible()
 		await expect(page).toHaveURL(/\/login$/)
+	})
+
+	test("refuses every wrong password, however many come in a row", async ({
+		request,
+	}) => {
+		const { email } = newCredentials()
+		const statuses: number[] = []
+
+		for (let attempt = 0; attempt < 5; attempt++) {
+			const response = await request.post(
+				`${BASE_URL}/auth-realtime/api/auth/sign-in/email`,
+				{
+					headers: { Origin: BASE_URL },
+					data: { email, password: "e2e-Wr0ng!-password-x" },
+				},
+			)
+			statuses.push(response.status())
+		}
+
+		expect(statuses).toEqual([401, 401, 401, 401, 401])
 	})
 
 	test("sends an unverified user back to email verification", async ({

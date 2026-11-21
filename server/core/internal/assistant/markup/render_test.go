@@ -33,6 +33,20 @@ func loadFixture(t *testing.T, name string) document.RootBlock {
 	return root
 }
 
+func Test_RenderedBlockUIDs(t *testing.T) {
+	t.Parallel()
+
+	root := loadFixture(t, "all_blocks")
+	assert.Equal(t, []string{
+		"h1", "p1", "p2", "q1", "q1p", "l1", "li1", "li2", "l2", "li3", "lc",
+		"t1", "ti1", "ti2", "c1", "c1p", "cl", "cli", "code1", "m1", "hr1",
+		"img1", "fig1", "file1", "g1", "mb1", "lb1", "sd1", "sh", "sp", "pl1",
+		"pi1", "tc1", "m2", "u1",
+	}, RenderedBlockUIDs(root.Content))
+
+	assert.Equal(t, []string{"pg", "pc", "pa", "pb"}, RenderedBlockUIDs([]document.Block{placedTestGrid(t)}))
+}
+
 func Test_Render(t *testing.T) {
 	t.Parallel()
 
