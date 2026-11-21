@@ -53,7 +53,17 @@ kubectl --namespace oxynote create secret generic oxynote-secrets \
   --from-literal=OXYNOTE_SMTP_DSN='smtp://user:password@mail.example.com:587'
 ```
 
-A change to the Secret reaches the pod after
+When a Secret's key names are not yours to choose, such as a database
+operator's, map one key with `extraEnv`:
+
+```yaml
+extraEnv:
+  - name: OXYNOTE_DB_DSN
+    valueFrom:
+      secretKeyRef: {name: oxynote-db-app, key: uri}
+```
+
+A change to a Secret reaches the pod after
 `kubectl --namespace oxynote rollout restart statefulset/oxynote`.
 
 The GitHub App's private key is a file. Put it in a Secret under the key
@@ -80,7 +90,9 @@ httpRoute:
 ```
 
 Realtime editing uses a websocket on `/auth-realtime/hocuspocus`, so the
-controller must pass websocket upgrades on.
+controller must pass websocket upgrades on. Files up to 25 MB can be
+uploaded, so allow request bodies of at least 30 MB. Some controllers
+default to 1 MB.
 
 Oxynote does not rate-limit requests. Limit sign-in attempts at the
 controller, on `/api/auth/sign-in/`, `/api/auth/sign-up/`,
@@ -123,6 +135,7 @@ kubectl --namespace oxynote exec statefulset/oxynote -- \
 | publicUrl | string | required | The origin users open Oxynote at, with no path, such as `https://docs.example.com`. It becomes `OXYNOTE_PUBLIC_URL`. For a port-forward, use `http://localhost:8080`. |
 | env | object | `{}` | Non-secret `OXYNOTE_*` variables, as the image's README lists them. A name the image does not know fails the install. Values are strings, so quote numbers and booleans. Secret ones go in `envFromSecret`. |
 | envFromSecret | string | `""` | Name of an existing Secret with the secret `OXYNOTE_*` variables, such as `OXYNOTE_SMTP_DSN`. Each key becomes a variable. |
+| extraEnv | list | `[]` | `OXYNOTE_*` variables read with `valueFrom`, for a Secret whose key names you do not choose, such as a database operator's `uri`. |
 | githubAppSecret | string | `""` | Name of a Secret that holds the GitHub App's private key under the key `private-key.pem`. |
 | persistence.existingClaim | string | `""` | Name of an existing PVC to use. The chart then creates none. |
 | persistence.size | string | `"10Gi"` | Size of the PVC the chart creates. |

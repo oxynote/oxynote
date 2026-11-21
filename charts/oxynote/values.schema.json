@@ -61,6 +61,18 @@
       }
     },
     "envFromSecret": {"type": "string"},
+    "extraEnv": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "valueFrom"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^OXYNOTE_[A-Z0-9_]+$"},
+          "valueFrom": {"type": "object"}
+        }
+      }
+    },
     "githubAppSecret": {"type": "string"},
     "persistence": {
       "type": "object",

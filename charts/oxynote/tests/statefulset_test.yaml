@@ -101,6 +101,24 @@ tests:
       - notExists:
           path: spec.template.spec.containers[0].envFrom
 
+  - it: reads extraEnv after the plain variables
+    set:
+      extraEnv:
+        - name: OXYNOTE_DB_DSN
+          valueFrom:
+            secretKeyRef:
+              name: oxynote-db-app
+              key: uri
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[1]
+          value:
+            name: OXYNOTE_DB_DSN
+            valueFrom:
+              secretKeyRef:
+                name: oxynote-db-app
+                key: uri
+
   - it: loads every key of envFromSecret as a variable
     set:
       envFromSecret: oxynote-secrets

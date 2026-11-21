@@ -21,6 +21,10 @@ env: {}
 # as `OXYNOTE_SMTP_DSN`. Each key becomes a variable.
 envFromSecret: ""
 
+# -- `OXYNOTE_*` variables read with `valueFrom`, for a Secret whose key
+# names you do not choose, such as a database operator's `uri`.
+extraEnv: []
+
 # -- Name of a Secret that holds the GitHub App's private key under the key
 # `private-key.pem`.
 githubAppSecret: ""

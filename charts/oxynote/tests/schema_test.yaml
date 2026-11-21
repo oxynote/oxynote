@@ -70,3 +70,26 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: /ingress/hosts
+
+  - it: takes only valueFrom in extraEnv
+    set:
+      publicUrl: https://docs.example.com
+      extraEnv:
+        - name: OXYNOTE_LOG_LEVEL
+          value: INFO
+    asserts:
+      - failedTemplate:
+          errorPattern: /extraEnv/0
+
+  - it: takes only OXYNOTE_ names in extraEnv
+    set:
+      publicUrl: https://docs.example.com
+      extraEnv:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: db
+              key: uri
+    asserts:
+      - failedTemplate:
+          errorPattern: /extraEnv/0/name
