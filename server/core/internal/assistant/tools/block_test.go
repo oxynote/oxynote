@@ -199,6 +199,7 @@ func runBlockCase(t *testing.T, c blockCase) {
 	if c.BlockUIDs != nil {
 		out, ok := res.(blockWriteResult)
 		require.True(t, ok)
+
 		calls := inp.ApplyEditCalls()
 		require.Len(t, calls, 1)
 		assert.Equal(t, blockWriteResult{BlockUIDs: c.BlockUIDs(calls[0].Ops)}, out)
