@@ -418,7 +418,10 @@ func Test_Info_toEino(t *testing.T) {
 	// a description change is meant to be reviewed as a golden diff, so
 	// the file is rewritten on request rather than by hand.
 	if os.Getenv("UPDATE_GOLDEN") != "" {
-		require.NoError(t, os.WriteFile("testdata/tool_schemas.golden", data, 0o600))
+		pretty, perr := json.MarshalIndent(got, "", "  ")
+		require.NoError(t, perr)
+
+		require.NoError(t, os.WriteFile("testdata/tool_schemas.golden", append(pretty, '\n'), 0o600))
 
 		return
 	}
