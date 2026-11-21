@@ -67,6 +67,7 @@ type QueueName string
 // Manager owns the DBOS runtime that stores, schedules and runs jobs.
 type Manager struct {
 	log   *slog.Logger
+	pool  *pgxpool.Pool
 	dbos  dbos.Context
 	names map[QueueName]struct{}
 	pe    *timeutil.PeriodicExec
@@ -83,7 +84,7 @@ func NewManager(ctx context.Context, log *slog.Logger, dsn string) (*Manager, er
 
 	// a pool of our own keeps DBOS from connecting to the postgres
 	// database to create the target one, which an external deployment
-	// may not allow. DBOS closes the pool on shutdown.
+	// may not allow. DBOS never closes it, so Close does.
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("creating the connection pool: %w", err)
@@ -103,6 +104,7 @@ func NewManager(ctx context.Context, log *slog.Logger, dsn string) (*Manager, er
 
 	m := &Manager{
 		log:   log,
+		pool:  pool,
 		dbos:  dc,
 		names: make(map[QueueName]struct{}),
 	}
@@ -136,6 +138,9 @@ func (m *Manager) Start(ctx context.Context) {
 // Close stops running jobs and releases the database connections. A job
 // cut short is resumed by the next process.
 func (m *Manager) Close() error {
+	// running jobs use the pool until DBOS stops them, so it closes last.
+	defer m.pool.Close()
+
 	return dbos.Shutdown(m.dbos, _shutdownTimeout)
 }
 
