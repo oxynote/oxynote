@@ -128,6 +128,17 @@ password `oxynote-admin-1234`. The login page shows both until you change
 the password, so change it in the settings before anyone else can reach the
 instance.
 
+If port 8080 is taken, publish another host port and set
+`OXYNOTE_PUBLIC_URL` to the address you open. Otherwise the login page
+cannot reach the server:
+
+```sh
+docker run -d -p 8081:8080 \
+  -e OXYNOTE_PUBLIC_URL=http://localhost:8081 \
+  -v oxynote_data:/oxynote/data \
+  ghcr.io/oxynote/oxynote
+```
+
 The [self-hosting guide](https://oxynote.io/blog/self-host-oxynote) walks
 through the install and the steps after it: Docker Compose, another port or
 domain, a first page with a metric chart, backups and upgrades. To run
