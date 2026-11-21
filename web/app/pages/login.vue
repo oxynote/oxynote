@@ -181,11 +181,22 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 		callbackQuery.set("next", nextUrl.value)
 	}
 
-	const res = (await signInEmailPassword({
-		email: values.email,
-		password: values.password,
-		callbackURL: `${config.public.appBaseURL}/login?${callbackQuery.toString()}`,
-	})) as AuthResponse
+	let res: AuthResponse
+
+	try {
+		res = await signInEmailPassword({
+			email: values.email,
+			password: values.password,
+			callbackURL: `${config.public.appBaseURL}/login?${callbackQuery.toString()}`,
+		})
+	} catch {
+		// a request the browser blocks, such as a cross-origin one, rejects
+		// instead of answering with an error.
+		loading.value = null
+		showToastMessage("error", t("onboarding.login.errors.login-failed"))
+
+		return
+	}
 
 	if (res.error) {
 		// the sign-in attempt re-sent the verification link

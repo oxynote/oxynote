@@ -29,13 +29,26 @@ vi.mock("vue-sonner", () => ({
 
 // route.query is a readonly proxy, so the route itself is what a test
 // arranges
-const { useRouteMock, navigateToMock } = vi.hoisted(() => ({
-	useRouteMock: vi.fn(),
-	navigateToMock: vi.fn(),
-}))
+const { useRouteMock, navigateToMock, signInEmailPasswordMock } = vi.hoisted(
+	() => ({
+		useRouteMock: vi.fn(),
+		navigateToMock: vi.fn(),
+		signInEmailPasswordMock: vi.fn(),
+	}),
+)
 
 mockNuxtImport("useRoute", () => useRouteMock)
 mockNuxtImport("navigateTo", () => navigateToMock)
+
+// better-auth keeps the fetch it saw when the client was created, so a
+// test cannot make the request itself fail. Instead the sign-in call is
+// wrapped here. It runs the real call unless a test says otherwise.
+mockNuxtImport<typeof useAuthSession>("useAuthSession", (original) => () => {
+	const session = original()
+	signInEmailPasswordMock.mockImplementation(session.signInEmailPassword)
+
+	return { ...session, signInEmailPassword: signInEmailPasswordMock }
+})
 
 // the query cache and the vue-sonner, useRoute and navigateTo module mocks
 // are app-wide singletons every mount in the file shares
@@ -49,6 +62,7 @@ describe("<login>", { concurrent: false }, () => {
 		vi.mocked(toast.custom).mockReset()
 		navigateToMock.mockReset()
 		useRouteMock.mockReset()
+		signInEmailPasswordMock.mockReset()
 		arrangeRoute()
 	})
 
@@ -544,6 +558,46 @@ describe("<login>", { concurrent: false }, () => {
 		await vi.waitFor(() => {
 			expect(toast.custom).toHaveBeenCalledTimes(1)
 		}, WAIT_FOR_OPTIONS)
+		expect
+			.soft(raisedToasts())
+			.toMatchObject([
+				{ type: "error", title: t("onboarding.login.errors.login-failed") },
+			])
+		expect.soft(navigateToMock).not.toHaveBeenCalled()
+		expect
+			.soft(
+				findButtonByText(
+					wrapper,
+					t("onboarding.login.email-password-form.continue"),
+				).attributes("disabled"),
+			)
+			.toBeUndefined()
+	})
+
+	it("reports an email/password sign-in the browser could not send", async ({
+		expect,
+	}) => {
+		seedAuthConfig()
+		const wrapper = await mountSuspended(Login)
+		// a request the browser blocks makes better-auth reject with this
+		signInEmailPasswordMock.mockRejectedValueOnce(
+			new TypeError("Failed to fetch"),
+		)
+
+		await submitCredentials(wrapper)
+
+		// vee-validate's validation runs on its own scheduler, and the page
+		// signals the end of neither it nor the request
+		await vi.waitFor(() => {
+			expect(toast.custom).toHaveBeenCalledTimes(1)
+		}, WAIT_FOR_OPTIONS)
+		expect.soft(signInEmailPasswordMock).toHaveBeenCalledTimes(1)
+		expect.soft(signInEmailPasswordMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				email: "ada@example.com",
+				password: "hunter2",
+			}),
+		)
 		expect
 			.soft(raisedToasts())
 			.toMatchObject([
