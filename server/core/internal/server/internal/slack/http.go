@@ -288,17 +288,10 @@ func (h *Handler) HandleEvent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// slackevents.ChallengeResponse has no json tag and would
-		// marshal the field as "Challenge", but Slack's URL
-		// verification expects a lowercase "challenge" attribute.
 		httpserver.Respond(
 			h.log,
 			w,
-			struct {
-				Challenge string `json:"challenge"`
-			}{
-				Challenge: event.Challenge,
-			},
+			slackevents.ChallengeResponse{Challenge: event.Challenge},
 			http.StatusOK,
 		)
 
