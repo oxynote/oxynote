@@ -189,20 +189,7 @@ describe("buildChildEnvs", () => {
 			...inheritedEnv,
 			XDG_DATA_HOME: "/tmp/caddy/data",
 			XDG_CONFIG_HOME: "/tmp/caddy/config",
-			OXYNOTE_CADDY_TRUSTED_PROXIES: "",
 		})
-	})
-
-	it("hands caddy the trusted proxies as space-separated words", ({
-		expect,
-	}) => {
-		const envs = build(
-			testConfig({ trustedProxies: ["10.0.0.0/8", "::1"] }),
-		)
-
-		expect(envs.caddy.OXYNOTE_CADDY_TRUSTED_PROXIES).toBe(
-			"10.0.0.0/8 ::1",
-		)
 	})
 
 	it("gives core and auth-realtime the same log level", ({ expect }) => {
@@ -382,7 +369,6 @@ describe("buildChildEnvs", () => {
 					PROVIDER: "anthropic",
 					API_KEY: "sk-ant",
 				},
-				rateLimitDisabled: true,
 				maxOrganizations: "10",
 			}),
 		)
@@ -407,10 +393,6 @@ describe("buildChildEnvs", () => {
 			envs.authRealtime
 				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_ID,
 		).toBe("gid")
-		expect(
-			envs.authRealtime
-				.OXYNOTE_AUTH_REALTIME_RATE_LIMIT_DISABLED,
-		).toBe("true")
 		expect(envs.authRealtime).toMatchObject({
 			OXYNOTE_AUTH_REALTIME_BETTER_AUTH_OIDC_ISSUER_URL:
 				"https://idp.example.com/realms/team",

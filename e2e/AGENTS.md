@@ -109,10 +109,6 @@ Two more sign in through the `keycloak` service (`:19180`):
 `prod-oidc-single-workspace.test.ts`, which runs serially like the one
 above. The single-workspace origin lives in `helpers/oidc.ts`, the
 `oxynote-oidc` one in `helpers/config.ts`.
-Two more keep the rate limiter on, which every other instance turns off:
-`oxynote-rate-limited` (`:19085`) trusts no proxy, and
-`oxynote-trusted-proxies` (`:19086`) trusts the private ranges. Only
-`prod-trusted-proxies.test.ts` drives them, through `helpers/rate-limit.ts`.
 Compose builds nothing; the image comes from `make prod-build`, tagged
 `:e2e-prod`, and CI's cache reaches it through `PROD_BUILD_EXTRA`. A `probe`
 container (idle alpine on the private network) exists for the

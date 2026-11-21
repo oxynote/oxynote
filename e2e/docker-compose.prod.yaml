@@ -13,9 +13,8 @@
 #     empty data volume (the generated secrets are regenerated per run)
 #   - no container_name, and its own ports (:19080 front door, :19081 the
 #     instance without email, :19082 the single-workspace instance, :19083
-#     and :19084 the OIDC instances, :19085 and :19086 the rate-limited
-#     instances, :19180 keycloak, :19025 mailpit), so it coexists with the
-#     dev stack and the e2e dev stack alike
+#     and :19084 the OIDC instances, :19180 keycloak, :19025 mailpit), so it
+#     coexists with the dev stack and the e2e dev stack alike
 #   - env is inlined and committed; there is nothing secret to protect
 #   - every image is pinned
 #   - no OXYNOTE_DB_DSN, OXYNOTE_VALKEY_DSN or OXYNOTE_OBJECT_STORAGE_DSN, which
@@ -45,10 +44,6 @@ services:
       # up for a day of iteration would hit a lower cap and start failing
       # signups with a full-house message.
       - OXYNOTE_MAX_ORGANIZATIONS=100000
-      # every request in a run arrives from one address, and better-auth
-      # gives sign-in and sign-up three per ten seconds between them, so the
-      # limiter would fail the suite rather than the code under test.
-      - OXYNOTE_RATE_LIMIT_DISABLED=true
     # the image ships its own layered probe (every internal service plus the
     # front door), which is what the probe container and the tests wait on.
     # Its start period is three minutes; compose inherits that.
@@ -68,9 +63,8 @@ services:
     environment:
       - OXYNOTE_PUBLIC_URL=http://localhost:19081
       - OXYNOTE_MAX_ORGANIZATION_MEMBERS=5
-      # the same two allowances as the instance above, for the same reasons.
+      # the same allowance as the instance above, for the same reason.
       - OXYNOTE_MAX_ORGANIZATIONS=100000
-      - OXYNOTE_RATE_LIMIT_DISABLED=true
     stop_grace_period: 60s
 
   # the same image with the workspace limits left at their defaults: one
@@ -86,8 +80,6 @@ services:
       - OXYNOTE_PUBLIC_URL=http://localhost:19082
       - OXYNOTE_SMTP_DSN=smtp://mailpit:1025?tls=none
       - OXYNOTE_EMAIL_FROM_ADDRESS=Oxynote <team@oxynote.io>
-      # the same limiter allowance as the instance above.
-      - OXYNOTE_RATE_LIMIT_DISABLED=true
     stop_grace_period: 60s
 
   # the same image signing in through keycloak, with any number of
@@ -106,7 +98,6 @@ services:
       - OXYNOTE_EMAIL_FROM_ADDRESS=Oxynote <team@oxynote.io>
       - OXYNOTE_MAX_ORGANIZATION_MEMBERS=5
       - OXYNOTE_MAX_ORGANIZATIONS=100000
-      - OXYNOTE_RATE_LIMIT_DISABLED=true
       - OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL=http://keycloak:8080/realms/oxynote
       - OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_ID=oxynote
       - OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_SECRET=oxynote-e2e-secret
@@ -128,7 +119,6 @@ services:
       - OXYNOTE_PUBLIC_URL=http://localhost:19084
       - OXYNOTE_SMTP_DSN=smtp://mailpit:1025?tls=none
       - OXYNOTE_EMAIL_FROM_ADDRESS=Oxynote <team@oxynote.io>
-      - OXYNOTE_RATE_LIMIT_DISABLED=true
       - OXYNOTE_SOCIAL_LOGIN_OIDC_ISSUER_URL=http://keycloak:8080/realms/oxynote
       - OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_ID=oxynote
       - OXYNOTE_SOCIAL_LOGIN_OIDC_CLIENT_SECRET=oxynote-e2e-secret
@@ -137,30 +127,6 @@ services:
     depends_on:
       keycloak:
         condition: service_healthy
-    stop_grace_period: 60s
-
-  # two instances with the rate limiter on, which every instance above turns
-  # off. Only tests/prod-trusted-proxies.test.ts drives them. The test acts
-  # as the proxy: it sends X-Forwarded-For itself, and its requests reach
-  # the container from docker's gateway, which has a private address. So
-  # oxynote-trusted-proxies trusts the private ranges, and
-  # oxynote-rate-limited trusts no proxy, as an install with the variable
-  # unset does.
-  oxynote-rate-limited:
-    image: ghcr.io/oxynote/oxynote:e2e-prod
-    ports:
-      - "19085:8080"
-    environment:
-      - OXYNOTE_PUBLIC_URL=http://localhost:19085
-    stop_grace_period: 60s
-
-  oxynote-trusted-proxies:
-    image: ghcr.io/oxynote/oxynote:e2e-prod
-    ports:
-      - "19086:8080"
-    environment:
-      - OXYNOTE_PUBLIC_URL=http://localhost:19086
-      - OXYNOTE_TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
     stop_grace_period: 60s
 
   # the identity provider of both OIDC instances. Its realm comes from the

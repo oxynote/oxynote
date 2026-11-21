@@ -819,8 +819,11 @@ export function createAuth({
 					}
 				: undefined,
 		},
+		// better-auth turns its limiter on by itself in production, so
+		// it is switched off here. Rate limiting is left to the
+		// operator's reverse proxy.
 		rateLimit: {
-			enabled: env.rateLimitEnabled,
+			enabled: false,
 		},
 		advanced: {
 			// better-auth compares the database against its own schema once,
@@ -839,9 +842,7 @@ export function createAuth({
 		},
 		// without valkey there is no secondary storage at all:
 		// sessions are read from the database, which
-		// storeSessionInDatabase keeps them in either way, and the
-		// rate-limit counters fall back to better-auth's in-memory
-		// storage.
+		// storeSessionInDatabase keeps them in either way.
 		...(redis
 			? { secondaryStorage: createSecondaryStorage(redis) }
 			: {}),

@@ -30,13 +30,6 @@ The image serves plain HTTP on port **8080** and assumes it is reached at
 `8080:8080` for a local run. For a real domain, put a TLS-terminating proxy
 in front and set `OXYNOTE_PUBLIC_URL` to the public `https://` origin.
 
-Also set `OXYNOTE_TRUSTED_PROXIES` to the proxy's addresses, as a
-comma-separated list of IPs or CIDR ranges (e.g. `10.0.0.0/8,192.168.1.4`).
-The proxy must send the client's address in `X-Forwarded-For`. The image
-then reads that address from requests that come from a listed proxy, and
-rate limits apply to each client. Unset, the image trusts no proxy, so every
-user behind the proxy shares one rate-limit bucket.
-
 ## Configuration
 
 Everything is configured through flat `OXYNOTE_*` variables. Setting any
@@ -177,9 +170,7 @@ nobody may be left who can manage the workspace.
 
 ### Tuning
 
-`OXYNOTE_RATE_LIMIT_DISABLED` (`true`/`false`; the built-in limiter buckets
-by client IP, so behind a proxy set `OXYNOTE_TRUSTED_PROXIES` as described
-above), `OXYNOTE_MAX_DOCUMENT_HISTORY_ENTRIES`,
+`OXYNOTE_MAX_DOCUMENT_HISTORY_ENTRIES`,
 `OXYNOTE_DOCUMENT_HISTORY_RETENTION` (Go duration, e.g. `2160h`),
 `OXYNOTE_LOG_LEVEL` (`DEBUG`/`INFO`/`WARN`/`ERROR`; the floor for both core
 and auth-realtime, `WARN` by default, so the container logs carry the
