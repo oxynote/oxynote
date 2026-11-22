@@ -30,7 +30,7 @@ func Test_LogReference(t *testing.T) {
 func Test_decodeLogAttrs(t *testing.T) {
 	t.Parallel()
 
-	// defaultQueries is the query list a log block gets when it names none.
+	// defaultQueries is the query list a log block gets when it has none.
 	defaultQueries := []any{
 		map[string]any{
 			"name":  "Query 1",

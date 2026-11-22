@@ -71,7 +71,7 @@ func MetricEnums() map[string][]string {
 func MetricReference() string {
 	var sb strings.Builder
 
-	sb.WriteString("dataSourceId (an id from list_data_sources), queries ([{name, query, legendFormat}], PromQL or SQL as the data source takes, one empty query when left out)")
+	sb.WriteString("dataSourceId (an id from list_data_sources), queries ([{name, query, legendFormat}], PromQL or SQL as the data source takes)")
 
 	for _, key := range slices.Sorted(maps.Keys(_metricEnums)) {
 		sb.WriteString(", " + key + " (" + strings.Join(enumValues(_metricEnums, key), "|") + ")")
@@ -206,10 +206,9 @@ func decodeMetricAttrs(text string, stored document.Block) (document.Attributes,
 	return attrs, nil
 }
 
-// defaultMetricQueries returns the queries of a metric that names none:
-// one empty query, as defaultMetricConfig in
-// web/app/components/editor/blocks/metrics/utils.ts creates it. Each call
-// returns a new list, so no two blocks share one.
+// defaultMetricQueries returns the queries a metric gets when it has
+// none: one empty query. It must match the default defined in the
+// frontend. Each call builds a new list, so two blocks never share one.
 func defaultMetricQueries() []any {
 	return []any{
 		map[string]any{

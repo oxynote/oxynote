@@ -54,7 +54,6 @@ func Test_MetricReference(t *testing.T) {
 
 	assert.Contains(t, got, "unitCustom")
 	assert.Contains(t, got, "dataSourceId")
-	assert.Contains(t, got, "one empty query when left out")
 	assert.Contains(t, got, "timeRange ($metric_range|")
 	assert.Contains(t, got, "refreshInterval ($metric_refresh|")
 	assert.Contains(t, got, "timeRange and refreshInterval default to $metric_range and $metric_refresh")
@@ -69,7 +68,7 @@ func Test_decodeMetricAttrs(t *testing.T) {
 	// palette names.
 	const legacyColor = "oklch(57.7% .245 27.325)"
 
-	// defaultQueries is the query list a metric gets when it names none.
+	// defaultQueries is the query list a metric gets when it has none.
 	defaultQueries := []any{
 		map[string]any{
 			"name":         "Query 1",

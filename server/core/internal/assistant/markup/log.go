@@ -123,10 +123,9 @@ func decodeLogAttrs(text string) (document.Attributes, error) {
 	return attrs, nil
 }
 
-// defaultLogQueries returns the queries of a log block that names none:
-// one empty query, as defaultLogConfig in
-// web/app/components/editor/blocks/logs/utils.ts creates it. Each call
-// returns a new list, so no two blocks share one.
+// defaultLogQueries returns the queries a log block gets when it has
+// none: one empty query. It must match the default defined in the
+// frontend. Each call builds a new list, so two blocks never share one.
 func defaultLogQueries() []any {
 	return []any{
 		map[string]any{
