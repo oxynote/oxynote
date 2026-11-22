@@ -674,7 +674,7 @@ describe("<DataView>", { concurrent: false }, () => {
 			// the window is read again when the search changes the query
 			expect(calls).toHaveLength(2)
 			expect(calls[1]?.query).toEqual({
-				q: '{job="api"} |~ "(?i)timeout"',
+				q: '{job="api"}\n|~ "(?i)timeout"',
 				limit: "100",
 				from: "2026-01-01T11:55:00.300Z",
 				to: "2026-01-01T12:00:00.300Z",

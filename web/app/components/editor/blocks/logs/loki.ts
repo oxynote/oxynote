@@ -45,7 +45,9 @@ export const lokiDialect: LogDialect = {
 // query as a label filter. A filter on a key read from the line brings the
 // parser for its format. The parser goes right after the stream selector,
 // but only when the query has no parser of its own. The search follows as
-// a case-insensitive line filter.
+// a case-insensitive line filter. Each part that follows the query starts a
+// line of its own: a `#` comment runs to the end of the line, so a part
+// added on the query's last line would be commented out.
 function withViewFilters(
 	query: string,
 	filters: LogFilter[],
@@ -74,13 +76,15 @@ function withViewFilters(
 
 	for (const filter of filters) {
 		if (!joined.includes(filter)) {
-			result += ` | ${matcher(filter)}`
+			result += `
+| ${matcher(filter)}`
 		}
 	}
 
 	const term = search.trim()
 	if (term) {
-		result += ` |~ ${quote(`(?i)${term.replace(REGEX_SPECIAL, "\\$&")}`)}`
+		result += `
+|~ ${quote(`(?i)${term.replace(REGEX_SPECIAL, "\\$&")}`)}`
 	}
 
 	return result

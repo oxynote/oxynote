@@ -92,7 +92,7 @@ describe("lokiDialect.withViewFilters", () => {
 				filters: [filter("status", "500")],
 				search: "",
 			},
-			expected: '{job="api"} | status="500"',
+			expected: '{job="api"}\n| status="500"',
 		},
 		{
 			name: "appends an excluding non-indexed filter as a negative label filter",
@@ -101,7 +101,7 @@ describe("lokiDialect.withViewFilters", () => {
 				filters: [filter("status", "500", { exclude: true })],
 				search: "",
 			},
-			expected: '{job="api"} | status!="500"',
+			expected: '{job="api"}\n| status!="500"',
 		},
 		{
 			name: "appends an indexed filter as a label filter when no selector closes",
@@ -110,7 +110,7 @@ describe("lokiDialect.withViewFilters", () => {
 				filters: [filter("env", "prod", { indexed: true })],
 				search: "",
 			},
-			expected: '{job="api" | env="prod"',
+			expected: '{job="api"\n| env="prod"',
 		},
 		{
 			name: "escapes backslashes and quotes in a filter value",
@@ -122,7 +122,7 @@ describe("lokiDialect.withViewFilters", () => {
 				],
 				search: "",
 			},
-			expected: '{path="C:\\\\a \\"b\\""} | msg="say \\"hi\\""',
+			expected: '{path="C:\\\\a \\"b\\""}\n| msg="say \\"hi\\""',
 		},
 		{
 			name: "escapes a newline and a tab in a filter value and the search",
@@ -131,17 +131,17 @@ describe("lokiDialect.withViewFilters", () => {
 				filters: [filter("msg", "a\nb\tc")],
 				search: "x\ny",
 			},
-			expected: '{} | msg="a\\nb\\tc" |~ "(?i)x\\ny"',
+			expected: '{}\n| msg="a\\nb\\tc"\n|~ "(?i)x\\ny"',
 		},
 		{
 			name: "appends a trimmed search as a case-insensitive line filter",
 			input: { query: '{job="api"}', filters: [], search: "  timeout " },
-			expected: '{job="api"} |~ "(?i)timeout"',
+			expected: '{job="api"}\n|~ "(?i)timeout"',
 		},
 		{
 			name: "escapes regex metacharacters and quotes in the search",
 			input: { query: "{}", filters: [], search: 'a.b(c)*"d"' },
-			expected: '{} |~ "(?i)a\\\\.b\\\\(c\\\\)\\\\*\\"d\\""',
+			expected: '{}\n|~ "(?i)a\\\\.b\\\\(c\\\\)\\\\*\\"d\\""',
 		},
 		{
 			name: "ignores a blank search",
@@ -160,7 +160,7 @@ describe("lokiDialect.withViewFilters", () => {
 				search: "slow",
 			},
 			expected:
-				'{job="api", env="prod"} | json | status="500" | route!="/health" |~ "(?i)slow"',
+				'{job="api", env="prod"} | json\n| status="500"\n| route!="/health"\n|~ "(?i)slow"',
 		},
 		{
 			name: "adds the parser a line key needs after the selector",
@@ -170,7 +170,7 @@ describe("lokiDialect.withViewFilters", () => {
 				search: "",
 			},
 			expected:
-				'{job="api"} | logfmt |= "x" | line_format "{{.msg}}" | user="bob"',
+				'{job="api"} | logfmt |= "x" | line_format "{{.msg}}"\n| user="bob"',
 		},
 		{
 			name: "adds each parser once, after the joined indexed filters",
@@ -183,7 +183,7 @@ describe("lokiDialect.withViewFilters", () => {
 				],
 				search: "",
 			},
-			expected: '{job="api", env="prod"} | json | a="1" | b="2"',
+			expected: '{job="api", env="prod"} | json\n| a="1"\n| b="2"',
 		},
 		{
 			name: "adds no parser when the query has one",
@@ -192,7 +192,20 @@ describe("lokiDialect.withViewFilters", () => {
 				filters: [filter("user", "bob", { format: LineFormat.JSON })],
 				search: "",
 			},
-			expected: '{job="api"} | json | user="bob"',
+			expected: '{job="api"} | json\n| user="bob"',
+		},
+		{
+			name: "keeps filters and the search out of a trailing comment",
+			input: {
+				query: '{app="api"} # note',
+				filters: [
+					filter("status", "200", { exclude: true }),
+					filter("env", "prod", { indexed: true }),
+				],
+				search: "timeout",
+			},
+			expected:
+				'{app="api", env="prod"} # note\n| status!="200"\n|~ "(?i)timeout"',
 		},
 	])("$name", ({ input, expected }, { expect }) => {
 		expect(
