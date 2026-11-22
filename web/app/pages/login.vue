@@ -130,6 +130,7 @@ onMounted(() => {
 		showToastMessage("success", t("onboarding.login.password-reset-success"))
 	}
 
+	warnAboutOtherAddress()
 	redirectTimeout = setupSignInRedirect()
 })
 
@@ -139,6 +140,35 @@ onUnmounted(() => {
 		clearTimeout(redirectTimeout)
 	}
 })
+
+// sign-in requests go to the address the server is configured for. From
+// any other address the browser blocks them as cross-origin, so the page
+// warns before anyone tries.
+function warnAboutOtherAddress() {
+	// NOCOV: the desktop app never runs on the configured address.
+	if (__DESKTOP_BUILD__) {
+		return
+	}
+
+	const configured = new URL(config.public.appBaseURL).origin
+	const opened = useRequestURL().origin
+
+	if (opened === configured) {
+		return
+	}
+
+	showToastMessage(
+		"warning",
+		t("onboarding.login.other-address.title"),
+		t("onboarding.login.other-address.description", {
+			configured,
+			opened,
+			variable: "OXYNOTE_PUBLIC_URL",
+		}),
+		undefined,
+		{ persistent: true },
+	)
+}
 
 async function logInWithProvider(provider: ProviderAuthMethod) {
 	loading.value = provider

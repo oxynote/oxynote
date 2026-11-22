@@ -90,6 +90,17 @@ describe("showToastMessage", { concurrent: false }, () => {
 		expect(toast.dismiss).not.toHaveBeenCalled()
 	})
 
+	it("keeps a persistent toast visible until it is dismissed", ({ expect }) => {
+		showToastMessage("warning", "Wrong address", undefined, undefined, {
+			persistent: true,
+		})
+
+		expect(toast.custom).toHaveBeenCalledExactlyOnceWith(expect.any(Function), {
+			duration: Number.POSITIVE_INFINITY,
+		})
+		expect(toast.dismiss).not.toHaveBeenCalled()
+	})
+
 	it("keeps the toaster's default duration for a message without an action", ({
 		expect,
 	}) => {

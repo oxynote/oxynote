@@ -34,15 +34,19 @@ const {
 	navigateToMock,
 	signInEmailPasswordMock,
 	signInSocialMock,
+	useRequestURLMock,
 } = vi.hoisted(() => ({
 	useRouteMock: vi.fn(),
 	navigateToMock: vi.fn(),
 	signInEmailPasswordMock: vi.fn(),
 	signInSocialMock: vi.fn(),
+	// nuxt itself reads the request url while it starts, before any hook
+	useRequestURLMock: vi.fn(() => new URL("http://test.local/login")),
 }))
 
 mockNuxtImport("useRoute", () => useRouteMock)
 mockNuxtImport("navigateTo", () => navigateToMock)
+mockNuxtImport("useRequestURL", () => useRequestURLMock)
 
 // better-auth keeps the fetch it saw when the client was created, so a
 // test cannot make the request itself fail. Instead the sign-in calls are
@@ -73,6 +77,7 @@ describe("<login>", { concurrent: false }, () => {
 		useRouteMock.mockReset()
 		signInEmailPasswordMock.mockReset()
 		signInSocialMock.mockReset()
+		useRequestURLMock.mockReset()
 		arrangeRoute()
 	})
 
@@ -191,6 +196,52 @@ describe("<login>", { concurrent: false }, () => {
 			expect(raisedToasts()).toMatchObject([{ type: "success", title: t(key) }])
 		},
 	)
+
+	it.for([
+		"http://localhost:8081",
+		"http://127.0.0.1",
+		"http://192.168.1.20:8080",
+	])(
+		"warns until closed that sign-in cannot work when opened on %s",
+		async (opened, { expect }) => {
+			seedAuthConfig()
+			useRequestURLMock.mockReturnValue(new URL(`${opened}/login`))
+
+			await mountSuspended(Login)
+
+			expect.soft(raisedToasts()).toMatchObject([
+				{
+					type: "warning",
+					title: t("onboarding.login.other-address.title"),
+					description: t("onboarding.login.other-address.description", {
+						configured: "http://test.local",
+						opened: opened,
+						variable: "OXYNOTE_PUBLIC_URL",
+					}),
+				},
+			])
+			expect
+				.soft(toast.custom)
+				.toHaveBeenCalledExactlyOnceWith(expect.any(Function), {
+					duration: Number.POSITIVE_INFINITY,
+				})
+			expect.soft(useRequestURLMock).toHaveBeenCalledTimes(1)
+		},
+	)
+
+	it("raises no warning when opened on the configured address", async ({
+		expect,
+	}) => {
+		seedAuthConfig()
+		useRequestURLMock.mockReturnValue(
+			new URL("http://test.local/login?next=%2Fteam"),
+		)
+
+		await mountSuspended(Login)
+
+		expect.soft(toast.custom).not.toHaveBeenCalled()
+		expect.soft(useRequestURLMock).toHaveBeenCalledTimes(1)
+	})
 
 	it.for(["google", "github", "slack"] as const)(
 		"signs in with %s and returns to the root",

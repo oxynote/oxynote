@@ -86,7 +86,11 @@
 				"invalid-credentials": "Invalid email or password",
 				"password-reset-failed": "Could not send the reset link. Please try again"
 			},
-			"no-methods": "No login methods are configured on this server."
+			"no-methods": "No login methods are configured on this server.",
+			"other-address": {
+				"title": "Login will not work from this address",
+				"description": "This server is set up for {configured}, but you opened {opened}. Set {variable} to {opened} and restart Oxynote."
+			}
 		},
 		"reset-password": {
 			"title": "Choose a new password",
