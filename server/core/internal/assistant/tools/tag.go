@@ -54,23 +54,23 @@ func (lt listTags) Exec(inp Input) (any, error) {
 			Name:      s.TagName,
 			ColorName: s.Color,
 		}
+
 		if !lt.IncludeDocuments {
 			out.Tags = append(out.Tags, e)
 			continue
 		}
 
-		docs := make([]tagDocument, 0, len(s.Documents))
 		// the tree lists each assigned document with its own subtree;
 		// the subtree is sidebar context, not an assignment.
-		for _, d := range s.Documents {
-			docs = append(docs, tagDocument{
+		e.Documents = make([]tagDocument, len(s.Documents))
+		for i, d := range s.Documents {
+			e.Documents[i] = tagDocument{
 				ID:              d.ID,
 				Name:            d.DocumentName,
 				DefaultBranchID: d.DefaultBranchID,
-			})
+			}
 		}
 
-		e.Documents = docs
 		out.Tags = append(out.Tags, e)
 	}
 
