@@ -13,9 +13,9 @@ import (
 // listTags returns the organisation's tags, optionally with the documents
 // carrying them.
 type listTags struct {
-	// IncludeDocuments asks for the documents each tag is on. Unset keeps
-	// today's shape and includes them.
-	IncludeDocuments null.Value[bool] `json:"include_documents"`
+	// IncludeDocuments asks for the documents each tag is on. The schema
+	// defaults it to true; false leaves the documents out.
+	IncludeDocuments bool `json:"include_documents,omitempty"`
 }
 
 // Info returns the tool's model-facing description.
@@ -54,7 +54,7 @@ func (lt listTags) Exec(inp Input) (any, error) {
 			Name:      s.TagName,
 			ColorName: s.Color,
 		}
-		if lt.IncludeDocuments.Valid && !lt.IncludeDocuments.V {
+		if !lt.IncludeDocuments {
 			out.Tags = append(out.Tags, e)
 			continue
 		}
@@ -94,9 +94,9 @@ type tagEntry struct {
 	// ColorName is the palette name of the tag's colour.
 	ColorName string `json:"color"`
 
-	// Documents is every document whose default branch carries the tag. It is an
-	// empty list, not missing, by default; include_documents=false leaves it out.
-	Documents any `json:"documents,omitempty"`
+	// Documents is every document whose default branch carries the tag. It is
+	// left out when include_documents is false.
+	Documents []tagDocument `json:"documents,omitempty"`
 }
 
 // tagDocument names one document carrying a tag.

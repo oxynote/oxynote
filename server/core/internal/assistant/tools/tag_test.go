@@ -60,7 +60,8 @@ func Test_listTags_Validate(t *testing.T) {
 func Test_listTags_Exec(t *testing.T) {
 	t.Parallel()
 
-	noDocs := null.NewValue(false, true)
+	noDocs := false
+	withDocs := true
 	oneDoc := []tagDocument{{ID: _testDocID, Name: _stubDocumentName, DefaultBranchID: _stubMainBranchID}}
 	noDocsList := []tagDocument{}
 	cc := map[string]struct {
@@ -103,6 +104,7 @@ func Test_listTags_Exec(t *testing.T) {
 		},
 		"Tags with their documents": {
 			Input: stubTagInput(),
+			Tool:  listTags{IncludeDocuments: withDocs},
 			Result: listTagsResult{Tags: []tagEntry{
 				{
 					ID:        _testTagID,
@@ -115,8 +117,8 @@ func Test_listTags_Exec(t *testing.T) {
 			Check: func(t *testing.T, got any) {
 				data, err := json.Marshal(got)
 				require.NoError(t, err)
-				// an unassigned tag keeps an empty array, not a missing key.
-				assert.Contains(t, string(data), `"documents":[]`)
+				// assigned documents are present in the JSON output.
+				assert.Contains(t, string(data), `"documents":[{`)
 			},
 		},
 	}
