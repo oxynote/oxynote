@@ -1,0 +1,141 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "oxynote.fullname" . }}
+  labels:
+    {{- include "oxynote.labels" . | nindent 4 }}
+spec:
+  # the pod keeps its state, by default its Postgres too, on one volume,
+  # so a second pod would corrupt it. A StatefulSet never starts a new pod
+  # before the old one is gone, which a Deployment does not promise.
+  replicas: 1
+  serviceName: {{ include "oxynote.fullname" . }}
+  selector:
+    matchLabels:
+      {{- include "oxynote.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "oxynote.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "oxynote.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      # Kubernetes would inject variables such as OXYNOTE_SERVICE_HOST for a
+      # Service named oxynote. The launcher refuses unknown OXYNOTE_ names
+      # and would not boot.
+      enableServiceLinks: false
+      # the launcher's ordered shutdown takes up to 55 seconds.
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: oxynote
+          image: {{ include "oxynote.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: OXYNOTE_PUBLIC_URL
+              value: {{ .Values.publicUrl | quote }}
+            {{- range $name, $value := .Values.env }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.envFromSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ . }}
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          # the first boot runs initdb and every migration, which can take
+          # minutes on slow storage.
+          startupProbe:
+            exec:
+              command: ["/usr/bin/node", "/oxynote/prod/healthcheck.mjs"]
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: ["/usr/bin/node", "/oxynote/prod/healthcheck.mjs"]
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+          # the launcher already exits when one of its services dies. This
+          # only catches a front door that hangs.
+          livenessProbe:
+            httpGet:
+              path: /auth-realtime/api/auth-config
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /oxynote/data
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.githubAppSecret }}
+            - name: github-app
+              mountPath: /oxynote/github
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "oxynote.claimName" . }}
+        - name: tmp
+          emptyDir: {}
+        {{- with .Values.githubAppSecret }}
+        - name: github-app
+          secret:
+            secretName: {{ . }}
+            items:
+              - key: private-key.pem
+                path: private-key.pem
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

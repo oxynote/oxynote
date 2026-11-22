@@ -1,0 +1,10 @@
+publicUrl: http://ingress.oxynote.localhost:19280
+env:
+  OXYNOTE_MAX_ORGANIZATIONS: "100000"
+persistence:
+  size: 2Gi
+ingress:
+  enabled: true
+  className: traefik
+  hosts:
+    - ingress.oxynote.localhost

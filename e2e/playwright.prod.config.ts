@@ -14,6 +14,8 @@ process.env.E2E_STACK = "prod"
 
 export default defineConfig({
 	testDir: "./tests",
+	// playwright.helm.config.ts runs these, against the Helm chart.
+	testIgnore: "helm-*.test.ts",
 	fullyParallel: true,
 	// the dev suite's width, deliberately: one container running caddy,
 	// web, core and auth-realtime together contends harder than four

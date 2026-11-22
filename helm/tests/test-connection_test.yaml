@@ -1,0 +1,59 @@
+suite: test-connection
+templates:
+  - templates/tests/test-connection.yaml
+set:
+  publicUrl: https://docs.example.com
+tests:
+  - it: is a restricted test hook that calls the front door through the Service
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: test
+      - equal:
+          path: spec.securityContext
+          value:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+      - equal:
+          path: spec.containers[0].securityContext
+          value:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      - matchRegex:
+          path: spec.containers[0].command[3]
+          pattern: http://RELEASE-NAME-oxynote:8080/auth-realtime/api/auth-config
+
+  - it: runs on the same nodes as the app
+    set:
+      nodeSelector:
+        disk: ssd
+      tolerations:
+        - key: dedicated
+          operator: Exists
+      affinity:
+        nodeAffinity: {}
+    asserts:
+      - equal:
+          path: spec.nodeSelector
+          value:
+            disk: ssd
+      - equal:
+          path: spec.tolerations[0].key
+          value: dedicated
+      - exists:
+          path: spec.affinity.nodeAffinity
+
+  - it: runs as the app's ServiceAccount
+    set:
+      serviceAccount.create: false
+      serviceAccount.name: oxynote-pull
+    asserts:
+      - equal:
+          path: spec.serviceAccountName
+          value: oxynote-pull

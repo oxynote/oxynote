@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "oxynote.fullname" . }}-test
+  labels:
+    {{- include "oxynote.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ include "oxynote.serviceAccountName" . }}
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: test
+      # the app's own image has node, so the test needs no other image.
+      image: {{ include "oxynote.image" . }}
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      command:
+        - /usr/bin/node
+        - --input-type=module
+        - -e
+        - |
+          const url = "http://{{ include "oxynote.fullname" . }}:{{ .Values.service.port }}/auth-realtime/api/auth-config"
+          const res = await fetch(url, { signal: AbortSignal.timeout(10_000) })
+          if (res.status !== 200) {
+            console.error(`${url} answered ${res.status}`)
+            process.exit(1)
+          }
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+  {{- with .Values.nodeSelector }}
+  nodeSelector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.affinity }}
+  affinity:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.tolerations }}
+  tolerations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}

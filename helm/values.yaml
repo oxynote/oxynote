@@ -1,0 +1,80 @@
+image:
+  repository: ghcr.io/oxynote/oxynote
+  # -- Empty means the chart's appVersion.
+  tag: ""
+  # -- Image digest (`sha256:...`). When set, it is used instead of the tag.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+# -- (string) The origin users open Oxynote at, with no path, such as
+# `https://docs.example.com`. It becomes `OXYNOTE_PUBLIC_URL`. For a
+# port-forward, use `http://localhost:8080`.
+# @default -- required
+publicUrl:
+
+# -- Non-secret `OXYNOTE_*` variables, as the image's README lists them. A
+# name the image does not know fails the install. Values are strings, so
+# quote numbers and booleans. Secret ones go in `envFromSecret`.
+env: {}
+
+# -- Name of an existing Secret with the secret `OXYNOTE_*` variables, such
+# as `OXYNOTE_SMTP_DSN`. Each key becomes a variable.
+envFromSecret: ""
+
+# -- `OXYNOTE_*` variables read with `valueFrom`, for a Secret whose key
+# names you do not choose, such as a database operator's `uri`.
+extraEnv: []
+
+# -- Name of a Secret that holds the GitHub App's private key under the key
+# `private-key.pem`.
+githubAppSecret: ""
+
+persistence:
+  # -- Name of an existing PVC to use. The chart then creates none.
+  existingClaim: ""
+  # -- Size of the PVC the chart creates.
+  size: 10Gi
+  # -- Storage class of the PVC. Empty means the cluster default.
+  storageClass: ""
+  # -- Extra annotations on the PVC the chart creates.
+  annotations: {}
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # -- Hosts the Ingress serves. Each one routes every path to Oxynote.
+  hosts: []
+  # -- TLS entries as in the Ingress spec: `secretName` and `hosts`.
+  tls: []
+
+httpRoute:
+  enabled: false
+  # -- Gateways to attach to. Required when enabled.
+  parentRefs: []
+  hostnames: []
+  annotations: {}
+
+# -- Set at least `requests.memory`, since the pod runs Postgres.
+resources: {}
+
+serviceAccount:
+  create: true
+  # -- Empty means the release's full name when created, and `default`
+  # otherwise.
+  name: ""
+  annotations: {}
+
+# -- Extra volumes for the pod, such as a ConfigMap with a CA file.
+extraVolumes: []
+extraVolumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+podLabels: {}

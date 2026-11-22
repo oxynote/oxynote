@@ -4,13 +4,6 @@ Mandatory for all Go code in `server/core` and `datagen`; this file wins
 over surrounding code for new and modified code. Where this file names an
 exemplar file, copy its shape.
 
-```sh
-make build          # goreleaser snapshot -> bin/ + ghcr.io/oxynote/core:dev
-make test           # go test -race ./...
-make check-coverage # fails below COVERAGE_MIN
-make lint           # golangci-lint run --fix;  check-lint = verify only
-```
-
 ## Layout
 
 - `cmd/core/main.go`: the only place that reads the environment, builds the
@@ -20,8 +13,6 @@ make lint           # golangci-lint run --fix;  check-lint = verify only
   dependency-light, domain-agnostic helpers only.
 - Package names short and lowercase; helper siblings `<parentabbrev><role>`
   (`redkit`) or a bare role when nesting disambiguates. Files snake_case.
-- Generated mocks: in-package `0mock_<name>_test.go` (sorts first) and
-  exported `_mock/` sibling packages (`package mock`).
 
 ## Style
 

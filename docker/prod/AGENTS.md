@@ -20,8 +20,8 @@ mailpit, since the example runs without email.
 - **`make prod-build`** (repo root) builds it. Core's binary must come from
   goreleaser, never `go build`; the target stages it into `.build/` for the
   Dockerfile's COPY, so a bare `docker build` fails on that COPY by design.
-- **`make e2e-prod`** is the only thing that exercises the image as an
-  operator installs it, and CI runs it only as a release gate. Run it
+- **`make e2e-prod`** is the only thing that exercises a locally built image
+  as an operator installs it, and CI runs it only as a release gate. Run it
   locally for any change to the Dockerfile, the Caddyfile or the launcher.
   See [e2e/AGENTS.md](../../e2e/AGENTS.md).
 - **`make prod-publish`** is the release build, run only by
@@ -70,6 +70,9 @@ mailpit, since the example runs without email.
   instead of adding variables, generate secrets instead of exposing them,
   and never leak an internal dependency's name into a public variable. An
   undeclared `OXYNOTE_*` variable is a boot error.
+  A new variable also goes in `helm/values.schema.json`: in
+  `extraEnv`'s name list, and in `env` too unless it carries a secret.
+  `node scripts/check-helm-env.mjs` fails until it does.
 - **Secrets precedence** (`launcher/src/secrets.ts`): explicit env (never
   persisted) → existing volume file → generate and persist 0600. The
   data-source override may carry a whole keyring; the generated file holds

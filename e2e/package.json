@@ -11,6 +11,7 @@
 		"setup": "pnpm run deps && playwright install chromium",
 		"test:dev": "playwright test -c playwright.dev.config.ts",
 		"test:prod": "playwright test -c playwright.prod.config.ts",
+		"test:helm": "playwright test -c playwright.helm.config.ts",
 		"check-types": "tsc --noEmit",
 		"eslint": "eslint --fix --max-warnings 0 .",
 		"check-eslint": "eslint --max-warnings 0 .",

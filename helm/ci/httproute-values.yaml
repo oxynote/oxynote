@@ -1,0 +1,12 @@
+publicUrl: http://httproute.oxynote.localhost:19280
+env:
+  OXYNOTE_MAX_ORGANIZATIONS: "100000"
+persistence:
+  size: 2Gi
+httpRoute:
+  enabled: true
+  parentRefs:
+    - name: oxynote-ci
+      namespace: traefik
+  hostnames:
+    - httproute.oxynote.localhost

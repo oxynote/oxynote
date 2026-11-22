@@ -1,0 +1,56 @@
+suite: ingress
+templates:
+  - templates/ingress.yaml
+set:
+  publicUrl: https://docs.example.com
+tests:
+  - it: renders nothing by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: routes every path of each host to the front door
+    set:
+      ingress.enabled: true
+      ingress.className: traefik
+      ingress.hosts:
+        - docs.example.com
+      ingress.tls:
+        - secretName: docs-tls
+          hosts:
+            - docs.example.com
+    asserts:
+      - equal:
+          path: spec.ingressClassName
+          value: traefik
+      - notExists:
+          path: metadata.annotations
+      - equal:
+          path: spec.rules
+          value:
+            - host: docs.example.com
+              http:
+                paths:
+                  - path: /
+                    pathType: Prefix
+                    backend:
+                      service:
+                        name: RELEASE-NAME-oxynote
+                        port:
+                          name: http
+      - equal:
+          path: spec.tls[0].secretName
+          value: docs-tls
+
+  - it: passes the user's annotations
+    set:
+      ingress.enabled: true
+      ingress.hosts:
+        - docs.example.com
+      ingress.annotations:
+        example.com/timeout: "3600"
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value:
+            example.com/timeout: "3600"

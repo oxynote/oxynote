@@ -54,6 +54,16 @@ docker:
           - "**/Dockerfile*"
           - "**/.goreleaser.yml"
 
+helm:
+  - changed-files:
+      - any-glob-to-any-file:
+          - helm/**
+          - e2e/helm/**
+          - e2e/tests/helm-*
+          - e2e/playwright.helm.config.ts
+          - scripts/helm-*
+          - scripts/check-helm-env.mjs
+
 dev-env:
   - changed-files:
       - any-glob-to-any-file:

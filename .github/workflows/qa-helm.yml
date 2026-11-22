@@ -1,0 +1,141 @@
+name: QA
+
+on:
+  # release.yml calls this with the image it has just published.
+  workflow_call:
+    inputs:
+      image-tag:
+        type: string
+        required: true
+  push:
+    branches:
+      - main
+    paths:
+      - helm/**
+      - e2e/helm/**
+      - e2e/tests/helm-*
+      - e2e/playwright.helm.config.ts
+      - e2e/helpers/**
+      - e2e/package.json
+      - e2e/pnpm-lock.yaml
+      - scripts/check-helm-env.mjs
+      - scripts/helm-render-check.sh
+      - docker/prod/launcher/src/env.ts
+      - .github/workflows/qa-helm.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - helm/**
+      - e2e/helm/**
+      - e2e/tests/helm-*
+      - e2e/playwright.helm.config.ts
+      - e2e/helpers/**
+      - e2e/package.json
+      - e2e/pnpm-lock.yaml
+      - scripts/check-helm-env.mjs
+      - scripts/helm-render-check.sh
+      - docker/prod/launcher/src/env.ts
+      - .github/workflows/qa-helm.yml
+
+# a newer push supersedes the still-running workflow of the stale commit
+# and cancels it. The group carries a hardcoded per-file prefix because
+# every QA workflow shares the display name "QA", so github.workflow
+# would put them all in one group and let a run of one workflow cancel
+# an in-flight run of another.
+concurrency:
+  group: qa-helm-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    name: Checking the Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: v4.3.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2
+
+      # helm-unittest is not signed, which Helm 4 checks by default.
+      - name: Install helm-unittest, kubeconform and helm-docs
+        run: |
+          helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.2.1 --verify=false
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin kubeconform
+          curl -fsSL https://github.com/norwoodj/helm-docs/releases/download/v1.14.2/helm-docs_1.14.2_Linux_x86_64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin helm-docs
+
+      - name: Run the chart checks
+        run: make helm-check
+
+  e2e:
+    name: Testing the Helm chart on kind
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: v4.3.2
+
+      - name: Set up kind
+        uses: helm/kind-action@v1
+        with:
+          version: v0.33.0
+          install_only: true
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: e2e/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: e2e/pnpm-lock.yaml
+
+      - name: Installing dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: e2e
+
+      - name: Install playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: e2e
+
+      - name: Run the chart on kind
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+        run: e2e/helm/run.sh "$IMAGE_TAG"
+
+      - name: Upload playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-helm
+          path: e2e/playwright-report
+          retention-days: 7

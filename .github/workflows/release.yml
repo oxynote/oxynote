@@ -12,6 +12,9 @@ name: Release
 # runs it: the image cannot be published without the suite that proves it
 # serves the product and keeps its internal surfaces unreachable.
 #
+# Then the Helm chart is tested against the published image and released
+# with the same version.
+#
 # The dev e2e suite is deliberately not a gate here. It runs the same flow
 # tests against a different assembly of the same product, and the prod suite
 # already runs them against the artifact being published — so it would cost
@@ -72,9 +75,9 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
-      # the only write this workflow needs: pushing to the repository's own
-      # package registry.
       packages: write
+    outputs:
+      version: ${{ steps.version.outputs.value }}
     steps:
       - name: Check out the code
         uses: actions/checkout@v7
@@ -143,3 +146,63 @@ jobs:
               --build-arg SENTRY_CORE_DSN=${{ secrets.SENTRY_CORE_DSN }} \
               --build-arg SENTRY_AUTH_REALTIME_DSN=${{ secrets.SENTRY_AUTH_REALTIME_DSN }} \
               --build-arg SENTRY_LAUNCHER_DSN=${{ secrets.SENTRY_LAUNCHER_DSN }}"
+
+  helm:
+    needs: publish
+    uses: ./.github/workflows/qa-helm.yml
+    with:
+      image-tag: ${{ needs.publish.outputs.version }}
+
+  publish-helm:
+    name: Publishing the Helm chart
+    needs:
+      - publish
+      - helm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: v4.3.2
+
+      - name: Log in to the chart registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      - name: Package and push the chart
+        id: push
+        run: make helm-publish RELEASE_VERSION="${{ needs.publish.outputs.version }}"
+
+  # a job of its own, so a failed signature can be retried after the push.
+  sign-helm:
+    name: Signing the Helm chart
+    needs: publish-helm
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+      # cosign signs without a key, with this workflow's own identity.
+      id-token: write
+    steps:
+      - name: Log in to the container registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up cosign
+        uses: sigstore/cosign-installer@v4
+
+      - name: Sign the chart
+        run: cosign sign --yes "ghcr.io/oxynote/helm/oxynote@${{ needs.publish-helm.outputs.digest }}"

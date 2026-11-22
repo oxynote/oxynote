@@ -70,11 +70,10 @@ check per step and loop until every check passes.
   Before adding a line, check that it is not already stated, not readable
   from the code it describes, and not the story of one change. Write the
   rule; a reason only where the rule would otherwise look arbitrary.
-- Some tools load at most 32 KiB of AGENTS.md per session: this file plus
-  every AGENTS.md on the path to the working directory. This file plus any
-  component's file stay under 32 KiB together; a package-level file below a
-  component stays under 5 KiB (`wc -c`). When a file grows, cut before
-  adding.
+- A session loads this file plus every AGENTS.md on the path to the
+  working directory. This file plus any component's file stay under 32 KiB
+  together; a package-level file below a component stays under 5 KiB
+  (`wc -c`). When a file grows, cut before adding.
 
 ---
 
@@ -101,6 +100,8 @@ components:
   `*.local.env` the stack reads), `demo/` data configs.
 - `docker/prod/` — the production all-in-one image, its Caddyfile, the TS
   launcher and the example compose. [docker/prod/AGENTS.md](docker/prod/AGENTS.md).
+- `helm/` — the all-in-one image's Helm chart.
+  [helm/AGENTS.md](helm/AGENTS.md).
 - `packages/common/` — `@oxynote/common`: plain TypeScript that web and
   auth-realtime both run (grid layout, editor schema version). No DOM or
   Node code; imported only through subpaths (`@oxynote/common/grid`).
@@ -127,10 +128,12 @@ make bench                        # every package's benchmarks; measure only
 make check-all                    # check-lint, test, e2e-prod; run before a commit
 make prod-build / prod-run[-no-email] / prod-stop  # all-in-one image on :8080 (mailpit :8025)
 make e2e-{dev,prod}[-stack-build|-stack-stop]  # dev stack :18080, prod image :19080 (no email :19081)
+make helm-check / e2e-helm       # Helm chart render checks / the chart on a kind cluster (:19280)
 ```
 
-`make prod-publish` is release-only (`.github/workflows/release.yml`).
-Component commands are in the nested files.
+`make prod-publish` and `make helm-publish` are release-only
+(`.github/workflows/release.yml`). Component commands are in the nested
+files.
 
 ## Cross-component contracts
 

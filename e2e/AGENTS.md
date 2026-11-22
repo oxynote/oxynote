@@ -28,6 +28,7 @@ configs.
 ```sh
 make e2e-dev  | e2e-dev-stack-build  | e2e-dev-stack-stop     # from the repo root
 make e2e-prod | e2e-prod-stack-build | e2e-prod-stack-stop
+make e2e-helm | e2e-helm-stack-stop                          # the Helm chart
 
 pnpm setup        # deps + playwright chromium         (from e2e/)
 pnpm test:dev     # full cycle against the dev stack;  test:prod likewise
@@ -43,14 +44,14 @@ e2e-*-stack-build` because compose cannot build core (goreleaser does) and
 because `E2E_DEV_COMPOSE_EXTRA` is how CI layers `docker-compose.dev.ci.yaml`
 over the base file.
 
-Both configs set `E2E_STACK` as their first statement; `helpers/config.ts`
+Every config sets `E2E_STACK` before anything else; `helpers/config.ts`
 resolves ports from it and `helpers/stack.ts` picks the compose file and
-make targets. Neither config sets `use.baseURL` (a config cannot influence a
+make targets. No config sets `use.baseURL` (a config cannot influence a
 module it imports), so `visit()` splices the origin on.
 
 To iterate without a full build each run: `make e2e-dev-stack-build` once,
 then `pnpm exec playwright test -c playwright.dev.config.ts`. **`-c` is
-required**; neither config has playwright's default filename. You are then
+required**; no config has playwright's default filename. You are then
 responsible for rebuilding after source changes; a stale image fails
 silently.
 
@@ -116,6 +117,19 @@ trust-boundary tests: internal ports are not published, so only a sibling
 container can tell loopback from wildcard binds. Postgres speaks no HTTP, so
 its port is probed with `nc -z`, against a control on the front door.
 
+## The helm stack
+
+`e2e/helm/run.sh` tests the Helm chart ([helm](../helm/AGENTS.md)) on a
+throwaway kind cluster behind Traefik (`:19280`, one `*.oxynote.localhost`
+host per release). It pulls published images and builds nothing, so a
+change to the signup or editor flow fails these tests until it is
+released. Only `playwright.helm.config.ts` runs the `helm-*.test.ts`
+files, with the release's address in `E2E_BASE_URL`. The releases send no email and allow
+many workspaces, so tests sign up with `signUpWithWorkspaceWithoutEmail`.
+The two tests in `helm-upgrade.test.ts` depend on each other, which no
+other file does: run.sh runs one, upgrades the release, then runs the
+other.
+
 ## Testing standards
 
 ### Layout
@@ -123,10 +137,11 @@ its port is probed with `nc -z`, against a control on the front door.
 - **Test files live in `tests/`, one per user-facing flow**, named as a user
   would (`signup`, `login`, `editor`, `collaboration`). Never `.spec.ts`.
   There is nothing to pair 1:1 with; an e2e test crosses four services.
-- **`prod-*.test.ts` is the one exception to naming by flow**: each observes
-  something only true of the all-in-one image. The dev config ignores them
-  (`testIgnore`). A test earns the prefix only if it would be meaningless or
-  misleading against the dev stack.
+- **`prod-*.test.ts` and `helm-*.test.ts` are the exceptions to naming by
+  flow**: each observes something only true of the all-in-one image or of
+  the Helm chart, and the other configs ignore them (`testIgnore`). A test
+  earns the prefix only if it would be meaningless or misleading against
+  the dev stack.
 - **Shared code lives in `helpers/`, one module per concern.** Helpers are
   setup and plumbing, not the assertion a test exists to make. A setup
   helper does assert its own success (`signUpAndVerify` checks the account
@@ -292,7 +307,8 @@ an unawaited promise, which in Playwright is an assertion that never ran.
 `eslint-plugin-playwright` (scoped to `tests/` and `helpers/`) enforces
 `no-wait-for-timeout`, `no-focused-test`, `no-skipped-test` and
 `missing-playwright-await`. knip needs no config: its Playwright plugin
-resolves both configs and their global hooks. TypeScript is strict with
+finds each config through the `test:*` script that names it, and their
+global hooks. TypeScript is strict with
 `noUnusedLocals`, `noUnusedParameters`, `noUncheckedIndexedAccess`,
 `noImplicitOverride`, `verbatimModuleSyntax`.
 
@@ -314,6 +330,10 @@ image without a release. Its cache reaches the build through
 `workflow_call`; path filters do not apply to a called workflow, so each
 runs in full on a tag. The dev suite is deliberately not a gate and is the
 one QA workflow without `workflow_call`.
+
+`qa-helm.yml` runs `make helm-check` and `e2e/helm/run.sh` on chart
+changes, against the latest release. release.yml calls it with the image it has just
+published, before it pushes the chart.
 
 ## Not covered
 
