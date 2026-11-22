@@ -45,4 +45,21 @@ describe("useAppearance", { concurrent: false }, () => {
 		// the ssr fallback
 		expect(useCookie("last-auto-resolved-color-mode").value).toBe("dark")
 	})
+
+	it("overrides a stale dark ssr cookie when the system is in light mode", async ({
+		expect,
+	}) => {
+		const appearance = useAppearance()
+
+		appearance.changeColorTheme("dark")
+		await nextTick()
+
+		appearance.changeColorTheme("auto")
+		await nextTick()
+
+		// The watcher should reconcile the cookie back to "light" in auto mode.
+		expect(appearance.color.value).toEqual({ system: true, theme: "light" })
+		expect(appearance.isDark.value).toBe(false)
+		expect(useCookie("last-auto-resolved-color-mode").value).toBe("light")
+	})
 })
