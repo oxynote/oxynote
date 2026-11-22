@@ -54,7 +54,7 @@ docker:
           - "**/Dockerfile*"
           - "**/.goreleaser.yml"
 
-helm-chart:
+helm:
   - changed-files:
       - any-glob-to-any-file:
           - helm/**
