@@ -94,7 +94,16 @@ ARG SENTRY_CORE_DSN=""
 ARG SENTRY_AUTH_REALTIME_DSN=""
 ARG SENTRY_LAUNCHER_DSN=""
 
-RUN pnpm run check-types && pnpm run build:bundle
+# restore refuses a backup from a newer image, so the launcher carries the
+# image version and the highest core migration, read from the migration
+# file names.
+COPY server/core/internal/db/migrations ./migrations
+ARG IMAGE_VERSION=dev
+
+RUN pnpm run check-types \
+	&& MIGRATION_VERSION=$(ls migrations | sed -n 's/^0*\([0-9][0-9]*\)_.*/\1/p' | sort -n | tail -1) \
+	&& test -n "${MIGRATION_VERSION}" \
+	&& MIGRATION_VERSION="${MIGRATION_VERSION}" pnpm run build:bundle
 
 # caddy and tini at pinned versions, checksum-verified before use. Both
 # licenses ship in the final image: caddy's Apache-2.0 rides in its release
@@ -172,6 +181,9 @@ COPY docker/prod/.build/${TARGETARCH}/oxynote-core /oxynote/core/server
 COPY --from=web-builder /app/.output /oxynote/web
 COPY --from=auth-realtime-builder /server/dist/bundle.mjs /oxynote/auth-realtime/index.mjs
 COPY --from=launcher-builder /launcher/dist/launcher.mjs /oxynote/prod/launcher.mjs
+# `docker compose exec` runs a program on PATH, so the launcher's commands
+# have one each.
+COPY --chmod=755 docker/prod/commands/backup docker/prod/commands/restore /usr/local/bin/
 COPY docker/prod/healthcheck.mjs /oxynote/prod/healthcheck.mjs
 COPY docker/prod/Caddyfile /oxynote/prod/Caddyfile
 COPY docker/prod/pg_hba.conf /oxynote/prod/pg_hba.conf

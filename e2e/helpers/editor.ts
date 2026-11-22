@@ -350,8 +350,9 @@ export async function createDocument(page: Page): Promise<void> {
 	const row = sidebarDocument(page, t("editor.new-document-name"))
 	await expect(row).toHaveAttribute("href", /New-Page-[a-z0-9]{20}$/)
 
+	// the href is a path, resolved against the instance the page is on.
 	const href = await row.getAttribute("href")
-	await visit(page, href ?? "")
+	await visit(page, new URL(href ?? "", page.url()).href)
 
 	await expect(page).toHaveURL(/New-Page-[a-z0-9]{20}$/)
 	await waitForEditor(page)
@@ -376,4 +377,24 @@ export async function openSlashMenu(page: Page): Promise<Locator> {
 export async function documentPersisted(page: Page): Promise<void> {
 	// eslint-disable-next-line playwright/no-wait-for-timeout -- the store is debounced server-side with no client-visible signal
 	await page.waitForTimeout(2_500)
+}
+
+// insertFileBlock adds a file block from the slash menu and answers the
+// picker it opens with the given file
+export async function insertFileBlock(
+	page: Page,
+	file: { name: string; mimeType: string; buffer: Buffer },
+): Promise<void> {
+	await contentEditor(page).click()
+	const menu = await openSlashMenu(page)
+	await page.keyboard.type("File")
+
+	// typing narrows the menu down to the one matching command
+	await expect(menu.getByRole("button")).toHaveCount(1)
+	await expect(menu.getByRole("button")).toContainText("File")
+	await page.keyboard.press("Enter")
+
+	const chooser = page.waitForEvent("filechooser")
+	await contentEditor(page).getByText(t("editor.file.description")).click()
+	await (await chooser).setFiles(file)
 }

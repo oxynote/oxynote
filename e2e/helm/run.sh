@@ -1,8 +1,10 @@
 #!/bin/sh
 # test the Helm chart on a throwaway kind cluster: ct install, a smoke test
-# through the Ingress and the HTTPRoute, and an upgrade from the release
-# before IMAGE_TAG. IMAGE_TAG defaults to the latest release. The cluster is
-# deleted on exit, also after a failure.
+# through the Ingress and the HTTPRoute, an upgrade from the release before
+# IMAGE_TAG, and a backup and restore with the README's commands when
+# IMAGE_TAG has them. IMAGE_TAG defaults to the latest release. A tag that is no release, such as
+# e2e-prod, names a local image, which is loaded into the cluster. The
+# cluster is deleted on exit, also after a failure.
 #
 # usage: e2e/helm/run.sh [IMAGE_TAG]
 set -eu
@@ -43,6 +45,22 @@ trap finish EXIT
 # dash runs the EXIT trap on an interrupt only when the shell exits itself.
 trap 'exit 130' INT TERM
 
+# readme_block TEXT prints the sh block of the chart's README that holds
+# TEXT, so the test runs the commands an operator copies.
+readme_block() {
+	awk -v text="$1" '
+		/^```sh$/ { block = ""; inside = 1; next }
+		/^```$/ { if (inside && index(block, text)) printf "%s", block; inside = 0; next }
+		inside { block = block $0 "\n" }
+	' "$chart/README.md"
+}
+
+# restarts POD prints how often the pod's container has restarted.
+restarts() {
+	kubectl --namespace "$namespace" get pod "$1" \
+		-o jsonpath='{.status.containerStatuses[0].restartCount}'
+}
+
 # test_release FILE HOST [playwright flags]
 test_release() {
 	file=$1
@@ -54,6 +72,11 @@ test_release() {
 
 echo "==> creating the cluster"
 kind create cluster --name "$cluster" --config e2e/helm/cluster.yaml --wait 120s
+
+if ! echo "$tags" | grep -qx "$image_tag"; then
+	echo "==> loading the local image ghcr.io/oxynote/oxynote:$image_tag"
+	kind load docker-image --name "$cluster" "ghcr.io/oxynote/oxynote:$image_tag"
+fi
 
 echo "==> installing the Gateway API and Traefik"
 kubectl apply --server-side -f \
@@ -107,5 +130,47 @@ if [ "$running" != "ghcr.io/oxynote/oxynote:$image_tag" ]; then
 fi
 
 test_release helm-upgrade.test.ts ingress.oxynote.localhost -g "after the upgrade"
+
+# a release from before the commands has no backup to test.
+if ! kubectl --namespace "$namespace" exec upgrade-oxynote-0 -- sh -c "command -v backup" >/dev/null; then
+	echo "==> $image_tag has no backup command, so the backup and restore are skipped"
+	echo "==> all helm e2e checks passed"
+	exit 0
+fi
+
+echo "==> backup and restore with the README's commands"
+# the README's commands name the release oxynote in the namespace oxynote.
+readme_block "-- backup >" > "$tmp/backup.sh"
+readme_block "-- restore <" > "$tmp/restore.sh"
+test -s "$tmp/backup.sh" && test -s "$tmp/restore.sh"
+export E2E_HELM_STATE="$tmp/backup.json"
+install_backup_release() {
+	helm install oxynote "$chart" --namespace "$namespace" \
+		--values "$chart/ci/httproute-values.yaml" --set "image.tag=$image_tag" \
+		--wait --timeout 15m >/dev/null
+}
+install_backup_release
+test_release helm-backup-restore.test.ts httproute.oxynote.localhost -g "before the backup"
+(cd "$tmp" && sh -eu backup.sh)
+
+# the restore goes into a new volume, as after a lost one.
+helm uninstall oxynote --namespace "$namespace" --wait >/dev/null
+kubectl --namespace "$namespace" delete pvc oxynote-data --wait >/dev/null
+install_backup_release
+before=$(restarts oxynote-0)
+(cd "$tmp" && sh -eu restore.sh)
+
+# the restore restarts the pod, and its boot swaps the instance in.
+tries=0
+until [ "$(restarts oxynote-0)" -gt "$before" ]; do
+	tries=$((tries + 1))
+	if [ "$tries" -gt 150 ]; then
+		echo "the pod did not restart after the restore" >&2
+		exit 1
+	fi
+	sleep 2
+done
+kubectl --namespace "$namespace" wait --for=condition=Ready pod/oxynote-0 --timeout 15m >/dev/null
+test_release helm-backup-restore.test.ts httproute.oxynote.localhost -g "after the restore"
 
 echo "==> all helm e2e checks passed"

@@ -21,7 +21,7 @@ export interface SecretReport {
 	fromEnv: string[]
 }
 
-function isNoEntry(err: unknown): boolean {
+export function isNoEntry(err: unknown): boolean {
 	return err instanceof Error && "code" in err && err.code === "ENOENT"
 }
 
@@ -40,6 +40,9 @@ function readSecret(path: string): string | undefined {
 		throw err
 	}
 }
+
+// the shape of every secret generateAscii draws.
+export const generatedAsciiPattern = /^[A-Za-z0-9_-]{32}$/
 
 // generateAscii draws 24 random bytes as base64url, which is exactly the 32
 // ASCII bytes core's installation signing secrets must be.

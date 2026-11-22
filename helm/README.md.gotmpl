@@ -107,19 +107,33 @@ upgrade has a short outage. If an upgrade never becomes ready,
 `kubectl --namespace oxynote delete pod oxynote-0`.
 
 ## Backups
-{{- /* TODO(#475): use the image's backup and restore commands. This recipe misses object-storage/ and an external OXYNOTE_DB_DSN. */}}
 
-The volume holds the embedded database and the secrets the image
-generates. Losing the secrets loses every stored data-source credential, so
-back up both:
+`backup` writes the whole instance to one file: the database, the secrets
+and the uploaded files.
 
 ```sh
-kubectl --namespace oxynote exec statefulset/oxynote -- sh -c \
-  'PGPASSWORD="$(cat /oxynote/data/secrets/database-password)" \
-  /usr/libexec/postgresql18/pg_dump -h /tmp/postgresql -U oxynote oxynote' > oxynote.sql
-kubectl --namespace oxynote exec statefulset/oxynote -- \
-  tar -C /oxynote/data -c secrets > oxynote-secrets.tar
+kubectl --namespace oxynote exec statefulset/oxynote -- backup > oxynote-backup.tar
 ```
+
+The file holds the instance's keys, so store it like a secret. With
+`OXYNOTE_DB_DSN` set, `backup` dumps that database. With an object store,
+it skips the uploaded files, so back up the bucket with the store's own
+tools.
+
+To restore, send the backup to the running pod:
+
+```sh
+kubectl --namespace oxynote exec -i statefulset/oxynote -- restore < oxynote-backup.tar
+```
+
+`restore` checks the whole backup and builds the new instance beside the
+running one. Then the pod restarts, and its boot swaps the new instance in.
+A backup that fails a check changes nothing, and a backup from a newer
+image is refused. With `OXYNOTE_DB_DSN`, the boot loads the database in one
+transaction. The role must own the database, because `restore` replaces
+its `public` and `dbos` schemas. If the load fails, the old instance keeps
+serving. If the boot cannot reach the database, it fails until it can, so
+the restore is never applied late.
 
 ## Uninstalling
 

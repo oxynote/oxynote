@@ -1,5 +1,9 @@
 import { describe, it } from "vitest"
-import { bakedSentryDsns } from "./baked.js"
+import {
+	bakedImageVersion,
+	bakedMigrationVersion,
+	bakedSentryDsns,
+} from "./baked.js"
 
 describe("bakedSentryDsns", () => {
 	it("falls back to disabled telemetry outside an image build", ({
@@ -12,5 +16,14 @@ describe("bakedSentryDsns", () => {
 			coreDsn: "",
 			authRealtimeDsn: "",
 		})
+	})
+})
+
+describe("bakedImageVersion", () => {
+	it("names a build outside the image dev, with no migration version", ({
+		expect,
+	}) => {
+		expect(bakedImageVersion).toBe("dev")
+		expect(bakedMigrationVersion).toBeUndefined()
 	})
 })

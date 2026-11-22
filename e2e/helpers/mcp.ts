@@ -6,6 +6,12 @@ import { BASE_URL, MCP_REDIRECT_URL, MCP_URL } from "./config"
 import { t } from "./i18n"
 import { visit } from "./page"
 
+// the mcp surface of an instance, which is also the OAuth resource a token
+// is bound to.
+function mcpURL(origin: string): string {
+	return origin === BASE_URL ? MCP_URL : `${origin}/core/api/mcp`
+}
+
 interface AuthorizationServer {
 	authorization_endpoint: string
 	token_endpoint: string
@@ -22,9 +28,11 @@ export async function authorizeMCPClient(
 	page: Page,
 	request: APIRequestContext,
 	scope = "documents:read",
+	origin = BASE_URL,
 ): Promise<string> {
+	const resource = mcpURL(origin)
 	const metadata = await request.get(
-		`${BASE_URL}/.well-known/oauth-authorization-server`,
+		`${origin}/.well-known/oauth-authorization-server`,
 	)
 	expect(metadata.ok()).toBe(true)
 
@@ -55,7 +63,7 @@ export async function authorizeMCPClient(
 	authorize.searchParams.set("code_challenge", challenge)
 	authorize.searchParams.set("code_challenge_method", "S256")
 	authorize.searchParams.set("state", randomUUID())
-	authorize.searchParams.set("resource", MCP_URL)
+	authorize.searchParams.set("resource", resource)
 
 	await visit(page, authorize.toString())
 	await page.getByRole("button", { name: t("oauth.consent.approve") }).click()
@@ -71,7 +79,7 @@ export async function authorizeMCPClient(
 			redirect_uri: MCP_REDIRECT_URL,
 			client_id: client.client_id,
 			code_verifier: verifier,
-			resource: MCP_URL,
+			resource,
 		},
 	})
 	expect(token.ok()).toBe(true)
@@ -84,11 +92,14 @@ export async function authorizeMCPClient(
 // connectMCPClient points the official MCP client at core's surface with
 // the given bearer token, which is what a third-party client does with
 // the token the flow above produced.
-export async function connectMCPClient(token: string): Promise<Client> {
+export async function connectMCPClient(
+	token: string,
+	origin = BASE_URL,
+): Promise<Client> {
 	const client = new Client({ name: "oxynote-e2e", version: "1.0.0" })
 
 	await client.connect(
-		new StreamableHTTPClientTransport(new URL(MCP_URL), {
+		new StreamableHTTPClientTransport(new URL(mcpURL(origin)), {
 			requestInit: {
 				headers: { authorization: `Bearer ${token}` },
 			},

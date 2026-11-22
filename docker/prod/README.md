@@ -190,14 +190,7 @@ generated on first boot and stored under `/oxynote/data/secrets/` with
 owner-only permissions — keep that volume.
 
 - Unless `OXYNOTE_DB_DSN` is set, the database lives there too, under
-  `/oxynote/data/postgres`, and so does every document. Back it up with the
-  `pg_dump` the image ships:
-
-  ```sh
-  docker compose exec -T oxynote sh -c 'PGPASSWORD="$(cat /oxynote/data/secrets/database-password)" \
-    /usr/libexec/postgresql18/pg_dump -h /tmp/postgresql -U oxynote oxynote' > oxynote.sql
-  ```
-
+  `/oxynote/data/postgres`, and so does every document.
 - Unless an object store is configured, every uploaded image lives there
   too, under `/oxynote/data/object-storage`.
 - **Losing the volume signs everyone out, permanently orphans every stored
@@ -218,6 +211,42 @@ owner-only permissions — keep that volume.
   generated file instead, write `<new key>` into
   `secrets/data-source-encryption-key` before dropping the override, or
   core boots with only the retired key and reads no credential.
+
+## Backups
+
+`backup` writes the whole instance to one file: the database, the secrets
+and the uploaded files.
+
+```sh
+docker compose exec -T oxynote backup > oxynote-backup.tar
+```
+
+The file holds the instance's keys, so store it like a secret.
+
+To restore, send the backup to the running instance:
+
+```sh
+docker compose exec -T oxynote restore < oxynote-backup.tar
+```
+
+- `restore` checks the whole backup and builds the new instance beside the
+  running one. Then the container restarts, and its boot swaps the new
+  instance in. The example compose file restarts it by itself; with
+  another runtime, start it again.
+- A backup that fails a check changes nothing. A backup from a newer image
+  is refused, and an older one is migrated at the next boot.
+- An instance that no longer starts can be restored while stopped:
+  `docker compose run --rm -T oxynote restore --replace < oxynote-backup.tar`.
+- With `OXYNOTE_DB_DSN` set, both commands use that database, and the boot
+  loads it in one transaction. The role must own the database, because
+  `restore` replaces its `public` and `dbos` schemas. If the load fails,
+  the old instance keeps serving. If the boot cannot reach the database,
+  it fails until it can, so the restore is never applied late.
+- With `OXYNOTE_OBJECT_STORAGE_DSN` set, both commands skip the uploaded
+  files. Back up the bucket with the store's own tools.
+- `OXYNOTE_AUTH_SECRET` and `OXYNOTE_DATA_SOURCE_ENCRYPTION_KEYS` are never
+  written to the volume, so a backup does not hold them. Set them on the
+  restored instance too.
 
 ## Security model
 

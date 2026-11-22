@@ -9,12 +9,15 @@ import {
 // OXYNOTE_DB_DSN. Its major is fixed by the package the image installs and by
 // these paths: a data directory only opens under the major that wrote it, so
 // moving to another one needs an upgrade path for existing volumes.
-const binDir = "/usr/libexec/postgresql18"
+export const binDir = "/usr/libexec/postgresql18"
 
 // a first boot builds the cluster here and renames it into place only once
 // it is complete, so a boot that dies halfway starts over instead of leaving
 // a cluster without its role.
 const scratchDir = `${postgresDataDir}.init`
+
+// the access rules every server the image runs reads.
+export const hbaFile = "/oxynote/prod/pg_hba.conf"
 
 export interface DatabaseDeps {
 	exists(path: string): boolean
@@ -43,13 +46,25 @@ export function prepareDatabase(deps: DatabaseDeps, password: string): boolean {
 	}
 
 	deps.remove(scratchDir)
+	createCluster(deps, scratchDir, password)
+	deps.rename(scratchDir, postgresDataDir)
 
+	return true
+}
+
+// createCluster builds a new cluster in dir, with the app role and its
+// database.
+export function createCluster(
+	deps: Pick<DatabaseDeps, "run">,
+	dir: string,
+	password: string,
+): void {
 	// the bootstrap superuser gets no password, and pg_hba.conf demands one
 	// from every connection, so nothing can log in as it.
 	deps.run(
 		`${binDir}/initdb`,
 		[
-			`--pgdata=${scratchDir}`,
+			`--pgdata=${dir}`,
 			"--username=postgres",
 			"--auth=reject",
 			"--encoding=UTF8",
@@ -69,7 +84,7 @@ export function prepareDatabase(deps: DatabaseDeps, password: string): boolean {
 		[
 			"--single",
 			"-D",
-			scratchDir,
+			dir,
 			"-c",
 			"exit_on_error=on",
 			"-c",
@@ -79,10 +94,6 @@ export function prepareDatabase(deps: DatabaseDeps, password: string): boolean {
 		`CREATE ROLE ${postgresDatabase} LOGIN PASSWORD '${password}';\n` +
 			`CREATE DATABASE ${postgresDatabase} OWNER ${postgresDatabase};\n`,
 	)
-
-	deps.rename(scratchDir, postgresDataDir)
-
-	return true
 }
 
 // the server the supervisor runs. An empty listen_addresses leaves the socket
@@ -97,7 +108,7 @@ export const databaseServer = {
 		"-c",
 		`unix_socket_directories=${postgresSocketDir}`,
 		"-c",
-		"hba_file=/oxynote/prod/pg_hba.conf",
+		`hba_file=${hbaFile}`,
 		"-c",
 		"log_checkpoints=off",
 	],
