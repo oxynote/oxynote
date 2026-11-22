@@ -4,6 +4,7 @@ import { afterEach, describe, it, vi } from "vitest"
 import RowDetails from "./RowDetails.vue"
 import { LineFormat } from "../dialect"
 import { lokiDialect } from "../loki"
+import { victoriaLogsDialect } from "../victorialogs"
 import {
 	findButtonByText,
 	mountUnderTooltipProvider,
@@ -48,6 +49,33 @@ describe("<RowDetails>", { concurrent: false }, () => {
 			[
 				["level", "info"],
 				["msg", "deploy finished"],
+			],
+		])
+	})
+
+	it("lists the fields a victorialogs query unpacked from the line once, as content", async ({
+		expect,
+	}) => {
+		// the nested value's row explains in a tooltip why it has no filter
+		const wrapper = await mountUnderTooltipProvider(RowDetails, {
+			props: {
+				log: makeLog({
+					line: '{"msg":"m","status":500,"user":{"id":7}}',
+					fields: { status: "500", "user.id": "7", trace_id: "abc" },
+					parsed: undefined,
+				}),
+				dialect: victoriaLogsDialect,
+				lineFilterFormats: Object.values(LineFormat),
+			},
+		})
+
+		expect(tableRows(wrapper).slice(1)).toEqual([
+			[["trace_id", "abc"]],
+			[
+				["msg", "m"],
+				["status", "500"],
+				["user", '{"id":7}'],
+				["user.id", "7"],
 			],
 		])
 	})

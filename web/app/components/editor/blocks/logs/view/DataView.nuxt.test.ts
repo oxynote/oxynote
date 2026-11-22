@@ -585,6 +585,41 @@ describe("<DataView>", { concurrent: false }, () => {
 			expect(chipTexts(wrapper)).toEqual(["env", "=", "prod"])
 		})
 
+		it("narrows a victorialogs query with a pipe after it", async ({
+			expect,
+		}) => {
+			mockEndpoint("GET", "/api/data-sources", () => [
+				{
+					id: DATA_SOURCE_ID,
+					name: "VictoriaLogs",
+					type: DataSourceType.VictoriaLogs,
+				},
+			])
+			const calls = mockEndpoint("GET", LINES_URL, () =>
+				logsResult([makeLog("a1", "11:57:00Z")]),
+			)
+			const wrapper = await mountView(
+				logConfig({ queries: [{ name: "Query 1", query: "error" }] }),
+			)
+			await settleLogRequests()
+			await rowButtons(wrapper)[0]?.trigger("click")
+
+			await findButtonByText(
+				wrapper,
+				t("editor.logs.view.include-value", { key: "env" }),
+			).trigger("click")
+			await settleLogRequests()
+
+			expect(calls).toHaveLength(2)
+			expect(calls[1]?.query).toEqual({
+				q: 'error\n| filter {"env"="prod"}',
+				limit: "100",
+				...WINDOW,
+				order: "desc",
+			})
+			expect(chipTexts(wrapper)).toEqual(["env", "=", "prod"])
+		})
+
 		it("replaces the filter on a key that already has one", async ({
 			expect,
 		}) => {

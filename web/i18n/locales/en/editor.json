@@ -574,6 +574,7 @@
 				"empty": "[empty]",
 				"prometheus": "Enter a PromQL query...",
 				"loki": "Enter a LogQL query...",
+				"victorialogs": "Enter a LogsQL query...",
 				"postgresql": "Enter a SQL query...",
 				"supabase": "Enter a SQL query...",
 				"mysql": "Enter a SQL query...",
@@ -996,8 +997,8 @@
 				"add-query-button": "Add Query",
 				"delete-query-button": "Delete Query",
 				"data-source-empty-title": "No log data sources",
-				"data-source-empty-description": "Connect Loki in the settings to show its logs here.",
-				"data-source-empty-description-non-admin": "Ask an admin to connect Loki to show its logs here."
+				"data-source-empty-description": "Connect Loki or VictoriaLogs in the settings to show its logs here.",
+				"data-source-empty-description-non-admin": "Ask an admin to connect Loki or VictoriaLogs to show its logs here."
 			},
 			"levels": {
 				"critical": "Crit",
@@ -1048,13 +1049,13 @@
 			"status": {
 				"data-source-not-selected": {
 					"title": "No Data Source Selected",
-					"description": "Choose a Loki data source to see logs",
+					"description": "Choose a Loki or VictoriaLogs data source to see logs",
 					"normal-action-button": "Edit Logs",
 					"readonly-action-button": "View Logs"
 				},
 				"no-query": {
 					"title": "No Query",
-					"description": "Add a LogQL query to see logs",
+					"description": "Add a query to see logs",
 					"normal-action-button": "Edit Logs",
 					"readonly-action-button": "View Logs"
 				},

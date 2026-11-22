@@ -10,6 +10,9 @@ const MESSAGE_KEYS = ["msg", "message", "log"]
 // at white space.
 const LOGFMT_PAIR = /\s*([^\s="]+)=("(?:[^"\\]|\\.)*"|[^\s"]*)(?=\s|$)/y
 
+// JSON number text: a sign, the whole part, a fraction and an exponent
+const NUMBER = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/
+
 // JSON's source text API, which the TypeScript lib does not type yet. An
 // older engine has no isRawJSON and gives the reviver no source.
 const SOURCE_JSON = JSON as JSON & {
@@ -80,6 +83,7 @@ export function summarizeLog(log: Log, dialect: LogDialect): LogSummary {
 	const shown = (key: string) =>
 		log.level === LogLevel.Unknown || !LEVEL_KEYS.has(key)
 	const line = readLine(log, dialect)
+	const { fields, parsed } = splitFields(log, line, dialect)
 	const messageKey = line
 		? MESSAGE_KEYS.find((k) => typeof line.record[k] === "string")
 		: undefined
@@ -95,10 +99,10 @@ export function summarizeLog(log: Log, dialect: LogDialect): LogSummary {
 		// a message of only white space is no message, so the row shows
 		// nothing in its place
 		message: message.trim() ? message : "",
-		extracted: extract(log, line, dialect, true)
+		extracted: extract(line, parsed, dialect, true)
 			.filter((f) => !(f.format && f.key === messageKey) && shown(f.key))
 			.map((f): KeyValue => [f.key, f.display]),
-		fields: sortedEntries(log.fields)
+		fields: fields
 			.filter((pair) => shown(pair[0]) && !repeatsLine(pair, line))
 			.map(displayPair),
 		labels: sortedEntries(log.labels).map(displayPair),
@@ -113,7 +117,15 @@ export function extractedFields(
 	log: Log,
 	dialect: LogDialect,
 ): ExtractedField[] {
-	return extract(log, readLine(log, dialect), dialect, false)
+	const line = readLine(log, dialect)
+
+	return extract(line, splitFields(log, line, dialect).parsed, dialect, false)
+}
+
+// carriedFields lists the fields carried beside the line, by key. The
+// keys the query's parser added are not among them.
+export function carriedFields(log: Log, dialect: LogDialect): KeyValue[] {
+	return splitFields(log, readLine(log, dialect), dialect).fields
 }
 
 // displayValue quotes a value when it is empty or holds white space, so the
@@ -273,8 +285,8 @@ function lineText(value: unknown): string {
 // extract leaves out the keys the source made from a nested value only when
 // nestedRepeats is true
 function extract(
-	log: Log,
 	line: ReadLine | null,
+	parsed: KeyValue[],
 	dialect: LogDialect,
 	nestedRepeats: boolean,
 ): ExtractedField[] {
@@ -293,7 +305,7 @@ function extract(
 				}
 			})
 		: []
-	const fromParser = sortedEntries(log.parsed ?? {})
+	const fromParser = parsed
 		.filter(
 			(pair) =>
 				!(
@@ -313,6 +325,37 @@ function extract(
 		}))
 
 	return [...fromLine, ...fromParser]
+}
+
+// splitFields sorts a log's key and value pairs into two lists. fields
+// holds what was sent along with the log. parsed holds what the query
+// read out of the log's line.
+//
+// Some sources send the two lists apart, so they are returned as they
+// came. Other sources send both mixed together as fields. There, a field
+// moves to parsed when the line holds the same key with the same value.
+// A field made from a nested value of the line moves too, such as
+// user.id for the line {"user":{"id":7}}.
+function splitFields(
+	log: Log,
+	line: ReadLine | null,
+	dialect: LogDialect,
+): { fields: KeyValue[]; parsed: KeyValue[] } {
+	const fields = sortedEntries(log.fields)
+
+	if (!dialect.parsedInFields || !line) {
+		return { fields: fields, parsed: sortedEntries(log.parsed ?? {}) }
+	}
+
+	const fromLine = (pair: KeyValue) =>
+		Object.entries(line.record).some(([k, v]) =>
+			dialect.repeatsLineKey(pair, k, v, true),
+		)
+
+	return {
+		fields: fields.filter((pair) => !fromLine(pair)),
+		parsed: fields.filter(fromLine),
+	}
 }
 
 // readLine reads a JSON or logfmt line key by key, or gives null for any
@@ -384,8 +427,44 @@ export function isNumberText(value: unknown): boolean {
 	return SOURCE_JSON.isRawJSON?.(value) ?? false
 }
 
-// parseLogfmt keeps the first valid value of each key. Empty values may
-// be replaced unless the source's parser explicitly retained one.
+// sameValue tells whether a source's text for a value is the line's value.
+// A source keeps a JSON number as it is written in the line, which can
+// differ from how JavaScript writes it. So numbers compare by value.
+export function sameValue(text: string, lineValue: unknown): boolean {
+	if (typeof lineValue === "string") {
+		return text === lineValue
+	}
+
+	if (typeof lineValue === "number" || isNumberText(lineValue)) {
+		const value = numberValue(text)
+
+		return value !== null && value === numberValue(JSON.stringify(lineValue))
+	}
+
+	return text === JSON.stringify(lineValue)
+}
+
+// numberValue writes JSON number text as its significant digits and an
+// exponent, so equal numbers give the same text and no digit is lost
+function numberValue(text: string): string | null {
+	const match = NUMBER.exec(text)
+	if (!match) {
+		return null
+	}
+
+	const [, sign = "", whole = "", fraction = "", exponent = "0"] = match
+	const digits = `${whole}${fraction}`.replace(/^0+/, "")
+	const significant = digits.replace(/0+$/, "")
+	const shift = digits.length - significant.length - fraction.length
+
+	return significant
+		? `${sign}${significant}e${BigInt(exponent) + BigInt(shift)}`
+		: "0"
+}
+
+// parseLogfmt keeps the value of a repeated key that the source keeps. A
+// source that keeps the first valid value may still replace an empty one,
+// unless its parser explicitly retained it.
 function parseLogfmt(
 	line: string,
 	log: Log,
@@ -408,6 +487,7 @@ function parseLogfmt(
 		if (value === null) {
 			rejected.push(match[0].trimStart())
 		} else if (
+			dialect.logfmtKeepsLastValue ||
 			!values.has(key) ||
 			(values.get(key) === "" &&
 				log.parsed?.[dialect.lineKeyName(key, log)] !== "")

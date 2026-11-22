@@ -1,6 +1,7 @@
 export enum DataSourceType {
 	Prometheus = "prometheus",
 	Loki = "loki",
+	VictoriaLogs = "victorialogs",
 
 	// SQL
 	PostgreSQL = "postgresql",

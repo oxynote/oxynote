@@ -45,4 +45,11 @@ export interface LogDialect {
 		lineValue: unknown,
 		nested: boolean,
 	): boolean
+	// logfmtKeepsLastValue tells which value the source keeps for a logfmt
+	// key that the line repeats. It is the last one when true, and the
+	// first one otherwise.
+	logfmtKeepsLastValue: boolean
+	// parsedInFields tells whether the source sends the keys a query read
+	// from the line among the log's fields, and not as parsed keys
+	parsedInFields: boolean
 }

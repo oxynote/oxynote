@@ -1,11 +1,13 @@
 import { describe, it, vi } from "vitest"
 import {
+	carriedFields,
 	displayValue,
 	extractedFields,
 	highlightParts,
 	mergeBounds,
 	mergeQueryLogs,
 	pastIn,
+	sameValue,
 	sortedEntries,
 	summarizeLog,
 	timeNanos,
@@ -15,6 +17,10 @@ import {
 import { LineFormat, type LogDialect } from "./dialect"
 
 const NOON_MILLIS = BigInt(Date.UTC(2026, 0, 1, 12, 0, 0))
+// 25.0 as the line writes it
+const RAW_25 = (JSON as JSON & { rawJSON: (text: string) => unknown }).rawJSON(
+	"25.0",
+)
 const MULTILINE_LOGFMT = [
 	'level=error msg="charge failed" provider=cardsim duration_ms=3687',
 	"java.sql.SQLTransientConnectionException: timed out",
@@ -30,6 +36,24 @@ const EXACT_DIALECT: LogDialect = {
 	decodeLogfmtValue,
 	repeatsLineKey: ([key, value], lineKey, lineValue) =>
 		key === lineKey && (typeof lineValue !== "string" || lineValue === value),
+	logfmtKeepsLastValue: false,
+	parsedInFields: false,
+}
+// a source that sends the keys it read from the line as fields, and names
+// the keys of a nested value with a dot
+const UNPACKING_DIALECT: LogDialect = {
+	...EXACT_DIALECT,
+	repeatsLineKey: ([key, value], lineKey, lineValue, nested) =>
+		key === lineKey
+			? value ===
+				(typeof lineValue === "string" ? lineValue : JSON.stringify(lineValue))
+			: nested && key.startsWith(`${lineKey}.`),
+	parsedInFields: true,
+}
+const UNPACKED_LOG = {
+	id: "unpacked",
+	line: '{"msg":"m","status":500,"user":{"id":1}}',
+	fields: { status: "500", "user.id": "1", region: "eu" },
 }
 
 describe("summarizeLog", () => {
@@ -436,6 +460,45 @@ describe("summarizeLog", () => {
 		).toBe(log.line)
 		expect(logfmtParseFailed).toHaveBeenCalledExactlyOnceWith(log)
 	})
+
+	it("keeps the last value of a repeated logfmt key for a source that keeps it", ({
+		expect,
+	}) => {
+		const log = makeLog({
+			id: "last",
+			line: "component=billing attempt=1 attempt=2 component=",
+		})
+
+		expect(
+			summarizeLog(log, { ...EXACT_DIALECT, logfmtKeepsLastValue: true })
+				.extracted,
+		).toEqual([
+			["component", '""'],
+			["attempt", "2"],
+		])
+	})
+
+	it("leaves out the fields a source read from the line", ({ expect }) => {
+		expect(summarizeLog(makeLog(UNPACKED_LOG), UNPACKING_DIALECT)).toEqual({
+			message: "m",
+			extracted: [
+				["status", "500"],
+				["user", '{"id":1}'],
+			],
+			fields: [["region", "eu"]],
+			labels: [],
+		})
+	})
+
+	it("keeps a field that differs from the line's key for a source that reads the line into fields", ({
+		expect,
+	}) => {
+		const log = makeLog({ ...UNPACKED_LOG, fields: { status: "200" } })
+
+		expect(summarizeLog(log, UNPACKING_DIALECT).fields).toEqual([
+			["status", "200"],
+		])
+	})
 })
 
 describe("extractedFields", () => {
@@ -649,6 +712,56 @@ describe("extractedFields", () => {
 		).toEqual([["service", "api", null]])
 		expect(logfmtParseFailed).toHaveBeenCalledExactlyOnceWith(log)
 		expect(decodeLogfmtValue).not.toHaveBeenCalled()
+	})
+
+	it("lists a field a source made from a nested value of the line as a parser key", ({
+		expect,
+	}) => {
+		expect(
+			extractedFields(makeLog(UNPACKED_LOG), UNPACKING_DIALECT).map((f) => [
+				f.key,
+				f.value,
+				f.format,
+			]),
+		).toEqual([
+			["msg", "m", LineFormat.JSON],
+			["status", "500", LineFormat.JSON],
+			["user", '{"id":1}', LineFormat.JSON],
+			["user.id", "1", null],
+		])
+	})
+})
+
+describe("carriedFields", () => {
+	it.for([
+		{
+			name: "lists every field by key for a source with parsed keys",
+			log: UNPACKED_LOG,
+			dialect: EXACT_DIALECT,
+			expected: [
+				["region", "eu"],
+				["status", "500"],
+				["user.id", "1"],
+			],
+		},
+		{
+			name: "leaves out the fields a source read from the line",
+			log: UNPACKED_LOG,
+			dialect: UNPACKING_DIALECT,
+			expected: [["region", "eu"]],
+		},
+		{
+			name: "lists every field of a plain line",
+			log: { ...UNPACKED_LOG, line: "GET /cart" },
+			dialect: UNPACKING_DIALECT,
+			expected: [
+				["region", "eu"],
+				["status", "500"],
+				["user.id", "1"],
+			],
+		},
+	])("$name", ({ log, dialect, expected }, { expect }) => {
+		expect(carriedFields(makeLog(log), dialect)).toEqual(expected)
 	})
 })
 
@@ -1043,6 +1156,69 @@ describe("sortedEntries", () => {
 		},
 	])("$name", ({ input, expected }, { expect }) => {
 		expect(sortedEntries(input)).toEqual(expected)
+	})
+})
+
+describe("sameValue", () => {
+	it.for<{ name: string; text: string; lineValue: unknown; expected: boolean }>(
+		[
+			{
+				name: "is true for the same text",
+				text: "ok",
+				lineValue: "ok",
+				expected: true,
+			},
+			{
+				name: "is false for text that only reads as the same number",
+				text: "25",
+				lineValue: "25.0",
+				expected: false,
+			},
+			{
+				name: "is true for a number written another way",
+				text: "2.50e1",
+				lineValue: RAW_25,
+				expected: true,
+			},
+			{
+				name: "is true for a number an engine without source text read",
+				text: "25.0",
+				lineValue: 25,
+				expected: true,
+			},
+			{
+				name: "is true for zero written with a fraction",
+				text: "0.0",
+				lineValue: 0,
+				expected: true,
+			},
+			{
+				name: "is false for another number",
+				text: "26",
+				lineValue: RAW_25,
+				expected: false,
+			},
+			{
+				name: "is false for text that is not a number",
+				text: "many",
+				lineValue: RAW_25,
+				expected: false,
+			},
+			{
+				name: "is true for a boolean",
+				text: "true",
+				lineValue: true,
+				expected: true,
+			},
+			{
+				name: "is true for a list written without spaces",
+				text: '["a","b"]',
+				lineValue: ["a", "b"],
+				expected: true,
+			},
+		],
+	)("$name", ({ text, lineValue, expected }, { expect }) => {
+		expect(sameValue(text, lineValue)).toBe(expected)
 	})
 })
 

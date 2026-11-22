@@ -65,6 +65,7 @@ const DATA_SOURCES = [
 	{ id: "prom-1", type: DataSourceType.Prometheus },
 	{ id: "pg-1", type: DataSourceType.PostgreSQL },
 	{ id: "loki-1", type: DataSourceType.Loki },
+	{ id: "vl-1", type: DataSourceType.VictoriaLogs },
 ]
 
 interface StubOptions {
@@ -278,6 +279,24 @@ describe("useQueryEditorExtension", () => {
 		expect(labels).toContain("$env")
 	})
 
+	it("wires variable completions for a victorialogs data source", async ({
+		expect,
+	}) => {
+		const { extensions } = makeEditor({ dataSourceId: "vl-1" })
+
+		expect(extensions.value).toBeDefined()
+
+		const labels = await completionLabels(
+			EditorState,
+			CompletionContext,
+			extensions.value as Extension,
+			"error $",
+			7,
+		)
+
+		expect(labels).toContain("$env")
+	})
+
 	it.for([
 		{ name: "provides no extensions without a data source", id: null },
 		{ name: "provides no extensions for an unknown data source", id: "gone" },
@@ -311,6 +330,12 @@ describe("useQueryEditorExtension", () => {
 			dataSourceId: "loki-1",
 			editingEnabled: true,
 			expected: "editor.config-modal-utils.query-placeholder.loki",
+		},
+		{
+			name: "prompts with the victorialogs placeholder",
+			dataSourceId: "vl-1",
+			editingEnabled: true,
+			expected: "editor.config-modal-utils.query-placeholder.victorialogs",
 		},
 		{
 			name: "prompts with the default placeholder without a data source",

@@ -2,6 +2,7 @@
 import FieldTable from "./FieldTable.vue"
 import type { LineFormat, LogDialect, LogFilter } from "../dialect"
 import {
+	carriedFields,
 	extractedFields,
 	sortedEntries,
 	type ExtractedField,
@@ -38,7 +39,7 @@ const sections = computed<
 	{
 		heading: t("editor.logs.view.metadata-heading"),
 		description: t("editor.logs.view.metadata-description"),
-		entries: sortedEntries(props.log.fields).map(([key, value]) => ({
+		entries: carriedFields(props.log, props.dialect).map(([key, value]) => ({
 			key: key,
 			value: value,
 			filter: { key: key, value: value, indexed: false },

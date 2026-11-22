@@ -33,6 +33,10 @@ describe("<DataSourceStatusIcon>", () => {
 	it.for([
 		{ type: DataSourceType.Prometheus, expected: "devicon:prometheus" },
 		{ type: DataSourceType.Loki, expected: "custom-icons:loki" },
+		{
+			type: DataSourceType.VictoriaLogs,
+			expected: "custom-icons:victoria-logs",
+		},
 		{ type: DataSourceType.PostgreSQL, expected: "devicon:postgresql" },
 		{ type: DataSourceType.Supabase, expected: "devicon:supabase" },
 		{ type: DataSourceType.MySQL, expected: "devicon:mysql" },

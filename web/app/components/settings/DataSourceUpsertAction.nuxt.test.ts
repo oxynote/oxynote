@@ -741,7 +741,11 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 	describe("authentication kind", { concurrent: false }, () => {
 		beforeEach(clearTeleportedOverlays)
 
-		it.for([DataSourceType.Prometheus, DataSourceType.Loki])(
+		it.for([
+			DataSourceType.Prometheus,
+			DataSourceType.Loki,
+			DataSourceType.VictoriaLogs,
+		])(
 			"offers a %s data source a token, starting on username and password",
 			async (type, { expect }) => {
 				const wrapper = await mountAction({ creationType: type })
@@ -1099,14 +1103,15 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 	})
 
 	describe("read-only warning", { concurrent: false }, () => {
-		it.for([DataSourceType.Prometheus, DataSourceType.Loki])(
-			"leaves %s without a read-only warning",
-			async (type, { expect }) => {
-				const wrapper = await mountAction({ creationType: type })
+		it.for([
+			DataSourceType.Prometheus,
+			DataSourceType.Loki,
+			DataSourceType.VictoriaLogs,
+		])("leaves %s without a read-only warning", async (type, { expect }) => {
+			const wrapper = await mountAction({ creationType: type })
 
-				expect(wrapper.text()).not.toContain("read-only")
-			},
-		)
+			expect(wrapper.text()).not.toContain("read-only")
+		})
 
 		it.for([
 			DataSourceType.PostgreSQL,

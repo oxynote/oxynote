@@ -4,6 +4,7 @@ import { usePromQLLegendExtension, usePromQLQueryExtension } from "./promql"
 import type { TimeRangePreset } from "~/utils/time-range"
 import { useSQLLegendExtension, useSQLQueryExtension } from "./sql"
 import { useLogQLQueryExtension } from "./logql"
+import { useLogsQLQueryExtension } from "./logsql"
 import type { VariableTreeResponse } from "~/utils"
 
 export const codemirrorTheme = EditorView.theme({
@@ -214,6 +215,7 @@ export function useQueryEditorExtension(
 		() => selectedDataSourceType.value === DataSourceType.Loki,
 		variables,
 	)
+	const logsqlExtension = useLogsQLQueryExtension(t, variables)
 
 	return {
 		extensions: computed(() => {
@@ -222,6 +224,8 @@ export function useQueryEditorExtension(
 					return promqlExtension.extensions.value
 				case DataSourceType.Loki:
 					return logqlExtension.extensions.value
+				case DataSourceType.VictoriaLogs:
+					return logsqlExtension.extensions.value
 				default:
 					if (isDataSourceSQLBased(selectedDataSourceType.value)) {
 						return sqlExtension.extensions.value
