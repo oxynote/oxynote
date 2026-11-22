@@ -20,6 +20,7 @@ import {
 	raisedToasts,
 	refuseForRole,
 	seedAuthConfig,
+	seedAuthOrganization,
 	seedAuthSession,
 	settleMutations,
 	stubViewportMatches,
@@ -98,6 +99,69 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 		expect(nameInput(wrapper).element.value).toBe("Acme")
 	})
 
+	it("fills the name field once a late organization arrives", async ({
+		expect,
+	}) => {
+		seedAuthOrganization(null)
+
+		const { wrapper } = await mountSection()
+		expect(nameInput(wrapper).element.value).toBe("")
+
+		mockAuthOrganization({
+			id: "org-1",
+			name: "Acme",
+			slug: "acme-corp",
+			logo: "",
+			members: [member("u1", "ada", "admin")],
+			invitations: [],
+		})
+		await nextTick()
+
+		expect(nameInput(wrapper).element.value).toBe("Acme")
+	})
+
+	it("follows a name that changed since the field was filled", async ({
+		expect,
+	}) => {
+		seedWorkspace()
+
+		const { wrapper } = await mountSection()
+		expect(nameInput(wrapper).element.value).toBe("Acme")
+
+		mockAuthOrganization({
+			id: "org-1",
+			name: "Acme-Renamed",
+			slug: "acme-corp",
+			logo: "",
+			members: [member("u1", "ada", "admin")],
+			invitations: [],
+		})
+		await nextTick()
+
+		expect(nameInput(wrapper).element.value).toBe("Acme-Renamed")
+	})
+
+	it("leaves a half-typed name alone when the organization updates", async ({
+		expect,
+	}) => {
+		seedWorkspace()
+
+		const { wrapper } = await mountSection()
+		await nameInput(wrapper).setValue("half-typed")
+
+		mockAuthOrganization({
+			id: "org-1",
+			name: "Acme-Renamed",
+			slug: "acme-corp",
+			logo: "",
+			members: [member("u1", "ada", "admin")],
+			invitations: [],
+		})
+		await nextTick()
+
+		expect(nameInput(wrapper).element.value).toBe("half-typed")
+	})
+
 	it("shows the workspace url", async ({ expect }) => {
 		seedWorkspace()
 
@@ -154,6 +218,90 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			data: { name: "Acme-EU" },
 			organizationId: "org-1",
 		})
+	})
+
+	it("retains the saved name when blurred after form submission", async ({
+		expect,
+	}) => {
+		const org = {
+			id: "org-1",
+			name: "Acme",
+			slug: "acme-corp",
+			logo: "",
+			members: [member("u1", "ada", "admin")],
+			invitations: [],
+		}
+		mockAuthOrganization(org)
+		const calls = mockAuthEndpoint("organization/update", (args) => {
+			const body = args.body as { data: { name?: string } }
+			if (body.data.name) {
+				org.name = body.data.name
+			}
+			return { id: "org-1" }
+		})
+		const { wrapper } = await mountSection()
+
+		await nameInput(wrapper).setValue("Acme-EU")
+		await wrapper.find("form").trigger("submit")
+		await settleMutations()
+
+		await vi.waitFor(() => {
+			expect(calls).toHaveLength(1)
+		}, WAIT_FOR_OPTIONS)
+		expect(calls[0]?.body).toEqual({
+			data: { name: "Acme-EU" },
+			organizationId: "org-1",
+		})
+
+		await nameInput(wrapper).trigger("blur")
+		await settleMutations()
+
+		expect(calls).toHaveLength(1)
+		expect(nameInput(wrapper).element.value).toBe("Acme-EU")
+	})
+
+	it("preserves edits made while a save is pending", async ({ expect }) => {
+		const org = {
+			id: "org-1",
+			name: "Acme",
+			slug: "acme-corp",
+			logo: "",
+			members: [member("u1", "ada", "admin")],
+			invitations: [],
+		}
+		mockAuthOrganization(org)
+		let resolveUpdate: (value: { id: string }) => void = () => undefined
+		let requestDispatched: () => void = () => undefined
+		const dispatched = new Promise<void>((resolve) => {
+			requestDispatched = resolve
+		})
+		const calls = mockAuthEndpoint("organization/update", (args) => {
+			requestDispatched()
+			const body = args.body as { data: { name?: string } }
+			if (body.data.name) {
+				org.name = body.data.name
+			}
+			return new Promise<{ id: string }>((resolve) => {
+				resolveUpdate = resolve
+			})
+		})
+		const { wrapper } = await mountSection()
+
+		await nameInput(wrapper).setValue("Acme-EU")
+		await wrapper.find("form").trigger("submit")
+		await dispatched
+
+		await nameInput(wrapper).setValue("Acme-US")
+
+		resolveUpdate({ id: "org-1" })
+		await settleMutations()
+
+		expect(calls).toHaveLength(1)
+		expect(calls[0]?.body).toEqual({
+			data: { name: "Acme-EU" },
+			organizationId: "org-1",
+		})
+		expect(nameInput(wrapper).element.value).toBe("Acme-US")
 	})
 
 	it("saves a name made of several words", async ({ expect }) => {
