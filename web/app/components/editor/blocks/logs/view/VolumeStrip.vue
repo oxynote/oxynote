@@ -24,7 +24,7 @@ interface TooltipParam {
 	seriesId: string
 	seriesName: string
 	marker: string
-	value: number
+	data: { count: number } | number | null
 	dataIndex: number
 }
 
@@ -40,6 +40,9 @@ const STACK_ORDER = [
 ]
 // the series that marks an interval without lines on the baseline
 const EMPTY_SERIES_ID = "empty"
+// both minima use axis units so they resize with the chart container
+const CHART_HEIGHT = 36
+const MIN_BAR_HEIGHT = 2
 // how many times the axis names, spread evenly from start to end
 const AXIS_LABELS = 4
 // a window longer than this names days on its axis instead of times
@@ -62,6 +65,17 @@ const option = computed<ECOption>(() => {
 	const levels = STACK_ORDER.filter((level) =>
 		props.buckets.some((bucket) => bucket.counts[level] > 0),
 	)
+	const bars = props.buckets.map(({ counts }) => ({
+		counts,
+		total: Object.values(counts).reduce((sum, count) => sum + count, 0),
+	}))
+	const peak = bars.reduce((max, { total }) => Math.max(max, total), 0)
+	// scale the whole stack so each level keeps its share of a short bar
+	const scaledBars = bars.map(({ counts, total }) => ({
+		counts,
+		scale:
+			total === 0 ? 0 : Math.max(CHART_HEIGHT / peak, MIN_BAR_HEIGHT / total),
+	}))
 
 	return {
 		animation: false,
@@ -71,7 +85,7 @@ const option = computed<ECOption>(() => {
 			show: false,
 			data: props.buckets.map((bucket) => bucket.start),
 		},
-		yAxis: { type: "value", show: false, min: 0 },
+		yAxis: { type: "value", show: false, min: 0, max: CHART_HEIGHT },
 		tooltip: {
 			show: true,
 			trigger: "axis",
@@ -96,19 +110,19 @@ const option = computed<ECOption>(() => {
 				barCategoryGap: "15%",
 				itemStyle: { color: st.logLevels[level], opacity: 0.8 },
 				emphasis: { disabled: true },
-				data: props.buckets.map((bucket) => bucket.counts[level]),
+				data: scaledBars.map(({ counts, scale }) => ({
+					value: counts[level] * scale,
+					count: counts[level],
+				})),
 			})),
-			// echarts draws a zero at barMinHeight, which leaves a dash on the
-			// baseline, and skips a null
 			{
 				id: EMPTY_SERIES_ID,
 				type: "bar" as const,
 				stack: "volume",
 				barCategoryGap: "15%",
-				barMinHeight: 2,
 				itemStyle: { color: st.logVolumeEmpty },
 				emphasis: { disabled: true },
-				data: props.buckets.map((bucket) => (isEmpty(bucket) ? 0 : null)),
+				data: bars.map(({ total }) => (total === 0 ? MIN_BAR_HEIGHT : null)),
 			},
 		],
 	}
@@ -212,7 +226,9 @@ function tooltipTime(params: unknown): string {
 									{{ row.seriesName }}
 								</div>
 								<div class="ml-1.5 text-2sm text-foreground tabular-nums">
-									{{ row.value }}
+									{{
+										typeof row.data === "object" ? row.data?.count : undefined
+									}}
 								</div>
 							</div>
 						</div>
