@@ -35,6 +35,7 @@ const {
 
 const route = useRoute()
 const config = useRuntimeConfig()
+const requestURL = useRequestURL()
 
 const emailPasswordFormSchema = toTypedSchema(
 	z.object({
@@ -151,7 +152,7 @@ function warnAboutOtherAddress() {
 	}
 
 	const configured = new URL(config.public.appBaseURL).origin
-	const opened = useRequestURL().origin
+	const opened = requestURL.origin
 
 	if (opened === configured) {
 		return

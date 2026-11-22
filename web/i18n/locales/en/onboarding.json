@@ -38,7 +38,11 @@
 					"description": "Please join the waitlist and we'll notify you as soon as we can create a new workspace for you"
 				}
 			},
-			"no-methods": "No sign-up methods are configured on this server."
+			"no-methods": "No sign-up methods are configured on this server.",
+			"other-address": {
+				"title": "Signup will not work from this address",
+				"description": "This server is set up for {configured}, but you opened {opened}. Set {variable} to {opened} and restart Oxynote."
+			}
 		},
 		"login": {
 			"title": "Welcome back to Oxynote",
