@@ -12,13 +12,12 @@ import { createGzip } from "node:zlib"
 import {
 	archiveFormat,
 	databaseEntry,
-	objectsDir,
 	remoteObjectsNote,
-	secretsDir,
 	writeArchive,
 	type ArchiveFile,
 } from "./archive.js"
 import type { Logger } from "./logging.js"
+import { objectsDir, secretsDir } from "./mapping.js"
 import { client, type Connection } from "./psql.js"
 
 // a backup keeps its dump in a directory of its own on the data volume while
@@ -41,9 +40,9 @@ export interface BackupOptions {
 
 // backup writes the whole instance to out as one tar while it keeps
 // running. The database is dumped before the objects are read, so the
-// archive can hold an object no row points at. It can also hold the row of
-// a file deleted in between. Core's cleanup pass removes that row again,
-// because it deletes a file's object before its row.
+// archive can hold an object no row points at. It misses the object of a
+// file deleted in between, such as one of a document deleted during the
+// backup, so that document comes back without the file.
 export async function backup(options: BackupOptions): Promise<void> {
 	if (options.outIsTerminal) {
 		throw new Error(
@@ -62,7 +61,8 @@ export async function backup(options: BackupOptions): Promise<void> {
 
 		await Promise.all([
 			db.dump(gzip).catch((err: unknown) => {
-				// the dump never completes, so neither may its file.
+				// the dump never completes, so neither may its
+				// file.
 				gzip.destroy()
 				throw err
 			}),

@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs"
 import { join } from "node:path"
 import { gzipSync } from "node:zlib"
 import { describe, it } from "vitest"
@@ -72,11 +78,7 @@ describe("finishRestore", () => {
 
 		expect(read(dataDir, "secrets/auth-secret")).toBe("new")
 		expect(
-			bin
-				.log()
-				.some((line) =>
-					line.includes("--single-transaction"),
-				),
+			bin.log().some((line) => line.startsWith("psql -X -q")),
 		).toBe(false)
 	})
 
@@ -112,6 +114,67 @@ describe("finishRestore", () => {
 			),
 		).rejects.toThrow("ERROR: boom")
 		expect(read(dataDir, "secrets/auth-secret")).toBe("auth")
+		expect(existsSync(join(dataDir, "restore"))).toBe(false)
+	})
+
+	it("drops an external restore whose dump is cut short", async ({
+		expect,
+	}) => {
+		const dataDir = staged({ database: "external", id: "id-1" })
+		const bin = fakeBin()
+		const dump = gzipSync("CREATE TABLE t ();\n".repeat(100))
+
+		writeFileSync(
+			join(dataDir, "restore/database.sql.gz"),
+			dump.subarray(0, dump.length / 2),
+		)
+
+		await expect(
+			finishRestore(
+				dataDir,
+				client(bin.dir, external),
+				recordingLog(),
+			),
+		).rejects.toThrow("unexpected end of file")
+		expect(bin.loaded()).not.toContain("COMMIT;")
+		expect(read(dataDir, "secrets/auth-secret")).toBe("auth")
+		expect(existsSync(join(dataDir, "restore"))).toBe(false)
+	})
+
+	it("drops an external restore whose dump cannot be read", async ({
+		expect,
+	}) => {
+		const dataDir = staged({ database: "external", id: "id-1" })
+		const bin = fakeBin()
+
+		rmSync(join(dataDir, "restore/database.sql.gz"))
+		mkdirSync(join(dataDir, "restore/database.sql.gz"))
+
+		await expect(
+			finishRestore(
+				dataDir,
+				client(bin.dir, external),
+				recordingLog(),
+			),
+		).rejects.toThrow("EISDIR")
+		expect(read(dataDir, "secrets/auth-secret")).toBe("auth")
+	})
+
+	it("swaps in an external restore whose commit reply was lost", async ({
+		expect,
+	}) => {
+		const dataDir = staged({ database: "external", id: "id-1" })
+		const bin = fakeBin()
+
+		bin.set("lost-reply")
+
+		await finishRestore(
+			dataDir,
+			client(bin.dir, external),
+			recordingLog(),
+		)
+
+		expect(read(dataDir, "secrets/auth-secret")).toBe("new")
 		expect(existsSync(join(dataDir, "restore"))).toBe(false)
 	})
 

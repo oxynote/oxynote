@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs"
-import { Readable } from "node:stream"
+import { pipeline, Readable } from "node:stream"
 import { createGunzip } from "node:zlib"
 
 export interface Script {
@@ -8,17 +8,25 @@ export interface Script {
 	dropTransactionTimeout?: boolean
 }
 
-// dumpScript streams a gzipped dump, unzipped, between before and after.
+// dumpScript streams a gzipped dump, unzipped, between before and after, in
+// one transaction. It commits only at its very end, so a script cut short
+// changes nothing.
 export function dumpScript(path: string, script: Script = {}): Readable {
-	const sql = createReadStream(path).pipe(createGunzip())
+	// a read error destroys the unzipped stream with it, so the reader
+	// sees the error, and the callback has nothing left to do.
+	const sql = pipeline(
+		createReadStream(path),
+		createGunzip(),
+		() => undefined,
+	)
 
 	return Readable.from(
 		(async function* () {
-			yield script.before ?? ""
+			yield `BEGIN;\n${script.before ?? ""}`
 			yield* script.dropTransactionTimeout
 				? withoutTransactionTimeout(sql)
 				: sql
-			yield script.after ?? ""
+			yield `${script.after ?? ""}\nCOMMIT;\n`
 		})(),
 	)
 }

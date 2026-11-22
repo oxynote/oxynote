@@ -84,16 +84,12 @@ mailpit, since the example runs without email.
   the disable switch from `process.env` because an invalid environment is
   one of the failures worth reporting.
 - **`backup` and `restore` are launcher commands** (`launcher/src/command.ts`),
-  each with a wrapper in `commands/`, because `docker compose exec` runs a
-  program on PATH. They log to stderr, since backup's tar is stdout. A
-  restore stages the new instance in `/oxynote/data/restore/` and commits
-  it with `restore/committed`. Inside a running instance it then sends
-  SIGTERM to PID 1, and the runtime's restart lets the boot finish it.
-  `finishRestore` (`staging.ts`) runs at every boot before the secrets are
-  read, and loads an external database there, before core starts. A new
-  part of the data volume joins its `parts` list. The image version and
-  the highest core migration are esbuild defines from the Dockerfile, and
-  restore refuses a backup newer than either.
+  each with a wrapper in `commands/`. A restore commits with
+  `restore/committed`, and `finishRestore` (`staging.ts`) completes it at
+  the next boot, before anything reads the volume. A new part of the data
+  volume goes in backup's file list, restore's `target` and staging's
+  `parts`. A new Postgres schema in core goes in `loadExternal`'s DROP
+  list.
 - **Crash policy: die, don't restart.** Any child exit tears the rest down
   and exits nonzero; restarts belong to the container runtime.
 - **Every emitted line is a JSON record with a `service` field**

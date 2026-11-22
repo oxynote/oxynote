@@ -1,5 +1,4 @@
 import { execFile, spawn, spawnSync } from "node:child_process"
-import { randomUUID } from "node:crypto"
 import {
 	chmodSync,
 	existsSync,
@@ -40,9 +39,11 @@ import {
 	corePort,
 	coreUrl,
 	dataDir,
+	databasePasswordFile,
 	mcpAvailable,
 	postgresPort,
 	postgresSocketDir,
+	secretsDir,
 	webPort,
 	webUrl,
 } from "./mapping.js"
@@ -219,25 +220,26 @@ function logEnabledFeatures(config: Config): void {
 	)
 }
 
-// how the client tools reach the instance's database. The embedded one takes
-// the app role's password from the volume.
-function connection(config: Config): Connection {
-	if (config.databaseDsn !== undefined) {
-		return externalConnection(config.databaseDsn, inheritedEnv)
-	}
-
-	const password = readFileSync(
-		join(dataDir, "secrets", "database-password"),
-		"utf8",
-	).trim()
-
-	return embeddedConnection(postgresSocketDir, password, inheritedEnv)
-}
-
-function external(config: Config): Connection | undefined {
+function externalDatabase(config: Config): Connection | undefined {
 	return config.databaseDsn === undefined
 		? undefined
 		: externalConnection(config.databaseDsn, inheritedEnv)
+}
+
+// how the client tools reach the instance's database. The embedded one takes
+// the app role's password from the volume.
+function databaseConnection(config: Config): Connection {
+	return (
+		externalDatabase(config) ??
+		embeddedConnection(
+			postgresSocketDir,
+			readFileSync(
+				join(dataDir, secretsDir, databasePasswordFile),
+				"utf8",
+			).trim(),
+			inheritedEnv,
+		)
+	)
 }
 
 async function runCommand(command: Command): Promise<void> {
@@ -247,20 +249,16 @@ async function runCommand(command: Command): Promise<void> {
 		await backup({
 			dataDir,
 			binDir,
-			connection: connection(config),
+			connection: databaseConnection(config),
 			external: config.databaseDsn !== undefined,
 			remoteObjects: config.objectStorage !== undefined,
-			secretsFromEnv: [
-				...(config.authSecret === undefined
-					? []
-					: ["OXYNOTE_AUTH_SECRET"]),
-				...(config.dataSourceEncryptionKeys ===
-				undefined
-					? []
-					: [
-							"OXYNOTE_DATA_SOURCE_ENCRYPTION_KEYS",
-						]),
-			],
+			secretsFromEnv: Object.entries({
+				OXYNOTE_AUTH_SECRET: config.authSecret,
+				OXYNOTE_DATA_SOURCE_ENCRYPTION_KEYS:
+					config.dataSourceEncryptionKeys,
+			})
+				.filter(([, value]) => value !== undefined)
+				.map(([name]) => name),
 			imageVersion: bakedImageVersion,
 			out: process.stdout,
 			outIsTerminal: process.stdout.isTTY,
@@ -274,7 +272,7 @@ async function runCommand(command: Command): Promise<void> {
 		await restore({
 			dataDir,
 			binDir,
-			external: external(config),
+			externalDatabase: externalDatabase(config),
 			env: inheritedEnv,
 			log: commandLog,
 			socketDir: restoreSocketDir,
@@ -289,8 +287,9 @@ async function runCommand(command: Command): Promise<void> {
 			inputIsTerminal: process.stdin.isTTY,
 			instanceRunning: () =>
 				probe(`${coreUrl}/api/x/version`),
-			// tini is PID 1. It passes the signal to the launcher, which
-			// stops in order and exits, and the runtime starts it again.
+			// tini is PID 1. It passes the signal to the launcher,
+			// which stops in order and exits, and the runtime starts
+			// it again.
 			restartInstance: () => {
 				process.kill(1, "SIGTERM")
 			},
@@ -301,7 +300,6 @@ async function runCommand(command: Command): Promise<void> {
 					password,
 				)
 			},
-			restoreId: randomUUID,
 		})
 	}
 }
@@ -313,11 +311,11 @@ async function main(): Promise<void> {
 	// them. A failed load drops the restore, and the old instance serves.
 	// Any other failure stops the boot, because a restore still staged
 	// would overwrite on a later boot what the old instance writes now.
-	const externalDatabase = external(config)
+	const external = externalDatabase(config)
 
 	await finishRestore(
 		dataDir,
-		externalDatabase && client(binDir, externalDatabase),
+		external && client(binDir, external),
 		log,
 	).catch((err: unknown) => {
 		if (existsSync(stagingDir(dataDir))) {
@@ -330,7 +328,7 @@ async function main(): Promise<void> {
 	})
 	removePartialBackups(dataDir)
 
-	const { secrets, report } = ensureSecrets(join(dataDir, "secrets"), {
+	const { secrets, report } = ensureSecrets(join(dataDir, secretsDir), {
 		authSecret: config.authSecret,
 		dataSourceEncryptionKeys: config.dataSourceEncryptionKeys,
 	})

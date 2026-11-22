@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { isExists, isNoEntry } from "./fs-errors.js"
+import { databasePasswordFile } from "./mapping.js"
 
 export interface Secrets {
 	authSecret: string
@@ -19,14 +21,6 @@ export interface SecretReport {
 	generated: string[]
 	fromVolume: string[]
 	fromEnv: string[]
-}
-
-export function isNoEntry(err: unknown): boolean {
-	return err instanceof Error && "code" in err && err.code === "ENOENT"
-}
-
-function isExists(err: unknown): boolean {
-	return err instanceof Error && "code" in err && err.code === "EEXIST"
 }
 
 function readSecret(path: string): string | undefined {
@@ -142,7 +136,7 @@ export function ensureSecrets(
 			"slack-installation-signing-secret",
 			generateAscii,
 		),
-		databasePassword: resolve("database-password", generateAscii),
+		databasePassword: resolve(databasePasswordFile, generateAscii),
 	}
 
 	return { secrets, report }

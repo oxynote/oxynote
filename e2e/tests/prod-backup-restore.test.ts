@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test } from "@playwright/test"
 import { submitLoginForm, type Credentials } from "../helpers/auth"
 import {
 	BACKUP_URL,
@@ -22,6 +22,7 @@ import {
 	contentEditor,
 	createDocument,
 	documentPersisted,
+	fileCard,
 	insertFileBlock,
 	titleEditor,
 	waitForEditor,
@@ -328,10 +329,6 @@ test.describe("backing up and restoring the image", () => {
 		await stopInstance("oxynote-restored")
 	})
 })
-
-function fileCard(page: Page) {
-	return contentEditor(page).locator('[data-type="fileBlock"] a')
-}
 
 function sha256(bytes: Buffer): string {
 	return createHash("sha256").update(bytes).digest("hex")

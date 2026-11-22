@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import {
 	existsSync,
 	mkdirSync,
@@ -9,16 +10,19 @@ import { join } from "node:path"
 import type { Readable } from "node:stream"
 import {
 	databaseEntry,
-	objectsDir,
 	readArchive,
-	refusal,
 	remoteObjectsNote,
-	secretsDir,
-	type ImageVersion,
 	type Manifest,
 } from "./archive.js"
 import { dumpScript } from "./dump.js"
+import { isExists } from "./fs-errors.js"
 import type { Logger } from "./logging.js"
+import {
+	databasePasswordFile,
+	objectsDir,
+	postgresDir,
+	secretsDir,
+} from "./mapping.js"
 import {
 	client,
 	embeddedConnection,
@@ -28,12 +32,13 @@ import {
 import { run } from "./run.js"
 import { generatedAsciiPattern } from "./secrets.js"
 import { commit, committed, finishRestore, stagingDir } from "./staging.js"
+import { refusal, type ImageVersion } from "./version.js"
 
 export interface RestoreOptions {
 	dataDir: string
 	binDir: string
 	// the database, when it is not the embedded one.
-	external: Connection | undefined
+	externalDatabase: Connection | undefined
 	// the environment the database tools run with.
 	env: Record<string, string>
 	// the temporary server an embedded restore loads its dump into.
@@ -52,7 +57,6 @@ export interface RestoreOptions {
 	// finishes the restore.
 	restartInstance(): void
 	createCluster(dir: string, password: string): void
-	restoreId(): string
 	log: Logger
 }
 
@@ -69,7 +73,8 @@ export async function restore(options: RestoreOptions): Promise<void> {
 	}
 
 	const external =
-		options.external && client(options.binDir, options.external)
+		options.externalDatabase &&
+		client(options.binDir, options.externalDatabase)
 	const live = await options.instanceRunning()
 	const staging = stagingDir(options.dataDir)
 
@@ -97,9 +102,14 @@ export async function restore(options: RestoreOptions): Promise<void> {
 	// the first alone. The next boot clears one that was interrupted.
 	try {
 		mkdirSync(staging, { mode: 0o700 })
-	} catch {
+	} catch (err) {
+		if (!isExists(err)) {
+			throw err
+		}
+
 		throw new Error(
 			"another restore is running, or an interrupted one left restore/ behind. Wait for it, or restart the instance to clear it",
+			{ cause: err },
 		)
 	}
 
@@ -117,7 +127,7 @@ export async function restore(options: RestoreOptions): Promise<void> {
 	commit(
 		options.dataDir,
 		external
-			? { database: "external", id: options.restoreId() }
+			? { database: "external", id: randomUUID() }
 			: { database: "embedded" },
 	)
 
@@ -140,7 +150,7 @@ async function refuseRunning(
 ): Promise<void> {
 	if (external) {
 		const others = await external.query(
-			"SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()",
+			"SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND backend_type = 'client backend'",
 		)
 
 		if (others !== "0") {
@@ -153,7 +163,7 @@ async function refuseRunning(
 	}
 
 	// a clean stop removes the file, and a crash leaves it behind.
-	if (existsSync(join(dataDir, "postgres", "postmaster.pid"))) {
+	if (existsSync(join(dataDir, postgresDir, "postmaster.pid"))) {
 		throw new Error(
 			"the instance is running in another container, or it did not stop cleanly. Run restore inside the running instance, or stop it first. After a crash, start and stop it once",
 		)
@@ -178,7 +188,7 @@ async function holdsInstance(
 		)
 	}
 
-	return existsSync(join(dataDir, "postgres", "PG_VERSION"))
+	return existsSync(join(dataDir, postgresDir, "PG_VERSION"))
 }
 
 // stage reads the backup into staging. The manifest is checked before
@@ -195,9 +205,9 @@ async function stage(
 				throw new Error(reason)
 			}
 
-			// both parts are staged even when the backup holds nothing
-			// for them, so the swap also replaces what the old instance
-			// kept there.
+			// both parts are staged even when the backup holds
+			// nothing for them, so the swap also replaces what the
+			// old instance kept there.
 			mkdirSync(join(staging, secretsDir), { mode: 0o700 })
 
 			if (!options.remoteObjects) {
@@ -258,7 +268,7 @@ async function buildCluster(
 	// the cluster takes the backed-up password, because the restored
 	// secrets are what core logs in with. The password reaches SQL as the
 	// superuser, so it must have the shape the image generates.
-	const passwordPath = join(staging, secretsDir, "database-password")
+	const passwordPath = join(staging, secretsDir, databasePasswordFile)
 	const password = existsSync(passwordPath)
 		? readFileSync(passwordPath, "utf8").trim()
 		: ""
@@ -269,7 +279,7 @@ async function buildCluster(
 		)
 	}
 
-	const cluster = join(staging, "postgres")
+	const cluster = join(staging, postgresDir)
 	const pgCtl = join(options.binDir, "pg_ctl")
 	const env = options.env
 

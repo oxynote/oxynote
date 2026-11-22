@@ -20,7 +20,10 @@ export function parseCommand(args: string[]): Command {
 	}
 
 	if (line === "restore" || line === "restore --replace") {
-		return { name: "restore", replace: line !== "restore" }
+		return {
+			name: "restore",
+			replace: line === "restore --replace",
+		}
 	}
 
 	throw new Error(usage)

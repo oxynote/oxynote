@@ -100,9 +100,10 @@ export function testSecrets(): Secrets {
 // fakes of the PostgreSQL client tools, as shell scripts in a temporary bin
 // directory. Each logs its arguments to bin/log. A file next to them steers
 // it: fail-dump, fail-load and fail-start make that step fail, big-dump
-// makes the dump longer than its preamble; migration,
-// version, others, tables and comment hold what a query answers. A load writes its
-// input to bin/loaded, and a schema comment in it to bin/comment, the way
+// makes the dump longer than its preamble, lost-reply fails a load after
+// its commit; migration, version, others, tables and comment hold what a
+// query answers. A load writes its input to bin/loaded, and a schema
+// comment in it to bin/comment once the input reaches its COMMIT, the way
 // the database would keep it.
 const scripts = {
 	pg_dump: `#!/bin/sh
@@ -127,7 +128,10 @@ case "$*" in
 *)
 	cat > "$dir/loaded"
 	if [ -f "$dir/fail-load" ]; then echo "ERROR: boom" >&2; exit 3; fi
-	sed -n "s/^COMMENT ON SCHEMA public IS '\\(.*\\)';$/\\1/p" "$dir/loaded" > "$dir/comment" ;;
+	if grep -qx "COMMIT;" "$dir/loaded"; then
+		sed -n "s/^COMMENT ON SCHEMA public IS '\\(.*\\)';$/\\1/p" "$dir/loaded" > "$dir/comment"
+	fi
+	if [ -f "$dir/lost-reply" ]; then echo "server closed the connection unexpectedly" >&2; exit 2; fi ;;
 esac
 `,
 	pg_ctl: `#!/bin/sh

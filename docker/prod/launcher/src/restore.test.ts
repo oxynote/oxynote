@@ -17,6 +17,7 @@ import {
 	fakeVolume,
 	recordingLog,
 	volumeState,
+	type FakeBin,
 } from "./test-helpers.js"
 
 const external = { args: ["--dbname", "postgresql://db"], env: {} }
@@ -31,8 +32,14 @@ const manifest: Manifest = {
 }
 
 const schemaReset =
-	"DROP SCHEMA IF EXISTS public CASCADE;\nDROP SCHEMA IF EXISTS dbos CASCADE;\nCREATE SCHEMA public;\n"
-const schemaComment = "\nCOMMENT ON SCHEMA public IS 'oxynote-restore:id-1';\n"
+	"BEGIN;\nDROP SCHEMA IF EXISTS public CASCADE;\nDROP SCHEMA IF EXISTS dbos CASCADE;\nCREATE SCHEMA public;\n"
+// the end of an external load. Its restore id is random, so it is read back
+// from the comment the fake database kept.
+function schemaComment(bin: FakeBin): string {
+	const comment = readFileSync(join(bin.dir, "comment"), "utf8").trim()
+
+	return `\nCOMMENT ON SCHEMA public IS '${comment}';\n\nCOMMIT;\n`
+}
 
 describe("restore", () => {
 	it("restores a backup into an empty volume", async ({ expect }) => {
@@ -52,15 +59,15 @@ describe("restore", () => {
 		expect(existsSync(join(dataDir, "restore"))).toBe(false)
 		expect(t.clusters).toEqual([fakeDatabasePassword])
 		expect(t.bin.loaded()).toBe(
-			"SET transaction_timeout = 0;\nCREATE TABLE t ();\n",
+			"BEGIN;\nSET transaction_timeout = 0;\nCREATE TABLE t ();\n\nCOMMIT;\n",
 		)
 		expect(t.bin.log().map((line) => line.split(" ")[0])).toEqual([
 			"pg_ctl",
 			"psql",
 			"pg_ctl",
 		])
-		expect(t.bin.log()[1]).toContain(
-			"-v ON_ERROR_STOP=1 --single-transaction",
+		expect(t.bin.log()[1]).toMatch(
+			/^psql -X -q -v ON_ERROR_STOP=1 -h /,
 		)
 		expect(t.log.lines.at(-1)).toBe(
 			"info restore complete. Start the instance",
@@ -156,6 +163,15 @@ describe("restore", () => {
 			"the instance is running in another container",
 		)
 		expect(volumeState(dataDir)).toEqual(before)
+	})
+
+	it("reports why it cannot create the staging", async ({ expect }) => {
+		const t = harness(
+			await backupOf(),
+			join(emptyVolume(), "missing"),
+		)
+
+		await expect(restore(t.options)).rejects.toThrow("ENOENT")
 	})
 
 	it("refuses a terminal as its input", async ({ expect }) => {
@@ -385,7 +401,7 @@ describe("restore", () => {
 		}) => {
 			const dataDir = fakeVolume({ cluster: false })
 			const t = harness(await backupOf(), dataDir, {
-				external,
+				externalDatabase: external,
 				instanceRunning: () => Promise.resolve(true),
 			})
 
@@ -396,9 +412,7 @@ describe("restore", () => {
 				t.bin
 					.log()
 					.some((line) =>
-						line.includes(
-							"--single-transaction",
-						),
+						line.startsWith("psql -X -q"),
 					),
 			).toBe(false)
 
@@ -409,7 +423,7 @@ describe("restore", () => {
 			)
 
 			expect(t.bin.loaded()).toBe(
-				`${schemaReset}SET transaction_timeout = 0;\nCREATE TABLE t ();\n${schemaComment}`,
+				`${schemaReset}SET transaction_timeout = 0;\nCREATE TABLE t ();\n${schemaComment(t.bin)}`,
 			)
 			expect(read(dataDir, "secrets/auth-secret")).toBe(
 				"auth",
@@ -486,17 +500,23 @@ describe("restore", () => {
 		}) => {
 			const dataDir = emptyVolume()
 			const t = harness(await backupOf(), dataDir, {
-				external,
+				externalDatabase: external,
 			})
 
 			await restore(t.options)
 
 			expect(t.bin.loaded()).toBe(
-				`${schemaReset}SET transaction_timeout = 0;\nCREATE TABLE t ();\n${schemaComment}`,
+				`${schemaReset}SET transaction_timeout = 0;\nCREATE TABLE t ();\n${schemaComment(t.bin)}`,
 			)
 			expect(t.bin.log().at(-1)).toBe(
-				"psql -X -q -v ON_ERROR_STOP=1 --single-transaction --dbname postgresql://db",
+				"psql -X -q -v ON_ERROR_STOP=1 --dbname postgresql://db",
 			)
+			expect(
+				readFileSync(
+					join(t.bin.dir, "comment"),
+					"utf8",
+				).trim(),
+			).toMatch(/^oxynote-restore:[0-9a-f-]{36}$/)
 			expect(t.clusters).toEqual([])
 			expect(read(dataDir, "secrets/auth-secret")).toBe(
 				"auth",
@@ -511,7 +531,7 @@ describe("restore", () => {
 			expect,
 		}) => {
 			const t = harness(await backupOf(), emptyVolume(), {
-				external,
+				externalDatabase: external,
 			})
 
 			t.bin.set("version", "160004")
@@ -519,7 +539,7 @@ describe("restore", () => {
 			await restore(t.options)
 
 			expect(t.bin.loaded()).toBe(
-				`${schemaReset}CREATE TABLE t ();\n${schemaComment}`,
+				`${schemaReset}CREATE TABLE t ();\n${schemaComment(t.bin)}`,
 			)
 		})
 
@@ -530,7 +550,7 @@ describe("restore", () => {
 				await backupOf({ bigDump: true }),
 				emptyVolume(),
 				{
-					external,
+					externalDatabase: external,
 				},
 			)
 
@@ -539,7 +559,7 @@ describe("restore", () => {
 			await restore(t.options)
 
 			expect(t.bin.loaded()).toBe(
-				`${schemaReset}CREATE TABLE t ();\n${"x".repeat(100000)}${schemaComment}`,
+				`${schemaReset}CREATE TABLE t ();\n${"x".repeat(100000)}${schemaComment(t.bin)}`,
 			)
 		})
 
@@ -547,7 +567,7 @@ describe("restore", () => {
 			expect,
 		}) => {
 			const t = harness(await backupOf(), emptyVolume(), {
-				external,
+				externalDatabase: external,
 			})
 
 			t.bin.set("others", "2")
@@ -555,13 +575,18 @@ describe("restore", () => {
 			await expect(restore(t.options)).rejects.toThrow(
 				"the database has 2 other connections. Run restore inside the running instance, or stop it first",
 			)
+			// autovacuum workers and other server processes do not
+			// count.
+			expect(t.bin.log().join("\n")).toContain(
+				"backend_type = 'client backend'",
+			)
 		})
 
 		it("counts a database with the schema as an instance", async ({
 			expect,
 		}) => {
 			const t = harness(await backupOf(), emptyVolume(), {
-				external,
+				externalDatabase: external,
 			})
 
 			t.bin.set("tables", "t")
@@ -577,7 +602,7 @@ describe("restore", () => {
 			const dataDir = fakeVolume({ cluster: false })
 			const before = volumeState(dataDir)
 			const t = harness(await backupOf(), dataDir, {
-				external,
+				externalDatabase: external,
 				replace: true,
 			})
 
@@ -656,7 +681,7 @@ function harness(
 	const options: RestoreOptions = {
 		dataDir,
 		binDir: bin.dir,
-		external: undefined,
+		externalDatabase: undefined,
 		env: {},
 		log,
 		socketDir: join(dataDir, "..", "sock"),
@@ -675,7 +700,6 @@ function harness(
 		restartInstance: () => {
 			restarts.push("restart")
 		},
-		restoreId: () => "id-1",
 		...overrides,
 	}
 

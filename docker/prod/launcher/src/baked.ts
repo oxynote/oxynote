@@ -34,7 +34,8 @@ export const bakedLauncherSentryDsn =
 
 // the image's release version and the highest core migration it ships,
 // both injected by esbuild --define from the Dockerfile. A build without
-// them reports "dev" and no migration version, and then restores nothing.
+// them reports "dev" and no migration version, and then refuses every
+// restore.
 declare const __IMAGE_VERSION__: string | undefined
 declare const __MIGRATION_VERSION__: string | undefined
 

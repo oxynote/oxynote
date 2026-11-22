@@ -19,15 +19,23 @@ export const webUrl = `http://127.0.0.1:${webPort}`
 // where the data volume is mounted; generated secrets live beneath it.
 export const dataDir = "/oxynote/data"
 
+// the parts of the data volume, by their names in it.
+export const postgresDir = "postgres"
+export const secretsDir = "secrets"
+export const objectsDir = "object-storage"
+export const searchDir = "search"
+// the embedded database's password, in secretsDir.
+export const databasePasswordFile = "database-password"
+
 // where core keeps uploaded objects when no object store is configured.
 // It sits on the data volume, so the files survive a restart like the
 // secrets do.
-const objectStorageLocalPath = `${dataDir}/object-storage`
+const objectStorageLocalPath = `${dataDir}/${objectsDir}`
 
 // where core keeps the search index. It is a cache of the database that
 // core rebuilds when it is missing, and it sits on the data volume so a
 // restart does not pay for that rebuild.
-const searchIndexPath = `${dataDir}/search`
+const searchIndexPath = `${dataDir}/${searchDir}`
 
 // the embedded PostgreSQL, run when no external DSN is configured. It
 // listens on a unix socket and on no TCP port at all; the port only names
@@ -35,7 +43,7 @@ const searchIndexPath = `${dataDir}/search`
 // and its database share one name.
 export const postgresPort = 5432
 export const postgresSocketDir = "/tmp/postgresql"
-export const postgresDataDir = `${dataDir}/postgres`
+export const postgresDataDir = `${dataDir}/${postgresDir}`
 export const postgresDatabase = "oxynote"
 
 // the fixed path a GitHub App's private key is mounted at when the

@@ -2,9 +2,9 @@
 # test the Helm chart on a throwaway kind cluster: ct install, a smoke test
 # through the Ingress and the HTTPRoute, an upgrade from the release before
 # IMAGE_TAG, and a backup and restore with the README's commands when
-# IMAGE_TAG has them. IMAGE_TAG defaults to the latest release. A tag that is no release, such as
-# e2e-prod, names a local image, which is loaded into the cluster. The
-# cluster is deleted on exit, also after a failure.
+# IMAGE_TAG has them. IMAGE_TAG defaults to the latest release. A tag that
+# is no release, such as e2e-prod, names a local image, which is loaded into
+# the cluster. The cluster is deleted on exit, also after a failure.
 #
 # usage: e2e/helm/run.sh [IMAGE_TAG]
 set -eu
@@ -70,6 +70,14 @@ test_release() {
 		pnpm exec playwright test -c playwright.helm.config.ts "tests/$file" "$@")
 }
 
+# install_backup_release installs the release the README's commands name:
+# oxynote, in the namespace oxynote.
+install_backup_release() {
+	helm install oxynote "$chart" --namespace "$namespace" \
+		--values "$chart/ci/httproute-values.yaml" --set "image.tag=$image_tag" \
+		--wait --timeout 15m >/dev/null
+}
+
 echo "==> creating the cluster"
 kind create cluster --name "$cluster" --config e2e/helm/cluster.yaml --wait 120s
 
@@ -131,24 +139,20 @@ fi
 
 test_release helm-upgrade.test.ts ingress.oxynote.localhost -g "after the upgrade"
 
-# a release from before the commands has no backup to test.
-if ! kubectl --namespace "$namespace" exec upgrade-oxynote-0 -- sh -c "command -v backup" >/dev/null; then
+# a release from before the commands has no backup to test. A failed exec
+# fails the script instead.
+backup_command=$(kubectl --namespace "$namespace" exec upgrade-oxynote-0 -- sh -c "command -v backup || true")
+if [ -z "$backup_command" ]; then
 	echo "==> $image_tag has no backup command, so the backup and restore are skipped"
 	echo "==> all helm e2e checks passed"
 	exit 0
 fi
 
 echo "==> backup and restore with the README's commands"
-# the README's commands name the release oxynote in the namespace oxynote.
 readme_block "-- backup >" > "$tmp/backup.sh"
 readme_block "-- restore <" > "$tmp/restore.sh"
 test -s "$tmp/backup.sh" && test -s "$tmp/restore.sh"
 export E2E_HELM_STATE="$tmp/backup.json"
-install_backup_release() {
-	helm install oxynote "$chart" --namespace "$namespace" \
-		--values "$chart/ci/httproute-values.yaml" --set "image.tag=$image_tag" \
-		--wait --timeout 15m >/dev/null
-}
 install_backup_release
 test_release helm-backup-restore.test.ts httproute.oxynote.localhost -g "before the backup"
 (cd "$tmp" && sh -eu backup.sh)

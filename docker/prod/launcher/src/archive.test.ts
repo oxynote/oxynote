@@ -2,12 +2,11 @@ import { createHash } from "node:crypto"
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Readable } from "node:stream"
+import { Readable, Writable } from "node:stream"
 import { pack } from "tar-stream"
 import { describe, it } from "vitest"
 import {
 	readArchive,
-	refusal,
 	writeArchive,
 	type ArchiveReader,
 	type Manifest,
@@ -102,6 +101,39 @@ describe("writeArchive and readArchive", () => {
 		})
 
 		expect(names).toEqual(["object-storage/a"])
+	})
+
+	it("fail when the output fails", async ({ expect }) => {
+		const source = mkdtempSync(join(tmpdir(), "oxynote-archive-"))
+		const out = new Writable({
+			write(_chunk, _encoding, callback) {
+				callback(new Error("no space left on device"))
+			},
+		})
+
+		writeFileSync(join(source, "a"), "x".repeat(100000))
+
+		await expect(
+			writeArchive(out, manifest, [
+				{
+					name: "object-storage/a",
+					path: join(source, "a"),
+				},
+			]),
+		).rejects.toThrow()
+	})
+
+	it("fail when the dump is missing", async ({ expect }) => {
+		const source = mkdtempSync(join(tmpdir(), "oxynote-archive-"))
+
+		await expect(
+			writeArchive(collector(), manifest, [
+				{
+					name: "database.sql.gz",
+					path: join(source, "gone"),
+				},
+			]),
+		).rejects.toThrow("ENOENT")
 	})
 
 	it("fail on a file that cannot be read for another reason", async ({
@@ -269,77 +301,6 @@ describe("readArchive", () => {
 			),
 		).rejects.toThrow("cannot read the backup: too new")
 	})
-})
-
-describe("refusal", () => {
-	const cases = {
-		"the same release": {
-			backup: {},
-			image: { version: "0.12.0", migrationVersion: 13 },
-			expected: undefined,
-		},
-		"an older release": {
-			backup: {
-				imageVersion: "0.11.0",
-				migrationVersion: 12,
-			},
-			image: { version: "0.12.0", migrationVersion: 13 },
-			expected: undefined,
-		},
-		"a newer release": {
-			backup: { imageVersion: "0.13.0" },
-			image: { version: "0.12.0", migrationVersion: 13 },
-			expected: "the backup comes from image 0.13.0, newer than this image's 0.12.0. Restore it with image 0.13.0 or later",
-		},
-		"a newer patch release": {
-			backup: { imageVersion: "0.12.1" },
-			image: { version: "0.12.0", migrationVersion: 13 },
-			expected: "the backup comes from image 0.12.1, newer than this image's 0.12.0. Restore it with image 0.12.1 or later",
-		},
-		"an older major with a higher minor": {
-			backup: { imageVersion: "0.99.0" },
-			image: { version: "1.0.0", migrationVersion: 13 },
-			expected: undefined,
-		},
-		"a newer migration": {
-			backup: { migrationVersion: 14 },
-			image: { version: "0.12.0", migrationVersion: 13 },
-			expected: "the backup is at migration 14, newer than this image's 13. Restore it with image 0.12.0 or later",
-		},
-		"a newer migration between dev builds": {
-			backup: { imageVersion: "dev", migrationVersion: 14 },
-			image: { version: "dev", migrationVersion: 13 },
-			expected: "the backup is at migration 14, newer than this image's 13. Restore it with image dev or later",
-		},
-		"a dev backup on a release": {
-			backup: { imageVersion: "dev" },
-			image: { version: "0.12.0", migrationVersion: 13 },
-			expected: undefined,
-		},
-		"a release backup on a dev image": {
-			backup: { imageVersion: "9.0.0" },
-			image: { version: "dev", migrationVersion: 13 },
-			expected: undefined,
-		},
-		"an unknown format": {
-			backup: { format: 2 },
-			image: { version: "0.12.0", migrationVersion: 13 },
-			expected: "the backup has format 2, and this image reads only format 1",
-		},
-		"an image that does not know its migration version": {
-			backup: {},
-			image: { version: "dev", migrationVersion: undefined },
-			expected: "this build does not know its migration version, so it cannot check the backup",
-		},
-	}
-
-	for (const [name, c] of Object.entries(cases)) {
-		it(`answers ${name}`, ({ expect }) => {
-			expect(
-				refusal({ ...manifest, ...c.backup }, c.image),
-			).toBe(c.expected)
-		})
-	}
 })
 
 function sha256(text: string): string {

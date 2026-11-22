@@ -8,21 +8,19 @@ import { composeArgs, composeCwd } from "./stack"
 // services.
 export const BACKUP_URL = "http://localhost:19085"
 
-export type BackupService =
-	| "oxynote-backup"
-	| "oxynote-restored"
-	| "oxynote-legacy"
-	| "oxynote-upgraded"
-	| "oxynote-external"
-	| "oxynote-external-16"
-
-const SERVICES = [
+const INSTANCES = [
 	"oxynote-backup",
 	"oxynote-restored",
 	"oxynote-legacy",
 	"oxynote-upgraded",
 	"oxynote-external",
 	"oxynote-external-16",
+] as const
+
+export type BackupService = (typeof INSTANCES)[number]
+
+const SERVICES = [
+	...INSTANCES,
 	"backup-postgres",
 	"backup-postgres-16",
 	"prometheus",
@@ -46,11 +44,11 @@ export interface CommandResult {
 // profile on. It never rejects on a nonzero exit, because a refused
 // restore is the outcome several tests wait for.
 function compose(args: string[], input?: Buffer): Promise<CommandResult> {
-	return command(
-		"docker",
-		[...composeArgs(), "--profile", "backup", ...args],
-		input,
-	)
+	return command("docker", [...backupComposeArgs(), ...args], input)
+}
+
+function backupComposeArgs(): string[] {
+	return [...composeArgs(), "--profile", "backup"]
 }
 
 function command(
@@ -195,9 +193,7 @@ export async function killRestore(
 	const child = spawn(
 		"docker",
 		[
-			...composeArgs(),
-			"--profile",
-			"backup",
+			...backupComposeArgs(),
 			"run",
 			"--rm",
 			"--no-deps",
@@ -215,26 +211,29 @@ export async function killRestore(
 	child.stdin.on("error", () => undefined)
 	child.stdin.write(backup.subarray(0, Math.floor(backup.length / 2)))
 
-	await expect
-		.poll(
-			async () =>
-				(
-					await command("docker", [
-						"exec",
-						name,
-						"test",
-						"-e",
-						"/oxynote/data/restore",
-					])
-				).code,
-			{ message: "the restore starts staging" },
-		)
-		.toBe(0)
+	try {
+		await expect
+			.poll(
+				async () =>
+					(
+						await command("docker", [
+							"exec",
+							name,
+							"test",
+							"-e",
+							"/oxynote/data/restore",
+						])
+					).code,
+				{ message: "the restore starts staging" },
+			)
+			.toBe(0)
 
-	succeeded(await command("docker", ["kill", "--signal", "KILL", name]))
-	child.stdin.destroy()
-	await closed
-	await command("docker", ["rm", "--force", name])
+		succeeded(await command("docker", ["kill", "--signal", "KILL", name]))
+	} finally {
+		child.stdin.destroy()
+		await command("docker", ["rm", "--force", name])
+		await closed
+	}
 }
 
 // volumeHash fingerprints every file on a stopped instance's volume, apart

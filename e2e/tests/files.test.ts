@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises"
-import { expect, test, type Locator, type Page } from "@playwright/test"
+import { expect, test } from "@playwright/test"
 import {
-	contentEditor,
 	createDocument,
 	documentPersisted,
+	fileCard,
 	insertFileBlock,
 	waitForEditor,
 } from "../helpers/editor"
@@ -18,12 +18,6 @@ const ZIP_BYTES = Buffer.concat([
 ])
 
 const TEXT = "hello from the attachment"
-
-// fileCard is the uploaded attachment's card, which is what the reader
-// clicks
-function fileCard(page: Page): Locator {
-	return contentEditor(page).locator('[data-type="fileBlock"] a')
-}
 
 test.describe("file attachments", () => {
 	test("uploads a file, keeps it across a reload and downloads it under its name", async ({

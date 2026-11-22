@@ -41,8 +41,9 @@ export interface Client {
 	// writes a plain dump without owners or grants, so it loads into a
 	// database any role owns.
 	dump(output: Writable): Promise<void>
-	// runs a script in one transaction that stops at the first error, so
-	// a failure changes nothing.
+	// runs a script that stops at the first error. A script that opens a
+	// transaction and fails before its commit changes nothing, because the
+	// server rolls back when psql disconnects.
 	load(script: Readable): Promise<void>
 }
 
@@ -89,7 +90,6 @@ export function client(binDir: string, connection: Connection): Client {
 					"-q",
 					"-v",
 					"ON_ERROR_STOP=1",
-					"--single-transaction",
 					...connection.args,
 				],
 				{ ...options, input: script },

@@ -221,9 +221,12 @@ and the uploaded files.
 docker compose exec -T oxynote backup > oxynote-backup.tar
 ```
 
-The file holds the instance's keys, so store it like a secret.
+The file holds the instance's keys, so keep it private and store a copy
+away from the server.
 
-To restore, send the backup to the running instance:
+To restore, send the backup to the running instance. This replaces
+everything the instance holds now. On a new host, start a fresh instance
+first, then restore into it.
 
 ```sh
 docker compose exec -T oxynote restore < oxynote-backup.tar
@@ -231,17 +234,30 @@ docker compose exec -T oxynote restore < oxynote-backup.tar
 
 - `restore` checks the whole backup and builds the new instance beside the
   running one. Then the container restarts, and its boot swaps the new
-  instance in. The example compose file restarts it by itself; with
+  instance in. The example compose file restarts it by itself. With
   another runtime, start it again.
 - A backup that fails a check changes nothing. A backup from a newer image
   is refused, and an older one is migrated at the next boot.
-- An instance that no longer starts can be restored while stopped:
-  `docker compose run --rm -T oxynote restore --replace < oxynote-backup.tar`.
-- With `OXYNOTE_DB_DSN` set, both commands use that database, and the boot
-  loads it in one transaction. The role must own the database, because
-  `restore` replaces its `public` and `dbos` schemas. If the load fails,
-  the old instance keeps serving. If the boot cannot reach the database,
-  it fails until it can, so the restore is never applied late.
+- An instance that no longer starts can be restored while stopped, in a
+  one-off container:
+
+  ```sh
+  docker compose stop oxynote
+  docker compose run --rm -T oxynote restore --replace < oxynote-backup.tar
+  docker compose up -d
+  ```
+
+  `restore` refuses a database that did not stop cleanly, even with
+  `--replace`. Start and stop the instance once to clear that. If its
+  database cannot start at all, remove its stale lock file first:
+  `docker compose run --rm --entrypoint rm oxynote /oxynote/data/postgres/postmaster.pid`.
+- With `OXYNOTE_DB_DSN` set, both commands use that database. The restore
+  loads it in one transaction, at the next boot or, on a stopped instance,
+  at once. The role must own the database, because `restore` replaces its
+  `public` and `dbos` schemas. If the load fails, the old instance keeps
+  serving. If the boot cannot reach the database, the instance does not
+  start until it can, so it never serves the old data while the restore
+  waits.
 - With `OXYNOTE_OBJECT_STORAGE_DSN` set, both commands skip the uploaded
   files. Back up the bucket with the store's own tools.
 - `OXYNOTE_AUTH_SECRET` and `OXYNOTE_DATA_SOURCE_ENCRYPTION_KEYS` are never

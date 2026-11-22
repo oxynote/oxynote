@@ -379,6 +379,12 @@ export async function documentPersisted(page: Page): Promise<void> {
 	await page.waitForTimeout(2_500)
 }
 
+// fileCard is the uploaded attachment's card, which is what the reader
+// clicks
+export function fileCard(page: Page): Locator {
+	return contentEditor(page).locator('[data-type="fileBlock"] a')
+}
+
 // insertFileBlock adds a file block from the slash menu and answers the
 // picker it opens with the given file
 export async function insertFileBlock(
