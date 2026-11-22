@@ -11,8 +11,8 @@ export default defineConfig({
 	testDir: "./tests",
 	// the prod-*.test.ts files hold the cases that only mean something
 	// against the all-in-one image; playwright.prod.config.ts runs them.
-	// playwright.kind.config.ts runs the kind-*.test.ts files.
-	testIgnore: ["prod-*.test.ts", "kind-*.test.ts"],
+	// playwright.helm.config.ts runs the helm-*.test.ts files.
+	testIgnore: ["prod-*.test.ts", "helm-*.test.ts"],
 	fullyParallel: true,
 	// every test signs up, verifies, logs in and creates a workspace
 	// before it starts, and the stack answers all of them from one core

@@ -11,32 +11,32 @@ on:
     branches:
       - main
     paths:
-      - charts/**
-      - e2e/kind/**
-      - e2e/tests/kind-*
-      - e2e/playwright.kind.config.ts
+      - helm/**
+      - e2e/helm/**
+      - e2e/tests/helm-*
+      - e2e/playwright.helm.config.ts
       - e2e/helpers/**
       - e2e/package.json
       - e2e/pnpm-lock.yaml
-      - scripts/check-chart-env.mjs
-      - scripts/chart-check.sh
+      - scripts/check-helm-env.mjs
+      - scripts/helm-render-check.sh
       - docker/prod/launcher/src/env.ts
-      - .github/workflows/qa-chart.yml
+      - .github/workflows/qa-helm.yml
   pull_request:
     branches:
       - main
     paths:
-      - charts/**
-      - e2e/kind/**
-      - e2e/tests/kind-*
-      - e2e/playwright.kind.config.ts
+      - helm/**
+      - e2e/helm/**
+      - e2e/tests/helm-*
+      - e2e/playwright.helm.config.ts
       - e2e/helpers/**
       - e2e/package.json
       - e2e/pnpm-lock.yaml
-      - scripts/check-chart-env.mjs
-      - scripts/chart-check.sh
+      - scripts/check-helm-env.mjs
+      - scripts/helm-render-check.sh
       - docker/prod/launcher/src/env.ts
-      - .github/workflows/qa-chart.yml
+      - .github/workflows/qa-helm.yml
 
 # a newer push supersedes the still-running workflow of the stale commit
 # and cancels it. The group carries a hardcoded per-file prefix because
@@ -44,7 +44,7 @@ on:
 # would put them all in one group and let a run of one workflow cancel
 # an in-flight run of another.
 concurrency:
-  group: qa-chart-${{ github.ref }}
+  group: qa-helm-${{ github.ref }}
   cancel-in-progress: true
 
 defaults:
@@ -82,9 +82,9 @@ jobs:
             | sudo tar -xz -C /usr/local/bin helm-docs
 
       - name: Run the chart checks
-        run: make chart-check
+        run: make helm-check
 
-  kind:
+  e2e:
     name: Testing the Helm chart on kind
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -130,12 +130,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           IMAGE_TAG: ${{ inputs.image-tag }}
-        run: e2e/kind/run.sh "$IMAGE_TAG"
+        run: e2e/helm/run.sh "$IMAGE_TAG"
 
       - name: Upload playwright report
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report-kind
+          name: playwright-report-helm
           path: e2e/playwright-report
           retention-days: 7

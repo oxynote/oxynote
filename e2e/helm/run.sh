@@ -4,7 +4,7 @@
 # before IMAGE_TAG. IMAGE_TAG defaults to the latest release. The cluster is
 # deleted on exit, also after a failure.
 #
-# usage: e2e/kind/run.sh [IMAGE_TAG]
+# usage: e2e/helm/run.sh [IMAGE_TAG]
 set -eu
 
 cd "$(dirname "$0")/../.."
@@ -15,9 +15,9 @@ image_tag=${1:-$(echo "$tags" | head -1)}
 # is the one before it.
 previous_tag=$(echo "$tags" | awk -v tag="$image_tag" 'found { print; exit } $0 == tag { found = 1 }')
 previous_tag=${previous_tag:-$(echo "$tags" | head -1)}
-cluster=oxynote-chart
+cluster=oxynote-helm
 namespace=oxynote
-chart=charts/oxynote
+chart=helm
 # the newest Gateway API release the pinned Traefik supports.
 gateway_api=v1.6.3
 traefik_chart=42.4.1
@@ -49,21 +49,21 @@ test_release() {
 	host=$2
 	shift 2
 	(cd e2e && E2E_BASE_URL="http://$host:19280" \
-		pnpm exec playwright test -c playwright.kind.config.ts "tests/$file" "$@")
+		pnpm exec playwright test -c playwright.helm.config.ts "tests/$file" "$@")
 }
 
 echo "==> creating the cluster"
-kind create cluster --name "$cluster" --config e2e/kind/cluster.yaml --wait 120s
+kind create cluster --name "$cluster" --config e2e/helm/cluster.yaml --wait 120s
 
 echo "==> installing the Gateway API and Traefik"
 kubectl apply --server-side -f \
 	"https://github.com/kubernetes-sigs/gateway-api/releases/download/$gateway_api/standard-install.yaml" >/dev/null
 helm install traefik oci://ghcr.io/traefik/helm/traefik --version "$traefik_chart" \
-	--namespace traefik --create-namespace --values e2e/kind/traefik-values.yaml \
+	--namespace traefik --create-namespace --values e2e/helm/traefik-values.yaml \
 	--wait --timeout 5m >/dev/null
 
 echo "==> starting the external Postgres"
-kubectl apply -f e2e/kind/postgres.yaml >/dev/null
+kubectl apply -f e2e/helm/postgres.yaml >/dev/null
 kubectl --namespace ci-deps rollout status deployment/postgres --timeout 5m
 
 echo "==> preparing the restricted namespace"
@@ -84,16 +84,16 @@ for route in ingress httproute; do
 	helm install "smoke-$route" "$chart" --namespace "$namespace" \
 		--values "$chart/ci/$route-values.yaml" --set "image.tag=$image_tag" \
 		--wait --timeout 15m >/dev/null
-	test_release kind-smoke.test.ts "$route.oxynote.localhost"
+	test_release helm-smoke.test.ts "$route.oxynote.localhost"
 	helm uninstall "smoke-$route" --namespace "$namespace" --wait >/dev/null
 done
 
 echo "==> upgrade from $previous_tag to $image_tag"
-export E2E_KIND_STATE="$tmp/upgrade.json"
+export E2E_HELM_STATE="$tmp/upgrade.json"
 helm install upgrade "$chart" --namespace "$namespace" \
 	--values "$chart/ci/ingress-values.yaml" --set "image.tag=$previous_tag" \
 	--wait --timeout 15m >/dev/null
-test_release kind-upgrade.test.ts ingress.oxynote.localhost -g "before the upgrade"
+test_release helm-upgrade.test.ts ingress.oxynote.localhost -g "before the upgrade"
 
 helm upgrade upgrade "$chart" --namespace "$namespace" \
 	--values "$chart/ci/ingress-values.yaml" --set "image.tag=$image_tag" \
@@ -106,6 +106,6 @@ if [ "$running" != "ghcr.io/oxynote/oxynote:$image_tag" ]; then
 	exit 1
 fi
 
-test_release kind-upgrade.test.ts ingress.oxynote.localhost -g "after the upgrade"
+test_release helm-upgrade.test.ts ingress.oxynote.localhost -g "after the upgrade"
 
-echo "==> all kind checks passed"
+echo "==> all helm e2e checks passed"

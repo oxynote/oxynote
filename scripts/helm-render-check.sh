@@ -1,12 +1,12 @@
 #!/bin/sh
 # every render-only check of the Helm chart.
 #
-# usage: scripts/chart-check.sh
+# usage: scripts/helm-render-check.sh
 set -eu
 
 cd "$(dirname "$0")/.."
 
-chart=charts/oxynote
+chart=helm
 helm3_image=alpine/helm:3.22.1@sha256:8191701ad1f82ee3695c87211fcbfe6d7b1bb7df92ac1c8de9ccdb0995a6a2c1
 kube_versions="1.34.0 1.35.0 1.36.0 1.37.0"
 # CRDs-catalog has no releases, so the commit is the pin.
@@ -71,14 +71,14 @@ fi
 
 echo "==> README"
 cp "$chart/README.md" "$tmp/README.md"
-helm-docs --chart-search-root charts --sort-values-order file --log-level warning
+helm-docs --chart-search-root helm --sort-values-order file --log-level warning
 if ! cmp -s "$chart/README.md" "$tmp/README.md"; then
 	echo "$chart/README.md was out of date. helm-docs has regenerated it." >&2
 	exit 1
 fi
 
 echo "==> env names"
-node scripts/check-chart-env.mjs
+node scripts/check-helm-env.mjs
 
 echo "==> reproducible package"
 epoch=$(git log -1 --format=%ct)

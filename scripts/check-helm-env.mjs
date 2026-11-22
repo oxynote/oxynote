@@ -4,11 +4,11 @@
 // like a secret. Print what differs and exit 1 when
 // they drift apart.
 //
-// usage: node scripts/check-chart-env.mjs
+// usage: node scripts/check-helm-env.mjs
 import { readFileSync } from "node:fs"
 
 const envPath = "docker/prod/launcher/src/env.ts"
-const schemaPath = "charts/oxynote/values.schema.json"
+const schemaPath = "helm/values.schema.json"
 
 // the launcher's names are the keys of baseSchema, one per line.
 const source = readFileSync(new URL(`../${envPath}`, import.meta.url), "utf8")

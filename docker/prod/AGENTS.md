@@ -70,9 +70,9 @@ mailpit, since the example runs without email.
   instead of adding variables, generate secrets instead of exposing them,
   and never leak an internal dependency's name into a public variable. An
   undeclared `OXYNOTE_*` variable is a boot error.
-  A new variable also goes in `charts/oxynote/values.schema.json`: in
+  A new variable also goes in `helm/values.schema.json`: in
   `extraEnv`'s name list, and in `env` too unless it carries a secret.
-  `node scripts/check-chart-env.mjs` fails until it does.
+  `node scripts/check-helm-env.mjs` fails until it does.
 - **Secrets precedence** (`launcher/src/secrets.ts`): explicit env (never
   persisted) → existing volume file → generate and persist 0600. The
   data-source override may carry a whole keyring; the generated file holds

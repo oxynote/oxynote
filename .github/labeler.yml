@@ -54,15 +54,15 @@ docker:
           - "**/Dockerfile*"
           - "**/.goreleaser.yml"
 
-chart:
+helm-chart:
   - changed-files:
       - any-glob-to-any-file:
-          - charts/**
-          - e2e/kind/**
-          - e2e/tests/kind-*
-          - e2e/playwright.kind.config.ts
-          - scripts/chart-*
-          - scripts/check-chart-env.mjs
+          - helm/**
+          - e2e/helm/**
+          - e2e/tests/helm-*
+          - e2e/playwright.helm.config.ts
+          - scripts/helm-*
+          - scripts/check-helm-env.mjs
 
 dev-env:
   - changed-files:

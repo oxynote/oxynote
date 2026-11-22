@@ -147,17 +147,17 @@ jobs:
               --build-arg SENTRY_AUTH_REALTIME_DSN=${{ secrets.SENTRY_AUTH_REALTIME_DSN }} \
               --build-arg SENTRY_LAUNCHER_DSN=${{ secrets.SENTRY_LAUNCHER_DSN }}"
 
-  chart:
+  helm:
     needs: publish
-    uses: ./.github/workflows/qa-chart.yml
+    uses: ./.github/workflows/qa-helm.yml
     with:
       image-tag: ${{ needs.publish.outputs.version }}
 
-  publish-chart:
+  publish-helm:
     name: Publishing the Helm chart
     needs:
       - publish
-      - chart
+      - helm
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -181,12 +181,12 @@ jobs:
 
       - name: Package and push the chart
         id: push
-        run: make chart-publish RELEASE_VERSION="${{ needs.publish.outputs.version }}"
+        run: make helm-publish RELEASE_VERSION="${{ needs.publish.outputs.version }}"
 
   # a job of its own, so a failed signature can be retried after the push.
-  sign-chart:
+  sign-helm:
     name: Signing the Helm chart
-    needs: publish-chart
+    needs: publish-helm
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -205,4 +205,4 @@ jobs:
         uses: sigstore/cosign-installer@v4
 
       - name: Sign the chart
-        run: cosign sign --yes "ghcr.io/oxynote/helm/oxynote@${{ needs.publish-chart.outputs.digest }}"
+        run: cosign sign --yes "ghcr.io/oxynote/helm/oxynote@${{ needs.publish-helm.outputs.digest }}"

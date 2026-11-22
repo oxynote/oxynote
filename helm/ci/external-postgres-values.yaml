@@ -1,5 +1,5 @@
 publicUrl: http://localhost:8080
-# e2e/kind/run.sh creates this Secret with OXYNOTE_DB_DSN before ct install.
+# e2e/helm/run.sh creates this Secret with OXYNOTE_DB_DSN before ct install.
 envFromSecret: oxynote-ci-db
 env:
   OXYNOTE_MAX_ORGANIZATIONS: "100000"

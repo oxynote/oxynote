@@ -32,7 +32,7 @@ in front and set `OXYNOTE_PUBLIC_URL` to the public `https://` origin.
 
 On Kubernetes, install the official Helm chart instead,
 `oci://ghcr.io/oxynote/helm/oxynote`. Its
-[README](../../charts/oxynote/README.md) covers the values, secrets and
+[README](../../helm/README.md) covers the values, secrets and
 exposing it through an Ingress or a Gateway.
 
 ## Configuration

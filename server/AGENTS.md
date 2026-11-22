@@ -18,62 +18,47 @@ Core domain rules sit beside their packages:
   (`OXYNOTE_AUTH_REALTIME_BACKEND_URL`).
 - `datagen/`: separate Go module synthesising demo Postgres/MariaDB content.
 
-Go builds go through goreleaser (`make build` in `server/core` and
-`datagen`).
 datagen shares core's test/lint workflow with its own copy of the
 golangci-lint profile; its `pgdemo`/`mariademo` suites start throwaway
 containers.
 
 ## Caddy / ports
 
-`docker/Caddyfile`: `:8080` front door (`/core/*` → `core:8080`,
-`/auth-realtime/*` → `auth-realtime:8081`, else `web:3000`), `:8082`
-changedetection.io, `:8083` Grafana (direct). `/api/x/...` is not exposed;
-GitHub and Slack callback URLs point at `:8080/core/api/apps/...`.
+`docker/Caddyfile` also serves `:8082` changedetection.io and `:8083`
+Grafana (direct). GitHub and Slack callback URLs point at
+`:8080/core/api/apps/...`.
 
 ## Core request surface
 
 `internal/server/router.go` is the canonical map.
 
 - `/api/...`: session-authed via auth-realtime's `/api/auth/get-session`
-  (`SERVER_AUTH_BETTER_AUTH_URL`). `GET /api/capabilities` reports one
-  boolean per optional service, snapshotted at boot, plus `aiAssistant`
-  (`status` + `model`).
-- `/api/x/...`: no auth; auth-realtime fetches/stores branch content here
-  (`/x/documents/{id}/branches`, `/x/documents/{id}/branch/{branchId}`),
-  triggers emails and initializes or tears down orgs.
-- `/api/apps/...`: sessionless; GitHub/Slack webhooks gated by request
-  signature, `GET /apps/slack/install` completes the OAuth exchange. Must
-  stay outside `/api/x`, since third parties reach core through the front
-  door.
+  (`SERVER_AUTH_BETTER_AUTH_URL`).
+- `/api/apps/...` stays outside `/api/x`, since third parties reach it
+  through the front door.
 - `/api/mcp`: streamable HTTP MCP server (`internal/server/internal/mcp`)
   over the assistant's ungated tool registry plus documents as resources.
   JWT bearer tokens come from auth-realtime's `@better-auth/mcp`; each
   request is validated against `GET /api/internal/mcp/session` (JWKS +
   consent row, so revocation 401s immediately) and scoped by
   `documents:read`/`documents:write`/`data-sources:read`.
-- `/api/ws` topics (`wetsocks/wsserver`) are registered in `router.go` as
-  `<event>@<domain.path>`; binders are `Handler.BindXxx` under
-  `internal/server/internal/...`.
 
 ## Document storage / Hocuspocus
 
 - Documents have branches (`document_branches`); every document has at least
   one, and the main one is flagged `default` (see the document package's
   AGENTS.md for the branch rules).
-- Hocuspocus `documentName` is `"<documentId>-<branchIdentifier>"`;
-  `"default"` is resolved by `resolveBranchId`
+- The branch identifier `"default"` is resolved by `resolveBranchId`
   (`auth-realtime/src/hocuspocus.ts`).
 - Branch content is stored twice: ProseMirror JSON in `content` (JSONB) and
   the Yjs binary in `raw_content` (base64 on the wire). `raw_content` is
   authoritative for CRDT continuity.
 - `onLoadDocument`/`onStoreDocument` round-trip through
-  `/api/x/documents/{id}/branch/{branchId}`. Never seed a doc from another
-  with `Y.applyUpdate` (clientIDs CRDT-merge and duplicate content); use
-  `replaceYdocContent` (`auth-realtime/src/ydocument.ts`), which deep-clones
-  `Y.XmlElement`s preserving the non-string attrs `clone()` drops. Read the
-  comments on `onLoadDocument` and on `applyMergeToOpenDocument`
-  (`routes.ts`) first.
+  `/api/x/documents/{id}/branch/{branchId}`. `Y.applyUpdate` from another
+  doc merges clientIDs and duplicates content, so use `replaceYdocContent`.
+  It deep-clones `Y.XmlElement`s, keeping the non-string attrs `clone()`
+  drops. Read the comments on `onLoadDocument` and on
+  `applyMergeToOpenDocument` (`routes.ts`) first.
 - **Fork, branch update, merge and branch delete go through auth-realtime**,
   which flushes the affected branch's pending store (both sides for a merge,
   the `-default` alias too), refuses the operation if the flush fails, then
@@ -93,8 +78,7 @@ Postgres 18. `db.New` applies `core/internal/db/migrations/` with goose:
 numbering. **The system is live: every schema change is a new migration;
 an applied migration's statements never change.** A Go migration has a
 Down and uses only its `*sql.Tx`, plain values and `migrations.Deps`, never
-`db` helpers, so it stays frozen. A dev volume behind on migrations can be reset with
-`docker compose -p oxynote -f docker/docker-compose.dev.yaml down -v`.
+`db` helpers, so it stays frozen.
 
 **Core migrations own the Better Auth tables** (snake_case columns matching
 the `fields` mappings in `auth-realtime/src/auth.ts`).
@@ -109,8 +93,7 @@ source ../../docker/env/auth-realtime.local.env && npx @better-auth/cli generate
 ## Env vars
 
 `docker/env/*.example.env` lists every variable each service reads, empty
-ones included; the dev compose reads only the gitignored `*.local.env`
-copies. Core reads `OXYNOTE_CORE_*` through `buildinfo.Getenv("FOO")`.
+ones included.
 
 Every integration is optional and keyed on one variable (`GITHUB_APP_ID`,
 `SLACK_CLIENT_ID`, `ASSISTANT_PROVIDER`, `CHANGEDETECTION_API_URL`,

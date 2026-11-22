@@ -12,10 +12,10 @@ import {
 import { visit } from "../helpers/page"
 import { signUpWithWorkspaceWithoutEmail } from "../helpers/without-email"
 
-// the second test depends on the first. kind/run.sh runs the first on the
-// previous release, upgrades the release, then runs the second. The first
-// hands over the account and the document in E2E_KIND_STATE.
-const statePath = process.env.E2E_KIND_STATE ?? ""
+// the second test depends on the first. e2e/helm/run.sh runs the first on
+// the previous release, upgrades the release, then runs the second. The
+// first hands over the account and the document in E2E_HELM_STATE.
+const statePath = process.env.E2E_HELM_STATE ?? ""
 const text = "Written before the upgrade"
 
 interface State {

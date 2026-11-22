@@ -1,6 +1,6 @@
 apiVersion: v2
 name: oxynote
-description: Oxynote, the collaborative documentation product, as one all-in-one pod.
+description: Oxynote, an open-source technical wiki that connects to the systems it describes, as one all-in-one pod.
 type: application
 # the release workflow sets both versions from the app tag. Keep 0.0.0 here.
 version: 0.0.0
@@ -13,5 +13,17 @@ icon: https://raw.githubusercontent.com/oxynote/oxynote/main/web/public/favicon.
 keywords:
   - documentation
   - wiki
+  - knowledge-base
   - runbooks
   - collaboration
+  - observability
+  - monitoring
+  - metrics
+  - logs
+  - dashboard
+  - prometheus
+  - loki
+  - incident-response
+  - mcp
+  - notion-alternative
+  - confluence-alternative

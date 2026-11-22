@@ -3,12 +3,12 @@
 # version that is already there, because a second push would change the
 # digest that the signature and every install point to.
 #
-# usage: scripts/chart-publish.sh VERSION
+# usage: scripts/helm-publish.sh VERSION
 set -eu
 
 cd "$(dirname "$0")/.."
 
-version=${1:?usage: scripts/chart-publish.sh VERSION}
+version=${1:?usage: scripts/helm-publish.sh VERSION}
 registry=oci://ghcr.io/oxynote/helm
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -25,7 +25,7 @@ if ! grep -qi "not found" "$tmp/show"; then
 	exit 1
 fi
 
-SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) helm package charts/oxynote \
+SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) helm package helm \
 	--version "$version" --app-version "$version" --destination "$tmp" >/dev/null
 
 if ! helm push "$tmp/oxynote-$version.tgz" "$registry" >"$tmp/push" 2>&1; then

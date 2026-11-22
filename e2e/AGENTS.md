@@ -28,7 +28,7 @@ configs.
 ```sh
 make e2e-dev  | e2e-dev-stack-build  | e2e-dev-stack-stop     # from the repo root
 make e2e-prod | e2e-prod-stack-build | e2e-prod-stack-stop
-make e2e-kind | e2e-kind-stack-stop                          # the Helm chart
+make e2e-helm | e2e-helm-stack-stop                          # the Helm chart
 
 pnpm setup        # deps + playwright chromium         (from e2e/)
 pnpm test:dev     # full cycle against the dev stack;  test:prod likewise
@@ -117,17 +117,16 @@ trust-boundary tests: internal ports are not published, so only a sibling
 container can tell loopback from wildcard binds. Postgres speaks no HTTP, so
 its port is probed with `nc -z`, against a control on the front door.
 
-## The kind stack
+## The helm stack
 
-`kind/run.sh` tests the Helm chart
-([charts/oxynote](../charts/oxynote/AGENTS.md)) on a throwaway kind cluster
-behind Traefik (`:19280`, one `*.oxynote.localhost` host per release). It
-pulls published images and builds nothing, so a change to the signup or
-editor flow fails these tests until it is released. Only
-`playwright.kind.config.ts` runs the `kind-*.test.ts` files, with the
-release's address in `E2E_BASE_URL`. The releases send no email and allow
+`e2e/helm/run.sh` tests the Helm chart ([helm](../helm/AGENTS.md)) on a
+throwaway kind cluster behind Traefik (`:19280`, one `*.oxynote.localhost`
+host per release). It pulls published images and builds nothing, so a
+change to the signup or editor flow fails these tests until it is
+released. Only `playwright.helm.config.ts` runs the `helm-*.test.ts`
+files, with the release's address in `E2E_BASE_URL`. The releases send no email and allow
 many workspaces, so tests sign up with `signUpWithWorkspaceWithoutEmail`.
-The two tests in `kind-upgrade.test.ts` depend on each other, which no
+The two tests in `helm-upgrade.test.ts` depend on each other, which no
 other file does: run.sh runs one, upgrades the release, then runs the
 other.
 
@@ -138,7 +137,7 @@ other.
 - **Test files live in `tests/`, one per user-facing flow**, named as a user
   would (`signup`, `login`, `editor`, `collaboration`). Never `.spec.ts`.
   There is nothing to pair 1:1 with; an e2e test crosses four services.
-- **`prod-*.test.ts` and `kind-*.test.ts` are the exceptions to naming by
+- **`prod-*.test.ts` and `helm-*.test.ts` are the exceptions to naming by
   flow**: each observes something only true of the all-in-one image or of
   the Helm chart, and the other configs ignore them (`testIgnore`). A test
   earns the prefix only if it would be meaningless or misleading against
@@ -332,8 +331,8 @@ image without a release. Its cache reaches the build through
 runs in full on a tag. The dev suite is deliberately not a gate and is the
 one QA workflow without `workflow_call`.
 
-`qa-chart.yml` runs `make chart-check` and `kind/run.sh` on chart changes,
-against the latest release. release.yml calls it with the image it has just
+`qa-helm.yml` runs `make helm-check` and `e2e/helm/run.sh` on chart
+changes, against the latest release. release.yml calls it with the image it has just
 published, before it pushes the chart.
 
 ## Not covered
