@@ -30,6 +30,14 @@ func Test_LogReference(t *testing.T) {
 func Test_decodeLogAttrs(t *testing.T) {
 	t.Parallel()
 
+	// defaultQueries is the query list a log block gets when it names none.
+	defaultQueries := []any{
+		map[string]any{
+			"name":  "Query 1",
+			"query": "",
+		},
+	}
+
 	cc := map[string]struct {
 		Text   string
 		Result document.Attributes
@@ -37,7 +45,7 @@ func Test_decodeLogAttrs(t *testing.T) {
 	}{
 		"No attrs at all": {
 			Text:   " ",
-			Result: document.Attributes{},
+			Result: document.Attributes{document.AttrQueries: defaultQueries},
 		},
 		"A fully configured log block": {
 			Text: `{"title":"API errors","dataSourceId":"d1qbc8kv2vg000cnb6ag","queries":[{"name":"Query 1","query":"up"}],` +
@@ -52,9 +60,13 @@ func Test_decodeLogAttrs(t *testing.T) {
 				document.AttrHeight:          "tall",
 			},
 		},
+		"An empty query list gets the default": {
+			Text:   `{"queries":[]}`,
+			Result: document.Attributes{document.AttrQueries: defaultQueries},
+		},
 		"Nulls are as absent as missing keys": {
 			Text:   `{"order":null,"queries":null}`,
-			Result: document.Attributes{document.AttrOrder: nil, document.AttrQueries: nil},
+			Result: document.Attributes{document.AttrOrder: nil, document.AttrQueries: defaultQueries},
 		},
 		"Not JSON": {
 			Text: "{",
@@ -66,7 +78,7 @@ func Test_decodeLogAttrs(t *testing.T) {
 		},
 		"A time range that follows the built-in variable": {
 			Text:   `{"timeRange":"$metric_range","refreshInterval":"1m"}`,
-			Result: document.Attributes{document.AttrTimeRange: "$metric_range", document.AttrRefreshInterval: "1m"},
+			Result: document.Attributes{document.AttrTimeRange: "$metric_range", document.AttrRefreshInterval: "1m", document.AttrQueries: defaultQueries},
 		},
 		"An unknown refresh interval": {
 			Text: `{"refreshInterval":"1y"}`,

@@ -71,7 +71,7 @@ func MetricEnums() map[string][]string {
 func MetricReference() string {
 	var sb strings.Builder
 
-	sb.WriteString("dataSourceId (an id from list_data_sources), queries ([{name, query, legendFormat}], PromQL or SQL as the data source takes)")
+	sb.WriteString("dataSourceId (an id from list_data_sources), queries ([{name, query, legendFormat}], PromQL or SQL as the data source takes, one empty query when left out)")
 
 	for _, key := range slices.Sorted(maps.Keys(_metricEnums)) {
 		sb.WriteString(", " + key + " (" + strings.Join(enumValues(_metricEnums, key), "|") + ")")
@@ -143,12 +143,15 @@ type metricThreshold struct {
 
 // decodeMetricAttrs reads and checks a metric's JSON attributes. A
 // threshold colour must be a palette name, or one the stored metric
-// already carries, since older metrics hold css. stored is the metric
-// the element's id names, or the zero block.
+// already carries, since older metrics hold css. A metric without
+// queries gets the default one. stored is the metric the element's id
+// names, or the zero block.
 func decodeMetricAttrs(text string, stored document.Block) (document.Attributes, error) {
 	attrs := document.Attributes{}
 
 	if strings.TrimSpace(text) == "" {
+		attrs[document.AttrQueries] = defaultMetricQueries()
+
 		return attrs, nil
 	}
 
@@ -179,6 +182,10 @@ func decodeMetricAttrs(text string, stored document.Block) (document.Attributes,
 		}
 	}
 
+	if len(typed.Queries) == 0 {
+		attrs[document.AttrQueries] = defaultMetricQueries()
+	}
+
 	colors := append(tagCore.ColorNames(), storedMetricColors(stored)...)
 
 	if c := typed.BaseThresholdColor; c != "" && !slices.Contains(colors, c) {
@@ -192,6 +199,20 @@ func decodeMetricAttrs(text string, stored document.Block) (document.Attributes,
 	}
 
 	return attrs, nil
+}
+
+// defaultMetricQueries returns the queries of a metric that names none:
+// one empty query, as defaultMetricConfig in
+// web/app/components/editor/blocks/metrics/utils.ts creates it. Each call
+// returns a new list, so no two blocks share one.
+func defaultMetricQueries() []any {
+	return []any{
+		map[string]any{
+			"name":         "Query 1",
+			"query":        "",
+			"legendFormat": "",
+		},
+	}
 }
 
 // storedMetricColors returns every colour the stored metric carries: the

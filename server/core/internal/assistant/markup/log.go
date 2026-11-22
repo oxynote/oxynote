@@ -73,11 +73,14 @@ type logQuery struct {
 
 // decodeLogAttrs reads a log block's JSON attributes and checks them:
 // every enum holds one of its values, every other attribute has its
-// type, and every query has a name and a query.
+// type, and every query has a name and a query. A log block without
+// queries gets the default one.
 func decodeLogAttrs(text string) (document.Attributes, error) {
 	attrs := document.Attributes{}
 
 	if strings.TrimSpace(text) == "" {
+		attrs[document.AttrQueries] = defaultLogQueries()
+
 		return attrs, nil
 	}
 
@@ -108,5 +111,22 @@ func decodeLogAttrs(text string) (document.Attributes, error) {
 		}
 	}
 
+	if len(typed.Queries) == 0 {
+		attrs[document.AttrQueries] = defaultLogQueries()
+	}
+
 	return attrs, nil
+}
+
+// defaultLogQueries returns the queries of a log block that names none:
+// one empty query, as defaultLogConfig in
+// web/app/components/editor/blocks/logs/utils.ts creates it. Each call
+// returns a new list, so no two blocks share one.
+func defaultLogQueries() []any {
+	return []any{
+		map[string]any{
+			"name":  "Query 1",
+			"query": "",
+		},
+	}
 }
