@@ -112,6 +112,10 @@ func Test_decodeMetricAttrs(t *testing.T) {
 				document.AttrSimulationPreset:  "cpu_usage",
 			},
 		},
+		"A JSON null gets the default query": {
+			Text:   "null",
+			Result: document.Attributes{document.AttrQueries: defaultQueries},
+		},
 		"An empty query list gets the default": {
 			Text:   `{"queries":[]}`,
 			Result: document.Attributes{document.AttrQueries: defaultQueries},

@@ -393,4 +393,19 @@ describe("<BottomConfig>", { concurrent: false }, () => {
 		expect(at(editors, 0).props("diffStatus")).toBe(DiffStatus.Removed)
 		expect(wrapper.text()).not.toContain(t("editor.metrics.config.no-query"))
 	})
+
+	it("says there is no query when a diff turned a missing query list into an empty one", async ({
+		expect,
+	}) => {
+		useEditorStore().setReviewableDiffActive(true)
+
+		const wrapper = await mountBottom({
+			modelValue: configWith({ queries: [] }),
+			diffStatus: DiffStatus.Modified,
+			oldConfig: configWith({ queries: null }),
+		})
+
+		expect(wrapper.text()).toContain(t("editor.metrics.config.no-query"))
+		expect(queryEditors(wrapper)).toHaveLength(0)
+	})
 })

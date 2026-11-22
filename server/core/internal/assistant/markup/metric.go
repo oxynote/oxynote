@@ -159,6 +159,11 @@ func decodeMetricAttrs(text string, stored document.Block) (document.Attributes,
 		return nil, fmt.Errorf("<metrics> holds a JSON object of its attributes: %w", err)
 	}
 
+	// a JSON null decodes to a nil map.
+	if attrs == nil {
+		attrs = document.Attributes{}
+	}
+
 	for _, key := range slices.Sorted(maps.Keys(_metricEnums)) {
 		v, ok := attrs.Value(key)
 		if !ok {

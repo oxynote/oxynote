@@ -230,7 +230,7 @@ function deleteQuery(index: number) {
 			</div>
 			<template v-else>
 				<!-- diff mode with modifications: iterate diffQueryEntries to include removed entries -->
-				<template v-if="areQueriesModified">
+				<template v-if="areQueriesModified && diffQueryEntries.length">
 					<div
 						v-for="entry in diffQueryEntries"
 						:key="entry.key"
