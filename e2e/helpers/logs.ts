@@ -45,12 +45,16 @@ export async function addLogGrid(
 	request: APIRequestContext,
 	configs: Record<string, unknown>[],
 ): Promise<LogPage> {
-	return await insertLogBlocks(
+	const grid = await insertLogBlocks(
 		page,
 		request,
 		configs,
 		(blocks) => `<grid>${blocks.join("")}</grid>`,
 	)
+
+	// the first id belongs to the grid, followed by its log blocks.
+	expect(grid.blockIds).toHaveLength(configs.length + 1)
+	return { ...grid, blockIds: grid.blockIds.slice(1) }
 }
 
 export interface LogPage {
@@ -123,20 +127,16 @@ async function insertLogBlocks(
 	expect(inserted.isError, JSON.stringify(inserted.content)).toBeFalsy()
 	await client.close()
 
-	const written = (
-		JSON.parse((inserted.content as { text: string }[])[0]?.text ?? "{}") as {
-			content?: string
-		}
-	).content
+	const written = JSON.parse(
+		(inserted.content as { text: string }[])[0]?.text ?? "{}",
+	) as { block_uids: string[] }
 
 	return {
 		url: url,
 		dataSourceId: dataSourceId ?? "",
 		documentId: id,
 		branchId: branchId ?? "",
-		blockIds: [...(written ?? "").matchAll(/<logs id="([^"]+)"/g)].map(
-			(match) => match[1] ?? "",
-		),
+		blockIds: written.block_uids,
 		token: token,
 	}
 }
