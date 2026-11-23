@@ -282,3 +282,18 @@ tests:
             options:
               - name: ndots
                 value: "2"
+
+  - it: sets no pull secret by default
+    asserts:
+      - notExists:
+          path: spec.template.spec.imagePullSecrets
+
+  - it: pulls the image with the given secrets
+    set:
+      imagePullSecrets:
+        - name: regcred
+    asserts:
+      - equal:
+          path: spec.template.spec.imagePullSecrets
+          value:
+            - name: regcred

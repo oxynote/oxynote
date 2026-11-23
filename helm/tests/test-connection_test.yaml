@@ -49,6 +49,16 @@ tests:
       - exists:
           path: spec.affinity.nodeAffinity
 
+  - it: pulls the image with the app's secrets
+    set:
+      imagePullSecrets:
+        - name: regcred
+    asserts:
+      - equal:
+          path: spec.imagePullSecrets
+          value:
+            - name: regcred
+
   - it: runs as the app's ServiceAccount
     set:
       serviceAccount.create: false
