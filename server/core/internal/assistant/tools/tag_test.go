@@ -46,7 +46,7 @@ func Test_listTags_Info(t *testing.T) {
 
 	assert.Equal(t, NameListTags, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Empty(t, info.Properties)
+	assert.Contains(t, info.Properties, "include_documents")
 	assert.Empty(t, info.Required)
 }
 
@@ -60,9 +60,11 @@ func Test_listTags_Exec(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Input  *InputMock
-		Result any
-		Err    error
+		Input        *InputMock
+		Tool         listTags
+		Result       any
+		Err          error
+		ExpectedJSON string
 	}{
 		"Error returned by Input.FetchTagTree": {
 			Input: &InputMock{
@@ -80,10 +82,20 @@ func Test_listTags_Exec(t *testing.T) {
 			},
 			Result: listTagsResult{Tags: []tagEntry{}},
 		},
-		// the tree lists the nested children of an assigned document as
-		// sidebar context. Only the assigned document itself is listed.
+		"Tags without their documents": {
+			Input: stubTagInput(),
+			Tool:  listTags{IncludeDocuments: false},
+			Result: listTagsResult{Tags: []tagEntry{
+				{ID: _testTagID, Name: _stubTagName, ColorName: _stubTagColor},
+				{ID: _otherTagID, Name: "Staging", ColorName: "orange"},
+			}},
+			ExpectedJSON: `{"tags":[{"id":"` + _testTagID.String() + `","name":"` + _stubTagName + `","color":"` + _stubTagColor + `"},{"id":"` + _otherTagID.String() + `","name":"Staging","color":"orange"}]}`,
+		},
 		"Tags with their documents": {
 			Input: stubTagInput(),
+			Tool:  listTags{IncludeDocuments: true},
+			// the tree lists the nested children of an assigned document as
+			// sidebar context. Only the assigned document itself is listed.
 			Result: listTagsResult{Tags: []tagEntry{
 				{
 					ID:        _testTagID,
@@ -93,6 +105,7 @@ func Test_listTags_Exec(t *testing.T) {
 				},
 				{ID: _otherTagID, Name: "Staging", ColorName: "orange", Documents: []tagDocument{}},
 			}},
+			ExpectedJSON: `{"tags":[{"id":"` + _testTagID.String() + `","name":"` + _stubTagName + `","color":"` + _stubTagColor + `","documents":[{"id":"` + _testDocID.String() + `","name":"` + _stubDocumentName + `","default_branch_id":"` + _stubMainBranchID.String() + `"}]},{"id":"` + _otherTagID.String() + `","name":"Staging","color":"orange","documents":[]}]}`,
 		},
 	}
 
@@ -100,7 +113,7 @@ func Test_listTags_Exec(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := listTags{}.Exec(c.Input)
+			res, err := c.Tool.Exec(c.Input)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, c.Input.FetchTagTreeCalls(), 1)
@@ -110,6 +123,12 @@ func Test_listTags_Exec(t *testing.T) {
 			}
 
 			assert.Equal(t, c.Result, res)
+
+			if c.ExpectedJSON != "" {
+				data, err := encodeResult(res)
+				require.NoError(t, err)
+				assert.JSONEq(t, c.ExpectedJSON, data)
+			}
 		})
 	}
 }
