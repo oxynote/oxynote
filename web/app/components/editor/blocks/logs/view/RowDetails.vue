@@ -38,7 +38,11 @@ const sections = computed<
 	},
 	{
 		heading: t("editor.logs.view.metadata-heading"),
-		description: t("editor.logs.view.metadata-description"),
+		description: t(
+			props.dialect.indexesAllFields
+				? "editor.logs.view.metadata-description-indexed"
+				: "editor.logs.view.metadata-description",
+		),
 		entries: carriedFields(props.log, props.dialect).map(([key, value]) => ({
 			key: key,
 			value: value,

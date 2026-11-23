@@ -38,6 +38,7 @@ const EXACT_DIALECT: LogDialect = {
 		key === lineKey && (typeof lineValue !== "string" || lineValue === value),
 	logfmtKeepsLastValue: false,
 	parsedInFields: false,
+	indexesAllFields: false,
 }
 // a source that sends the keys it read from the line as fields, and names
 // the keys of a nested value with a dot
@@ -49,6 +50,7 @@ const UNPACKING_DIALECT: LogDialect = {
 				(typeof lineValue === "string" ? lineValue : JSON.stringify(lineValue))
 			: nested && key.startsWith(`${lineKey}.`),
 	parsedInFields: true,
+	indexesAllFields: true,
 }
 const UNPACKED_LOG = {
 	id: "unpacked",

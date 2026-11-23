@@ -38,6 +38,7 @@ export const lokiDialect: LogDialect = {
 	repeatsLineKey,
 	logfmtKeepsLastValue: false,
 	parsedInFields: false,
+	indexesAllFields: false,
 }
 
 // withViewFilters returns the query narrowed by the view's filters and

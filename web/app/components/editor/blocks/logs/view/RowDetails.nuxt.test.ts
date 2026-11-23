@@ -2,7 +2,7 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { flushPromises, type VueWrapper } from "@vue/test-utils"
 import { afterEach, describe, it, vi } from "vitest"
 import RowDetails from "./RowDetails.vue"
-import { LineFormat } from "../dialect"
+import { LineFormat, type LogDialect } from "../dialect"
 import { lokiDialect } from "../loki"
 import { victoriaLogsDialect } from "../victorialogs"
 import {
@@ -92,6 +92,19 @@ describe("<RowDetails>", { concurrent: false }, () => {
 			t("editor.logs.view.content-description"),
 		])
 		expect(notes.every((note) => note.classes().includes("hidden"))).toBe(true)
+	})
+
+	it("calls the metadata indexed when the source indexes every field", async ({
+		expect,
+	}) => {
+		const wrapper = await mountDetails(makeLog(), victoriaLogsDialect)
+		const notes = wrapper.findAll("h4 + span")
+
+		expect(notes.map((note) => note.text())).toEqual([
+			t("editor.logs.view.origin-description"),
+			t("editor.logs.view.metadata-description-indexed"),
+			t("editor.logs.view.content-description"),
+		])
 	})
 
 	it("says none in a table without entries", async ({ expect }) => {
@@ -363,11 +376,11 @@ function makeLog(overrides: Partial<Log> = {}): Log {
 }
 
 // every line format can be filtered, so no row needs a tooltip provider
-function mountDetails(log: Log) {
+function mountDetails(log: Log, dialect: LogDialect = lokiDialect) {
 	return mountSuspended(RowDetails, {
 		props: {
 			log,
-			dialect: lokiDialect,
+			dialect,
 			lineFilterFormats: Object.values(LineFormat),
 		},
 	})

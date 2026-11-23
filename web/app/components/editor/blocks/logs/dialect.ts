@@ -52,4 +52,7 @@ export interface LogDialect {
 	// parsedInFields tells whether the source sends the keys a query read
 	// from the line among the log's fields, and not as parsed keys
 	parsedInFields: boolean
+	// indexesAllFields tells whether the source indexes every field, and not
+	// only the ones that identify a stream
+	indexesAllFields: boolean
 }

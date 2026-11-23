@@ -999,6 +999,7 @@
 				"origin-description": "Indexed, set by the system that sent the log",
 				"metadata-heading": "Metadata fields",
 				"metadata-description": "Unindexed, sent alongside the log",
+				"metadata-description-indexed": "Indexed, if sent alongside the log",
 				"content-heading": "Content fields",
 				"content-description": "Unindexed, read from the log",
 				"section-empty": "None",

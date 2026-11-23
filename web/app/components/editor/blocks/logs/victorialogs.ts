@@ -54,6 +54,7 @@ export const victoriaLogsDialect: LogDialect = {
 	repeatsLineKey,
 	logfmtKeepsLastValue: true,
 	parsedInFields: true,
+	indexesAllFields: true,
 }
 
 // withViewFilters returns the query narrowed by the view's filters and
