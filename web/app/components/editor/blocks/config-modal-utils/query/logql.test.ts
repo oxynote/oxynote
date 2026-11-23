@@ -243,7 +243,7 @@ describe("useLogQLQueryExtension", () => {
 		const { options } = await complete(doc, true)
 
 		expect(options.find((o) => o.label === label)?.info).toBe(
-			`editor.config-modal-utils.query-info.loki.${key}`,
+			`query-languages.loki.${key}`,
 		)
 	})
 

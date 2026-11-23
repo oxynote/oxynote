@@ -27,17 +27,17 @@ function promqlDurationPresets(t: (key: string) => string) {
 		{
 			label: "$__interval",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.prometheus.interval"),
+			info: t("query-languages.prometheus.interval"),
 		},
 		{
 			label: "$__range",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.prometheus.range"),
+			info: t("query-languages.prometheus.range"),
 		},
 		{
 			label: "$__rate_interval",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.prometheus.rate-interval"),
+			info: t("query-languages.prometheus.rate-interval"),
 		},
 		{ label: "1m", type: "constant" },
 		{ label: "5m", type: "constant" },

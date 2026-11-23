@@ -30,37 +30,37 @@ function postgreSQLCompletions(t: (key: string) => string): Completion[] {
 		{
 			label: "$__from",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.sql.from"),
+			info: t("query-languages.sql.from"),
 		},
 		{
 			label: "$__to",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.sql.to"),
+			info: t("query-languages.sql.to"),
 		},
 		{
 			label: "$__interval",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.sql.interval"),
+			info: t("query-languages.sql.interval"),
 		},
 		{
 			label: "$__interval_ms",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.sql.interval-ms"),
+			info: t("query-languages.sql.interval-ms"),
 		},
 		{
 			label: "$__range",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.sql.range"),
+			info: t("query-languages.sql.range"),
 		},
 		{
 			label: "$__range_s",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.sql.range-s"),
+			info: t("query-languages.sql.range-s"),
 		},
 		{
 			label: "$__range_ms",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.sql.range-ms"),
+			info: t("query-languages.sql.range-ms"),
 		},
 		// macros
 		snippetCompletion("$__time(${1:dateColumn})", {
@@ -117,14 +117,14 @@ function postgreSQLCompletions(t: (key: string) => string): Completion[] {
 			label: "$__unixEpochFrom",
 			type: "function",
 			detail: "macro",
-			info: t("editor.config-modal-utils.query-info.sql.unix-epoch-from"),
+			info: t("query-languages.sql.unix-epoch-from"),
 			apply: "$__unixEpochFrom()",
 		},
 		{
 			label: "$__unixEpochTo",
 			type: "function",
 			detail: "macro",
-			info: t("editor.config-modal-utils.query-info.sql.unix-epoch-to"),
+			info: t("query-languages.sql.unix-epoch-to"),
 			apply: "$__unixEpochTo()",
 		},
 		snippetCompletion("$__unixEpochNanoFilter(${1:dateColumn})", {
@@ -137,14 +137,14 @@ function postgreSQLCompletions(t: (key: string) => string): Completion[] {
 			label: "$__unixEpochNanoFrom",
 			type: "function",
 			detail: "macro",
-			info: t("editor.config-modal-utils.query-info.sql.unix-epoch-nano-from"),
+			info: t("query-languages.sql.unix-epoch-nano-from"),
 			apply: "$__unixEpochNanoFrom()",
 		},
 		{
 			label: "$__unixEpochNanoTo",
 			type: "function",
 			detail: "macro",
-			info: t("editor.config-modal-utils.query-info.sql.unix-epoch-nano-to"),
+			info: t("query-languages.sql.unix-epoch-nano-to"),
 			apply: "$__unixEpochNanoTo()",
 		},
 		snippetCompletion("$__unixEpochGroup(${1:dateColumn}, '${2:5m}')", {
@@ -174,37 +174,37 @@ function mySQLCompletions(t: (key: string) => string): Completion[] {
 		{
 			label: "$__from",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.sql.from"),
+			info: t("query-languages.sql.from"),
 		},
 		{
 			label: "$__to",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.sql.to"),
+			info: t("query-languages.sql.to"),
 		},
 		{
 			label: "$__interval",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.sql.interval"),
+			info: t("query-languages.sql.interval"),
 		},
 		{
 			label: "$__interval_ms",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.sql.interval-ms"),
+			info: t("query-languages.sql.interval-ms"),
 		},
 		{
 			label: "$__range",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.sql.range"),
+			info: t("query-languages.sql.range"),
 		},
 		{
 			label: "$__range_s",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.sql.range-s"),
+			info: t("query-languages.sql.range-s"),
 		},
 		{
 			label: "$__range_ms",
 			type: "variable",
-			info: t("editor.config-modal-utils.query-info.sql.range-ms"),
+			info: t("query-languages.sql.range-ms"),
 		},
 		// macros
 		snippetCompletion("$__time(${1:dateColumn})", {
@@ -261,14 +261,14 @@ function mySQLCompletions(t: (key: string) => string): Completion[] {
 			label: "$__unixEpochFrom",
 			type: "function",
 			detail: "macro",
-			info: t("editor.config-modal-utils.query-info.sql.unix-epoch-from"),
+			info: t("query-languages.sql.unix-epoch-from"),
 			apply: "$__unixEpochFrom()",
 		},
 		{
 			label: "$__unixEpochTo",
 			type: "function",
 			detail: "macro",
-			info: t("editor.config-modal-utils.query-info.sql.unix-epoch-to"),
+			info: t("query-languages.sql.unix-epoch-to"),
 			apply: "$__unixEpochTo()",
 		},
 		snippetCompletion("$__unixEpochNanoFilter(${1:dateColumn})", {
@@ -281,14 +281,14 @@ function mySQLCompletions(t: (key: string) => string): Completion[] {
 			label: "$__unixEpochNanoFrom",
 			type: "function",
 			detail: "macro",
-			info: t("editor.config-modal-utils.query-info.sql.unix-epoch-nano-from"),
+			info: t("query-languages.sql.unix-epoch-nano-from"),
 			apply: "$__unixEpochNanoFrom()",
 		},
 		{
 			label: "$__unixEpochNanoTo",
 			type: "function",
 			detail: "macro",
-			info: t("editor.config-modal-utils.query-info.sql.unix-epoch-nano-to"),
+			info: t("query-languages.sql.unix-epoch-nano-to"),
 			apply: "$__unixEpochNanoTo()",
 		},
 		snippetCompletion("$__unixEpochGroup(${1:dateColumn}, '${2:5m}')", {

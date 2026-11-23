@@ -57,52 +57,52 @@ function stageCompletions(t: (key: string) => string): Completion[] {
 		{
 			label: "json",
 			type: "keyword",
-			info: t("editor.config-modal-utils.query-info.loki.json"),
+			info: t("query-languages.loki.json"),
 		},
 		{
 			label: "logfmt",
 			type: "keyword",
-			info: t("editor.config-modal-utils.query-info.loki.logfmt"),
+			info: t("query-languages.loki.logfmt"),
 		},
 		snippetCompletion('regexp "${}"', {
 			label: "regexp",
 			type: "keyword",
-			info: t("editor.config-modal-utils.query-info.loki.regexp"),
+			info: t("query-languages.loki.regexp"),
 		}),
 		snippetCompletion('pattern "${}"', {
 			label: "pattern",
 			type: "keyword",
-			info: t("editor.config-modal-utils.query-info.loki.pattern"),
+			info: t("query-languages.loki.pattern"),
 		}),
 		{
 			label: "unpack",
 			type: "keyword",
-			info: t("editor.config-modal-utils.query-info.loki.unpack"),
+			info: t("query-languages.loki.unpack"),
 		},
 		snippetCompletion('line_format "${}"', {
 			label: "line_format",
 			type: "keyword",
-			info: t("editor.config-modal-utils.query-info.loki.line-format"),
+			info: t("query-languages.loki.line-format"),
 		}),
 		{
 			label: "label_format",
 			type: "keyword",
-			info: t("editor.config-modal-utils.query-info.loki.label-format"),
+			info: t("query-languages.loki.label-format"),
 		},
 		{
 			label: "drop",
 			type: "keyword",
-			info: t("editor.config-modal-utils.query-info.loki.drop"),
+			info: t("query-languages.loki.drop"),
 		},
 		{
 			label: "keep",
 			type: "keyword",
-			info: t("editor.config-modal-utils.query-info.loki.keep"),
+			info: t("query-languages.loki.keep"),
 		},
 		{
 			label: "decolorize",
 			type: "keyword",
-			info: t("editor.config-modal-utils.query-info.loki.decolorize"),
+			info: t("query-languages.loki.decolorize"),
 		},
 	]
 }
@@ -113,22 +113,22 @@ function lineFilterCompletions(t: (key: string) => string): Completion[] {
 		snippetCompletion('|= "${}"', {
 			label: "|=",
 			type: "keyword",
-			info: t("editor.config-modal-utils.query-info.loki.contains"),
+			info: t("query-languages.loki.contains"),
 		}),
 		snippetCompletion('!= "${}"', {
 			label: "!=",
 			type: "keyword",
-			info: t("editor.config-modal-utils.query-info.loki.not-contains"),
+			info: t("query-languages.loki.not-contains"),
 		}),
 		snippetCompletion('|~ "${}"', {
 			label: "|~",
 			type: "keyword",
-			info: t("editor.config-modal-utils.query-info.loki.matches"),
+			info: t("query-languages.loki.matches"),
 		}),
 		snippetCompletion('!~ "${}"', {
 			label: "!~",
 			type: "keyword",
-			info: t("editor.config-modal-utils.query-info.loki.not-matches"),
+			info: t("query-languages.loki.not-matches"),
 		}),
 	]
 }
@@ -327,12 +327,12 @@ export function useLogQLQueryExtension(
 				? {
 						label: field.name,
 						type: "constant",
-						info: t("editor.config-modal-utils.query-info.loki.label"),
+						info: t("query-languages.loki.label"),
 					}
 				: {
 						label: field.name,
 						type: "property",
-						info: t("editor.config-modal-utils.query-info.loki.field"),
+						info: t("query-languages.loki.field"),
 					},
 		)
 	}

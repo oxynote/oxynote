@@ -191,15 +191,15 @@ describe("usePromQLQueryExtension", () => {
 
 		expect(byLabel.get("$__interval")).toMatchObject({
 			type: "variable",
-			info: "editor.config-modal-utils.query-info.prometheus.interval",
+			info: "query-languages.prometheus.interval",
 		})
 		expect(byLabel.get("$__range")).toMatchObject({
 			type: "variable",
-			info: "editor.config-modal-utils.query-info.prometheus.range",
+			info: "query-languages.prometheus.range",
 		})
 		expect(byLabel.get("$__rate_interval")).toMatchObject({
 			type: "variable",
-			info: "editor.config-modal-utils.query-info.prometheus.rate-interval",
+			info: "query-languages.prometheus.rate-interval",
 		})
 		expect(byLabel.get("1m")?.type).toBe("constant")
 	})

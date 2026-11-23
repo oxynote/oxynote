@@ -215,7 +215,13 @@ export function useQueryEditorExtension(
 		() => selectedDataSourceType.value === DataSourceType.Loki,
 		variables,
 	)
-	const logsqlExtension = useLogsQLQueryExtension(t, variables)
+	const logsqlExtension = useLogsQLQueryExtension(
+		t,
+		dataSourceId,
+		timeRange,
+		() => selectedDataSourceType.value === DataSourceType.VictoriaLogs,
+		variables,
+	)
 
 	return {
 		extensions: computed(() => {
