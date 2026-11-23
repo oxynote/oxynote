@@ -165,19 +165,16 @@ describe("readArchive", () => {
 	}
 	const manifestText = JSON.stringify(manifest)
 
-	const cases = [
-		{
-			name: "an empty input",
+	const cases = {
+		"an empty input": {
 			input: () => Promise.resolve(Buffer.alloc(1024)),
 			expected: "cannot read the backup: it is empty",
 		},
-		{
-			name: "a first entry that is not the manifest",
+		"a first entry that is not the manifest": {
 			input: () => tar([["database.sql.gz", "x"]]),
 			expected: "cannot read the backup: it starts with database.sql.gz instead of manifest.json",
 		},
-		{
-			name: "a manifest without a migration version",
+		"a manifest without a migration version": {
 			input: () =>
 				tar([
 					[
@@ -190,22 +187,19 @@ describe("readArchive", () => {
 				]),
 			expected: "cannot read the backup:",
 		},
-		{
-			name: "no checksums",
+		"no checksums": {
 			input: () =>
 				tar([["manifest.json", manifestText]], null),
 			expected: "cannot read the backup: it ends before its checksums, so it is incomplete",
 		},
-		{
-			name: "checksums that are no map of hashes",
+		"checksums that are no map of hashes": {
 			input: () =>
 				tar([["manifest.json", manifestText]], {
 					a: 1,
 				}),
 			expected: "cannot read the backup:",
 		},
-		{
-			name: "a path outside the target",
+		"a path outside the target": {
 			input: () =>
 				tar([
 					["manifest.json", manifestText],
@@ -213,8 +207,7 @@ describe("readArchive", () => {
 				]),
 			expected: "cannot read the backup: it holds an invalid entry name: secrets/../../x",
 		},
-		{
-			name: "an absolute path",
+		"an absolute path": {
 			input: () =>
 				tar([
 					["manifest.json", manifestText],
@@ -222,16 +215,14 @@ describe("readArchive", () => {
 				]),
 			expected: "cannot read the backup: it holds an invalid entry name: /etc/passwd",
 		},
-		{
-			name: "an entry its checksum does not match",
+		"an entry its checksum does not match": {
 			input: () =>
 				tar([["manifest.json", manifestText]], {
 					"manifest.json": "0",
 				}),
 			expected: "cannot read the backup: manifest.json does not match its checksum",
 		},
-		{
-			name: "a checksum for an entry that is missing",
+		"a checksum for an entry that is missing": {
 			input: () =>
 				tar([["manifest.json", manifestText]], {
 					"manifest.json": sha256(manifestText),
@@ -239,8 +230,7 @@ describe("readArchive", () => {
 				}),
 			expected: "cannot read the backup: database.sql.gz does not match its checksum",
 		},
-		{
-			name: "an entry after the checksums",
+		"an entry after the checksums": {
 			input: async () =>
 				Buffer.concat([
 					(
@@ -258,8 +248,7 @@ describe("readArchive", () => {
 				]),
 			expected: "cannot read the backup: it holds secrets/extra after its checksums",
 		},
-		{
-			name: "a truncated archive",
+		"a truncated archive": {
 			input: async () =>
 				(
 					await tar([
@@ -269,10 +258,10 @@ describe("readArchive", () => {
 				).subarray(0, 2048),
 			expected: "cannot read the backup: Unexpected end of data",
 		},
-	]
+	}
 
-	for (const c of cases) {
-		it(`refuses ${c.name}`, async ({ expect }) => {
+	for (const [name, c] of Object.entries(cases)) {
+		it(`refuses ${name}`, async ({ expect }) => {
 			await expect(
 				readArchive(
 					Readable.from([await c.input()]),

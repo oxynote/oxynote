@@ -281,7 +281,6 @@ async function buildCluster(
 
 	const cluster = join(staging, postgresDir)
 	const pgCtl = join(options.binDir, "pg_ctl")
-	const env = options.env
 
 	options.createCluster(cluster, password)
 	mkdirSync(options.socketDir, { recursive: true, mode: 0o700 })
@@ -299,17 +298,21 @@ async function buildCluster(
 			"-o",
 			`-c listen_addresses= -c unix_socket_directories=${options.socketDir} -c hba_file=${options.hbaFile}`,
 		],
-		{ env },
+		{ env: options.env },
 	)
 
 	try {
 		await client(
 			options.binDir,
-			embeddedConnection(options.socketDir, password, env),
+			embeddedConnection(
+				options.socketDir,
+				password,
+				options.env,
+			),
 		).load(dumpScript(join(staging, databaseEntry)))
 	} finally {
 		await run(pgCtl, ["stop", "-w", "-m", "fast", "-D", cluster], {
-			env,
+			env: options.env,
 		})
 	}
 

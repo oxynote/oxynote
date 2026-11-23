@@ -56,16 +56,16 @@ async function* withoutTransactionTimeout(
 
 		if (size >= preambleBytes) {
 			past = true
-			yield withoutLine(Buffer.concat(head))
+			yield preambleWithoutTimeout(Buffer.concat(head))
 		}
 	}
 
 	if (!past) {
-		yield withoutLine(Buffer.concat(head))
+		yield preambleWithoutTimeout(Buffer.concat(head))
 	}
 }
 
-function withoutLine(head: Buffer): Buffer {
+function preambleWithoutTimeout(head: Buffer): Buffer {
 	const at = head.indexOf(transactionTimeout)
 
 	return at === -1

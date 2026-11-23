@@ -1,16 +1,5 @@
 import { describe, it } from "vitest"
-import { embeddedConnection, externalConnection } from "./psql.js"
-
-describe("externalConnection", () => {
-	it("hands the DSN to the client tools as their database", ({
-		expect,
-	}) => {
-		expect(externalConnection("postgresql://db", {}).args).toEqual([
-			"--dbname",
-			"postgresql://db",
-		])
-	})
-})
+import { embeddedConnection } from "./psql.js"
 
 describe("embeddedConnection", () => {
 	it("logs in as the app role through the socket", ({ expect }) => {

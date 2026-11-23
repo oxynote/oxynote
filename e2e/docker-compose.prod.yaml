@@ -197,6 +197,13 @@ services:
   # probing published host ports instead would prove nothing: the internal
   # ports are not published, so every such probe would pass whether the
   # services bound loopback or the wildcard.
+  probe:
+    image: alpine:3.24.4
+    command: ["sleep", "infinity"]
+    depends_on:
+      oxynote:
+        condition: service_healthy
+
   # tests/prod-backup-restore.test.ts backs up oxynote-backup and restores
   # into oxynote-restored. A restore brings back the same instance, so all
   # six serve one address, one at a time, and the test starts and stops
@@ -267,13 +274,6 @@ services:
   prometheus:
     image: prom/prometheus:v3.15.1
     profiles: [backup]
-
-  probe:
-    image: alpine:3.24.4
-    command: ["sleep", "infinity"]
-    depends_on:
-      oxynote:
-        condition: service_healthy
 
   # the tests read verification links out of mailpit's REST API, so its http
   # port is published rather than proxied through the image's front door —

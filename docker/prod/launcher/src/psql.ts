@@ -10,13 +10,6 @@ export interface Connection {
 	env: Record<string, string>
 }
 
-export function externalConnection(
-	dsn: string,
-	env: Record<string, string>,
-): Connection {
-	return { args: ["--dbname", dsn], env }
-}
-
 // the app role on a server the image runs, reached through its socket.
 export function embeddedConnection(
 	socketDir: string,

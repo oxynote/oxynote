@@ -47,12 +47,7 @@ import {
 	webPort,
 	webUrl,
 } from "./mapping.js"
-import {
-	client,
-	embeddedConnection,
-	externalConnection,
-	type Connection,
-} from "./psql.js"
+import { client, embeddedConnection, type Connection } from "./psql.js"
 import { restore } from "./restore.js"
 import { ensureSecrets } from "./secrets.js"
 import { createCrashReporter } from "./sentry.js"
@@ -223,7 +218,7 @@ function logEnabledFeatures(config: Config): void {
 function externalDatabase(config: Config): Connection | undefined {
 	return config.databaseDsn === undefined
 		? undefined
-		: externalConnection(config.databaseDsn, inheritedEnv)
+		: { args: ["--dbname", config.databaseDsn], env: inheritedEnv }
 }
 
 // how the client tools reach the instance's database. The embedded one takes
@@ -242,7 +237,9 @@ function databaseConnection(config: Config): Connection {
 	)
 }
 
-async function runCommand(command: Command): Promise<void> {
+async function runCommand(
+	command: Exclude<Command, { name: "serve" }>,
+): Promise<void> {
 	const config = loadConfig(process.env)
 
 	if (command.name === "backup") {
@@ -268,40 +265,33 @@ async function runCommand(command: Command): Promise<void> {
 		return
 	}
 
-	if (command.name === "restore") {
-		await restore({
-			dataDir,
-			binDir,
-			externalDatabase: externalDatabase(config),
-			env: inheritedEnv,
-			log: commandLog,
-			socketDir: restoreSocketDir,
-			hbaFile,
-			remoteObjects: config.objectStorage !== undefined,
-			image: {
-				version: bakedImageVersion,
-				migrationVersion: bakedMigrationVersion,
-			},
-			replace: command.replace,
-			input: process.stdin,
-			inputIsTerminal: process.stdin.isTTY,
-			instanceRunning: () =>
-				probe(`${coreUrl}/api/x/version`),
-			// tini is PID 1. It passes the signal to the launcher,
-			// which stops in order and exits, and the runtime starts
-			// it again.
-			restartInstance: () => {
-				process.kill(1, "SIGTERM")
-			},
-			createCluster: (dir, password) => {
-				createCluster(
-					{ run: runToCompletion },
-					dir,
-					password,
-				)
-			},
-		})
-	}
+	await restore({
+		dataDir,
+		binDir,
+		externalDatabase: externalDatabase(config),
+		env: inheritedEnv,
+		log: commandLog,
+		socketDir: restoreSocketDir,
+		hbaFile,
+		remoteObjects: config.objectStorage !== undefined,
+		image: {
+			version: bakedImageVersion,
+			migrationVersion: bakedMigrationVersion,
+		},
+		replace: command.replace,
+		input: process.stdin,
+		inputIsTerminal: process.stdin.isTTY,
+		instanceRunning: () => probe(`${coreUrl}/api/x/version`),
+		// tini is PID 1. It passes the signal to the launcher,
+		// which stops in order and exits, and the runtime starts
+		// it again.
+		restartInstance: () => {
+			process.kill(1, "SIGTERM")
+		},
+		createCluster: (dir, password) => {
+			createCluster({ run: runToCompletion }, dir, password)
+		},
+	})
 }
 
 async function main(): Promise<void> {
@@ -521,7 +511,7 @@ async function main(): Promise<void> {
 			)
 		}
 	} catch (err) {
-		log.error(err instanceof Error ? err.message : String(err))
+		log.error(message(err))
 		await crashReporter.report(err)
 		await supervisor.stopAll()
 		process.exit(1)

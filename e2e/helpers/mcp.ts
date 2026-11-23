@@ -2,14 +2,14 @@ import { createHash, randomUUID } from "node:crypto"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { expect, type APIRequestContext, type Page } from "@playwright/test"
-import { BASE_URL, MCP_REDIRECT_URL, MCP_URL } from "./config"
+import { BASE_URL, MCP_REDIRECT_URL } from "./config"
 import { t } from "./i18n"
 import { visit } from "./page"
 
 // the mcp surface of an instance, which is also the OAuth resource a token
 // is bound to.
 function mcpURL(origin: string): string {
-	return origin === BASE_URL ? MCP_URL : `${origin}/core/api/mcp`
+	return `${origin}/core/api/mcp`
 }
 
 interface AuthorizationServer {

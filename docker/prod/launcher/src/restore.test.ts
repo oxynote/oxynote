@@ -221,9 +221,8 @@ describe("restore", () => {
 		expect(volumeState(dataDir)).toEqual(before)
 	})
 
-	const malformed = [
-		{
-			name: "an entry restore does not know",
+	const malformed = {
+		"an entry restore does not know": {
 			input: () =>
 				archive([
 					[
@@ -234,8 +233,7 @@ describe("restore", () => {
 				]),
 			expected: "cannot read the backup: it holds an unknown entry: etc/passwd",
 		},
-		{
-			name: "a backup without a database dump",
+		"a backup without a database dump": {
 			input: () =>
 				archive([
 					[
@@ -245,8 +243,7 @@ describe("restore", () => {
 				]),
 			expected: "cannot read the backup: it holds no database dump",
 		},
-		{
-			name: "a backup without a database password",
+		"a backup without a database password": {
 			input: () =>
 				archive([
 					[
@@ -258,8 +255,7 @@ describe("restore", () => {
 			expected: "cannot read the backup: it holds no database password this image generates",
 		},
 		// the password reaches SQL as the superuser
-		{
-			name: "a database password the image never generates",
+		"a database password the image never generates": {
 			input: () =>
 				archive([
 					[
@@ -274,10 +270,10 @@ describe("restore", () => {
 				]),
 			expected: "cannot read the backup: it holds no database password this image generates",
 		},
-	]
+	}
 
-	for (const c of malformed) {
-		it(`refuses ${c.name}`, async ({ expect }) => {
+	for (const [name, c] of Object.entries(malformed)) {
+		it(`refuses ${name}`, async ({ expect }) => {
 			const dataDir = emptyVolume()
 			const t = harness(await c.input(), dataDir)
 
