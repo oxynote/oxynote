@@ -35,6 +35,7 @@ const {
 
 const route = useRoute()
 const config = useRuntimeConfig()
+const requestURL = useRequestURL()
 
 const emailPasswordFormSchema = toTypedSchema(
 	z.object({
@@ -130,6 +131,7 @@ onMounted(() => {
 		showToastMessage("success", t("onboarding.login.password-reset-success"))
 	}
 
+	warnAboutOtherAddress()
 	redirectTimeout = setupSignInRedirect()
 })
 
@@ -140,24 +142,64 @@ onUnmounted(() => {
 	}
 })
 
+// sign-in requests go to the address the server is configured for. From
+// any other address the browser blocks them as cross-origin, so the page
+// warns before anyone tries.
+function warnAboutOtherAddress() {
+	// NOCOV: the desktop app never runs on the configured address.
+	if (__DESKTOP_BUILD__) {
+		return
+	}
+
+	const configured = new URL(config.public.appBaseURL).origin
+	const opened = requestURL.origin
+
+	if (opened === configured) {
+		return
+	}
+
+	showToastMessage(
+		"warning",
+		t("onboarding.login.other-address.title"),
+		t("onboarding.login.other-address.description", {
+			configured,
+			opened,
+			variable: "OXYNOTE_PUBLIC_URL",
+		}),
+		undefined,
+		{ persistent: true },
+	)
+}
+
 async function logInWithProvider(provider: ProviderAuthMethod) {
 	loading.value = provider
 
-	const res = (await signInSocial({
-		provider,
-		callbackURL:
-			oauthContinueUrl.value ??
-			postAuthDocumentUrl(config.public.appBaseURL, nextUrl.value),
-		newUserCallbackURL: postAuthDocumentUrl(
-			config.public.appBaseURL,
-			nextUrl.value,
-			"/welcome",
-		),
-		...(provider === "oidc" && {
-			errorCallbackURL: oidcErrorCallbackUrl(config.public.appBaseURL),
-		}),
-		fetchOptions: { query: route.query },
-	})) as AuthResponse
+	let res: AuthResponse
+
+	try {
+		res = await signInSocial({
+			provider,
+			callbackURL:
+				oauthContinueUrl.value ??
+				postAuthDocumentUrl(config.public.appBaseURL, nextUrl.value),
+			newUserCallbackURL: postAuthDocumentUrl(
+				config.public.appBaseURL,
+				nextUrl.value,
+				"/welcome",
+			),
+			...(provider === "oidc" && {
+				errorCallbackURL: oidcErrorCallbackUrl(config.public.appBaseURL),
+			}),
+			fetchOptions: { query: route.query },
+		})
+	} catch {
+		// a request the browser blocks, such as a cross-origin one, rejects
+		// instead of answering with an error.
+		showToastMessage("error", t("onboarding.login.errors.login-failed"))
+		loading.value = null
+
+		return
+	}
 
 	if (res.error) {
 		showToastMessage("error", t("onboarding.login.errors.login-failed"))
@@ -181,11 +223,22 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 		callbackQuery.set("next", nextUrl.value)
 	}
 
-	const res = (await signInEmailPassword({
-		email: values.email,
-		password: values.password,
-		callbackURL: `${config.public.appBaseURL}/login?${callbackQuery.toString()}`,
-	})) as AuthResponse
+	let res: AuthResponse
+
+	try {
+		res = await signInEmailPassword({
+			email: values.email,
+			password: values.password,
+			callbackURL: `${config.public.appBaseURL}/login?${callbackQuery.toString()}`,
+		})
+	} catch {
+		// a request the browser blocks, such as a cross-origin one, rejects
+		// instead of answering with an error.
+		loading.value = null
+		showToastMessage("error", t("onboarding.login.errors.login-failed"))
+
+		return
+	}
 
 	if (res.error) {
 		// the sign-in attempt re-sent the verification link

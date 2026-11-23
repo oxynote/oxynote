@@ -29,13 +29,39 @@ vi.mock("vue-sonner", () => ({
 
 // route.query is a readonly proxy, so the route itself is what a test
 // arranges
-const { useRouteMock, navigateToMock } = vi.hoisted(() => ({
+const {
+	useRouteMock,
+	navigateToMock,
+	signInEmailPasswordMock,
+	signInSocialMock,
+	useRequestURLMock,
+} = vi.hoisted(() => ({
 	useRouteMock: vi.fn(),
 	navigateToMock: vi.fn(),
+	signInEmailPasswordMock: vi.fn(),
+	signInSocialMock: vi.fn(),
+	// nuxt itself reads the request url while it starts, before any hook
+	useRequestURLMock: vi.fn(() => new URL("http://test.local/login")),
 }))
 
 mockNuxtImport("useRoute", () => useRouteMock)
 mockNuxtImport("navigateTo", () => navigateToMock)
+mockNuxtImport("useRequestURL", () => useRequestURLMock)
+
+// better-auth keeps the fetch it saw when the client was created, so a
+// test cannot make the request itself fail. Instead the sign-in calls are
+// wrapped here. They run the real call unless a test says otherwise.
+mockNuxtImport<typeof useAuthSession>("useAuthSession", (original) => () => {
+	const session = original()
+	signInEmailPasswordMock.mockImplementation(session.signInEmailPassword)
+	signInSocialMock.mockImplementation(session.signInSocial)
+
+	return {
+		...session,
+		signInEmailPassword: signInEmailPasswordMock,
+		signInSocial: signInSocialMock,
+	}
+})
 
 // the query cache and the vue-sonner, useRoute and navigateTo module mocks
 // are app-wide singletons every mount in the file shares
@@ -49,6 +75,9 @@ describe("<login>", { concurrent: false }, () => {
 		vi.mocked(toast.custom).mockReset()
 		navigateToMock.mockReset()
 		useRouteMock.mockReset()
+		signInEmailPasswordMock.mockReset()
+		signInSocialMock.mockReset()
+		useRequestURLMock.mockReset()
 		arrangeRoute()
 	})
 
@@ -167,6 +196,52 @@ describe("<login>", { concurrent: false }, () => {
 			expect(raisedToasts()).toMatchObject([{ type: "success", title: t(key) }])
 		},
 	)
+
+	it.for([
+		"http://localhost:8081",
+		"http://127.0.0.1",
+		"http://192.168.1.20:8080",
+	])(
+		"warns until closed that sign-in cannot work when opened on %s",
+		async (opened, { expect }) => {
+			seedAuthConfig()
+			useRequestURLMock.mockReturnValue(new URL(`${opened}/login`))
+
+			await mountSuspended(Login)
+
+			expect.soft(raisedToasts()).toMatchObject([
+				{
+					type: "warning",
+					title: t("onboarding.login.other-address.title"),
+					description: t("onboarding.login.other-address.description", {
+						configured: "http://test.local",
+						opened: opened,
+						variable: "OXYNOTE_PUBLIC_URL",
+					}),
+				},
+			])
+			expect
+				.soft(toast.custom)
+				.toHaveBeenCalledExactlyOnceWith(expect.any(Function), {
+					duration: Number.POSITIVE_INFINITY,
+				})
+			expect.soft(useRequestURLMock).toHaveBeenCalledTimes(1)
+		},
+	)
+
+	it("raises no warning when opened on the configured address", async ({
+		expect,
+	}) => {
+		seedAuthConfig()
+		useRequestURLMock.mockReturnValue(
+			new URL("http://test.local/login?next=%2Fteam"),
+		)
+
+		await mountSuspended(Login)
+
+		expect.soft(toast.custom).not.toHaveBeenCalled()
+		expect.soft(useRequestURLMock).toHaveBeenCalledTimes(1)
+	})
 
 	it.for(["google", "github", "slack"] as const)(
 		"signs in with %s and returns to the root",
@@ -313,6 +388,42 @@ describe("<login>", { concurrent: false }, () => {
 			.toMatchObject([
 				{ type: "error", title: t("onboarding.login.errors.login-failed") },
 			])
+		expect
+			.soft(
+				findButtonByText(
+					wrapper,
+					t("onboarding.login.login-google"),
+				).attributes("disabled"),
+			)
+			.toBeUndefined()
+	})
+
+	it("reports a social sign-in the browser could not send", async ({
+		expect,
+	}) => {
+		seedAuthConfig({ methods: ["google"] })
+		const wrapper = await mountSuspended(Login)
+		// a request the browser blocks makes better-auth reject with this
+		signInSocialMock.mockRejectedValueOnce(new TypeError("Failed to fetch"))
+
+		await findButtonByText(wrapper, t("onboarding.login.login-google")).trigger(
+			"click",
+		)
+
+		// the page signals the end of neither the request nor its failure
+		await vi.waitFor(() => {
+			expect(toast.custom).toHaveBeenCalledTimes(1)
+		}, WAIT_FOR_OPTIONS)
+		expect.soft(signInSocialMock).toHaveBeenCalledTimes(1)
+		expect
+			.soft(signInSocialMock)
+			.toHaveBeenCalledWith(expect.objectContaining({ provider: "google" }))
+		expect
+			.soft(raisedToasts())
+			.toMatchObject([
+				{ type: "error", title: t("onboarding.login.errors.login-failed") },
+			])
+		expect.soft(navigateToMock).not.toHaveBeenCalled()
 		expect
 			.soft(
 				findButtonByText(
@@ -544,6 +655,46 @@ describe("<login>", { concurrent: false }, () => {
 		await vi.waitFor(() => {
 			expect(toast.custom).toHaveBeenCalledTimes(1)
 		}, WAIT_FOR_OPTIONS)
+		expect
+			.soft(raisedToasts())
+			.toMatchObject([
+				{ type: "error", title: t("onboarding.login.errors.login-failed") },
+			])
+		expect.soft(navigateToMock).not.toHaveBeenCalled()
+		expect
+			.soft(
+				findButtonByText(
+					wrapper,
+					t("onboarding.login.email-password-form.continue"),
+				).attributes("disabled"),
+			)
+			.toBeUndefined()
+	})
+
+	it("reports an email/password sign-in the browser could not send", async ({
+		expect,
+	}) => {
+		seedAuthConfig()
+		const wrapper = await mountSuspended(Login)
+		// a request the browser blocks makes better-auth reject with this
+		signInEmailPasswordMock.mockRejectedValueOnce(
+			new TypeError("Failed to fetch"),
+		)
+
+		await submitCredentials(wrapper)
+
+		// vee-validate's validation runs on its own scheduler, and the page
+		// signals the end of neither it nor the request
+		await vi.waitFor(() => {
+			expect(toast.custom).toHaveBeenCalledTimes(1)
+		}, WAIT_FOR_OPTIONS)
+		expect.soft(signInEmailPasswordMock).toHaveBeenCalledTimes(1)
+		expect.soft(signInEmailPasswordMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				email: "ada@example.com",
+				password: "hunter2",
+			}),
+		)
 		expect
 			.soft(raisedToasts())
 			.toMatchObject([

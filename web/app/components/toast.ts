@@ -14,6 +14,8 @@ export function showToastMessage(
 	title: string,
 	description?: string | ToastText,
 	action?: { label: string; onClick: () => void },
+	// a persistent toast stays until the user closes it
+	options?: { persistent?: boolean },
 ) {
 	const toastId = toast.custom(
 		() =>
@@ -26,7 +28,9 @@ export function showToastMessage(
 					toast.dismiss(toastId)
 				},
 			}),
-		action ? { duration: Number.POSITIVE_INFINITY } : undefined,
+		action || options?.persistent
+			? { duration: Number.POSITIVE_INFINITY }
+			: undefined,
 	)
 }
 
