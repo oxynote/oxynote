@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -14,24 +13,9 @@ import (
 // listTags returns the organisation's tags, optionally with the documents
 // carrying them.
 type listTags struct {
-	// IncludeDocuments asks for the documents each tag is on. The schema
-	// defaults it to true; false leaves the documents out.
+	// IncludeDocuments asks for the documents each tag is on. Left out, the
+	// result only carries tag ids, names and colours.
 	IncludeDocuments bool `json:"include_documents,omitempty"`
-}
-
-// UnmarshalJSON keeps the original shape when a caller omits
-// include_documents: the argument defaults to true, not Go's false.
-func (lt *listTags) UnmarshalJSON(data []byte) error {
-	type plain listTags
-
-	decoded := plain{IncludeDocuments: true}
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		return err
-	}
-
-	*lt = listTags(decoded)
-
-	return nil
 }
 
 // Info returns the tool's model-facing description.
@@ -39,11 +23,11 @@ func (listTags) Info() Info {
 	return Info{
 		Name:        NameListTags,
 		Traits:      Traits{Group: GroupTags, Role: org.RoleViewer},
-		Description: "List the organisation's tags in sidebar order as [{id, name, color, documents}]. documents are the documents whose default branch carries the tag. Pass include_documents=false to omit them. A tag on another branch shows only in get_document for that branch.",
+		Description: "List the organisation's tags in sidebar order as [{id, name, color, documents}]. documents are the documents whose default branch carries the tag. Pass include_documents=true to include them. A tag on another branch shows only in get_document for that branch.",
 		Properties: map[string]any{
 			"include_documents": map[string]any{
 				"type":        "boolean",
-				"default":     true,
+				"default":     false,
 				"description": "Include the documents carrying each tag.",
 			},
 		},
