@@ -7,6 +7,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/rs/xid"
 )
@@ -30,6 +31,9 @@ var _ Tx = &TxMock{}
 //			InsertDocumentFunc: func(ctx context.Context, doc document.Document) error {
 //				panic("mock out the InsertDocument method")
 //			},
+//			RecordDocumentBranchHistoryEntryFunc: func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) error {
+//				panic("mock out the RecordDocumentBranchHistoryEntry method")
+//			},
 //			RollbackFunc: func() error {
 //				panic("mock out the Rollback method")
 //			},
@@ -51,6 +55,9 @@ type TxMock struct {
 
 	// InsertDocumentFunc mocks the InsertDocument method.
 	InsertDocumentFunc func(ctx context.Context, doc document.Document) error
+
+	// RecordDocumentBranchHistoryEntryFunc mocks the RecordDocumentBranchHistoryEntry method.
+	RecordDocumentBranchHistoryEntryFunc func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) error
 
 	// RollbackFunc mocks the Rollback method.
 	RollbackFunc func() error
@@ -79,6 +86,19 @@ type TxMock struct {
 			// Doc is the doc argument value.
 			Doc document.Document
 		}
+		// RecordDocumentBranchHistoryEntry holds details about calls to the RecordDocumentBranchHistoryEntry method.
+		RecordDocumentBranchHistoryEntry []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// By is the by argument value.
+			By null.String
+			// Boundary is the boundary argument value.
+			Boundary bool
+		}
 		// Rollback holds details about calls to the Rollback method.
 		Rollback []struct {
 		}
@@ -94,11 +114,12 @@ type TxMock struct {
 			MaintainerIDs []string
 		}
 	}
-	lockCommit                    sync.RWMutex
-	lockDeleteDocument            sync.RWMutex
-	lockInsertDocument            sync.RWMutex
-	lockRollback                  sync.RWMutex
-	lockUpsertDocumentMaintainers sync.RWMutex
+	lockCommit                           sync.RWMutex
+	lockDeleteDocument                   sync.RWMutex
+	lockInsertDocument                   sync.RWMutex
+	lockRecordDocumentBranchHistoryEntry sync.RWMutex
+	lockRollback                         sync.RWMutex
+	lockUpsertDocumentMaintainers        sync.RWMutex
 }
 
 // Commit calls CommitFunc.
@@ -211,6 +232,57 @@ func (mock *TxMock) InsertDocumentCalls() []struct {
 	mock.lockInsertDocument.RLock()
 	calls = mock.calls.InsertDocument
 	mock.lockInsertDocument.RUnlock()
+	return calls
+}
+
+// RecordDocumentBranchHistoryEntry calls RecordDocumentBranchHistoryEntryFunc.
+func (mock *TxMock) RecordDocumentBranchHistoryEntry(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) error {
+	callInfo := struct {
+		Ctx            context.Context
+		BranchID       xid.ID
+		OrganizationID string
+		By             null.String
+		Boundary       bool
+	}{
+		Ctx:            ctx,
+		BranchID:       branchID,
+		OrganizationID: organizationID,
+		By:             by,
+		Boundary:       boundary,
+	}
+	mock.lockRecordDocumentBranchHistoryEntry.Lock()
+	mock.calls.RecordDocumentBranchHistoryEntry = append(mock.calls.RecordDocumentBranchHistoryEntry, callInfo)
+	mock.lockRecordDocumentBranchHistoryEntry.Unlock()
+	if mock.RecordDocumentBranchHistoryEntryFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.RecordDocumentBranchHistoryEntryFunc(ctx, branchID, organizationID, by, boundary)
+}
+
+// RecordDocumentBranchHistoryEntryCalls gets all the calls that were made to RecordDocumentBranchHistoryEntry.
+// Check the length with:
+//
+//	len(mockedTx.RecordDocumentBranchHistoryEntryCalls())
+func (mock *TxMock) RecordDocumentBranchHistoryEntryCalls() []struct {
+	Ctx            context.Context
+	BranchID       xid.ID
+	OrganizationID string
+	By             null.String
+	Boundary       bool
+} {
+	var calls []struct {
+		Ctx            context.Context
+		BranchID       xid.ID
+		OrganizationID string
+		By             null.String
+		Boundary       bool
+	}
+	mock.lockRecordDocumentBranchHistoryEntry.RLock()
+	calls = mock.calls.RecordDocumentBranchHistoryEntry
+	mock.lockRecordDocumentBranchHistoryEntry.RUnlock()
 	return calls
 }
 

@@ -1302,6 +1302,7 @@ func Test_input_CreateDocument(t *testing.T) {
 		Exists   int
 		Begins   int
 		Inserts  int
+		Records  int
 		Upserts  int
 		Commits  int
 		Jobs     int
@@ -1317,10 +1318,13 @@ func Test_input_CreateDocument(t *testing.T) {
 		}
 	}
 
-	stubTx := func(insertErr, upsertErr, commitErr error) *TxMock {
+	stubTx := func(insertErr, recordErr, upsertErr, commitErr error) *TxMock {
 		return &TxMock{
 			InsertDocumentFunc: func(context.Context, document.Document) error {
 				return insertErr
+			},
+			RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
+				return recordErr
 			},
 			UpsertDocumentMaintainersFunc: func(context.Context, xid.ID, string, []string) error {
 				return upsertErr
@@ -1359,29 +1363,34 @@ func Test_input_CreateDocument(t *testing.T) {
 			return tcase{DB: stubDB(nil, assert.AnError), Queue: stubQueue(nil), Begins: 1, Err: assert.AnError}
 		}(),
 		"Error returned by Tx.InsertDocument": func() tcase {
-			tx := stubTx(assert.AnError, nil, nil)
+			tx := stubTx(assert.AnError, nil, nil, nil)
 
 			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Err: assert.AnError}
 		}(),
-		"Error returned by Tx.UpsertDocumentMaintainers": func() tcase {
-			tx := stubTx(nil, assert.AnError, nil)
+		"Error returned by Tx.RecordDocumentBranchHistoryEntry": func() tcase {
+			tx := stubTx(nil, assert.AnError, nil, nil)
 
-			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Upserts: 1, Err: assert.AnError}
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Records: 1, Err: assert.AnError}
+		}(),
+		"Error returned by Tx.UpsertDocumentMaintainers": func() tcase {
+			tx := stubTx(nil, nil, assert.AnError, nil)
+
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Records: 1, Upserts: 1, Err: assert.AnError}
 		}(),
 		"Error returned by SearchQueue.Enqueue": func() tcase {
-			tx := stubTx(nil, nil, nil)
+			tx := stubTx(nil, nil, nil, nil)
 
-			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(assert.AnError), Begins: 1, Inserts: 1, Upserts: 1, Jobs: 1, Err: assert.AnError}
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(assert.AnError), Begins: 1, Inserts: 1, Records: 1, Upserts: 1, Jobs: 1, Err: assert.AnError}
 		}(),
 		"Error returned by Tx.Commit": func() tcase {
-			tx := stubTx(nil, nil, assert.AnError)
+			tx := stubTx(nil, nil, nil, assert.AnError)
 
-			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Upserts: 1, Commits: 1, Jobs: 1, Err: assert.AnError}
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Records: 1, Upserts: 1, Commits: 1, Jobs: 1, Err: assert.AnError}
 		}(),
 		"Every write lands together": func() tcase {
-			tx := stubTx(nil, nil, nil)
+			tx := stubTx(nil, nil, nil, nil)
 
-			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Upserts: 1, Commits: 1, Jobs: 1, Notifies: 1}
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Records: 1, Upserts: 1, Commits: 1, Jobs: 1, Notifies: 1}
 		}(),
 	}
 
@@ -1417,8 +1426,18 @@ func Test_input_CreateDocument(t *testing.T) {
 			}
 
 			assert.Len(t, c.Tx.InsertDocumentCalls(), c.Inserts)
+			assert.Len(t, c.Tx.RecordDocumentBranchHistoryEntryCalls(), c.Records)
 			assert.Len(t, c.Tx.UpsertDocumentMaintainersCalls(), c.Upserts)
 			assert.Len(t, c.Tx.CommitCalls(), c.Commits)
+
+			if c.Records != 0 {
+				recs := c.Tx.RecordDocumentBranchHistoryEntryCalls()
+				require.Len(t, recs, c.Records)
+				assert.Equal(t, doc.BranchID, recs[0].BranchID)
+				assert.Equal(t, "org", recs[0].OrganizationID)
+				assert.Equal(t, null.StringFrom("user"), recs[0].By)
+				assert.True(t, recs[0].Boundary)
+			}
 
 			// the rollback is deferred unconditionally; after a
 			// successful commit it is a harmless no-op.
