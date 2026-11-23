@@ -823,6 +823,7 @@
 				},
 				"query-name-default-format": "Query {index}",
 				"add-query-button": "Add Query",
+				"no-query": "No Query",
 				"title-label": "Title",
 				"title-placeholder": "Enter a title...",
 				"title-empty-value-placeholder": "[empty]",
@@ -995,6 +996,7 @@
 				"query-name-default-format": "Query {index}",
 				"add-query-button": "Add Query",
 				"delete-query-button": "Delete Query",
+				"no-query": "No Query",
 				"data-source-empty-title": "No log data sources",
 				"data-source-empty-description": "Connect Loki in the settings to show its logs here.",
 				"data-source-empty-description-non-admin": "Ask an admin to connect Loki to show its logs here."

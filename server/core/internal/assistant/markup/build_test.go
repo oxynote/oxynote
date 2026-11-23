@@ -247,7 +247,7 @@ func Test_Build(t *testing.T) {
 		},
 		"New metric follows the built-in variables": {
 			Markup: `<metrics>{}</metrics>`,
-			Result: "<metrics>{\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\"}</metrics>\n",
+			Result: "<metrics>{\"queries\":[{\"legendFormat\":\"\",\"name\":\"Query 1\",\"query\":\"\"}],\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\"}</metrics>\n",
 		},
 		"Metric drops a simulation flag the markup sent": {
 			Markup: `<metrics>{"simulationActive":true,"uid":"x","nodeCommentId":"c"}</metrics>`,
@@ -267,11 +267,11 @@ func Test_Build(t *testing.T) {
 		},
 		"Metric under its former name builds a metric": {
 			Markup: `<grid><metric>{"title":"Up"}</metric></grid>`,
-			Result: "<grid>\n  <metrics row=\"0\" column=\"0\" stack=\"0\">{\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\",\"title\":\"Up\"}</metrics>\n</grid>\n",
+			Result: "<grid>\n  <metrics row=\"0\" column=\"0\" stack=\"0\">{\"queries\":[{\"legendFormat\":\"\",\"name\":\"Query 1\",\"query\":\"\"}],\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\",\"title\":\"Up\"}</metrics>\n</grid>\n",
 		},
 		"New logs build a log block": {
 			Markup: `<grid><logs>{"title":"Errors","order":"asc"}</logs></grid>`,
-			Result: "<grid>\n  <logs row=\"0\" column=\"0\" stack=\"0\">{\"order\":\"asc\",\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\",\"title\":\"Errors\"}</logs>\n</grid>\n",
+			Result: "<grid>\n  <logs row=\"0\" column=\"0\" stack=\"0\">{\"order\":\"asc\",\"queries\":[{\"name\":\"Query 1\",\"query\":\"\"}],\"refreshInterval\":\"$metric_refresh\",\"timeRange\":\"$metric_range\",\"title\":\"Errors\"}</logs>\n</grid>\n",
 		},
 		"Logs drop the uid and comment the markup sent": {
 			Markup: `<logs>{"uid":"x","nodeCommentId":"c"}</logs>`,

@@ -124,7 +124,7 @@ function deleteQuery(index: number) {
 }
 </script>
 <template>
-	<div class="flex w-full flex-col gap-2 py-1.75">
+	<div class="flex min-h-full w-full flex-col gap-2 py-1.75">
 		<div
 			v-for="(entry, index) in entries"
 			:key="entry.key"
@@ -179,6 +179,20 @@ function deleteQuery(index: number) {
 				</ConfigField>
 			</div>
 		</div>
+		<!-- the root's min-h-full lets this fill the pane, so it is centred -->
+		<ShadcnUiEmpty
+			v-if="isEditingDisabled && !entries.length"
+			class="p-3 text-foreground md:p-3"
+		>
+			<ShadcnUiEmptyHeader>
+				<ShadcnUiEmptyMedia variant="icon" class="size-9">
+					<Icon name="mingcute:code-line" class="size-6" />
+				</ShadcnUiEmptyMedia>
+				<ShadcnUiEmptyTitle>
+					{{ $t("editor.logs.config.no-query") }}
+				</ShadcnUiEmptyTitle>
+			</ShadcnUiEmptyHeader>
+		</ShadcnUiEmpty>
 		<ShadcnUiButton
 			v-if="!isEditingDisabled"
 			variant="dim"

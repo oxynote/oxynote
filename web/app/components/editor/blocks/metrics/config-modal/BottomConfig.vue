@@ -148,7 +148,7 @@ function deleteQuery(index: number) {
 </script>
 <template>
 	<ShadcnUiPopover>
-		<div class="flex w-full flex-col gap-2 py-1.75">
+		<div class="flex min-h-full w-full flex-col gap-2 py-1.75">
 			<div
 				v-if="
 					metricConfig.queries?.length === 1 &&
@@ -230,7 +230,7 @@ function deleteQuery(index: number) {
 			</div>
 			<template v-else>
 				<!-- diff mode with modifications: iterate diffQueryEntries to include removed entries -->
-				<template v-if="areQueriesModified">
+				<template v-if="areQueriesModified && diffQueryEntries.length">
 					<div
 						v-for="entry in diffQueryEntries"
 						:key="entry.key"
@@ -460,6 +460,20 @@ function deleteQuery(index: number) {
 							</ConfigField>
 						</div>
 					</div>
+					<!-- the root's min-h-full lets this fill the pane, so it is centred -->
+					<ShadcnUiEmpty
+						v-if="isEditingDisabled && !metricConfig.queries?.length"
+						class="p-3 text-foreground md:p-3"
+					>
+						<ShadcnUiEmptyHeader>
+							<ShadcnUiEmptyMedia variant="icon" class="size-9">
+								<Icon name="mingcute:code-line" class="size-6" />
+							</ShadcnUiEmptyMedia>
+							<ShadcnUiEmptyTitle>
+								{{ $t("editor.metrics.config.no-query") }}
+							</ShadcnUiEmptyTitle>
+						</ShadcnUiEmptyHeader>
+					</ShadcnUiEmpty>
 				</template>
 			</template>
 			<ShadcnUiButton

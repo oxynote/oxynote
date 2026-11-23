@@ -73,16 +73,24 @@ type logQuery struct {
 
 // decodeLogAttrs reads a log block's JSON attributes and checks them:
 // every enum holds one of its values, every other attribute has its
-// type, and every query has a name and a query.
+// type, and every query has a name and a query. A log block without
+// queries gets the default one.
 func decodeLogAttrs(text string) (document.Attributes, error) {
 	attrs := document.Attributes{}
 
 	if strings.TrimSpace(text) == "" {
+		attrs[document.AttrQueries] = defaultLogQueries()
+
 		return attrs, nil
 	}
 
 	if err := jsonv2.Unmarshal([]byte(text), &attrs); err != nil {
 		return nil, fmt.Errorf("<logs> holds a JSON object of its attributes: %w", err)
+	}
+
+	// a JSON null decodes to a nil map.
+	if attrs == nil {
+		attrs = document.Attributes{}
 	}
 
 	for _, key := range slices.Sorted(maps.Keys(_logEnums)) {
@@ -108,5 +116,21 @@ func decodeLogAttrs(text string) (document.Attributes, error) {
 		}
 	}
 
+	if len(typed.Queries) == 0 {
+		attrs[document.AttrQueries] = defaultLogQueries()
+	}
+
 	return attrs, nil
+}
+
+// defaultLogQueries returns the queries a log block gets when it has
+// none: one empty query. It must match the default defined in the
+// frontend. Each call builds a new list, so two blocks never share one.
+func defaultLogQueries() []any {
+	return []any{
+		map[string]any{
+			"name":  "Query 1",
+			"query": "",
+		},
+	}
 }

@@ -68,6 +68,15 @@ func Test_decodeMetricAttrs(t *testing.T) {
 	// palette names.
 	const legacyColor = "oklch(57.7% .245 27.325)"
 
+	// defaultQueries is the query list a metric gets when it has none.
+	defaultQueries := []any{
+		map[string]any{
+			"name":         "Query 1",
+			"query":        "",
+			"legendFormat": "",
+		},
+	}
+
 	cc := map[string]struct {
 		Text   string
 		Stored document.Block
@@ -76,7 +85,7 @@ func Test_decodeMetricAttrs(t *testing.T) {
 	}{
 		"No attrs at all": {
 			Text:   " ",
-			Result: document.Attributes{},
+			Result: document.Attributes{document.AttrQueries: defaultQueries},
 		},
 		"A fully configured metric": {
 			Text: `{"title":"Request rate","dataSourceId":"d1qbc8kv2vg000cnb6ag","visualizationType":"line_chart",` +
@@ -102,23 +111,32 @@ func Test_decodeMetricAttrs(t *testing.T) {
 				document.AttrSimulationPreset:  "cpu_usage",
 			},
 		},
+		"A JSON null gets the default query": {
+			Text:   "null",
+			Result: document.Attributes{document.AttrQueries: defaultQueries},
+		},
+		"An empty query list gets the default": {
+			Text:   `{"queries":[]}`,
+			Result: document.Attributes{document.AttrQueries: defaultQueries},
+		},
 		"Nulls are as absent as missing keys": {
 			Text:   `{"visualizationType":null,"queries":null,"thresholds":null,"decimals":null}`,
-			Result: document.Attributes{document.AttrVisualizationType: nil, document.AttrQueries: nil, "thresholds": nil, "decimals": nil},
+			Result: document.Attributes{document.AttrVisualizationType: nil, document.AttrQueries: defaultQueries, "thresholds": nil, "decimals": nil},
 		},
 		"An unknown attr passes through": {
 			Text:   `{"wibble":1}`,
-			Result: document.Attributes{"wibble": 1.0},
+			Result: document.Attributes{"wibble": 1.0, document.AttrQueries: defaultQueries},
 		},
 		"A threshold row with nothing set": {
 			Text:   `{"thresholds":[{}]}`,
-			Result: document.Attributes{"thresholds": []any{map[string]any{}}},
+			Result: document.Attributes{"thresholds": []any{map[string]any{}}, document.AttrQueries: defaultQueries},
 		},
 		"Built-in variable references": {
 			Text: `{"timeRange":"$metric_range","refreshInterval":"$metric_refresh"}`,
 			Result: document.Attributes{
 				document.AttrTimeRange:       "$metric_range",
 				document.AttrRefreshInterval: "$metric_refresh",
+				document.AttrQueries:         defaultQueries,
 			},
 		},
 		"A time range following the refresh interval": {
@@ -192,6 +210,7 @@ func Test_decodeMetricAttrs(t *testing.T) {
 			Result: document.Attributes{
 				"thresholds":         []any{map[string]any{"value": 90.0, "color": legacyColor}},
 				"baseThresholdColor": legacyColor,
+				document.AttrQueries: defaultQueries,
 			},
 		},
 	}

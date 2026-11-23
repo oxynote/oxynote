@@ -93,6 +93,7 @@ describe("<BottomConfig>", { concurrent: false }, () => {
 
 		expect(queryEditors(wrapper)).toHaveLength(0)
 		expect(wrapper.text()).toContain(t("editor.logs.config.add-query-button"))
+		expect(wrapper.text()).not.toContain(t("editor.logs.config.no-query"))
 	})
 
 	it("stores a query the reader typed", async ({ expect }) => {
@@ -209,6 +210,42 @@ describe("<BottomConfig>", { concurrent: false }, () => {
 		expect(deleteButtons(wrapper)).toHaveLength(0)
 	})
 
+	it.for([
+		{
+			name: "says there is no query in read mode when the queries are null",
+			input: () => null,
+		},
+		{
+			name: "says there is no query in read mode when the query list is empty",
+			input: () => [],
+		},
+	])("$name", async ({ input }, { expect }) => {
+		useEditorMeta().setEditable(false)
+
+		const wrapper = await mountBottom({
+			modelValue: configWith({ queries: input() }),
+		})
+
+		expect(wrapper.text()).toContain(t("editor.logs.config.no-query"))
+		expect(queryEditors(wrapper)).toHaveLength(0)
+		expect(wrapper.text()).not.toContain(
+			t("editor.logs.config.add-query-button"),
+		)
+	})
+
+	it("says there is no query while a reviewable diff is shown", async ({
+		expect,
+	}) => {
+		useEditorStore().setReviewableDiffActive(true)
+
+		const wrapper = await mountBottom({
+			modelValue: configWith({ queries: [] }),
+		})
+
+		expect(wrapper.text()).toContain(t("editor.logs.config.no-query"))
+		expect(queryEditors(wrapper)).toHaveLength(0)
+	})
+
 	describe("in a diff", () => {
 		it("shows the query a diff replaced under the new one, as one query", async ({
 			expect,
@@ -321,6 +358,23 @@ describe("<BottomConfig>", { concurrent: false }, () => {
 				{ query: "a", diffStatus: DiffStatus.Removed },
 				{ query: "b", diffStatus: DiffStatus.Removed },
 			])
+		})
+
+		it("shows the queries a reviewed diff removed instead of saying there is none", async ({
+			expect,
+		}) => {
+			useEditorStore().setReviewableDiffActive(true)
+
+			const wrapper = await mountBottom({
+				modelValue: configWith({ queries: [] }),
+				diffStatus: DiffStatus.Modified,
+				oldConfig: configWith({ queries: [query("Errors", "a")] }),
+			})
+
+			expect(editorDiffs(wrapper)).toEqual([
+				{ query: "a", diffStatus: DiffStatus.Removed },
+			])
+			expect(wrapper.text()).not.toContain(t("editor.logs.config.no-query"))
 		})
 
 		it.for([
