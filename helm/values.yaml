@@ -76,5 +76,9 @@ extraVolumeMounts: []
 nodeSelector: {}
 tolerations: []
 affinity: {}
+# -- DNS policy for the pod. Empty leaves the Kubernetes default, `ClusterFirst`.
+dnsPolicy: ""
+# -- Pod DNS config, such as a lower `ndots`.
+dnsConfig: {}
 podAnnotations: {}
 podLabels: {}

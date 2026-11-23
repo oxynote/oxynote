@@ -162,5 +162,7 @@ kubectl --namespace oxynote exec statefulset/oxynote -- \
 | nodeSelector | object | `{}` |  |
 | tolerations | list | `[]` |  |
 | affinity | object | `{}` |  |
+| dnsPolicy | string | `""` | DNS policy for the pod. Empty leaves the Kubernetes default, `ClusterFirst`. |
+| dnsConfig | object | `{}` | Pod DNS config, such as a lower `ndots`. |
 | podAnnotations | object | `{}` |  |
 | podLabels | object | `{}` |  |

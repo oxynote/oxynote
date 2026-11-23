@@ -49,6 +49,21 @@ tests:
       - exists:
           path: spec.affinity.nodeAffinity
 
+  - it: resolves names as the app does
+    set:
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "2"
+    asserts:
+      - equal:
+          path: spec.dnsPolicy
+          value: ClusterFirst
+      - equal:
+          path: spec.dnsConfig.options[0].value
+          value: "2"
+
   - it: runs as the app's ServiceAccount
     set:
       serviceAccount.create: false

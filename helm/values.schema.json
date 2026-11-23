@@ -197,6 +197,8 @@
     "nodeSelector": {"type": "object", "additionalProperties": {"type": "string"}},
     "tolerations": {"type": "array", "items": {"type": "object"}},
     "affinity": {"type": "object"},
+    "dnsPolicy": {"type": "string", "enum": ["", "ClusterFirst", "ClusterFirstWithHostNet", "Default", "None"]},
+    "dnsConfig": {"type": "object"},
     "podAnnotations": {"type": "object", "additionalProperties": {"type": "string"}},
     "podLabels": {"type": "object", "additionalProperties": {"type": "string"}}
   }
