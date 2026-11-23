@@ -15,7 +15,7 @@ import (
 type listTags struct {
 	// IncludeDocuments asks for the documents each tag is on. Left out, the
 	// result only carries tag ids, names and colours.
-	IncludeDocuments bool `json:"include_documents,omitempty"`
+	IncludeDocuments bool `json:"include_documents"`
 }
 
 // Info returns the tool's model-facing description.
@@ -23,12 +23,12 @@ func (listTags) Info() Info {
 	return Info{
 		Name:        NameListTags,
 		Traits:      Traits{Group: GroupTags, Role: org.RoleViewer},
-		Description: "List the organisation's tags in sidebar order as [{id, name, color, documents}]. documents are the documents whose default branch carries the tag. Pass include_documents=true to include them. A tag on another branch shows only in get_document for that branch.",
+		Description: "List the organisation's tags in sidebar order as [{id, name, color}]. With include_documents each tag also lists the documents whose default branch carries the tag. A tag on another branch shows only in get_document for that branch.",
 		Properties: map[string]any{
 			"include_documents": map[string]any{
 				"type":        "boolean",
 				"default":     false,
-				"description": "Include the documents carrying each tag.",
+				"description": "True adds the documents carrying each tag.",
 			},
 		},
 	}
@@ -39,7 +39,7 @@ func (listTags) Validate() error {
 	return nil
 }
 
-// Exec lists every tag with the documents carrying it.
+// Exec lists every tag, optionally with the documents carrying it.
 func (lt listTags) Exec(inp Input) (any, error) {
 	tree, err := inp.FetchTagTree()
 	if err != nil {
@@ -96,7 +96,7 @@ type tagEntry struct {
 
 	// Documents is every document whose default branch carries the tag. It is
 	// left out when include_documents is false.
-	Documents []tagDocument `json:"documents,omitempty"`
+	Documents []tagDocument `json:"documents,omitzero"`
 }
 
 // tagDocument names one document carrying a tag.

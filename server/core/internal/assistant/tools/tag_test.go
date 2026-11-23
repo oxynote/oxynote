@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"encoding/json"
 	"errors"
 	"testing"
 
@@ -60,16 +59,12 @@ func Test_listTags_Validate(t *testing.T) {
 func Test_listTags_Exec(t *testing.T) {
 	t.Parallel()
 
-	noDocs := false
-	withDocs := true
-	oneDoc := []tagDocument{{ID: _testDocID, Name: _stubDocumentName, DefaultBranchID: _stubMainBranchID}}
-	noDocsList := []tagDocument{}
 	cc := map[string]struct {
-		Input  *InputMock
-		Result any
-		Err    error
-		Tool   listTags
-		Check  func(t *testing.T, got any)
+		Input        *InputMock
+		Tool         listTags
+		Result       any
+		Err          error
+		ExpectedJSON string
 	}{
 		"Error returned by Input.FetchTagTree": {
 			Input: &InputMock{
@@ -87,39 +82,30 @@ func Test_listTags_Exec(t *testing.T) {
 			},
 			Result: listTagsResult{Tags: []tagEntry{}},
 		},
-		// the tree lists the nested children of an assigned document as
-		// sidebar context. Only the assigned document itself is listed.
 		"Tags without their documents": {
 			Input: stubTagInput(),
+			Tool:  listTags{IncludeDocuments: false},
 			Result: listTagsResult{Tags: []tagEntry{
 				{ID: _testTagID, Name: _stubTagName, ColorName: _stubTagColor},
 				{ID: _otherTagID, Name: "Staging", ColorName: "orange"},
 			}},
-			Tool: listTags{IncludeDocuments: noDocs},
-			Check: func(t *testing.T, got any) {
-				data, err := json.Marshal(got)
-				require.NoError(t, err)
-				assert.NotContains(t, string(data), `"documents"`)
-			},
+			ExpectedJSON: `{"tags":[{"id":"` + _testTagID.String() + `","name":"` + _stubTagName + `","color":"` + _stubTagColor + `"},{"id":"` + _otherTagID.String() + `","name":"Staging","color":"orange"}]}`,
 		},
 		"Tags with their documents": {
 			Input: stubTagInput(),
-			Tool:  listTags{IncludeDocuments: withDocs},
+			Tool:  listTags{IncludeDocuments: true},
+			// the tree lists the nested children of an assigned document as
+			// sidebar context. Only the assigned document itself is listed.
 			Result: listTagsResult{Tags: []tagEntry{
 				{
 					ID:        _testTagID,
 					Name:      _stubTagName,
 					ColorName: _stubTagColor,
-					Documents: oneDoc,
+					Documents: []tagDocument{{ID: _testDocID, Name: _stubDocumentName, DefaultBranchID: _stubMainBranchID}},
 				},
-				{ID: _otherTagID, Name: "Staging", ColorName: "orange", Documents: noDocsList},
+				{ID: _otherTagID, Name: "Staging", ColorName: "orange", Documents: []tagDocument{}},
 			}},
-			Check: func(t *testing.T, got any) {
-				data, err := json.Marshal(got)
-				require.NoError(t, err)
-				// assigned documents are present in the JSON output.
-				assert.Contains(t, string(data), `"documents":[{`)
-			},
+			ExpectedJSON: `{"tags":[{"id":"` + _testTagID.String() + `","name":"` + _stubTagName + `","color":"` + _stubTagColor + `","documents":[{"id":"` + _testDocID.String() + `","name":"` + _stubDocumentName + `","default_branch_id":"` + _stubMainBranchID.String() + `"}]},{"id":"` + _otherTagID.String() + `","name":"Staging","color":"orange","documents":[]}]}`,
 		},
 	}
 
@@ -138,8 +124,10 @@ func Test_listTags_Exec(t *testing.T) {
 
 			assert.Equal(t, c.Result, res)
 
-			if c.Check != nil {
-				c.Check(t, res)
+			if c.ExpectedJSON != "" {
+				data, err := encodeResult(res)
+				require.NoError(t, err)
+				assert.JSONEq(t, c.ExpectedJSON, data)
 			}
 		})
 	}
