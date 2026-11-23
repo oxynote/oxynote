@@ -1,5 +1,6 @@
 // Package main runs the demo data generator: it serves mock engineering
-// metrics for Prometheus to scrape and fills the demo databases with rows.
+// metrics for Prometheus to scrape, fills the demo databases with rows and
+// writes demo logs to VictoriaLogs.
 package main
 
 import (
@@ -14,6 +15,7 @@ import (
 	"github.com/oxynote/oxynote/datagen/internal/mariademo"
 	"github.com/oxynote/oxynote/datagen/internal/pgdemo"
 	"github.com/oxynote/oxynote/datagen/internal/server"
+	"github.com/oxynote/oxynote/datagen/internal/vlogsdemo"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -55,6 +57,16 @@ func main() {
 		wg.Go(func() {
 			if err := maria.Run(termCtx); err != nil {
 				log.Error("mariademo generator failed", slog.String("error", err.Error()))
+			}
+		})
+	}
+
+	if url := os.Getenv("DATAGEN_VICTORIALOGS_URL"); url != "" {
+		vlogs := vlogsdemo.NewGenerator(log, url)
+
+		wg.Go(func() {
+			if err := vlogs.Run(termCtx); err != nil {
+				log.Error("vlogsdemo generator failed", slog.String("error", err.Error()))
 			}
 		})
 	}

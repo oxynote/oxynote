@@ -101,11 +101,32 @@ services:
     environment:
       - DATAGEN_POSTGRES_DSN=postgresql://demouser:demopass@postgres/demodb?sslmode=disable
       - DATAGEN_MARIADB_DSN=demouser:demopass@tcp(mariadb:3306)/demodb?parseTime=true
+      - DATAGEN_VICTORIALOGS_URL=http://victorialogs:9428
     depends_on:
       postgres:
         condition: service_healthy
       mariadb:
         condition: service_healthy
+      victorialogs:
+        condition: service_started
+    restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        mode: non-blocking
+        max-size: 10m
+        max-file: "3"
+  victorialogs:
+    container_name: victorialogs
+    image: victoriametrics/victoria-logs:v1.54.0
+    command:
+      - -storageDataPath=/vlogs
+      - -retentionPeriod=14d
+      - -loggerLevel=WARN
+    ports:
+      - "8085:9428"
+    volumes:
+      - victorialogs_data:/vlogs
     restart: unless-stopped
     logging:
       driver: local
@@ -244,3 +265,4 @@ volumes:
   caddy_config:
   changedetection_data:
   grafana_storage:
+  victorialogs_data:
