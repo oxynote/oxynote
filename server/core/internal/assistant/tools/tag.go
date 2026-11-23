@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -16,6 +17,21 @@ type listTags struct {
 	// IncludeDocuments asks for the documents each tag is on. The schema
 	// defaults it to true; false leaves the documents out.
 	IncludeDocuments bool `json:"include_documents,omitempty"`
+}
+
+// UnmarshalJSON keeps the original shape when a caller omits
+// include_documents: the argument defaults to true, not Go's false.
+func (lt *listTags) UnmarshalJSON(data []byte) error {
+	type plain listTags
+
+	decoded := plain{IncludeDocuments: true}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+
+	*lt = listTags(decoded)
+
+	return nil
 }
 
 // Info returns the tool's model-facing description.

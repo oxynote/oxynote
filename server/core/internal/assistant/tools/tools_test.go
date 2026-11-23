@@ -493,7 +493,7 @@ func Test_decodeTool(t *testing.T) {
 		"Empty payload": {
 			Decode: decodeTool[listTags],
 			Args:   ``,
-			Result: listTags{},
+			Result: listTags{IncludeDocuments: true},
 		},
 		"Malformed JSON": {
 			Decode:    decodeTool[createTag],

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"testing"
 
@@ -55,6 +56,18 @@ func Test_listTags_Validate(t *testing.T) {
 	t.Parallel()
 
 	assert.NoError(t, listTags{}.Validate())
+}
+
+func Test_listTags_UnmarshalJSON(t *testing.T) {
+	t.Parallel()
+
+	var omitted listTags
+	require.NoError(t, jsonv2.Unmarshal([]byte(`{}`), &omitted))
+	assert.True(t, omitted.IncludeDocuments, "omitting the argument keeps documents in the result")
+
+	var explicit listTags
+	require.NoError(t, jsonv2.Unmarshal([]byte(`{"include_documents": false}`), &explicit))
+	assert.False(t, explicit.IncludeDocuments)
 }
 
 func Test_listTags_Exec(t *testing.T) {
