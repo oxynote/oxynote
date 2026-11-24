@@ -324,6 +324,17 @@ describe("victoriaLogsDialect.readsLineKey", () => {
 		).toBe(false)
 	})
 
+	it("does not read a value with half a character", ({ expect }) => {
+		expect(
+			victoriaLogsDialect.readsLineKey(
+				{ ...LOG, line: String.raw`{"status":"\ud800"}` },
+				LineFormat.JSON,
+				"status",
+				String.fromCharCode(0xd800),
+			),
+		).toBe(false)
+	})
+
 	it("reads a single-quoted byte escape as the view shows it", ({ expect }) => {
 		const shown = victoriaLogsDialect.decodeLogfmtValue(String.raw`'\xe9'`)
 

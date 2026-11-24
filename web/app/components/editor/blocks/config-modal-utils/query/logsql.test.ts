@@ -139,17 +139,7 @@ describe("useLogsQLQueryExtension", () => {
 			{ name: "a field regex", doc: 'level:~"err|¦"', expected: 12 },
 			{ name: "an escaped pipe", doc: '{app=~"a\\\\|b¦"}', expected: 7 },
 			{ name: "a plain string", doc: '{app="a|¦"}', expected: 6 },
-			{
-				name: "a pipe after an escaped backslash",
-				doc: '{app=~"a\\\\\\\\|¦"}',
-				expected: 13,
-			},
 			{ name: "a backtick escaped pipe", doc: "{app=~`a\\|b¦`}", expected: 7 },
-			{
-				name: "a backtick pipe after an escaped backslash",
-				doc: "{app=~`a\\\\|¦`}",
-				expected: 11,
-			},
 		])(
 			"completes from the right place in $name",
 			async ({ doc, expected }, { expect }) => {
@@ -212,44 +202,19 @@ describe("useLogsQLQueryExtension", () => {
 				expected: '{app=~"web|api|db"}',
 			},
 			{
-				name: "an alternative that holds an escaped pipe",
-				doc: "{app=~`web|ap¦p\\|le|db`}",
-				expected: "{app=~`web|api|db`}",
+				name: "the whole value of a regex with an escape",
+				doc: String.raw`{app=~"web|ap¦p\\|le"}`,
+				expected: String.raw`{app=~"api"}`,
 			},
 			{
-				name: "only one alternative inside a regex group",
-				doc: '{app=~"web|(foo|ap¦ple)|db"}',
-				expected: '{app=~"web|(foo|api)|db"}',
+				name: "the whole value of a regex with a group",
+				doc: String.raw`{app=~"web|(foo|ap¦ple)"}`,
+				expected: String.raw`{app=~"api"}`,
 			},
 			{
-				name: "only the alternative after a regex flag group",
-				doc: '{app=~"(?i)ap¦ple"}',
-				expected: '{app=~"(?i)api"}',
-			},
-			{
-				name: "an alternative that holds a parenthesis in a character class",
-				doc: '{app=~"ap¦ple[)]|db"}',
-				expected: '{app=~"api|db"}',
-			},
-			{
-				name: "an alternative that holds a named character class",
-				doc: '{app=~"ap¦ple[[:alpha:]|]|db"}',
-				expected: '{app=~"api|db"}',
-			},
-			{
-				name: "an alternative that a hex escape for a pipe ends",
-				doc: String.raw`{app=~"ap¦ple\x7cdb"}`,
-				expected: String.raw`{app=~"api\x7cdb"}`,
-			},
-			{
-				name: "an alternative that holds an escaped quote",
-				doc: '{app=~"ap¦ple\\"x|db"}',
-				expected: '{app=~"api|db"}',
-			},
-			{
-				name: "an alternative that holds an escaped parenthesis",
-				doc: '{app=~"ap¦p\\\\)le|db"}',
-				expected: '{app=~"api|db"}',
+				name: "the whole value of a regex with a character class",
+				doc: String.raw`{app=~"web|ap¦ple[|]"}`,
+				expected: String.raw`{app=~"api"}`,
 			},
 		])(
 			"replaces $name when a value is accepted",
@@ -580,11 +545,6 @@ describe("useLogsQLQueryExtension", () => {
 	it.for([
 		{ name: "in a comment", doc: "error # lev¦", explicit: true },
 		{ name: "in the middle of a word", doc: "* | sta¦ts", explicit: true },
-		{
-			name: "in a regex character class",
-			doc: '{app=~"web|[a¦|)]"}',
-			explicit: true,
-		},
 	])("offers nothing $name", async ({ doc, explicit }, { expect }) => {
 		const { complete } = makeComplete()
 

@@ -120,14 +120,16 @@ function withViewFilters(
 //
 // A value with bytes that are not UTF-8, such as "\xff", reaches the view
 // with U+FFFD in their place. So the view cannot write a filter that
-// matches the stored bytes.
+// matches the stored bytes. A JSON escape of half a character, such as
+// "\ud800", is not valid text either, and VictoriaLogs refuses it in a
+// query.
 function readsLineKey(
 	log: Log,
 	format: LineFormat,
 	key: string,
 	value: string,
 ): boolean {
-	if (value.includes("\uFFFD")) {
+	if (value.includes("\uFFFD") || !value.isWellFormed()) {
 		return false
 	}
 
