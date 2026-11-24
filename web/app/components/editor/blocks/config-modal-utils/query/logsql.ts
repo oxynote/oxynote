@@ -145,12 +145,12 @@ function stringEnd(doc: string, pos: number, quote: string) {
 	return pos
 }
 
-// splitsRegex tells whether the character at i is a | that splits a regex
-// into alternatives. An escaped | is a plain character. Outside backticks
-// the string takes two backslashes to write one for the regex. The string's
-// text starts at from.
-function splitsRegex(doc: string, from: number, i: number, quote: string) {
-	if (doc.charAt(i) !== "|") {
+// endsAlternative tells whether the character at i is a | or a group
+// parenthesis, which end an alternative of a regex. An escaped one is a
+// plain character. Outside backticks the string takes two backslashes to
+// write one for the regex. The string's text starts at from.
+function endsAlternative(doc: string, from: number, i: number, quote: string) {
+	if (!"|()".includes(doc.charAt(i))) {
 		return false
 	}
 
@@ -179,7 +179,7 @@ function alternativeRange(
 	let end = to
 
 	for (let i = pos - 1; i >= from; i--) {
-		if (splitsRegex(doc, from, i, quote)) {
+		if (endsAlternative(doc, from, i, quote)) {
 			start = i + 1
 
 			break
@@ -187,7 +187,7 @@ function alternativeRange(
 	}
 
 	for (let i = pos; i < to; i++) {
-		if (splitsRegex(doc, from, i, quote)) {
+		if (endsAlternative(doc, from, i, quote)) {
 			end = i
 
 			break

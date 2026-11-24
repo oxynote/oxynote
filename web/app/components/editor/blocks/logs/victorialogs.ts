@@ -110,9 +110,15 @@ function withViewFilters(
 
 // before v1.54.0 VictoriaLogs unpacks a JSON line only when the line
 // starts with its brace. The view also reads a line with white space
-// before the brace.
+// before the brace. The view reads only the first line of a logfmt log,
+// but VictoriaLogs reads the whole log and ends a bare value only at a
+// space. So a value before a newline would hold the next line too.
 function readsLineKeys(log: Log, format: LineFormat): boolean {
-	return format !== LineFormat.JSON || log.line.startsWith("{")
+	if (format === LineFormat.Logfmt) {
+		return !log.line.includes("\n")
+	}
+
+	return log.line.startsWith("{")
 }
 
 // unquoteLogsQL reads text as VictoriaLogs reads a string, in a query or

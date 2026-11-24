@@ -216,6 +216,16 @@ describe("useLogsQLQueryExtension", () => {
 				doc: "{app=~`web|ap¦p\\|le|db`}",
 				expected: "{app=~`web|api|db`}",
 			},
+			{
+				name: "only one alternative inside a regex group",
+				doc: '{app=~"web|(foo|ap¦ple)|db"}',
+				expected: '{app=~"web|(foo|api)|db"}',
+			},
+			{
+				name: "only the alternative after a regex flag group",
+				doc: '{app=~"(?i)ap¦ple"}',
+				expected: '{app=~"(?i)api"}',
+			},
 		])(
 			"replaces $name when a value is accepted",
 			async ({ doc, expected }, { expect }) => {

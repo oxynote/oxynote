@@ -235,6 +235,11 @@ describe("victoriaLogsDialect.readsLineKeys", () => {
 			input: { line: " status=200", format: LineFormat.Logfmt },
 			expected: true,
 		},
+		{
+			name: "does not read a logfmt log of several lines",
+			input: { line: "status=200\ntrace", format: LineFormat.Logfmt },
+			expected: false,
+		},
 	])("$name", ({ input, expected }, { expect }) => {
 		expect(
 			victoriaLogsDialect.readsLineKeys(
