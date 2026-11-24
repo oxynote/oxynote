@@ -128,9 +128,8 @@ func Test_Generator_Run(t *testing.T) {
 			Store: &fakeStore{queryStatus: http.StatusInternalServerError},
 			Err:   assert.AnError,
 		},
-		"Error returned by backfill": {
+		"Failed backfill keeps the run going": {
 			Store: &fakeStore{ingestStatus: http.StatusBadRequest},
-			Err:   assert.AnError,
 		},
 		"Successful run on an empty store": {
 			Store:    &fakeStore{},
@@ -223,6 +222,58 @@ func Test_Generator_awaitStore(t *testing.T) {
 			}
 
 			assert.Equal(t, c.Result, res)
+		})
+	}
+}
+
+func Test_Generator_retry(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		FailFor  int
+		Canceled bool
+		Calls    int
+		Err      error
+	}{
+		"Attempts run out": {
+			FailFor: _readyAttempts,
+			Calls:   _readyAttempts,
+			Err:     assert.AnError,
+		},
+		"Context cancelled": {
+			FailFor:  _readyAttempts,
+			Canceled: true,
+			Calls:    1,
+			Err:      assert.AnError,
+		},
+		"Succeeds after a failure": {FailFor: 1, Calls: 2},
+		"Succeeds at once":         {Calls: 1},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.Canceled {
+				cancel()
+			}
+
+			calls := 0
+
+			err := prepGenerator(t, &fakeStore{}).retry(ctx, func() error {
+				calls++
+
+				if calls <= c.FailFor {
+					return assert.AnError
+				}
+
+				return nil
+			})
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Calls, calls)
 		})
 	}
 }

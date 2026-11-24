@@ -6,10 +6,6 @@ const LEVEL_KEYS = new Set(["level", "lvl", "detected_level"])
 // the keys a structured line names its message with, in order of preference
 const MESSAGE_KEYS = ["msg", "message", "log"]
 
-// one logfmt pair: a key, then a quoted or a bare value. A bare value ends
-// at white space.
-const LOGFMT_PAIR = /\s*([^\s="]+)=("(?:[^"\\]|\\.)*"|[^\s"]*)(?=\s|$)/y
-
 // JSON number text: a sign, the whole part, a fraction and an exponent
 const NUMBER = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/
 
@@ -83,7 +79,8 @@ export function summarizeLog(log: Log, dialect: LogDialect): LogSummary {
 	const shown = (key: string) =>
 		log.level === LogLevel.Unknown || !LEVEL_KEYS.has(key)
 	const line = readLine(log, dialect)
-	const { fields, parsed } = splitFields(log, line, dialect)
+	const fields = sortedEntries(log.fields)
+	const parsed = sortedEntries(log.parsed ?? {})
 	const messageKey = line
 		? MESSAGE_KEYS.find((k) => typeof line.record[k] === "string")
 		: undefined
@@ -112,20 +109,40 @@ export function summarizeLog(log: Log, dialect: LogDialect): LogSummary {
 // extractedFields lists the keys of a JSON or logfmt line in their order,
 // then the keys the query's parser added. A parser key that repeats a line
 // key stays out. A key the source made from a nested value stays in,
-// because it can be filtered on and the nested value cannot.
+// because it can be filtered on and the nested value cannot. A source that
+// indexes every field lists a key that repeats a stored field once, as that
+// field.
 export function extractedFields(
 	log: Log,
 	dialect: LogDialect,
 ): ExtractedField[] {
 	const line = readLine(log, dialect)
+	const extracted = extract(
+		line,
+		sortedEntries(log.parsed ?? {}),
+		dialect,
+		false,
+	)
 
-	return extract(line, splitFields(log, line, dialect).parsed, dialect, false)
+	if (!dialect.indexesAllFields || !line) {
+		return extracted
+	}
+
+	const fields = sortedEntries(log.fields)
+
+	return extracted.filter(
+		(f) =>
+			!fields.some(
+				(pair) =>
+					pair[0] === f.key &&
+					dialect.repeatsLineKey(pair, f.key, line.record[f.key], false),
+			),
+	)
 }
 
-// carriedFields lists the fields carried beside the line, by key. The
-// keys the query's parser added are not among them.
-export function carriedFields(log: Log, dialect: LogDialect): KeyValue[] {
-	return splitFields(log, readLine(log, dialect), dialect).fields
+// carriedFields lists the fields carried beside the line, by key
+export function carriedFields(log: Log): KeyValue[] {
+	return sortedEntries(log.fields)
 }
 
 // displayValue quotes a value when it is empty or holds white space, so the
@@ -327,37 +344,6 @@ function extract(
 	return [...fromLine, ...fromParser]
 }
 
-// splitFields sorts a log's key and value pairs into two lists. fields
-// holds what was sent along with the log. parsed holds what the query
-// read out of the log's line.
-//
-// Some sources send the two lists apart, so they are returned as they
-// came. Other sources send both mixed together as fields. There, a field
-// moves to parsed when the line holds the same key with the same value.
-// A field made from a nested value of the line moves too, such as
-// user.id for the line {"user":{"id":7}}.
-function splitFields(
-	log: Log,
-	line: ReadLine | null,
-	dialect: LogDialect,
-): { fields: KeyValue[]; parsed: KeyValue[] } {
-	const fields = sortedEntries(log.fields)
-
-	if (!dialect.parsedInFields || !line) {
-		return { fields: fields, parsed: sortedEntries(log.parsed ?? {}) }
-	}
-
-	const fromLine = (pair: KeyValue) =>
-		Object.entries(line.record).some(([k, v]) =>
-			dialect.repeatsLineKey(pair, k, v, true),
-		)
-
-	return {
-		fields: fields.filter((pair) => !fromLine(pair)),
-		parsed: fields.filter(fromLine),
-	}
-}
-
 // readLine reads a JSON or logfmt line key by key, or gives null for any
 // other line
 function readLine(log: Log, dialect: LogDialect): ReadLine | null {
@@ -475,8 +461,8 @@ function parseLogfmt(
 	let at = 0
 
 	while (/\S/.test(line.slice(at))) {
-		LOGFMT_PAIR.lastIndex = at
-		const match = LOGFMT_PAIR.exec(line)
+		dialect.logfmtPair.lastIndex = at
+		const match = dialect.logfmtPair.exec(line)
 		if (!match) {
 			return null
 		}
@@ -495,7 +481,7 @@ function parseLogfmt(
 			values.set(key, value)
 		}
 
-		at = LOGFMT_PAIR.lastIndex
+		at = dialect.logfmtPair.lastIndex
 	}
 
 	return values.size

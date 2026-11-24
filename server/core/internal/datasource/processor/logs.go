@@ -398,6 +398,12 @@ type LogLine struct {
 	// Parsed specifies the keys a parser stage of the query took from the
 	// line itself, such as LogQL's logfmt. It is empty when no parser ran.
 	Parsed map[string]string `json:"parsed,omitempty"`
+
+	// FieldsChecked indicates that Fields holds only the fields sent with
+	// the line. Without it, Fields may also hold fields the query made. Such
+	// a field exists only in the result, such as one that a pipe extracts
+	// from the message or computes.
+	FieldsChecked bool `json:"fieldsChecked,omitempty"`
 }
 
 // LogsResult is one page of a window's lines.

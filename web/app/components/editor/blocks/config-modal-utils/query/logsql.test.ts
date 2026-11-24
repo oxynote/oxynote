@@ -39,6 +39,7 @@ const DATA: LogStubData = {
 			{ name: "app", kind: LogFieldKind.Label },
 			{ name: "level", kind: LogFieldKind.Field },
 			{ name: "odd name", kind: LogFieldKind.Field },
+			{ name: "by", kind: LogFieldKind.Field },
 		],
 	},
 	fieldValues: {
@@ -118,6 +119,17 @@ describe("useLogsQLQueryExtension", () => {
 			{ name: "a field regex", doc: 'level:~"err|¦"', expected: 12 },
 			{ name: "an escaped pipe", doc: '{app=~"a\\\\|b¦"}', expected: 7 },
 			{ name: "a plain string", doc: '{app="a|¦"}', expected: 6 },
+			{
+				name: "a pipe after an escaped backslash",
+				doc: '{app=~"a\\\\\\\\|¦"}',
+				expected: 13,
+			},
+			{ name: "a backtick escaped pipe", doc: "{app=~`a\\|b¦`}", expected: 7 },
+			{
+				name: "a backtick pipe after an escaped backslash",
+				doc: "{app=~`a\\\\|¦`}",
+				expected: 11,
+			},
 		])(
 			"completes from the right place in $name",
 			async ({ doc, expected }, { expect }) => {
@@ -183,6 +195,7 @@ describe("useLogsQLQueryExtension", () => {
 			{ name: "a plain field", label: "level", expected: "level:" },
 			{ name: "a builtin field", label: "_time", expected: "_time:" },
 			{ name: "an odd field name", label: "odd name", expected: '"odd name":' },
+			{ name: "a reserved field name", label: "by", expected: '"by":' },
 		])(
 			"applies $name with its colon",
 			async ({ label, expected }, { expect }) => {

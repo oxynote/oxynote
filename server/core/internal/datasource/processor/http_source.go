@@ -44,7 +44,7 @@ var _errEndpointNotFound = errutil.New(
 	"the data source does not serve this request",
 )
 
-// httpClient sends the GET requests of a data source that answers over
+// httpClient sends the requests of a data source that answers over
 // HTTP. It authenticates with the data source's credentials and never
 // follows a redirect.
 type httpClient struct {
@@ -70,15 +70,33 @@ func (hc *httpClient) fetchJSON[T any](ctx context.Context, path string, params 
 	return res, nil
 }
 
-// fetchRaw sends a GET to the path and returns the body of a 200 answer. Any
-// other answer is the error it describes.
+// fetchRaw sends a GET to the path and returns the body of a 200 answer, as
+// fetch does.
 func (hc *httpClient) fetchRaw(ctx context.Context, path string, params url.Values, header http.Header) ([]byte, error) {
+	return hc.fetch(ctx, path, params, nil, header)
+}
+
+// postForm sends a POST to the path with form as its body and returns the
+// body of a 200 answer, as fetch does. It is for a query too long for a
+// URL, which many proxies cut off at about 8 KB. A GET cannot carry it
+// either, because Go servers read form values from the body only for
+// POST, PUT and PATCH, and proxies often drop the body of a GET. Use it
+// only for a server that reads such a POST like the same GET, as
+// VictoriaLogs does.
+func (hc *httpClient) postForm(ctx context.Context, path string, form url.Values) ([]byte, error) {
+	return hc.fetch(ctx, path, nil, form, nil)
+}
+
+// fetch sends a request to the path and returns the body of a 200 answer.
+// It is a POST of form when form is set, and a GET otherwise. Any other
+// answer is the error it describes.
+func (hc *httpClient) fetch(ctx context.Context, path string, params, form url.Values, header http.Header) ([]byte, error) {
 	client, err := hc.authClient()
 	if err != nil {
 		return nil, err
 	}
 
-	status, body, err := hc.doRequest(ctx, client, path, params, header)
+	status, body, err := hc.doRequest(ctx, client, path, params, form, header)
 	if err != nil {
 		return nil, err
 	}
@@ -119,13 +137,15 @@ func (hc *httpClient) fetchRaw(ctx context.Context, path string, params url.Valu
 	return nil, NewInvalidQueryError(cmp.Or(msg, "the data source rejected the query"))
 }
 
-// doRequest sends a GET to the path through client and returns the
-// status and body.
+// doRequest sends a request to the path through client and returns the
+// status and body. It is a POST of form when form is set, and a GET
+// otherwise.
 func (hc *httpClient) doRequest(
 	ctx context.Context,
 	client *http.Client,
 	path string,
 	params url.Values,
+	form url.Values,
 	header http.Header,
 ) (int, []byte, error) {
 	target, err := url.JoinPath(hc.inp.URL(), path)
@@ -137,13 +157,22 @@ func (hc *httpClient) doRequest(
 		target += "?" + params.Encode()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
+	method, reqBody := http.MethodGet, io.Reader(http.NoBody)
+	if form != nil {
+		method, reqBody = http.MethodPost, strings.NewReader(form.Encode())
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, target, reqBody)
 	if err != nil {
 		// NOCOV: url.JoinPath already parsed the same target.
 		return 0, nil, fmt.Errorf("creating request: %w", err)
 	}
 
 	maps.Copy(req.Header, header)
+
+	if form != nil {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {

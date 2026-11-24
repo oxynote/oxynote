@@ -14,7 +14,7 @@ function remove(filter: LogFilter) {
 	<div class="flex shrink-0 flex-wrap items-center gap-1.5 px-2.5 pb-2">
 		<span
 			v-for="filter in filters"
-			:key="filter.key"
+			:key="`${filter.format ?? 'field'}:${filter.key}`"
 			class="inline-flex h-6 max-w-full items-center gap-1 rounded-md border bg-muted pr-0.5 pl-1.5 text-xs text-foreground"
 		>
 			<span class="shrink-0 text-muted-foreground">{{ filter.key }}</span>

@@ -53,7 +53,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 		])
 	})
 
-	it("lists the fields a victorialogs query unpacked from the line once, as content", async ({
+	it("lists the keys a victorialogs query unpacked from the line once, as content", async ({
 		expect,
 	}) => {
 		// the nested value's row explains in a tooltip why it has no filter
@@ -61,8 +61,9 @@ describe("<RowDetails>", { concurrent: false }, () => {
 			props: {
 				log: makeLog({
 					line: '{"msg":"m","status":500,"user":{"id":7}}',
-					fields: { status: "500", "user.id": "7", trace_id: "abc" },
-					parsed: undefined,
+					fields: { trace_id: "abc" },
+					parsed: { status: "500", "user.id": "7" },
+					fieldsChecked: true,
 				}),
 				dialect: victoriaLogsDialect,
 				lineFilterFormats: Object.values(LineFormat),
@@ -94,16 +95,59 @@ describe("<RowDetails>", { concurrent: false }, () => {
 		expect(notes.every((note) => note.classes().includes("hidden"))).toBe(true)
 	})
 
-	it("calls the metadata indexed when the source indexes every field", async ({
+	it.for([
+		{
+			name: "the source told the stored fields apart",
+			fieldsChecked: true,
+			expected: "editor.logs.view.metadata-description-indexed",
+		},
+		{
+			name: "the source could not tell them apart",
+			fieldsChecked: false,
+			expected: "editor.logs.view.metadata-description-indexed-if-sent",
+		},
+	])(
+		"calls the metadata indexed when $name",
+		async ({ fieldsChecked, expected }, { expect }) => {
+			const wrapper = await mountDetails(
+				makeLog({ fieldsChecked }),
+				victoriaLogsDialect,
+			)
+			const notes = wrapper.findAll("h4 + span")
+
+			expect(notes.map((note) => note.text())).toEqual([
+				t("editor.logs.view.origin-description"),
+				t(expected),
+				t("editor.logs.view.content-description"),
+			])
+		},
+	)
+
+	it("lists the fields a query pipe wrote as content, filtered as fields", async ({
 		expect,
 	}) => {
-		const wrapper = await mountDetails(makeLog(), victoriaLogsDialect)
-		const notes = wrapper.findAll("h4 + span")
+		const wrapper = await mountDetails(
+			makeLog({
+				line: '10.0.0.1 "GET /a"',
+				labels: {},
+				fields: { host: "gw-1" },
+				parsed: { ip: "10.0.0.1" },
+				fieldsChecked: true,
+			}),
+			victoriaLogsDialect,
+		)
 
-		expect(notes.map((note) => note.text())).toEqual([
-			t("editor.logs.view.origin-description"),
-			t("editor.logs.view.metadata-description-indexed"),
-			t("editor.logs.view.content-description"),
+		await findButtonByText(
+			wrapper,
+			t("editor.logs.view.include-value", { key: "ip" }),
+		).trigger("click")
+
+		expect(tableRows(wrapper).slice(1)).toEqual([
+			[["host", "gw-1"]],
+			[["ip", "10.0.0.1"]],
+		])
+		expect(wrapper.emitted("filter")).toEqual([
+			[{ key: "ip", value: "10.0.0.1", indexed: false, exclude: false }],
 		])
 	})
 
@@ -303,6 +347,58 @@ describe("<RowDetails>", { concurrent: false }, () => {
 		await flushPromises()
 
 		expect(openTooltipText(wrapper)).toBe(t(expected))
+	})
+
+	it("lists a stored field that repeats a line key once, as metadata", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSuspended(RowDetails, {
+			props: {
+				log: makeLog({
+					line: '{"level":"error","path":"/a"}',
+					labels: {},
+					fields: { level: "error" },
+					parsed: undefined,
+				}),
+				dialect: victoriaLogsDialect,
+				lineFilterFormats: Object.values(LineFormat),
+			},
+		})
+
+		await findButtonByText(
+			wrapper,
+			t("editor.logs.view.include-value", { key: "level" }),
+		).trigger("click")
+
+		expect(tableRows(wrapper).slice(1)).toEqual([
+			[["level", "error"]],
+			[["path", "/a"]],
+		])
+		expect(wrapper.emitted("filter")).toEqual([
+			[{ key: "level", value: "error", indexed: false, exclude: false }],
+		])
+	})
+
+	it("keeps a line key whose stored field holds another value", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSuspended(RowDetails, {
+			props: {
+				log: makeLog({
+					line: '{"status":200}',
+					labels: {},
+					fields: { status: "500" },
+					parsed: undefined,
+				}),
+				dialect: victoriaLogsDialect,
+				lineFilterFormats: Object.values(LineFormat),
+			},
+		})
+
+		expect(tableRows(wrapper).slice(1)).toEqual([
+			[["status", "500"]],
+			[["status", "200"]],
+		])
 	})
 
 	it("copies the raw line and says so", async ({ expect }) => {

@@ -11,6 +11,10 @@ const REGEX_SPECIAL = /[\\.+*?()|[\]{}^$]/g
 const KEY_CHAR = /[^A-Za-z0-9_]/g
 const CLASH_SUFFIX = "_extracted"
 
+// one logfmt pair: a key, then a quoted or a bare value. A bare value ends
+// at white space.
+const LOGFMT_PAIR = /\s*([^\s="]+)=("(?:[^"\\]|\\.)*"|[^\s"]*)(?=\s|$)/y
+
 // the LogQL parser that reads each line format
 const PARSERS: Record<LineFormat, string> = {
 	[LineFormat.JSON]: "json",
@@ -36,8 +40,9 @@ export const lokiDialect: LogDialect = {
 	logfmtParseFailed,
 	decodeLogfmtValue,
 	repeatsLineKey,
+	logfmtPair: LOGFMT_PAIR,
 	logfmtKeepsLastValue: false,
-	parsedInFields: false,
+	keepsLineKeyNames: false,
 	indexesAllFields: false,
 }
 

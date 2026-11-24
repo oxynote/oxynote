@@ -38,12 +38,8 @@ const sections = computed<
 	},
 	{
 		heading: t("editor.logs.view.metadata-heading"),
-		description: t(
-			props.dialect.indexesAllFields
-				? "editor.logs.view.metadata-description-indexed"
-				: "editor.logs.view.metadata-description",
-		),
-		entries: carriedFields(props.log, props.dialect).map(([key, value]) => ({
+		description: metadataDescription(),
+		entries: carriedFields(props.log).map(([key, value]) => ({
 			key: key,
 			value: value,
 			filter: { key: key, value: value, indexed: false },
@@ -55,6 +51,21 @@ const sections = computed<
 		entries: extractedFields(props.log, props.dialect).map(extractedRow),
 	},
 ])
+
+// metadataDescription says whether the metadata fields are indexed. A
+// source that indexes every field is sure of it only when the fields were
+// checked. Otherwise the query may have added some of them.
+function metadataDescription() {
+	if (!props.dialect.indexesAllFields) {
+		return t("editor.logs.view.metadata-description")
+	}
+
+	if (props.log.fieldsChecked) {
+		return t("editor.logs.view.metadata-description-indexed")
+	}
+
+	return t("editor.logs.view.metadata-description-indexed-if-sent")
+}
 
 // extractedRow gives a key the query's parser added a plain filter. A key
 // read from the line filters by the source's name for it, and brings the

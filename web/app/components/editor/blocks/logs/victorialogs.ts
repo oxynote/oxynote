@@ -27,6 +27,11 @@ const NUMBER_ESCAPES: Record<
 	U: { base: 16, length: 8 },
 }
 
+// one logfmt pair: a key, then a value in double quotes, single quotes or
+// backticks, or a bare value that ends at white space
+const LOGFMT_PAIR =
+	/\s*([^\s="]+)=("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`|[^\s"]*)(?=\s|$)/y
+
 const ENCODER = new TextEncoder()
 
 // the pipe that reads each line format
@@ -52,8 +57,9 @@ export const victoriaLogsDialect: LogDialect = {
 	logfmtParseFailed: () => false,
 	decodeLogfmtValue,
 	repeatsLineKey,
+	logfmtPair: LOGFMT_PAIR,
 	logfmtKeepsLastValue: true,
-	parsedInFields: true,
+	keepsLineKeyNames: true,
 	indexesAllFields: true,
 }
 
@@ -217,10 +223,28 @@ function repeatsLineKey(
 
 	return (
 		nested &&
-		lineValue !== null &&
-		typeof lineValue === "object" &&
-		!isNumberText(lineValue) &&
-		key.startsWith(`${lineKey}.`)
+		key.startsWith(`${lineKey}.`) &&
+		holdsPath(lineValue, key.slice(lineKey.length + 1), value)
+	)
+}
+
+// holdsPath tells whether a nested value holds the text at a dotted path.
+// An inner key can hold dots too, so each key is tried as a prefix.
+function holdsPath(node: unknown, path: string, text: string): boolean {
+	if (
+		node === null ||
+		typeof node !== "object" ||
+		Array.isArray(node) ||
+		isNumberText(node)
+	) {
+		return false
+	}
+
+	return Object.entries(node).some(([key, value]) =>
+		key === path
+			? sameValue(text, value)
+			: path.startsWith(`${key}.`) &&
+				holdsPath(value, path.slice(key.length + 1), text),
 	)
 }
 

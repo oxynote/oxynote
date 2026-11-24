@@ -72,8 +72,25 @@ const WORD_BEFORE_CURSOR = /[\p{L}\p{Nd}_][\p{L}\p{Nd}_.-]*$/u
 const WORD_CHARS = /^[\p{L}\p{Nd}_.-]*$/u
 const WORD_CHAR = /[\p{L}\p{Nd}_]/u
 
-// a field name that needs no quotes. A logic word would read as an operator.
-const BARE_FIELD = /^(?!(?:and|or|not)$)[\p{L}_][\p{L}\p{Nd}_.-]*$/iu
+const BARE_FIELD = /^[\p{L}_][\p{L}\p{Nd}_.-]*$/u
+
+// the words VictoriaLogs reads as syntax, so a field with such a name needs
+// quotes
+const RESERVED_WORDS = new Set([
+	...filterFunctions,
+	...mathFunctions,
+	...pipeNames,
+	...runningStatsFunctions,
+	...statsFunctions,
+	"and",
+	"as",
+	"by",
+	"from",
+	"if",
+	"not",
+	"options",
+	"or",
+])
 
 // what the query holds before the cursor, read character by character.
 // The parse tree cannot say this alone, because an unclosed string has no
@@ -123,10 +140,27 @@ function stringEnd(doc: string, pos: number, quote: string) {
 }
 
 // a regex lists its alternatives with |, so a value completes only the
-// last one. An escaped | is a plain character.
-function alternativeStart(doc: string, from: number, pos: number) {
+// last one. An escaped | is a plain character. Outside backticks the string
+// takes two backslashes to write one for the regex.
+function alternativeStart(
+	doc: string,
+	from: number,
+	pos: number,
+	quote: string,
+) {
 	for (let i = pos - 1; i >= from; i--) {
-		if (doc.charAt(i) === "|" && doc.charAt(i - 1) !== "\\") {
+		if (doc.charAt(i) !== "|") {
+			continue
+		}
+
+		let slashes = 0
+
+		while (i - slashes > from && doc.charAt(i - slashes - 1) === "\\") {
+			slashes++
+		}
+
+		const regexSlashes = quote === "`" ? slashes : Math.floor(slashes / 2)
+		if (regexSlashes % 2 === 0) {
 			return i + 1
 		}
 	}
@@ -403,9 +437,11 @@ export function useLogsQLQueryExtension(
 		return (res.data?.fields ?? [])
 			.filter((field) => !labelsOnly || field.kind === LogFieldKind.Label)
 			.map((field) => {
-				const name = BARE_FIELD.test(field.name)
-					? field.name
-					: JSON.stringify(field.name)
+				const name =
+					BARE_FIELD.test(field.name) &&
+					!RESERVED_WORDS.has(field.name.toLowerCase())
+						? field.name
+						: JSON.stringify(field.name)
 				const isLabel = field.kind === LogFieldKind.Label
 
 				return {
@@ -449,7 +485,9 @@ export function useLogsQLQueryExtension(
 		}
 
 		return {
-			from: target.regex ? alternativeStart(doc, from + 1, ctx.pos) : from + 1,
+			from: target.regex
+				? alternativeStart(doc, from + 1, ctx.pos, quote)
+				: from + 1,
 			options: await fieldValues(target.field, target.q, (value) =>
 				quote === "`" && value.includes("`")
 					? null

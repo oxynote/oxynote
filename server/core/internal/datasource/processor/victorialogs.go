@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -58,7 +60,15 @@ const (
 
 	// _victoriaLogsStreamID is the field holding a log's stream ID.
 	_victoriaLogsStreamID = "_stream_id"
+
+	// _victoriaLogsMaxLookupLen caps one lookup query, in bytes. VictoriaLogs
+	// refuses a query over 16 KiB by default.
+	_victoriaLogsMaxLookupLen = 15000
 )
+
+// _victoriaLogsStreamIDPattern matches a stream ID, which goes into a lookup
+// query unquoted.
+var _victoriaLogsStreamIDPattern = regexp.MustCompile(`^[0-9a-f]+$`)
 
 // _victoriaLogsLevelFields are the fields a log's level is read from, the
 // first one present winning. VictoriaLogs stores an OpenTelemetry log's
@@ -72,12 +82,16 @@ var _errVictoriaLogsNoTime = NewInvalidQueryError("the query returned a row with
 // VictoriaLogs represents a VictoriaLogs data source processor.
 type VictoriaLogs struct {
 	httpClient
+
+	// log is the structured logger.
+	log *slog.Logger
 }
 
 // NewVictoriaLogs creates a new VictoriaLogs data source processor.
-func NewVictoriaLogs(inp Input) *VictoriaLogs {
+func NewVictoriaLogs(log *slog.Logger, inp Input) *VictoriaLogs {
 	return &VictoriaLogs{
-		httpClient{inp: inp},
+		inp: inp,
+		log: log,
 	}
 }
 
@@ -103,7 +117,7 @@ func (vl *VictoriaLogs) TestConnection(ctx context.Context) (ConnectionStatus, e
 		return "", err
 	}
 
-	status, body, err := vl.doRequest(ctx, client, _victoriaLogsBuildinfoPath, nil, nil)
+	status, body, err := vl.doRequest(ctx, client, _victoriaLogsBuildinfoPath, nil, nil, nil)
 	if err != nil {
 		return ConnectionStatusUnreachable, nil
 	}
@@ -281,22 +295,14 @@ func (vl *VictoriaLogs) fetchLines(q string, at time.Time) LogsFetcher {
 			return nil, err
 		}
 
-		var lines []LogLine
+		rows, err := decodeVictoriaLogsRows(body)
+		if err != nil {
+			return nil, err
+		}
 
-		sc := bufio.NewScanner(bytes.NewReader(body))
-		sc.Buffer(nil, _maxHTTPResponseSize)
+		lines := make([]LogLine, 0, len(rows))
 
-		for sc.Scan() {
-			if len(bytes.TrimSpace(sc.Bytes())) == 0 {
-				continue
-			}
-
-			var row victoriaLogsRow
-
-			if err := json.Unmarshal(sc.Bytes(), &row); err != nil {
-				return nil, fmt.Errorf("decoding victorialogs log: %w", err)
-			}
-
+		for _, row := range rows {
 			line, err := row.logLine()
 			if err != nil {
 				return nil, err
@@ -305,10 +311,7 @@ func (vl *VictoriaLogs) fetchLines(q string, at time.Time) LogsFetcher {
 			lines = append(lines, line)
 		}
 
-		if err := sc.Err(); err != nil {
-			// NOCOV: the body is in memory and under the scanner's cap.
-			return nil, fmt.Errorf("reading victorialogs logs: %w", err)
-		}
+		vl.splitStoredFields(ctx, rows, lines)
 
 		// before v1.53.0 the sort pipe can return logs out of order after
 		// pipes such as unpack_json, so they are sorted here.
@@ -316,6 +319,172 @@ func (vl *VictoriaLogs) fetchLines(q string, at time.Time) LogsFetcher {
 
 		return lines, nil
 	}
+}
+
+// splitStoredFields tells the fields the query made from the stored ones.
+// VictoriaLogs returns both kinds mixed together, so it reads the stored
+// copy of each line by its stream and time, without the query's pipes. A
+// field the copy lacks, or holds with another value, moves from Fields to
+// Parsed. A line without exactly one stored copy keeps its fields as they
+// came, such as when the query dropped _stream_id.
+func (vl *VictoriaLogs) splitStoredFields(ctx context.Context, rows []victoriaLogsRow, lines []LogLine) {
+	stored := make(map[victoriaLogsKey][]victoriaLogsRow, len(rows))
+
+	for _, lookup := range newVictoriaLogsLookups(rows) {
+		copies, err := vl.fetchStored(ctx, lookup)
+		if err != nil {
+			// the split only changes where the client lists the fields, so
+			// a failed lookup leaves every line as it came.
+			vl.log.Warn("cannot read stored logs", slog.String("error", err.Error()))
+
+			return
+		}
+
+		for _, c := range copies {
+			if key, _, ok := c.key(); ok {
+				stored[key] = append(stored[key], c)
+			}
+		}
+	}
+
+	for i, row := range rows {
+		key, _, ok := row.key()
+		if !ok || len(stored[key]) != 1 {
+			continue
+		}
+
+		splitVictoriaLogsLine(&lines[i], stored[key][0])
+	}
+}
+
+// fetchStored reads the stored logs a lookup matches.
+func (vl *VictoriaLogs) fetchStored(ctx context.Context, lookup victoriaLogsLookup) ([]victoriaLogsRow, error) {
+	body, err := vl.postForm(ctx, _victoriaLogsQueryPath, createVictoriaLogsWindowParams(lookup.query, lookup.tr))
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeVictoriaLogsRows(body)
+}
+
+// victoriaLogsKey identifies a stored log by its stream and by its time as
+// VictoriaLogs writes it.
+type victoriaLogsKey struct {
+	// streamID specifies the log's stream.
+	streamID string
+
+	// time specifies the log's time, as written in its _time field.
+	time string
+}
+
+// victoriaLogsLookup is one query that reads the stored copies of part of
+// a page's logs, and the window they fall in. A long page needs several
+// lookups, because each query stays under _victoriaLogsMaxLookupLen.
+type victoriaLogsLookup struct {
+	// query specifies the filter that matches each log by stream and time.
+	query string
+
+	// tr specifies the window, which ends just after the newest log.
+	tr TimeRange
+}
+
+// newVictoriaLogsLookups returns the queries that read the stored copies
+// of the rows. Each query stays under _victoriaLogsMaxLookupLen. A row
+// without a valid stream ID or time has no copy to read.
+func newVictoriaLogsLookups(rows []victoriaLogsRow) []victoriaLogsLookup {
+	var (
+		lookups []victoriaLogsLookup
+		terms   []string
+		size    int
+		tr      TimeRange
+	)
+
+	flush := func() {
+		if len(terms) > 0 {
+			lookups = append(lookups, victoriaLogsLookup{query: strings.Join(terms, " or "), tr: tr})
+		}
+
+		terms, size = nil, 0
+	}
+
+	for _, row := range rows {
+		key, t, ok := row.key()
+		if !ok {
+			continue
+		}
+
+		term := fmt.Sprintf("(%s:%s %s:%s)", _victoriaLogsStreamID, key.streamID, _victoriaLogsTime, key.time)
+		if size+len(" or ")+len(term) > _victoriaLogsMaxLookupLen {
+			flush()
+		}
+
+		end := t.Add(time.Nanosecond)
+
+		switch {
+		case len(terms) == 0:
+			tr = TimeRange{From: t, To: end}
+		case t.Before(tr.From):
+			tr.From = t
+		case end.After(tr.To):
+			tr.To = end
+		}
+
+		terms = append(terms, term)
+		size += len(" or ") + len(term)
+	}
+
+	flush()
+
+	return lookups
+}
+
+// splitVictoriaLogsLine moves each field of line that stored lacks, or
+// holds with another value, from Fields to Parsed.
+func splitVictoriaLogsLine(line *LogLine, stored victoriaLogsRow) {
+	parsed := map[string]string{}
+
+	for k, v := range line.Fields {
+		if s, ok := stored[k]; !ok || s != v {
+			parsed[k] = v
+			delete(line.Fields, k)
+		}
+	}
+
+	if len(parsed) > 0 {
+		line.Parsed = parsed
+	}
+
+	line.FieldsChecked = true
+}
+
+// decodeVictoriaLogsRows decodes an answer of the query endpoint, which
+// holds one JSON row per line.
+func decodeVictoriaLogsRows(body []byte) ([]victoriaLogsRow, error) {
+	var rows []victoriaLogsRow
+
+	sc := bufio.NewScanner(bytes.NewReader(body))
+	sc.Buffer(nil, _maxHTTPResponseSize)
+
+	for sc.Scan() {
+		if len(bytes.TrimSpace(sc.Bytes())) == 0 {
+			continue
+		}
+
+		var row victoriaLogsRow
+
+		if err := json.Unmarshal(sc.Bytes(), &row); err != nil {
+			return nil, fmt.Errorf("decoding victorialogs log: %w", err)
+		}
+
+		rows = append(rows, row)
+	}
+
+	if err := sc.Err(); err != nil {
+		// NOCOV: the body is in memory and under the scanner's cap.
+		return nil, fmt.Errorf("reading victorialogs logs: %w", err)
+	}
+
+	return rows, nil
 }
 
 // victoriaLogsHitsResponse is the answer of the hits endpoint.
@@ -365,6 +534,19 @@ func (vlr victoriaLogsListResponse) names() []string {
 // victoriaLogsRow is one log as the query endpoint returns it, every
 // field a string.
 type victoriaLogsRow map[string]string
+
+// key returns the row's stream and time, the time parsed, and whether both
+// are valid. A query can drop or rewrite either field.
+func (vr victoriaLogsRow) key() (victoriaLogsKey, time.Time, bool) {
+	id, raw := vr[_victoriaLogsStreamID], vr[_victoriaLogsTime]
+
+	t, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil || !_victoriaLogsStreamIDPattern.MatchString(id) {
+		return victoriaLogsKey{}, time.Time{}, false
+	}
+
+	return victoriaLogsKey{streamID: id, time: raw}, t, true
+}
 
 // logLine returns the row as a normalized line.
 func (vr victoriaLogsRow) logLine() (LogLine, error) {

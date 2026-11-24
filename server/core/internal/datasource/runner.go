@@ -342,7 +342,10 @@ func (m *Manager) newClient(ds DataSource) (ownedClient, error) {
 	case TypeLoki:
 		return m.lokiClient(ds)
 	case TypeVictoriaLogs:
-		return processor.NewVictoriaLogs(newStateInput(ds.URL, ds.Credentials)), nil
+		return processor.NewVictoriaLogs(
+			m.log.With(slog.String("data_source_id", ds.ID.String())),
+			newStateInput(ds.URL, ds.Credentials),
+		), nil
 	case TypeVictoriaMetrics:
 		return processor.NewVictoriaMetrics(newStateInput(ds.URL, ds.Credentials)), nil
 	default:

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/oxynote/oxynote/datagen/internal/mockmetrics"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
@@ -41,7 +42,8 @@ const (
 	// log stream.
 	_ingestPath = "/insert/jsonline?_stream_fields=service,env&_time_field=_time&_msg_field=_msg"
 
-	// _readyAttempts defines how many times the store is asked at startup.
+	// _readyAttempts defines how many times a request to the store is tried
+	// at startup.
 	_readyAttempts = 30
 
 	// _readyDelay defines the wait between those attempts.
@@ -178,11 +180,13 @@ func (g *Generator) Run(ctx context.Context) error {
 	if empty {
 		g.log.Info("vlogsdemo: backfilling historical logs", slog.Int("days", g.backfillDays))
 
+		// NOTE: a partial history is still a working demo, so the new logs
+		// keep coming after a failed backfill.
 		if err := g.backfill(ctx, timeutil.Now()); err != nil {
-			return fmt.Errorf("vlogsdemo: backfill: %w", err)
+			g.log.Error("cannot backfill demo logs", slog.String("error", err.Error()))
+		} else {
+			g.log.Info("vlogsdemo: backfill complete")
 		}
-
-		g.log.Info("vlogsdemo: backfill complete")
 	}
 
 	timeutil.NewPeriodicExec(
@@ -190,7 +194,7 @@ func (g *Generator) Run(ctx context.Context) error {
 		0,
 		func(ctx context.Context) {
 			if err := g.ingest(ctx, g.newTick(timeutil.Now(), g.interval)); err != nil {
-				g.log.Error("vlogsdemo: tick insert failed", slog.String("error", err.Error()))
+				g.log.Error("cannot insert demo logs", slog.String("error", err.Error()))
 			}
 		},
 		nil,
@@ -204,24 +208,28 @@ func (g *Generator) Run(ctx context.Context) error {
 // The server image has no shell for a compose health check, so the store
 // may still be starting when the generator does.
 func (g *Generator) awaitStore(ctx context.Context) (bool, error) {
-	var err error
+	var empty bool
 
-	for range _readyAttempts {
-		var empty bool
+	err := g.retry(ctx, func() error {
+		var err error
 
 		empty, err = g.isEmpty(ctx)
-		if err == nil {
-			return empty, nil
-		}
 
-		select {
-		case <-ctx.Done():
-			return false, ctx.Err()
-		case <-time.After(g.readyDelay):
-		}
-	}
+		return err
+	})
 
-	return false, err
+	return empty, err
+}
+
+// retry runs f until it succeeds, its attempts run out or ctx is done.
+func (g *Generator) retry(ctx context.Context, f func() error) error {
+	return backoff.Retry(
+		f,
+		backoff.WithContext(
+			backoff.WithMaxRetries(backoff.NewConstantBackOff(g.readyDelay), _readyAttempts-1),
+			ctx,
+		),
+	)
 }
 
 // isEmpty tells whether the store holds no logs.
@@ -246,14 +254,22 @@ func (g *Generator) backfill(ctx context.Context, now time.Time) error {
 			continue
 		}
 
-		if err := g.ingest(ctx, batch); err != nil {
+		if err := g.ingestBatch(ctx, batch); err != nil {
 			return err
 		}
 
 		batch = nil
 	}
 
-	return g.ingest(ctx, batch)
+	return g.ingestBatch(ctx, batch)
+}
+
+// ingestBatch sends one backfilled batch, and retries it so that a short
+// outage leaves no gap in the history.
+func (g *Generator) ingestBatch(ctx context.Context, batch []entry) error {
+	return g.retry(ctx, func() error {
+		return g.ingest(ctx, batch)
+	})
 }
 
 // newTick generates the logs of one tick, spread over the span before t.

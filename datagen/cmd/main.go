@@ -66,7 +66,7 @@ func main() {
 
 		wg.Go(func() {
 			if err := vlogs.Run(termCtx); err != nil {
-				log.Error("vlogsdemo generator failed", slog.String("error", err.Error()))
+				log.Error("cannot run vlogsdemo generator", slog.String("error", err.Error()))
 			}
 		})
 	}

@@ -36,20 +36,21 @@ const EXACT_DIALECT: LogDialect = {
 	decodeLogfmtValue,
 	repeatsLineKey: ([key, value], lineKey, lineValue) =>
 		key === lineKey && (typeof lineValue !== "string" || lineValue === value),
+	logfmtPair: /\s*([^\s="]+)=("(?:[^"\\]|\\.)*"|[^\s"]*)(?=\s|$)/y,
 	logfmtKeepsLastValue: false,
-	parsedInFields: false,
+	keepsLineKeyNames: false,
 	indexesAllFields: false,
 }
-// a source that sends the keys it read from the line as fields, and names
-// the keys of a nested value with a dot
-const UNPACKING_DIALECT: LogDialect = {
+// a source that indexes every field, and names the keys of a nested value
+// with a dot
+const INDEXING_DIALECT: LogDialect = {
 	...EXACT_DIALECT,
 	repeatsLineKey: ([key, value], lineKey, lineValue, nested) =>
 		key === lineKey
 			? value ===
 				(typeof lineValue === "string" ? lineValue : JSON.stringify(lineValue))
 			: nested && key.startsWith(`${lineKey}.`),
-	parsedInFields: true,
+	keepsLineKeyNames: true,
 	indexesAllFields: true,
 }
 const UNPACKED_LOG = {
@@ -480,24 +481,10 @@ describe("summarizeLog", () => {
 		])
 	})
 
-	it("leaves out the fields a source read from the line", ({ expect }) => {
-		expect(summarizeLog(makeLog(UNPACKED_LOG), UNPACKING_DIALECT)).toEqual({
-			message: "m",
-			extracted: [
-				["status", "500"],
-				["user", '{"id":1}'],
-			],
-			fields: [["region", "eu"]],
-			labels: [],
-		})
-	})
-
-	it("keeps a field that differs from the line's key for a source that reads the line into fields", ({
-		expect,
-	}) => {
+	it("keeps a field that differs from the line's key", ({ expect }) => {
 		const log = makeLog({ ...UNPACKED_LOG, fields: { status: "200" } })
 
-		expect(summarizeLog(log, UNPACKING_DIALECT).fields).toEqual([
+		expect(summarizeLog(log, INDEXING_DIALECT).fields).toEqual([
 			["status", "200"],
 		])
 	})
@@ -716,18 +703,16 @@ describe("extractedFields", () => {
 		expect(decodeLogfmtValue).not.toHaveBeenCalled()
 	})
 
-	it("lists a field a source made from a nested value of the line as a parser key", ({
+	it("lists a key that repeats a stored field once, as that field, for a source that indexes every field", ({
 		expect,
 	}) => {
 		expect(
-			extractedFields(makeLog(UNPACKED_LOG), UNPACKING_DIALECT).map((f) => [
-				f.key,
-				f.value,
-				f.format,
-			]),
+			extractedFields(
+				makeLog({ ...UNPACKED_LOG, parsed: { "user.id": "1" } }),
+				INDEXING_DIALECT,
+			).map((f) => [f.key, f.value, f.format]),
 		).toEqual([
 			["msg", "m", LineFormat.JSON],
-			["status", "500", LineFormat.JSON],
 			["user", '{"id":1}', LineFormat.JSON],
 			["user.id", "1", null],
 		])
@@ -735,35 +720,12 @@ describe("extractedFields", () => {
 })
 
 describe("carriedFields", () => {
-	it.for([
-		{
-			name: "lists every field by key for a source with parsed keys",
-			log: UNPACKED_LOG,
-			dialect: EXACT_DIALECT,
-			expected: [
-				["region", "eu"],
-				["status", "500"],
-				["user.id", "1"],
-			],
-		},
-		{
-			name: "leaves out the fields a source read from the line",
-			log: UNPACKED_LOG,
-			dialect: UNPACKING_DIALECT,
-			expected: [["region", "eu"]],
-		},
-		{
-			name: "lists every field of a plain line",
-			log: { ...UNPACKED_LOG, line: "GET /cart" },
-			dialect: UNPACKING_DIALECT,
-			expected: [
-				["region", "eu"],
-				["status", "500"],
-				["user.id", "1"],
-			],
-		},
-	])("$name", ({ log, dialect, expected }, { expect }) => {
-		expect(carriedFields(makeLog(log), dialect)).toEqual(expected)
+	it("lists every field by key", ({ expect }) => {
+		expect(carriedFields(makeLog(UNPACKED_LOG))).toEqual([
+			["region", "eu"],
+			["status", "500"],
+			["user.id", "1"],
+		])
 	})
 })
 

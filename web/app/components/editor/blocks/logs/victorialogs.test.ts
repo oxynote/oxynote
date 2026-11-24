@@ -1,5 +1,6 @@
 import { describe, it } from "vitest"
 import { LineFormat, type LogFilter } from "./dialect"
+import { extractedFields } from "./rows"
 import { victoriaLogsDialect } from "./victorialogs"
 
 // 25.0 as the line writes it
@@ -437,6 +438,38 @@ describe("victoriaLogsDialect.repeatsLineKey", () => {
 			expected: false,
 		},
 		{
+			name: "is false for a dotted key the nested value does not hold",
+			field: ["user.region", "eu"],
+			lineKey: "user",
+			lineValue: { id: 7 },
+			nested: true,
+			expected: false,
+		},
+		{
+			name: "is false for a nested key with another value",
+			field: ["user.id", "8"],
+			lineKey: "user",
+			lineValue: { id: 7 },
+			nested: true,
+			expected: false,
+		},
+		{
+			name: "is true for a key two levels deep",
+			field: ["user.geo.city", "Riga"],
+			lineKey: "user",
+			lineValue: { geo: { city: "Riga" } },
+			nested: true,
+			expected: true,
+		},
+		{
+			name: "is true for an inner key that holds a dot",
+			field: ["user.geo.city", "Riga"],
+			lineKey: "user",
+			lineValue: { "geo.city": "Riga" },
+			nested: true,
+			expected: true,
+		},
+		{
 			name: "is false for a dotted key beside a null",
 			field: ["user.id", "7"],
 			lineKey: "user",
@@ -448,6 +481,27 @@ describe("victoriaLogsDialect.repeatsLineKey", () => {
 		expect(
 			victoriaLogsDialect.repeatsLineKey(field, lineKey, lineValue, nested),
 		).toBe(expected)
+	})
+})
+
+describe("victoriaLogsDialect.logfmtPair", () => {
+	it.for([
+		{ name: "single quotes", line: "x='ab cd' y=1" },
+		{ name: "backticks", line: "x=`ab cd` y=1" },
+		{ name: "double quotes", line: 'x="ab cd" y=1' },
+	])("reads a value in $name", ({ line }, { expect }) => {
+		const fields = extractedFields({ ...LOG, line }, victoriaLogsDialect)
+
+		expect(fields.map((f) => [f.key, f.value])).toEqual([
+			["x", "ab cd"],
+			["y", "1"],
+		])
+	})
+
+	it("keeps a line with bare words as plain text", ({ expect }) => {
+		expect(
+			extractedFields({ ...LOG, line: "foo a=1" }, victoriaLogsDialect),
+		).toEqual([])
 	})
 })
 

@@ -45,13 +45,16 @@ export interface LogDialect {
 		lineValue: unknown,
 		nested: boolean,
 	): boolean
+	// logfmtPair reads one logfmt pair, as a key and a raw value. It is
+	// sticky, because the line is read pair by pair.
+	logfmtPair: RegExp
 	// logfmtKeepsLastValue tells which value the source keeps for a logfmt
 	// key that the line repeats. It is the last one when true, and the
 	// first one otherwise.
 	logfmtKeepsLastValue: boolean
-	// parsedInFields tells whether the source sends the keys a query read
-	// from the line among the log's fields, and not as parsed keys
-	parsedInFields: boolean
+	// keepsLineKeyNames tells whether a key read from the line keeps its
+	// name, so a field and a line key can share one
+	keepsLineKeyNames: boolean
 	// indexesAllFields tells whether the source indexes every field, and not
 	// only the ones that identify a stream
 	indexesAllFields: boolean

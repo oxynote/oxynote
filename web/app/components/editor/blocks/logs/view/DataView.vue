@@ -389,9 +389,18 @@ function viewParams(): LogQueriesParams | null {
 	}
 }
 
-// a key keeps one filter, so a new value for it replaces the old one
+// a key keeps one filter, so a new value for it replaces the old one. A
+// source that names a field and a line key alike keeps one filter for each.
 function addFilter(filter: LogFilter) {
-	filters.value = [...filters.value.filter((f) => f.key !== filter.key), filter]
+	const sharesNames = dialect.value?.keepsLineKeyNames
+
+	filters.value = [
+		...filters.value.filter(
+			(f) =>
+				f.key !== filter.key || (sharesNames && f.format !== filter.format),
+		),
+		filter,
+	]
 }
 
 function setExpanded(id: string, expanded: boolean) {
