@@ -107,19 +107,44 @@ upgrade has a short outage. If an upgrade never becomes ready,
 `kubectl --namespace oxynote delete pod oxynote-0`.
 
 ## Backups
-{{- /* TODO(#475): use the image's backup and restore commands. This recipe misses object-storage/ and an external OXYNOTE_DB_DSN. */}}
 
-The volume holds the embedded database and the secrets the image
-generates. Losing the secrets loses every stored data-source credential, so
-back up both:
+`backup` writes the whole instance to one file: the database, the secrets
+and the uploaded files.
 
 ```sh
-kubectl --namespace oxynote exec statefulset/oxynote -- sh -c \
-  'PGPASSWORD="$(cat /oxynote/data/secrets/database-password)" \
-  /usr/libexec/postgresql18/pg_dump -h /tmp/postgresql -U oxynote oxynote' > oxynote.sql
-kubectl --namespace oxynote exec statefulset/oxynote -- \
-  tar -C /oxynote/data -c secrets > oxynote-secrets.tar
+kubectl --namespace oxynote exec statefulset/oxynote -- backup > oxynote-backup.tar
 ```
+
+The file holds the instance's keys, so keep it private and store a copy
+away from the cluster.
+
+To restore, send the backup to the running pod. This replaces everything
+the instance holds now. On a new cluster, install the chart first, then
+restore into it.
+
+```sh
+kubectl --namespace oxynote exec -i statefulset/oxynote -- restore < oxynote-backup.tar
+```
+
+- `restore` checks the whole backup and builds the new instance beside the
+  running one. Then the container restarts, and its boot swaps the new
+  instance in.
+- A backup that fails a check changes nothing. A backup from a newer image
+  is refused, and an older one is migrated at the next boot.
+- A restore needs a running pod. If the pod no longer starts, uninstall
+  the release, delete its PVC, install it again, and restore into the new
+  pod.
+- With `OXYNOTE_DB_DSN` set, both commands use that database. The restore
+  loads it in one transaction at the next boot. The role must own the
+  database, because `restore` replaces its `public` and `dbos` schemas. If
+  the load fails, the old instance keeps serving. If the boot cannot reach
+  the database, the pod does not start until it can, so it never serves
+  the old data while the restore waits.
+- With `OXYNOTE_OBJECT_STORAGE_DSN` set, both commands skip the uploaded
+  files. Back up the bucket with the store's own tools.
+- The backup does not hold the Secrets the chart only reads, such as
+  `envFromSecret` and `githubAppSecret`. Back them up separately, and give
+  them to the restored release.
 
 ## Uninstalling
 

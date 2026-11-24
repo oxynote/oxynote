@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { isExists, isNoEntry } from "./fs-errors.js"
+import { databasePasswordFile } from "./mapping.js"
 
 export interface Secrets {
 	authSecret: string
@@ -21,14 +23,6 @@ export interface SecretReport {
 	fromEnv: string[]
 }
 
-function isNoEntry(err: unknown): boolean {
-	return err instanceof Error && "code" in err && err.code === "ENOENT"
-}
-
-function isExists(err: unknown): boolean {
-	return err instanceof Error && "code" in err && err.code === "EEXIST"
-}
-
 function readSecret(path: string): string | undefined {
 	try {
 		return readFileSync(path, "utf8").trim() || undefined
@@ -40,6 +34,9 @@ function readSecret(path: string): string | undefined {
 		throw err
 	}
 }
+
+// the shape of every secret generateAscii draws.
+export const generatedAsciiPattern = /^[A-Za-z0-9_-]{32}$/
 
 // generateAscii draws 24 random bytes as base64url, which is exactly the 32
 // ASCII bytes core's installation signing secrets must be.
@@ -139,7 +136,7 @@ export function ensureSecrets(
 			"slack-installation-signing-secret",
 			generateAscii,
 		),
-		databasePassword: resolve("database-password", generateAscii),
+		databasePassword: resolve(databasePasswordFile, generateAscii),
 	}
 
 	return { secrets, report }

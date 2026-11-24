@@ -110,6 +110,9 @@ Two more sign in through the `keycloak` service (`:19180`):
 `prod-oidc-single-workspace.test.ts`, which runs serially like the one
 above. The single-workspace origin lives in `helpers/oidc.ts`, the
 `oxynote-oidc` one in `helpers/config.ts`.
+The `backup` profile adds instances on one address (`:19085`), one running
+at a time: only `prod-backup-restore.test.ts` starts them, serially and
+without retries.
 Compose builds nothing; the image comes from `make prod-build`, tagged
 `:e2e-prod`, and CI's cache reaches it through `PROD_BUILD_EXTRA`. A `probe`
 container (idle alpine on the private network) exists for the
@@ -122,13 +125,15 @@ its port is probed with `nc -z`, against a control on the front door.
 `e2e/helm/run.sh` tests the Helm chart ([helm](../helm/AGENTS.md)) on a
 throwaway kind cluster behind Traefik (`:19280`, one `*.oxynote.localhost`
 host per release). It pulls published images and builds nothing, so a
-change to the signup or editor flow fails these tests until it is
-released. Only `playwright.helm.config.ts` runs the `helm-*.test.ts`
-files, with the release's address in `E2E_BASE_URL`. The releases send no email and allow
+change to the signup or editor flow fails these tests until it is released
+or tested as a local image (`make e2e-helm HELM_IMAGE_TAG=e2e-prod`). Only
+`playwright.helm.config.ts` runs the `helm-*.test.ts` files, with the
+release's address in `E2E_BASE_URL`. The releases send no email and allow
 many workspaces, so tests sign up with `signUpWithWorkspaceWithoutEmail`.
-The two tests in `helm-upgrade.test.ts` depend on each other, which no
-other file does: run.sh runs one, upgrades the release, then runs the
-other.
+The two tests in `helm-upgrade.test.ts` depend on each other, and so do
+the two in `helm-backup-restore.test.ts`: run.sh runs one, upgrades or
+restores the release, then runs the other. The restore runs the chart
+README's Backups sh blocks, so editing them changes the test.
 
 ## Testing standards
 

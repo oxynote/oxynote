@@ -104,7 +104,8 @@ e2e-prod-stack-stop:
 	@$(QUIET) "stopping the stack" $(E2E_PROD_COMPOSE) down -v
 
 # the Helm chart on kind (e2e/helm/run.sh), against published images. Set
-# HELM_IMAGE_TAG to test another release than the latest.
+# HELM_IMAGE_TAG to test another release than the latest, or a local image
+# such as e2e-prod.
 .PHONY: e2e-helm
 e2e-helm:
 	@e2e/helm/run.sh $(HELM_IMAGE_TAG)

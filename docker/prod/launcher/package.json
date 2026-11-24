@@ -8,7 +8,7 @@
 	},
 	"scripts": {
 		"check-types": "tsc --noEmit",
-		"build:bundle": "esbuild src/index.ts --bundle --platform=node --format=esm --minify \"--define:__SENTRY_WEB_DSN__=\\\"${SENTRY_WEB_DSN:-}\\\"\" \"--define:__SENTRY_CORE_DSN__=\\\"${SENTRY_CORE_DSN:-}\\\"\" \"--define:__SENTRY_AUTH_REALTIME_DSN__=\\\"${SENTRY_AUTH_REALTIME_DSN:-}\\\"\" \"--define:__SENTRY_LAUNCHER_DSN__=\\\"${SENTRY_LAUNCHER_DSN:-}\\\"\" \"--banner:js=import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);\" --outfile=dist/launcher.mjs",
+		"build:bundle": "esbuild src/index.ts --bundle --platform=node --format=esm --minify \"--define:__SENTRY_WEB_DSN__=\\\"${SENTRY_WEB_DSN:-}\\\"\" \"--define:__SENTRY_CORE_DSN__=\\\"${SENTRY_CORE_DSN:-}\\\"\" \"--define:__SENTRY_AUTH_REALTIME_DSN__=\\\"${SENTRY_AUTH_REALTIME_DSN:-}\\\"\" \"--define:__SENTRY_LAUNCHER_DSN__=\\\"${SENTRY_LAUNCHER_DSN:-}\\\"\" \"--define:__IMAGE_VERSION__=\\\"${IMAGE_VERSION:-}\\\"\" \"--define:__MIGRATION_VERSION__=\\\"${MIGRATION_VERSION:-}\\\"\" \"--banner:js=import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);\" --outfile=dist/launcher.mjs",
 		"eslint": "eslint --fix --max-warnings 0 --cache --cache-location node_modules/.cache/eslint --cache-strategy content .",
 		"check-eslint": "eslint --max-warnings 0 --cache --cache-location node_modules/.cache/eslint --cache-strategy content .",
 		"fmt": "prettier --write .",
@@ -26,6 +26,7 @@
 	"dependencies": {
 		"@sentry/node": "^11.14.0",
 		"pino": "^10.4.0",
+		"tar-stream": "^3.2.2",
 		"zod": "^4.6.7"
 	},
 	"devDependencies": {

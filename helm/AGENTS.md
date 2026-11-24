@@ -42,7 +42,7 @@ root [AGENTS.md](../AGENTS.md).
 
 ```sh
 make helm-check   # render-only checks: lint, unittest on Helm 4 and 3, kubeconform, README, env names
-make e2e-helm     # the chart on kind: ct install, smoke and upgrade tests
+make e2e-helm     # the chart on kind: ct install, smoke, upgrade, backup and restore
 helm unittest --strict helm
 ```
 

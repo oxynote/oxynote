@@ -1,14 +1,31 @@
 import { execFile, spawn, spawnSync } from "node:child_process"
-import { chmodSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs"
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+} from "node:fs"
 import net from "node:net"
 import os from "node:os"
 import { join } from "node:path"
 import * as Sentry from "@sentry/node"
 import { destination } from "pino"
-import { bakedLauncherSentryDsn, bakedSentryDsns } from "./baked.js"
+import { backup, removePartialBackups } from "./backup.js"
 import {
+	bakedImageVersion,
+	bakedLauncherSentryDsn,
+	bakedMigrationVersion,
+	bakedSentryDsns,
+} from "./baked.js"
+import { parseCommand, type Command } from "./command.js"
+import {
+	binDir,
+	createCluster,
 	databaseReadiness,
 	databaseServer,
+	hbaFile,
 	prepareDatabase,
 } from "./database.js"
 import { loadConfig, type Config } from "./env.js"
@@ -22,21 +39,27 @@ import {
 	corePort,
 	coreUrl,
 	dataDir,
+	databasePasswordFile,
 	mcpAvailable,
 	postgresPort,
+	postgresSocketDir,
+	secretsDir,
 	webPort,
 	webUrl,
 } from "./mapping.js"
+import { client, embeddedConnection, type Connection } from "./psql.js"
+import { restore } from "./restore.js"
 import { ensureSecrets } from "./secrets.js"
 import { createCrashReporter } from "./sentry.js"
+import { finishRestore, stagingDir } from "./staging.js"
 import {
 	createSupervisor,
 	type ChildSpec,
 	type Supervisor,
 } from "./supervisor.js"
 
-// the composition root: the only module that reads the environment, touches
-// the filesystem, spawns processes, or installs signal handlers.
+// the composition root: the only module that reads the environment or
+// installs signal handlers.
 
 // built before anything else runs, because an invalid environment is one of
 // the failures worth reporting and loadConfig throws on it — there is no
@@ -57,6 +80,16 @@ const shutdownDeadlineMs = 55_000
 // reach the stream in write order rather than through two buffers.
 const out = destination(1)
 const log = createLogger("launcher", out)
+
+// backup writes its archive to stdout, so the commands log to stderr.
+const commandLog = createLogger("launcher", destination(2))
+
+// the environment every child and every first-boot step starts from.
+const inheritedEnv = { PATH: process.env.PATH ?? "", HOME: "/oxynote" }
+
+// the temporary server a restore loads an embedded dump into. It is not the
+// live socket, so a restore never meets a running instance there.
+const restoreSocketDir = "/tmp/postgresql-restore"
 
 function logChildLine(name: string, line: string): void {
 	out.write(`${childRecord(name, line)}\n`)
@@ -117,14 +150,9 @@ function connects(host: string, port: number): Promise<boolean> {
 
 // runs one of the database's first-boot steps to completion. It blocks,
 // which costs nothing: no child is running yet.
-function runToCompletion(
-	command: string,
-	args: string[],
-	input: string,
-	env: Record<string, string>,
-): void {
+function runToCompletion(command: string, args: string[], input: string): void {
 	const result = spawnSync(command, args, {
-		env,
+		env: inheritedEnv,
 		input,
 		encoding: "utf8",
 	})
@@ -187,10 +215,110 @@ function logEnabledFeatures(config: Config): void {
 	)
 }
 
+function externalDatabase(config: Config): Connection | undefined {
+	return config.databaseDsn === undefined
+		? undefined
+		: { args: ["--dbname", config.databaseDsn], env: inheritedEnv }
+}
+
+// how the client tools reach the instance's database. The embedded one takes
+// the app role's password from the volume.
+function databaseConnection(config: Config): Connection {
+	return (
+		externalDatabase(config) ??
+		embeddedConnection(
+			postgresSocketDir,
+			readFileSync(
+				join(dataDir, secretsDir, databasePasswordFile),
+				"utf8",
+			).trim(),
+			inheritedEnv,
+		)
+	)
+}
+
+async function runCommand(
+	command: Exclude<Command, { name: "serve" }>,
+): Promise<void> {
+	const config = loadConfig(process.env)
+
+	if (command.name === "backup") {
+		await backup({
+			dataDir,
+			binDir,
+			connection: databaseConnection(config),
+			external: config.databaseDsn !== undefined,
+			remoteObjects: config.objectStorage !== undefined,
+			secretsFromEnv: Object.entries({
+				OXYNOTE_AUTH_SECRET: config.authSecret,
+				OXYNOTE_DATA_SOURCE_ENCRYPTION_KEYS:
+					config.dataSourceEncryptionKeys,
+			})
+				.filter(([, value]) => value !== undefined)
+				.map(([name]) => name),
+			imageVersion: bakedImageVersion,
+			out: process.stdout,
+			outIsTerminal: process.stdout.isTTY,
+			log: commandLog,
+		})
+
+		return
+	}
+
+	await restore({
+		dataDir,
+		binDir,
+		externalDatabase: externalDatabase(config),
+		env: inheritedEnv,
+		log: commandLog,
+		socketDir: restoreSocketDir,
+		hbaFile,
+		remoteObjects: config.objectStorage !== undefined,
+		image: {
+			version: bakedImageVersion,
+			migrationVersion: bakedMigrationVersion,
+		},
+		replace: command.replace,
+		input: process.stdin,
+		inputIsTerminal: process.stdin.isTTY,
+		instanceRunning: () => probe(`${coreUrl}/api/x/version`),
+		// tini is PID 1. It passes the signal to the launcher,
+		// which stops in order and exits, and the runtime starts
+		// it again.
+		restartInstance: () => {
+			process.kill(1, "SIGTERM")
+		},
+		createCluster: (dir, password) => {
+			createCluster({ run: runToCompletion }, dir, password)
+		},
+	})
+}
+
 async function main(): Promise<void> {
 	const config = loadConfig(process.env)
 
-	const { secrets, report } = ensureSecrets(join(dataDir, "secrets"), {
+	// before the secrets are read, because a committed restore replaces
+	// them. A failed load drops the restore, and the old instance serves.
+	// Any other failure stops the boot, because a restore still staged
+	// would overwrite on a later boot what the old instance writes now.
+	const external = externalDatabase(config)
+
+	await finishRestore(
+		dataDir,
+		external && client(binDir, external),
+		log,
+	).catch((err: unknown) => {
+		if (existsSync(stagingDir(dataDir))) {
+			throw err
+		}
+
+		log.error(
+			`the restore failed, so the old instance stays: ${message(err)}`,
+		)
+	})
+	removePartialBackups(dataDir)
+
+	const { secrets, report } = ensureSecrets(join(dataDir, secretsDir), {
 		authSecret: config.authSecret,
 		dataSourceEncryptionKeys: config.dataSourceEncryptionKeys,
 	})
@@ -211,7 +339,6 @@ async function main(): Promise<void> {
 		)
 	}
 
-	const inheritedEnv = { PATH: process.env.PATH ?? "", HOME: "/oxynote" }
 	const envs = buildChildEnvs(
 		config,
 		secrets,
@@ -244,14 +371,7 @@ async function main(): Promise<void> {
 					})
 				},
 				chmod: chmodSync,
-				run: (command, args, input) => {
-					runToCompletion(
-						command,
-						args,
-						input,
-						inheritedEnv,
-					)
-				},
+				run: runToCompletion,
 			},
 			secrets.databasePassword,
 		)
@@ -391,7 +511,7 @@ async function main(): Promise<void> {
 			)
 		}
 	} catch (err) {
-		log.error(err instanceof Error ? err.message : String(err))
+		log.error(message(err))
 		await crashReporter.report(err)
 		await supervisor.stopAll()
 		process.exit(1)
@@ -401,9 +521,29 @@ async function main(): Promise<void> {
 	logEnabledFeatures(config)
 }
 
-main().catch((err: unknown) => {
-	log.error(err instanceof Error ? err.message : String(err))
-	void crashReporter.report(err).then(() => {
+function message(err: unknown): string {
+	return err instanceof Error ? err.message : String(err)
+}
+
+let command: Command
+
+try {
+	command = parseCommand(process.argv.slice(2))
+} catch (err) {
+	process.stderr.write(`${message(err)}\n`)
+	process.exit(2)
+}
+
+if (command.name === "serve") {
+	main().catch((err: unknown) => {
+		log.error(message(err))
+		void crashReporter.report(err).then(() => {
+			process.exit(1)
+		})
+	})
+} else {
+	runCommand(command).catch((err: unknown) => {
+		commandLog.error(message(err))
 		process.exit(1)
 	})
-})
+}

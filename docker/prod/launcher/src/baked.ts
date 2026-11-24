@@ -31,3 +31,21 @@ export const bakedLauncherSentryDsn =
 	typeof __SENTRY_LAUNCHER_DSN__ === "string"
 		? __SENTRY_LAUNCHER_DSN__
 		: ""
+
+// the image's release version and the highest core migration it ships,
+// both injected by esbuild --define from the Dockerfile. A build without
+// them reports "dev" and no migration version, and then refuses every
+// restore.
+declare const __IMAGE_VERSION__: string | undefined
+declare const __MIGRATION_VERSION__: string | undefined
+
+export const bakedImageVersion =
+	typeof __IMAGE_VERSION__ === "string" && __IMAGE_VERSION__ !== ""
+		? __IMAGE_VERSION__
+		: "dev"
+
+export const bakedMigrationVersion =
+	typeof __MIGRATION_VERSION__ === "string" &&
+	__MIGRATION_VERSION__ !== ""
+		? Number(__MIGRATION_VERSION__)
+		: undefined

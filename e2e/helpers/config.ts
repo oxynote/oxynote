@@ -30,9 +30,6 @@ export const MAILPIT_URL = `http://localhost:${PORTS.mailpit}`
 export const OIDC_URL = `http://localhost:${PORTS.oidc}`
 export const KEYCLOAK_URL = `http://localhost:${PORTS.keycloak}`
 export const REALTIME_WS_URL = `ws://localhost:${PORTS.frontDoor}/auth-realtime/hocuspocus`
-// the mcp surface's canonical url, which is also the OAuth resource
-// (RFC 8707) a token is bound to.
-export const MCP_URL = `${BASE_URL}/core/api/mcp`
 // where the authorization server sends the browser back with the code.
 // It is mailpit's origin: an address in the stack that is not the app
 // under test, answers, and leaves the query string alone — the only

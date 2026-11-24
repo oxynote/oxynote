@@ -83,6 +83,13 @@ mailpit, since the example runs without email.
   killed outright or a boot that fails before any child exists, and reads
   the disable switch from `process.env` because an invalid environment is
   one of the failures worth reporting.
+- **`backup` and `restore` are launcher commands** (`launcher/src/command.ts`),
+  each with a wrapper in `commands/`. A restore commits with
+  `restore/committed`, and `finishRestore` (`staging.ts`) completes it at
+  the next boot, before anything reads the volume. A new part of the data
+  volume goes in backup's file list, restore's `target` and staging's
+  `parts`. A new Postgres schema in core goes in `loadExternal`'s DROP
+  list.
 - **Crash policy: die, don't restart.** Any child exit tears the rest down
   and exits nonzero; restarts belong to the container runtime.
 - **Every emitted line is a JSON record with a `service` field**
@@ -103,9 +110,10 @@ mailpit, since the example runs without email.
 Follows [server/auth-realtime](../../server/auth-realtime/AGENTS.md)'s
 conventions: tabs-at-8 prettier, no semicolons, explicit `.js` import
 extensions, type-aware eslint, knip, vitest with concurrent tests and the
-context-local `expect`. `src/index.ts` is the only module with side effects
-and is excluded from coverage; everything else is a factory taking its
-dependencies and is fully tested.
+context-local `expect`. `src/index.ts` is the composition root: the only
+module that reads the environment or installs signal handlers, and excluded
+from coverage. The other modules take their settings as arguments and are
+fully tested, against real temp folders where they touch files.
 
 ```sh
 cd docker/prod/launcher

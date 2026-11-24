@@ -10,7 +10,9 @@
 #
 # the same fixture rules apply:
 #   - no named volumes, so every run starts from an empty database and an
-#     empty data volume (the generated secrets are regenerated per run)
+#     empty data volume (the generated secrets are regenerated per run).
+#     The backup profile is the exception: a restore writes a volume that
+#     another container then boots from.
 #   - no container_name, and its own ports (:19080 front door, :19081 the
 #     instance without email, :19082 the single-workspace instance, :19083
 #     and :19084 the OIDC instances, :19180 keycloak, :19025 mailpit), so it
@@ -29,6 +31,29 @@
 # :e2e-prod, so a run cannot replace the :prod image `make prod-run` uses.
 
 name: oxynote-e2e-prod
+
+x-backup-database: &backup-database
+  profiles: [backup]
+  environment:
+    - POSTGRES_USER=docs
+    - POSTGRES_PASSWORD=docs
+    - POSTGRES_DB=docs
+  healthcheck:
+    test: ["CMD", "pg_isready", "-U", "docs"]
+    interval: 2s
+
+x-backup-instance: &backup-instance
+  image: ghcr.io/oxynote/oxynote:e2e-prod
+  profiles: [backup]
+  ports:
+    - "19085:8080"
+  environment:
+    - OXYNOTE_PUBLIC_URL=http://localhost:19085
+    - OXYNOTE_MAX_ORGANIZATIONS=100000
+  # as in the example compose file. A restore inside the instance restarts
+  # it, and its boot finishes the restore.
+  restart: unless-stopped
+  stop_grace_period: 60s
 
 services:
   oxynote:
@@ -179,6 +204,77 @@ services:
       oxynote:
         condition: service_healthy
 
+  # tests/prod-backup-restore.test.ts backs up oxynote-backup and restores
+  # into oxynote-restored. A restore brings back the same instance, so all
+  # six serve one address, one at a time, and the test starts and stops
+  # them itself; the profile keeps them out of `up`. oxynote-legacy runs the
+  # last release before the commands existed, and oxynote-upgraded boots
+  # its volume on the image under test.
+  oxynote-backup:
+    <<: *backup-instance
+    volumes:
+      - backup-source:/oxynote/data
+    depends_on:
+      - prometheus
+
+  oxynote-restored:
+    <<: *backup-instance
+    volumes:
+      - backup-restored:/oxynote/data
+
+  oxynote-legacy:
+    <<: *backup-instance
+    image: ghcr.io/oxynote/oxynote:0.11.0@sha256:02ed0f65c4d5f1f8d8cc6751a055639fa440aba9646c73c687b8d7c5d4c1fdee
+    volumes:
+      - backup-legacy:/oxynote/data
+
+  oxynote-upgraded:
+    <<: *backup-instance
+    volumes:
+      - backup-legacy:/oxynote/data
+
+  # an instance on an external database, whose role is not the image's
+  # oxynote. A restore into it proves the dump carries no owners.
+  oxynote-external:
+    <<: *backup-instance
+    environment:
+      - OXYNOTE_PUBLIC_URL=http://localhost:19085
+      - OXYNOTE_MAX_ORGANIZATIONS=100000
+      - OXYNOTE_DB_DSN=postgresql://docs:docs@backup-postgres:5432/docs?sslmode=disable
+    volumes:
+      - backup-external:/oxynote/data
+    depends_on:
+      backup-postgres:
+        condition: service_healthy
+
+  backup-postgres:
+    <<: *backup-database
+    image: postgres:18.6-alpine
+
+  # the same on PostgreSQL 16, which rejects settings that the image's
+  # pg_dump 18 writes.
+  oxynote-external-16:
+    <<: *backup-instance
+    environment:
+      - OXYNOTE_PUBLIC_URL=http://localhost:19085
+      - OXYNOTE_MAX_ORGANIZATIONS=100000
+      - OXYNOTE_DB_DSN=postgresql://docs:docs@backup-postgres-16:5432/docs?sslmode=disable
+    volumes:
+      - backup-external-16:/oxynote/data
+    depends_on:
+      backup-postgres-16:
+        condition: service_healthy
+
+  backup-postgres-16:
+    <<: *backup-database
+    image: postgres:16.11-alpine
+
+  # the data source whose stored credential the backup test restores.
+  # Core stores a data source only once it answers.
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    profiles: [backup]
+
   # the tests read verification links out of mailpit's REST API, so its http
   # port is published rather than proxied through the image's front door —
   # which routes nothing but the product.
@@ -188,6 +284,13 @@ services:
       - MP_QUIET=true
     ports:
       - "19025:8025"
+
+volumes:
+  backup-source:
+  backup-restored:
+  backup-legacy:
+  backup-external:
+  backup-external-16:
 
 configs:
   keycloak-realm:

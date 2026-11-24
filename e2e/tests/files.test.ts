@@ -1,13 +1,12 @@
 import { readFile } from "node:fs/promises"
-import { expect, test, type Locator, type Page } from "@playwright/test"
+import { expect, test } from "@playwright/test"
 import {
-	contentEditor,
 	createDocument,
 	documentPersisted,
-	openSlashMenu,
+	fileCard,
+	insertFileBlock,
 	waitForEditor,
 } from "../helpers/editor"
-import { t } from "../helpers/i18n"
 import { visit } from "../helpers/page"
 import { signUpWithWorkspace } from "../helpers/workspace"
 
@@ -19,32 +18,6 @@ const ZIP_BYTES = Buffer.concat([
 ])
 
 const TEXT = "hello from the attachment"
-
-// insertFileBlock adds a file block from the slash menu and answers the
-// picker it opens with the given file
-async function insertFileBlock(
-	page: Page,
-	file: { name: string; mimeType: string; buffer: Buffer },
-): Promise<void> {
-	await contentEditor(page).click()
-	const menu = await openSlashMenu(page)
-	await page.keyboard.type("File")
-
-	// typing narrows the menu down to the one matching command
-	await expect(menu.getByRole("button")).toHaveCount(1)
-	await expect(menu.getByRole("button")).toContainText("File")
-	await page.keyboard.press("Enter")
-
-	const chooser = page.waitForEvent("filechooser")
-	await contentEditor(page).getByText(t("editor.file.description")).click()
-	await (await chooser).setFiles(file)
-}
-
-// fileCard is the uploaded attachment's card, which is what the reader
-// clicks
-function fileCard(page: Page): Locator {
-	return contentEditor(page).locator('[data-type="fileBlock"] a')
-}
 
 test.describe("file attachments", () => {
 	test("uploads a file, keeps it across a reload and downloads it under its name", async ({
