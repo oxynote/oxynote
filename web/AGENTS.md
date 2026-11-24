@@ -397,11 +397,13 @@ test context).
 [@oxynote/lezer-promql](https://github.com/oxynote/lezer-promql) and
 [@oxynote/lezer-logql](https://github.com/oxynote/lezer-logql) fork the
 PromQL and LogQL grammars to add duration placeholders (`$__interval`) and
-variable references (`$env`). Both are published packages. The PromQL fork
-reaches the app through a pnpm override in
+variable references (`$env`).
+[@oxynote/lezer-logsql](https://github.com/oxynote/lezer-logsql) is our own
+LogsQL grammar with the same two additions. All three are published
+packages. The PromQL fork reaches the app through a pnpm override in
 [pnpm-workspace.yaml](pnpm-workspace.yaml), so
-`@prometheus-io/codemirror-promql` resolves it too. The LogQL fork is a
-plain dependency. A grammar change is a release from its own repo, then a
+`@prometheus-io/codemirror-promql` resolves it too. The other two are plain
+dependencies. A grammar change is a release from its own repo, then a
 bump in the override or `package.json`, and in `minimumReleaseAgeExclude`.
 
 ## Electron packaging

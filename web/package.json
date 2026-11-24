@@ -53,7 +53,7 @@
 		"@nuxtjs/i18n": "^10.6.0",
 		"@oxynote/common": "link:../packages/common",
 		"@oxynote/lezer-logql": "^0.4.2-oxynote.1",
-		"@oxynote/lezer-logsql": "file:../../lezer-logsql",
+		"@oxynote/lezer-logsql": "^0.1.1",
 		"@pinia/colada": "^1.4.9",
 		"@pinia/colada-nuxt": "^1.2.1",
 		"@pinia/colada-plugin-auto-refetch": "^0.2.7",
