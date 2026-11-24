@@ -1271,6 +1271,12 @@ describe("calculateGaugeAxisBounds", () => {
 			expected: { min: 0, max: 1 },
 		},
 		{
+			name: "falls back when the maximum is below the default minimum",
+			unit: VisualizationMiscUnit.Percent0to1,
+			bounds: { max: -0.1 },
+			expected: { min: 0, max: 1 },
+		},
+		{
 			name: "falls back when manual bounds are reversed",
 			unit: VisualizationMiscUnit.Percent0to100,
 			bounds: { min: 80, max: 40 },
