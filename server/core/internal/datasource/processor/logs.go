@@ -697,12 +697,23 @@ func (lr *LogsResult) withLineIDs() *LogsResult {
 // hash returns a hex digest of everything that identifies the line. An
 // empty part separates the labels from the fields, so a label and a
 // field of the same name and value hash differently.
+//
+// The check of a line moves the fields the query made from Fields to
+// Parsed. So a checked line hashes both, and its ID is the same when the
+// check fails.
 func (ll LogLine) hash() string {
+	fields := ll.Fields
+	if ll.FieldsChecked {
+		fields = make(map[string]string, len(ll.Fields)+len(ll.Parsed))
+		maps.Copy(fields, ll.Fields)
+		maps.Copy(fields, ll.Parsed)
+	}
+
 	parts := slices.Concat(
 		[]string{strconv.FormatInt(ll.Time.UnixNano(), 10)},
 		sortedPairs(ll.Labels),
 		[]string{""},
-		sortedPairs(ll.Fields),
+		sortedPairs(fields),
 		[]string{ll.Line},
 	)
 

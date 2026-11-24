@@ -1006,6 +1006,7 @@
 				"section-empty": "None",
 				"filter-query-blocked": "Can't filter on this field, because the query reads or changes the log in its own way",
 				"filter-nested": "Can't filter on this field, because its value holds more fields inside it",
+				"filter-line-unread": "Can't filter on this field, because the data source can't read it from this log",
 				"filter-null": "Can't filter on this field, because it has no value",
 				"include-value": "Show only logs where {key} is this value",
 				"exclude-value": "Hide logs where {key} is this value",

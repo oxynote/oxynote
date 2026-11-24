@@ -308,7 +308,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 	it.for([
 		{
 			name: "turns off the filter of a line key the query cannot filter",
-			input: { log: {}, formats: [LineFormat.JSON] },
+			input: { log: {}, formats: [LineFormat.JSON], dialect: lokiDialect },
 			expected: "editor.logs.view.filter-query-blocked",
 		},
 		{
@@ -316,6 +316,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 			input: {
 				log: { line: '{"user":{"id":1}}', parsed: undefined },
 				formats: [LineFormat.JSON],
+				dialect: lokiDialect,
 			},
 			expected: "editor.logs.view.filter-nested",
 		},
@@ -324,14 +325,24 @@ describe("<RowDetails>", { concurrent: false }, () => {
 			input: {
 				log: { line: '{"status":null}', parsed: undefined },
 				formats: [LineFormat.JSON],
+				dialect: lokiDialect,
 			},
 			expected: "editor.logs.view.filter-null",
+		},
+		{
+			name: "turns off the filter of a line key the source cannot read",
+			input: {
+				log: { line: ' {"status":200}', fields: {}, parsed: undefined },
+				formats: [LineFormat.JSON],
+				dialect: victoriaLogsDialect,
+			},
+			expected: "editor.logs.view.filter-line-unread",
 		},
 	])("$name", async ({ input, expected }, { expect }) => {
 		const wrapper = await mountUnderTooltipProvider(RowDetails, {
 			props: {
 				log: makeLog(input.log),
-				dialect: lokiDialect,
+				dialect: input.dialect,
 				lineFilterFormats: input.formats,
 			},
 		})

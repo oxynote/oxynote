@@ -1110,7 +1110,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 		])("leaves %s without a read-only warning", async (type, { expect }) => {
 			const wrapper = await mountAction({ creationType: type })
 
-			expect(wrapper.text()).not.toContain("read-only")
+			expect(readOnlyWarning(wrapper).exists()).toBe(false)
 		})
 
 		it.for([
@@ -1120,8 +1120,11 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			DataSourceType.MariaDB,
 		])("warns that %s needs a read-only user", async (type, { expect }) => {
 			const wrapper = await mountAction({ creationType: type })
+			const key = `settings.action-modals.data-source-upsert.read-only-warning.${type}`
 
-			expect(wrapper.text()).toContain("read-only")
+			expect(readOnlyWarning(wrapper).text()).toBe(
+				t(key, { link: t(`${key}-link`) }),
+			)
 		})
 	})
 
@@ -1182,6 +1185,10 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 		})
 	})
 })
+
+function readOnlyWarning(wrapper: Awaited<ReturnType<typeof mountAction>>) {
+	return wrapper.find("form .border-status-warning\\/30")
+}
 
 function helpButtons(wrapper: Awaited<ReturnType<typeof mountAction>>) {
 	return wrapper

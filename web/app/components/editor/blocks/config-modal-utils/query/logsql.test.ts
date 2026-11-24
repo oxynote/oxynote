@@ -1,5 +1,10 @@
 import { describe, it, vi } from "vitest"
-import { EditorState, type Extension } from "@codemirror/state"
+import {
+	EditorState,
+	type Extension,
+	type TransactionSpec,
+} from "@codemirror/state"
+import type { EditorView } from "@codemirror/view"
 import {
 	CompletionContext,
 	type Completion,
@@ -40,6 +45,7 @@ const DATA: LogStubData = {
 			{ name: "level", kind: LogFieldKind.Field },
 			{ name: "odd name", kind: LogFieldKind.Field },
 			{ name: "by", kind: LogFieldKind.Field },
+			{ name: "trace-id", kind: LogFieldKind.Field },
 		],
 	},
 	fieldValues: {
@@ -81,11 +87,25 @@ describe("useLogsQLQueryExtension", () => {
 		})
 
 		it("does not narrow the values across an or", async ({ expect }) => {
+			const { complete, captured, api } = makeComplete()
+
+			const { labels } = await complete('{env="prod" or app="¦"}')
+
+			expect(labels).toContain("api")
+			expect(api.fieldValues.refresh).toHaveBeenCalledTimes(1)
+			expect(api.fields.refresh).not.toHaveBeenCalled()
+			expect(captured.fieldValuesParams?.value?.field).toBe("app")
+			expect(captured.fieldValuesParams?.value?.q).toBeUndefined()
+		})
+
+		it("reads the values of a quoted field by its unquoted name", async ({
+			expect,
+		}) => {
 			const { complete, captured } = makeComplete()
 
-			await complete('{env="prod" or app="¦"}')
+			await complete('{"a\\"b"="¦"}')
 
-			expect(captured.fieldValuesParams?.value?.q).toBeUndefined()
+			expect(captured.fieldValuesParams?.value?.field).toBe('a"b')
 		})
 
 		it.for([
@@ -174,6 +194,49 @@ describe("useLogsQLQueryExtension", () => {
 
 			expect(options.find((o) => o.label === 'a.b"c')?.apply).toBe(expected)
 		})
+
+		it.for([
+			{
+				name: "the rest of a value",
+				doc: '{app="ap¦ple"}',
+				expected: '{app="api"}',
+			},
+			{
+				name: "the rest of a value in a field filter",
+				doc: 'level:="ap¦ple" error',
+				expected: 'level:="api" error',
+			},
+			{
+				name: "only one alternative of a regex",
+				doc: '{app=~"web|ap¦ple|db"}',
+				expected: '{app=~"web|api|db"}',
+			},
+			{
+				name: "an alternative that holds an escaped pipe",
+				doc: "{app=~`web|ap¦p\\|le|db`}",
+				expected: "{app=~`web|api|db`}",
+			},
+		])(
+			"replaces $name when a value is accepted",
+			async ({ doc, expected }, { expect }) => {
+				const { complete } = makeComplete()
+
+				const { options, state, from } = await complete(doc)
+				const option = options.find((o) => o.label === "api")
+
+				expect(accept(state, option, from)).toBe(expected)
+			},
+		)
+
+		it("keeps the text after a string that is still open", async ({
+			expect,
+		}) => {
+			const { complete } = makeComplete()
+
+			const { options } = await complete('{app="ap¦ple}')
+
+			expect(options.find((o) => o.label === "api")?.apply).toBe("api")
+		})
 	})
 
 	describe("in a filter", () => {
@@ -232,6 +295,7 @@ describe("useLogsQLQueryExtension", () => {
 		it.for([
 			{ name: "an exact match", doc: "level:=¦" },
 			{ name: "a list of values", doc: "level:in(a, ¦)" },
+			{ name: "a list after an uppercase function", doc: "level:IN(a, ¦)" },
 			{ name: "a group", doc: "level:(a or ¦)" },
 		])("offers the values in $name", async ({ doc }, { expect }) => {
 			const { complete } = makeComplete()
@@ -240,6 +304,41 @@ describe("useLogsQLQueryExtension", () => {
 
 			expect(labels).toContain("api")
 		})
+
+		it.for([
+			{ name: "an exact match", doc: "level:=¦" },
+			{ name: "a regex match", doc: "level:~¦" },
+		])(
+			"offers no filter functions after $name",
+			async ({ doc }, { expect }) => {
+				const { complete } = makeComplete()
+
+				const { labels } = await complete(doc)
+
+				expect(labels).not.toContain("seq")
+			},
+		)
+
+		it.for([
+			{ name: "a double-quoted name", doc: '"a\\"b":¦', expected: 'a"b' },
+			{
+				name: "a name quoted for its space",
+				doc: '"odd name":¦',
+				expected: "odd name",
+			},
+			{ name: "a single-quoted name", doc: "'it\\'s':¦", expected: "it's" },
+			{ name: "a name in backticks", doc: "`a\\b`:¦", expected: "a\\b" },
+			{ name: "a bare name", doc: "trace-id:¦", expected: "trace-id" },
+		])(
+			"reads the values of $name by the field it names",
+			async ({ doc, expected }, { expect }) => {
+				const { complete, captured } = makeComplete()
+
+				await complete(doc)
+
+				expect(captured.fieldValuesParams?.value?.field).toBe(expected)
+			},
+		)
 
 		it("offers no values in a function that takes no field value", async ({
 			expect,
@@ -352,6 +451,30 @@ describe("useLogsQLQueryExtension", () => {
 				expect(api.fields.refresh).not.toHaveBeenCalled()
 			},
 		)
+
+		it.for([
+			{
+				name: "quotes a field with a hyphen in a math pipe",
+				doc: "* | math ¦",
+				expected: '"trace-id"',
+			},
+			{
+				name: "quotes a field with a hyphen in a math function",
+				doc: "* | math round(¦",
+				expected: '"trace-id"',
+			},
+			{
+				name: "keeps a field with a hyphen bare in a fields pipe",
+				doc: "* | fields ¦",
+				expected: "trace-id",
+			},
+		])("$name", async ({ doc, expected }, { expect }) => {
+			const { complete } = makeComplete()
+
+			const { options } = await complete(doc)
+
+			expect(options.find((o) => o.label === "trace-id")?.apply).toBe(expected)
+		})
 
 		it("inserts a function with its parentheses", async ({ expect }) => {
 			const { complete } = makeComplete()
@@ -547,6 +670,33 @@ function localeText(key: Completion["info"]) {
 	return typeof node === "string" ? node : undefined
 }
 
+// accept picks a completion the way the editor does, and gives the doc
+// that results. It gives an empty doc when the completion is plain text.
+function accept(
+	state: EditorState,
+	option: Completion | undefined,
+	from: number | null,
+) {
+	let doc = ""
+	const view = {
+		state: state,
+		dispatch: (spec: TransactionSpec) => {
+			doc = state.update(spec).state.doc.toString()
+		},
+	}
+
+	if (typeof option?.apply === "function" && from !== null) {
+		option.apply(
+			view as unknown as EditorView,
+			option,
+			from,
+			state.selection.main.head,
+		)
+	}
+
+	return doc
+}
+
 function makeComplete(variables: VariableTreeResponse = variableTree()) {
 	const stub = stubLogAPI(logAPIMock, DATA)
 	const { extensions } = useLogsQLQueryExtension(
@@ -562,6 +712,7 @@ function makeComplete(variables: VariableTreeResponse = variableTree()) {
 		const pos = marked.indexOf("¦")
 		const state = EditorState.create({
 			doc: marked.replace("¦", ""),
+			selection: { anchor: pos },
 			extensions: extensions.value as Extension,
 		})
 		const sources = state.languageDataAt<CompletionSource>("autocomplete", pos)
@@ -578,7 +729,7 @@ function makeComplete(variables: VariableTreeResponse = variableTree()) {
 			}
 		}
 
-		return { options, labels: options.map((o) => o.label), from }
+		return { options, labels: options.map((o) => o.label), from, state }
 	}
 
 	return { ...stub, extensions, complete }

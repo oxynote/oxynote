@@ -32,6 +32,7 @@ const EXACT_DIALECT: LogDialect = {
 	withViewFilters: (query) => query,
 	canFilterLineKey: () => true,
 	lineKeyName: (key) => key,
+	readsLineKeys: () => true,
 	logfmtParseFailed: () => false,
 	decodeLogfmtValue,
 	repeatsLineKey: ([key, value], lineKey, lineValue) =>

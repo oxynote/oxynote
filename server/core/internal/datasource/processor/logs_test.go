@@ -1232,6 +1232,30 @@ func Test_LogLine_hash(t *testing.T) {
 			}),
 			Equal: false,
 		},
+		"Parsed is ignored on an unchecked line": {
+			Other: with(func(l *LogLine) { l.Parsed = map[string]string{"status": "200"} }),
+			Equal: true,
+		},
+		"Checked line without parsed": {
+			Other: with(func(l *LogLine) { l.FieldsChecked = true }),
+			Equal: true,
+		},
+		"Field moved to parsed on a checked line": {
+			Other: with(func(l *LogLine) {
+				l.FieldsChecked = true
+				l.Parsed = map[string]string{"sha": "3f9a1c2"}
+				l.Fields = map[string]string{}
+			}),
+			Equal: true,
+		},
+		"Different parsed on a checked line": {
+			Other: with(func(l *LogLine) {
+				l.FieldsChecked = true
+				l.Parsed = map[string]string{"sha": "0000000"}
+				l.Fields = map[string]string{}
+			}),
+			Equal: false,
+		},
 	}
 
 	for cn, c := range cc {

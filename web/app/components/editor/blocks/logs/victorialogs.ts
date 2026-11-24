@@ -28,9 +28,10 @@ const NUMBER_ESCAPES: Record<
 }
 
 // one logfmt pair: a key, then a value in double quotes, single quotes or
-// backticks, or a bare value that ends at white space
+// backticks, or a bare value. VictoriaLogs ends a value only at a space, so
+// a tab is part of a bare value.
 const LOGFMT_PAIR =
-	/\s*([^\s="]+)=("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`|[^\s"]*)(?=\s|$)/y
+	/\s*([^\s="]+)=("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`|[^ "]*)(?= |$)/y
 
 const ENCODER = new TextEncoder()
 
@@ -54,8 +55,9 @@ export const victoriaLogsDialect: LogDialect = {
 	withViewFilters,
 	canFilterLineKey: () => true,
 	lineKeyName: (key) => key,
+	readsLineKeys,
 	logfmtParseFailed: () => false,
-	decodeLogfmtValue,
+	decodeLogfmtValue: unquoteLogsQL,
 	repeatsLineKey,
 	logfmtPair: LOGFMT_PAIR,
 	logfmtKeepsLastValue: true,
@@ -106,10 +108,18 @@ function withViewFilters(
 	return pipes.reduce((result, pipe) => `${result}\n| ${pipe}`, query)
 }
 
-// decodeLogfmtValue reads a value as VictoriaLogs' logfmt parser does. It
-// unquotes a value in double quotes, single quotes or backticks. A quoted
-// value it cannot unquote is kept as written.
-function decodeLogfmtValue(raw: string): string {
+// before v1.54.0 VictoriaLogs unpacks a JSON line only when the line
+// starts with its brace. The view also reads a line with white space
+// before the brace.
+function readsLineKeys(log: Log, format: LineFormat): boolean {
+	return format !== LineFormat.JSON || log.line.startsWith("{")
+}
+
+// unquoteLogsQL reads text as VictoriaLogs reads a string, in a query or
+// in a logfmt value. It unquotes text in double quotes, single quotes or
+// backticks. Any other text, and quoted text it cannot unquote, is kept as
+// written.
+export function unquoteLogsQL(raw: string): string {
 	const quote = raw.charAt(0)
 	if (quote === "`") {
 		return raw.length > 1 && raw.endsWith("`")

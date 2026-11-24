@@ -1,15 +1,16 @@
 package vlogsdemo
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -33,24 +34,32 @@ type fakeStore struct {
 	// ingestStatus is the status of an ingest, 200 when zero.
 	ingestStatus int
 
+	// err fails every request before the store answers it.
+	err error
+
+	// readErr fails the read of every answer's body.
+	readErr error
+
+	// onTick runs after each ingest the size of a tick, with how many
+	// there were so far.
+	onTick func(ticks int)
+
 	mu       sync.Mutex
 	requests int
 	ticks    int
 	lines    []string
 }
 
-// ServeHTTP answers a query or records the ingested lines.
-func (f *fakeStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// respond answers a query or records the ingested lines.
+func (f *fakeStore) respond(r *http.Request) (*http.Response, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+
 	body, _ := io.ReadAll(r.Body) //nolint:errcheck // a short body fails the test's assertions
 
 	if r.URL.Path == _queryPath {
-		if f.queryStatus != 0 {
-			w.WriteHeader(f.queryStatus)
-		}
-
-		_, _ = w.Write([]byte(f.queryBody)) //nolint:errcheck // the client reports it
-
-		return
+		return f.response(f.queryStatus, f.queryBody), nil
 	}
 
 	f.mu.Lock()
@@ -62,10 +71,25 @@ func (f *fakeStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if len(lines) <= _maxTickLogs {
 		f.ticks++
+
+		if f.onTick != nil {
+			f.onTick(f.ticks)
+		}
 	}
 
-	if f.ingestStatus != 0 {
-		w.WriteHeader(f.ingestStatus)
+	return f.response(f.ingestStatus, ""), nil
+}
+
+// response returns an answer with the status, 200 when zero, and the body.
+func (f *fakeStore) response(status int, body string) *http.Response {
+	var r io.Reader = strings.NewReader(body)
+	if f.readErr != nil {
+		r = iotest.ErrReader(f.readErr)
+	}
+
+	return &http.Response{
+		StatusCode: cmp.Or(status, http.StatusOK),
+		Body:       io.NopCloser(r),
 	}
 }
 
@@ -77,23 +101,15 @@ func (f *fakeStore) ingested() (int, int) {
 	return f.requests, len(f.lines)
 }
 
-// tickCount returns how many ingests were the size of a tick.
-func (f *fakeStore) tickCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	return f.ticks
-}
-
-// prepGenerator starts the fake store and points a generator at it.
+// prepGenerator points a generator at the fake store.
 func prepGenerator(t *testing.T, store *fakeStore) *Generator {
 	t.Helper()
 
-	srv := httptest.NewServer(store)
-	t.Cleanup(srv.Close)
+	client, mt := testutil.MockHTTP()
+	mt.RegisterNoResponder(store.respond)
 
-	g := NewGenerator(slog.New(slog.DiscardHandler), srv.URL+"/")
-	g.httpClient = srv.Client()
+	g := NewGenerator(slog.New(slog.DiscardHandler), "http://victorialogs:9428/")
+	g.httpClient = client
 	g.readyDelay = time.Millisecond
 
 	return g
@@ -155,24 +171,18 @@ func Test_Generator_Run(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 
-			done := make(chan error, 1)
-
-			go func() {
-				done <- g.Run(ctx)
-			}()
-
-			if c.Err != nil {
-				testutil.AssertEqualError(t, c.Err, <-done)
-
-				return
+			store.onTick = func(ticks int) {
+				if ticks > 1 {
+					cancel()
+				}
 			}
 
-			require.Eventually(t, func() bool {
-				return store.tickCount() > 1
-			}, 5*time.Second, time.Millisecond)
+			err := g.Run(ctx)
+			testutil.AssertEqualError(t, c.Err, err)
 
-			cancel()
-			require.NoError(t, <-done)
+			if err != nil {
+				return
+			}
 
 			_, lines := store.ingested()
 			if c.Backfill {
@@ -532,8 +542,11 @@ func Test_Generator_post(t *testing.T) {
 			Err:   assert.AnError,
 		},
 		"Error returned by httpClient.Do": {
-			URL:   "http://127.0.0.1:1",
-			Store: &fakeStore{},
+			Store: &fakeStore{err: assert.AnError},
+			Err:   assert.AnError,
+		},
+		"Error returned by io.ReadAll": {
+			Store: &fakeStore{readErr: assert.AnError},
 			Err:   assert.AnError,
 		},
 		"Unexpected status": {

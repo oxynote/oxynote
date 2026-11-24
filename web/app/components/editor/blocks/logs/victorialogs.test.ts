@@ -218,6 +218,33 @@ describe("victoriaLogsDialect.lineKeyName", () => {
 	})
 })
 
+describe("victoriaLogsDialect.readsLineKeys", () => {
+	it.for([
+		{
+			name: "reads a JSON line that starts with its brace",
+			input: { line: '{"status":200}', format: LineFormat.JSON },
+			expected: true,
+		},
+		{
+			name: "does not read a JSON line that starts with white space",
+			input: { line: ' {"status":200}', format: LineFormat.JSON },
+			expected: false,
+		},
+		{
+			name: "reads a logfmt line that starts with white space",
+			input: { line: " status=200", format: LineFormat.Logfmt },
+			expected: true,
+		},
+	])("$name", ({ input, expected }, { expect }) => {
+		expect(
+			victoriaLogsDialect.readsLineKeys(
+				{ ...LOG, line: input.line },
+				input.format,
+			),
+		).toBe(expected)
+	})
+})
+
 describe("victoriaLogsDialect.logfmtParseFailed", () => {
 	it("never reports a failed parse", ({ expect }) => {
 		expect(victoriaLogsDialect.logfmtParseFailed(LOG)).toBe(false)
@@ -496,6 +523,29 @@ describe("victoriaLogsDialect.logfmtPair", () => {
 			["x", "ab cd"],
 			["y", "1"],
 		])
+	})
+
+	it("ends a bare value at a space and not at a tab", ({ expect }) => {
+		const fields = extractedFields(
+			{ ...LOG, line: "code=200\tuser=ann zone=eu" },
+			victoriaLogsDialect,
+		)
+
+		expect(fields.map((f) => [f.key, f.value])).toEqual([
+			["code", "200\tuser=ann"],
+			["zone", "eu"],
+		])
+	})
+
+	it("keeps a line with a tab after a quoted value as plain text", ({
+		expect,
+	}) => {
+		expect(
+			extractedFields(
+				{ ...LOG, line: 'code="200"\tuser=ann' },
+				victoriaLogsDialect,
+			),
+		).toEqual([])
 	})
 
 	it("keeps a line with bare words as plain text", ({ expect }) => {

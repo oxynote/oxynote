@@ -103,6 +103,14 @@ function extractedRow(field: ExtractedField): FieldRow {
 		}
 	}
 
+	if (!props.dialect.readsLineKeys(props.log, field.format)) {
+		return {
+			...row,
+			filter: null,
+			disabledReason: t("editor.logs.view.filter-line-unread"),
+		}
+	}
+
 	return {
 		...row,
 		filter: {

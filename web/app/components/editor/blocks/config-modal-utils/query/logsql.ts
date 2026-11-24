@@ -8,6 +8,8 @@ import {
 } from "@oxynote/lezer-logsql"
 import { LanguageSupport, LRLanguage } from "@codemirror/language"
 import {
+	insertCompletionText,
+	pickedCompletion,
 	snippetCompletion,
 	type Completion,
 	type CompletionContext,
@@ -17,6 +19,7 @@ import type { SyntaxNode } from "@lezer/common"
 import { resolveTimeRange, TimeRangePreset } from "~/utils/time-range"
 import type { VariableTreeResponse } from "~/utils"
 import { referencedVariableValues } from "~/utils/variable"
+import { unquoteLogsQL } from "~/components/editor/blocks/logs/victorialogs"
 import {
 	TYPED_VARIABLE_PATTERN,
 	variableCompletions,
@@ -73,6 +76,9 @@ const WORD_CHARS = /^[\p{L}\p{Nd}_.-]*$/u
 const WORD_CHAR = /[\p{L}\p{Nd}_]/u
 
 const BARE_FIELD = /^[\p{L}_][\p{L}\p{Nd}_.-]*$/u
+
+// math reads a - as minus, so a name with one needs quotes there
+const BARE_MATH_FIELD = /^[\p{L}_][\p{L}\p{Nd}_.]*$/u
 
 // the words VictoriaLogs reads as syntax, so a field with such a name needs
 // quotes
@@ -139,33 +145,56 @@ function stringEnd(doc: string, pos: number, quote: string) {
 	return pos
 }
 
+// splitsRegex tells whether the character at i is a | that splits a regex
+// into alternatives. An escaped | is a plain character. Outside backticks
+// the string takes two backslashes to write one for the regex. The string's
+// text starts at from.
+function splitsRegex(doc: string, from: number, i: number, quote: string) {
+	if (doc.charAt(i) !== "|") {
+		return false
+	}
+
+	let slashes = 0
+
+	while (i - slashes > from && doc.charAt(i - slashes - 1) === "\\") {
+		slashes++
+	}
+
+	const regexSlashes = quote === "`" ? slashes : Math.floor(slashes / 2)
+
+	return regexSlashes % 2 === 0
+}
+
 // a regex lists its alternatives with |, so a value completes only the
-// last one. An escaped | is a plain character. Outside backticks the string
-// takes two backslashes to write one for the regex.
-function alternativeStart(
+// one around pos. alternativeRange finds where that one starts and ends,
+// in the string text between from and to.
+function alternativeRange(
 	doc: string,
 	from: number,
+	to: number,
 	pos: number,
 	quote: string,
 ) {
+	let start = from
+	let end = to
+
 	for (let i = pos - 1; i >= from; i--) {
-		if (doc.charAt(i) !== "|") {
-			continue
-		}
+		if (splitsRegex(doc, from, i, quote)) {
+			start = i + 1
 
-		let slashes = 0
-
-		while (i - slashes > from && doc.charAt(i - slashes - 1) === "\\") {
-			slashes++
-		}
-
-		const regexSlashes = quote === "`" ? slashes : Math.floor(slashes / 2)
-		if (regexSlashes % 2 === 0) {
-			return i + 1
+			break
 		}
 	}
 
-	return from
+	for (let i = pos; i < to; i++) {
+		if (splitsRegex(doc, from, i, quote)) {
+			end = i
+
+			break
+		}
+	}
+
+	return { start, end }
 }
 
 // probe parses the query with word in place of the text between from and
@@ -199,7 +228,7 @@ function closest(node: SyntaxNode, ...names: string[]) {
 }
 
 function fieldNameText(node: SyntaxNode, text: string) {
-	return text.slice(node.from, node.to).replace(/^["'`]|["'`]$/g, "")
+	return unquoteLogsQL(text.slice(node.from, node.to))
 }
 
 // the query whose logs a lookup at node should read. In a pipe, that is
@@ -271,7 +300,6 @@ function valueTarget(node: SyntaxNode, text: string) {
 					field: fieldNameText(name, text),
 					q: otherMatchers(matcher, text),
 					regex: !!(matcher.getChild("=~") ?? matcher.getChild("!~")),
-					inStream: true,
 				}
 			: null
 	}
@@ -283,7 +311,9 @@ function valueTarget(node: SyntaxNode, text: string) {
 				owner?.name === "Regexp" ||
 				(owner?.name === "ArgList" &&
 					VALUE_FUNCTIONS.includes(
-						text.slice(owner.prevSibling?.from, owner.prevSibling?.to),
+						text
+							.slice(owner.prevSibling?.from, owner.prevSibling?.to)
+							.toLowerCase(),
 					))))
 	const filter = closest(node, "FieldFilter", "Subquery")
 	const name = filter?.getChild("FieldName")
@@ -296,7 +326,6 @@ function valueTarget(node: SyntaxNode, text: string) {
 		field: fieldNameText(name, text),
 		q: lookupScope(filter, text),
 		regex: owner?.name === "Regexp",
-		inStream: false,
 	}
 }
 
@@ -325,6 +354,18 @@ function quoteValue(value: string, quote: string, regex: boolean) {
 		.replace(/\\/g, "\\\\")
 		.replaceAll(quote, `\\${quote}`)
 		.replace(/\n/g, "\\n")
+}
+
+// replaceUpTo gives a completion that also replaces the text between the
+// cursor and end. A plain completion ends at the cursor, so it leaves the
+// rest of a value in place.
+function replaceUpTo(text: string, end: number): Completion["apply"] {
+	return (view, completion, from) => {
+		view.dispatch({
+			...insertCompletionText(view.state, text, from, end),
+			annotations: pickedCompletion.of(completion),
+		})
+	}
 }
 
 function descriptionKey(group: string, name: string) {
@@ -430,6 +471,7 @@ export function useLogsQLQueryExtension(
 		q: string | undefined,
 		suffix: string,
 		labelsOnly = false,
+		bare = BARE_FIELD,
 	): Promise<Completion[]> {
 		fieldsParams.value = lookupParams(q)
 		const res = await fetchFields.refresh()
@@ -438,8 +480,7 @@ export function useLogsQLQueryExtension(
 			.filter((field) => !labelsOnly || field.kind === LogFieldKind.Label)
 			.map((field) => {
 				const name =
-					BARE_FIELD.test(field.name) &&
-					!RESERVED_WORDS.has(field.name.toLowerCase())
+					bare.test(field.name) && !RESERVED_WORDS.has(field.name.toLowerCase())
 						? field.name
 						: JSON.stringify(field.name)
 				const isLabel = field.kind === LogFieldKind.Label
@@ -456,7 +497,7 @@ export function useLogsQLQueryExtension(
 	async function fieldValues(
 		field: string,
 		q: string | undefined,
-		apply: (value: string) => string | null,
+		apply: (value: string) => Completion["apply"] | null,
 	): Promise<Completion[]> {
 		fieldValuesParams.value = { ...lookupParams(q), field: field }
 		const res = await fetchFieldValues.refresh()
@@ -484,15 +525,24 @@ export function useLogsQLQueryExtension(
 			return null
 		}
 
+		// the string's text ends before its closing quote, or at the cursor
+		// while the string is still open
+		const textEnd = end > ctx.pos ? end - 1 : ctx.pos
+		const range = target.regex
+			? alternativeRange(doc, from + 1, textEnd, ctx.pos, quote)
+			: { start: from + 1, end: textEnd }
+
 		return {
-			from: target.regex
-				? alternativeStart(doc, from + 1, ctx.pos, quote)
-				: from + 1,
-			options: await fieldValues(target.field, target.q, (value) =>
-				quote === "`" && value.includes("`")
-					? null
-					: quoteValue(value, quote, target.regex),
-			),
+			from: range.start,
+			options: await fieldValues(target.field, target.q, (value) => {
+				if (quote === "`" && value.includes("`")) {
+					return null
+				}
+
+				const text = quoteValue(value, quote, target.regex)
+
+				return range.end > ctx.pos ? replaceUpTo(text, range.end) : text
+			}),
 		}
 	}
 
@@ -526,6 +576,8 @@ export function useLogsQLQueryExtension(
 
 		const variable = at("$x")
 		const target = variable && valueTarget(variable.node, variable.text)
+		const takesFilterFunction =
+			at("seq", "(")?.node.parent?.name === "FunctionFilter"
 
 		if (target) {
 			const values = await fieldValues(
@@ -535,9 +587,9 @@ export function useLogsQLQueryExtension(
 			)
 
 			return result(
-				target.inStream
-					? values
-					: [...values, ...functionCompletions(t, filterFunctions, "filters")],
+				takesFilterFunction
+					? [...values, ...functionCompletions(t, filterFunctions, "filters")]
+					: values,
 			)
 		}
 
@@ -555,7 +607,7 @@ export function useLogsQLQueryExtension(
 
 		if (isPipe) {
 			options.push(...pipeCompletions(t))
-		} else if (at("seq", "(")?.node.parent?.name === "FunctionFilter") {
+		} else if (takesFilterFunction) {
 			options.push(...functionCompletions(t, filterFunctions, "filters"))
 		}
 
@@ -597,7 +649,12 @@ export function useLogsQLQueryExtension(
 			!isResultName(name.node, name.text)
 		) {
 			options.push(
-				...(await fieldNames(lookupScope(name.node, name.text), "")),
+				...(await fieldNames(
+					lookupScope(name.node, name.text),
+					"",
+					false,
+					closest(name.node, "MathPipe") ? BARE_MATH_FIELD : BARE_FIELD,
+				)),
 				...builtinFieldCompletions(t, ""),
 			)
 		}
