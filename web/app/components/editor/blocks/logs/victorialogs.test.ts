@@ -261,6 +261,16 @@ describe("victoriaLogsDialect.readsLineKey", () => {
 			expected: false,
 		},
 		{
+			name: "trims a logfmt key as Go does",
+			input: { line: "\u0085status=200", format: LineFormat.Logfmt },
+			expected: true,
+		},
+		{
+			name: "keeps a byte order mark in a logfmt key as Go does",
+			input: { line: "\uFEFFstatus=200", format: LineFormat.Logfmt },
+			expected: false,
+		},
+		{
 			name: "reads the last value of a repeated logfmt key",
 			input: { line: "status=500 status=200", format: LineFormat.Logfmt },
 			expected: true,
@@ -301,13 +311,29 @@ describe("victoriaLogsDialect.readsLineKey", () => {
 		).toBe(expected)
 	})
 
-	it("reads a single-quoted byte escape as a character", ({ expect }) => {
+	it("does not read a value that is not UTF-8", ({ expect }) => {
+		const shown = victoriaLogsDialect.decodeLogfmtValue(String.raw`"\xff"`)
+
+		expect(
+			victoriaLogsDialect.readsLineKey(
+				{ ...LOG, line: String.raw`status="\xff"` },
+				LineFormat.Logfmt,
+				"status",
+				shown ?? "",
+			),
+		).toBe(false)
+	})
+
+	it("reads a single-quoted byte escape as the view shows it", ({ expect }) => {
+		const shown = victoriaLogsDialect.decodeLogfmtValue(String.raw`'\xe9'`)
+
+		expect(shown).toBe("é")
 		expect(
 			victoriaLogsDialect.readsLineKey(
 				{ ...LOG, line: String.raw`name='\xe9'` },
 				LineFormat.Logfmt,
 				"name",
-				"é",
+				shown ?? "",
 			),
 		).toBe(true)
 	})
@@ -386,6 +412,16 @@ describe("victoriaLogsDialect.decodeLogfmtValue", () => {
 			name: "replaces a byte that is not UTF-8",
 			input: String.raw`"\xff"`,
 			expected: "\uFFFD",
+		},
+		{
+			name: "reads a byte escape in single quotes as a character",
+			input: String.raw`'\xe9\351'`,
+			expected: "\u00E9\u00E9",
+		},
+		{
+			name: "reads a code point escape in single quotes",
+			input: String.raw`'\u00E9'`,
+			expected: "\u00E9",
 		},
 		{
 			name: "keeps an octal escape above one byte as written",

@@ -237,6 +237,16 @@ describe("useLogsQLQueryExtension", () => {
 				expected: '{app=~"api|db"}',
 			},
 			{
+				name: "an alternative that a hex escape for a pipe ends",
+				doc: String.raw`{app=~"ap¦ple\x7cdb"}`,
+				expected: String.raw`{app=~"api\x7cdb"}`,
+			},
+			{
+				name: "an alternative that holds an escaped quote",
+				doc: '{app=~"ap¦ple\\"x|db"}',
+				expected: '{app=~"api|db"}',
+			},
+			{
 				name: "an alternative that holds an escaped parenthesis",
 				doc: '{app=~"ap¦p\\\\)le|db"}',
 				expected: '{app=~"api|db"}',

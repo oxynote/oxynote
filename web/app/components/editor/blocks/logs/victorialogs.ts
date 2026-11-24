@@ -35,6 +35,10 @@ const LOGFMT_PAIR =
 
 const ENCODER = new TextEncoder()
 
+// white space at either end of a text, as Go's strings.TrimSpace removes
+// it. Unlike JavaScript's trim, it keeps U+FEFF and removes U+0085.
+const GO_SPACE = /^(?:[^\S\uFEFF]|\u0085)+|(?:[^\S\uFEFF]|\u0085)+$/g
+
 // the pipe that reads each line format
 const UNPACK_PIPES: Record<LineFormat, string> = {
 	[LineFormat.JSON]: "unpack_json",
@@ -111,14 +115,22 @@ function withViewFilters(
 // before v1.54.0 VictoriaLogs unpacks a JSON line only when the line
 // starts with its brace. The view also reads a line with white space
 // before the brace. A logfmt log is read again as VictoriaLogs reads it,
-// because the view reads only its first line and ends a value at a tab or
-// a carriage return too.
+// because the view reads only its first line, without a carriage return
+// at its end.
+//
+// A value with bytes that are not UTF-8, such as "\xff", reaches the view
+// with U+FFFD in their place. So the view cannot write a filter that
+// matches the stored bytes.
 function readsLineKey(
 	log: Log,
 	format: LineFormat,
 	key: string,
 	value: string,
 ): boolean {
+	if (value.includes("\uFFFD")) {
+		return false
+	}
+
 	if (format === LineFormat.Logfmt) {
 		return unpackLogfmt(log.line).get(key) === value
 	}
@@ -135,7 +147,7 @@ function unpackLogfmt(text: string): Map<string, string> {
 
 	while (rest !== null) {
 		const end: number = rest.search(/[= ]/)
-		const name = (end < 0 ? rest : rest.slice(0, end)).trim()
+		const name = (end < 0 ? rest : rest.slice(0, end)).replace(GO_SPACE, "")
 		const tail: string = end < 0 ? "" : rest.slice(end + 1)
 		let value = ""
 		let next: string | null = null
@@ -262,7 +274,13 @@ export function unquoteLogsQL(raw: string): string {
 			: raw
 	}
 
-	if (quote !== '"' && quote !== "'") {
+	if (quote === "'") {
+		const read = readSingleQuoted(raw)
+
+		return read?.length === raw.length ? read.value : raw
+	}
+
+	if (quote !== '"') {
 		return raw
 	}
 

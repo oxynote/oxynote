@@ -33,6 +33,18 @@ const logsqlLanguage = LRLanguage.define({
 
 const INFO_KEY = "query-languages.victorialogs"
 
+// how long a string escape that writes a number is, backslash included.
+// \x7c is 4 characters but writes a single |. A regex in a string can
+// hold such escapes, so the walk over it must skip each one whole. An
+// octal escape such as \174 has no letter and is 4 characters. Any other
+// escape, such as \n, is 2.
+const ESCAPE_LENGTHS: Record<string, number | undefined> = {
+	x: 4,
+	u: 6,
+	U: 10,
+}
+const OCTAL_ESCAPE_LENGTH = 4
+
 // other names of a pipe. They share its description.
 const PIPE_ALIASES: Record<string, string> = {
 	cp: "copy",
@@ -146,15 +158,20 @@ function stringEnd(doc: string, pos: number, quote: string) {
 }
 
 // stringChar reads the character of a string's text at i. Outside
-// backticks an escape is one character, and the string takes two
-// backslashes to write one for the regex. Any other escape gives an empty
-// char, because it never means anything to the regex.
+// backticks an escape writes one character, so \\ writes one backslash for
+// the regex and \x7c writes a |. The char is empty for an escape the
+// string cannot read.
 function stringChar(doc: string, i: number, quote: string) {
-	if (quote !== "`" && doc.charAt(i) === "\\") {
-		return { char: doc.charAt(i + 1) === "\\" ? "\\" : "", length: 2 }
+	if (quote === "`" || doc.charAt(i) !== "\\") {
+		return { char: doc.charAt(i), length: 1 }
 	}
 
-	return { char: doc.charAt(i), length: 1 }
+	const letter = doc.charAt(i + 1)
+	const length =
+		ESCAPE_LENGTHS[letter] ?? (/[0-7]/.test(letter) ? OCTAL_ESCAPE_LENGTH : 2)
+	const char = unquoteLogsQL(quote + doc.slice(i, i + length) + quote)
+
+	return { char: char.length === 1 ? char : "", length }
 }
 
 // a regex lists its alternatives with |, so a value completes only the
@@ -193,13 +210,18 @@ function alternativeRange(
 
 			if (char === "]" && i > classStart) {
 				inClass = false
-			} else if (char === "[" && doc.charAt(i + 1) === ":" && named >= 0) {
+			} else if (
+				char === "[" &&
+				doc.charAt(i + 1) === ":" &&
+				named >= 0 &&
+				named < to
+			) {
 				size = named + 2 - i
 			}
 		} else if (char === "[") {
 			inClass = true
 			classStart = i + (doc.charAt(i + 1) === "^" ? 2 : 1)
-		} else if ("|()".includes(char)) {
+		} else if (char === "|" || char === "(" || char === ")") {
 			if (i < pos) {
 				start = i + 1
 			} else {
