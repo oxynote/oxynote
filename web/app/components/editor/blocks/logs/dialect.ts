@@ -31,10 +31,15 @@ export interface LogDialect {
 	// lineKeyName names a key read from the log's line the way the source
 	// names it once parsed
 	lineKeyName(key: string, log: Log): string
-	// readsLineKeys tells whether the source can read the keys of this
-	// log's line in the given format. The view reads some lines that a
-	// source does not.
-	readsLineKeys(log: Log, format: LineFormat): boolean
+	// readsLineKey tells whether the source reads this key of the log's line
+	// in the given format, with the value the view shows. The view reads
+	// some lines differently from a source.
+	readsLineKey(
+		log: Log,
+		format: LineFormat,
+		key: string,
+		value: string,
+	): boolean
 	// logfmtParseFailed reports whether the source stopped parsing the line
 	logfmtParseFailed(log: Log): boolean
 	// decodeLogfmtValue reads a value as the source does, or gives null

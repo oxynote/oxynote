@@ -218,7 +218,7 @@ describe("victoriaLogsDialect.lineKeyName", () => {
 	})
 })
 
-describe("victoriaLogsDialect.readsLineKeys", () => {
+describe("victoriaLogsDialect.readsLineKey", () => {
 	it.for([
 		{
 			name: "reads a JSON line that starts with its brace",
@@ -236,17 +236,80 @@ describe("victoriaLogsDialect.readsLineKeys", () => {
 			expected: true,
 		},
 		{
-			name: "does not read a logfmt log of several lines",
+			name: "reads a logfmt value that a space ends before a newline",
+			input: { line: "status=200 \ntrace", format: LineFormat.Logfmt },
+			expected: true,
+		},
+		{
+			name: "reads a logfmt key on a later line",
+			input: { line: "msg=x \nstatus=200", format: LineFormat.Logfmt },
+			expected: true,
+		},
+		{
+			name: "reads a bare logfmt value that holds a tab",
+			input: { line: "msg=a\tb status=200", format: LineFormat.Logfmt },
+			expected: true,
+		},
+		{
+			name: "does not read a logfmt value that runs into the next line",
 			input: { line: "status=200\ntrace", format: LineFormat.Logfmt },
 			expected: false,
 		},
+		{
+			name: "does not read a logfmt value that ends with a carriage return",
+			input: { line: "status=200\r", format: LineFormat.Logfmt },
+			expected: false,
+		},
+		{
+			name: "reads the last value of a repeated logfmt key",
+			input: { line: "status=500 status=200", format: LineFormat.Logfmt },
+			expected: true,
+		},
+		{
+			name: "reads a double-quoted logfmt value",
+			input: { line: 'status="200" msg=x', format: LineFormat.Logfmt },
+			expected: true,
+		},
+		{
+			name: "stops at a quoted logfmt value that a space does not follow",
+			input: { line: 'msg="x"y status=200', format: LineFormat.Logfmt },
+			expected: false,
+		},
+		{
+			name: "reads a double-quoted value with a newline as bare text",
+			input: { line: 'msg="a\nb" status=200', format: LineFormat.Logfmt },
+			expected: true,
+		},
+		{
+			name: "reads a single-quoted logfmt value",
+			input: { line: String.raw`status='2\x300'`, format: LineFormat.Logfmt },
+			expected: true,
+		},
+		{
+			name: "reads a backtick logfmt value",
+			input: { line: "status=`20\r0`", format: LineFormat.Logfmt },
+			expected: true,
+		},
 	])("$name", ({ input, expected }, { expect }) => {
 		expect(
-			victoriaLogsDialect.readsLineKeys(
+			victoriaLogsDialect.readsLineKey(
 				{ ...LOG, line: input.line },
 				input.format,
+				"status",
+				"200",
 			),
 		).toBe(expected)
+	})
+
+	it("reads a single-quoted byte escape as a character", ({ expect }) => {
+		expect(
+			victoriaLogsDialect.readsLineKey(
+				{ ...LOG, line: String.raw`name='\xe9'` },
+				LineFormat.Logfmt,
+				"name",
+				"é",
+			),
+		).toBe(true)
 	})
 })
 

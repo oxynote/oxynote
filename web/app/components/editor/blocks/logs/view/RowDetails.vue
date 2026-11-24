@@ -103,7 +103,9 @@ function extractedRow(field: ExtractedField): FieldRow {
 		}
 	}
 
-	if (!props.dialect.readsLineKeys(props.log, field.format)) {
+	if (
+		!props.dialect.readsLineKey(props.log, field.format, field.key, field.value)
+	) {
 		return {
 			...row,
 			filter: null,

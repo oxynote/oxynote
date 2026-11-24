@@ -277,8 +277,8 @@ describe("lokiDialect.lineKeyName", () => {
 	})
 })
 
-describe("lokiDialect.readsLineKeys", () => {
-	it("reads the keys of a JSON line that starts with white space", ({
+describe("lokiDialect.readsLineKey", () => {
+	it("reads the key of a JSON line that starts with white space", ({
 		expect,
 	}) => {
 		const log: Log = {
@@ -290,7 +290,9 @@ describe("lokiDialect.readsLineKeys", () => {
 			fields: {},
 		}
 
-		expect(lokiDialect.readsLineKeys(log, LineFormat.JSON)).toBe(true)
+		expect(
+			lokiDialect.readsLineKey(log, LineFormat.JSON, "status", "200"),
+		).toBe(true)
 	})
 })
 

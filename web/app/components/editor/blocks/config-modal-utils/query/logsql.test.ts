@@ -226,6 +226,21 @@ describe("useLogsQLQueryExtension", () => {
 				doc: '{app=~"(?i)ap¦ple"}',
 				expected: '{app=~"(?i)api"}',
 			},
+			{
+				name: "an alternative that holds a parenthesis in a character class",
+				doc: '{app=~"ap¦ple[)]|db"}',
+				expected: '{app=~"api|db"}',
+			},
+			{
+				name: "an alternative that holds a named character class",
+				doc: '{app=~"ap¦ple[[:alpha:]|]|db"}',
+				expected: '{app=~"api|db"}',
+			},
+			{
+				name: "an alternative that holds an escaped parenthesis",
+				doc: '{app=~"ap¦p\\\\)le|db"}',
+				expected: '{app=~"api|db"}',
+			},
 		])(
 			"replaces $name when a value is accepted",
 			async ({ doc, expected }, { expect }) => {
@@ -555,6 +570,11 @@ describe("useLogsQLQueryExtension", () => {
 	it.for([
 		{ name: "in a comment", doc: "error # lev¦", explicit: true },
 		{ name: "in the middle of a word", doc: "* | sta¦ts", explicit: true },
+		{
+			name: "in a regex character class",
+			doc: '{app=~"web|[a¦|)]"}',
+			explicit: true,
+		},
 	])("offers nothing $name", async ({ doc, explicit }, { expect }) => {
 		const { complete } = makeComplete()
 

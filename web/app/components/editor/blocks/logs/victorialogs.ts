@@ -55,7 +55,7 @@ export const victoriaLogsDialect: LogDialect = {
 	withViewFilters,
 	canFilterLineKey: () => true,
 	lineKeyName: (key) => key,
-	readsLineKeys,
+	readsLineKey,
 	logfmtParseFailed: () => false,
 	decodeLogfmtValue: unquoteLogsQL,
 	repeatsLineKey,
@@ -110,15 +110,144 @@ function withViewFilters(
 
 // before v1.54.0 VictoriaLogs unpacks a JSON line only when the line
 // starts with its brace. The view also reads a line with white space
-// before the brace. The view reads only the first line of a logfmt log,
-// but VictoriaLogs reads the whole log and ends a bare value only at a
-// space. So a value before a newline would hold the next line too.
-function readsLineKeys(log: Log, format: LineFormat): boolean {
+// before the brace. A logfmt log is read again as VictoriaLogs reads it,
+// because the view reads only its first line and ends a value at a tab or
+// a carriage return too.
+function readsLineKey(
+	log: Log,
+	format: LineFormat,
+	key: string,
+	value: string,
+): boolean {
 	if (format === LineFormat.Logfmt) {
-		return !log.line.includes("\n")
+		return unpackLogfmt(log.line).get(key) === value
 	}
 
 	return log.line.startsWith("{")
+}
+
+// unpackLogfmt reads text as VictoriaLogs' unpack_logfmt pipe does. A key
+// ends at = or a space, and a bare value ends only at a space. A later
+// value of a key replaces the earlier one.
+function unpackLogfmt(text: string): Map<string, string> {
+	const fields = new Map<string, string>()
+	let rest: string | null = text
+
+	while (rest !== null) {
+		const end: number = rest.search(/[= ]/)
+		const name = (end < 0 ? rest : rest.slice(0, end)).trim()
+		const tail: string = end < 0 ? "" : rest.slice(end + 1)
+		let value = ""
+		let next: string | null = null
+
+		if (end >= 0 && rest.charAt(end) === " ") {
+			next = tail
+		} else if (tail) {
+			const quoted = readQuotedValue(tail)
+			const space = tail.indexOf(" ")
+
+			if (quoted) {
+				value = quoted.value
+				next = tail.startsWith(" ", quoted.length)
+					? tail.slice(quoted.length + 1)
+					: null
+			} else {
+				value = space < 0 ? tail : tail.slice(0, space)
+				next = space < 0 ? null : tail.slice(space + 1)
+			}
+		}
+
+		if (name || value) {
+			fields.set(name, value)
+		}
+
+		rest = next
+	}
+
+	return fields
+}
+
+// readQuotedValue reads the quoted value at the start of text, as
+// VictoriaLogs does. It gives the value and the length of its quoted text,
+// or null when text does not start with a value VictoriaLogs can unquote.
+function readQuotedValue(
+	text: string,
+): { value: string; length: number } | null {
+	const quote = text.charAt(0)
+
+	if (quote === "`") {
+		const end = text.indexOf("`", 1)
+
+		return end < 0
+			? null
+			: { value: text.slice(1, end).replaceAll("\r", ""), length: end + 1 }
+	}
+
+	if (quote === '"') {
+		const end = doubleQuotedEnd(text)
+		const value = end < 0 ? null : unquote(text.slice(0, end), quote)
+
+		return value === null ? null : { value, length: end }
+	}
+
+	return quote === "'" ? readSingleQuoted(text) : null
+}
+
+// doubleQuotedEnd gives where the double-quoted text at the start of text
+// ends, or -1 when it does not end. A Go string cannot hold a newline.
+function doubleQuotedEnd(text: string): number {
+	for (let i = 1; i < text.length; i++) {
+		const char = text.charAt(i)
+		if (char === "\n") {
+			return -1
+		}
+
+		if (char === "\\") {
+			i++
+		} else if (char === '"') {
+			return i + 1
+		}
+	}
+
+	return -1
+}
+
+// readSingleQuoted reads a single-quoted value as VictoriaLogs does. It
+// reads one character or escape at a time and may hold a newline. A \x or
+// octal escape writes the character with that code, not a single byte.
+function readSingleQuoted(
+	text: string,
+): { value: string; length: number } | null {
+	const chars = Array.from(text)
+	let value = ""
+	let i = 1
+
+	while (i < chars.length && chars[i] !== "'") {
+		const char = chars[i] ?? ""
+		if (char !== "\\") {
+			value += char
+			i++
+
+			continue
+		}
+
+		const escape = readEscape(chars, i + 1, "'")
+		if (!escape) {
+			return null
+		}
+
+		const code = chars[i + 1] ?? ""
+		value += /^[x0-7]$/.test(code)
+			? String.fromCodePoint(escape.bytes[0] ?? 0)
+			: new TextDecoder().decode(new Uint8Array(escape.bytes))
+		i = escape.end
+	}
+
+	if (i >= chars.length) {
+		return null
+	}
+
+	return { value, length: chars.slice(0, i + 1).join("").length }
 }
 
 // unquoteLogsQL reads text as VictoriaLogs reads a string, in a query or

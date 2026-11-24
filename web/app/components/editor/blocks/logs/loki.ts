@@ -37,7 +37,7 @@ export const lokiDialect: LogDialect = {
 	withViewFilters,
 	canFilterLineKey,
 	lineKeyName,
-	readsLineKeys: () => true,
+	readsLineKey: () => true,
 	logfmtParseFailed,
 	decodeLogfmtValue,
 	repeatsLineKey,

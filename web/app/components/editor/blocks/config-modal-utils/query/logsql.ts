@@ -145,29 +145,23 @@ function stringEnd(doc: string, pos: number, quote: string) {
 	return pos
 }
 
-// endsAlternative tells whether the character at i is a | or a group
-// parenthesis, which end an alternative of a regex. An escaped one is a
-// plain character. Outside backticks the string takes two backslashes to
-// write one for the regex. The string's text starts at from.
-function endsAlternative(doc: string, from: number, i: number, quote: string) {
-	if (!"|()".includes(doc.charAt(i))) {
-		return false
+// stringChar reads the character of a string's text at i. Outside
+// backticks an escape is one character, and the string takes two
+// backslashes to write one for the regex. Any other escape gives an empty
+// char, because it never means anything to the regex.
+function stringChar(doc: string, i: number, quote: string) {
+	if (quote !== "`" && doc.charAt(i) === "\\") {
+		return { char: doc.charAt(i + 1) === "\\" ? "\\" : "", length: 2 }
 	}
 
-	let slashes = 0
-
-	while (i - slashes > from && doc.charAt(i - slashes - 1) === "\\") {
-		slashes++
-	}
-
-	const regexSlashes = quote === "`" ? slashes : Math.floor(slashes / 2)
-
-	return regexSlashes % 2 === 0
+	return { char: doc.charAt(i), length: 1 }
 }
 
 // a regex lists its alternatives with |, so a value completes only the
 // one around pos. alternativeRange finds where that one starts and ends,
-// in the string text between from and to.
+// in the string text between from and to. A group's parenthesis ends an
+// alternative too. Inside a character class such as [|)] each character is
+// literal, so it gives null when pos is inside one.
 function alternativeRange(
 	doc: string,
 	from: number,
@@ -177,21 +171,47 @@ function alternativeRange(
 ) {
 	let start = from
 	let end = to
+	let inClass = false
+	let classStart = from
+	let cursorInClass: boolean | null = null
+	let i = from
 
-	for (let i = pos - 1; i >= from; i--) {
-		if (endsAlternative(doc, from, i, quote)) {
-			start = i + 1
-
-			break
+	while (i < to && end === to) {
+		if (cursorInClass === null && i >= pos) {
+			cursorInClass = inClass
 		}
+
+		const { char, length } = stringChar(doc, i, quote)
+		let size = length
+
+		if (char === "\\") {
+			size += stringChar(doc, i + length, quote).length
+		} else if (inClass) {
+			// a ] right after the opening [ or [^ is literal. A named class
+			// such as [:alpha:] holds its own ].
+			const named = doc.indexOf(":]", i + 2)
+
+			if (char === "]" && i > classStart) {
+				inClass = false
+			} else if (char === "[" && doc.charAt(i + 1) === ":" && named >= 0) {
+				size = named + 2 - i
+			}
+		} else if (char === "[") {
+			inClass = true
+			classStart = i + (doc.charAt(i + 1) === "^" ? 2 : 1)
+		} else if ("|()".includes(char)) {
+			if (i < pos) {
+				start = i + 1
+			} else {
+				end = i
+			}
+		}
+
+		i += size
 	}
 
-	for (let i = pos; i < to; i++) {
-		if (endsAlternative(doc, from, i, quote)) {
-			end = i
-
-			break
-		}
+	if (cursorInClass ?? inClass) {
+		return null
 	}
 
 	return { start, end }
@@ -531,6 +551,10 @@ export function useLogsQLQueryExtension(
 		const range = target.regex
 			? alternativeRange(doc, from + 1, textEnd, ctx.pos, quote)
 			: { start: from + 1, end: textEnd }
+
+		if (!range) {
+			return null
+		}
 
 		return {
 			from: range.start,
