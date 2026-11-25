@@ -31,4 +31,19 @@ describe("extractPromQLSelectors", () => {
 	])("$name", ({ query, expected }, { expect }) => {
 		expect(extractPromQLSelectors(query)).toEqual(expected)
 	})
+
+	it.for([
+		{
+			name: "extracts selectors that only MetricsQL parses",
+			query: 'rate(foo{a="b" or c="d"}) + foo.bar',
+			expected: ['foo{a="b" or c="d"}', "foo.bar"],
+		},
+		{
+			name: "leaves out a selector that uses a WITH template",
+			query: 'WITH (f = {job="api"}) rate(foo{f}[5m])',
+			expected: ['{job="api"}'],
+		},
+	])("$name with the metricsql dialect", ({ query, expected }, { expect }) => {
+		expect(extractPromQLSelectors(query, "metricsql")).toEqual(expected)
+	})
 })

@@ -11,6 +11,7 @@ import {
 	type PrometheusStubData,
 } from "./test-helpers"
 import { usePromQLLegendExtension, usePromQLQueryExtension } from "./promql"
+import type { PromQLDialect } from "~/utils/promql"
 
 // @prometheus-io/codemirror-promql declares no package exports, so node
 // loads its CJS build together with CJS copies of the codemirror
@@ -50,6 +51,7 @@ const PRESET_LABELS = [
 function makeComplete(
 	data?: PrometheusStubData,
 	variables: VariableTreeResponse = [],
+	dialect: PromQLDialect = "promql",
 ) {
 	const stub = stubPrometheusAPI(prometheusAPIMock, data)
 	const { extensions } = usePromQLQueryExtension(
@@ -58,6 +60,7 @@ function makeComplete(
 		() => TimeRangePreset.Last1Hour,
 		() => true,
 		() => variables,
+		dialect,
 	)
 
 	async function complete(doc: string, pos: number) {
@@ -85,6 +88,7 @@ function makeLegend(
 		timeRange?: TimeRangePreset | null
 		data?: PrometheusStubData
 		variables?: VariableTreeResponse
+		dialect?: PromQLDialect
 	} = {},
 ) {
 	const stub = stubPrometheusAPI(prometheusAPIMock, options.data)
@@ -95,6 +99,7 @@ function makeLegend(
 			"timeRange" in options ? options.timeRange : TimeRangePreset.Last1Hour,
 		() => true,
 		() => options.variables ?? [],
+		options.dialect,
 	)
 
 	return { ...stub, ...legend }
@@ -303,6 +308,61 @@ describe("usePromQLQueryExtension", () => {
 			)
 		})
 	})
+
+	describe("with the metricsql dialect", () => {
+		it.for([
+			{
+				name: "offers MetricsQL's functions with their descriptions",
+				doc: "median_o",
+				label: "median_over_time",
+				info: "query-languages.victoriametrics.rollup.median-over-time",
+			},
+			{
+				name: "offers MetricsQL's operators after an expression",
+				doc: "up i",
+				label: "ifnot",
+				info: "query-languages.victoriametrics.keywords.ifnot",
+			},
+			{
+				name: "offers limit after an aggregation",
+				doc: "sum(up) l",
+				label: "limit",
+				info: "query-languages.victoriametrics.keywords.limit",
+			},
+			{
+				name: "offers the templates a WITH defines",
+				doc: "WITH (window = 5m) rate(up[5m]) + w",
+				label: "window",
+				info: "query-languages.victoriametrics.template",
+			},
+		])("$name", async ({ doc, label, info }, { expect }) => {
+			const { complete } = makeComplete(undefined, [], "metricsql")
+
+			const res = await complete(doc, doc.length)
+
+			expect(res?.options.find((o) => o.label === label)?.info).toBe(info)
+		})
+
+		it("drops the PromQL functions MetricsQL lacks", async ({ expect }) => {
+			const { complete } = makeComplete(undefined, [], "metricsql")
+
+			const res = await complete("double_exp", 10)
+
+			expect(res?.options.map((o) => o.label) ?? []).not.toContain(
+				"double_exponential_smoothing",
+			)
+		})
+
+		it("offers the variables in a window that only MetricsQL has", async ({
+			expect,
+		}) => {
+			const { complete } = makeComplete(undefined, variableTree(), "metricsql")
+
+			const res = await complete("up[:$", 5)
+
+			expect(res?.options.map((o) => o.label) ?? []).toContain("$env")
+		})
+	})
 })
 
 describe("usePromQLLegendExtension", () => {
@@ -320,6 +380,20 @@ describe("usePromQLLegendExtension", () => {
 		expect(toValue(captured.seriesParams)?.variableValues).toEqual({
 			env: "prod",
 		})
+	})
+
+	it("requests labels for the MetricsQL selectors without WITH templates", ({
+		expect,
+	}) => {
+		const { captured } = makeLegend({
+			query: 'WITH (f = {job="api"}) rate(foo{f}[5m]) + bar{a="b" or c="d"}',
+			dialect: "metricsql",
+		})
+
+		expect(toValue(captured.labelsParams)?.matchers).toEqual([
+			'{job="api"}',
+			'bar{a="b" or c="d"}',
+		])
 	})
 
 	it("requests labels for the selectors extracted from the query", ({

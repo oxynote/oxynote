@@ -484,8 +484,7 @@ async function refreshData() {
 	if (
 		!editorStore.activeDocumentId ||
 		!editorStore.activeBranchId ||
-		!props.config.dataSourceId ||
-		!props.config.queries?.length ||
+		!queryRunnable.value ||
 		!props.config.timeRange ||
 		props.disableRefresh
 	) {
