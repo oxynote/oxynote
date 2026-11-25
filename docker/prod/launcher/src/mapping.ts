@@ -79,6 +79,8 @@ const webDocumentationLinks = {
 		"https://guide.trevor.io/hc/en-us/articles/6843804879261-Creating-a-read-only-database-user-in-MySQL",
 	NUXT_PUBLIC_PROMETHEUS_QUERY_GUIDE_URL:
 		"https://prometheus.io/docs/prometheus/latest/querying/basics/",
+	NUXT_PUBLIC_VICTORIAMETRICS_QUERY_GUIDE_URL:
+		"https://docs.victoriametrics.com/victoriametrics/keyconcepts/#metricsql",
 	NUXT_PUBLIC_POSTGRESQL_QUERY_GUIDE_URL:
 		"https://www.postgresql.org/docs/current/sql-select.html",
 	NUXT_PUBLIC_MYSQL_QUERY_GUIDE_URL:

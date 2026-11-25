@@ -3,6 +3,7 @@ import MariaDBHelp from "./MariaDBHelp.vue"
 import MySQLHelp from "./MySQLHelp.vue"
 import PostgreSQLHelp from "./PostgreSQLHelp.vue"
 import PrometheusHelp from "./PrometheusHelp.vue"
+import VictoriaMetricsHelp from "./VictoriaMetricsHelp.vue"
 
 const props = defineProps<{
 	dataSourceType: DataSourceType
@@ -13,6 +14,9 @@ const props = defineProps<{
 		class="flex max-h-[min(30rem,50dvh)] w-full flex-col overflow-y-auto text-2sm leading-4.5"
 	>
 		<PrometheusHelp v-if="props.dataSourceType === DataSourceType.Prometheus" />
+		<VictoriaMetricsHelp
+			v-else-if="props.dataSourceType === DataSourceType.VictoriaMetrics"
+		/>
 		<PostgreSQLHelp
 			v-else-if="
 				props.dataSourceType === DataSourceType.PostgreSQL ||

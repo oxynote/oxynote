@@ -743,6 +743,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 
 		it.for([
 			DataSourceType.Prometheus,
+			DataSourceType.VictoriaMetrics,
 			DataSourceType.Loki,
 			DataSourceType.VictoriaLogs,
 		])(
@@ -1105,6 +1106,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 	describe("read-only warning", { concurrent: false }, () => {
 		it.for([
 			DataSourceType.Prometheus,
+			DataSourceType.VictoriaMetrics,
 			DataSourceType.Loki,
 			DataSourceType.VictoriaLogs,
 		])("leaves %s without a read-only warning", async (type, { expect }) => {

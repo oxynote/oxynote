@@ -32,6 +32,10 @@ describe("<DataSourceStatusIcon>", () => {
 
 	it.for([
 		{ type: DataSourceType.Prometheus, expected: "devicon:prometheus" },
+		{
+			type: DataSourceType.VictoriaMetrics,
+			expected: "simple-icons:victoriametrics",
+		},
 		{ type: DataSourceType.Loki, expected: "custom-icons:loki" },
 		{
 			type: DataSourceType.VictoriaLogs,
@@ -48,6 +52,25 @@ describe("<DataSourceStatusIcon>", () => {
 
 		expect(renderedIconNames(wrapper)[0]).toBe(expected)
 	})
+
+	it.for([
+		{ type: DataSourceType.VictoriaMetrics, expected: true },
+		{ type: DataSourceType.Prometheus, expected: false },
+	])(
+		"colours the $type logo with its theme token: $expected",
+		async ({ type, expected }, { expect }) => {
+			const wrapper = await mountSuspended(DataSourceStatusIcon, {
+				props: { dataSource: makeDataSource(type) },
+			})
+
+			expect(
+				wrapper
+					.get(".iconify")
+					.classes()
+					.includes("text-data-source-victoriametrics"),
+			).toBe(expected)
+		},
+	)
 
 	it("falls back to the prometheus logo for a type this build does not know", async ({
 		expect,

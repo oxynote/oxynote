@@ -26,6 +26,7 @@ declare module "nuxt/schema" {
 		mysqlReadOnlyUserSetupGuideURL: string
 		mariadbReadOnlyUserSetupGuideURL: string
 		prometheusQueryGuideURL: string
+		victoriametricsQueryGuideURL: string
 		postgresqlQueryGuideURL: string
 		mysqlQueryGuideURL: string
 		mariadbQueryGuideURL: string

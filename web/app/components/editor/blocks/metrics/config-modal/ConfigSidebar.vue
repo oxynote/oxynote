@@ -11,6 +11,7 @@ import SimulationPresetSelect from "./SimulationPresetSelect.vue"
 
 const dataSourceTypes = [
 	DataSourceType.Prometheus,
+	DataSourceType.VictoriaMetrics,
 	DataSourceType.PostgreSQL,
 	DataSourceType.Supabase,
 	DataSourceType.MySQL,

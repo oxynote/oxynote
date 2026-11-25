@@ -1,5 +1,6 @@
 export enum DataSourceType {
 	Prometheus = "prometheus",
+	VictoriaMetrics = "victoriametrics",
 	Loki = "loki",
 	VictoriaLogs = "victorialogs",
 

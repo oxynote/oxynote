@@ -63,6 +63,7 @@ const t = (key: string) => key
 
 const DATA_SOURCES = [
 	{ id: "prom-1", type: DataSourceType.Prometheus },
+	{ id: "vm-1", type: DataSourceType.VictoriaMetrics },
 	{ id: "pg-1", type: DataSourceType.PostgreSQL },
 	{ id: "loki-1", type: DataSourceType.Loki },
 	{ id: "vl-1", type: DataSourceType.VictoriaLogs },
@@ -300,6 +301,10 @@ describe("useQueryEditorExtension", () => {
 	it.for([
 		{ name: "provides no extensions without a data source", id: null },
 		{ name: "provides no extensions for an unknown data source", id: "gone" },
+		{
+			name: "provides no extensions for a victoriametrics data source",
+			id: "vm-1",
+		},
 	])("$name", ({ id }, { expect }) => {
 		const { extensions } = makeEditor({ dataSourceId: id })
 
@@ -318,6 +323,12 @@ describe("useQueryEditorExtension", () => {
 			dataSourceId: "prom-1",
 			editingEnabled: true,
 			expected: "editor.config-modal-utils.query-placeholder.prometheus",
+		},
+		{
+			name: "prompts with the victoriametrics placeholder",
+			dataSourceId: "vm-1",
+			editingEnabled: true,
+			expected: "editor.config-modal-utils.query-placeholder.victoriametrics",
 		},
 		{
 			name: "prompts with the postgresql placeholder",

@@ -430,6 +430,9 @@ describe("buildChildEnvs", () => {
 			envs.web.NUXT_PUBLIC_PROMETHEUS_QUERY_GUIDE_URL,
 		).toContain("prometheus.io")
 		expect(
+			envs.web.NUXT_PUBLIC_VICTORIAMETRICS_QUERY_GUIDE_URL,
+		).toContain("docs.victoriametrics.com")
+		expect(
 			envs.web.NUXT_PUBLIC_LINK_TO_MORE_INFO_ABOUT_PRODUCT,
 		).toBe("https://oxynote.io")
 		expect(envs.web.NUXT_PUBLIC_DOCS_URL).toBe(

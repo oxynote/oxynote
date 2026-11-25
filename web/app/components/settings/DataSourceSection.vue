@@ -33,6 +33,26 @@ const sections = computed(() => {
 			},
 		},
 		{
+			key: DataSourceType.VictoriaMetrics,
+			icon: "simple-icons:victoriametrics",
+			iconClass: "text-data-source-victoriametrics",
+			items:
+				fetchDataSources.state.value.data?.filter(
+					(ds) =>
+						ds.type === DataSourceType.VictoriaMetrics &&
+						ds.status !== DataSourceStatus.LocalOptimisticInsert,
+				) ?? [],
+			create: () => {
+				emit("data-source-creation", DataSourceType.VictoriaMetrics)
+			},
+			update: (dataSource: DataSource) => {
+				emit("data-source-update", dataSource)
+			},
+			delete: (dataSource: DataSource) => {
+				emit("data-source-removal", dataSource)
+			},
+		},
+		{
 			key: DataSourceType.Loki,
 			icon: "custom-icons:loki",
 			items:
@@ -165,7 +185,10 @@ async function copyURL(dataSource: DataSource) {
 				class="flex w-full items-center justify-between gap-2"
 			>
 				<div class="flex items-center gap-2">
-					<Icon :name="section.icon" class="size-6.5 shrink-0" />
+					<Icon
+						:name="section.icon"
+						:class="cn('size-6.5 shrink-0', section.iconClass)"
+					/>
 					<div class="flex flex-col">
 						<div class="text-sm">
 							{{ $t(`settings.data-sources.${section.key}.title`) }}

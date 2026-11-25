@@ -9,6 +9,7 @@ import (
 
 	"github.com/oxynote/oxynote/datagen/internal/mockmetrics"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
@@ -133,12 +134,14 @@ func Test_NewManager(t *testing.T) {
 	t.Parallel()
 
 	log := slog.New(slog.DiscardHandler)
+	fc := newFactory()
 
-	m := NewManager(newFactory(), log)
+	m := NewManager(fc, log)
 	require.NotNil(t, m)
 
 	assert.NotNil(t, m.r)
 	assert.Equal(t, log, m.log)
+	assert.Equal(t, fc, m.g)
 	assert.Equal(t, _genInterval, m.interval)
 
 	// every drifting state and every gauge has to be wired, which the
@@ -184,6 +187,116 @@ func Test_Manager_Run(t *testing.T) {
 	cancel()
 
 	<-stopCh
+}
+
+func Test_Manager_Backfill(t *testing.T) {
+	t.Parallel()
+
+	from := time.Date(2026, 1, 5, 10, 0, 0, 0, time.UTC)
+
+	cc := map[string]struct {
+		Gatherer prometheus.Gatherer
+		Writer   *SampleWriterMock
+		To       time.Time
+		Err      error
+		Times    []time.Time
+		Flushes  int
+	}{
+		"Error returned by Gatherer.Gather": {
+			Gatherer: prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
+				return nil, assert.AnError
+			}),
+			Writer:  &SampleWriterMock{},
+			To:      from.Add(3 * time.Minute),
+			Err:     assert.AnError,
+			Times:   []time.Time{},
+			Flushes: 0,
+		},
+		"Error returned by SampleWriter.WriteSamples": {
+			Writer: &SampleWriterMock{
+				WriteSamplesFunc: func(context.Context, time.Time, []*dto.MetricFamily) error {
+					return assert.AnError
+				},
+			},
+			To:      from.Add(3 * time.Minute),
+			Err:     assert.AnError,
+			Times:   []time.Time{from},
+			Flushes: 0,
+		},
+		"Error returned by SampleWriter.Flush": {
+			Writer: &SampleWriterMock{
+				FlushFunc: func(context.Context) error {
+					return assert.AnError
+				},
+			},
+			To:      from.Add(3 * time.Minute),
+			Err:     assert.AnError,
+			Times:   []time.Time{from, from.Add(time.Minute), from.Add(2 * time.Minute)},
+			Flushes: 1,
+		},
+		"Successful backfill of an empty window": {
+			Writer:  &SampleWriterMock{},
+			To:      from,
+			Times:   []time.Time{},
+			Flushes: 1,
+		},
+		"Successful backfill": {
+			Writer:  &SampleWriterMock{},
+			To:      from.Add(3 * time.Minute),
+			Times:   []time.Time{from, from.Add(time.Minute), from.Add(2 * time.Minute)},
+			Flushes: 1,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			m := NewManager(newFactory(), slog.New(slog.DiscardHandler))
+			m.interval = time.Minute
+
+			if c.Gatherer != nil {
+				m.g = c.Gatherer
+			}
+
+			err := m.Backfill(context.Background(), from, c.To, c.Writer)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			calls := c.Writer.WriteSamplesCalls()
+
+			times := make([]time.Time, 0, len(calls))
+			for _, call := range calls {
+				times = append(times, call.T)
+			}
+
+			assert.Equal(t, c.Times, times)
+			assert.Len(t, c.Writer.FlushCalls(), c.Flushes)
+
+			if err != nil {
+				return
+			}
+
+			// each tick hands over every gauge, and the drifting ones move
+			// on from one tick to the next.
+			reviews := make([]float64, 0, len(calls))
+
+			for _, call := range calls {
+				assert.Len(t, call.Ff, 15)
+
+				for _, f := range call.Ff {
+					if f.GetName() == "engineering_pr_time_to_first_review_minutes" {
+						reviews = append(reviews, f.GetMetric()[0].GetGauge().GetValue())
+					}
+				}
+			}
+
+			require.Len(t, reviews, len(calls))
+
+			for i := 1; i < len(reviews); i++ {
+				assert.NotEqual(t, reviews[i-1], reviews[i])
+			}
+		})
+	}
 }
 
 func Test_Manager_setCounts(t *testing.T) {

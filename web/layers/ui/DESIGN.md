@@ -126,6 +126,7 @@ shared meaning gets its own neutrally named token.
 | | `log-level-trace` | `#62748e` | `#90a1b9` |
 | | `log-level-unknown` | `#737373` | `#a1a1a1` |
 | | `log-volume-empty` (dash for an interval without lines) | `#a1a1a1` | `#525252` |
+| Data sources | `data-source-victoriametrics` (single-colour brand icon) | `#020202` | `#ffffff` |
 
 Recurring pattern for a tinted feature surface: the feature colour at
 5–15% as the fill, 20–30% as the border, and the matching `-foreground`

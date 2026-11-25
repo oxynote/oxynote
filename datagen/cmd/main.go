@@ -1,11 +1,12 @@
 // Package main runs the demo data generator: it serves mock engineering
-// metrics for Prometheus to scrape, fills the demo databases with rows and
-// writes demo logs to VictoriaLogs.
+// metrics for VictoriaMetrics to scrape, backfills their history there,
+// fills the demo databases with rows and writes demo logs to VictoriaLogs.
 package main
 
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"github.com/oxynote/oxynote/datagen/internal/pgdemo"
 	"github.com/oxynote/oxynote/datagen/internal/server"
 	"github.com/oxynote/oxynote/datagen/internal/vlogsdemo"
+	"github.com/oxynote/oxynote/datagen/internal/vmdemo"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -29,16 +31,26 @@ func main() {
 		metricutil.WithCustomHost("demo"),
 	)
 
-	srv := server.New(log, metrics)
+	mgr := gen.NewManager(metrics, log)
 
 	termCtx, termCancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer termCancel()
+
+	// the history goes in before the metrics are served. Otherwise a scrape
+	// could record a backfilled value at the current time.
+	if url := os.Getenv("DATAGEN_VICTORIAMETRICS_URL"); url != "" {
+		if err := vmdemo.NewImporter(log, &http.Client{}, url).Fill(termCtx, mgr); err != nil {
+			log.Error("vmdemo backfill failed", slog.String("error", err.Error()))
+		}
+	}
+
+	srv := server.New(log, metrics)
 
 	var wg sync.WaitGroup
 
 	wg.Go(srv.Listen)
 	wg.Go(func() {
-		gen.NewManager(metrics, log).Run(termCtx)
+		mgr.Run(termCtx)
 	})
 
 	if dsn := os.Getenv("DATAGEN_POSTGRES_DSN"); dsn != "" {

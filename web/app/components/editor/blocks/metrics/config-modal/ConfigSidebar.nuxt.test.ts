@@ -542,6 +542,7 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 			.map((s) => s.props("types") as DataSourceType[])
 		const metricTypes = [
 			DataSourceType.Prometheus,
+			DataSourceType.VictoriaMetrics,
 			DataSourceType.PostgreSQL,
 			DataSourceType.Supabase,
 			DataSourceType.MySQL,

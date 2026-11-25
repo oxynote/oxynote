@@ -117,6 +117,7 @@ const dataSourceType = computed(() => {
 const acceptsTokens = computed(
 	() =>
 		dataSourceType.value === DataSourceType.Prometheus ||
+		dataSourceType.value === DataSourceType.VictoriaMetrics ||
 		dataSourceType.value === DataSourceType.Loki ||
 		dataSourceType.value === DataSourceType.VictoriaLogs,
 )
