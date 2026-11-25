@@ -106,3 +106,11 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: /extraEnv/0/name
+
+  - it: rejects an unknown dnsPolicy
+    set:
+      publicUrl: https://docs.example.com
+      dnsPolicy: ClusterFirstt
+    asserts:
+      - failedTemplate:
+          errorPattern: /dnsPolicy

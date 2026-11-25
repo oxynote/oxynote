@@ -257,3 +257,28 @@ tests:
           value:
             app.kubernetes.io/name: oxynote
             app.kubernetes.io/instance: RELEASE-NAME
+
+  - it: leaves DNS to the cluster by default
+    asserts:
+      - notExists:
+          path: spec.template.spec.dnsPolicy
+      - notExists:
+          path: spec.template.spec.dnsConfig
+
+  - it: sets the DNS policy and config
+    set:
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "2"
+    asserts:
+      - equal:
+          path: spec.template.spec.dnsPolicy
+          value: ClusterFirst
+      - equal:
+          path: spec.template.spec.dnsConfig
+          value:
+            options:
+              - name: ndots
+                value: "2"
