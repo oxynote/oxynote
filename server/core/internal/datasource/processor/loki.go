@@ -100,7 +100,7 @@ func (l *Loki) TestConnection(ctx context.Context) (ConnectionStatus, error) {
 		return "", err
 	}
 
-	status, body, err := l.doRequest(ctx, client, _lokiBuildInfoPath, nil, nil, nil)
+	status, body, err := l.doRequest(ctx, client, http.MethodGet, _lokiBuildInfoPath, nil, nil)
 	if err != nil {
 		return ConnectionStatusUnreachable, nil
 	}

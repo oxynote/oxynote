@@ -54,13 +54,13 @@ const sections = computed<
 
 // metadataDescription says whether the metadata fields are indexed. A
 // source that indexes every field is sure of it only when the fields were
-// checked. Otherwise the query may have added some of them.
+// split. Otherwise the query may have added some of them.
 function metadataDescription() {
 	if (!props.dialect.indexesAllFields) {
 		return t("editor.logs.view.metadata-description")
 	}
 
-	if (props.log.fieldsChecked) {
+	if (props.log.storedFieldsOnly) {
 		return t("editor.logs.view.metadata-description-indexed")
 	}
 

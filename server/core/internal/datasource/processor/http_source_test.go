@@ -2,10 +2,10 @@ package processor
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -131,7 +131,7 @@ func Test_httpClient_fetch(t *testing.T) {
 
 			hc := &httpClient{inp: inp}
 
-			body, err := hc.fetch(context.Background(), _testPath, nil, nil, nil)
+			body, err := hc.fetch(context.Background(), http.MethodGet, _testPath, nil, nil)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -141,42 +141,6 @@ func Test_httpClient_fetch(t *testing.T) {
 			assert.Equal(t, c.Result, string(body))
 		})
 	}
-}
-
-func Test_httpClient_fetchRaw(t *testing.T) {
-	inp := prepHTTPInput(t, "", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "1", r.URL.Query().Get("start"))
-		assert.Equal(t, "yes", r.Header.Get("X-Test"))
-
-		_, err := w.Write([]byte("body"))
-		assert.NoError(t, err)
-	}))
-
-	body, err := (&httpClient{inp: inp}).fetchRaw(
-		context.Background(),
-		_testPath,
-		url.Values{"start": {"1"}},
-		http.Header{"X-Test": {"yes"}},
-	)
-	require.NoError(t, err)
-	assert.Equal(t, "body", string(body))
-}
-
-func Test_httpClient_postForm(t *testing.T) {
-	inp := prepHTTPInput(t, "", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Empty(t, r.URL.RawQuery)
-		assert.NoError(t, r.ParseForm())
-		assert.Equal(t, "error", r.PostForm.Get("query"))
-
-		_, err := w.Write([]byte("body"))
-		assert.NoError(t, err)
-	}))
-
-	body, err := (&httpClient{inp: inp}).postForm(context.Background(), _testPath, url.Values{"query": {"error"}})
-	require.NoError(t, err)
-	assert.Equal(t, "body", string(body))
 }
 
 func Test_httpClient_fetchJSON(t *testing.T) {
@@ -221,22 +185,23 @@ func Test_httpClient_doRequest(t *testing.T) {
 	cc := map[string]struct {
 		URL     string
 		Handler http.Handler
-		Form    url.Values
+		Method  string
 		Status  int
 		Body    string
 		Err     error
 	}{
-		"Form goes in a POST body": {
+		"Params go in a POST body": {
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				assert.Equal(t, http.MethodPost, r.Method)
+				assert.Empty(t, r.URL.RawQuery)
 				assert.Equal(t, "application/x-www-form-urlencoded", r.Header.Get("Content-Type"))
 				assert.NoError(t, r.ParseForm())
-				assert.Equal(t, "error", r.PostForm.Get("query"))
+				assert.Equal(t, "1", r.PostForm.Get("start"))
 
 				_, err := w.Write([]byte("body"))
 				assert.NoError(t, err)
 			}),
-			Form:   url.Values{"query": {"error"}},
+			Method: http.MethodPost,
 			Status: http.StatusOK,
 			Body:   "body",
 		},
@@ -295,9 +260,9 @@ func Test_httpClient_doRequest(t *testing.T) {
 			status, body, err := hc.doRequest(
 				context.Background(),
 				&http.Client{},
+				cmp.Or(c.Method, http.MethodGet),
 				_testPath,
 				map[string][]string{"start": {"1"}},
-				c.Form,
 				http.Header{"X-Test": {"yes"}},
 			)
 			testutil.AssertEqualError(t, c.Err, err)

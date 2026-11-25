@@ -399,11 +399,10 @@ type LogLine struct {
 	// line itself, such as LogQL's logfmt. It is empty when no parser ran.
 	Parsed map[string]string `json:"parsed,omitempty"`
 
-	// FieldsChecked indicates that Fields holds only the fields sent with
-	// the line. Without it, Fields may also hold fields the query made. Such
-	// a field exists only in the result, such as one that a pipe extracts
-	// from the message or computes.
-	FieldsChecked bool `json:"fieldsChecked,omitempty"`
+	// StoredFieldsOnly indicates that Fields holds only the fields sent
+	// with the line, and Parsed the ones the query made. Without it, Fields
+	// may hold both.
+	StoredFieldsOnly bool `json:"storedFieldsOnly,omitempty"`
 }
 
 // LogsResult is one page of a window's lines.
@@ -697,13 +696,11 @@ func (lr *LogsResult) withLineIDs() *LogsResult {
 // hash returns a hex digest of everything that identifies the line. An
 // empty part separates the labels from the fields, so a label and a
 // field of the same name and value hash differently.
-//
-// The check of a line moves the fields the query made from Fields to
-// Parsed. So a checked line hashes both, and its ID is the same when the
-// check fails.
+// A split line hashes Fields and Parsed together, so its ID stays the same
+// when the split fails.
 func (ll LogLine) hash() string {
 	fields := ll.Fields
-	if ll.FieldsChecked {
+	if ll.StoredFieldsOnly {
 		fields = make(map[string]string, len(ll.Fields)+len(ll.Parsed))
 		maps.Copy(fields, ll.Fields)
 		maps.Copy(fields, ll.Parsed)

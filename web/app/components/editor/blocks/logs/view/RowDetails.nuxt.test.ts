@@ -63,7 +63,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 					line: '{"msg":"m","status":500,"user":{"id":7}}',
 					fields: { trace_id: "abc" },
 					parsed: { status: "500", "user.id": "7" },
-					fieldsChecked: true,
+					storedFieldsOnly: true,
 				}),
 				dialect: victoriaLogsDialect,
 				lineFilterFormats: Object.values(LineFormat),
@@ -98,19 +98,19 @@ describe("<RowDetails>", { concurrent: false }, () => {
 	it.for([
 		{
 			name: "the source told the stored fields apart",
-			fieldsChecked: true,
+			storedFieldsOnly: true,
 			expected: "editor.logs.view.metadata-description-indexed",
 		},
 		{
 			name: "the source could not tell them apart",
-			fieldsChecked: false,
+			storedFieldsOnly: false,
 			expected: "editor.logs.view.metadata-description-indexed-if-sent",
 		},
 	])(
 		"calls the metadata indexed when $name",
-		async ({ fieldsChecked, expected }, { expect }) => {
+		async ({ storedFieldsOnly, expected }, { expect }) => {
 			const wrapper = await mountDetails(
-				makeLog({ fieldsChecked }),
+				makeLog({ storedFieldsOnly }),
 				victoriaLogsDialect,
 			)
 			const notes = wrapper.findAll("h4 + span")
@@ -132,7 +132,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 				labels: {},
 				fields: { host: "gw-1" },
 				parsed: { ip: "10.0.0.1" },
-				fieldsChecked: true,
+				storedFieldsOnly: true,
 			}),
 			victoriaLogsDialect,
 		)

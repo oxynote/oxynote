@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -777,6 +778,21 @@ func Test_VictoriaLogs_LogFieldValues(t *testing.T) {
 func Test_VictoriaLogs_fetchLines(t *testing.T) {
 	tiny := TimeRange{From: time.Unix(0, 0), To: time.Unix(0, 10)}
 
+	split := uniqueTimeCorpusLine(t)
+	splitQuery := fmt.Sprintf(`seq:="%d" | copy level as copied | math seq * 2 as double | format "t-<trace_id>" as trace_id`, split.Seq)
+
+	checkSplit := func(t *testing.T, lines []LogLine) {
+		t.Helper()
+
+		assert.True(t, lines[0].StoredFieldsOnly)
+		assert.Equal(t, map[string]string{"level": split.Level, "seq": strconv.Itoa(split.Seq)}, lines[0].Fields)
+		assert.Equal(t, map[string]string{
+			"copied":   split.Level,
+			"double":   strconv.Itoa(split.Seq * 2),
+			"trace_id": "t-" + split.TraceID,
+		}, lines[0].Parsed)
+	}
+
 	cc := map[string]struct {
 		Handler http.Handler
 		Version string
@@ -790,7 +806,7 @@ func Test_VictoriaLogs_fetchLines(t *testing.T) {
 		Result  []LogLine
 		Err     error
 	}{
-		"Error returned by httpClient.fetchRaw": {
+		"Error returned by VictoriaLogs.fetchRows": {
 			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusBadRequest, `bad`),
 			Range:   tiny,
 			Limit:   1,
@@ -853,19 +869,19 @@ func Test_VictoriaLogs_fetchLines(t *testing.T) {
 		},
 		"Fields the query made are told apart on the oldest VictoriaLogs": {
 			Version: _victoriaLogsVersions[0],
-			Query:   victoriaLogsSplitQuery(),
+			Query:   splitQuery,
 			Range:   _logsWindow,
 			Limit:   10,
 			Count:   1,
-			Check:   checkVictoriaLogsSplit,
+			Check:   checkSplit,
 		},
 		"Fields the query made are told apart on the newest VictoriaLogs": {
 			Version: _victoriaLogsVersions[1],
-			Query:   victoriaLogsSplitQuery(),
+			Query:   splitQuery,
 			Range:   _logsWindow,
 			Limit:   10,
 			Count:   1,
-			Check:   checkVictoriaLogsSplit,
+			Check:   checkSplit,
 		},
 		"Comment at the end of an asc query on the oldest VictoriaLogs": {
 			Version: _victoriaLogsVersions[0],
@@ -925,53 +941,50 @@ func Test_VictoriaLogs_fetchLines(t *testing.T) {
 	}
 }
 
-func Test_VictoriaLogs_splitStoredFields(t *testing.T) {
+func Test_VictoriaLogs_fetchStoredRows(t *testing.T) {
 	const (
 		id = "0a1b"
 		at = "1970-01-01T00:00:00.000000001Z"
 	)
 
-	page := victoriaLogsRow{"_stream_id": id, "_time": at, "host": "a", "made": "m", "changed": "new"}
-	stored := `{"_stream_id":"` + id + `","_time":"` + at + `","host":"a","changed":"old"}`
+	page := victoriaLogsRow{"_stream_id": id, "_time": at, "host": "a"}
+	stored := `{"_stream_id":"` + id + `","_time":"` + at + `","host":"a"}`
+
+	notCalled := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		assert.Fail(t, "stored logs were looked up")
+	})
 
 	cc := map[string]struct {
 		Rows    []victoriaLogsRow
 		Handler http.Handler
-		Fields  map[string]string
-		Parsed  map[string]string
-		Split   bool
+		Result  map[victoriaLogsRowKey]victoriaLogsRow
 		Logged  string
 	}{
-		"Error returned by httpClient.postForm": {
+		"Page over the cap": {
+			Rows:    slices.Repeat([]victoriaLogsRow{page}, _maxLogsLimit+2),
+			Handler: notCalled,
+		},
+		"Error returned by VictoriaLogs.fetchRows": {
 			Rows:    []victoriaLogsRow{page},
 			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusBadRequest, `bad`),
-			Fields:  map[string]string{"host": "a", "made": "m", "changed": "new"},
 			Logged:  "cannot read stored logs",
 		},
-		"Copy that does not decode": {
-			Rows:    []victoriaLogsRow{page},
-			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusOK, `{"_msg":1}`),
-			Fields:  map[string]string{"host": "a", "made": "m", "changed": "new"},
-			Logged:  "cannot read stored logs",
+		"Row without a stream ID": {
+			Rows:    []victoriaLogsRow{{"_time": at, "host": "a"}},
+			Handler: notCalled,
+			Result:  map[victoriaLogsRowKey]victoriaLogsRow{},
 		},
 		"Two stored copies": {
 			Rows:    []victoriaLogsRow{page},
 			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusOK, stored+"\n"+stored),
-			Fields:  map[string]string{"host": "a", "made": "m", "changed": "new"},
-		},
-		"Row without a stream ID": {
-			Rows: []victoriaLogsRow{{"_time": at, "host": "a"}},
-			Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-				assert.Fail(t, "a row without a key was looked up")
-			}),
-			Fields: map[string]string{"host": "a"},
+			Result:  map[victoriaLogsRowKey]victoriaLogsRow{},
 		},
 		"One stored copy": {
 			Rows:    []victoriaLogsRow{page},
 			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusOK, stored),
-			Fields:  map[string]string{"host": "a"},
-			Parsed:  map[string]string{"made": "m", "changed": "new"},
-			Split:   true,
+			Result: map[victoriaLogsRowKey]victoriaLogsRow{
+				{streamID: id, time: time.Unix(0, 1).UTC()}: page,
+			},
 		},
 	}
 
@@ -979,19 +992,10 @@ func Test_VictoriaLogs_splitStoredFields(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			lines := make([]LogLine, len(c.Rows))
-
-			for i, row := range c.Rows {
-				line, err := row.logLine()
-				require.NoError(t, err)
-
-				lines[i] = line
-			}
-
 			var buf bytes.Buffer
 
-			NewVictoriaLogs(slog.New(slog.NewTextHandler(&buf, nil)), prepHTTPInput(t, "", c.Handler)).
-				splitStoredFields(context.Background(), c.Rows, lines)
+			res := NewVictoriaLogs(slog.New(slog.NewTextHandler(&buf, nil)), prepHTTPInput(t, "", c.Handler)).
+				fetchStoredRows(context.Background(), c.Rows)
 
 			if c.Logged == "" {
 				assert.Empty(t, buf.String())
@@ -999,38 +1003,42 @@ func Test_VictoriaLogs_splitStoredFields(t *testing.T) {
 				assert.Contains(t, buf.String(), c.Logged)
 			}
 
-			assert.Equal(t, c.Fields, lines[0].Fields)
-			assert.Equal(t, c.Parsed, lines[0].Parsed)
-			assert.Equal(t, c.Split, lines[0].FieldsChecked)
+			assert.Equal(t, c.Result, res)
 		})
 	}
 }
 
-func Test_VictoriaLogs_fetchStored(t *testing.T) {
-	lookup := victoriaLogsLookup{
-		query: "(_stream_id:ab _time:1970-01-01T00:00:00.000000001Z)",
-		tr:    TimeRange{From: time.Unix(0, 1), To: time.Unix(0, 2)},
-	}
-
+func Test_VictoriaLogs_fetchRows(t *testing.T) {
 	cc := map[string]struct {
 		Handler http.Handler
 		Result  []victoriaLogsRow
 		Err     error
 	}{
-		"Error returned by httpClient.postForm": {
+		"Error returned by httpClient.fetch": {
 			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusBadRequest, `bad`),
 			Err:     NewInvalidQueryError("bad"),
 		},
-		"Successful lookup": {
+		"Row that does not decode": {
+			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusOK, `{"_msg":1}`),
+			Err:     assert.AnError,
+		},
+		"Rows with blank lines between them": {
+			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusOK, "\n"+`{"a":"1"}`+"\n\n"+`{"b":"2"}`+"\n"),
+			Result:  []victoriaLogsRow{{"a": "1"}, {"b": "2"}},
+		},
+		"Empty answer": {
+			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusOK, ``),
+		},
+		"Params go in a POST body": {
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				assert.Equal(t, http.MethodPost, r.Method)
 				assert.NoError(t, r.ParseForm())
-				assert.Equal(t, lookup.query, r.PostForm.Get("query"))
+				assert.Equal(t, "error", r.PostForm.Get("query"))
 
-				_, err := w.Write([]byte(`{"_stream_id":"ab","host":"a"}`))
+				_, err := w.Write([]byte(`{"a":"1"}`))
 				assert.NoError(t, err)
 			}),
-			Result: []victoriaLogsRow{{"_stream_id": "ab", "host": "a"}},
+			Result: []victoriaLogsRow{{"a": "1"}},
 		},
 	}
 
@@ -1039,7 +1047,7 @@ func Test_VictoriaLogs_fetchStored(t *testing.T) {
 			t.Parallel()
 
 			res, err := NewVictoriaLogs(slog.New(slog.DiscardHandler), prepHTTPInput(t, "", c.Handler)).
-				fetchStored(context.Background(), lookup)
+				fetchRows(context.Background(), http.MethodPost, url.Values{"query": {"error"}})
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -1091,53 +1099,6 @@ func Test_newVictoriaLogsLookups(t *testing.T) {
 	assert.Equal(t, len(many), terms)
 }
 
-func Test_splitVictoriaLogsLine(t *testing.T) {
-	t.Parallel()
-
-	line := LogLine{Fields: map[string]string{"host": "a", "made": "m", "changed": "new"}}
-	splitVictoriaLogsLine(&line, victoriaLogsRow{"host": "a", "changed": "old"})
-
-	assert.Equal(t, map[string]string{"host": "a"}, line.Fields)
-	assert.Equal(t, map[string]string{"made": "m", "changed": "new"}, line.Parsed)
-	assert.True(t, line.FieldsChecked)
-
-	stored := LogLine{Fields: map[string]string{"host": "a"}}
-	splitVictoriaLogsLine(&stored, victoriaLogsRow{"host": "a"})
-
-	assert.Nil(t, stored.Parsed)
-	assert.True(t, stored.FieldsChecked)
-}
-
-func Test_decodeVictoriaLogsRows(t *testing.T) {
-	cc := map[string]struct {
-		Body   string
-		Result []victoriaLogsRow
-		Err    error
-	}{
-		"Row that does not decode": {Body: `{"_msg":1}`, Err: assert.AnError},
-		"Rows with blank lines between them": {
-			Body:   "\n" + `{"a":"1"}` + "\n\n" + `{"b":"2"}` + "\n",
-			Result: []victoriaLogsRow{{"a": "1"}, {"b": "2"}},
-		},
-		"Empty answer": {},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			res, err := decodeVictoriaLogsRows([]byte(c.Body))
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			assert.Equal(t, c.Result, res)
-		})
-	}
-}
-
 func Test_victoriaLogsListResponse_names(t *testing.T) {
 	t.Parallel()
 
@@ -1150,8 +1111,7 @@ func Test_victoriaLogsListResponse_names(t *testing.T) {
 func Test_victoriaLogsRow_key(t *testing.T) {
 	cc := map[string]struct {
 		Row    victoriaLogsRow
-		Result victoriaLogsKey
-		Time   time.Time
+		Result victoriaLogsRowKey
 		OK     bool
 	}{
 		"Row without a stream ID":   {Row: victoriaLogsRow{"_time": "1970-01-01T00:00:00Z"}},
@@ -1159,8 +1119,7 @@ func Test_victoriaLogsRow_key(t *testing.T) {
 		"Time that does not parse":  {Row: victoriaLogsRow{"_stream_id": "ab", "_time": "yesterday"}},
 		"Valid key": {
 			Row:    victoriaLogsRow{"_stream_id": "ab", "_time": "1970-01-01T00:00:00.000000001Z"},
-			Result: victoriaLogsKey{streamID: "ab", time: "1970-01-01T00:00:00.000000001Z"},
-			Time:   time.Unix(0, 1).UTC(),
+			Result: victoriaLogsRowKey{streamID: "ab", time: time.Unix(0, 1).UTC()},
 			OK:     true,
 		},
 	}
@@ -1169,11 +1128,47 @@ func Test_victoriaLogsRow_key(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			key, at, ok := c.Row.key()
+			key, ok := c.Row.key()
 
 			assert.Equal(t, c.OK, ok)
 			assert.Equal(t, c.Result, key)
-			assert.True(t, c.Time.Equal(at))
+		})
+	}
+}
+
+func Test_victoriaLogsRow_splitLine(t *testing.T) {
+	cc := map[string]struct {
+		Fields map[string]string
+		Stored victoriaLogsRow
+		Result LogLine
+	}{
+		"Fields the query made or changed": {
+			Fields: map[string]string{"host": "a", "made": "m", "changed": "new"},
+			Stored: victoriaLogsRow{"host": "a", "changed": "old"},
+			Result: LogLine{
+				Fields:           map[string]string{"host": "a"},
+				Parsed:           map[string]string{"made": "m", "changed": "new"},
+				StoredFieldsOnly: true,
+			},
+		},
+		"Only stored fields": {
+			Fields: map[string]string{"host": "a"},
+			Stored: victoriaLogsRow{"host": "a"},
+			Result: LogLine{
+				Fields:           map[string]string{"host": "a"},
+				StoredFieldsOnly: true,
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			line := LogLine{Fields: c.Fields}
+			c.Stored.splitLine(&line)
+
+			assert.Equal(t, c.Result, line)
 		})
 	}
 }
@@ -1397,9 +1392,11 @@ func Test_createVictoriaLogsWindowParams(t *testing.T) {
 	}
 }
 
-// victoriaLogsSplitSeq returns a corpus line with a level that no other
+// uniqueTimeCorpusLine returns a corpus line with a level that no other
 // line of its stream shares a time with, so its stored copy is the only one.
-func victoriaLogsSplitSeq() corpusLine {
+func uniqueTimeCorpusLine(t *testing.T) corpusLine {
+	t.Helper()
+
 	type streamTime struct {
 		service string
 		at      time.Time
@@ -1417,27 +1414,7 @@ func victoriaLogsSplitSeq() corpusLine {
 		}
 	}
 
-	panic("the corpus has no line with a time of its own")
-}
+	t.Fatal("the corpus has no line with a time of its own")
 
-// victoriaLogsSplitQuery returns a query that reads the line of
-// victoriaLogsSplitSeq and adds, copies and changes fields.
-func victoriaLogsSplitQuery() string {
-	return fmt.Sprintf(`seq:="%d" | copy level as copied | math seq * 2 as double | format "t-<trace_id>" as trace_id`, victoriaLogsSplitSeq().Seq)
-}
-
-// checkVictoriaLogsSplit checks that the stored fields of that line stay
-// fields and the ones the query made or changed are parsed.
-func checkVictoriaLogsSplit(t *testing.T, lines []LogLine) {
-	t.Helper()
-
-	line, stored := lines[0], victoriaLogsSplitSeq()
-
-	assert.True(t, line.FieldsChecked)
-	assert.Equal(t, map[string]string{"level": stored.Level, "seq": strconv.Itoa(stored.Seq)}, line.Fields)
-	assert.Equal(t, map[string]string{
-		"copied":   stored.Level,
-		"double":   strconv.Itoa(stored.Seq * 2),
-		"trace_id": "t-" + stored.TraceID,
-	}, line.Parsed)
+	return corpusLine{}
 }

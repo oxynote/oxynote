@@ -735,7 +735,7 @@ describe("<DataView>", { concurrent: false }, () => {
 							labels: {},
 							fields,
 							parsed,
-							fieldsChecked: true,
+							storedFieldsOnly: true,
 						},
 					]),
 				)

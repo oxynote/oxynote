@@ -56,7 +56,7 @@ type httpClient struct {
 func (hc *httpClient) fetchJSON[T any](ctx context.Context, path string, params url.Values, header http.Header) (T, error) {
 	var res T
 
-	body, err := hc.fetchRaw(ctx, path, params, header)
+	body, err := hc.fetch(ctx, http.MethodGet, path, params, header)
 	if err != nil {
 		return res, err
 	}
@@ -70,33 +70,15 @@ func (hc *httpClient) fetchJSON[T any](ctx context.Context, path string, params 
 	return res, nil
 }
 
-// fetchRaw sends a GET to the path and returns the body of a 200 answer, as
-// fetch does.
-func (hc *httpClient) fetchRaw(ctx context.Context, path string, params url.Values, header http.Header) ([]byte, error) {
-	return hc.fetch(ctx, path, params, nil, header)
-}
-
-// postForm sends a POST to the path with form as its body and returns the
-// body of a 200 answer, as fetch does. It is for a query too long for a
-// URL, which many proxies cut off at about 8 KB. A GET cannot carry it
-// either, because Go servers read form values from the body only for
-// POST, PUT and PATCH, and proxies often drop the body of a GET. Use it
-// only for a server that reads such a POST like the same GET, as
-// VictoriaLogs does.
-func (hc *httpClient) postForm(ctx context.Context, path string, form url.Values) ([]byte, error) {
-	return hc.fetch(ctx, path, nil, form, nil)
-}
-
 // fetch sends a request to the path and returns the body of a 200 answer.
-// It is a POST of form when form is set, and a GET otherwise. Any other
-// answer is the error it describes.
-func (hc *httpClient) fetch(ctx context.Context, path string, params, form url.Values, header http.Header) ([]byte, error) {
+// Any other answer is the error it describes.
+func (hc *httpClient) fetch(ctx context.Context, method, path string, params url.Values, header http.Header) ([]byte, error) {
 	client, err := hc.authClient()
 	if err != nil {
 		return nil, err
 	}
 
-	status, body, err := hc.doRequest(ctx, client, path, params, form, header)
+	status, body, err := hc.doRequest(ctx, client, method, path, params, header)
 	if err != nil {
 		return nil, err
 	}
@@ -138,14 +120,14 @@ func (hc *httpClient) fetch(ctx context.Context, path string, params, form url.V
 }
 
 // doRequest sends a request to the path through client and returns the
-// status and body. It is a POST of form when form is set, and a GET
-// otherwise.
+// status and body. A POST carries params as a form body, for a query too
+// long for a URL.
 func (hc *httpClient) doRequest(
 	ctx context.Context,
 	client *http.Client,
+	method string,
 	path string,
 	params url.Values,
-	form url.Values,
 	header http.Header,
 ) (int, []byte, error) {
 	target, err := url.JoinPath(hc.inp.URL(), path)
@@ -153,13 +135,13 @@ func (hc *httpClient) doRequest(
 		return 0, nil, fmt.Errorf("building url: %w", err)
 	}
 
-	if len(params) > 0 {
-		target += "?" + params.Encode()
-	}
+	reqBody := io.Reader(http.NoBody)
 
-	method, reqBody := http.MethodGet, io.Reader(http.NoBody)
-	if form != nil {
-		method, reqBody = http.MethodPost, strings.NewReader(form.Encode())
+	switch {
+	case method == http.MethodPost:
+		reqBody = strings.NewReader(params.Encode())
+	case len(params) > 0:
+		target += "?" + params.Encode()
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, target, reqBody)
@@ -170,7 +152,7 @@ func (hc *httpClient) doRequest(
 
 	maps.Copy(req.Header, header)
 
-	if form != nil {
+	if method == http.MethodPost {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 
