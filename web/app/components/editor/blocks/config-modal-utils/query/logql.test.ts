@@ -1,5 +1,6 @@
 import { describe, it, vi } from "vitest"
 import { EditorState, type Extension } from "@codemirror/state"
+import type { EditorView } from "@codemirror/view"
 import {
 	CompletionContext,
 	type Completion,
@@ -62,6 +63,7 @@ function makeComplete(variables: VariableTreeResponse = variableTree()) {
 		const ctx = new CompletionContext(state, pos, explicit)
 		const options: Completion[] = []
 		let from: number | null = null
+		let to: number | null = null
 
 		for (const source of sources) {
 			const res = await source(ctx)
@@ -69,13 +71,42 @@ function makeComplete(variables: VariableTreeResponse = variableTree()) {
 			if (res) {
 				options.push(...res.options)
 				from = res.from
+				to = res.to ?? null
 			}
 		}
 
-		return { options, labels: options.map((o) => o.label), from }
+		return { options, labels: options.map((o) => o.label), from, to }
 	}
 
 	return { ...stub, complete }
+}
+
+function applyCompletion(
+	option: Completion,
+	doc: string,
+	from: number,
+	pos: number,
+) {
+	const state = EditorState.create({ doc, selection: { anchor: pos } })
+	let result = state
+
+	if (typeof option.apply !== "function") {
+		throw new Error("expected an apply function")
+	}
+
+	option.apply(
+		{
+			state,
+			dispatch: (spec: Parameters<EditorState["update"]>[0]) => {
+				result = state.update(spec).state
+			},
+		} as unknown as EditorView,
+		option,
+		from,
+		pos,
+	)
+
+	return result.doc.toString()
 }
 
 describe("useLogQLQueryExtension", () => {
@@ -138,6 +169,90 @@ describe("useLogQLQueryExtension", () => {
 			expect(options.find((o) => o.label === 'a.b"c')?.apply).toBe(expected)
 		})
 
+		it("starts value completions after the last regex alternative", async ({
+			expect,
+		}) => {
+			const { complete } = makeComplete()
+			const marked = '{app=~"api|¦"}'
+
+			const { labels, from } = await complete(marked)
+
+			expect(labels).toEqual(["api", 'a.b"c', "$env", "$window"])
+			expect(from).toBe(marked.indexOf("|") + 1)
+		})
+
+		it("filters on the alternative around the cursor", async ({ expect }) => {
+			const { complete } = makeComplete()
+			const marked = '{app=~"api|ngi¦nx|web"}'
+			const doc = marked.replace("¦", "")
+			const pos = marked.indexOf("¦")
+
+			const { from, to } = await complete(marked)
+			const first = doc.indexOf("|")
+
+			expect(from).toBe(first + 1)
+			expect(to).toBe(pos)
+		})
+
+		it("replaces only the alternative when a value is picked", async ({
+			expect,
+		}) => {
+			const { complete } = makeComplete()
+			const marked = '{app=~"api|ngi¦nx|web"}'
+			const doc = marked.replace("¦", "")
+			const pos = marked.indexOf("¦")
+
+			const { options, from } = await complete(marked)
+			const option = options.find((o) => o.label === "api")
+
+			expect(option).toBeDefined()
+			expect(from).not.toBeNull()
+
+			if (!option || from === null) {
+				throw new Error("expected the api completion")
+			}
+
+			const applied = applyCompletion(option, doc, from, pos)
+
+			expect(applied).toBe('{app=~"api|api|web"}')
+		})
+
+		it("replaces the whole regex when an escape changes what a | means", async ({
+			expect,
+		}) => {
+			const { complete } = makeComplete()
+			const marked = '{app=~"api\\|ngi¦nx"}'
+			const doc = marked.replace("¦", "")
+			const pos = marked.indexOf("¦")
+
+			const { options, from, to } = await complete(marked)
+			const option = options.find((o) => o.label === "api")
+
+			expect(from).toBe(doc.indexOf('"') + 1)
+			expect(to).toBe(pos)
+			expect(option).toBeDefined()
+
+			if (!option || from === null) {
+				throw new Error("expected the api completion")
+			}
+
+			const applied = applyCompletion(option, doc, from, pos)
+
+			expect(applied).toBe('{app=~"api"}')
+		})
+
+		it.for([
+			{ name: "an escaped pipe", doc: '{app=~"api\\|v1¦"}' },
+			{ name: "a group", doc: '{app=~"(api|v1)¦"}' },
+			{ name: "a character class", doc: '{app=~"[a|b]¦"}' },
+		])("does not split on $name", async ({ doc }, { expect }) => {
+			const { complete } = makeComplete()
+
+			const { from } = await complete(doc)
+
+			expect(from).toBe(doc.indexOf('"') + 1)
+		})
+
 		it("offers no variables where the grammar needs a string", async ({
 			expect,
 		}) => {
@@ -184,6 +299,18 @@ describe("useLogQLQueryExtension", () => {
 				field: "level",
 				q: '{app="api"} | json',
 			})
+		})
+
+		it("starts value completions after a regex alternative in a label filter", async ({
+			expect,
+		}) => {
+			const { complete } = makeComplete()
+			const marked = '{app="api"} | json | level=~"info|¦"'
+
+			const { labels, from } = await complete(marked)
+
+			expect(labels).toEqual(["api", 'a.b"c', "$env", "$window"])
+			expect(from).toBe(marked.lastIndexOf("|") + 1)
 		})
 
 		it.for([
