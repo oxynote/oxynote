@@ -182,6 +182,7 @@
       "if": {"properties": {"enabled": {"const": true}}},
       "then": {"properties": {"parentRefs": {"minItems": 1}}}
     },
+    "revisionHistoryLimit": {"type": ["integer", "null"], "minimum": 0},
     "resources": {"type": "object"},
     "serviceAccount": {
       "type": "object",

@@ -179,6 +179,7 @@ kubectl --namespace oxynote exec -i statefulset/oxynote -- restore < oxynote-bac
 | httpRoute.parentRefs | list | `[]` | Gateways to attach to. Required when enabled. |
 | httpRoute.hostnames | list | `[]` |  |
 | httpRoute.annotations | object | `{}` |  |
+| revisionHistoryLimit | int | `nil` | How many old revisions the StatefulSet keeps for `kubectl rollout undo`. Empty leaves the Kubernetes default of 10. |
 | resources | object | `{}` | Set at least `requests.memory`, since the pod runs Postgres. |
 | serviceAccount.create | bool | `true` |  |
 | serviceAccount.name | string | `""` | Empty means the release's full name when created, and `default` otherwise. |

@@ -60,6 +60,10 @@ httpRoute:
   hostnames: []
   annotations: {}
 
+# -- (int) How many old revisions the StatefulSet keeps for `kubectl rollout
+# undo`. Empty leaves the Kubernetes default of 10.
+revisionHistoryLimit:
+
 # -- Set at least `requests.memory`, since the pod runs Postgres.
 resources: {}
 

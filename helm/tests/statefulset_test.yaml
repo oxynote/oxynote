@@ -282,3 +282,16 @@ tests:
             options:
               - name: ndots
                 value: "2"
+
+  - it: leaves the revision history limit to Kubernetes by default
+    asserts:
+      - notExists:
+          path: spec.revisionHistoryLimit
+
+  - it: sets the revision history limit, zero included
+    set:
+      revisionHistoryLimit: 0
+    asserts:
+      - equal:
+          path: spec.revisionHistoryLimit
+          value: 0

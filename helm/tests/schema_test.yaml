@@ -114,3 +114,11 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: /dnsPolicy
+
+  - it: rejects a negative revision history limit
+    set:
+      publicUrl: https://docs.example.com
+      revisionHistoryLimit: -1
+    asserts:
+      - failedTemplate:
+          errorPattern: /revisionHistoryLimit

@@ -9,6 +9,9 @@ spec:
   # so a second pod would corrupt it. A StatefulSet never starts a new pod
   # before the old one is gone, which a Deployment does not promise.
   replicas: 1
+  {{- if not (kindIs "invalid" .Values.revisionHistoryLimit) }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  {{- end }}
   serviceName: {{ include "oxynote.fullname" . }}
   selector:
     matchLabels:
