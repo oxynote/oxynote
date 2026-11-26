@@ -158,6 +158,7 @@ kubectl --namespace oxynote exec -i statefulset/oxynote -- restore < oxynote-bac
 | image.tag | string | `""` | Empty means the chart's appVersion. |
 | image.digest | string | `""` | Image digest (`sha256:...`). When set, it is used instead of the tag. |
 | image.pullPolicy | string | `"IfNotPresent"` |  |
+| imagePullSecrets | list | `[]` | Secrets for pulling the image from a private registry or mirror, such as `[{name: regcred}]`. |
 | publicUrl | string | required | The origin users open Oxynote at, with no path, such as `https://docs.example.com`. It becomes `OXYNOTE_PUBLIC_URL`. For a port-forward, use `http://localhost:8080`. |
 | env | object | `{}` | Non-secret `OXYNOTE_*` variables, as the image's README lists them. A name the image does not know fails the install. Values are strings, so quote numbers and booleans. Secret ones go in `envFromSecret`. |
 | envFromSecret | string | `""` | Name of an existing Secret with the secret `OXYNOTE_*` variables, such as `OXYNOTE_SMTP_DSN`. Each key becomes a variable. |

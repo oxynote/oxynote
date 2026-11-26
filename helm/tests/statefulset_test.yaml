@@ -218,6 +218,8 @@ tests:
         a: b
       podLabels:
         team: docs
+      imagePullSecrets:
+        - name: regcred
     asserts:
       - equal:
           path: spec.template.spec.containers[0].resources
@@ -257,6 +259,10 @@ tests:
           value:
             app.kubernetes.io/name: oxynote
             app.kubernetes.io/instance: RELEASE-NAME
+      - equal:
+          path: spec.template.spec.imagePullSecrets
+          value:
+            - name: regcred
 
   - it: leaves DNS to the cluster by default
     asserts:

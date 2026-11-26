@@ -18,6 +18,10 @@ spec:
     runAsGroup: 65532
     seccompProfile:
       type: RuntimeDefault
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   containers:
     - name: test
       # the app's own image has node, so the test needs no other image.

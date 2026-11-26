@@ -6,6 +6,10 @@ image:
   digest: ""
   pullPolicy: IfNotPresent
 
+# -- Secrets for pulling the image from a private registry or mirror, such as
+# `[{name: regcred}]`.
+imagePullSecrets: []
+
 # -- (string) The origin users open Oxynote at, with no path, such as
 # `https://docs.example.com`. It becomes `OXYNOTE_PUBLIC_URL`. For a
 # port-forward, use `http://localhost:8080`.
