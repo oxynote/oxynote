@@ -295,8 +295,8 @@ function valueRangeOptions(
 
 		return {
 			...option,
-			apply: (view, completion, from, to) => {
-				const end = valueEnd(view.state.doc.toString(), to, quote, split)
+			apply: (view, completion, from, _to) => {
+				const end = valueEnd(view.state.doc.toString(), from, quote, split)
 
 				view.dispatch({
 					...insertCompletionText(view.state, applied, from, end),

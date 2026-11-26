@@ -270,6 +270,29 @@ describe("useLogQLQueryExtension", () => {
 			expect(applied).toBe('{app=~"api"}')
 		})
 
+		it("keeps an escape before the cursor when it finds the end", async ({
+			expect,
+		}) => {
+			const { complete } = makeComplete()
+			const marked = '{app=~"a\\¦"suffix", env="prod"}'
+			const doc = marked.replace("¦", "")
+			const pos = marked.indexOf("¦")
+
+			const { options, from } = await complete(marked)
+			const option = options.find((o) => o.label === "api")
+
+			expect(option).toBeDefined()
+			expect(from).not.toBeNull()
+
+			if (!option || from === null) {
+				throw new Error("expected the api completion")
+			}
+
+			const applied = applyCompletion(option, doc, from, pos)
+
+			expect(applied).toBe('{app=~"api", env="prod"}')
+		})
+
 		it.for([
 			{ name: "an escaped pipe", doc: '{app=~"api\\|v1¦"}' },
 			{ name: "a group", doc: '{app=~"(api|v1)¦"}' },
