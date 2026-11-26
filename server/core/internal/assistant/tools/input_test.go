@@ -770,7 +770,25 @@ func Test_input_FetchDocument(t *testing.T) {
 	cc := map[string]struct {
 		DB  *DBMock
 		Err error
+		ID  xid.ID
 	}{
+		"Branch id passed as document id": {
+			DB: func() *DBMock {
+				db := stubDocumentDB()
+				db.FetchDocumentFunc = func(context.Context, xid.ID, string, string) (*document.Document, error) {
+					return nil, errutil.ErrNotFound
+				}
+				db.FetchDocumentByBranchIDFunc = func(_ context.Context, branchID xid.ID, orgID string) (*document.Document, error) {
+					if branchID == _stubBranchID {
+						return stubBranchDocument(_testDocID, orgID, branchID, _stubBranchName), nil
+					}
+					return nil, errutil.ErrNotFound
+				}
+				return db
+			}(),
+			ID:  _stubBranchID,
+			Err: branchAsDocumentError{branchID: _stubBranchID, docID: _testDocID, docName: _stubDocumentName},
+		},
 		"Error returned by db.FetchDocument": {
 			DB:  failingDocumentDB(),
 			Err: assert.AnError,
@@ -790,7 +808,7 @@ func Test_input_FetchDocument(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			doc, err := testDeps(c.DB, nil, nil).newInput(context.Background(), NameGetDocument).FetchDocument(_testDocID)
+			doc, err := testDeps(c.DB, nil, nil).newInput(context.Background(), NameGetDocument).FetchDocument(c.ID)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, c.DB.FetchDocumentCalls(), 1)
@@ -812,9 +830,11 @@ func Test_input_FetchBranch(t *testing.T) {
 		DB       *DBMock
 		Branch   xid.ID
 		Result   string
+		Fetches  int
 		Listings int
 		Err      error
 	}{
+
 		"Error returned by db.FetchDocumentByBranchID": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
@@ -837,6 +857,7 @@ func Test_input_FetchBranch(t *testing.T) {
 				},
 			},
 			Branch:   _unknownBranchID,
+			Fetches:  2,
 			Listings: 1,
 			Err:      ErrUnknownDocument,
 		},
@@ -876,7 +897,7 @@ func Test_input_FetchBranch(t *testing.T) {
 			doc, err := inp.FetchBranch(_testDocID, c.Branch)
 			testutil.AssertEqualError(t, c.Err, err)
 
-			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), 1)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), max(c.Fetches, 1))
 			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), c.Listings)
 
 			if err != nil {
@@ -891,7 +912,7 @@ func Test_input_FetchBranch(t *testing.T) {
 			again, err := inp.FetchBranch(_testDocID, c.Branch)
 			require.NoError(t, err)
 			assert.Same(t, doc, again)
-			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), 1)
+			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), max(c.Fetches, 1))
 
 			_, err = inp.FetchBranch(xid.New(), c.Branch)
 			require.Error(t, err)
@@ -899,6 +920,48 @@ func Test_input_FetchBranch(t *testing.T) {
 			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), 1)
 		})
 	}
+}
+
+func Test_input_unknownDocumentError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Branch id names its document and unwraps to ErrUnknownDocument", func(t *testing.T) {
+		t.Parallel()
+
+		db := stubDocumentDB()
+		err := testDeps(db, nil, nil).newInput(context.Background(), NameGetDocument).unknownDocumentError(_stubBranchID)
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrUnknownDocument)
+		assert.Equal(
+			t,
+			fmt.Sprintf("id %s is a branch of document %s (%q); pass %s as document_id and %s as branch_id",
+				_stubBranchID, _testDocID, _stubDocumentName, _testDocID, _stubBranchID),
+			err.Error(),
+		)
+		assert.NotContains(t, err.Error(), "list_documents")
+		assert.Len(t, db.FetchDocumentByBranchIDCalls(), 1)
+	})
+
+	t.Run("Unknown id returns ErrUnknownDocument", func(t *testing.T) {
+		t.Parallel()
+
+		db := stubDocumentDB()
+		err := testDeps(db, nil, nil).newInput(context.Background(), NameGetDocument).unknownDocumentError(_unknownBranchID)
+
+		testutil.AssertEqualError(t, ErrUnknownDocument, err)
+		assert.Len(t, db.FetchDocumentByBranchIDCalls(), 1)
+	})
+
+	t.Run("Error returned by db.FetchDocumentByBranchID", func(t *testing.T) {
+		t.Parallel()
+
+		db := failingDocumentDB()
+		err := testDeps(db, nil, nil).newInput(context.Background(), NameGetDocument).unknownDocumentError(_stubBranchID)
+
+		testutil.AssertEqualError(t, assert.AnError, err)
+		assert.Len(t, db.FetchDocumentByBranchIDCalls(), 1)
+	})
 }
 
 func Test_input_unknownBranchError(t *testing.T) {
@@ -944,6 +1007,7 @@ func Test_input_FetchDocumentBranches(t *testing.T) {
 		Result []document.BranchSummary
 		Err    error
 	}{
+
 		"Error returned by db.FetchDocumentBranches": {
 			DB: &DBMock{
 				FetchDocumentBranchesFunc: func(context.Context, xid.ID, string) ([]document.BranchSummary, error) {

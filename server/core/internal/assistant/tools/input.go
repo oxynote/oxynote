@@ -64,6 +64,27 @@ var _errUnknownParent = errors.New("no document with that id to use as parent; c
 // discover that a document exists elsewhere.
 var ErrUnknownDocument = errors.New("no document with that id in this organisation; call list_documents for the ids that exist")
 
+// branchAsDocumentError is returned when a document_id names a branch
+// in the organisation. It unwraps to ErrUnknownDocument so callers
+// classifying missing documents (such as MCP resource reads) still
+// treat it as not found without appending ErrUnknownDocument's text.
+type branchAsDocumentError struct {
+	branchID xid.ID
+	docID    xid.ID
+	docName  string
+}
+
+func (e branchAsDocumentError) Error() string {
+	return fmt.Sprintf(
+		"id %s is a branch of document %s (%q); pass %s as document_id and %s as branch_id",
+		e.branchID, e.docID, e.docName, e.docID, e.branchID,
+	)
+}
+
+func (e branchAsDocumentError) Unwrap() error {
+	return ErrUnknownDocument
+}
+
 // _errBranchProtected is what a content write reports for a branch that
 // is protected. Reading it stays allowed; the caller is told which of
 // the document's branches would take the write instead.
@@ -310,13 +331,38 @@ func (i *input) FetchDocument(documentID xid.ID) (*document.Document, error) {
 	doc, err := i.db.FetchDocument(i.ctx, documentID, i.orgID, document.DefaultBranch)
 	if err != nil {
 		if errutil.IsNotFound(err) {
-			return nil, ErrUnknownDocument
+			return nil, i.unknownDocumentError(documentID)
 		}
 
 		return nil, err
 	}
 
 	return doc, nil
+}
+
+// unknownDocumentError returns the error for a document_id that names
+// no document in the session's organisation. When the id names one of
+// the organisatin's branches instead, the error names the document it
+// belongs to so the callers can recover without listing every document.
+func (i *input) unknownDocumentError(id xid.ID) error {
+	doc, err := i.db.FetchDocumentByBranchID(i.ctx, id, i.orgID)
+	if err != nil {
+		if errutil.IsNotFound(err) {
+			return ErrUnknownDocument
+		}
+
+		return err
+	}
+
+	if doc == nil {
+		return ErrUnknownDocument
+	}
+
+	return branchAsDocumentError{
+		branchID: id,
+		docID:    doc.ID,
+		docName:  doc.DocumentName,
+	}
 }
 
 // FetchBranch returns the document on the branch branchID names. A branch id
@@ -372,7 +418,7 @@ func (i *input) FetchDocumentBranches(documentID xid.ID) ([]document.BranchSumma
 	}
 
 	if len(branches) == 0 {
-		return nil, ErrUnknownDocument
+		return nil, i.unknownDocumentError(documentID)
 	}
 
 	return branches, nil
@@ -450,7 +496,12 @@ func (i *input) FetchDocumentChildren(parentID null.Value[xid.ID]) (document.Sum
 
 	if cerr := i.db.CheckDocumentExists(i.ctx, parentID.V, i.orgID); cerr != nil {
 		if errutil.IsNotFound(cerr) {
-			return nil, fmt.Errorf("parent %s: %w", parentID.V, ErrUnknownDocument)
+			err := i.unknownDocumentError(parentID.V)
+			if errors.Is(err, ErrUnknownDocument) {
+				return nil, fmt.Errorf("parent %s: %w", parentID.V, err)
+			}
+
+			return nil, fmt.Errorf("checking parent: %w", err)
 		}
 
 		return nil, fmt.Errorf("checking parent: %w", cerr)
@@ -529,7 +580,7 @@ func (i *input) DeleteDocument(id xid.ID) error {
 	}
 
 	if len(ids) == 0 {
-		return ErrUnknownDocument
+		return i.unknownDocumentError(id)
 	}
 
 	for _, id := range ids {
