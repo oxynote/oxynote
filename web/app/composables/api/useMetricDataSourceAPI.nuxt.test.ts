@@ -5,10 +5,10 @@ import {
 	mockEndpoint,
 	runInApp,
 } from "./test-helpers"
-import usePrometheusDataSourceAPI from "./usePrometheusDataSourceAPI"
+import useMetricDataSourceAPI from "./useMetricDataSourceAPI"
 
 function makePrometheusDataSourceAPI() {
-	return runInApp(() => usePrometheusDataSourceAPI())
+	return runInApp(() => useMetricDataSourceAPI())
 }
 
 const FROM = "2026-01-01T00:00:00.000Z"
@@ -23,14 +23,14 @@ const TIME_RANGE = {
 // creating a query with a truthy enabled condition eagerly loads it once;
 // refresh() joins that in-flight load (or reuses its fresh result) instead
 // of forcing a second request, which keeps the call accounting deterministic
-describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
+describe("useMetricDataSourceAPI", { concurrent: false }, () => {
 	// the tests share the app-wide query cache and the test-time endpoint
 	// registry, so they cannot interleave
 	beforeEach(clearQueryCache)
 
 	afterEach(disposeMockEndpoints)
 
-	describe("usePrometheusMetadata", () => {
+	describe("useMetricMetadata", () => {
 		it("returns null without a data source id", async ({ expect }) => {
 			const metadataCalls = mockEndpoint(
 				"GET",
@@ -38,7 +38,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 				() => ({ result: {} }),
 			)
 			const api = makePrometheusDataSourceAPI()
-			const metadata = runInApp(() => api.usePrometheusMetadata(null, true))
+			const metadata = runInApp(() => api.useMetricMetadata(null, true))
 
 			const result = await metadata.refresh()
 
@@ -56,7 +56,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 				() => metadataResult,
 			)
 			const api = makePrometheusDataSourceAPI()
-			const metadata = runInApp(() => api.usePrometheusMetadata("ds1", true))
+			const metadata = runInApp(() => api.useMetricMetadata("ds1", true))
 
 			const result = await metadata.refresh()
 
@@ -66,7 +66,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 		})
 	})
 
-	describe("usePrometheusLabels", () => {
+	describe("useMetricLabels", () => {
 		it("returns null without matchers", async ({ expect }) => {
 			const labelCalls = mockEndpoint(
 				"GET",
@@ -75,7 +75,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 			)
 			const api = makePrometheusDataSourceAPI()
 			const labels = runInApp(() =>
-				api.usePrometheusLabels("ds1", { ...TIME_RANGE }, true),
+				api.useMetricLabels("ds1", { ...TIME_RANGE }, true),
 			)
 
 			const result = await labels.refresh()
@@ -92,7 +92,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 			)
 			const api = makePrometheusDataSourceAPI()
 			const labels = runInApp(() =>
-				api.usePrometheusLabels(
+				api.useMetricLabels(
 					"ds1",
 					{ matchers: ["up", "node_load1"], ...TIME_RANGE },
 					true,
@@ -122,9 +122,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 				variableValues: { env: "prod" },
 			})
 			const api = makePrometheusDataSourceAPI()
-			const lookup = runInApp(() =>
-				api.usePrometheusLabels("ds1", params, true),
-			)
+			const lookup = runInApp(() => api.useMetricLabels("ds1", params, true))
 			await lookup.refresh()
 
 			params.value = { ...params.value, variableValues: { env: "dev" } }
@@ -141,7 +139,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 		})
 	})
 
-	describe("usePrometheusLabelValues", () => {
+	describe("useMetricLabelValues", () => {
 		it("returns null without a label", async ({ expect }) => {
 			const valueCalls = mockEndpoint(
 				"GET",
@@ -150,7 +148,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 			)
 			const api = makePrometheusDataSourceAPI()
 			const values = runInApp(() =>
-				api.usePrometheusLabelValues("ds1", { label: "", ...TIME_RANGE }, true),
+				api.useMetricLabelValues("ds1", { label: "", ...TIME_RANGE }, true),
 			)
 
 			const result = await values.refresh()
@@ -167,11 +165,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 			)
 			const api = makePrometheusDataSourceAPI()
 			const values = runInApp(() =>
-				api.usePrometheusLabelValues(
-					"ds1",
-					{ label: "job", ...TIME_RANGE },
-					true,
-				),
+				api.useMetricLabelValues("ds1", { label: "job", ...TIME_RANGE }, true),
 			)
 
 			const result = await values.refresh()
@@ -191,7 +185,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 			)
 			const api = makePrometheusDataSourceAPI()
 			const values = runInApp(() =>
-				api.usePrometheusLabelValues(
+				api.useMetricLabelValues(
 					"ds1",
 					{ label: "job", matchers: ["up", "node_load1"], ...TIME_RANGE },
 					true,
@@ -223,7 +217,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 			})
 			const api = makePrometheusDataSourceAPI()
 			const lookup = runInApp(() =>
-				api.usePrometheusLabelValues("ds1", params, true),
+				api.useMetricLabelValues("ds1", params, true),
 			)
 			await lookup.refresh()
 
@@ -241,7 +235,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 		})
 	})
 
-	describe("usePrometheusSeries", () => {
+	describe("useMetricSeries", () => {
 		it("returns null without matchers", async ({ expect }) => {
 			const seriesCalls = mockEndpoint(
 				"GET",
@@ -250,7 +244,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 			)
 			const api = makePrometheusDataSourceAPI()
 			const series = runInApp(() =>
-				api.usePrometheusSeries("ds1", { matchers: [], ...TIME_RANGE }, true),
+				api.useMetricSeries("ds1", { matchers: [], ...TIME_RANGE }, true),
 			)
 
 			const result = await series.refresh()
@@ -270,7 +264,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 			)
 			const api = makePrometheusDataSourceAPI()
 			const series = runInApp(() =>
-				api.usePrometheusSeries(
+				api.useMetricSeries(
 					"ds1",
 					{ matchers: ["up", "node_load1"], ...TIME_RANGE },
 					true,
@@ -300,9 +294,7 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 				variableValues: { env: "prod" },
 			})
 			const api = makePrometheusDataSourceAPI()
-			const lookup = runInApp(() =>
-				api.usePrometheusSeries("ds1", params, true),
-			)
+			const lookup = runInApp(() => api.useMetricSeries("ds1", params, true))
 			await lookup.refresh()
 
 			params.value = { ...params.value, variableValues: { env: "dev" } }

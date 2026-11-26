@@ -44,8 +44,8 @@ export function stubPrometheusAPI(mock: Mock, data: PrometheusStubData = {}) {
 	} = {}
 
 	mock.mockReturnValue({
-		usePrometheusMetadata: () => api.metadata,
-		usePrometheusLabels: (
+		useMetricMetadata: () => api.metadata,
+		useMetricLabels: (
 			_id: unknown,
 			params: MaybeRefOrGetter<PrometheusLabelParams | null | undefined>,
 		) => {
@@ -53,7 +53,7 @@ export function stubPrometheusAPI(mock: Mock, data: PrometheusStubData = {}) {
 
 			return api.labels
 		},
-		usePrometheusLabelValues: (
+		useMetricLabelValues: (
 			_id: unknown,
 			params: Ref<PrometheusLabelValuesParams | null | undefined>,
 		) => {
@@ -61,7 +61,7 @@ export function stubPrometheusAPI(mock: Mock, data: PrometheusStubData = {}) {
 
 			return api.labelValues
 		},
-		usePrometheusSeries: (
+		useMetricSeries: (
 			_id: unknown,
 			params: MaybeRefOrGetter<PrometheusSeriesParams | null | undefined>,
 		) => {

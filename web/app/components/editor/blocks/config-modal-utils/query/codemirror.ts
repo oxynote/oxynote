@@ -200,6 +200,14 @@ export function useQueryEditorExtension(
 		() => selectedDataSourceType.value === DataSourceType.Prometheus,
 		variables,
 	)
+	const metricsqlExtension = usePromQLQueryExtension(
+		t,
+		dataSourceId,
+		timeRange,
+		() => selectedDataSourceType.value === DataSourceType.VictoriaMetrics,
+		variables,
+		"metricsql",
+	)
 	const sqlExtension = useSQLQueryExtension(
 		t,
 		dataSourceId,
@@ -228,6 +236,8 @@ export function useQueryEditorExtension(
 			switch (selectedDataSourceType.value) {
 				case DataSourceType.Prometheus:
 					return promqlExtension.extensions.value
+				case DataSourceType.VictoriaMetrics:
+					return metricsqlExtension.extensions.value
 				case DataSourceType.Loki:
 					return logqlExtension.extensions.value
 				case DataSourceType.VictoriaLogs:
@@ -272,6 +282,14 @@ export function useLegendEditorExtension(
 		() => selectedDataSourceType.value === DataSourceType.Prometheus,
 		variables,
 	)
+	const metricsqlExtension = usePromQLLegendExtension(
+		query,
+		dataSourceId,
+		timeRange,
+		() => selectedDataSourceType.value === DataSourceType.VictoriaMetrics,
+		variables,
+		"metricsql",
+	)
 	const sqlExtension = useSQLLegendExtension(
 		query,
 		dataSourceId,
@@ -284,6 +302,8 @@ export function useLegendEditorExtension(
 		switch (selectedDataSourceType.value) {
 			case DataSourceType.Prometheus:
 				return await promqlExtension.fetchAllLabelNames()
+			case DataSourceType.VictoriaMetrics:
+				return await metricsqlExtension.fetchAllLabelNames()
 			default:
 				if (isDataSourceSQLBased(selectedDataSourceType.value)) {
 					return await sqlExtension.fetchAllLabelNames()
@@ -297,6 +317,8 @@ export function useLegendEditorExtension(
 		switch (selectedDataSourceType.value) {
 			case DataSourceType.Prometheus:
 				return await promqlExtension.fetchExampleLabelValues()
+			case DataSourceType.VictoriaMetrics:
+				return await metricsqlExtension.fetchExampleLabelValues()
 			default:
 				if (isDataSourceSQLBased(selectedDataSourceType.value)) {
 					return await sqlExtension.fetchExampleLabelValues()

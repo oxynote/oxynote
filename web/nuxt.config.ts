@@ -132,6 +132,7 @@ export default defineNuxtConfig({
 			mysqlReadOnlyUserSetupGuideURL: "",
 			mariadbReadOnlyUserSetupGuideURL: "",
 			prometheusQueryGuideURL: "",
+			victoriametricsQueryGuideURL: "",
 			postgresqlQueryGuideURL: "",
 			mysqlQueryGuideURL: "",
 			mariadbQueryGuideURL: "",

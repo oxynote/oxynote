@@ -10,29 +10,34 @@ const props = withDefaults(
 		size: "8.5",
 	},
 )
-const icon = computed(() => {
+const icon = computed((): { name: string; class?: string } => {
 	if (!props.dataSource) {
-		return "devicon:prometheus"
+		return { name: "devicon:prometheus" }
 	}
 
 	switch (props.dataSource.type) {
 		case DataSourceType.Prometheus:
-			return "devicon:prometheus"
+			return { name: "devicon:prometheus" }
+		case DataSourceType.VictoriaMetrics:
+			return {
+				name: "simple-icons:victoriametrics",
+				class: "text-data-source-victoriametrics",
+			}
 		case DataSourceType.Loki:
-			return "custom-icons:loki"
+			return { name: "custom-icons:loki" }
 		case DataSourceType.VictoriaLogs:
-			return "custom-icons:victoria-logs"
+			return { name: "custom-icons:victoria-logs" }
 		case DataSourceType.PostgreSQL:
-			return "devicon:postgresql"
+			return { name: "devicon:postgresql" }
 		case DataSourceType.Supabase:
-			return "devicon:supabase"
+			return { name: "devicon:supabase" }
 		case DataSourceType.MySQL:
-			return "devicon:mysql"
+			return { name: "devicon:mysql" }
 		case DataSourceType.MariaDB:
-			return "devicon:mariadb"
+			return { name: "devicon:mariadb" }
 		default:
 			// a newer server may send a type this build does not know
-			return "devicon:prometheus"
+			return { name: "devicon:prometheus" }
 	}
 })
 </script>
@@ -59,8 +64,13 @@ const icon = computed(() => {
 		"
 	>
 		<Icon
-			:name="icon"
-			class="size-full shrink-0 rounded-full border border-background"
+			:name="icon.name"
+			:class="
+				cn(
+					'size-full shrink-0 rounded-full border border-background',
+					icon.class,
+				)
+			"
 		/>
 		<div
 			:class="

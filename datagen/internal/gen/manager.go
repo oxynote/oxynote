@@ -1,9 +1,10 @@
 // Package gen generates the mock engineering-culture metrics the demo
-// Prometheus scrapes.
+// VictoriaMetrics scrapes.
 package gen
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math/rand"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // _genInterval defines how often metrics are refreshed.
@@ -73,6 +75,9 @@ type Manager struct {
 
 	// log is the structured logger.
 	log *slog.Logger
+
+	// g gathers the gauges, so a backfill can read each tick back.
+	g prometheus.Gatherer
 
 	// interval defines how often metrics are refreshed.
 	interval time.Duration
@@ -172,6 +177,7 @@ func NewManager(fc metricutil.Factory, log *slog.Logger) *Manager {
 	return &Manager{
 		r:        mockmetrics.NewRand(timeutil.Now().UnixNano()),
 		log:      log,
+		g:        fc,
 		interval: _genInterval,
 		// Temporary fix age by comment type — hacks accumulate and never leave.
 		tempFixAgeTemp: newContinuous(mockmetrics.GaugeParams{
@@ -485,6 +491,31 @@ func (m *Manager) Run(ctx context.Context) {
 	).Start(ctx)
 }
 
+// Backfill generates the history Run would have produced, one tick per
+// interval between from and to, and writes each tick to w at its time. The
+// gauges keep the last tick's state, so a Run started afterwards carries on
+// from it.
+func (m *Manager) Backfill(ctx context.Context, from, to time.Time, w SampleWriter) error {
+	for t := from; t.Before(to); t = t.Add(m.interval) {
+		m.generateData()
+
+		ff, err := m.g.Gather()
+		if err != nil {
+			return fmt.Errorf("gathering metrics: %w", err)
+		}
+
+		if err := w.WriteSamples(ctx, t, ff); err != nil {
+			return fmt.Errorf("writing samples: %w", err)
+		}
+	}
+
+	if err := w.Flush(ctx); err != nil {
+		return fmt.Errorf("flushing samples: %w", err)
+	}
+
+	return nil
+}
+
 // countBucket specifies the sampling parameters of one labelled bucket of a
 // gauge that is resampled from scratch on every tick.
 type countBucket struct {
@@ -608,4 +639,15 @@ func (m *Manager) generateData() {
 	m.womMachineRate.With(prometheus.Labels{"platform": "my_special_setup"}).Set(m.womSpecialSetup.tick(r))
 
 	m.log.Debug("mock metrics generated")
+}
+
+// SampleWriter writes ticks of gathered metrics at the time they stand for.
+//
+//go:generate ../../../server/core/scripts/codegen/mock -t internal SampleWriter samplewriter
+type SampleWriter interface {
+	// WriteSamples should write every sample of ff with the timestamp t.
+	WriteSamples(ctx context.Context, t time.Time, ff []*dto.MetricFamily) error
+
+	// Flush should send the samples it still holds.
+	Flush(ctx context.Context) error
 }

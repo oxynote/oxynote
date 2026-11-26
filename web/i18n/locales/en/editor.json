@@ -573,6 +573,7 @@
 				"default": "Enter a query...",
 				"empty": "[empty]",
 				"prometheus": "Enter a PromQL query...",
+				"victoriametrics": "Enter a MetricsQL query...",
 				"loki": "Enter a LogQL query...",
 				"victorialogs": "Enter a LogsQL query...",
 				"postgresql": "Enter a SQL query...",
@@ -663,7 +664,7 @@
 						"examples-title": "Examples",
 						"examples": {
 							"example-1": {
-								"description": "{query} - latest request counter values for only {method} requests from the {service} service",
+								"description": "{query}: the latest request counter values, only for {method} requests from the {service} service",
 								"placeholders": {
 									"query": "http_requests_total{'{'}service=\"api\", method=\"GET\"{'}'}",
 									"method": "GET",
@@ -671,9 +672,37 @@
 								}
 							},
 							"example-2": {
-								"description": "{query} - total request rate grouped by {service}, useful for multi-series charts",
+								"description": "{query}: the total request rate per {service}, useful for multi-series charts",
 								"placeholders": {
 									"query": "sum by (service) (rate(http_requests_total{'{'}method=\"GET\"{'}'}[5m]))",
+									"service": "service"
+								}
+							}
+						}
+					},
+					"victoriametrics": {
+						"main": "{metricsql-queries}, which accepts PromQL and adds functions of its own. Use a metric name to fetch series, {label-filter} to filter by labels, and functions such as {rate-function} to calculate changes over time. A range selector like {range-selector} is optional, because VictoriaMetrics picks the window from the step when you leave it out. Read more in the {official-docs}.",
+						"main-placeholders": {
+							"metricsql-queries": "VictoriaMetrics queries use MetricsQL",
+							"label-filter": "{'{'}...{'}'}",
+							"range-selector": "[5m]",
+							"rate-function": "rate()",
+							"official-docs": "VictoriaMetrics docs"
+						},
+						"examples-title": "Examples",
+						"examples": {
+							"example-1": {
+								"description": "{query}: the latest request counter values, only for {method} requests from the {service} service",
+								"placeholders": {
+									"query": "http_requests_total{'{'}service=\"api\", method=\"GET\"{'}'}",
+									"method": "GET",
+									"service": "api"
+								}
+							},
+							"example-2": {
+								"description": "{query}: the request rate per {service}, with no range selector, so the window follows the step",
+								"placeholders": {
+									"query": "sum by (service) (rate(http_requests_total{'{'}method=\"GET\"{'}'}))",
 									"service": "service"
 								}
 							}

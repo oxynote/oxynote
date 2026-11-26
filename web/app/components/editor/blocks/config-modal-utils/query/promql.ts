@@ -10,6 +10,7 @@ import type {
 } from "@codemirror/autocomplete"
 import { parser } from "@prometheus-io/lezer-promql"
 import type { EditorState } from "@codemirror/state"
+import { metricsqlParser, type PromQLDialect } from "~/utils/promql"
 import { resolveTimeRange, TimeRangePreset } from "~/utils/time-range"
 import type { VariableTreeResponse } from "~/utils"
 import { referencedVariableValues } from "~/utils/variable"
@@ -17,6 +18,7 @@ import {
 	TYPED_VARIABLE_PATTERN,
 	variableCompletions,
 } from "./variable-completion"
+import { metricsqlLanguage, withMetricsQLCompletions } from "./metricsql"
 
 const MATCHER_PROCESSING_DEBOUNCE_MS = 700
 const PROMQL_DURATION_UNITS = new Set(["ms", "s", "m", "h", "d", "w", "y"])
@@ -75,9 +77,16 @@ function bracketContext(ctx: CompletionContext) {
 // variable there: a slot that takes a value, a label name or a metric name
 // parses it, while a keyword or an operator position turns it into an
 // error. A string takes any text, so it takes a variable too.
-function acceptsVariable(state: EditorState, from: number, to: number) {
+function acceptsVariable(
+	state: EditorState,
+	from: number,
+	to: number,
+	dialect: PromQLDialect,
+) {
 	const probe = `${state.sliceDoc(0, from)}$x${state.sliceDoc(to)}`
-	const node = parser.parse(probe).resolveInner(from + 1, 1)
+	const node = (dialect === "metricsql" ? metricsqlParser : parser)
+		.parse(probe)
+		.resolveInner(from + 1, 1)
 	if (node.name === "StringLiteral") {
 		return true
 	}
@@ -89,14 +98,14 @@ function acceptsVariable(state: EditorState, from: number, to: number) {
 // typed so far, or at the cursor before anything is typed. Null when the
 // cursor is in the middle of another word or the grammar has no place for
 // a variable there.
-function variableSlot(ctx: CompletionContext) {
+function variableSlot(ctx: CompletionContext, dialect: PromQLDialect) {
 	const typed = ctx.matchBefore(TYPED_VARIABLE_PATTERN)
 	if (!typed && ctx.matchBefore(/[\w:]+$/)) {
 		return null
 	}
 
 	const from = typed?.from ?? ctx.pos
-	if (!acceptsVariable(ctx.state, from, ctx.pos)) {
+	if (!acceptsVariable(ctx.state, from, ctx.pos, dialect)) {
 		return null
 	}
 
@@ -124,61 +133,68 @@ function makeWrappedCompleteStrategy(
 	base: CompleteStrategy,
 	t: (key: string) => string,
 	variables: MaybeRefOrGetter<VariableTreeResponse>,
+	dialect: PromQLDialect,
 ): CompleteStrategy {
-	return {
-		promQL: async (
-			ctx: CompletionContext,
-		): Promise<CompletionResult | null> => {
-			const res = await base.promQL(ctx)
-			const slot = variableSlot(ctx)
-			const variableOptions = slot
-				? variableCompletions(toValue(variables), t)
-				: []
-			const bc = bracketContext(ctx)
+	async function complete(
+		ctx: CompletionContext,
+	): Promise<CompletionResult | null> {
+		const res = await base.promQL(ctx)
+		const slot = variableSlot(ctx, dialect)
+		const variableOptions = slot
+			? variableCompletions(toValue(variables), t)
+			: []
+		const bc = bracketContext(ctx)
 
-			// a typed $key only ever matches a variable, so the variables
-			// replace whatever the base offers for the same text
-			if (!bc && slot?.typed) {
-				return {
-					from: slot.from,
-					to: ctx.pos,
-					options: variableOptions,
-					validFor: TYPED_VARIABLE_PATTERN,
-				}
+		// a typed $key only ever matches a variable, so the variables
+		// replace whatever the base offers for the same text
+		if (!bc && slot?.typed) {
+			return {
+				from: slot.from,
+				to: ctx.pos,
+				options: variableOptions,
+				validFor: TYPED_VARIABLE_PATTERN,
 			}
+		}
 
-			if (!res) {
-				return res
-			}
+		if (!res) {
+			return res
+		}
 
-			// Outside [...] → return PromQL results with the variables added
-			if (!bc) {
-				return {
-					...res,
-					options: mergeDedupByLabel(res.options, variableOptions),
-				}
-			}
-
-			// never allow unit-only duration suffix completions inside [...]
-			const filtered = res.options.filter(
-				(o) => !PROMQL_DURATION_UNITS.has(o.label),
-			)
-
-			//  show presets when empty, when typing "$", or when typing a number
-			const showPresets =
-				bc.token.length === 0 ||
-				bc.token.startsWith("$") ||
-				/^\d/.test(bc.token)
-
-			const presets = showPresets ? promqlDurationPresets(t) : []
-
+		// Outside [...] → return PromQL results with the variables added
+		if (!bc) {
 			return {
 				...res,
-				from: bc.from, // keep tooltip anchored correctly inside [...]
-				to: bc.to,
-				options: mergeDedupByLabel(presets, variableOptions, filtered),
-				validFor: /^[\w$]*$/,
+				options: mergeDedupByLabel(res.options, variableOptions),
 			}
+		}
+
+		// never allow unit-only duration suffix completions inside [...]
+		const filtered = res.options.filter(
+			(o) => !PROMQL_DURATION_UNITS.has(o.label),
+		)
+
+		//  show presets when empty, when typing "$", or when typing a number
+		const showPresets =
+			bc.token.length === 0 || bc.token.startsWith("$") || /^\d/.test(bc.token)
+
+		const presets = showPresets ? promqlDurationPresets(t) : []
+
+		return {
+			...res,
+			from: bc.from, // keep tooltip anchored correctly inside [...]
+			to: bc.to,
+			options: mergeDedupByLabel(presets, variableOptions, filtered),
+			validFor: /^[\w$]*$/,
+		}
+	}
+
+	return {
+		promQL: async (ctx: CompletionContext) => {
+			const res = await complete(ctx)
+
+			return dialect === "metricsql"
+				? withMetricsQLCompletions(ctx, res, t)
+				: res
 		},
 	}
 }
@@ -189,19 +205,20 @@ export function usePromQLQueryExtension(
 	timeRange: MaybeRefOrGetter<TimeRangePreset | null | undefined>,
 	enable: MaybeRefOrGetter<boolean>,
 	variables: MaybeRefOrGetter<VariableTreeResponse>,
+	dialect: PromQLDialect = "promql",
 ) {
 	const {
-		usePrometheusMetadata,
-		usePrometheusLabels,
-		usePrometheusLabelValues,
-		usePrometheusSeries,
-	} = usePrometheusDataSourceAPI()
-	const fetchPrometheusMetadata = usePrometheusMetadata(dataSourceId, enable)
+		useMetricMetadata,
+		useMetricLabels,
+		useMetricLabelValues,
+		useMetricSeries,
+	} = useMetricDataSourceAPI()
+	const fetchPrometheusMetadata = useMetricMetadata(dataSourceId, enable)
 
 	const lastFetchPrometheusLabelsParams = ref<
 		PrometheusLabelParams | null | undefined
 	>(null)
-	const fetchPrometheusLabels = usePrometheusLabels(
+	const fetchPrometheusLabels = useMetricLabels(
 		dataSourceId,
 		lastFetchPrometheusLabelsParams,
 		enable,
@@ -210,7 +227,7 @@ export function usePromQLQueryExtension(
 	const lastFetchPrometheusLabelValuesParams = ref<
 		PrometheusLabelValuesParams | null | undefined
 	>(null)
-	const fetchPrometheusLabelValues = usePrometheusLabelValues(
+	const fetchPrometheusLabelValues = useMetricLabelValues(
 		dataSourceId,
 		lastFetchPrometheusLabelValuesParams,
 		enable,
@@ -219,7 +236,7 @@ export function usePromQLQueryExtension(
 	const lastFetchPrometheusSeriesParams = ref<
 		PrometheusSeriesParams | null | undefined
 	>(null)
-	const fetchPrometheusSeries = usePrometheusSeries(
+	const fetchPrometheusSeries = useMetricSeries(
 		dataSourceId,
 		lastFetchPrometheusSeriesParams,
 		enable,
@@ -278,19 +295,32 @@ export function usePromQLQueryExtension(
 		}),
 	})
 
+	const completeStrategy = makeWrappedCompleteStrategy(
+		basePromQL,
+		t,
+		variables,
+		dialect,
+	)
+
 	return {
-		extensions: computed(() => [
-			new PromQLExtension()
-				.activateLinter(false)
-				.setComplete({
-					completeStrategy: makeWrappedCompleteStrategy(
-						basePromQL,
-						t,
-						variables,
-					),
-				})
-				.asExtension(),
-		]),
+		extensions: computed(() => {
+			if (dialect === "metricsql") {
+				return [
+					metricsqlLanguage,
+					metricsqlLanguage.data.of({
+						autocomplete: (ctx: CompletionContext) =>
+							completeStrategy.promQL(ctx),
+					}),
+				]
+			}
+
+			return [
+				new PromQLExtension()
+					.activateLinter(false)
+					.setComplete({ completeStrategy: completeStrategy })
+					.asExtension(),
+			]
+		}),
 	}
 }
 
@@ -300,6 +330,7 @@ export function usePromQLLegendExtension(
 	timeRange: MaybeRefOrGetter<TimeRangePreset | null | undefined>,
 	enable: MaybeRefOrGetter<boolean>,
 	variables: MaybeRefOrGetter<VariableTreeResponse>,
+	dialect: PromQLDialect = "promql",
 ) {
 	const matchers = computed(() => {
 		const q = toValue(query)?.trim()
@@ -307,16 +338,15 @@ export function usePromQLLegendExtension(
 			return []
 		}
 
-		return extractPromQLSelectors(q)
+		return extractPromQLSelectors(q, dialect)
 	})
 	const debouncedMatchers = refDebounced(
 		matchers,
 		MATCHER_PROCESSING_DEBOUNCE_MS,
 	)
 
-	const { usePrometheusLabels, usePrometheusSeries } =
-		usePrometheusDataSourceAPI()
-	const fetchPrometheusLabels = usePrometheusLabels(
+	const { useMetricLabels, useMetricSeries } = useMetricDataSourceAPI()
+	const fetchPrometheusLabels = useMetricLabels(
 		dataSourceId,
 		() => {
 			const timeRangeVal = toValue(timeRange)
@@ -341,7 +371,7 @@ export function usePromQLLegendExtension(
 		enable,
 		30 * 1000, // 30 secs
 	)
-	const fetchPrometheusSeries = usePrometheusSeries(
+	const fetchPrometheusSeries = useMetricSeries(
 		dataSourceId,
 		() => {
 			const timeRangeVal = toValue(timeRange)

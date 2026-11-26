@@ -115,12 +115,13 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 
 	it.for([
 		{ index: 0, type: DataSourceType.Prometheus },
-		{ index: 1, type: DataSourceType.Loki },
-		{ index: 2, type: DataSourceType.VictoriaLogs },
-		{ index: 3, type: DataSourceType.PostgreSQL },
-		{ index: 4, type: DataSourceType.Supabase },
-		{ index: 5, type: DataSourceType.MySQL },
-		{ index: 6, type: DataSourceType.MariaDB },
+		{ index: 1, type: DataSourceType.VictoriaMetrics },
+		{ index: 2, type: DataSourceType.Loki },
+		{ index: 3, type: DataSourceType.VictoriaLogs },
+		{ index: 4, type: DataSourceType.PostgreSQL },
+		{ index: 5, type: DataSourceType.Supabase },
+		{ index: 6, type: DataSourceType.MySQL },
+		{ index: 7, type: DataSourceType.MariaDB },
 	])(
 		"asks to connect a new $type data source",
 		async ({ index, type }, { expect }) => {
@@ -134,6 +135,7 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 	)
 
 	it.for([
+		DataSourceType.VictoriaMetrics,
 		DataSourceType.Loki,
 		DataSourceType.VictoriaLogs,
 		DataSourceType.PostgreSQL,
@@ -156,6 +158,7 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 	)
 
 	it.for([
+		DataSourceType.VictoriaMetrics,
 		DataSourceType.Loki,
 		DataSourceType.VictoriaLogs,
 		DataSourceType.PostgreSQL,
@@ -256,10 +259,10 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 			expect.soft(wrapper.text()).toContain("Prod metrics")
 			// only the options menu, which holds nothing that changes the source
 			expect.soft(wrapper.findAll("button")).toHaveLength(1)
-			// the six types other than prometheus have nothing connected
+			// the seven types other than prometheus have nothing connected
 			expect
 				.soft(wrapper.text().split(t("settings.data-sources.not-connected")))
-				.toHaveLength(7)
+				.toHaveLength(8)
 		})
 
 		it("offers only the URL copy in a data source's options menu", async ({

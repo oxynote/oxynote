@@ -1,6 +1,6 @@
-const PROMETHEUS_QUERY_KEYS = {
+const METRIC_QUERY_KEYS = {
 	metadata: (dataSourceId: string) =>
-		["prometheus", dataSourceId, "metadata"] as const,
+		["metrics", dataSourceId, "metadata"] as const,
 	labels: (
 		dataSourceId: string,
 		timeRange: string,
@@ -8,7 +8,7 @@ const PROMETHEUS_QUERY_KEYS = {
 		variableValues: Record<string, string>,
 	) =>
 		[
-			"prometheus",
+			"metrics",
 			dataSourceId,
 			"labels",
 			timeRange,
@@ -22,7 +22,7 @@ const PROMETHEUS_QUERY_KEYS = {
 		variableValues: Record<string, string>,
 	) =>
 		[
-			"prometheus",
+			"metrics",
 			dataSourceId,
 			"label-values",
 			label,
@@ -36,7 +36,7 @@ const PROMETHEUS_QUERY_KEYS = {
 		variableValues: Record<string, string>,
 	) =>
 		[
-			"prometheus",
+			"metrics",
 			dataSourceId,
 			"series",
 			matchers,
@@ -48,12 +48,12 @@ const PROMETHEUS_QUERY_KEYS = {
 export default function () {
 	const { $coreAPIClient } = useNuxtApp()
 
-	function usePrometheusMetadata(
+	function useMetricMetadata(
 		dataSourceIdRef: MaybeRefOrGetter<string | null | undefined>,
 		enableFetch: MaybeRefOrGetter<boolean>,
 	) {
 		return useQuery({
-			key: () => PROMETHEUS_QUERY_KEYS.metadata(toValue(dataSourceIdRef) || ""),
+			key: () => METRIC_QUERY_KEYS.metadata(toValue(dataSourceIdRef) || ""),
 			query: async () => {
 				const dataSourceId = toValue(dataSourceIdRef)
 				if (!dataSourceId) {
@@ -77,7 +77,7 @@ export default function () {
 		})
 	}
 
-	function usePrometheusLabels(
+	function useMetricLabels(
 		dataSourceIdRef: MaybeRefOrGetter<string | null | undefined>,
 		paramsRef: MaybeRefOrGetter<PrometheusLabelParams | null | undefined>,
 		enableFetch: MaybeRefOrGetter<boolean>,
@@ -85,7 +85,7 @@ export default function () {
 	) {
 		return useQuery({
 			key: () =>
-				PROMETHEUS_QUERY_KEYS.labels(
+				METRIC_QUERY_KEYS.labels(
 					toValue(dataSourceIdRef) || "",
 					toValue(paramsRef)?.timeRangeKey || "",
 					(toValue(paramsRef)?.matchers ?? []).join(","),
@@ -127,7 +127,7 @@ export default function () {
 		})
 	}
 
-	function usePrometheusLabelValues(
+	function useMetricLabelValues(
 		dataSourceIdRef: MaybeRefOrGetter<string | null | undefined>,
 		paramsRef: MaybeRefOrGetter<PrometheusLabelValuesParams | null | undefined>,
 		enableFetch: MaybeRefOrGetter<boolean>,
@@ -137,7 +137,7 @@ export default function () {
 				const dataSourceId = toValue(dataSourceIdRef)
 				const params = toValue(paramsRef)
 
-				return PROMETHEUS_QUERY_KEYS.labelValues(
+				return METRIC_QUERY_KEYS.labelValues(
 					dataSourceId || "",
 					params?.label || "",
 					params?.timeRangeKey || "",
@@ -191,7 +191,7 @@ export default function () {
 		})
 	}
 
-	function usePrometheusSeries(
+	function useMetricSeries(
 		dataSourceIdRef: MaybeRefOrGetter<string | null | undefined>,
 		paramsRef: MaybeRefOrGetter<PrometheusSeriesParams | null | undefined>,
 		enableFetch: MaybeRefOrGetter<boolean>,
@@ -202,7 +202,7 @@ export default function () {
 				const dataSourceId = toValue(dataSourceIdRef)
 				const params = toValue(paramsRef)
 
-				return PROMETHEUS_QUERY_KEYS.series(
+				return METRIC_QUERY_KEYS.series(
 					dataSourceId || "",
 					params?.matchers.join(",") || "",
 					params?.timeRangeKey || "",
@@ -253,9 +253,9 @@ export default function () {
 	}
 
 	return {
-		usePrometheusMetadata,
-		usePrometheusLabels,
-		usePrometheusLabelValues,
-		usePrometheusSeries,
+		useMetricMetadata,
+		useMetricLabels,
+		useMetricLabelValues,
+		useMetricSeries,
 	}
 }

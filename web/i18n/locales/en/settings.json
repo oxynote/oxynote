@@ -176,6 +176,7 @@
 				"title": {
 					"creation": {
 						"prometheus": "Connect Prometheus",
+						"victoriametrics": "Connect VictoriaMetrics",
 						"loki": "Connect Loki",
 						"victorialogs": "Connect VictoriaLogs",
 						"postgresql": "Connect PostgreSQL",
@@ -185,6 +186,7 @@
 					},
 					"update": {
 						"prometheus": "Update Prometheus",
+						"victoriametrics": "Update VictoriaMetrics",
 						"loki": "Update Loki",
 						"victorialogs": "Update VictoriaLogs",
 						"postgresql": "Update PostgreSQL",
@@ -196,6 +198,7 @@
 				"description": {
 					"creation": {
 						"prometheus": "Connect a new Prometheus server to use in your workspace.",
+						"victoriametrics": "Connect a new VictoriaMetrics server to use in your workspace.",
 						"loki": "Connect a new Loki server to use in your workspace.",
 						"victorialogs": "Connect a new VictoriaLogs server to use in your workspace.",
 						"postgresql": "Connect a new PostgreSQL server to use in your workspace.",
@@ -205,6 +208,7 @@
 					},
 					"update": {
 						"prometheus": "Update the settings of your Prometheus server.",
+						"victoriametrics": "Update the settings of your VictoriaMetrics server.",
 						"loki": "Update the settings of your Loki server.",
 						"victorialogs": "Update the settings of your VictoriaLogs server.",
 						"postgresql": "Update the settings of your PostgreSQL server.",
@@ -217,6 +221,10 @@
 					"prometheus": {
 						"label": "Name",
 						"placeholder": "Main Prometheus Server"
+					},
+					"victoriametrics": {
+						"label": "Name",
+						"placeholder": "Main VictoriaMetrics Server"
 					},
 					"loki": {
 						"label": "Name",
@@ -247,6 +255,10 @@
 					"prometheus": {
 						"label": "URL",
 						"placeholder": "https://prometheus.example.com:9090"
+					},
+					"victoriametrics": {
+						"label": "URL",
+						"placeholder": "https://victoriametrics.example.com:8428"
 					},
 					"loki": {
 						"label": "URL",
@@ -300,6 +312,10 @@
 						"label": "Username",
 						"placeholder": "Username"
 					},
+					"victoriametrics": {
+						"label": "Username",
+						"placeholder": "Username"
+					},
 					"loki": {
 						"label": "Username",
 						"placeholder": "Username"
@@ -327,6 +343,10 @@
 				},
 				"creds-password-field": {
 					"prometheus": {
+						"label": "Password",
+						"placeholder": "Password"
+					},
+					"victoriametrics": {
 						"label": "Password",
 						"placeholder": "Password"
 					},
@@ -457,6 +477,7 @@
 			"data-source-removal": {
 				"title": {
 					"prometheus": "Remove Prometheus Data Source",
+					"victoriametrics": "Remove VictoriaMetrics Data Source",
 					"loki": "Remove Loki Data Source",
 					"victorialogs": "Remove VictoriaLogs Data Source",
 					"postgresql": "Remove PostgreSQL Data Source",
@@ -699,6 +720,39 @@
 					"disconnect": {
 						"title": "Prometheus couldn't be disconnected",
 						"description": "An error occurred while trying to disconnect from Prometheus. Please try again"
+					}
+				}
+			},
+			"victoriametrics": {
+				"title": "VictoriaMetrics",
+				"description": "Connect your VictoriaMetrics server and use it in metric monitoring blocks in your pages",
+				"connect": "Connect",
+				"connected-label": "Connected",
+				"option-button-screen-reader-hint": "Manage Data Source",
+				"options": {
+					"update": {
+						"title": "Update"
+					},
+					"delete": {
+						"title": "Remove"
+					}
+				},
+				"status-messages": {
+					"success": "Successfully connected",
+					"unauthorized": "Authentication credentials are incorrect",
+					"unreachable": "VictoriaMetrics server is unreachable",
+					"version_not_supported": "VictoriaMetrics version not supported",
+					"invalid_encryption_key": "Stored credentials can no longer be read",
+					"invalid_ca_certificate": "CA certificate is invalid, or the connection does not use TLS"
+				},
+				"errors": {
+					"install": {
+						"title": "VictoriaMetrics data source couldn't be connected",
+						"description": "An error occurred while trying to connect to VictoriaMetrics. Please try again"
+					},
+					"disconnect": {
+						"title": "VictoriaMetrics couldn't be disconnected",
+						"description": "An error occurred while trying to disconnect from VictoriaMetrics. Please try again"
 					}
 				}
 			},

@@ -8,6 +8,7 @@ describe("isDataSourceSQLBased", () => {
 		{ type: DataSourceType.MySQL, expected: true },
 		{ type: DataSourceType.MariaDB, expected: true },
 		{ type: DataSourceType.Prometheus, expected: false },
+		{ type: DataSourceType.VictoriaMetrics, expected: false },
 		{ type: DataSourceType.Loki, expected: false },
 		{ type: DataSourceType.VictoriaLogs, expected: false },
 		{ type: null, expected: false },

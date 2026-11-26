@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@prometheus-io/lezer-promql': npm:@oxynote/lezer-promql@0.314.0-oxynote.3
+  '@prometheus-io/lezer-promql': npm:@oxynote/lezer-promql@0.316.0-oxynote.1
   tar: ^7.5.22
   tmp: ^0.2.7
 
@@ -62,8 +62,8 @@ importers:
         specifier: ^1.0.3
         version: 1.0.3(@nuxt/schema@4.6.4)(confbox@0.2.4)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(magic-string@1.4.5)(mlly@1.8.2)(oxc-parser@0.141.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@6.0.3)(vue@3.5.44(typescript@6.0.3)))(rolldown@1.2.19)(unplugin@3.7.0(esbuild@0.28.2)(rolldown@1.2.19)(rollup@4.68.2)(vite@8.3.8(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.1)))
       '@prometheus-io/codemirror-promql':
-        specifier: ^0.308.0
-        version: 0.308.0(@codemirror/autocomplete@6.20.2)(@codemirror/language@6.12.3)(@codemirror/lint@6.9.6)(@codemirror/state@6.6.0)(@codemirror/view@6.43.0)(@lezer/common@1.5.2)(@lezer/highlight@1.2.3)(@lezer/lr@1.4.10)
+        specifier: ^0.316.0
+        version: 0.316.0(@codemirror/autocomplete@6.20.2)(@codemirror/language@6.12.3)(@codemirror/lint@6.9.6)(@codemirror/state@6.6.0)(@codemirror/view@6.43.0)(@lezer/common@1.5.2)(@lezer/highlight@1.2.3)(@lezer/lr@1.4.10)
       '@sentry/nuxt':
         specifier: ^11.11.0
         version: 11.12.0(63823e90eac70de803c8066af98733d3)
@@ -2545,8 +2545,8 @@ packages:
       '@lezer/highlight': ^1.0.0
       '@lezer/lr': ^1.4.0
 
-  '@oxynote/lezer-promql@0.314.0-oxynote.3':
-    resolution: {integrity: sha512-pdB2Tpv0hZnYQESDAlmMpf8kURMvl1lYRCjvfiNhRkyQ1tK7GQECviuaogBGMFtG59i3nnE/pqpJipgXxyapaw==}
+  '@oxynote/lezer-promql@0.316.0-oxynote.1':
+    resolution: {integrity: sha512-GF4mh+DY5+H0HaHSm/tdzWnBekWfJzqgq30wMl6BZqJcTMfwCF5FXW9ADDykJB2Rx+ap73P+vxtNH949DYiKtg==}
     peerDependencies:
       '@lezer/highlight': ^1.1.2
       '@lezer/lr': ^1.2.3
@@ -2602,8 +2602,8 @@ packages:
   '@poppinss/exception@1.2.3':
     resolution: {integrity: sha512-dCED+QRChTVatE9ibtoaxc+WkdzOSjYTKi/+uacHWIsfodVfpsueo3+DKpgU5Px8qXjgmXkSvhXvSCz3fnP9lw==}
 
-  '@prometheus-io/codemirror-promql@0.308.0':
-    resolution: {integrity: sha512-jdmrgTC7Rwn945AQw8PokJta2WPXMKk3N+A9rFXDcmMiv3l32LcMX6asuUcca5TiVSVKo2vpXlE1DaAPn+SCxA==}
+  '@prometheus-io/codemirror-promql@0.316.0':
+    resolution: {integrity: sha512-+LdFp6hFy3WII/GRKrO0HEuRn0KZK73kj1/82pQBpeXcm0pbR/1KCVAj/K3B2HK9ocicmgm2HVoPmk7S3A6tUA==}
     engines: {node: '>=12.0.0'}
     peerDependencies:
       '@codemirror/autocomplete': ^6.4.0
@@ -11147,7 +11147,7 @@ snapshots:
       '@lezer/highlight': 1.2.3
       '@lezer/lr': 1.4.10
 
-  '@oxynote/lezer-promql@0.314.0-oxynote.3(@lezer/highlight@1.2.3)(@lezer/lr@1.4.10)':
+  '@oxynote/lezer-promql@0.316.0-oxynote.1(@lezer/highlight@1.2.3)(@lezer/lr@1.4.10)':
     dependencies:
       '@lezer/highlight': 1.2.3
       '@lezer/lr': 1.4.10
@@ -11218,7 +11218,7 @@ snapshots:
 
   '@poppinss/exception@1.2.3': {}
 
-  '@prometheus-io/codemirror-promql@0.308.0(@codemirror/autocomplete@6.20.2)(@codemirror/language@6.12.3)(@codemirror/lint@6.9.6)(@codemirror/state@6.6.0)(@codemirror/view@6.43.0)(@lezer/common@1.5.2)(@lezer/highlight@1.2.3)(@lezer/lr@1.4.10)':
+  '@prometheus-io/codemirror-promql@0.316.0(@codemirror/autocomplete@6.20.2)(@codemirror/language@6.12.3)(@codemirror/lint@6.9.6)(@codemirror/state@6.6.0)(@codemirror/view@6.43.0)(@lezer/common@1.5.2)(@lezer/highlight@1.2.3)(@lezer/lr@1.4.10)':
     dependencies:
       '@codemirror/autocomplete': 6.20.2
       '@codemirror/language': 6.12.3
@@ -11226,7 +11226,7 @@ snapshots:
       '@codemirror/state': 6.6.0
       '@codemirror/view': 6.43.0
       '@lezer/common': 1.5.2
-      '@prometheus-io/lezer-promql': '@oxynote/lezer-promql@0.314.0-oxynote.3(@lezer/highlight@1.2.3)(@lezer/lr@1.4.10)'
+      '@prometheus-io/lezer-promql': '@oxynote/lezer-promql@0.316.0-oxynote.1(@lezer/highlight@1.2.3)(@lezer/lr@1.4.10)'
       lru-cache: 11.5.3
     transitivePeerDependencies:
       - '@lezer/highlight'

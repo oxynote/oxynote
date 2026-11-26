@@ -403,7 +403,9 @@ LogsQL grammar with the same two additions. All three are published
 packages. The PromQL fork reaches the app through a pnpm override in
 [pnpm-workspace.yaml](pnpm-workspace.yaml), so
 `@prometheus-io/codemirror-promql` resolves it too. The other two are plain
-dependencies. A grammar change is a release from its own repo, then a
+dependencies. The PromQL fork's `metricsql` dialect parses VictoriaMetrics
+queries. The PromQL editor takes it as an option, and `metricsql.ts` adds
+MetricsQL's functions and keywords. A grammar change is a release from its own repo, then a
 bump in the override or `package.json`, and in `minimumReleaseAgeExclude`.
 
 ## Electron packaging

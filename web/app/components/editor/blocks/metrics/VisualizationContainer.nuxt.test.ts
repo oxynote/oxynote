@@ -204,6 +204,19 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 		)
 	})
 
+	it("sends no query while it is blank", async ({ expect }) => {
+		const calls = mockEndpoint("GET", QUERY_URL, () => seriesResult())
+
+		await mountContainer(
+			metricConfig({
+				queries: [{ name: "Query 1", query: " ", legendFormat: "" }],
+			}),
+		)
+		await flushPromises()
+
+		expect(calls).toHaveLength(0)
+	})
+
 	it("shows nothing while the first answer may still come quickly", async ({
 		expect,
 	}) => {

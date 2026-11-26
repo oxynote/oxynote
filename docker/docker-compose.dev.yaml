@@ -102,6 +102,7 @@ services:
       - DATAGEN_POSTGRES_DSN=postgresql://demouser:demopass@postgres/demodb?sslmode=disable
       - DATAGEN_MARIADB_DSN=demouser:demopass@tcp(mariadb:3306)/demodb?parseTime=true
       - DATAGEN_VICTORIALOGS_URL=http://victorialogs:9428
+      - DATAGEN_VICTORIAMETRICS_URL=http://victoriametrics:8428
     depends_on:
       postgres:
         condition: service_healthy
@@ -109,6 +110,8 @@ services:
         condition: service_healthy
       victorialogs:
         condition: service_started
+      victoriametrics:
+        condition: service_healthy
     restart: unless-stopped
     logging:
       driver: local
@@ -128,6 +131,27 @@ services:
     volumes:
       - victorialogs_data:/vlogs
     restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        mode: non-blocking
+        max-size: 10m
+        max-file: "3"
+  victoriametrics:
+    container_name: victoriametrics
+    image: victoriametrics/victoria-metrics:v1.157.0
+    command:
+      - -promscrape.config=/etc/victoriametrics/scrape.yaml
+      - -loggerLevel=WARN
+    volumes:
+      - victoriametrics_data:/victoria-metrics-data
+      - ./demo/victoriametrics/scrape.yaml:/etc/victoriametrics/scrape.yaml:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8428/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     logging:
       driver: local
       options:
@@ -260,6 +284,7 @@ volumes:
   core_storage:
   mariadb_data:
   postgres_data:
+  victoriametrics_data:
   valkey_data:
   caddy_data:
   caddy_config:

@@ -12,7 +12,7 @@ nodeLinker: hoisted
 # @prometheus-io/codemirror-promql imports the grammar itself, so the fork
 # has to win that resolution rather than only the app's own imports.
 overrides:
-  "@prometheus-io/lezer-promql": "npm:@oxynote/lezer-promql@0.314.0-oxynote.3"
+  "@prometheus-io/lezer-promql": "npm:@oxynote/lezer-promql@0.316.0-oxynote.1"
   # electron-forge's toolchain pins vulnerable majors: @electron/node-gyp
   # wants tar 6 (upstream node-gyp 11 runs the same tar.extract calls on 7)
   # and external-editor wants tmp 0.0.x (tmpNameSync is unchanged in 0.2).
@@ -38,4 +38,4 @@ blockExoticSubdeps: false
 minimumReleaseAgeExclude:
   - "@oxynote/lezer-logql@0.4.2-oxynote.1"
   - "@oxynote/lezer-logsql@0.1.1"
-  - "@oxynote/lezer-promql@0.314.0-oxynote.3"
+  - "@oxynote/lezer-promql@0.316.0-oxynote.1"

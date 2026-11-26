@@ -17,6 +17,11 @@ describe("<HelpPopoverContent>", () => {
 				"editor.metrics.config.query-explanations.prometheus.main-placeholders.prometheus-queries",
 		},
 		{
+			type: DataSourceType.VictoriaMetrics,
+			expectedKey:
+				"editor.metrics.config.query-explanations.victoriametrics.main-placeholders.metricsql-queries",
+		},
+		{
 			type: DataSourceType.PostgreSQL,
 			expectedKey:
 				"editor.metrics.config.query-explanations.postgresql.main-placeholders.postgresql-queries",

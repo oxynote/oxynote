@@ -43,7 +43,7 @@ const sqlAPIMock = vi.hoisted(() => vi.fn())
 const logAPIMock = vi.hoisted(() => vi.fn())
 const dataSourceAPIMock = vi.hoisted(() => vi.fn())
 
-vi.mock("~/composables/api/usePrometheusDataSourceAPI", () => ({
+vi.mock("~/composables/api/useMetricDataSourceAPI", () => ({
 	default: prometheusAPIMock,
 }))
 
@@ -63,6 +63,7 @@ const t = (key: string) => key
 
 const DATA_SOURCES = [
 	{ id: "prom-1", type: DataSourceType.Prometheus },
+	{ id: "vm-1", type: DataSourceType.VictoriaMetrics },
 	{ id: "pg-1", type: DataSourceType.PostgreSQL },
 	{ id: "loki-1", type: DataSourceType.Loki },
 	{ id: "vl-1", type: DataSourceType.VictoriaLogs },
@@ -243,6 +244,24 @@ describe("useQueryEditorExtension", () => {
 		expect(labels).toContain("$env")
 	})
 
+	it("wires metricsql completions for a victoriametrics data source", async ({
+		expect,
+	}) => {
+		const { extensions } = makeEditor({ dataSourceId: "vm-1" })
+
+		expect(extensions.value).toBeDefined()
+
+		const labels = await completionLabels(
+			CjsEditorState,
+			CjsCompletionContext,
+			extensions.value as Extension,
+			"median_o",
+			8,
+		)
+
+		expect(labels).toContain("median_over_time")
+	})
+
 	it("wires sql completions for a postgresql data source", async ({
 		expect,
 	}) => {
@@ -320,6 +339,12 @@ describe("useQueryEditorExtension", () => {
 			expected: "editor.config-modal-utils.query-placeholder.prometheus",
 		},
 		{
+			name: "prompts with the victoriametrics placeholder",
+			dataSourceId: "vm-1",
+			editingEnabled: true,
+			expected: "editor.config-modal-utils.query-placeholder.victoriametrics",
+		},
+		{
 			name: "prompts with the postgresql placeholder",
 			dataSourceId: "pg-1",
 			editingEnabled: true,
@@ -351,31 +376,33 @@ describe("useQueryEditorExtension", () => {
 })
 
 describe("useLegendEditorExtension", () => {
-	it("routes label names through the prometheus fetcher", async ({
-		expect,
-	}) => {
-		const { prom, sql, fetchAllLabelNames } = makeLegendEditor({
-			dataSourceId: "prom-1",
-			prometheusData: { labels: { result: ["job", "__name__"] } },
-		})
+	it.for(["prom-1", "vm-1"])(
+		"routes label names of %s through the prometheus fetcher",
+		async (dataSourceId, { expect }) => {
+			const { prom, sql, fetchAllLabelNames } = makeLegendEditor({
+				dataSourceId: dataSourceId,
+				prometheusData: { labels: { result: ["job", "__name__"] } },
+			})
 
-		await expect(fetchAllLabelNames()).resolves.toEqual(["job"])
-		expect(prom.api.labels.refresh).toHaveBeenCalledTimes(1)
-		expect(sql.api.labels.refresh).toHaveBeenCalledTimes(0)
-	})
+			await expect(fetchAllLabelNames()).resolves.toEqual(["job"])
+			expect(prom.api.labels.refresh).toHaveBeenCalledTimes(1)
+			expect(sql.api.labels.refresh).toHaveBeenCalledTimes(0)
+		},
+	)
 
-	it("routes example values through the prometheus fetcher", async ({
-		expect,
-	}) => {
-		const { prom, sql, fetchExampleLabelValues } = makeLegendEditor({
-			dataSourceId: "prom-1",
-			prometheusData: { series: { result: [{ job: "api" }] } },
-		})
+	it.for(["prom-1", "vm-1"])(
+		"routes example values of %s through the prometheus fetcher",
+		async (dataSourceId, { expect }) => {
+			const { prom, sql, fetchExampleLabelValues } = makeLegendEditor({
+				dataSourceId: dataSourceId,
+				prometheusData: { series: { result: [{ job: "api" }] } },
+			})
 
-		await expect(fetchExampleLabelValues()).resolves.toEqual({ job: "api" })
-		expect(prom.api.series.refresh).toHaveBeenCalledTimes(1)
-		expect(sql.api.labels.refresh).toHaveBeenCalledTimes(0)
-	})
+			await expect(fetchExampleLabelValues()).resolves.toEqual({ job: "api" })
+			expect(prom.api.series.refresh).toHaveBeenCalledTimes(1)
+			expect(sql.api.labels.refresh).toHaveBeenCalledTimes(0)
+		},
+	)
 
 	it("routes label names through the sql fetcher", async ({ expect }) => {
 		const { prom, sql, fetchAllLabelNames } = makeLegendEditor({
