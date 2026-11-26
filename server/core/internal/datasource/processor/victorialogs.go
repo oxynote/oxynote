@@ -68,6 +68,11 @@ const (
 	// _victoriaLogsLookupTimeout caps the lookups of one fetch, so a slow
 	// lookup cannot use up the time the page needs.
 	_victoriaLogsLookupTimeout = 2 * time.Second
+
+	// _victoriaLogsExactTime formats a lookup time with all nine digits.
+	// VictoriaLogs reads a shorter time as the whole second or millisecond
+	// it names.
+	_victoriaLogsExactTime = "2006-01-02T15:04:05.000000000Z07:00"
 )
 
 // _victoriaLogsStreamIDPattern matches a stream ID, which goes into a lookup
@@ -424,9 +429,13 @@ type victoriaLogsLookup struct {
 
 // newVictoriaLogsLookups returns the queries that read the stored copies
 // of the rows, each under _victoriaLogsMaxLookupLen. A row without a valid
-// key has no copy to read.
+// key has no copy to read. Rows that share a key, such as the rows of an
+// unroll pipe, get one term. Two lookups would each return the stored log,
+// and it would look like two copies.
 func newVictoriaLogsLookups(rows []victoriaLogsRow) []victoriaLogsLookup {
 	var lookups []victoriaLogsLookup
+
+	seen := map[victoriaLogsRowKey]struct{}{}
 
 	for _, row := range rows {
 		key, ok := row.key()
@@ -434,12 +443,18 @@ func newVictoriaLogsLookups(rows []victoriaLogsRow) []victoriaLogsLookup {
 			continue
 		}
 
+		if _, found := seen[key]; found {
+			continue
+		}
+
+		seen[key] = struct{}{}
+
 		term := fmt.Sprintf(
 			"(%s:%s %s:%s)",
 			_victoriaLogsStreamID,
 			key.streamID,
 			_victoriaLogsTime,
-			key.time.Format(time.RFC3339Nano),
+			key.time.Format(_victoriaLogsExactTime),
 		)
 		end := key.time.Add(time.Nanosecond)
 

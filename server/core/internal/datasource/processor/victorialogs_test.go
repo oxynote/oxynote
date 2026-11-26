@@ -1079,6 +1079,11 @@ func Test_newVictoriaLogsLookups(t *testing.T) {
 	assert.Equal(t, "(_stream_id:ab _time:1970-01-01T00:00:00.000000005Z) or (_stream_id:cd _time:1970-01-01T00:00:00.000000002Z)", lookups[0].query)
 	assert.Equal(t, TimeRange{From: time.Unix(0, 2).UTC(), To: time.Unix(0, 6).UTC()}, lookups[0].tr)
 
+	// rows sharing a key get one term, and a time keeps all nine digits
+	lookups = newVictoriaLogsLookups([]victoriaLogsRow{row("ab", int64(time.Second)), row("ab", int64(time.Second))})
+	require.Len(t, lookups, 1)
+	assert.Equal(t, "(_stream_id:ab _time:1970-01-01T00:00:01.000000000Z)", lookups[0].query)
+
 	// many rows split into queries under the cap
 	many := make([]victoriaLogsRow, 1000)
 	for i := range many {
