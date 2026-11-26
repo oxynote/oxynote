@@ -782,8 +782,10 @@ func Test_input_FetchDocument(t *testing.T) {
 					if branchID == _stubBranchID {
 						return stubBranchDocument(_testDocID, orgID, branchID, _stubBranchName), nil
 					}
+
 					return nil, errutil.ErrNotFound
 				}
+
 				return db
 			}(),
 			ID:  _stubBranchID,
@@ -834,7 +836,6 @@ func Test_input_FetchBranch(t *testing.T) {
 		Listings int
 		Err      error
 	}{
-
 		"Error returned by db.FetchDocumentByBranchID": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
@@ -1007,7 +1008,6 @@ func Test_input_FetchDocumentBranches(t *testing.T) {
 		Result []document.BranchSummary
 		Err    error
 	}{
-
 		"Error returned by db.FetchDocumentBranches": {
 			DB: &DBMock{
 				FetchDocumentBranchesFunc: func(context.Context, xid.ID, string) ([]document.BranchSummary, error) {
