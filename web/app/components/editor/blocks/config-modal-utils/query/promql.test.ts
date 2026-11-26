@@ -30,7 +30,7 @@ installAutoImportGlobals()
 
 const prometheusAPIMock = vi.hoisted(() => vi.fn())
 
-vi.mock("~/composables/api/usePrometheusDataSourceAPI", () => ({
+vi.mock("~/composables/api/useMetricDataSourceAPI", () => ({
 	default: prometheusAPIMock,
 }))
 

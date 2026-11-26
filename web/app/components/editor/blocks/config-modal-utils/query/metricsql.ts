@@ -298,24 +298,21 @@ function namedCompletions(
 }
 
 function functionCompletions(t: (key: string) => string): Completion[] {
+	const fn = t(`${INFO_KEY}.details.function`)
+	const aggregation = t(`${INFO_KEY}.details.aggregation`)
+
 	return [
-		...namedCompletions(t, ROLLUP_FUNCTIONS, "rollup", "function", "function"),
-		...namedCompletions(
-			t,
-			TRANSFORM_FUNCTIONS,
-			"transform",
-			"function",
-			"function",
-		),
-		...namedCompletions(t, LABEL_FUNCTIONS, "label", "function", "function"),
-		...namedCompletions(t, AGGREGATIONS, "aggregate", "aggregation", "keyword"),
+		...namedCompletions(t, ROLLUP_FUNCTIONS, "rollup", fn, "function"),
+		...namedCompletions(t, TRANSFORM_FUNCTIONS, "transform", fn, "function"),
+		...namedCompletions(t, LABEL_FUNCTIONS, "label", fn, "function"),
+		...namedCompletions(t, AGGREGATIONS, "aggregate", aggregation, "keyword"),
 	]
 }
 
 function keywordCompletion(t: (key: string) => string, name: string) {
 	return {
 		label: name,
-		detail: "keyword",
+		detail: t(`${INFO_KEY}.details.keyword`),
 		info: t(descriptionKey("keywords", name)),
 		type: "keyword",
 	}
@@ -346,7 +343,7 @@ function templateCompletions(
 
 	return [...names].map((name) => ({
 		label: name,
-		detail: "template",
+		detail: t(`${INFO_KEY}.details.template`),
 		info: t(`${INFO_KEY}.template`),
 		type: "variable",
 	}))

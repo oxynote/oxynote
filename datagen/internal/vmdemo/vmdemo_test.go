@@ -2,6 +2,7 @@ package vmdemo
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -26,8 +27,9 @@ const (
 	_testURL    = "http://vm.test"
 	_seriesURL  = _testURL + "/api/v1/series"
 	_importURL  = _testURL + "/api/v1/import/prometheus"
+	_flushURL   = _testURL + "/internal/force_flush"
 	_noSeries   = `{"status":"success","data":[]}`
-	_someSeries = `{"status":"success","data":[{"__name__":"engineering_up","job":"datagen"}]}`
+	_someSeries = `{"status":"success","data":[{"__name__":"datagen_backfill_done","job":"datagen"}]}`
 )
 
 func TestMain(m *testing.M) {
@@ -54,21 +56,27 @@ func Test_Importer_Fill(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Resp      httpmock.Responder
-		Source    *SourceMock
-		Err       error
-		Backfills int
+		Resp       httpmock.Responder
+		ImportResp httpmock.Responder
+		FlushResp  httpmock.Responder
+		Source     *SourceMock
+		Err        error
+		Backfills  int
+		Imports    int
+		Flushes    int
 	}{
 		"Error returned by the series request": {
 			Resp:      httpmock.NewStringResponder(http.StatusInternalServerError, ""),
 			Source:    &SourceMock{},
 			Err:       assert.AnError,
 			Backfills: 0,
+			Imports:   0,
 		},
-		"Existing history skips the backfill": {
+		"Finished backfill skips the backfill": {
 			Resp:      httpmock.NewStringResponder(http.StatusOK, _someSeries),
 			Source:    &SourceMock{},
 			Backfills: 0,
+			Imports:   0,
 		},
 		"Error returned by Source.Backfill": {
 			Resp: httpmock.NewStringResponder(http.StatusOK, _noSeries),
@@ -79,11 +87,34 @@ func Test_Importer_Fill(t *testing.T) {
 			},
 			Err:       assert.AnError,
 			Backfills: 1,
+			Imports:   0,
+		},
+		"Error returned by the done marker import": {
+			Resp:       httpmock.NewStringResponder(http.StatusOK, _noSeries),
+			ImportResp: httpmock.NewStringResponder(http.StatusBadRequest, ""),
+			Source:     &SourceMock{},
+			Err:        assert.AnError,
+			Backfills:  1,
+			Imports:    1,
+		},
+		"Error returned by the flush request": {
+			Resp:       httpmock.NewStringResponder(http.StatusOK, _noSeries),
+			ImportResp: httpmock.NewStringResponder(http.StatusNoContent, ""),
+			FlushResp:  httpmock.NewStringResponder(http.StatusInternalServerError, ""),
+			Source:     &SourceMock{},
+			Err:        assert.AnError,
+			Backfills:  1,
+			Imports:    1,
+			Flushes:    1,
 		},
 		"Successful backfill": {
-			Resp:      httpmock.NewStringResponder(http.StatusOK, _noSeries),
-			Source:    &SourceMock{},
-			Backfills: 1,
+			Resp:       httpmock.NewStringResponder(http.StatusOK, _noSeries),
+			ImportResp: httpmock.NewStringResponder(http.StatusNoContent, ""),
+			FlushResp:  httpmock.NewStringResponder(http.StatusOK, ""),
+			Source:     &SourceMock{},
+			Backfills:  1,
+			Imports:    1,
+			Flushes:    1,
 		},
 	}
 
@@ -91,8 +122,25 @@ func Test_Importer_Fill(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			var marker string
+
 			client, mt := testutil.MockHTTP()
 			mt.RegisterResponder(http.MethodGet, _seriesURL, c.Resp)
+
+			if c.ImportResp != nil {
+				mt.RegisterResponder(http.MethodPost, _importURL, func(req *http.Request) (*http.Response, error) {
+					raw, err := io.ReadAll(req.Body)
+					require.NoError(t, err)
+
+					marker = string(raw)
+
+					return c.ImportResp(req)
+				})
+			}
+
+			if c.FlushResp != nil {
+				mt.RegisterResponder(http.MethodGet, _flushURL, c.FlushResp)
+			}
 
 			i := NewImporter(slog.New(slog.DiscardHandler), client, _testURL)
 
@@ -101,10 +149,15 @@ func Test_Importer_Fill(t *testing.T) {
 			err := i.Fill(context.Background(), c.Source)
 			testutil.AssertEqualError(t, c.Err, err)
 
-			assert.Equal(t, 1, mt.GetTotalCallCount())
+			assert.Equal(t, 1+c.Imports+c.Flushes, mt.GetTotalCallCount())
 
 			calls := c.Source.BackfillCalls()
 			require.Len(t, calls, c.Backfills)
+
+			if c.Imports > 0 {
+				// the done marker carries the time the history ends at.
+				assert.Equal(t, fmt.Sprintf("datagen_backfill_done 1 %d\n", calls[0].To.UnixMilli()), marker)
+			}
 
 			if c.Backfills == 0 {
 				return
@@ -260,7 +313,7 @@ func Test_Importer_Flush(t *testing.T) {
 	}
 }
 
-func Test_Importer_hasData(t *testing.T) {
+func Test_Importer_isDone(t *testing.T) {
 	t.Parallel()
 
 	since := time.Unix(1_767_607_200, 0)
@@ -303,11 +356,11 @@ func Test_Importer_hasData(t *testing.T) {
 
 			i := NewImporter(slog.New(slog.DiscardHandler), client, _testURL)
 
-			res, err := i.hasData(context.Background(), since)
+			res, err := i.isDone(context.Background(), since)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Equal(t, 1, mt.GetTotalCallCount())
-			assert.Equal(t, `{job="datagen"}`, query.Get("match[]"))
+			assert.Equal(t, `datagen_backfill_done{job="datagen"}`, query.Get("match[]"))
 			assert.Equal(t, "1767607200", query.Get("start"))
 
 			if err != nil {

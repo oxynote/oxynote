@@ -53,7 +53,7 @@ describe("withMetricsQLCompletions", () => {
 		expect(res?.from).toBe(0)
 		expect.soft(options.get("median_over_time")).toEqual({
 			label: "median_over_time",
-			detail: "function",
+			detail: "query-languages.victoriametrics.details.function",
 			info: "query-languages.victoriametrics.rollup.median-over-time",
 			type: "function",
 		})
@@ -68,7 +68,7 @@ describe("withMetricsQLCompletions", () => {
 			.toBe("query-languages.victoriametrics.transform.range-median")
 		expect.soft(options.get("topk_max")).toEqual({
 			label: "topk_max",
-			detail: "aggregation",
+			detail: "query-languages.victoriametrics.details.aggregation",
 			info: "query-languages.victoriametrics.aggregate.topk-max",
 			type: "keyword",
 		})
@@ -77,7 +77,7 @@ describe("withMetricsQLCompletions", () => {
 			.toBe("query-languages.victoriametrics.aggregate.sum")
 		expect.soft(options.get("with")).toEqual({
 			label: "with",
-			detail: "keyword",
+			detail: "query-languages.victoriametrics.details.keyword",
 			info: "query-languages.victoriametrics.keywords.with",
 			type: "keyword",
 		})
@@ -94,7 +94,7 @@ describe("withMetricsQLCompletions", () => {
 
 		expect.soft(options.get("f")).toEqual({
 			label: "f",
-			detail: "template",
+			detail: "query-languages.victoriametrics.details.template",
 			info: "query-languages.victoriametrics.template",
 			type: "variable",
 		})

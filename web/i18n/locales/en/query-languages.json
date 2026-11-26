@@ -6,6 +6,12 @@
 			"rate-interval": "Safe interval for rate() and increase(), adjusts to scrape frequency"
 		},
 		"victoriametrics": {
+			"details": {
+				"function": "function",
+				"aggregation": "aggregation",
+				"keyword": "keyword",
+				"template": "template"
+			},
 			"template": "Template defined in WITH.",
 			"keywords": {
 				"with": "Defines templates that the query after it can use.",

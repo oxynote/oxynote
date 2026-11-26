@@ -39,6 +39,11 @@ describe("extractPromQLSelectors", () => {
 			expected: ['foo{a="b" or c="d"}', "foo.bar"],
 		},
 		{
+			name: "leaves out a WITH template used as a metric",
+			query: 'WITH (m = up{job="api"}, f(x) = rate(x[5m])) m + f(foo)',
+			expected: ['up{job="api"}', "foo"],
+		},
+		{
 			name: "leaves out a selector that uses a WITH template",
 			query: 'WITH (f = {job="api"}) rate(foo{f}[5m])',
 			expected: ['{job="api"}'],

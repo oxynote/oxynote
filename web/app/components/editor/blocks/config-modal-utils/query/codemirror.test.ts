@@ -43,7 +43,7 @@ const sqlAPIMock = vi.hoisted(() => vi.fn())
 const logAPIMock = vi.hoisted(() => vi.fn())
 const dataSourceAPIMock = vi.hoisted(() => vi.fn())
 
-vi.mock("~/composables/api/usePrometheusDataSourceAPI", () => ({
+vi.mock("~/composables/api/useMetricDataSourceAPI", () => ({
 	default: prometheusAPIMock,
 }))
 

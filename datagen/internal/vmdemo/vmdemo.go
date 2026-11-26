@@ -40,6 +40,12 @@ const (
 	_instance = "datagen:8080"
 )
 
+// _doneMetric names the sample written once the whole history is in. A
+// scrape that failed before datagen started leaves datagen series too, and
+// so does a backfill that stopped half way. So only this sample counts as a
+// finished backfill.
+const _doneMetric = "datagen_backfill_done"
+
 // Importer writes generated history into VictoriaMetrics.
 type Importer struct {
 	// log is the structured logger.
@@ -70,17 +76,17 @@ func NewImporter(log *slog.Logger, httpClient *http.Client, baseURL string) *Imp
 }
 
 // Fill writes the history src generates up to now into VictoriaMetrics,
-// unless it already holds datagen series from that period.
+// unless a backfill finished within that period already.
 func (i *Importer) Fill(ctx context.Context, src Source) error {
 	now := timeutil.Now()
 	from := now.AddDate(0, 0, -i.backfillDays)
 
-	exists, err := i.hasData(ctx, from)
+	done, err := i.isDone(ctx, from)
 	if err != nil {
 		return fmt.Errorf("vmdemo: check backfill: %w", err)
 	}
 
-	if exists {
+	if done {
 		return nil
 	}
 
@@ -88,6 +94,19 @@ func (i *Importer) Fill(ctx context.Context, src Source) error {
 
 	if err := src.Backfill(ctx, from, now, i); err != nil {
 		return fmt.Errorf("vmdemo: backfill: %w", err)
+	}
+
+	fmt.Fprintf(&i.buf, "%s 1 %d\n", _doneMetric, now.UnixMilli())
+
+	if err := i.Flush(ctx); err != nil {
+		return fmt.Errorf("vmdemo: mark backfill done: %w", err)
+	}
+
+	// VictoriaMetrics makes new samples searchable only after a few
+	// seconds. So it flushes them now, or a restart right after the
+	// backfill would miss the marker and backfill again.
+	if _, err := i.do(ctx, http.MethodGet, "/internal/force_flush", nil); err != nil {
+		return fmt.Errorf("vmdemo: flush backfill: %w", err)
 	}
 
 	i.log.Info("vmdemo: backfill complete")
@@ -136,11 +155,10 @@ func (i *Importer) Flush(ctx context.Context) error {
 	return nil
 }
 
-// hasData reports whether VictoriaMetrics holds datagen series since the
-// given time.
-func (i *Importer) hasData(ctx context.Context, since time.Time) (bool, error) {
+// isDone reports whether a backfill finished since the given time.
+func (i *Importer) isDone(ctx context.Context, since time.Time) (bool, error) {
 	q := url.Values{}
-	q.Set("match[]", fmt.Sprintf("{job=%q}", _job))
+	q.Set("match[]", fmt.Sprintf("%s{job=%q}", _doneMetric, _job))
 	q.Set("start", strconv.FormatInt(since.Unix(), 10))
 
 	raw, err := i.do(ctx, http.MethodGet, "/api/v1/series?"+q.Encode(), nil)

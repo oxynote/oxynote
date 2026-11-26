@@ -208,17 +208,17 @@ export function usePromQLQueryExtension(
 	dialect: PromQLDialect = "promql",
 ) {
 	const {
-		usePrometheusMetadata,
-		usePrometheusLabels,
-		usePrometheusLabelValues,
-		usePrometheusSeries,
-	} = usePrometheusDataSourceAPI()
-	const fetchPrometheusMetadata = usePrometheusMetadata(dataSourceId, enable)
+		useMetricMetadata,
+		useMetricLabels,
+		useMetricLabelValues,
+		useMetricSeries,
+	} = useMetricDataSourceAPI()
+	const fetchPrometheusMetadata = useMetricMetadata(dataSourceId, enable)
 
 	const lastFetchPrometheusLabelsParams = ref<
 		PrometheusLabelParams | null | undefined
 	>(null)
-	const fetchPrometheusLabels = usePrometheusLabels(
+	const fetchPrometheusLabels = useMetricLabels(
 		dataSourceId,
 		lastFetchPrometheusLabelsParams,
 		enable,
@@ -227,7 +227,7 @@ export function usePromQLQueryExtension(
 	const lastFetchPrometheusLabelValuesParams = ref<
 		PrometheusLabelValuesParams | null | undefined
 	>(null)
-	const fetchPrometheusLabelValues = usePrometheusLabelValues(
+	const fetchPrometheusLabelValues = useMetricLabelValues(
 		dataSourceId,
 		lastFetchPrometheusLabelValuesParams,
 		enable,
@@ -236,7 +236,7 @@ export function usePromQLQueryExtension(
 	const lastFetchPrometheusSeriesParams = ref<
 		PrometheusSeriesParams | null | undefined
 	>(null)
-	const fetchPrometheusSeries = usePrometheusSeries(
+	const fetchPrometheusSeries = useMetricSeries(
 		dataSourceId,
 		lastFetchPrometheusSeriesParams,
 		enable,
@@ -345,9 +345,8 @@ export function usePromQLLegendExtension(
 		MATCHER_PROCESSING_DEBOUNCE_MS,
 	)
 
-	const { usePrometheusLabels, usePrometheusSeries } =
-		usePrometheusDataSourceAPI()
-	const fetchPrometheusLabels = usePrometheusLabels(
+	const { useMetricLabels, useMetricSeries } = useMetricDataSourceAPI()
+	const fetchPrometheusLabels = useMetricLabels(
 		dataSourceId,
 		() => {
 			const timeRangeVal = toValue(timeRange)
@@ -372,7 +371,7 @@ export function usePromQLLegendExtension(
 		enable,
 		30 * 1000, // 30 secs
 	)
-	const fetchPrometheusSeries = usePrometheusSeries(
+	const fetchPrometheusSeries = useMetricSeries(
 		dataSourceId,
 		() => {
 			const timeRangeVal = toValue(timeRange)
