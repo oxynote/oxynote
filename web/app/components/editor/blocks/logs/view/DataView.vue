@@ -9,6 +9,7 @@ import { useBlockVariables } from "../../variables"
 import { mergeQueryLogs } from "../rows"
 import { LineFormat, type LogDialect, type LogFilter } from "../dialect"
 import { lokiDialect } from "../loki"
+import { victoriaLogsDialect } from "../victorialogs"
 import type { LogConfig } from "../utils"
 import { volumeBuckets } from "../volume"
 import {
@@ -54,6 +55,11 @@ const ROW_HEIGHT_PX = 33
 // reader scrolls one screen. After a faster scroll, the block shows its
 // spinner for a moment.
 const NEAR_VIEWPORT_MARGIN = "100% 0%"
+// the query language of each log source
+const DIALECTS: Partial<Record<DataSourceType, LogDialect>> = {
+	[DataSourceType.Loki]: lokiDialect,
+	[DataSourceType.VictoriaLogs]: victoriaLogsDialect,
+}
 
 const props = defineProps<{
 	config: LogConfig
@@ -115,7 +121,7 @@ const dialect = computed<LogDialect | null>(() => {
 		(s) => s.id === props.config.dataSourceId,
 	)
 
-	return source?.type === DataSourceType.Loki ? lokiDialect : null
+	return (source && DIALECTS[source.type]) ?? null
 })
 // a filter on a key read from a line runs on every query, so it needs
 // every query to let it through
@@ -383,9 +389,18 @@ function viewParams(): LogQueriesParams | null {
 	}
 }
 
-// a key keeps one filter, so a new value for it replaces the old one
+// a key keeps one filter, so a new value for it replaces the old one. A
+// source that names a field and a line key alike keeps one filter for each.
 function addFilter(filter: LogFilter) {
-	filters.value = [...filters.value.filter((f) => f.key !== filter.key), filter]
+	const sharesNames = dialect.value?.keepsLineKeyNames
+
+	filters.value = [
+		...filters.value.filter(
+			(f) =>
+				f.key !== filter.key || (sharesNames && f.format !== filter.format),
+		),
+		filter,
+	]
 }
 
 function setExpanded(id: string, expanded: boolean) {

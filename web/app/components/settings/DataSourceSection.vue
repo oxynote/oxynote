@@ -52,6 +52,25 @@ const sections = computed(() => {
 			},
 		},
 		{
+			key: DataSourceType.VictoriaLogs,
+			icon: "custom-icons:victoria-logs",
+			items:
+				fetchDataSources.state.value.data?.filter(
+					(ds) =>
+						ds.type === DataSourceType.VictoriaLogs &&
+						ds.status !== DataSourceStatus.LocalOptimisticInsert,
+				) ?? [],
+			create: () => {
+				emit("data-source-creation", DataSourceType.VictoriaLogs)
+			},
+			update: (dataSource: DataSource) => {
+				emit("data-source-update", dataSource)
+			},
+			delete: (dataSource: DataSource) => {
+				emit("data-source-removal", dataSource)
+			},
+		},
+		{
 			key: DataSourceType.PostgreSQL,
 			icon: "devicon:postgresql",
 			items:

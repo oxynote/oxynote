@@ -44,7 +44,7 @@ var _errEndpointNotFound = errutil.New(
 	"the data source does not serve this request",
 )
 
-// httpClient sends the GET requests of a data source that answers over
+// httpClient sends the requests of a data source that answers over
 // HTTP. It authenticates with the data source's credentials and never
 // follows a redirect.
 type httpClient struct {
@@ -56,7 +56,7 @@ type httpClient struct {
 func (hc *httpClient) fetchJSON[T any](ctx context.Context, path string, params url.Values, header http.Header) (T, error) {
 	var res T
 
-	body, err := hc.fetchRaw(ctx, path, params, header)
+	body, err := hc.fetch(ctx, http.MethodGet, path, params, header)
 	if err != nil {
 		return res, err
 	}
@@ -70,15 +70,15 @@ func (hc *httpClient) fetchJSON[T any](ctx context.Context, path string, params 
 	return res, nil
 }
 
-// fetchRaw sends a GET to the path and returns the body of a 200 answer. Any
-// other answer is the error it describes.
-func (hc *httpClient) fetchRaw(ctx context.Context, path string, params url.Values, header http.Header) ([]byte, error) {
+// fetch sends a request to the path and returns the body of a 200 answer.
+// Any other answer is the error it describes.
+func (hc *httpClient) fetch(ctx context.Context, method, path string, params url.Values, header http.Header) ([]byte, error) {
 	client, err := hc.authClient()
 	if err != nil {
 		return nil, err
 	}
 
-	status, body, err := hc.doRequest(ctx, client, path, params, header)
+	status, body, err := hc.doRequest(ctx, client, method, path, params, header)
 	if err != nil {
 		return nil, err
 	}
@@ -119,11 +119,13 @@ func (hc *httpClient) fetchRaw(ctx context.Context, path string, params url.Valu
 	return nil, NewInvalidQueryError(cmp.Or(msg, "the data source rejected the query"))
 }
 
-// doRequest sends a GET to the path through client and returns the
-// status and body.
+// doRequest sends a request to the path through client and returns the
+// status and body. A POST carries params as a form body, for a query too
+// long for a URL.
 func (hc *httpClient) doRequest(
 	ctx context.Context,
 	client *http.Client,
+	method string,
 	path string,
 	params url.Values,
 	header http.Header,
@@ -133,17 +135,26 @@ func (hc *httpClient) doRequest(
 		return 0, nil, fmt.Errorf("building url: %w", err)
 	}
 
-	if len(params) > 0 {
+	reqBody := io.Reader(http.NoBody)
+
+	switch {
+	case method == http.MethodPost:
+		reqBody = strings.NewReader(params.Encode())
+	case len(params) > 0:
 		target += "?" + params.Encode()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, method, target, reqBody)
 	if err != nil {
 		// NOCOV: url.JoinPath already parsed the same target.
 		return 0, nil, fmt.Errorf("creating request: %w", err)
 	}
 
 	maps.Copy(req.Header, header)
+
+	if method == http.MethodPost {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {

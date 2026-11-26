@@ -46,6 +46,9 @@ importers:
       '@oxynote/lezer-logql':
         specifier: ^0.4.2-oxynote.1
         version: 0.4.2-oxynote.1(@lezer/lr@1.4.10)
+      '@oxynote/lezer-logsql':
+        specifier: ^0.1.1
+        version: 0.1.1(@lezer/common@1.5.2)(@lezer/highlight@1.2.3)(@lezer/lr@1.4.10)
       '@pinia/colada':
         specifier: ^1.4.9
         version: 1.4.9(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@6.0.3)(vue@3.5.44(typescript@6.0.3)))(vue@3.5.44(typescript@6.0.3))
@@ -2532,6 +2535,14 @@ packages:
     resolution: {integrity: sha512-jdQpurrXX3s0Sg6OEt0T7ksGEpKjujf6FnFG3caw6UTP+/1VwyUI7UmIJfbantrqEPwbc4zImRcc4dc7sldT1w==}
     engines: {node: '>=24', npm: '>=11.12.1'}
     peerDependencies:
+      '@lezer/lr': ^1.4.0
+
+  '@oxynote/lezer-logsql@0.1.1':
+    resolution: {integrity: sha512-hjzH1aqenDYOL9zl7fqwyqCFhWxR7Z7UMlEbEfy4TEj737AqSPh5W3gbUCHen/jc6akupkoP7OK/9eecSsTemg==}
+    engines: {node: '>=24'}
+    peerDependencies:
+      '@lezer/common': ^1.0.0
+      '@lezer/highlight': ^1.0.0
       '@lezer/lr': ^1.4.0
 
   '@oxynote/lezer-promql@0.314.0-oxynote.3':
@@ -11128,6 +11139,12 @@ snapshots:
 
   '@oxynote/lezer-logql@0.4.2-oxynote.1(@lezer/lr@1.4.10)':
     dependencies:
+      '@lezer/lr': 1.4.10
+
+  '@oxynote/lezer-logsql@0.1.1(@lezer/common@1.5.2)(@lezer/highlight@1.2.3)(@lezer/lr@1.4.10)':
+    dependencies:
+      '@lezer/common': 1.5.2
+      '@lezer/highlight': 1.2.3
       '@lezer/lr': 1.4.10
 
   '@oxynote/lezer-promql@0.314.0-oxynote.3(@lezer/highlight@1.2.3)(@lezer/lr@1.4.10)':

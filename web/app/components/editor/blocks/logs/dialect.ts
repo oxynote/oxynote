@@ -31,6 +31,15 @@ export interface LogDialect {
 	// lineKeyName names a key read from the log's line the way the source
 	// names it once parsed
 	lineKeyName(key: string, log: Log): string
+	// readsLineKey tells whether the source reads this key of the log's line
+	// in the given format, with the value the view shows. The view reads
+	// some lines differently from a source.
+	readsLineKey(
+		log: Log,
+		format: LineFormat,
+		key: string,
+		value: string,
+	): boolean
 	// logfmtParseFailed reports whether the source stopped parsing the line
 	logfmtParseFailed(log: Log): boolean
 	// decodeLogfmtValue reads a value as the source does, or gives null
@@ -45,4 +54,17 @@ export interface LogDialect {
 		lineValue: unknown,
 		nested: boolean,
 	): boolean
+	// logfmtPair reads one logfmt pair, as a key and a raw value. It is
+	// sticky, because the line is read pair by pair.
+	logfmtPair: RegExp
+	// logfmtKeepsLastValue tells which value the source keeps for a logfmt
+	// key that the line repeats. It is the last one when true, and the
+	// first one otherwise.
+	logfmtKeepsLastValue: boolean
+	// keepsLineKeyNames tells whether a key read from the line keeps its
+	// name, so a field and a line key can share one
+	keepsLineKeyNames: boolean
+	// indexesAllFields tells whether the source indexes every field, and not
+	// only the ones that identify a stream
+	indexesAllFields: boolean
 }

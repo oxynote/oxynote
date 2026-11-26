@@ -398,6 +398,11 @@ type LogLine struct {
 	// Parsed specifies the keys a parser stage of the query took from the
 	// line itself, such as LogQL's logfmt. It is empty when no parser ran.
 	Parsed map[string]string `json:"parsed,omitempty"`
+
+	// StoredFieldsOnly indicates that Fields holds only the fields sent
+	// with the line, and Parsed the ones the query made. Without it, Fields
+	// may hold both.
+	StoredFieldsOnly bool `json:"storedFieldsOnly,omitempty"`
 }
 
 // LogsResult is one page of a window's lines.
@@ -691,12 +696,21 @@ func (lr *LogsResult) withLineIDs() *LogsResult {
 // hash returns a hex digest of everything that identifies the line. An
 // empty part separates the labels from the fields, so a label and a
 // field of the same name and value hash differently.
+// A split line hashes Fields and Parsed together, so its ID stays the same
+// when the split fails.
 func (ll LogLine) hash() string {
+	fields := ll.Fields
+	if ll.StoredFieldsOnly {
+		fields = make(map[string]string, len(ll.Fields)+len(ll.Parsed))
+		maps.Copy(fields, ll.Fields)
+		maps.Copy(fields, ll.Parsed)
+	}
+
 	parts := slices.Concat(
 		[]string{strconv.FormatInt(ll.Time.UnixNano(), 10)},
 		sortedPairs(ll.Labels),
 		[]string{""},
-		sortedPairs(ll.Fields),
+		sortedPairs(fields),
 		[]string{ll.Line},
 	)
 

@@ -574,49 +574,14 @@
 				"empty": "[empty]",
 				"prometheus": "Enter a PromQL query...",
 				"loki": "Enter a LogQL query...",
+				"victorialogs": "Enter a LogsQL query...",
 				"postgresql": "Enter a SQL query...",
 				"supabase": "Enter a SQL query...",
 				"mysql": "Enter a SQL query...",
 				"mariadb": "Enter a SQL query..."
 			},
 			"query-info": {
-				"prometheus": {
-					"interval": "Auto-calculated interval based on time range and resolution (ex. \"15s\", \"5m\", \"1h\")",
-					"range": "Duration of the selected time range",
-					"rate-interval": "Safe interval for rate() and increase(), adjusts to scrape frequency"
-				},
-				"variable": "Current value: {value}. You can change it in the variables sidebar.",
-				"loki": {
-					"json": "Extracts the fields of a JSON line. Nested keys are joined with an underscore.",
-					"logfmt": "Extracts the key=value pairs of a logfmt line.",
-					"regexp": "Extracts the named groups of a regular expression as fields.",
-					"pattern": "Extracts fields by matching each line against a pattern of literal text and named captures.",
-					"unpack": "Unpacks a JSON line made by a pack stage, restoring the labels packed into it.",
-					"line-format": "Rewrites each line from a template that can use its labels and fields.",
-					"label-format": "Renames labels, or sets them from a template.",
-					"drop": "Removes the listed labels and fields.",
-					"keep": "Keeps only the listed labels and fields, and removes the rest.",
-					"decolorize": "Removes ANSI color codes from each line.",
-					"contains": "Keeps the lines that contain the text.",
-					"not-contains": "Drops the lines that contain the text.",
-					"matches": "Keeps the lines that match the regular expression.",
-					"not-matches": "Drops the lines that match the regular expression.",
-					"label": "Stream label. Loki indexes it, so a filter on it is fast.",
-					"field": "Field found in the log lines. Loki does not index it, so a filter on it reads every line of the selected streams."
-				},
-				"sql": {
-					"from": "Start of the selected time range in unix milliseconds",
-					"to": "End of the selected time range in unix milliseconds",
-					"interval": "Auto-calculated interval based on time range and resolution (ex. \"15s\", \"5m\", \"1h\")",
-					"interval-ms": "The auto-calculated interval in milliseconds",
-					"range": "Length of the selected time range in whole seconds (ex. \"3600s\")",
-					"range-s": "Length of the selected time range in seconds",
-					"range-ms": "Length of the selected time range in milliseconds",
-					"unix-epoch-from": "Start of the selected time range as a unix epoch timestamp (in seconds)",
-					"unix-epoch-to": "End of the selected time range as a unix epoch timestamp (in seconds)",
-					"unix-epoch-nano-from": "Start of the selected time range as a unix epoch timestamp (in nanoseconds)",
-					"unix-epoch-nano-to": "End of the selected time range as a unix epoch timestamp (in nanoseconds)"
-				}
+				"variable": "Current value: {value}. You can change it in the variables sidebar."
 			},
 			"variable-time-range": "Global time",
 			"variable-refresh-interval": "Global refresh",
@@ -998,8 +963,8 @@
 				"delete-query-button": "Delete Query",
 				"no-query": "No Query",
 				"data-source-empty-title": "No log data sources",
-				"data-source-empty-description": "Connect Loki in the settings to show its logs here.",
-				"data-source-empty-description-non-admin": "Ask an admin to connect Loki to show its logs here."
+				"data-source-empty-description": "Connect Loki or VictoriaLogs in the settings to show its logs here.",
+				"data-source-empty-description-non-admin": "Ask an admin to connect Loki or VictoriaLogs to show its logs here."
 			},
 			"levels": {
 				"critical": "Crit",
@@ -1036,11 +1001,14 @@
 				"origin-description": "Indexed, set by the system that sent the log",
 				"metadata-heading": "Metadata fields",
 				"metadata-description": "Unindexed, sent alongside the log",
+				"metadata-description-indexed": "Indexed, sent alongside the log",
+				"metadata-description-indexed-if-sent": "Indexed, if sent alongside the log",
 				"content-heading": "Content fields",
 				"content-description": "Unindexed, read from the log",
 				"section-empty": "None",
 				"filter-query-blocked": "Can't filter on this field, because the query reads or changes the log in its own way",
 				"filter-nested": "Can't filter on this field, because its value holds more fields inside it",
+				"filter-line-unread": "Can't filter on this field, because the data source can't read it from this log",
 				"filter-null": "Can't filter on this field, because it has no value",
 				"include-value": "Show only logs where {key} is this value",
 				"exclude-value": "Hide logs where {key} is this value",
@@ -1050,13 +1018,13 @@
 			"status": {
 				"data-source-not-selected": {
 					"title": "No Data Source Selected",
-					"description": "Choose a Loki data source to see logs",
+					"description": "Choose a Loki or VictoriaLogs data source to see logs",
 					"normal-action-button": "Edit Logs",
 					"readonly-action-button": "View Logs"
 				},
 				"no-query": {
 					"title": "No Query",
-					"description": "Add a LogQL query to see logs",
+					"description": "Add a query to see logs",
 					"normal-action-button": "Edit Logs",
 					"readonly-action-button": "View Logs"
 				},

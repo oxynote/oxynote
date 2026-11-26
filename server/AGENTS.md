@@ -16,7 +16,8 @@ Core domain rules sit beside their packages:
 - `server/auth-realtime/`: `:8081`, Better Auth (organization plugin) and
   Hocuspocus in one Hono process; forwards non-auth `/api/...` to core
   (`OXYNOTE_AUTH_REALTIME_BACKEND_URL`).
-- `datagen/`: separate Go module synthesising demo Postgres/MariaDB content.
+- `datagen/`: separate Go module synthesising demo Postgres, MariaDB and
+  VictoriaLogs content.
 
 datagen shares core's test/lint workflow with its own copy of the
 golangci-lint profile; its `pgdemo`/`mariademo` suites start throwaway

@@ -6,8 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -133,7 +135,7 @@ func victoriaLogsCorpusWhere(tr TimeRange, match func(corpusLine) bool) map[stri
 func prepVictoriaLogs(t *testing.T, version string) *VictoriaLogs {
 	t.Helper()
 
-	return NewVictoriaLogs(prepHTTPInput(t, "http://"+_victoriaLogsAddrs[version], nil))
+	return NewVictoriaLogs(slog.New(slog.DiscardHandler), prepHTTPInput(t, "http://"+_victoriaLogsAddrs[version], nil))
 }
 
 func Test_NewVictoriaLogs(t *testing.T) {
@@ -141,15 +143,18 @@ func Test_NewVictoriaLogs(t *testing.T) {
 
 	inp := &InputMock{}
 
-	vl := NewVictoriaLogs(inp)
+	log := slog.New(slog.DiscardHandler)
+
+	vl := NewVictoriaLogs(log, inp)
 	require.NotNil(t, vl)
+	assert.Same(t, log, vl.log)
 	assert.Same(t, inp, vl.inp)
 }
 
 func Test_VictoriaLogs_Close(t *testing.T) {
 	t.Parallel()
 
-	assert.NoError(t, NewVictoriaLogs(&InputMock{}).Close())
+	assert.NoError(t, NewVictoriaLogs(slog.New(slog.DiscardHandler), &InputMock{}).Close())
 }
 
 func Test_VictoriaLogs_TestConnection(t *testing.T) {
@@ -273,7 +278,7 @@ func Test_VictoriaLogs_TestConnection(t *testing.T) {
 				inp.CredentialsFunc = func() credentials.Credentials { return stubCredentials(creds) }
 			}
 
-			vl := NewVictoriaLogs(inp)
+			vl := NewVictoriaLogs(slog.New(slog.DiscardHandler), inp)
 
 			t.Cleanup(func() { assert.NoError(t, vl.Close()) })
 
@@ -412,7 +417,7 @@ func Test_VictoriaLogs_Logs(t *testing.T) {
 			t.Parallel()
 
 			if c.Handler != nil {
-				res, err := NewVictoriaLogs(prepHTTPInput(t, "", c.Handler)).Logs(context.Background(), c.Query, c.Range, c.Page)
+				res, err := NewVictoriaLogs(slog.New(slog.DiscardHandler), prepHTTPInput(t, "", c.Handler)).Logs(context.Background(), c.Query, c.Range, c.Page)
 				testutil.AssertEqualError(t, c.Err, err)
 
 				if err != nil {
@@ -537,7 +542,7 @@ func Test_VictoriaLogs_LogsVolume(t *testing.T) {
 			t.Parallel()
 
 			if c.Handler != nil {
-				res, err := NewVictoriaLogs(prepHTTPInput(t, "", c.Handler)).LogsVolume(context.Background(), "", c.Range)
+				res, err := NewVictoriaLogs(slog.New(slog.DiscardHandler), prepHTTPInput(t, "", c.Handler)).LogsVolume(context.Background(), "", c.Range)
 				testutil.AssertEqualError(t, c.Err, err)
 
 				if err != nil {
@@ -630,7 +635,7 @@ func Test_VictoriaLogs_LogFields(t *testing.T) {
 			t.Parallel()
 
 			if c.Handler != nil {
-				res, err := NewVictoriaLogs(prepHTTPInput(t, "", c.Handler)).LogFields(context.Background(), c.Query, _logsWindow)
+				res, err := NewVictoriaLogs(slog.New(slog.DiscardHandler), prepHTTPInput(t, "", c.Handler)).LogFields(context.Background(), c.Query, _logsWindow)
 				testutil.AssertEqualError(t, c.Err, err)
 
 				if err != nil {
@@ -731,7 +736,7 @@ func Test_VictoriaLogs_LogFieldValues(t *testing.T) {
 			t.Parallel()
 
 			if c.Handler != nil {
-				res, err := NewVictoriaLogs(prepHTTPInput(t, "", c.Handler)).
+				res, err := NewVictoriaLogs(slog.New(slog.DiscardHandler), prepHTTPInput(t, "", c.Handler)).
 					LogFieldValues(context.Background(), c.Field, c.Query, _logsWindow)
 				testutil.AssertEqualError(t, c.Err, err)
 
@@ -773,6 +778,21 @@ func Test_VictoriaLogs_LogFieldValues(t *testing.T) {
 func Test_VictoriaLogs_fetchLines(t *testing.T) {
 	tiny := TimeRange{From: time.Unix(0, 0), To: time.Unix(0, 10)}
 
+	split := uniqueTimeCorpusLine(t)
+	splitQuery := fmt.Sprintf(`seq:="%d" | copy level as copied | math seq * 2 as double | format "t-<trace_id>" as trace_id`, split.Seq)
+
+	checkSplit := func(t *testing.T, lines []LogLine) {
+		t.Helper()
+
+		assert.True(t, lines[0].StoredFieldsOnly)
+		assert.Equal(t, map[string]string{"level": split.Level, "seq": strconv.Itoa(split.Seq)}, lines[0].Fields)
+		assert.Equal(t, map[string]string{
+			"copied":   split.Level,
+			"double":   strconv.Itoa(split.Seq * 2),
+			"trace_id": "t-" + split.TraceID,
+		}, lines[0].Parsed)
+	}
+
 	cc := map[string]struct {
 		Handler http.Handler
 		Version string
@@ -782,10 +802,11 @@ func Test_VictoriaLogs_fetchLines(t *testing.T) {
 		Order   LogsOrder
 		Params  url.Values
 		Count   int
+		Check   func(t *testing.T, lines []LogLine)
 		Result  []LogLine
 		Err     error
 	}{
-		"Error returned by httpClient.fetchRaw": {
+		"Error returned by VictoriaLogs.fetchRows": {
 			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusBadRequest, `bad`),
 			Range:   tiny,
 			Limit:   1,
@@ -846,6 +867,22 @@ func Test_VictoriaLogs_fetchLines(t *testing.T) {
 			Limit:   10,
 			Err:     _errVictoriaLogsNoTime,
 		},
+		"Fields the query made are told apart on the oldest VictoriaLogs": {
+			Version: _victoriaLogsVersions[0],
+			Query:   splitQuery,
+			Range:   _logsWindow,
+			Limit:   10,
+			Count:   1,
+			Check:   checkSplit,
+		},
+		"Fields the query made are told apart on the newest VictoriaLogs": {
+			Version: _victoriaLogsVersions[1],
+			Query:   splitQuery,
+			Range:   _logsWindow,
+			Limit:   10,
+			Count:   1,
+			Check:   checkSplit,
+		},
 		"Comment at the end of an asc query on the oldest VictoriaLogs": {
 			Version: _victoriaLogsVersions[0],
 			Query:   "timeout # slow calls",
@@ -880,7 +917,7 @@ func Test_VictoriaLogs_fetchLines(t *testing.T) {
 				c.Handler.ServeHTTP(w, r)
 			})
 
-			lines, err := NewVictoriaLogs(prepHTTPInput(t, target, h)).
+			lines, err := NewVictoriaLogs(slog.New(slog.DiscardHandler), prepHTTPInput(t, target, h)).
 				fetchLines(c.Query, c.Range.To)(context.Background(), c.Range.From, c.Range.To, c.Limit, c.Order)
 			testutil.AssertEqualError(t, c.Err, err)
 
@@ -889,7 +926,11 @@ func Test_VictoriaLogs_fetchLines(t *testing.T) {
 			}
 
 			if c.Version != "" {
-				assert.Len(t, lines, c.Count)
+				require.Len(t, lines, c.Count)
+
+				if c.Check != nil {
+					c.Check(t, lines)
+				}
 
 				return
 			}
@@ -900,6 +941,169 @@ func Test_VictoriaLogs_fetchLines(t *testing.T) {
 	}
 }
 
+func Test_VictoriaLogs_fetchStoredRows(t *testing.T) {
+	const (
+		id = "0a1b"
+		at = "1970-01-01T00:00:00.000000001Z"
+	)
+
+	page := victoriaLogsRow{"_stream_id": id, "_time": at, "host": "a"}
+	stored := `{"_stream_id":"` + id + `","_time":"` + at + `","host":"a"}`
+
+	notCalled := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		assert.Fail(t, "stored logs were looked up")
+	})
+
+	cc := map[string]struct {
+		Rows    []victoriaLogsRow
+		Handler http.Handler
+		Result  map[victoriaLogsRowKey]victoriaLogsRow
+		Logged  string
+	}{
+		"Page over the cap": {
+			Rows:    slices.Repeat([]victoriaLogsRow{page}, _maxLogsLimit+2),
+			Handler: notCalled,
+		},
+		"Error returned by VictoriaLogs.fetchRows": {
+			Rows:    []victoriaLogsRow{page},
+			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusBadRequest, `bad`),
+			Logged:  "cannot read stored logs",
+		},
+		"Row without a stream ID": {
+			Rows:    []victoriaLogsRow{{"_time": at, "host": "a"}},
+			Handler: notCalled,
+			Result:  map[victoriaLogsRowKey]victoriaLogsRow{},
+		},
+		"Two stored copies": {
+			Rows:    []victoriaLogsRow{page},
+			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusOK, stored+"\n"+stored),
+			Result:  map[victoriaLogsRowKey]victoriaLogsRow{},
+		},
+		"One stored copy": {
+			Rows:    []victoriaLogsRow{page},
+			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusOK, stored),
+			Result: map[victoriaLogsRowKey]victoriaLogsRow{
+				{streamID: id, time: time.Unix(0, 1).UTC()}: page,
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+
+			res := NewVictoriaLogs(slog.New(slog.NewTextHandler(&buf, nil)), prepHTTPInput(t, "", c.Handler)).
+				fetchStoredRows(context.Background(), c.Rows)
+
+			if c.Logged == "" {
+				assert.Empty(t, buf.String())
+			} else {
+				assert.Contains(t, buf.String(), c.Logged)
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
+}
+
+func Test_VictoriaLogs_fetchRows(t *testing.T) {
+	cc := map[string]struct {
+		Handler http.Handler
+		Result  []victoriaLogsRow
+		Err     error
+	}{
+		"Error returned by httpClient.fetch": {
+			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusBadRequest, `bad`),
+			Err:     NewInvalidQueryError("bad"),
+		},
+		"Row that does not decode": {
+			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusOK, `{"_msg":1}`),
+			Err:     assert.AnError,
+		},
+		"Rows with blank lines between them": {
+			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusOK, "\n"+`{"a":"1"}`+"\n\n"+`{"b":"2"}`+"\n"),
+			Result:  []victoriaLogsRow{{"a": "1"}, {"b": "2"}},
+		},
+		"Empty answer": {
+			Handler: testutil.JSONHandler(_victoriaLogsQueryPath, http.StatusOK, ``),
+		},
+		"Params go in a POST body": {
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, http.MethodPost, r.Method)
+				assert.NoError(t, r.ParseForm())
+				assert.Equal(t, "error", r.PostForm.Get("query"))
+
+				_, err := w.Write([]byte(`{"a":"1"}`))
+				assert.NoError(t, err)
+			}),
+			Result: []victoriaLogsRow{{"a": "1"}},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := NewVictoriaLogs(slog.New(slog.DiscardHandler), prepHTTPInput(t, "", c.Handler)).
+				fetchRows(context.Background(), http.MethodPost, url.Values{"query": {"error"}})
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
+}
+
+func Test_newVictoriaLogsLookups(t *testing.T) {
+	t.Parallel()
+
+	row := func(id string, ns int64) victoriaLogsRow {
+		return victoriaLogsRow{"_stream_id": id, "_time": time.Unix(0, ns).UTC().Format(time.RFC3339Nano)}
+	}
+
+	// rows without a valid key are left out
+	assert.Empty(t, newVictoriaLogsLookups([]victoriaLogsRow{
+		{"_time": "1970-01-01T00:00:00Z"},
+		{"_stream_id": "a b", "_time": "1970-01-01T00:00:00Z"},
+		{"_stream_id": "ab", "_time": "yesterday"},
+	}))
+
+	// the window spans every row and ends after the newest one
+	lookups := newVictoriaLogsLookups([]victoriaLogsRow{row("ab", 5), row("cd", 2)})
+	require.Len(t, lookups, 1)
+	assert.Equal(t, "(_stream_id:ab _time:1970-01-01T00:00:00.000000005Z) or (_stream_id:cd _time:1970-01-01T00:00:00.000000002Z)", lookups[0].query)
+	assert.Equal(t, TimeRange{From: time.Unix(0, 2).UTC(), To: time.Unix(0, 6).UTC()}, lookups[0].tr)
+
+	// rows sharing a key get one term, and a time keeps all nine digits
+	lookups = newVictoriaLogsLookups([]victoriaLogsRow{row("ab", int64(time.Second)), row("ab", int64(time.Second))})
+	require.Len(t, lookups, 1)
+	assert.Equal(t, "(_stream_id:ab _time:1970-01-01T00:00:01.000000000Z)", lookups[0].query)
+
+	// many rows split into queries under the cap
+	many := make([]victoriaLogsRow, 1000)
+	for i := range many {
+		many[i] = row(strings.Repeat("f", 48), int64(i))
+	}
+
+	lookups = newVictoriaLogsLookups(many)
+	require.Greater(t, len(lookups), 1)
+
+	terms := 0
+
+	for _, l := range lookups {
+		assert.LessOrEqual(t, len(l.query), _victoriaLogsMaxLookupLen)
+
+		terms += strings.Count(l.query, "_stream_id:")
+	}
+
+	assert.Equal(t, len(many), terms)
+}
+
 func Test_victoriaLogsListResponse_names(t *testing.T) {
 	t.Parallel()
 
@@ -907,6 +1111,71 @@ func Test_victoriaLogsListResponse_names(t *testing.T) {
 
 	assert.Equal(t, []string{"b", "a"}, vlr.names())
 	assert.Equal(t, []string{}, victoriaLogsListResponse{}.names())
+}
+
+func Test_victoriaLogsRow_key(t *testing.T) {
+	cc := map[string]struct {
+		Row    victoriaLogsRow
+		Result victoriaLogsRowKey
+		OK     bool
+	}{
+		"Row without a stream ID":   {Row: victoriaLogsRow{"_time": "1970-01-01T00:00:00Z"}},
+		"Stream ID that is not hex": {Row: victoriaLogsRow{"_stream_id": "x) or *", "_time": "1970-01-01T00:00:00Z"}},
+		"Time that does not parse":  {Row: victoriaLogsRow{"_stream_id": "ab", "_time": "yesterday"}},
+		"Valid key": {
+			Row:    victoriaLogsRow{"_stream_id": "ab", "_time": "1970-01-01T00:00:00.000000001Z"},
+			Result: victoriaLogsRowKey{streamID: "ab", time: time.Unix(0, 1).UTC()},
+			OK:     true,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			key, ok := c.Row.key()
+
+			assert.Equal(t, c.OK, ok)
+			assert.Equal(t, c.Result, key)
+		})
+	}
+}
+
+func Test_victoriaLogsRow_splitLine(t *testing.T) {
+	cc := map[string]struct {
+		Fields map[string]string
+		Stored victoriaLogsRow
+		Result LogLine
+	}{
+		"Fields the query made or changed": {
+			Fields: map[string]string{"host": "a", "made": "m", "changed": "new"},
+			Stored: victoriaLogsRow{"host": "a", "changed": "old"},
+			Result: LogLine{
+				Fields:           map[string]string{"host": "a"},
+				Parsed:           map[string]string{"made": "m", "changed": "new"},
+				StoredFieldsOnly: true,
+			},
+		},
+		"Only stored fields": {
+			Fields: map[string]string{"host": "a"},
+			Stored: victoriaLogsRow{"host": "a"},
+			Result: LogLine{
+				Fields:           map[string]string{"host": "a"},
+				StoredFieldsOnly: true,
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			line := LogLine{Fields: c.Fields}
+			c.Stored.splitLine(&line)
+
+			assert.Equal(t, c.Result, line)
+		})
+	}
 }
 
 func Test_victoriaLogsRow_logLine(t *testing.T) {
@@ -1126,4 +1395,31 @@ func Test_createVictoriaLogsWindowParams(t *testing.T) {
 			assert.Equal(t, c.Result, createVictoriaLogsWindowParams(c.Query, tr))
 		})
 	}
+}
+
+// uniqueTimeCorpusLine returns a corpus line with a level that no other
+// line of its stream shares a time with, so its stored copy is the only one.
+func uniqueTimeCorpusLine(t *testing.T) corpusLine {
+	t.Helper()
+
+	type streamTime struct {
+		service string
+		at      time.Time
+	}
+
+	counts := map[streamTime]int{}
+
+	for _, l := range _logsCorpus {
+		counts[streamTime{l.Service, l.Time}]++
+	}
+
+	for _, l := range _logsCorpus {
+		if l.Level != "" && counts[streamTime{l.Service, l.Time}] == 1 {
+			return l
+		}
+	}
+
+	t.Fatal("the corpus has no line with a time of its own")
+
+	return corpusLine{}
 }

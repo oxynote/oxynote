@@ -47,6 +47,9 @@ export interface Log {
 	// the keys a parser stage of the query took from the line, such as
 	// LogQL's logfmt. Absent when no parser ran.
 	parsed?: Record<string, string>
+	// fields holds only the fields sent with the line, and parsed the ones
+	// the query made. Without it, fields may hold both.
+	storedFieldsOnly?: boolean
 }
 
 // both cursors are opaque. nextCursor reads on past the result's last line,

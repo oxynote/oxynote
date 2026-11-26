@@ -2,6 +2,7 @@
 import FieldTable from "./FieldTable.vue"
 import type { LineFormat, LogDialect, LogFilter } from "../dialect"
 import {
+	carriedFields,
 	extractedFields,
 	sortedEntries,
 	type ExtractedField,
@@ -37,8 +38,8 @@ const sections = computed<
 	},
 	{
 		heading: t("editor.logs.view.metadata-heading"),
-		description: t("editor.logs.view.metadata-description"),
-		entries: sortedEntries(props.log.fields).map(([key, value]) => ({
+		description: metadataDescription(),
+		entries: carriedFields(props.log).map(([key, value]) => ({
 			key: key,
 			value: value,
 			filter: { key: key, value: value, indexed: false },
@@ -50,6 +51,21 @@ const sections = computed<
 		entries: extractedFields(props.log, props.dialect).map(extractedRow),
 	},
 ])
+
+// metadataDescription says whether the metadata fields are indexed. A
+// source that indexes every field is sure of it only when the fields were
+// split. Otherwise the query may have added some of them.
+function metadataDescription() {
+	if (!props.dialect.indexesAllFields) {
+		return t("editor.logs.view.metadata-description")
+	}
+
+	if (props.log.storedFieldsOnly) {
+		return t("editor.logs.view.metadata-description-indexed")
+	}
+
+	return t("editor.logs.view.metadata-description-indexed-if-sent")
+}
 
 // extractedRow gives a key the query's parser added a plain filter. A key
 // read from the line filters by the source's name for it, and brings the
@@ -84,6 +100,16 @@ function extractedRow(field: ExtractedField): FieldRow {
 			...row,
 			filter: null,
 			disabledReason: t("editor.logs.view.filter-query-blocked"),
+		}
+	}
+
+	if (
+		!props.dialect.readsLineKey(props.log, field.format, field.key, field.value)
+	) {
+		return {
+			...row,
+			filter: null,
+			disabledReason: t("editor.logs.view.filter-line-unread"),
 		}
 	}
 

@@ -585,6 +585,41 @@ describe("<DataView>", { concurrent: false }, () => {
 			expect(chipTexts(wrapper)).toEqual(["env", "=", "prod"])
 		})
 
+		it("narrows a victorialogs query with a pipe after it", async ({
+			expect,
+		}) => {
+			mockEndpoint("GET", "/api/data-sources", () => [
+				{
+					id: DATA_SOURCE_ID,
+					name: "VictoriaLogs",
+					type: DataSourceType.VictoriaLogs,
+				},
+			])
+			const calls = mockEndpoint("GET", LINES_URL, () =>
+				logsResult([makeLog("a1", "11:57:00Z")]),
+			)
+			const wrapper = await mountView(
+				logConfig({ queries: [{ name: "Query 1", query: "error" }] }),
+			)
+			await settleLogRequests()
+			await rowButtons(wrapper)[0]?.trigger("click")
+
+			await findButtonByText(
+				wrapper,
+				t("editor.logs.view.include-value", { key: "env" }),
+			).trigger("click")
+			await settleLogRequests()
+
+			expect(calls).toHaveLength(2)
+			expect(calls[1]?.query).toEqual({
+				q: 'error\n| filter {"env"="prod"}',
+				limit: "100",
+				...WINDOW,
+				order: "desc",
+			})
+			expect(chipTexts(wrapper)).toEqual(["env", "=", "prod"])
+		})
+
 		it("replaces the filter on a key that already has one", async ({
 			expect,
 		}) => {
@@ -613,6 +648,119 @@ describe("<DataView>", { concurrent: false }, () => {
 			])
 			expect(chipTexts(wrapper)).toEqual(["env", "≠", "prod"])
 		})
+
+		it("keeps a victorialogs field filter beside a line key filter of the same name", async ({
+			expect,
+		}) => {
+			mockEndpoint("GET", "/api/data-sources", () => [
+				{
+					id: DATA_SOURCE_ID,
+					name: "VictoriaLogs",
+					type: DataSourceType.VictoriaLogs,
+				},
+			])
+			const calls = mockEndpoint("GET", LINES_URL, () =>
+				logsResult([
+					{
+						...makeLog("a1", "11:57:00Z"),
+						line: '{"status":200}',
+						labels: {},
+						fields: { status: "500" },
+					},
+				]),
+			)
+			const wrapper = await mountView(
+				logConfig({ queries: [{ name: "Query 1", query: "error" }] }),
+			)
+			await settleLogRequests()
+			await rowButtons(wrapper)[0]?.trigger("click")
+			const include = t("editor.logs.view.include-value", { key: "status" })
+
+			await wrapper
+				.findAll("button")
+				.find((b) => b.text() === include)
+				?.trigger("click")
+			await settleLogRequests()
+			await wrapper
+				.findAll("button")
+				.filter((b) => b.text() === include)[1]
+				?.trigger("click")
+			await settleLogRequests()
+
+			expect(calls.at(-1)?.query.q).toContain('filter "status":="500"')
+			expect(calls.at(-1)?.query.q).toContain('"__oxynote_line.status":="200"')
+			expect(chipTexts(wrapper)).toEqual([
+				"status",
+				"=",
+				"500",
+				"status",
+				"=",
+				"200",
+			])
+		})
+
+		it.for<{
+			name: string
+			fields: Record<string, string>
+			parsed?: Record<string, string>
+			expected: number
+		}>([
+			{
+				name: "as metadata when it was stored",
+				fields: { status: "200" },
+				parsed: undefined,
+				expected: 1,
+			},
+			{
+				name: "as content when the query made it",
+				fields: {},
+				parsed: { status: "200" },
+				expected: 0,
+			},
+		])(
+			"lists a victorialogs field that repeats a line key $name",
+			async ({ fields, parsed, expected }, { expect }) => {
+				mockEndpoint("GET", "/api/data-sources", () => [
+					{
+						id: DATA_SOURCE_ID,
+						name: "VictoriaLogs",
+						type: DataSourceType.VictoriaLogs,
+					},
+				])
+				mockEndpoint("GET", LINES_URL, () =>
+					logsResult([
+						{
+							...makeLog("a1", "11:57:00Z"),
+							line: '{"status":200}',
+							labels: {},
+							fields,
+							parsed,
+							storedFieldsOnly: true,
+						},
+					]),
+				)
+				const wrapper = await mountView(
+					logConfig({ queries: [{ name: "Query 1", query: "error" }] }),
+				)
+				await settleLogRequests()
+				await rowButtons(wrapper)[0]?.trigger("click")
+				const include = t("editor.logs.view.include-value", { key: "status" })
+				const metadata = wrapper
+					.findAll("section")
+					.find(
+						(section) =>
+							section.find("h4").text() ===
+							t("editor.logs.view.metadata-heading"),
+					)
+
+				expect(
+					wrapper.findAll("button").filter((b) => b.text() === include),
+				).toHaveLength(1)
+				expect(
+					metadata?.findAll("button").filter((b) => b.text() === include),
+				).toHaveLength(expected)
+			},
+		)
 
 		it("keeps showing the lines while a narrowed query loads", async ({
 			expect,

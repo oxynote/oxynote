@@ -2,8 +2,9 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { flushPromises, type VueWrapper } from "@vue/test-utils"
 import { afterEach, describe, it, vi } from "vitest"
 import RowDetails from "./RowDetails.vue"
-import { LineFormat } from "../dialect"
+import { LineFormat, type LogDialect } from "../dialect"
 import { lokiDialect } from "../loki"
+import { victoriaLogsDialect } from "../victorialogs"
 import {
 	findButtonByText,
 	mountUnderTooltipProvider,
@@ -52,6 +53,34 @@ describe("<RowDetails>", { concurrent: false }, () => {
 		])
 	})
 
+	it("lists the keys a victorialogs query unpacked from the line once, as content", async ({
+		expect,
+	}) => {
+		// the nested value's row explains in a tooltip why it has no filter
+		const wrapper = await mountUnderTooltipProvider(RowDetails, {
+			props: {
+				log: makeLog({
+					line: '{"msg":"m","status":500,"user":{"id":7}}',
+					fields: { trace_id: "abc" },
+					parsed: { status: "500", "user.id": "7" },
+					storedFieldsOnly: true,
+				}),
+				dialect: victoriaLogsDialect,
+				lineFilterFormats: Object.values(LineFormat),
+			},
+		})
+
+		expect(tableRows(wrapper).slice(1)).toEqual([
+			[["trace_id", "abc"]],
+			[
+				["msg", "m"],
+				["status", "500"],
+				["user", '{"id":7}'],
+				["user.id", "7"],
+			],
+		])
+	})
+
 	it("describes each table in a note that narrow blocks hide", async ({
 		expect,
 	}) => {
@@ -64,6 +93,62 @@ describe("<RowDetails>", { concurrent: false }, () => {
 			t("editor.logs.view.content-description"),
 		])
 		expect(notes.every((note) => note.classes().includes("hidden"))).toBe(true)
+	})
+
+	it.for([
+		{
+			name: "the source told the stored fields apart",
+			storedFieldsOnly: true,
+			expected: "editor.logs.view.metadata-description-indexed",
+		},
+		{
+			name: "the source could not tell them apart",
+			storedFieldsOnly: false,
+			expected: "editor.logs.view.metadata-description-indexed-if-sent",
+		},
+	])(
+		"calls the metadata indexed when $name",
+		async ({ storedFieldsOnly, expected }, { expect }) => {
+			const wrapper = await mountDetails(
+				makeLog({ storedFieldsOnly }),
+				victoriaLogsDialect,
+			)
+			const notes = wrapper.findAll("h4 + span")
+
+			expect(notes.map((note) => note.text())).toEqual([
+				t("editor.logs.view.origin-description"),
+				t(expected),
+				t("editor.logs.view.content-description"),
+			])
+		},
+	)
+
+	it("lists the fields a query pipe wrote as content, filtered as fields", async ({
+		expect,
+	}) => {
+		const wrapper = await mountDetails(
+			makeLog({
+				line: '10.0.0.1 "GET /a"',
+				labels: {},
+				fields: { host: "gw-1" },
+				parsed: { ip: "10.0.0.1" },
+				storedFieldsOnly: true,
+			}),
+			victoriaLogsDialect,
+		)
+
+		await findButtonByText(
+			wrapper,
+			t("editor.logs.view.include-value", { key: "ip" }),
+		).trigger("click")
+
+		expect(tableRows(wrapper).slice(1)).toEqual([
+			[["host", "gw-1"]],
+			[["ip", "10.0.0.1"]],
+		])
+		expect(wrapper.emitted("filter")).toEqual([
+			[{ key: "ip", value: "10.0.0.1", indexed: false, exclude: false }],
+		])
 	})
 
 	it("says none in a table without entries", async ({ expect }) => {
@@ -223,7 +308,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 	it.for([
 		{
 			name: "turns off the filter of a line key the query cannot filter",
-			input: { log: {}, formats: [LineFormat.JSON] },
+			input: { log: {}, formats: [LineFormat.JSON], dialect: lokiDialect },
 			expected: "editor.logs.view.filter-query-blocked",
 		},
 		{
@@ -231,6 +316,7 @@ describe("<RowDetails>", { concurrent: false }, () => {
 			input: {
 				log: { line: '{"user":{"id":1}}', parsed: undefined },
 				formats: [LineFormat.JSON],
+				dialect: lokiDialect,
 			},
 			expected: "editor.logs.view.filter-nested",
 		},
@@ -239,14 +325,24 @@ describe("<RowDetails>", { concurrent: false }, () => {
 			input: {
 				log: { line: '{"status":null}', parsed: undefined },
 				formats: [LineFormat.JSON],
+				dialect: lokiDialect,
 			},
 			expected: "editor.logs.view.filter-null",
+		},
+		{
+			name: "turns off the filter of a line key the source cannot read",
+			input: {
+				log: { line: ' {"status":200}', fields: {}, parsed: undefined },
+				formats: [LineFormat.JSON],
+				dialect: victoriaLogsDialect,
+			},
+			expected: "editor.logs.view.filter-line-unread",
 		},
 	])("$name", async ({ input, expected }, { expect }) => {
 		const wrapper = await mountUnderTooltipProvider(RowDetails, {
 			props: {
 				log: makeLog(input.log),
-				dialect: lokiDialect,
+				dialect: input.dialect,
 				lineFilterFormats: input.formats,
 			},
 		})
@@ -262,6 +358,58 @@ describe("<RowDetails>", { concurrent: false }, () => {
 		await flushPromises()
 
 		expect(openTooltipText(wrapper)).toBe(t(expected))
+	})
+
+	it("lists a stored field that repeats a line key once, as metadata", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSuspended(RowDetails, {
+			props: {
+				log: makeLog({
+					line: '{"level":"error","path":"/a"}',
+					labels: {},
+					fields: { level: "error" },
+					parsed: undefined,
+				}),
+				dialect: victoriaLogsDialect,
+				lineFilterFormats: Object.values(LineFormat),
+			},
+		})
+
+		await findButtonByText(
+			wrapper,
+			t("editor.logs.view.include-value", { key: "level" }),
+		).trigger("click")
+
+		expect(tableRows(wrapper).slice(1)).toEqual([
+			[["level", "error"]],
+			[["path", "/a"]],
+		])
+		expect(wrapper.emitted("filter")).toEqual([
+			[{ key: "level", value: "error", indexed: false, exclude: false }],
+		])
+	})
+
+	it("keeps a line key whose stored field holds another value", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSuspended(RowDetails, {
+			props: {
+				log: makeLog({
+					line: '{"status":200}',
+					labels: {},
+					fields: { status: "500" },
+					parsed: undefined,
+				}),
+				dialect: victoriaLogsDialect,
+				lineFilterFormats: Object.values(LineFormat),
+			},
+		})
+
+		expect(tableRows(wrapper).slice(1)).toEqual([
+			[["status", "500"]],
+			[["status", "200"]],
+		])
 	})
 
 	it("copies the raw line and says so", async ({ expect }) => {
@@ -335,11 +483,11 @@ function makeLog(overrides: Partial<Log> = {}): Log {
 }
 
 // every line format can be filtered, so no row needs a tooltip provider
-function mountDetails(log: Log) {
+function mountDetails(log: Log, dialect: LogDialect = lokiDialect) {
 	return mountSuspended(RowDetails, {
 		props: {
 			log,
-			dialect: lokiDialect,
+			dialect,
 			lineFilterFormats: Object.values(LineFormat),
 		},
 	})

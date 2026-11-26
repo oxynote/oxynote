@@ -150,26 +150,18 @@ describe("useSQLQueryExtension", () => {
 		const options = await complete("$", 1)
 		const byLabel = new Map(options.map((o) => [o.label, o]))
 
-		expect(byLabel.get("$__from")?.info).toBe(
-			"editor.config-modal-utils.query-info.sql.from",
-		)
-		expect(byLabel.get("$__to")?.info).toBe(
-			"editor.config-modal-utils.query-info.sql.to",
-		)
+		expect(byLabel.get("$__from")?.info).toBe("query-languages.sql.from")
+		expect(byLabel.get("$__to")?.info).toBe("query-languages.sql.to")
 		expect(byLabel.get("$__interval")?.info).toBe(
-			"editor.config-modal-utils.query-info.sql.interval",
+			"query-languages.sql.interval",
 		)
 		expect(byLabel.get("$__interval_ms")?.info).toBe(
-			"editor.config-modal-utils.query-info.sql.interval-ms",
+			"query-languages.sql.interval-ms",
 		)
-		expect(byLabel.get("$__range")?.info).toBe(
-			"editor.config-modal-utils.query-info.sql.range",
-		)
-		expect(byLabel.get("$__range_s")?.info).toBe(
-			"editor.config-modal-utils.query-info.sql.range-s",
-		)
+		expect(byLabel.get("$__range")?.info).toBe("query-languages.sql.range")
+		expect(byLabel.get("$__range_s")?.info).toBe("query-languages.sql.range-s")
 		expect(byLabel.get("$__range_ms")?.info).toBe(
-			"editor.config-modal-utils.query-info.sql.range-ms",
+			"query-languages.sql.range-ms",
 		)
 	})
 

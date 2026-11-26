@@ -177,6 +177,7 @@
 					"creation": {
 						"prometheus": "Connect Prometheus",
 						"loki": "Connect Loki",
+						"victorialogs": "Connect VictoriaLogs",
 						"postgresql": "Connect PostgreSQL",
 						"supabase": "Connect Supabase",
 						"mysql": "Connect MySQL",
@@ -185,6 +186,7 @@
 					"update": {
 						"prometheus": "Update Prometheus",
 						"loki": "Update Loki",
+						"victorialogs": "Update VictoriaLogs",
 						"postgresql": "Update PostgreSQL",
 						"supabase": "Update Supabase",
 						"mysql": "Update MySQL",
@@ -195,6 +197,7 @@
 					"creation": {
 						"prometheus": "Connect a new Prometheus server to use in your workspace.",
 						"loki": "Connect a new Loki server to use in your workspace.",
+						"victorialogs": "Connect a new VictoriaLogs server to use in your workspace.",
 						"postgresql": "Connect a new PostgreSQL server to use in your workspace.",
 						"supabase": "Connect a Supabase project to use in your workspace.",
 						"mysql": "Connect a new MySQL server to use in your workspace.",
@@ -203,6 +206,7 @@
 					"update": {
 						"prometheus": "Update the settings of your Prometheus server.",
 						"loki": "Update the settings of your Loki server.",
+						"victorialogs": "Update the settings of your VictoriaLogs server.",
 						"postgresql": "Update the settings of your PostgreSQL server.",
 						"supabase": "Update the settings of your Supabase project.",
 						"mysql": "Update the settings of your MySQL server.",
@@ -217,6 +221,10 @@
 					"loki": {
 						"label": "Name",
 						"placeholder": "Main Loki Server"
+					},
+					"victorialogs": {
+						"label": "Name",
+						"placeholder": "Main VictoriaLogs Server"
 					},
 					"postgresql": {
 						"label": "Name",
@@ -243,6 +251,10 @@
 					"loki": {
 						"label": "URL",
 						"placeholder": "https://loki.example.com:3100"
+					},
+					"victorialogs": {
+						"label": "URL",
+						"placeholder": "https://victorialogs.example.com:9428"
 					},
 					"postgresql": {
 						"label": "URL",
@@ -292,6 +304,10 @@
 						"label": "Username",
 						"placeholder": "Username"
 					},
+					"victorialogs": {
+						"label": "Username",
+						"placeholder": "Username"
+					},
 					"postgresql": {
 						"label": "Username",
 						"placeholder": "Username"
@@ -315,6 +331,10 @@
 						"placeholder": "Password"
 					},
 					"loki": {
+						"label": "Password",
+						"placeholder": "Password"
+					},
+					"victorialogs": {
 						"label": "Password",
 						"placeholder": "Password"
 					},
@@ -438,6 +458,7 @@
 				"title": {
 					"prometheus": "Remove Prometheus Data Source",
 					"loki": "Remove Loki Data Source",
+					"victorialogs": "Remove VictoriaLogs Data Source",
 					"postgresql": "Remove PostgreSQL Data Source",
 					"supabase": "Remove Supabase Data Source",
 					"mysql": "Remove MySQL Data Source",
@@ -711,6 +732,39 @@
 					"disconnect": {
 						"title": "Loki couldn't be disconnected",
 						"description": "An error occurred while trying to disconnect from Loki. Please try again"
+					}
+				}
+			},
+			"victorialogs": {
+				"title": "VictoriaLogs",
+				"description": "Connect your VictoriaLogs server and use it in live log blocks in your pages",
+				"connect": "Connect",
+				"connected-label": "Connected",
+				"option-button-screen-reader-hint": "Manage Data Source",
+				"options": {
+					"update": {
+						"title": "Update"
+					},
+					"delete": {
+						"title": "Remove"
+					}
+				},
+				"status-messages": {
+					"success": "Successfully connected",
+					"unauthorized": "Authentication credentials are incorrect",
+					"unreachable": "VictoriaLogs server is unreachable",
+					"version_not_supported": "VictoriaLogs version not supported",
+					"invalid_encryption_key": "Stored credentials can no longer be read",
+					"invalid_ca_certificate": "CA certificate is invalid, or the connection does not use TLS"
+				},
+				"errors": {
+					"install": {
+						"title": "VictoriaLogs data source couldn't be connected",
+						"description": "An error occurred while trying to connect to VictoriaLogs. Please try again"
+					},
+					"disconnect": {
+						"title": "VictoriaLogs couldn't be disconnected",
+						"description": "An error occurred while trying to disconnect from VictoriaLogs. Please try again"
 					}
 				}
 			},

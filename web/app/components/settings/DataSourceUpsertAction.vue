@@ -117,7 +117,8 @@ const dataSourceType = computed(() => {
 const acceptsTokens = computed(
 	() =>
 		dataSourceType.value === DataSourceType.Prometheus ||
-		dataSourceType.value === DataSourceType.Loki,
+		dataSourceType.value === DataSourceType.Loki ||
+		dataSourceType.value === DataSourceType.VictoriaLogs,
 )
 
 const { createDataSource, updateDataSource } = useDataSourceAPI()

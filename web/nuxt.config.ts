@@ -207,6 +207,7 @@ export default defineNuxtConfig({
 					"en/general.json",
 					"en/sidebar.json",
 					"en/editor.json",
+					"en/query-languages.json",
 					"en/onboarding.json",
 					"en/settings.json",
 					"en/shortcuts.json",

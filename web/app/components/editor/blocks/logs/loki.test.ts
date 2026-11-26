@@ -277,6 +277,25 @@ describe("lokiDialect.lineKeyName", () => {
 	})
 })
 
+describe("lokiDialect.readsLineKey", () => {
+	it("reads the key of a JSON line that starts with white space", ({
+		expect,
+	}) => {
+		const log: Log = {
+			id: "l1",
+			time: "2026-01-01T12:00:00Z",
+			level: LogLevel.Info,
+			line: ' {"status":200}',
+			labels: {},
+			fields: {},
+		}
+
+		expect(
+			lokiDialect.readsLineKey(log, LineFormat.JSON, "status", "200"),
+		).toBe(true)
+	})
+})
+
 describe("lokiDialect.logfmtParseFailed", () => {
 	it.for([
 		{

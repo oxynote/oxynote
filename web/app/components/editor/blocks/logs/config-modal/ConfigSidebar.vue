@@ -7,7 +7,7 @@ import DataSourceSelect from "../../config-modal-utils/DataSourceSelect.vue"
 import TimestampFormatSelect from "./TimestampFormatSelect.vue"
 import OrderSelect from "./OrderSelect.vue"
 
-const dataSourceTypes = [DataSourceType.Loki]
+const dataSourceTypes = [DataSourceType.Loki, DataSourceType.VictoriaLogs]
 
 const config = defineModel<LogConfig>({ required: true })
 const props = defineProps<{

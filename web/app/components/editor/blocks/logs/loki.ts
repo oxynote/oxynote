@@ -1,6 +1,6 @@
 import { parser } from "@oxynote/lezer-logql"
 import { LineFormat, type LogDialect, type LogFilter } from "./dialect"
-import { isNumberText, type KeyValue } from "./rows"
+import { isNumberText, sameValue, type KeyValue } from "./rows"
 
 // RE2 metacharacters, which a search has to match literally
 const REGEX_SPECIAL = /[\\.+*?()|[\]{}^$]/g
@@ -10,7 +10,10 @@ const REGEX_SPECIAL = /[\\.+*?()|[\]{}^$]/g
 // suffix when the key clashes with a label or field.
 const KEY_CHAR = /[^A-Za-z0-9_]/g
 const CLASH_SUFFIX = "_extracted"
-const NUMBER = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/
+
+// one logfmt pair: a key, then a quoted or a bare value. A bare value ends
+// at white space.
+const LOGFMT_PAIR = /\s*([^\s="]+)=("(?:[^"\\]|\\.)*"|[^\s"]*)(?=\s|$)/y
 
 // the LogQL parser that reads each line format
 const PARSERS: Record<LineFormat, string> = {
@@ -34,9 +37,14 @@ export const lokiDialect: LogDialect = {
 	withViewFilters,
 	canFilterLineKey,
 	lineKeyName,
+	readsLineKey: () => true,
 	logfmtParseFailed,
 	decodeLogfmtValue,
 	repeatsLineKey,
+	logfmtPair: LOGFMT_PAIR,
+	logfmtKeepsLastValue: false,
+	keepsLineKeyNames: false,
+	indexesAllFields: false,
 }
 
 // withViewFilters returns the query narrowed by the view's filters and
@@ -169,42 +177,6 @@ function repeatsLineKey(
 		!isNumberText(lineValue) &&
 		name.startsWith(`${lineName}_`)
 	)
-}
-
-// sameValue tells whether Loki's text for a value is the line's value. Loki
-// keeps a JSON number as it is written in the line, which can differ from
-// how JavaScript writes it. So numbers compare by value.
-function sameValue(text: string, lineValue: unknown): boolean {
-	if (typeof lineValue === "string") {
-		return text === lineValue
-	}
-
-	if (typeof lineValue === "number" || isNumberText(lineValue)) {
-		const value = numberValue(text)
-
-		return value !== null && value === numberValue(JSON.stringify(lineValue))
-	}
-
-	return text === JSON.stringify(lineValue)
-}
-
-// numberValue writes JSON number text as its significant digits and an
-// exponent, so equal numbers give the same text and no digit is lost
-function numberValue(text: string): string | null {
-	const match = NUMBER.exec(text)
-
-	if (!match) {
-		return null
-	}
-
-	const [, sign = "", whole = "", fraction = "", exponent = "0"] = match
-	const digits = `${whole}${fraction}`.replace(/^0+/, "")
-	const significant = digits.replace(/0+$/, "")
-	const shift = digits.length - significant.length - fraction.length
-
-	return significant
-		? `${sign}${significant}e${BigInt(exponent) + BigInt(shift)}`
-		: "0"
 }
 
 function matcher(filter: LogFilter): string {

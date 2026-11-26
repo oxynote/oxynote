@@ -20,6 +20,8 @@ const icon = computed(() => {
 			return "devicon:prometheus"
 		case DataSourceType.Loki:
 			return "custom-icons:loki"
+		case DataSourceType.VictoriaLogs:
+			return "custom-icons:victoria-logs"
 		case DataSourceType.PostgreSQL:
 			return "devicon:postgresql"
 		case DataSourceType.Supabase:

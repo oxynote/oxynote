@@ -1232,6 +1232,30 @@ func Test_LogLine_hash(t *testing.T) {
 			}),
 			Equal: false,
 		},
+		"Parsed is ignored on an unsplit line": {
+			Other: with(func(l *LogLine) { l.Parsed = map[string]string{"status": "200"} }),
+			Equal: true,
+		},
+		"Split line without parsed": {
+			Other: with(func(l *LogLine) { l.StoredFieldsOnly = true }),
+			Equal: true,
+		},
+		"Field moved to parsed on a split line": {
+			Other: with(func(l *LogLine) {
+				l.StoredFieldsOnly = true
+				l.Parsed = map[string]string{"sha": "3f9a1c2"}
+				l.Fields = map[string]string{}
+			}),
+			Equal: true,
+		},
+		"Different parsed on a split line": {
+			Other: with(func(l *LogLine) {
+				l.StoredFieldsOnly = true
+				l.Parsed = map[string]string{"sha": "0000000"}
+				l.Fields = map[string]string{}
+			}),
+			Equal: false,
+		},
 	}
 
 	for cn, c := range cc {

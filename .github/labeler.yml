@@ -193,7 +193,8 @@ data-sources:
           - web/app/composables/api/*{DataSource,prometheus}*
           - web/app/utils/api/data-source/**
           - web/app/utils/promql.ts
-          - web/app/assets/custom-icons/{loki,prometheus,tempo}*
+          - web/app/assets/custom-icons/{loki,prometheus,tempo,victoria-logs}*
+          - web/i18n/locales/*/query-languages.json
           - server/core/internal/**/datasource/**
           - server/core/internal/{server/internal/block,document/blockrun}/**
           - server/core/internal/document/metric*

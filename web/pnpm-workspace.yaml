@@ -37,4 +37,5 @@ blockExoticSubdeps: false
 # release is usable the moment it exists — every new version needs a line here.
 minimumReleaseAgeExclude:
   - "@oxynote/lezer-logql@0.4.2-oxynote.1"
+  - "@oxynote/lezer-logsql@0.1.1"
   - "@oxynote/lezer-promql@0.314.0-oxynote.3"

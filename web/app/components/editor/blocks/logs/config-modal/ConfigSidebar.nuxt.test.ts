@@ -25,6 +25,7 @@ import { DiffStatus } from "~/components/editor/diff/position-map"
 
 const NEW_DATA_SOURCE_ID = makeXid("dsnew")
 const OLD_DATA_SOURCE_ID = makeXid("dsold")
+const LOG_TYPES = [DataSourceType.Loki, DataSourceType.VictoriaLogs]
 
 // the editable flag is a shared cookie state, the editor store and the
 // query cache are app-wide, and the menus are teleported into a shared
@@ -63,7 +64,7 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 		expect(at(selects, 0).props("modelValue")).toEqual(config)
 		expect(at(selects, 0).props("diffMode")).toBe(false)
 		expect(at(selects, 0).props("diffStatus")).toBeNull()
-		expect(at(selects, 0).props("types")).toEqual([DataSourceType.Loki])
+		expect(at(selects, 0).props("types")).toEqual(LOG_TYPES)
 		expect(at(selects, 0).props("emptyTitle")).toBe(
 			t("editor.logs.config.data-source-empty-title"),
 		)
@@ -230,8 +231,8 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 			expect(at(selects, 1).props("oldConfig")).toEqual(oldConfig)
 			expect(at(selects, 1).props("diffMode")).toBe(true)
 			expect(at(selects, 1).props("diffStatus")).toBe(DiffStatus.Removed)
-			expect(at(selects, 0).props("types")).toEqual([DataSourceType.Loki])
-			expect(at(selects, 1).props("types")).toEqual([DataSourceType.Loki])
+			expect(at(selects, 0).props("types")).toEqual(LOG_TYPES)
+			expect(at(selects, 1).props("types")).toEqual(LOG_TYPES)
 		})
 
 		it("shows the title a diff replaced beside the new one", async ({

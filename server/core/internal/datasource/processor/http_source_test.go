@@ -2,6 +2,7 @@ package processor
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -40,7 +41,7 @@ func prepHTTPInput(t *testing.T, target string, h http.Handler) *InputMock {
 	}
 }
 
-func Test_httpClient_fetchRaw(t *testing.T) {
+func Test_httpClient_fetch(t *testing.T) {
 	cc := map[string]struct {
 		Inp     *InputMock
 		Handler http.Handler
@@ -130,7 +131,7 @@ func Test_httpClient_fetchRaw(t *testing.T) {
 
 			hc := &httpClient{inp: inp}
 
-			body, err := hc.fetchRaw(context.Background(), _testPath, nil, nil)
+			body, err := hc.fetch(context.Background(), http.MethodGet, _testPath, nil, nil)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -184,10 +185,26 @@ func Test_httpClient_doRequest(t *testing.T) {
 	cc := map[string]struct {
 		URL     string
 		Handler http.Handler
+		Method  string
 		Status  int
 		Body    string
 		Err     error
 	}{
+		"Params go in a POST body": {
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, http.MethodPost, r.Method)
+				assert.Empty(t, r.URL.RawQuery)
+				assert.Equal(t, "application/x-www-form-urlencoded", r.Header.Get("Content-Type"))
+				assert.NoError(t, r.ParseForm())
+				assert.Equal(t, "1", r.PostForm.Get("start"))
+
+				_, err := w.Write([]byte("body"))
+				assert.NoError(t, err)
+			}),
+			Method: http.MethodPost,
+			Status: http.StatusOK,
+			Body:   "body",
+		},
 		"Invalid URL": {
 			URL: "://",
 			Err: assert.AnError,
@@ -214,6 +231,7 @@ func Test_httpClient_doRequest(t *testing.T) {
 		},
 		"Path prefix params and header reach the server": {
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, http.MethodGet, r.Method)
 				assert.Equal(t, "/proxy"+_testPath, r.URL.Path)
 				assert.Equal(t, "1", r.URL.Query().Get("start"))
 				assert.Equal(t, "yes", r.Header.Get("X-Test"))
@@ -242,6 +260,7 @@ func Test_httpClient_doRequest(t *testing.T) {
 			status, body, err := hc.doRequest(
 				context.Background(),
 				&http.Client{},
+				cmp.Or(c.Method, http.MethodGet),
 				_testPath,
 				map[string][]string{"start": {"1"}},
 				http.Header{"X-Test": {"yes"}},
