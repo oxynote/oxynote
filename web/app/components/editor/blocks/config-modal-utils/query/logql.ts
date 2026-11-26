@@ -162,7 +162,7 @@ function alternativeRange(doc: string, from: number, to: number, pos: number) {
 	const text = doc.slice(from, to)
 
 	if (/[\\()[\]]/.test(text)) {
-		return { start: from, end: to }
+		return { start: from, end: to, split: false }
 	}
 
 	const before = text.slice(0, pos - from).lastIndexOf("|")
@@ -171,6 +171,7 @@ function alternativeRange(doc: string, from: number, to: number, pos: number) {
 	return {
 		start: before < 0 ? from : from + before + 1,
 		end: after < 0 ? to : from + after,
+		split: true,
 	}
 }
 
@@ -259,13 +260,31 @@ function stringEnd(doc: string, from: number, quote: string) {
 	return doc.length
 }
 
+// the end of the alternative that starts at from, in the current document.
+// A split alternative ends at the next | or at the closing quote; a whole
+// value ends at the closing quote.
+function valueEnd(doc: string, from: number, quote: string, split: boolean) {
+	for (let i = from; i < doc.length; i++) {
+		const c = doc.charAt(i)
+
+		if (quote === '"' && c === "\\") {
+			i++
+		} else if (c === quote || (split && c === "|")) {
+			return i
+		}
+	}
+
+	return doc.length
+}
+
 // CodeMirror filters the options by the text between from and to, so a
 // completion in the middle of a value keeps to at the cursor. Picking an
-// option still replaces the whole alternative.
+// option still replaces the whole alternative, using the positions that
+// are current when apply runs.
 function valueRangeOptions(
 	options: Completion[],
-	start: number,
-	end: number,
+	quote: string,
+	split: boolean,
 ): Completion[] {
 	return options.map((option) => {
 		if (typeof option.apply !== "string") {
@@ -276,9 +295,11 @@ function valueRangeOptions(
 
 		return {
 			...option,
-			apply: (view, completion) => {
+			apply: (view, completion, from, to) => {
+				const end = valueEnd(view.state.doc.toString(), to, quote, split)
+
 				view.dispatch({
-					...insertCompletionText(view.state, applied, start, end),
+					...insertCompletionText(view.state, applied, from, end),
 					annotations: pickedCompletion.of(completion),
 				})
 			},
@@ -443,10 +464,10 @@ export function useLogQLQueryExtension(
 			const textEnd = stringEnd(doc, from, quote)
 			const range = matcher.regex
 				? alternativeRange(doc, from + 1, textEnd, ctx.pos)
-				: { start: from + 1, end: ctx.pos }
+				: { start: from + 1, end: ctx.pos, split: false }
 			const valueRange = (options: Completion[]) =>
 				range.end > ctx.pos
-					? valueRangeOptions(options, range.start, range.end)
+					? valueRangeOptions(options, quote, range.split)
 					: options
 
 			if (scan.selector !== null) {

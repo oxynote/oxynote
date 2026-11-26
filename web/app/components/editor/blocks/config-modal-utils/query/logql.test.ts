@@ -217,6 +217,35 @@ describe("useLogQLQueryExtension", () => {
 			expect(applied).toBe('{app=~"api|api|web"}')
 		})
 
+		it("replaces the alternative at the positions current when it applies", async ({
+			expect,
+		}) => {
+			const { complete } = makeComplete()
+			const marked = '{app=~"api|ngi¦nx|web"}'
+			const doc = marked.replace("¦", "")
+			const pos = marked.indexOf("¦")
+
+			const { options, from } = await complete(marked)
+			const option = options.find((o) => o.label === "api")
+
+			expect(option).toBeDefined()
+			expect(from).not.toBeNull()
+
+			if (!option || from === null) {
+				throw new Error("expected the api completion")
+			}
+
+			const prefix = "foo"
+			const applied = applyCompletion(
+				option,
+				prefix + doc,
+				from + prefix.length,
+				pos + prefix.length,
+			)
+
+			expect(applied).toBe(`${prefix}{app=~"api|api|web"}`)
+		})
+
 		it("replaces the whole regex when an escape changes what a | means", async ({
 			expect,
 		}) => {
