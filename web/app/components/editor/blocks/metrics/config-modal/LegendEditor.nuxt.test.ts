@@ -130,6 +130,13 @@ describe("<LegendEditor>", { concurrent: false }, () => {
 		expect(wrapper.findAll(".cm-line span").length).toBeGreaterThan(0)
 	})
 
+	it("highlights a dotted label as one placeholder", async ({ expect }) => {
+		const wrapper = await mountEditor({ modelValue: "{{service.name}}" })
+
+		const texts = wrapper.findAll(".cm-line span").map((span) => span.text())
+		expect(texts).toContain("service.name")
+	})
+
 	it("trims the legend format once the reader leaves the field", async ({
 		expect,
 	}) => {

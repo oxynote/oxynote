@@ -206,8 +206,10 @@ function nameFromMetric(
 	orderedLegendLabelFn: (type: GenericQueryChartType) => string,
 	labels: Record<string, string>,
 ) {
+	// Label names may carry dots: VictoriaMetrics keeps OpenTelemetry's
+	// `service.name` as it is, and Prometheus 3 accepts it too.
 	const name = legendLabelFormat.replace(
-		/\{\{([a-zA-Z_][\w:]*)\}\}/g,
+		/\{\{([a-zA-Z_][\w:.]*)\}\}/g,
 		(_match: string, variable: string) => {
 			return labels[variable] ?? ""
 		},

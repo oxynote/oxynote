@@ -47,7 +47,7 @@ const legendFormatLanguage = StreamLanguage.define<{ inBraces: boolean }>({
 				return null
 			}
 
-			if (stream.match(/[a-zA-Z_][\w:]*/)) {
+			if (stream.match(/[a-zA-Z_][\w:.]*/)) {
 				return "label"
 			}
 
@@ -138,7 +138,7 @@ function legendLabelCompletionSource() {
 		let posIndex = pos
 		while (posIndex > open + 2) {
 			const ch = before.charAt(posIndex - 1)
-			if (!/[\w:]/.test(ch)) {
+			if (!/[\w:.]/.test(ch)) {
 				break
 			}
 

@@ -479,6 +479,12 @@ describe("mergeVisualizationResults", () => {
 			expected: "api",
 		},
 		{
+			name: "substitutes a dotted OpenTelemetry label",
+			format: "{{service.name}} {{service.namespace}}",
+			labels: { "service.name": "checkout", "service.namespace": "shop" },
+			expected: "checkout shop",
+		},
+		{
 			name: "ignores a placeholder starting with a digit",
 			format: "{{1job}}",
 			labels: { "1job": "api" },
