@@ -23,6 +23,7 @@ import (
 	pgDocker "github.com/orlangure/gnomock/preset/postgres"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/db/migrations"
+	"github.com/oxynote/oxynote/server/core/internal/document/comment"
 	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
@@ -521,6 +522,145 @@ func Test_migrateDataSourceCredentialsKind(t *testing.T) {
 
 			m := migrations.Go(migrations.Deps{DataSourceKeys: keys})[0]
 			require.Equal(t, int64(13), m.Version)
+
+			run := m.UpFnContext
+			if c.Down {
+				run = m.DownFnContext
+			}
+
+			err = run(ctx, tx)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			require.NoError(t, tx.Commit())
+
+			c.Check(t, db)
+		})
+	}
+}
+
+func Test_backfillDocumentCommentRevisions(t *testing.T) {
+	type tcase struct {
+		CancelledContext bool
+		Down             bool
+		Err              error
+		// Check inspects the rows the migration left behind.
+		Check func(t *testing.T, db *DB)
+	}
+
+	// prep stores a comment with a reply and drops the revisions the
+	// write recorded, so the rows look as they did before migration 015.
+	prep := func(t *testing.T, db *DB) (comment.Comment, comment.Reply) {
+		t.Helper()
+
+		c := prepDocumentComments(t, db, 1, func(_ int, c *comment.Comment) {
+			c.UpdatedAt = null.TimeFrom(c.CreatedAt.Add(time.Minute))
+		})[0]
+		r := prepDocumentCommentReplies(t, db, 1, func(_ int, r *comment.Reply) {
+			r.CommentID = c.ID
+			r.OrganizationID = c.OrganizationID
+		})[0]
+
+		_, err := db.sql.Exec("DELETE FROM document_comment_revisions")
+		require.NoError(t, err)
+
+		_, err = db.sql.Exec("DELETE FROM document_comment_reply_revisions")
+		require.NoError(t, err)
+
+		return c, r
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(t *testing.T, db *DB) tcase {
+			prep(t, db)
+
+			return tcase{
+				CancelledContext: true,
+				Err:              assert.AnError,
+			}
+		},
+		"Every comment and reply gains a revision of its text": func(t *testing.T, db *DB) tcase {
+			c, r := prep(t, db)
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					var revs []comment.Revision
+
+					require.NoError(t, db.sql.Select(&revs, "SELECT * FROM document_comment_revisions"))
+					require.Len(t, revs, 1)
+					assert.Equal(t, c.ID, revs[0].CommentID)
+					assert.Equal(t, c.OrganizationID, revs[0].OrganizationID)
+					assert.Equal(t, c.Content, revs[0].Content)
+					assert.Equal(t, c.UserID, revs[0].UserID)
+					assert.Equal(t, c.UpdatedAt.Time, revs[0].CreatedAt)
+
+					var replyRevs []comment.ReplyRevision
+
+					require.NoError(t, db.sql.Select(&replyRevs, "SELECT * FROM document_comment_reply_revisions"))
+					require.Len(t, replyRevs, 1)
+					assert.Equal(t, r.ID, replyRevs[0].ReplyID)
+					assert.Equal(t, r.Content, replyRevs[0].Content)
+					assert.Equal(t, r.CreatedAt, replyRevs[0].CreatedAt)
+
+					// the ids are real xids, so they carry the time they
+					// were made.
+					assert.WithinDuration(t, timeutil.Now(), revs[0].ID.Time(), time.Minute)
+				},
+			}
+		},
+		"No comments": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					var n int
+
+					require.NoError(t, db.sql.Get(&n, "SELECT count(*) FROM document_comment_revisions"))
+					assert.Zero(t, n)
+				},
+			}
+		},
+		"Down removes every revision": func(t *testing.T, db *DB) tcase {
+			prepDocumentCommentReplies(t, db, 1, nil)
+
+			return tcase{
+				Down: true,
+				Check: func(t *testing.T, db *DB) {
+					var n int
+
+					require.NoError(t, db.sql.Get(&n, `SELECT
+						(SELECT count(*) FROM document_comment_revisions) +
+						(SELECT count(*) FROM document_comment_reply_revisions)`))
+					assert.Zero(t, n)
+				},
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			tx, err := db.sql.BeginTx(ctx, nil)
+			require.NoError(t, err)
+
+			t.Cleanup(func() {
+				tx.Rollback() //nolint:errcheck,gosec // the transaction is committed or the test failed
+			})
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			m := migrations.Go(migrations.Deps{})[1]
+			require.Equal(t, int64(15), m.Version)
 
 			run := m.UpFnContext
 			if c.Down {

@@ -246,20 +246,6 @@ func (c Comment) Unresolve() Comment {
 	return nc
 }
 
-// Delete returns the comment deleted, with its text removed. It fails on a
-// comment that is already deleted.
-func (c Comment) Delete() (Comment, error) {
-	if c.DeletedAt.Valid {
-		return Comment{}, ErrDeleted
-	}
-
-	nc := c
-	nc.Content = nil
-	nc.DeletedAt = null.TimeFrom(timeutil.Now())
-
-	return nc, nil
-}
-
 // Excerpt returns the start of the thread's text. Once the comment is
 // deleted, the text comes from its first reply.
 func (c Comment) Excerpt() string {
@@ -320,15 +306,6 @@ func NewReply(inp ReplyInput, commentID xid.ID, userID, organizationID string) (
 		Content:        inp.Content,
 		CreatedAt:      timeutil.Now(),
 	}, nil
-}
-
-// Delete returns the reply deleted, with its text removed.
-func (r Reply) Delete() Reply {
-	nr := r
-	nr.Content = nil
-	nr.DeletedAt = null.TimeFrom(timeutil.Now())
-
-	return nr
 }
 
 // ApplyUpdate returns the reply with the input's content. It fails on an

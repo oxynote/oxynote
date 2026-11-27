@@ -307,7 +307,7 @@ func Test_agent_CheckDocumentFileReferenced(t *testing.T) {
 				r.Content = comment.Content{"uid": "file-ref"}
 			})[0]
 
-			require.NoError(t, db.DeleteDocumentCommentReply(context.Background(), r.Delete()))
+			require.NoError(t, db.DeleteDocumentCommentReply(context.Background(), r.ID, r.CommentID, r.OrganizationID))
 
 			c := fetchStoredDocumentComment(t, db, r.CommentID)
 

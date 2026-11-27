@@ -705,7 +705,7 @@ func Test_agent_DeleteDocumentComment(t *testing.T) {
 				cancel()
 			}
 
-			err := db.DeleteDocumentComment(ctx, c.Comment)
+			err := db.DeleteDocumentComment(ctx, c.Comment.ID, c.Comment.DocumentID, c.Comment.OrganizationID)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -714,7 +714,11 @@ func Test_agent_DeleteDocumentComment(t *testing.T) {
 
 			// the row stays, without its text, and the comment leaves
 			// every read.
-			testutil.AssertFilterEqual(t, c.Comment, fetchStoredDocumentComment(t, db, c.Comment.ID))
+			// the delete stamps its own time.
+			stored := fetchStoredDocumentComment(t, db, c.Comment.ID)
+			assert.WithinDuration(t, timeutil.Now(), stored.DeletedAt.Time, time.Minute)
+			c.Comment.DeletedAt = stored.DeletedAt
+			testutil.AssertFilterEqual(t, c.Comment, stored)
 
 			res, err := db.FetchDocumentComment(context.Background(), c.Comment.ID, c.Comment.DocumentID, c.Comment.OrganizationID)
 			testutil.AssertEqualError(t, sql.ErrNoRows, err)
@@ -770,14 +774,18 @@ func Test_agent_DeleteDocumentCommentReply(t *testing.T) {
 				cancel()
 			}
 
-			err := db.DeleteDocumentCommentReply(ctx, c.Reply)
+			err := db.DeleteDocumentCommentReply(ctx, c.Reply.ID, c.Reply.CommentID, c.Reply.OrganizationID)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
 
-			testutil.AssertFilterEqual(t, c.Reply, fetchStoredDocumentCommentReply(t, db, c.Reply.ID))
+			// the delete stamps its own time.
+			stored := fetchStoredDocumentCommentReply(t, db, c.Reply.ID)
+			assert.WithinDuration(t, timeutil.Now(), stored.DeletedAt.Time, time.Minute)
+			c.Reply.DeletedAt = stored.DeletedAt
+			testutil.AssertFilterEqual(t, c.Reply, stored)
 
 			res, err := db.FetchDocumentCommentReply(context.Background(), c.Reply.ID, c.Reply.CommentID, c.Reply.OrganizationID)
 			testutil.AssertEqualError(t, sql.ErrNoRows, err)
@@ -997,9 +1005,7 @@ func Test_agent_DeleteDocumentCommentsByBranchID(t *testing.T) {
 				cancel()
 			}
 
-			deletedAt := timeutil.Now().Truncate(time.Microsecond)
-
-			err := db.DeleteDocumentCommentsByBranchID(ctx, c.Comments[0].BranchID, c.Comments[0].OrganizationID, deletedAt)
+			err := db.DeleteDocumentCommentsByBranchID(ctx, c.Comments[0].BranchID, c.Comments[0].OrganizationID)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -1010,15 +1016,19 @@ func Test_agent_DeleteDocumentCommentsByBranchID(t *testing.T) {
 			require.NoError(t, err)
 			assert.Empty(t, res)
 
+			// the delete stamps its own time, one for every row.
+			deletedAt := fetchStoredDocumentComment(t, db, c.Comments[0].ID).DeletedAt
+			assert.WithinDuration(t, timeutil.Now(), deletedAt.Time, time.Minute)
+
 			for _, cmt := range c.Comments {
 				cmt.Content = nil
-				cmt.DeletedAt = null.TimeFrom(deletedAt)
+				cmt.DeletedAt = deletedAt
 				testutil.AssertFilterEqual(t, cmt, fetchStoredDocumentComment(t, db, cmt.ID))
 			}
 
 			for _, r := range c.Replies {
 				r.Content = nil
-				r.DeletedAt = null.TimeFrom(deletedAt)
+				r.DeletedAt = deletedAt
 				testutil.AssertFilterEqual(t, r, fetchStoredDocumentCommentReply(t, db, r.ID))
 			}
 

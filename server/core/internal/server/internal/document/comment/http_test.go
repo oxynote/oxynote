@@ -1141,7 +1141,7 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 		"Error returned by Tx.DeleteDocumentComment": {
 			Tx: &TxMock{
 				FetchDocumentCommentFunc: stubComment(),
-				DeleteDocumentCommentFunc: func(context.Context, commentCore.Comment) error {
+				DeleteDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) error {
 					return assert.AnError
 				},
 			},
@@ -1209,10 +1209,10 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 			assert.Len(t, c.Tx.RollbackCalls(), c.RolledBack)
 
 			if c.Deleted > 0 {
-				deleted := c.Tx.DeleteDocumentCommentCalls()[0].C
+				deleted := c.Tx.DeleteDocumentCommentCalls()[0]
 				assert.Equal(t, _commentID, deleted.ID)
-				assert.Nil(t, deleted.Content)
-				assert.True(t, deleted.DeletedAt.Valid)
+				assert.Equal(t, _documentID, deleted.DocumentID)
+				assert.Equal(t, "org1", deleted.OrganizationID)
 			}
 
 			if c.ChangeType == "" {
@@ -1295,7 +1295,7 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 			DB: &DBMock{
 				FetchDocumentCommentFunc:      stubComment,
 				FetchDocumentCommentReplyFunc: stubReply("u1"),
-				DeleteDocumentCommentReplyFunc: func(context.Context, commentCore.Reply) error {
+				DeleteDocumentCommentReplyFunc: func(context.Context, xid.ID, xid.ID, string) error {
 					return assert.AnError
 				},
 			},
@@ -1350,10 +1350,10 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 			assert.Len(t, c.DB.DeleteDocumentCommentReplyCalls(), c.Deleted)
 
 			if c.Deleted > 0 {
-				deleted := c.DB.DeleteDocumentCommentReplyCalls()[0].R
+				deleted := c.DB.DeleteDocumentCommentReplyCalls()[0]
 				assert.Equal(t, _replyID, deleted.ID)
-				assert.Nil(t, deleted.Content)
-				assert.True(t, deleted.DeletedAt.Valid)
+				assert.Equal(t, _commentID, deleted.CommentID)
+				assert.Equal(t, "org1", deleted.OrganizationID)
 			}
 
 			if c.ChangeType == "" {

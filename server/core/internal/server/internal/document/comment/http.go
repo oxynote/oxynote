@@ -5,7 +5,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	commentCore "github.com/oxynote/oxynote/server/core/internal/document/comment"
@@ -599,13 +598,14 @@ func (h *Handler) DeleteDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	nc, err := c.Delete()
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	// a deleted comment is still found while a live reply keeps its
+	// thread open.
+	if c.DeletedAt.Valid {
+		httpserver.RespondError(h.log, w, commentCore.ErrDeleted)
 		return
 	}
 
-	if err := tx.DeleteDocumentComment(r.Context(), nc); err != nil {
+	if err := tx.DeleteDocumentComment(r.Context(), commentID, documentID, session.ActiveOrganizationID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -681,7 +681,7 @@ func (h *Handler) DeleteDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.db.DeleteDocumentCommentReply(r.Context(), reply.Delete()); err != nil {
+	if err := h.db.DeleteDocumentCommentReply(r.Context(), replyID, commentID, session.ActiveOrganizationID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -757,11 +757,11 @@ type CommentsDBAgent interface {
 	UpdateDocumentCommentStatus(ctx context.Context, c commentCore.Comment) error
 
 	// DeleteDocumentComment should soft-delete a comment.
-	DeleteDocumentComment(ctx context.Context, c commentCore.Comment) error
+	DeleteDocumentComment(ctx context.Context, id, documentID xid.ID, organizationID string) error
 
 	// DeleteDocumentCommentsByBranchID should soft-delete all comments for
 	// a branch.
-	DeleteDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string, deletedAt time.Time) error
+	DeleteDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error
 }
 
 // RepliesDBAgent is an interface that handles communication with the
@@ -777,5 +777,5 @@ type RepliesDBAgent interface {
 	UpdateDocumentCommentReply(ctx context.Context, r commentCore.Reply) error
 
 	// DeleteDocumentCommentReply should soft-delete a reply.
-	DeleteDocumentCommentReply(ctx context.Context, r commentCore.Reply) error
+	DeleteDocumentCommentReply(ctx context.Context, id, commentID xid.ID, organizationID string) error
 }

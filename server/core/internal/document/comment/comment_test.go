@@ -188,51 +188,6 @@ func Test_Comment_Unresolve(t *testing.T) {
 	assert.Equal(t, c.Content, unresolved.Content)
 }
 
-func Test_Comment_Delete(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		Deleted bool
-		Err     error
-	}{
-		"Already deleted comment": {
-			Deleted: true,
-			Err:     ErrDeleted,
-		},
-		"Successful deletion": {},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			cmt := stubComment()
-			if c.Deleted {
-				cmt.DeletedAt = null.TimeFrom(time.Now())
-			}
-
-			res, err := cmt.Delete()
-
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			assert.Nil(t, res.Content)
-			assert.True(t, res.DeletedAt.Valid)
-
-			// the author, the thread and the anchor stay, so the thread
-			// still reads as the author's.
-			assert.Equal(t, cmt.ID, res.ID)
-			assert.Equal(t, cmt.UserID, res.UserID)
-			assert.Equal(t, cmt.AnchorBlockID, res.AnchorBlockID)
-			assert.Equal(t, cmt.CreatedAt, res.CreatedAt)
-			assert.Equal(t, cmt.Replies, res.Replies)
-		})
-	}
-}
-
 func Test_Comment_Excerpt(t *testing.T) {
 	text := func(s string) Content {
 		return Content{
@@ -384,19 +339,6 @@ func Test_NewReply(t *testing.T) {
 			c.Check(t, res)
 		})
 	}
-}
-
-func Test_Reply_Delete(t *testing.T) {
-	t.Parallel()
-
-	r := Reply{ID: xid.New(), CommentID: xid.New(), UserID: null.StringFrom("user-1"), Content: Content{"text": "reply"}}
-
-	res := r.Delete()
-	assert.Nil(t, res.Content)
-	assert.True(t, res.DeletedAt.Valid)
-	assert.Equal(t, r.ID, res.ID)
-	assert.Equal(t, r.CommentID, res.CommentID)
-	assert.Equal(t, r.UserID, res.UserID)
 }
 
 func Test_Reply_ApplyUpdate(t *testing.T) {

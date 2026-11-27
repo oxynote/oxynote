@@ -1029,7 +1029,7 @@ type DBAgent interface {
 
 	// DeleteDocumentCommentsByBranchID should soft-delete all comments for
 	// a branch.
-	DeleteDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string, deletedAt time.Time) error
+	DeleteDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error
 }
 
 // HooksDBAgent is an interface that handles communication with the document

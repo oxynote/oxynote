@@ -339,12 +339,7 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = tx.DeleteDocumentCommentsByBranchID(
-		r.Context(),
-		toDoc.BranchID,
-		session.ActiveOrganizationID,
-		timeutil.Now(),
-	); err != nil {
+	if err = tx.DeleteDocumentCommentsByBranchID(r.Context(), toDoc.BranchID, session.ActiveOrganizationID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}

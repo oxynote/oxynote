@@ -2,12 +2,13 @@ package db
 
 import (
 	"context"
-	"time"
+	"database/sql"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/document/comment"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
 
@@ -73,14 +74,6 @@ func (a *agent) FetchDocumentComment(ctx context.Context, id, documentID xid.ID,
 			"document_comments.fk_document_id":     documentID,
 			"document_comments.fk_organization_id": organizationID,
 		}).
-		Where(sq.Or{
-			sq.Eq{"document_comments.deleted_at": nil},
-			sq.Expr(`EXISTS (
-				SELECT 1 FROM document_comment_replies live
-				WHERE live.fk_document_comment_id = document_comments.id
-				AND live.deleted_at IS NULL
-			)`),
-		}).
 		Limit(1).
 		MustSql()
 
@@ -103,6 +96,10 @@ func (a *agent) FetchDocumentComment(ctx context.Context, id, documentID xid.ID,
 
 	if err := sqlx.SelectContext(ctx, a.sql, &replies, q, args...); err != nil {
 		return nil, err
+	}
+
+	if c.DeletedAt.Valid && len(replies) == 0 {
+		return nil, sql.ErrNoRows
 	}
 
 	c.Replies = replies
@@ -201,16 +198,16 @@ func (a *agent) UpdateDocumentCommentReply(ctx context.Context, r comment.Reply)
 }
 
 // DeleteDocumentComment soft-deletes a comment, clearing its text.
-func (a *agent) DeleteDocumentComment(ctx context.Context, c comment.Comment) error {
+func (a *agent) DeleteDocumentComment(ctx context.Context, id, documentID xid.ID, organizationID string) error {
 	q, args := a.builder.Update("document_comments").
 		SetMap(map[string]any{
 			"content":    nil,
-			"deleted_at": c.DeletedAt,
+			"deleted_at": timeutil.Now(),
 		}).
 		Where(sq.Eq{
-			"id":                 c.ID,
-			"fk_document_id":     c.DocumentID,
-			"fk_organization_id": c.OrganizationID,
+			"id":                 id,
+			"fk_document_id":     documentID,
+			"fk_organization_id": organizationID,
 		}).MustSql()
 
 	_, err := a.sql.ExecContext(ctx, q, args...)
@@ -219,16 +216,16 @@ func (a *agent) DeleteDocumentComment(ctx context.Context, c comment.Comment) er
 }
 
 // DeleteDocumentCommentReply soft-deletes a reply, clearing its text.
-func (a *agent) DeleteDocumentCommentReply(ctx context.Context, r comment.Reply) error {
+func (a *agent) DeleteDocumentCommentReply(ctx context.Context, id, commentID xid.ID, organizationID string) error {
 	q, args := a.builder.Update("document_comment_replies").
 		SetMap(map[string]any{
 			"content":    nil,
-			"deleted_at": r.DeletedAt,
+			"deleted_at": timeutil.Now(),
 		}).
 		Where(sq.Eq{
-			"id":                     r.ID,
-			"fk_document_comment_id": r.CommentID,
-			"fk_organization_id":     r.OrganizationID,
+			"id":                     id,
+			"fk_document_comment_id": commentID,
+			"fk_organization_id":     organizationID,
 		}).MustSql()
 
 	_, err := a.sql.ExecContext(ctx, q, args...)
@@ -246,14 +243,6 @@ func (a *agent) FetchDocumentCommentsByBranchID(ctx context.Context, branchID xi
 			"document_comments.fk_branch_id":       branchID,
 			"document_comments.fk_organization_id": organizationID,
 			"document_comments.resolved":           resolved,
-		}).
-		Where(sq.Or{
-			sq.Eq{"document_comments.deleted_at": nil},
-			sq.Expr(`EXISTS (
-				SELECT 1 FROM document_comment_replies live
-				WHERE live.fk_document_comment_id = document_comments.id
-				AND live.deleted_at IS NULL
-			)`),
 		}).
 		OrderBy("document_comments.created_at DESC").
 		MustSql()
@@ -297,8 +286,16 @@ func (a *agent) FetchDocumentCommentsByBranchID(ctx context.Context, branchID xi
 		byComment[r.CommentID] = append(byComment[r.CommentID], r)
 	}
 
-	for i := range comments {
-		rr, ok := byComment[comments[i].ID]
+	// a deleted comment stays listed only while a live reply keeps its
+	// thread open.
+	live := comments[:0]
+
+	for _, c := range comments {
+		rr, ok := byComment[c.ID]
+		if !ok && c.DeletedAt.Valid {
+			continue
+		}
+
 		if !ok {
 			// an empty slice rather than nil, so a comment with no
 			// replies serializes as [] here the same way it does
@@ -306,26 +303,22 @@ func (a *agent) FetchDocumentCommentsByBranchID(ctx context.Context, branchID xi
 			rr = make([]comment.Reply, 0)
 		}
 
-		comments[i].Replies = rr
+		c.Replies = rr
+		live = append(live, c)
 	}
 
-	return comments, nil
+	return live, nil
 }
 
 // DeleteDocumentCommentsByBranchID soft-deletes every live comment of a
 // branch and every live reply in those threads, clearing their text. The
 // replies go too, because a live reply would keep a deleted comment's
 // thread listed.
-func (a *agent) DeleteDocumentCommentsByBranchID(
-	ctx context.Context,
-	branchID xid.ID,
-	organizationID string,
-	deletedAt time.Time,
-) error {
+func (a *agent) DeleteDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error {
 	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
 		deleted := map[string]any{
 			"content":    nil,
-			"deleted_at": deletedAt,
+			"deleted_at": timeutil.Now(),
 		}
 
 		threads := a.builder.Select("id").
