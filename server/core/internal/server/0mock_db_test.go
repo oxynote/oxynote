@@ -74,13 +74,13 @@ var _ DB = &DBMock{}
 //			DeleteDocumentBranchByIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) error {
 //				panic("mock out the DeleteDocumentBranchByID method")
 //			},
-//			DeleteDocumentCommentFunc: func(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string) error {
+//			DeleteDocumentCommentFunc: func(ctx context.Context, c comment.Comment) error {
 //				panic("mock out the DeleteDocumentComment method")
 //			},
-//			DeleteDocumentCommentReplyFunc: func(ctx context.Context, id xid.ID, commentID xid.ID, organizationID string) error {
+//			DeleteDocumentCommentReplyFunc: func(ctx context.Context, r comment.Reply) error {
 //				panic("mock out the DeleteDocumentCommentReply method")
 //			},
-//			DeleteDocumentCommentsByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) error {
+//			DeleteDocumentCommentsByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string, deletedAt time.Time) error {
 //				panic("mock out the DeleteDocumentCommentsByBranchID method")
 //			},
 //			DeleteDocumentFileFunc: func(ctx context.Context, id string) error {
@@ -263,9 +263,6 @@ var _ DB = &DBMock{}
 //			ReplaceBranchTagsFunc: func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error {
 //				panic("mock out the ReplaceBranchTags method")
 //			},
-//			ReplaceDocumentCommentFunc: func(ctx context.Context, c comment.Comment) error {
-//				panic("mock out the ReplaceDocumentComment method")
-//			},
 //			SetTagVisibilityFunc: func(ctx context.Context, organizationID string, userID string, id xid.ID, inp tag.VisibilityInput) error {
 //				panic("mock out the SetTagVisibility method")
 //			},
@@ -295,6 +292,9 @@ var _ DB = &DBMock{}
 //			},
 //			UpdateDocumentCommentReplyFunc: func(ctx context.Context, r comment.Reply) error {
 //				panic("mock out the UpdateDocumentCommentReply method")
+//			},
+//			UpdateDocumentCommentStatusFunc: func(ctx context.Context, c comment.Comment) error {
+//				panic("mock out the UpdateDocumentCommentStatus method")
 //			},
 //			UpdateDocumentParentIDFunc: func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error {
 //				panic("mock out the UpdateDocumentParentID method")
@@ -376,13 +376,13 @@ type DBMock struct {
 	DeleteDocumentBranchByIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) error
 
 	// DeleteDocumentCommentFunc mocks the DeleteDocumentComment method.
-	DeleteDocumentCommentFunc func(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string) error
+	DeleteDocumentCommentFunc func(ctx context.Context, c comment.Comment) error
 
 	// DeleteDocumentCommentReplyFunc mocks the DeleteDocumentCommentReply method.
-	DeleteDocumentCommentReplyFunc func(ctx context.Context, id xid.ID, commentID xid.ID, organizationID string) error
+	DeleteDocumentCommentReplyFunc func(ctx context.Context, r comment.Reply) error
 
 	// DeleteDocumentCommentsByBranchIDFunc mocks the DeleteDocumentCommentsByBranchID method.
-	DeleteDocumentCommentsByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) error
+	DeleteDocumentCommentsByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string, deletedAt time.Time) error
 
 	// DeleteDocumentFileFunc mocks the DeleteDocumentFile method.
 	DeleteDocumentFileFunc func(ctx context.Context, id string) error
@@ -564,9 +564,6 @@ type DBMock struct {
 	// ReplaceBranchTagsFunc mocks the ReplaceBranchTags method.
 	ReplaceBranchTagsFunc func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error
 
-	// ReplaceDocumentCommentFunc mocks the ReplaceDocumentComment method.
-	ReplaceDocumentCommentFunc func(ctx context.Context, c comment.Comment) error
-
 	// SetTagVisibilityFunc mocks the SetTagVisibility method.
 	SetTagVisibilityFunc func(ctx context.Context, organizationID string, userID string, id xid.ID, inp tag.VisibilityInput) error
 
@@ -596,6 +593,9 @@ type DBMock struct {
 
 	// UpdateDocumentCommentReplyFunc mocks the UpdateDocumentCommentReply method.
 	UpdateDocumentCommentReplyFunc func(ctx context.Context, r comment.Reply) error
+
+	// UpdateDocumentCommentStatusFunc mocks the UpdateDocumentCommentStatus method.
+	UpdateDocumentCommentStatusFunc func(ctx context.Context, c comment.Comment) error
 
 	// UpdateDocumentParentIDFunc mocks the UpdateDocumentParentID method.
 	UpdateDocumentParentIDFunc func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error
@@ -755,23 +755,15 @@ type DBMock struct {
 		DeleteDocumentComment []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
-			// ID is the id argument value.
-			ID xid.ID
-			// DocumentID is the documentID argument value.
-			DocumentID xid.ID
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
+			// C is the c argument value.
+			C comment.Comment
 		}
 		// DeleteDocumentCommentReply holds details about calls to the DeleteDocumentCommentReply method.
 		DeleteDocumentCommentReply []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
-			// ID is the id argument value.
-			ID xid.ID
-			// CommentID is the commentID argument value.
-			CommentID xid.ID
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
+			// R is the r argument value.
+			R comment.Reply
 		}
 		// DeleteDocumentCommentsByBranchID holds details about calls to the DeleteDocumentCommentsByBranchID method.
 		DeleteDocumentCommentsByBranchID []struct {
@@ -781,6 +773,8 @@ type DBMock struct {
 			BranchID xid.ID
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
+			// DeletedAt is the deletedAt argument value.
+			DeletedAt time.Time
 		}
 		// DeleteDocumentFile holds details about calls to the DeleteDocumentFile method.
 		DeleteDocumentFile []struct {
@@ -1294,13 +1288,6 @@ type DBMock struct {
 			// ToBranchID is the toBranchID argument value.
 			ToBranchID xid.ID
 		}
-		// ReplaceDocumentComment holds details about calls to the ReplaceDocumentComment method.
-		ReplaceDocumentComment []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// C is the c argument value.
-			C comment.Comment
-		}
 		// SetTagVisibility holds details about calls to the SetTagVisibility method.
 		SetTagVisibility []struct {
 			// Ctx is the ctx argument value.
@@ -1382,6 +1369,13 @@ type DBMock struct {
 			Ctx context.Context
 			// R is the r argument value.
 			R comment.Reply
+		}
+		// UpdateDocumentCommentStatus holds details about calls to the UpdateDocumentCommentStatus method.
+		UpdateDocumentCommentStatus []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// C is the c argument value.
+			C comment.Comment
 		}
 		// UpdateDocumentParentID holds details about calls to the UpdateDocumentParentID method.
 		UpdateDocumentParentID []struct {
@@ -1565,7 +1559,6 @@ type DBMock struct {
 	lockPromoteBranchApprovals                    sync.RWMutex
 	lockRecordDocumentBranchHistoryEntry          sync.RWMutex
 	lockReplaceBranchTags                         sync.RWMutex
-	lockReplaceDocumentComment                    sync.RWMutex
 	lockSetTagVisibility                          sync.RWMutex
 	lockUnassignBranchTag                         sync.RWMutex
 	lockUnassignGithubInstallationOrganization    sync.RWMutex
@@ -1576,6 +1569,7 @@ type DBMock struct {
 	lockUpdateDocumentBranchMetadata              sync.RWMutex
 	lockUpdateDocumentComment                     sync.RWMutex
 	lockUpdateDocumentCommentReply                sync.RWMutex
+	lockUpdateDocumentCommentStatus               sync.RWMutex
 	lockUpdateDocumentParentID                    sync.RWMutex
 	lockUpdateDocumentTree                        sync.RWMutex
 	lockUpdateGithubInstallationOrganizationID    sync.RWMutex
@@ -2158,17 +2152,13 @@ func (mock *DBMock) DeleteDocumentBranchByIDCalls() []struct {
 }
 
 // DeleteDocumentComment calls DeleteDocumentCommentFunc.
-func (mock *DBMock) DeleteDocumentComment(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string) error {
+func (mock *DBMock) DeleteDocumentComment(ctx context.Context, c comment.Comment) error {
 	callInfo := struct {
-		Ctx            context.Context
-		ID             xid.ID
-		DocumentID     xid.ID
-		OrganizationID string
+		Ctx context.Context
+		C   comment.Comment
 	}{
-		Ctx:            ctx,
-		ID:             id,
-		DocumentID:     documentID,
-		OrganizationID: organizationID,
+		Ctx: ctx,
+		C:   c,
 	}
 	mock.lockDeleteDocumentComment.Lock()
 	mock.calls.DeleteDocumentComment = append(mock.calls.DeleteDocumentComment, callInfo)
@@ -2179,7 +2169,7 @@ func (mock *DBMock) DeleteDocumentComment(ctx context.Context, id xid.ID, docume
 		)
 		return errOut
 	}
-	return mock.DeleteDocumentCommentFunc(ctx, id, documentID, organizationID)
+	return mock.DeleteDocumentCommentFunc(ctx, c)
 }
 
 // DeleteDocumentCommentCalls gets all the calls that were made to DeleteDocumentComment.
@@ -2187,16 +2177,12 @@ func (mock *DBMock) DeleteDocumentComment(ctx context.Context, id xid.ID, docume
 //
 //	len(mockedDB.DeleteDocumentCommentCalls())
 func (mock *DBMock) DeleteDocumentCommentCalls() []struct {
-	Ctx            context.Context
-	ID             xid.ID
-	DocumentID     xid.ID
-	OrganizationID string
+	Ctx context.Context
+	C   comment.Comment
 } {
 	var calls []struct {
-		Ctx            context.Context
-		ID             xid.ID
-		DocumentID     xid.ID
-		OrganizationID string
+		Ctx context.Context
+		C   comment.Comment
 	}
 	mock.lockDeleteDocumentComment.RLock()
 	calls = mock.calls.DeleteDocumentComment
@@ -2205,17 +2191,13 @@ func (mock *DBMock) DeleteDocumentCommentCalls() []struct {
 }
 
 // DeleteDocumentCommentReply calls DeleteDocumentCommentReplyFunc.
-func (mock *DBMock) DeleteDocumentCommentReply(ctx context.Context, id xid.ID, commentID xid.ID, organizationID string) error {
+func (mock *DBMock) DeleteDocumentCommentReply(ctx context.Context, r comment.Reply) error {
 	callInfo := struct {
-		Ctx            context.Context
-		ID             xid.ID
-		CommentID      xid.ID
-		OrganizationID string
+		Ctx context.Context
+		R   comment.Reply
 	}{
-		Ctx:            ctx,
-		ID:             id,
-		CommentID:      commentID,
-		OrganizationID: organizationID,
+		Ctx: ctx,
+		R:   r,
 	}
 	mock.lockDeleteDocumentCommentReply.Lock()
 	mock.calls.DeleteDocumentCommentReply = append(mock.calls.DeleteDocumentCommentReply, callInfo)
@@ -2226,7 +2208,7 @@ func (mock *DBMock) DeleteDocumentCommentReply(ctx context.Context, id xid.ID, c
 		)
 		return errOut
 	}
-	return mock.DeleteDocumentCommentReplyFunc(ctx, id, commentID, organizationID)
+	return mock.DeleteDocumentCommentReplyFunc(ctx, r)
 }
 
 // DeleteDocumentCommentReplyCalls gets all the calls that were made to DeleteDocumentCommentReply.
@@ -2234,16 +2216,12 @@ func (mock *DBMock) DeleteDocumentCommentReply(ctx context.Context, id xid.ID, c
 //
 //	len(mockedDB.DeleteDocumentCommentReplyCalls())
 func (mock *DBMock) DeleteDocumentCommentReplyCalls() []struct {
-	Ctx            context.Context
-	ID             xid.ID
-	CommentID      xid.ID
-	OrganizationID string
+	Ctx context.Context
+	R   comment.Reply
 } {
 	var calls []struct {
-		Ctx            context.Context
-		ID             xid.ID
-		CommentID      xid.ID
-		OrganizationID string
+		Ctx context.Context
+		R   comment.Reply
 	}
 	mock.lockDeleteDocumentCommentReply.RLock()
 	calls = mock.calls.DeleteDocumentCommentReply
@@ -2252,15 +2230,17 @@ func (mock *DBMock) DeleteDocumentCommentReplyCalls() []struct {
 }
 
 // DeleteDocumentCommentsByBranchID calls DeleteDocumentCommentsByBranchIDFunc.
-func (mock *DBMock) DeleteDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error {
+func (mock *DBMock) DeleteDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string, deletedAt time.Time) error {
 	callInfo := struct {
 		Ctx            context.Context
 		BranchID       xid.ID
 		OrganizationID string
+		DeletedAt      time.Time
 	}{
 		Ctx:            ctx,
 		BranchID:       branchID,
 		OrganizationID: organizationID,
+		DeletedAt:      deletedAt,
 	}
 	mock.lockDeleteDocumentCommentsByBranchID.Lock()
 	mock.calls.DeleteDocumentCommentsByBranchID = append(mock.calls.DeleteDocumentCommentsByBranchID, callInfo)
@@ -2271,7 +2251,7 @@ func (mock *DBMock) DeleteDocumentCommentsByBranchID(ctx context.Context, branch
 		)
 		return errOut
 	}
-	return mock.DeleteDocumentCommentsByBranchIDFunc(ctx, branchID, organizationID)
+	return mock.DeleteDocumentCommentsByBranchIDFunc(ctx, branchID, organizationID, deletedAt)
 }
 
 // DeleteDocumentCommentsByBranchIDCalls gets all the calls that were made to DeleteDocumentCommentsByBranchID.
@@ -2282,11 +2262,13 @@ func (mock *DBMock) DeleteDocumentCommentsByBranchIDCalls() []struct {
 	Ctx            context.Context
 	BranchID       xid.ID
 	OrganizationID string
+	DeletedAt      time.Time
 } {
 	var calls []struct {
 		Ctx            context.Context
 		BranchID       xid.ID
 		OrganizationID string
+		DeletedAt      time.Time
 	}
 	mock.lockDeleteDocumentCommentsByBranchID.RLock()
 	calls = mock.calls.DeleteDocumentCommentsByBranchID
@@ -4854,45 +4836,6 @@ func (mock *DBMock) ReplaceBranchTagsCalls() []struct {
 	return calls
 }
 
-// ReplaceDocumentComment calls ReplaceDocumentCommentFunc.
-func (mock *DBMock) ReplaceDocumentComment(ctx context.Context, c comment.Comment) error {
-	callInfo := struct {
-		Ctx context.Context
-		C   comment.Comment
-	}{
-		Ctx: ctx,
-		C:   c,
-	}
-	mock.lockReplaceDocumentComment.Lock()
-	mock.calls.ReplaceDocumentComment = append(mock.calls.ReplaceDocumentComment, callInfo)
-	mock.lockReplaceDocumentComment.Unlock()
-	if mock.ReplaceDocumentCommentFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.ReplaceDocumentCommentFunc(ctx, c)
-}
-
-// ReplaceDocumentCommentCalls gets all the calls that were made to ReplaceDocumentComment.
-// Check the length with:
-//
-//	len(mockedDB.ReplaceDocumentCommentCalls())
-func (mock *DBMock) ReplaceDocumentCommentCalls() []struct {
-	Ctx context.Context
-	C   comment.Comment
-} {
-	var calls []struct {
-		Ctx context.Context
-		C   comment.Comment
-	}
-	mock.lockReplaceDocumentComment.RLock()
-	calls = mock.calls.ReplaceDocumentComment
-	mock.lockReplaceDocumentComment.RUnlock()
-	return calls
-}
-
 // SetTagVisibility calls SetTagVisibilityFunc.
 func (mock *DBMock) SetTagVisibility(ctx context.Context, organizationID string, userID string, id xid.ID, inp tag.VisibilityInput) error {
 	callInfo := struct {
@@ -5304,6 +5247,45 @@ func (mock *DBMock) UpdateDocumentCommentReplyCalls() []struct {
 	mock.lockUpdateDocumentCommentReply.RLock()
 	calls = mock.calls.UpdateDocumentCommentReply
 	mock.lockUpdateDocumentCommentReply.RUnlock()
+	return calls
+}
+
+// UpdateDocumentCommentStatus calls UpdateDocumentCommentStatusFunc.
+func (mock *DBMock) UpdateDocumentCommentStatus(ctx context.Context, c comment.Comment) error {
+	callInfo := struct {
+		Ctx context.Context
+		C   comment.Comment
+	}{
+		Ctx: ctx,
+		C:   c,
+	}
+	mock.lockUpdateDocumentCommentStatus.Lock()
+	mock.calls.UpdateDocumentCommentStatus = append(mock.calls.UpdateDocumentCommentStatus, callInfo)
+	mock.lockUpdateDocumentCommentStatus.Unlock()
+	if mock.UpdateDocumentCommentStatusFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.UpdateDocumentCommentStatusFunc(ctx, c)
+}
+
+// UpdateDocumentCommentStatusCalls gets all the calls that were made to UpdateDocumentCommentStatus.
+// Check the length with:
+//
+//	len(mockedDB.UpdateDocumentCommentStatusCalls())
+func (mock *DBMock) UpdateDocumentCommentStatusCalls() []struct {
+	Ctx context.Context
+	C   comment.Comment
+} {
+	var calls []struct {
+		Ctx context.Context
+		C   comment.Comment
+	}
+	mock.lockUpdateDocumentCommentStatus.RLock()
+	calls = mock.calls.UpdateDocumentCommentStatus
+	mock.lockUpdateDocumentCommentStatus.RUnlock()
 	return calls
 }
 

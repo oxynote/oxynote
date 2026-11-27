@@ -290,6 +290,29 @@ func Test_agent_CheckDocumentFileReferenced(t *testing.T) {
 
 			return tcase{ID: "file-ref", DocumentID: c.DocumentID, Result: true}
 		},
+		"Referenced by an earlier comment revision": func(t *testing.T, db *DB) tcase {
+			c := prepDocumentComments(t, db, 1, func(_ int, c *comment.Comment) {
+				c.Content = comment.Content{"uid": "file-ref"}
+			})[0]
+
+			// the edit replaced the text, but its revision keeps the file.
+			c.Content = comment.Content{"text": "edited"}
+			c.UpdatedAt = null.TimeFrom(c.CreatedAt.Add(time.Minute))
+			require.NoError(t, db.UpdateDocumentComment(context.Background(), c))
+
+			return tcase{ID: "file-ref", DocumentID: c.DocumentID, Result: true}
+		},
+		"Referenced by a deleted comment reply": func(t *testing.T, db *DB) tcase {
+			r := prepDocumentCommentReplies(t, db, 1, func(_ int, r *comment.Reply) {
+				r.Content = comment.Content{"uid": "file-ref"}
+			})[0]
+
+			require.NoError(t, db.DeleteDocumentCommentReply(context.Background(), r.Delete()))
+
+			c := fetchStoredDocumentComment(t, db, r.CommentID)
+
+			return tcase{ID: "file-ref", DocumentID: c.DocumentID, Result: true}
+		},
 		"Referenced by another document": func(t *testing.T, db *DB) tcase {
 			prepDocuments(t, db, 1, func(_ int, doc *document.Document) {
 				doc.Content.Content[0].Attrs = document.Attributes{"uid": "file-ref"}

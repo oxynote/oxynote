@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	commentCore "github.com/oxynote/oxynote/server/core/internal/document/comment"
@@ -523,7 +524,7 @@ func (h *Handler) UpdateDocumentCommentStatus(w http.ResponseWriter, r *http.Req
 		nc = c.Unresolve()
 	}
 
-	if err := h.db.UpdateDocumentComment(r.Context(), nc); err != nil {
+	if err := h.db.UpdateDocumentCommentStatus(r.Context(), nc); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -544,7 +545,7 @@ func (h *Handler) UpdateDocumentCommentStatus(w http.ResponseWriter, r *http.Req
 				nc.ID,
 				nc.AnchorBlockID,
 				nc.BranchID,
-				nc.Content.Excerpt(),
+				nc.Excerpt(),
 			),
 			commentCore.Recipients(nc.Participants(), session.UserID)...,
 		)
@@ -558,9 +559,9 @@ func (h *Handler) UpdateDocumentCommentStatus(w http.ResponseWriter, r *http.Req
 	)
 }
 
-// DeleteDocumentComment handles the deletion of a comment.
-// If the comment has replies, the first reply is promoted to become the main comment.
-// If there are no replies, the comment is deleted.
+// DeleteDocumentComment handles the deletion of a comment. The comment is
+// soft-deleted and loses its text. A thread with live replies stays
+// listed, with the deleted comment on top.
 func (h *Handler) DeleteDocumentComment(w http.ResponseWriter, r *http.Request) {
 	session, ok := auth.RequireSession(h.log, w, r)
 	if !ok {
@@ -598,29 +599,20 @@ func (h *Handler) DeleteDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var cct ChangeType
+	nc, err := c.Delete()
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
 
-	if nc, ok := c.Replace(); ok {
-		reply := c.Replies[0]
+	if err := tx.DeleteDocumentComment(r.Context(), nc); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
 
-		if err := tx.ReplaceDocumentComment(r.Context(), nc); err != nil {
-			httpserver.RespondError(h.log, w, err)
-			return
-		}
-
-		if err := tx.DeleteDocumentCommentReply(r.Context(), reply.ID, commentID, session.ActiveOrganizationID); err != nil {
-			httpserver.RespondError(h.log, w, err)
-			return
-		}
-
+	cct := ChangeTypeDeleted
+	if len(c.Replies) > 0 {
 		cct = ChangeTypeUpdated
-	} else {
-		if err := tx.DeleteDocumentComment(r.Context(), commentID, documentID, session.ActiveOrganizationID); err != nil {
-			httpserver.RespondError(h.log, w, err)
-			return
-		}
-
-		cct = ChangeTypeDeleted
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -672,7 +664,8 @@ func (h *Handler) DeleteDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 	// published under the path document id; the document-scoped comment
 	// fetch rejects a comment anchored to another document with a
 	// not-found.
-	if _, err = h.db.FetchDocumentComment(r.Context(), commentID, documentID, session.ActiveOrganizationID); err != nil {
+	c, err := h.db.FetchDocumentComment(r.Context(), commentID, documentID, session.ActiveOrganizationID)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -688,14 +681,21 @@ func (h *Handler) DeleteDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.db.DeleteDocumentCommentReply(r.Context(), replyID, commentID, session.ActiveOrganizationID); err != nil {
+	if err := h.db.DeleteDocumentCommentReply(r.Context(), reply.Delete()); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
+	// a deleted comment stays listed only while it has a live reply, so
+	// deleting its last one closes the thread.
+	cct := ChangeTypeUpdated
+	if c.DeletedAt.Valid && len(c.Replies) == 1 {
+		cct = ChangeTypeDeleted
+	}
+
 	if h.comments.changeCallback != nil {
 		h.comments.changeCallback(session.ActiveOrganizationID, documentID, ChangeMessage{
-			Type:      ChangeTypeUpdated,
+			Type:      cct,
 			CommentID: commentID,
 		})
 	}
@@ -752,14 +752,16 @@ type CommentsDBAgent interface {
 	// UpdateDocumentComment should update an existing comment.
 	UpdateDocumentComment(ctx context.Context, c commentCore.Comment) error
 
-	// ReplaceDocumentComment should replace a comment's content and author with the given reply's data.
-	ReplaceDocumentComment(ctx context.Context, c commentCore.Comment) error
+	// UpdateDocumentCommentStatus should update whether a comment is
+	// resolved.
+	UpdateDocumentCommentStatus(ctx context.Context, c commentCore.Comment) error
 
-	// DeleteDocumentComment should delete a comment.
-	DeleteDocumentComment(ctx context.Context, id, documentID xid.ID, organizationID string) error
+	// DeleteDocumentComment should soft-delete a comment.
+	DeleteDocumentComment(ctx context.Context, c commentCore.Comment) error
 
-	// DeleteDocumentCommentsByBranchID should delete all comments for a branch.
-	DeleteDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error
+	// DeleteDocumentCommentsByBranchID should soft-delete all comments for
+	// a branch.
+	DeleteDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string, deletedAt time.Time) error
 }
 
 // RepliesDBAgent is an interface that handles communication with the
@@ -774,6 +776,6 @@ type RepliesDBAgent interface {
 	// UpdateDocumentCommentReply should update an existing reply.
 	UpdateDocumentCommentReply(ctx context.Context, r commentCore.Reply) error
 
-	// DeleteDocumentCommentReply should delete a reply.
-	DeleteDocumentCommentReply(ctx context.Context, id, commentID xid.ID, organizationID string) error
+	// DeleteDocumentCommentReply should soft-delete a reply.
+	DeleteDocumentCommentReply(ctx context.Context, r commentCore.Reply) error
 }

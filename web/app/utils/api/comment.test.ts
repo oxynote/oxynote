@@ -1,7 +1,7 @@
 import { describe, it } from "vitest"
 import {
 	makeWsDocumentCommentChangeTopic,
-	promoteFirstDocumentReplyToComment,
+	markDocumentCommentDeleted,
 	type DocumentComment,
 	type DocumentCommentReply,
 } from "./comment"
@@ -45,29 +45,27 @@ describe("makeWsDocumentCommentChangeTopic", () => {
 	})
 })
 
-describe("promoteFirstDocumentReplyToComment", () => {
-	it("promotes the earliest reply into the comment", ({ expect }) => {
-		const later = reply("r2", "u2", "2024-06-02T10:00:00Z")
-		const earliest = reply("r1", "u1", "2024-06-01T12:00:00Z")
+describe("markDocumentCommentDeleted", () => {
+	it("keeps the thread with its replies and drops the comment's text", ({
+		expect,
+	}) => {
+		const replies = [reply("r1", "u1", "2024-06-01T12:00:00Z")]
 
-		const result = promoteFirstDocumentReplyToComment(
-			comment([later, earliest]),
-		)
+		const result = markDocumentCommentDeleted(comment(replies))
 
-		expect(result).toMatchObject({
-			id: "c1",
-			userId: "u1",
-			content: { text: "reply-r1" },
-			createdAt: "2024-06-01T12:00:00Z",
-			replies: [later],
+		expect(result).toEqual({
+			...comment(replies),
+			content: null,
+			deletedAt: result?.deletedAt,
 		})
+		expect(typeof result?.deletedAt).toBe("string")
 	})
 
 	it("returns null when the comment has no replies", ({ expect }) => {
-		expect(promoteFirstDocumentReplyToComment(comment([]))).toBeNull()
+		expect(markDocumentCommentDeleted(comment([]))).toBeNull()
 	})
 
 	it("returns null when the replies are missing entirely", ({ expect }) => {
-		expect(promoteFirstDocumentReplyToComment(comment(undefined))).toBeNull()
+		expect(markDocumentCommentDeleted(comment(undefined))).toBeNull()
 	})
 })

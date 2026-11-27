@@ -763,7 +763,7 @@ func Test_Handler_MergeBranches(t *testing.T) {
 		"Error returned by Tx.DeleteDocumentCommentsByBranchID": {
 			DB: &DBMock{FetchDocumentByBranchIDFunc: fetchByBranch},
 			Tx: &TxMock{
-				DeleteDocumentCommentsByBranchIDFunc: func(context.Context, xid.ID, string) error {
+				DeleteDocumentCommentsByBranchIDFunc: func(context.Context, xid.ID, string, time.Time) error {
 					return errors.New("boom")
 				},
 			},
@@ -971,6 +971,11 @@ func Test_Handler_MergeBranches(t *testing.T) {
 				assert.Equal(t, "org1", entry.OrganizationID)
 				assert.True(t, entry.Boundary)
 				assert.Equal(t, null.StringFrom("u1"), entry.By)
+
+				// the target's comments are soft-deleted.
+				deleted := c.Tx.DeleteDocumentCommentsByBranchIDCalls()[0]
+				assert.Equal(t, _branchID, deleted.BranchID)
+				assert.False(t, deleted.DeletedAt.IsZero())
 
 				// the target's hooks are detached and the source's copied
 				// inside the transaction; the copies are set up once it

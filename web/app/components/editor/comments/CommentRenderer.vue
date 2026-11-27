@@ -201,7 +201,8 @@ const loadedCommentThread = computed<
 			self: boolean
 			image?: string | null
 		}
-		content: Record<string, any>
+		// null for a deleted comment kept at the start of its thread
+		content: Record<string, any> | null
 		reply: boolean
 		createdAt: Date
 		updatedAt?: Date | null
@@ -1035,9 +1036,11 @@ async function deleteSelectedComment() {
 	}
 
 	const commentId = loadedComment.value.id
-	const comment = loadedComment.value
+	const isTextComment = !!selectedComment.value.textComment
+	// a comment with replies stays as the start of its thread
+	const threadEnds = !loadedComment.value.replies?.length
 
-	if (!comment.replies?.length) {
+	if (threadEnds) {
 		closePopover()
 	}
 
@@ -1050,6 +1053,10 @@ async function deleteSelectedComment() {
 	} catch (err) {
 		showRequestErrorToast(err, t("editor.comment-thread.errors.delete-failed"))
 		return
+	}
+
+	if (threadEnds) {
+		removeThreadMark(commentId, isTextComment)
 	}
 }
 
@@ -1079,6 +1086,13 @@ async function resolveComment() {
 		return
 	}
 
+	removeThreadMark(commentId, isTextComment)
+	resetEditor()
+}
+
+// removeThreadMark takes a thread that is gone off the content it was
+// anchored to, in the diff view too.
+function removeThreadMark(commentId: string, isTextComment: boolean) {
 	if (isDiffMode.value && props.diffContext?.diffEditor) {
 		deleteCommentFromEditor(
 			props.diffContext.diffEditor,
@@ -1089,7 +1103,6 @@ async function resolveComment() {
 	}
 
 	deleteCommentFromEditor(props.contentEditor, commentId, isTextComment)
-	resetEditor()
 }
 
 async function saveReply() {
@@ -1158,11 +1171,22 @@ async function deleteReply(id: string) {
 		return
 	}
 
+	const commentId = selectedComment.value.id
+	const isTextComment = !!selectedComment.value.textComment
+	// a deleted comment's thread goes with its last reply
+	const threadEnds =
+		!!loadedComment.value?.deletedAt &&
+		loadedComment.value.replies?.length === 1
+
+	if (threadEnds) {
+		closePopover()
+	}
+
 	try {
 		await commentAPI.deleteDocumentCommentReplyByReplyId.mutateAsync({
 			docId: editorStore.activeDocumentId,
 			branchId: editorStore.activeBranchId,
-			commentId: selectedComment.value.id,
+			commentId: commentId,
 			replyId: id,
 		})
 	} catch (err) {
@@ -1171,6 +1195,10 @@ async function deleteReply(id: string) {
 			t("editor.comment-thread.errors.reply-delete-failed"),
 		)
 		return
+	}
+
+	if (threadEnds) {
+		removeThreadMark(commentId, isTextComment)
 	}
 }
 
@@ -1817,144 +1845,163 @@ function updateNodeCommentIdInEditor(
 									cn('group/comment flex w-full flex-col rounded-md text-sm')
 								"
 							>
-								<div class="flex items-center justify-between">
-									<div class="flex flex-1 items-center gap-1.5">
-										<ShadcnUiAvatar class="size-6 border">
-											<ShadcnUiAvatarImage
-												v-if="item.author.image"
-												:src="item.author.image"
-												:alt="$t('settings.workspace.logo-alt')"
-											/>
-											<ShadcnUiAvatarFallback class="rounded-md text-2xs">
-												<LazyDefaultAvatar
-													v-if="item.author.id"
-													kind="user"
-													:seed="item.author.id"
-													decorative
+								<template v-if="item.content">
+									<div class="flex items-center justify-between">
+										<div class="flex flex-1 items-center gap-1.5">
+											<ShadcnUiAvatar class="size-6 border">
+												<ShadcnUiAvatarImage
+													v-if="item.author.image"
+													:src="item.author.image"
+													:alt="$t('settings.workspace.logo-alt')"
 												/>
-												<LazyDefaultAvatar
-													v-else
-													kind="deleted-user"
-													decorative
-												/>
-											</ShadcnUiAvatarFallback>
-										</ShadcnUiAvatar>
-										<div class="text-2sm opacity-60">
-											<i18n-t
-												v-if="!item.edited"
-												scope="global"
-												keypath="editor.comment-thread.comment-header"
-												tag="span"
-											>
-												<template #author>
-													<span class="font-semibold">
-														{{ item.author.name }}
-													</span>
-												</template>
-												<template #time>
-													{{
-														new Date().getTime() - item.createdAt.getTime() <
-														NOW_TIME_LABEL_THRESHOLD_MS
-															? $t("editor.comment-thread.now-time-label")
-															: formatDistanceToNowStrict(item.createdAt, {
-																	addSuffix: true,
-																	locale: convertDateFnsLocale(locale),
-																})
-													}}
-												</template>
-											</i18n-t>
-											<i18n-t
-												v-else
-												scope="global"
-												keypath="editor.comment-thread.edited-comment-header"
-												tag="span"
-											>
-												<template #author>
-													<span class="font-semibold">
-														{{ item.author.name }}
-													</span>
-												</template>
-												<template #time>
-													{{
-														new Date().getTime() - item.createdAt.getTime() <
-														NOW_TIME_LABEL_THRESHOLD_MS
-															? $t("editor.comment-thread.now-time-label")
-															: formatDistanceToNowStrict(
-																	new Date(item.createdAt),
-																	{
+												<ShadcnUiAvatarFallback class="rounded-md text-2xs">
+													<LazyDefaultAvatar
+														v-if="item.author.id"
+														kind="user"
+														:seed="item.author.id"
+														decorative
+													/>
+													<LazyDefaultAvatar
+														v-else
+														kind="deleted-user"
+														decorative
+													/>
+												</ShadcnUiAvatarFallback>
+											</ShadcnUiAvatar>
+											<div class="text-2sm opacity-60">
+												<i18n-t
+													v-if="!item.edited"
+													scope="global"
+													keypath="editor.comment-thread.comment-header"
+													tag="span"
+												>
+													<template #author>
+														<span class="font-semibold">
+															{{ item.author.name }}
+														</span>
+													</template>
+													<template #time>
+														{{
+															new Date().getTime() - item.createdAt.getTime() <
+															NOW_TIME_LABEL_THRESHOLD_MS
+																? $t("editor.comment-thread.now-time-label")
+																: formatDistanceToNowStrict(item.createdAt, {
 																		addSuffix: true,
 																		locale: convertDateFnsLocale(locale),
-																	},
-																)
-													}}
-												</template>
-											</i18n-t>
+																	})
+														}}
+													</template>
+												</i18n-t>
+												<i18n-t
+													v-else
+													scope="global"
+													keypath="editor.comment-thread.edited-comment-header"
+													tag="span"
+												>
+													<template #author>
+														<span class="font-semibold">
+															{{ item.author.name }}
+														</span>
+													</template>
+													<template #time>
+														{{
+															new Date().getTime() - item.createdAt.getTime() <
+															NOW_TIME_LABEL_THRESHOLD_MS
+																? $t("editor.comment-thread.now-time-label")
+																: formatDistanceToNowStrict(
+																		new Date(item.createdAt),
+																		{
+																			addSuffix: true,
+																			locale: convertDateFnsLocale(locale),
+																		},
+																	)
+														}}
+													</template>
+												</i18n-t>
+											</div>
+										</div>
+										<div>
+											<ShadcnUiDropdownMenu
+												v-if="item.author.self && canRoleEdit"
+											>
+												<ShadcnUiDropdownMenuTrigger as-child>
+													<ShadcnUiButton
+														variant="ghost-plain"
+														size="icon-sm"
+														:class="
+															cn(
+																!editTarget
+																	? ''
+																	: 'pointer-events-none invisible',
+															)
+														"
+													>
+														<Icon name="lucide:ellipsis" />
+													</ShadcnUiButton>
+												</ShadcnUiDropdownMenuTrigger>
+												<ShadcnUiDropdownMenuContent
+													side="bottom"
+													align="start"
+													loop
+												>
+													<ShadcnUiDropdownMenuItem
+														@click="startEdit(item.reply ? item.id : undefined)"
+													>
+														<Icon name="lucide:pen-line" />
+														<span>
+															{{
+																$t("editor.comment-thread.edit-start-button")
+															}}
+														</span>
+													</ShadcnUiDropdownMenuItem>
+													<ShadcnUiDropdownMenuItem
+														@click="
+															item.reply
+																? deleteReply(item.id)
+																: deleteSelectedComment()
+														"
+													>
+														<Icon name="lucide:trash-2" />
+														<span>
+															{{ $t("editor.comment-thread.delete-button") }}
+														</span>
+													</ShadcnUiDropdownMenuItem>
+												</ShadcnUiDropdownMenuContent>
+											</ShadcnUiDropdownMenu>
 										</div>
 									</div>
-									<div>
-										<ShadcnUiDropdownMenu
-											v-if="item.author.self && canRoleEdit"
+									<div class="ml-2.75 flex max-w-none min-w-0">
+										<div class="flex min-w-0 flex-1 gap-3.5">
+											<div class="w-0.5 bg-border" />
+											<Comment
+												:content="item.content"
+												:class="
+													cn(
+														'mt-1 mb-2 min-w-0 flex-1 rounded-md border border-transparent p-1 transition-colors duration-150',
+														editTarget?.id === item.id
+															? 'border-border'
+															: undefined,
+													)
+												"
+											/>
+										</div>
+									</div>
+								</template>
+								<template v-else>
+									<div class="flex items-center gap-1.5">
+										<div
+											class="flex size-6 shrink-0 items-center justify-center rounded-full border text-muted-foreground"
 										>
-											<ShadcnUiDropdownMenuTrigger as-child>
-												<ShadcnUiButton
-													variant="ghost-plain"
-													size="icon-sm"
-													:class="
-														cn(
-															!editTarget
-																? ''
-																: 'pointer-events-none invisible',
-														)
-													"
-												>
-													<Icon name="lucide:ellipsis" />
-												</ShadcnUiButton>
-											</ShadcnUiDropdownMenuTrigger>
-											<ShadcnUiDropdownMenuContent
-												side="bottom"
-												align="start"
-												loop
-											>
-												<ShadcnUiDropdownMenuItem
-													@click="startEdit(item.reply ? item.id : undefined)"
-												>
-													<Icon name="lucide:pen-line" />
-													<span>
-														{{ $t("editor.comment-thread.edit-start-button") }}
-													</span>
-												</ShadcnUiDropdownMenuItem>
-												<ShadcnUiDropdownMenuItem
-													@click="
-														item.reply
-															? deleteReply(item.id)
-															: deleteSelectedComment()
-													"
-												>
-													<Icon name="lucide:trash-2" />
-													<span>
-														{{ $t("editor.comment-thread.delete-button") }}
-													</span>
-												</ShadcnUiDropdownMenuItem>
-											</ShadcnUiDropdownMenuContent>
-										</ShadcnUiDropdownMenu>
+											<Icon name="lucide:trash-2" class="size-3" />
+										</div>
+										<span class="text-2sm opacity-60">
+											{{ $t("editor.comment-thread.deleted-comment") }}
+										</span>
 									</div>
-								</div>
-								<div class="ml-2.75 flex max-w-none min-w-0">
-									<div class="flex min-w-0 flex-1 gap-3.5">
-										<div class="w-0.5 bg-border" />
-										<Comment
-											:content="item.content"
-											:class="
-												cn(
-													'mt-1 mb-2 min-w-0 flex-1 rounded-md border border-transparent p-1 transition-colors duration-150',
-													editTarget?.id === item.id
-														? 'border-border'
-														: undefined,
-												)
-											"
-										/>
+									<div class="ml-2.75 flex">
+										<div class="h-4 w-0.5 bg-border" />
 									</div>
-								</div>
+								</template>
 							</div>
 						</DynamicScrollerItem>
 					</template>

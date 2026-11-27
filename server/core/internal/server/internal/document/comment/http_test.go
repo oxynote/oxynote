@@ -936,12 +936,12 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 			RespCode: http.StatusBadRequest,
 			Fetched:  1,
 		},
-		"Error returned by DB.UpdateDocumentComment": {
+		"Error returned by DB.UpdateDocumentCommentStatus": {
 			DB: &DBMock{
 				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
 					return storedComment("u2"), nil
 				},
-				UpdateDocumentCommentFunc: func(context.Context, commentCore.Comment) error {
+				UpdateDocumentCommentStatusFunc: func(context.Context, commentCore.Comment) error {
 					return assert.AnError
 				},
 			},
@@ -1047,7 +1047,7 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 				assert.Equal(t, "hello", pub.calls[i].Core.Metadata[notification.MetaKeyCommentExcerpt])
 			}
 
-			uu := c.DB.UpdateDocumentCommentCalls()
+			uu := c.DB.UpdateDocumentCommentStatusCalls()
 			require.Len(t, uu, c.Updated)
 			require.Len(t, cpt.calls, c.Changes)
 
@@ -1067,20 +1067,24 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 }
 
 func Test_Handler_DeleteDocumentComment(t *testing.T) {
+	stubComment := func(replies ...commentCore.Reply) func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
+		return func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
+			return storedComment("u1", replies...), nil
+		}
+	}
+
 	cc := map[string]struct {
-		Tx           *TxMock
-		BeginErr     error
-		NoSession    bool
-		OmitDoc      bool
-		RespCode     int
-		Begun        int
-		Fetched      int
-		Replaced     int
-		ReplyDeleted int
-		Deleted      int
-		Committed    int
-		RolledBack   int
-		ChangeType   ChangeType
+		Tx         *TxMock
+		BeginErr   error
+		NoSession  bool
+		OmitDoc    bool
+		RespCode   int
+		Begun      int
+		Fetched    int
+		Deleted    int
+		Committed  int
+		RolledBack int
+		ChangeType ChangeType
 	}{
 		"No session in context": {
 			Tx:        &TxMock{},
@@ -1120,12 +1124,24 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 			Fetched:    1,
 			RolledBack: 1,
 		},
-		"Error returned by Tx.DeleteDocumentComment": {
+		"Already deleted comment": {
 			Tx: &TxMock{
 				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u1"), nil
+					c := storedComment("u1", storedReply("u2"))
+					c.DeletedAt = null.TimeFrom(time.Now())
+
+					return c, nil
 				},
-				DeleteDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) error {
+			},
+			RespCode:   http.StatusNotFound,
+			Begun:      1,
+			Fetched:    1,
+			RolledBack: 1,
+		},
+		"Error returned by Tx.DeleteDocumentComment": {
+			Tx: &TxMock{
+				FetchDocumentCommentFunc: stubComment(),
+				DeleteDocumentCommentFunc: func(context.Context, commentCore.Comment) error {
 					return assert.AnError
 				},
 			},
@@ -1135,42 +1151,9 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 			Deleted:    1,
 			RolledBack: 1,
 		},
-		"Error returned by Tx.ReplaceDocumentComment": {
-			Tx: &TxMock{
-				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u1", storedReply("u2")), nil
-				},
-				ReplaceDocumentCommentFunc: func(context.Context, commentCore.Comment) error {
-					return assert.AnError
-				},
-			},
-			RespCode:   http.StatusInternalServerError,
-			Begun:      1,
-			Fetched:    1,
-			Replaced:   1,
-			RolledBack: 1,
-		},
-		"Error returned by Tx.DeleteDocumentCommentReply": {
-			Tx: &TxMock{
-				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u1", storedReply("u2")), nil
-				},
-				DeleteDocumentCommentReplyFunc: func(context.Context, xid.ID, xid.ID, string) error {
-					return assert.AnError
-				},
-			},
-			RespCode:     http.StatusInternalServerError,
-			Begun:        1,
-			Fetched:      1,
-			Replaced:     1,
-			ReplyDeleted: 1,
-			RolledBack:   1,
-		},
 		"Error returned by Tx.Commit": {
 			Tx: &TxMock{
-				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u1"), nil
-				},
+				FetchDocumentCommentFunc: stubComment(),
 				CommitFunc: func() error {
 					return assert.AnError
 				},
@@ -1183,11 +1166,7 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 			RolledBack: 1,
 		},
 		"Successful deletion without replies": {
-			Tx: &TxMock{
-				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u1"), nil
-				},
-			},
+			Tx:         &TxMock{FetchDocumentCommentFunc: stubComment()},
 			RespCode:   http.StatusNoContent,
 			Begun:      1,
 			Fetched:    1,
@@ -1196,20 +1175,15 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 			RolledBack: 1,
 			ChangeType: ChangeTypeDeleted,
 		},
-		"Successful deletion promotes first reply": {
-			Tx: &TxMock{
-				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u1", storedReply("u2")), nil
-				},
-			},
-			RespCode:     http.StatusNoContent,
-			Begun:        1,
-			Fetched:      1,
-			Replaced:     1,
-			ReplyDeleted: 1,
-			Committed:    1,
-			RolledBack:   1,
-			ChangeType:   ChangeTypeUpdated,
+		"Successful deletion keeps a thread with replies": {
+			Tx:         &TxMock{FetchDocumentCommentFunc: stubComment(storedReply("u2"))},
+			RespCode:   http.StatusNoContent,
+			Begun:      1,
+			Fetched:    1,
+			Deleted:    1,
+			Committed:  1,
+			RolledBack: 1,
+			ChangeType: ChangeTypeUpdated,
 		},
 	}
 
@@ -1230,11 +1204,16 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, db.BeginTxCalls(), c.Begun)
 			assert.Len(t, c.Tx.FetchDocumentCommentCalls(), c.Fetched)
-			assert.Len(t, c.Tx.ReplaceDocumentCommentCalls(), c.Replaced)
-			assert.Len(t, c.Tx.DeleteDocumentCommentReplyCalls(), c.ReplyDeleted)
 			assert.Len(t, c.Tx.DeleteDocumentCommentCalls(), c.Deleted)
 			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
 			assert.Len(t, c.Tx.RollbackCalls(), c.RolledBack)
+
+			if c.Deleted > 0 {
+				deleted := c.Tx.DeleteDocumentCommentCalls()[0].C
+				assert.Equal(t, _commentID, deleted.ID)
+				assert.Nil(t, deleted.Content)
+				assert.True(t, deleted.DeletedAt.Valid)
+			}
 
 			if c.ChangeType == "" {
 				assert.Empty(t, cpt.calls)
@@ -1248,6 +1227,18 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 }
 
 func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
+	stubComment := func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
+		return storedComment("u2", storedReply("u1"), storedReply("u3")), nil
+	}
+
+	stubReply := func(userID string) func(context.Context, xid.ID, xid.ID, string) (*commentCore.Reply, error) {
+		return func(context.Context, xid.ID, xid.ID, string) (*commentCore.Reply, error) {
+			r := storedReply(userID)
+
+			return &r, nil
+		}
+	}
+
 	cc := map[string]struct {
 		DB             *DBMock
 		NoSession      bool
@@ -1256,7 +1247,7 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 		CommentFetched int
 		ReplyFetched   int
 		Deleted        int
-		Changes        int
+		ChangeType     ChangeType
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -1282,6 +1273,7 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 		},
 		"Error returned by DB.FetchDocumentCommentReply": {
 			DB: &DBMock{
+				FetchDocumentCommentFunc: stubComment,
 				FetchDocumentCommentReplyFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Reply, error) {
 					return nil, assert.AnError
 				},
@@ -1292,11 +1284,8 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 		},
 		"Not the reply author": {
 			DB: &DBMock{
-				FetchDocumentCommentReplyFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Reply, error) {
-					r := storedReply("u2")
-
-					return &r, nil
-				},
+				FetchDocumentCommentFunc:      stubComment,
+				FetchDocumentCommentReplyFunc: stubReply("u2"),
 			},
 			RespCode:       http.StatusForbidden,
 			CommentFetched: 1,
@@ -1304,12 +1293,9 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 		},
 		"Error returned by DB.DeleteDocumentCommentReply": {
 			DB: &DBMock{
-				FetchDocumentCommentReplyFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Reply, error) {
-					r := storedReply("u1")
-
-					return &r, nil
-				},
-				DeleteDocumentCommentReplyFunc: func(context.Context, xid.ID, xid.ID, string) error {
+				FetchDocumentCommentFunc:      stubComment,
+				FetchDocumentCommentReplyFunc: stubReply("u1"),
+				DeleteDocumentCommentReplyFunc: func(context.Context, commentCore.Reply) error {
 					return assert.AnError
 				},
 			},
@@ -1320,17 +1306,30 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 		},
 		"Successful deletion": {
 			DB: &DBMock{
-				FetchDocumentCommentReplyFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Reply, error) {
-					r := storedReply("u1")
-
-					return &r, nil
-				},
+				FetchDocumentCommentFunc:      stubComment,
+				FetchDocumentCommentReplyFunc: stubReply("u1"),
 			},
 			RespCode:       http.StatusOK,
 			CommentFetched: 1,
 			ReplyFetched:   1,
 			Deleted:        1,
-			Changes:        1,
+			ChangeType:     ChangeTypeUpdated,
+		},
+		"Successful deletion of the last reply under a deleted comment": {
+			DB: &DBMock{
+				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
+					c := storedComment("u2", storedReply("u1"))
+					c.DeletedAt = null.TimeFrom(time.Now())
+
+					return c, nil
+				},
+				FetchDocumentCommentReplyFunc: stubReply("u1"),
+			},
+			RespCode:       http.StatusOK,
+			CommentFetched: 1,
+			ReplyFetched:   1,
+			Deleted:        1,
+			ChangeType:     ChangeTypeDeleted,
 		},
 	}
 
@@ -1349,11 +1348,21 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 			assert.Len(t, c.DB.FetchDocumentCommentCalls(), c.CommentFetched)
 			assert.Len(t, c.DB.FetchDocumentCommentReplyCalls(), c.ReplyFetched)
 			assert.Len(t, c.DB.DeleteDocumentCommentReplyCalls(), c.Deleted)
-			require.Len(t, cpt.calls, c.Changes)
 
-			if c.Changes > 0 {
-				assert.Equal(t, ChangeTypeUpdated, cpt.calls[0].Type)
+			if c.Deleted > 0 {
+				deleted := c.DB.DeleteDocumentCommentReplyCalls()[0].R
+				assert.Equal(t, _replyID, deleted.ID)
+				assert.Nil(t, deleted.Content)
+				assert.True(t, deleted.DeletedAt.Valid)
 			}
+
+			if c.ChangeType == "" {
+				assert.Empty(t, cpt.calls)
+				return
+			}
+
+			require.Len(t, cpt.calls, 1)
+			assert.Equal(t, c.ChangeType, cpt.calls[0].Type)
 		})
 	}
 }

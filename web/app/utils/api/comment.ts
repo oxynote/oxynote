@@ -1,5 +1,3 @@
-import { compareAsc } from "date-fns"
-
 export function makeWsDocumentCommentChangeTopic(docId: string): string {
 	return `change@documents.${docId}.comments`
 }
@@ -15,9 +13,13 @@ export interface DocumentComment {
 	resolved: boolean
 	resolvedBy?: string | null
 	resolvedAt?: Date | string | null
-	content: Record<string, any>
+	// null once the comment is deleted
+	content: Record<string, any> | null
 	createdAt: Date | string
 	updatedAt?: Date | string | null
+	// a deleted comment stays at the top of its thread while a reply is
+	// left, so the thread keeps its start
+	deletedAt?: Date | string | null
 	replies?: DocumentCommentReply[]
 
 	// present only on comments anchored to deleted diff content
@@ -74,27 +76,19 @@ export interface DocumentCommentDiffDeletionContext {
 	textAnchors?: DocumentDiffDeletedContentTextAnchor[]
 }
 
-export function promoteFirstDocumentReplyToComment(
+// markDocumentCommentDeleted returns the comment as the server keeps it
+// once deleted, or null when no reply is left to keep its thread.
+export function markDocumentCommentDeleted(
 	comment: DocumentComment,
 ): DocumentComment | null {
-	// sort mutates in place, so this keeps sorting comment.replies itself
-	// whenever there are replies to sort
-	const replies = comment.replies ?? []
-
-	const firstReply = replies.sort((a, b) =>
-		compareAsc(new Date(a.createdAt), new Date(b.createdAt)),
-	)[0]
-	if (!firstReply) {
+	if (!comment.replies?.length) {
 		return null
 	}
 
 	return {
 		...comment,
-		userId: firstReply.userId,
-		content: firstReply.content,
-		createdAt: firstReply.createdAt,
-		updatedAt: firstReply.updatedAt,
-		replies: replies.filter((r) => r.id !== firstReply.id),
+		content: null,
+		deletedAt: new Date().toISOString(),
 	}
 }
 

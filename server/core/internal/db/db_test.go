@@ -543,7 +543,8 @@ func Test_migrateDataSourceCredentialsKind(t *testing.T) {
 
 func Test_DB_moveSQLMigrateHistory(t *testing.T) {
 	// sql-migrate recorded these ids before goose replaced it, so its
-	// history can never list anything newer.
+	// history can never list anything newer. A database with the full
+	// history is therefore at version 12, and later migrations still run.
 	ids := []string{
 		"001_initial.sql",
 		"002_history_entry_snapshot.sql",
@@ -575,7 +576,10 @@ func Test_DB_moveSQLMigrateHistory(t *testing.T) {
 			}
 		},
 		"Full history": func(t *testing.T, db *DB) tcase {
-			_, err := db.sql.Exec("DROP TABLE goose_db_version")
+			_, err := db.migrations.DownTo(context.Background(), 12)
+			require.NoError(t, err)
+
+			_, err = db.sql.Exec("DROP TABLE goose_db_version")
 			require.NoError(t, err)
 
 			prepSQLMigrateHistory(t, db, ids...)
@@ -598,7 +602,10 @@ func Test_DB_moveSQLMigrateHistory(t *testing.T) {
 			}
 		},
 		"History outside the public schema": func(t *testing.T, db *DB) tcase {
-			_, err := db.sql.Exec("DROP TABLE goose_db_version")
+			_, err := db.migrations.DownTo(context.Background(), 12)
+			require.NoError(t, err)
+
+			_, err = db.sql.Exec("DROP TABLE goose_db_version")
 			require.NoError(t, err)
 
 			prepSQLMigrateHistory(t, db, ids...)

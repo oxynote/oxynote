@@ -6,6 +6,7 @@ package comment
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	commentCore "github.com/oxynote/oxynote/server/core/internal/document/comment"
@@ -25,13 +26,13 @@ var _ Tx = &TxMock{}
 //			CommitFunc: func() error {
 //				panic("mock out the Commit method")
 //			},
-//			DeleteDocumentCommentFunc: func(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string) error {
+//			DeleteDocumentCommentFunc: func(ctx context.Context, c commentCore.Comment) error {
 //				panic("mock out the DeleteDocumentComment method")
 //			},
-//			DeleteDocumentCommentReplyFunc: func(ctx context.Context, id xid.ID, commentID xid.ID, organizationID string) error {
+//			DeleteDocumentCommentReplyFunc: func(ctx context.Context, r commentCore.Reply) error {
 //				panic("mock out the DeleteDocumentCommentReply method")
 //			},
-//			DeleteDocumentCommentsByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) error {
+//			DeleteDocumentCommentsByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string, deletedAt time.Time) error {
 //				panic("mock out the DeleteDocumentCommentsByBranchID method")
 //			},
 //			FetchDocumentByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error) {
@@ -55,9 +56,6 @@ var _ Tx = &TxMock{}
 //			InsertDocumentCommentReplyFunc: func(ctx context.Context, r commentCore.Reply) error {
 //				panic("mock out the InsertDocumentCommentReply method")
 //			},
-//			ReplaceDocumentCommentFunc: func(ctx context.Context, c commentCore.Comment) error {
-//				panic("mock out the ReplaceDocumentComment method")
-//			},
 //			RollbackFunc: func() error {
 //				panic("mock out the Rollback method")
 //			},
@@ -66,6 +64,9 @@ var _ Tx = &TxMock{}
 //			},
 //			UpdateDocumentCommentReplyFunc: func(ctx context.Context, r commentCore.Reply) error {
 //				panic("mock out the UpdateDocumentCommentReply method")
+//			},
+//			UpdateDocumentCommentStatusFunc: func(ctx context.Context, c commentCore.Comment) error {
+//				panic("mock out the UpdateDocumentCommentStatus method")
 //			},
 //		}
 //
@@ -78,13 +79,13 @@ type TxMock struct {
 	CommitFunc func() error
 
 	// DeleteDocumentCommentFunc mocks the DeleteDocumentComment method.
-	DeleteDocumentCommentFunc func(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string) error
+	DeleteDocumentCommentFunc func(ctx context.Context, c commentCore.Comment) error
 
 	// DeleteDocumentCommentReplyFunc mocks the DeleteDocumentCommentReply method.
-	DeleteDocumentCommentReplyFunc func(ctx context.Context, id xid.ID, commentID xid.ID, organizationID string) error
+	DeleteDocumentCommentReplyFunc func(ctx context.Context, r commentCore.Reply) error
 
 	// DeleteDocumentCommentsByBranchIDFunc mocks the DeleteDocumentCommentsByBranchID method.
-	DeleteDocumentCommentsByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) error
+	DeleteDocumentCommentsByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string, deletedAt time.Time) error
 
 	// FetchDocumentByBranchIDFunc mocks the FetchDocumentByBranchID method.
 	FetchDocumentByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error)
@@ -107,9 +108,6 @@ type TxMock struct {
 	// InsertDocumentCommentReplyFunc mocks the InsertDocumentCommentReply method.
 	InsertDocumentCommentReplyFunc func(ctx context.Context, r commentCore.Reply) error
 
-	// ReplaceDocumentCommentFunc mocks the ReplaceDocumentComment method.
-	ReplaceDocumentCommentFunc func(ctx context.Context, c commentCore.Comment) error
-
 	// RollbackFunc mocks the Rollback method.
 	RollbackFunc func() error
 
@@ -118,6 +116,9 @@ type TxMock struct {
 
 	// UpdateDocumentCommentReplyFunc mocks the UpdateDocumentCommentReply method.
 	UpdateDocumentCommentReplyFunc func(ctx context.Context, r commentCore.Reply) error
+
+	// UpdateDocumentCommentStatusFunc mocks the UpdateDocumentCommentStatus method.
+	UpdateDocumentCommentStatusFunc func(ctx context.Context, c commentCore.Comment) error
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -128,23 +129,15 @@ type TxMock struct {
 		DeleteDocumentComment []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
-			// ID is the id argument value.
-			ID xid.ID
-			// DocumentID is the documentID argument value.
-			DocumentID xid.ID
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
+			// C is the c argument value.
+			C commentCore.Comment
 		}
 		// DeleteDocumentCommentReply holds details about calls to the DeleteDocumentCommentReply method.
 		DeleteDocumentCommentReply []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
-			// ID is the id argument value.
-			ID xid.ID
-			// CommentID is the commentID argument value.
-			CommentID xid.ID
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
+			// R is the r argument value.
+			R commentCore.Reply
 		}
 		// DeleteDocumentCommentsByBranchID holds details about calls to the DeleteDocumentCommentsByBranchID method.
 		DeleteDocumentCommentsByBranchID []struct {
@@ -154,6 +147,8 @@ type TxMock struct {
 			BranchID xid.ID
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
+			// DeletedAt is the deletedAt argument value.
+			DeletedAt time.Time
 		}
 		// FetchDocumentByBranchID holds details about calls to the FetchDocumentByBranchID method.
 		FetchDocumentByBranchID []struct {
@@ -220,13 +215,6 @@ type TxMock struct {
 			// R is the r argument value.
 			R commentCore.Reply
 		}
-		// ReplaceDocumentComment holds details about calls to the ReplaceDocumentComment method.
-		ReplaceDocumentComment []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// C is the c argument value.
-			C commentCore.Comment
-		}
 		// Rollback holds details about calls to the Rollback method.
 		Rollback []struct {
 		}
@@ -244,6 +232,13 @@ type TxMock struct {
 			// R is the r argument value.
 			R commentCore.Reply
 		}
+		// UpdateDocumentCommentStatus holds details about calls to the UpdateDocumentCommentStatus method.
+		UpdateDocumentCommentStatus []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// C is the c argument value.
+			C commentCore.Comment
+		}
 	}
 	lockCommit                           sync.RWMutex
 	lockDeleteDocumentComment            sync.RWMutex
@@ -256,10 +251,10 @@ type TxMock struct {
 	lockFetchDocumentMaintainers         sync.RWMutex
 	lockInsertDocumentComment            sync.RWMutex
 	lockInsertDocumentCommentReply       sync.RWMutex
-	lockReplaceDocumentComment           sync.RWMutex
 	lockRollback                         sync.RWMutex
 	lockUpdateDocumentComment            sync.RWMutex
 	lockUpdateDocumentCommentReply       sync.RWMutex
+	lockUpdateDocumentCommentStatus      sync.RWMutex
 }
 
 // Commit calls CommitFunc.
@@ -293,17 +288,13 @@ func (mock *TxMock) CommitCalls() []struct {
 }
 
 // DeleteDocumentComment calls DeleteDocumentCommentFunc.
-func (mock *TxMock) DeleteDocumentComment(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string) error {
+func (mock *TxMock) DeleteDocumentComment(ctx context.Context, c commentCore.Comment) error {
 	callInfo := struct {
-		Ctx            context.Context
-		ID             xid.ID
-		DocumentID     xid.ID
-		OrganizationID string
+		Ctx context.Context
+		C   commentCore.Comment
 	}{
-		Ctx:            ctx,
-		ID:             id,
-		DocumentID:     documentID,
-		OrganizationID: organizationID,
+		Ctx: ctx,
+		C:   c,
 	}
 	mock.lockDeleteDocumentComment.Lock()
 	mock.calls.DeleteDocumentComment = append(mock.calls.DeleteDocumentComment, callInfo)
@@ -314,7 +305,7 @@ func (mock *TxMock) DeleteDocumentComment(ctx context.Context, id xid.ID, docume
 		)
 		return errOut
 	}
-	return mock.DeleteDocumentCommentFunc(ctx, id, documentID, organizationID)
+	return mock.DeleteDocumentCommentFunc(ctx, c)
 }
 
 // DeleteDocumentCommentCalls gets all the calls that were made to DeleteDocumentComment.
@@ -322,16 +313,12 @@ func (mock *TxMock) DeleteDocumentComment(ctx context.Context, id xid.ID, docume
 //
 //	len(mockedTx.DeleteDocumentCommentCalls())
 func (mock *TxMock) DeleteDocumentCommentCalls() []struct {
-	Ctx            context.Context
-	ID             xid.ID
-	DocumentID     xid.ID
-	OrganizationID string
+	Ctx context.Context
+	C   commentCore.Comment
 } {
 	var calls []struct {
-		Ctx            context.Context
-		ID             xid.ID
-		DocumentID     xid.ID
-		OrganizationID string
+		Ctx context.Context
+		C   commentCore.Comment
 	}
 	mock.lockDeleteDocumentComment.RLock()
 	calls = mock.calls.DeleteDocumentComment
@@ -340,17 +327,13 @@ func (mock *TxMock) DeleteDocumentCommentCalls() []struct {
 }
 
 // DeleteDocumentCommentReply calls DeleteDocumentCommentReplyFunc.
-func (mock *TxMock) DeleteDocumentCommentReply(ctx context.Context, id xid.ID, commentID xid.ID, organizationID string) error {
+func (mock *TxMock) DeleteDocumentCommentReply(ctx context.Context, r commentCore.Reply) error {
 	callInfo := struct {
-		Ctx            context.Context
-		ID             xid.ID
-		CommentID      xid.ID
-		OrganizationID string
+		Ctx context.Context
+		R   commentCore.Reply
 	}{
-		Ctx:            ctx,
-		ID:             id,
-		CommentID:      commentID,
-		OrganizationID: organizationID,
+		Ctx: ctx,
+		R:   r,
 	}
 	mock.lockDeleteDocumentCommentReply.Lock()
 	mock.calls.DeleteDocumentCommentReply = append(mock.calls.DeleteDocumentCommentReply, callInfo)
@@ -361,7 +344,7 @@ func (mock *TxMock) DeleteDocumentCommentReply(ctx context.Context, id xid.ID, c
 		)
 		return errOut
 	}
-	return mock.DeleteDocumentCommentReplyFunc(ctx, id, commentID, organizationID)
+	return mock.DeleteDocumentCommentReplyFunc(ctx, r)
 }
 
 // DeleteDocumentCommentReplyCalls gets all the calls that were made to DeleteDocumentCommentReply.
@@ -369,16 +352,12 @@ func (mock *TxMock) DeleteDocumentCommentReply(ctx context.Context, id xid.ID, c
 //
 //	len(mockedTx.DeleteDocumentCommentReplyCalls())
 func (mock *TxMock) DeleteDocumentCommentReplyCalls() []struct {
-	Ctx            context.Context
-	ID             xid.ID
-	CommentID      xid.ID
-	OrganizationID string
+	Ctx context.Context
+	R   commentCore.Reply
 } {
 	var calls []struct {
-		Ctx            context.Context
-		ID             xid.ID
-		CommentID      xid.ID
-		OrganizationID string
+		Ctx context.Context
+		R   commentCore.Reply
 	}
 	mock.lockDeleteDocumentCommentReply.RLock()
 	calls = mock.calls.DeleteDocumentCommentReply
@@ -387,15 +366,17 @@ func (mock *TxMock) DeleteDocumentCommentReplyCalls() []struct {
 }
 
 // DeleteDocumentCommentsByBranchID calls DeleteDocumentCommentsByBranchIDFunc.
-func (mock *TxMock) DeleteDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error {
+func (mock *TxMock) DeleteDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string, deletedAt time.Time) error {
 	callInfo := struct {
 		Ctx            context.Context
 		BranchID       xid.ID
 		OrganizationID string
+		DeletedAt      time.Time
 	}{
 		Ctx:            ctx,
 		BranchID:       branchID,
 		OrganizationID: organizationID,
+		DeletedAt:      deletedAt,
 	}
 	mock.lockDeleteDocumentCommentsByBranchID.Lock()
 	mock.calls.DeleteDocumentCommentsByBranchID = append(mock.calls.DeleteDocumentCommentsByBranchID, callInfo)
@@ -406,7 +387,7 @@ func (mock *TxMock) DeleteDocumentCommentsByBranchID(ctx context.Context, branch
 		)
 		return errOut
 	}
-	return mock.DeleteDocumentCommentsByBranchIDFunc(ctx, branchID, organizationID)
+	return mock.DeleteDocumentCommentsByBranchIDFunc(ctx, branchID, organizationID, deletedAt)
 }
 
 // DeleteDocumentCommentsByBranchIDCalls gets all the calls that were made to DeleteDocumentCommentsByBranchID.
@@ -417,11 +398,13 @@ func (mock *TxMock) DeleteDocumentCommentsByBranchIDCalls() []struct {
 	Ctx            context.Context
 	BranchID       xid.ID
 	OrganizationID string
+	DeletedAt      time.Time
 } {
 	var calls []struct {
 		Ctx            context.Context
 		BranchID       xid.ID
 		OrganizationID string
+		DeletedAt      time.Time
 	}
 	mock.lockDeleteDocumentCommentsByBranchID.RLock()
 	calls = mock.calls.DeleteDocumentCommentsByBranchID
@@ -739,45 +722,6 @@ func (mock *TxMock) InsertDocumentCommentReplyCalls() []struct {
 	return calls
 }
 
-// ReplaceDocumentComment calls ReplaceDocumentCommentFunc.
-func (mock *TxMock) ReplaceDocumentComment(ctx context.Context, c commentCore.Comment) error {
-	callInfo := struct {
-		Ctx context.Context
-		C   commentCore.Comment
-	}{
-		Ctx: ctx,
-		C:   c,
-	}
-	mock.lockReplaceDocumentComment.Lock()
-	mock.calls.ReplaceDocumentComment = append(mock.calls.ReplaceDocumentComment, callInfo)
-	mock.lockReplaceDocumentComment.Unlock()
-	if mock.ReplaceDocumentCommentFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.ReplaceDocumentCommentFunc(ctx, c)
-}
-
-// ReplaceDocumentCommentCalls gets all the calls that were made to ReplaceDocumentComment.
-// Check the length with:
-//
-//	len(mockedTx.ReplaceDocumentCommentCalls())
-func (mock *TxMock) ReplaceDocumentCommentCalls() []struct {
-	Ctx context.Context
-	C   commentCore.Comment
-} {
-	var calls []struct {
-		Ctx context.Context
-		C   commentCore.Comment
-	}
-	mock.lockReplaceDocumentComment.RLock()
-	calls = mock.calls.ReplaceDocumentComment
-	mock.lockReplaceDocumentComment.RUnlock()
-	return calls
-}
-
 // Rollback calls RollbackFunc.
 func (mock *TxMock) Rollback() error {
 	callInfo := struct {
@@ -883,5 +827,44 @@ func (mock *TxMock) UpdateDocumentCommentReplyCalls() []struct {
 	mock.lockUpdateDocumentCommentReply.RLock()
 	calls = mock.calls.UpdateDocumentCommentReply
 	mock.lockUpdateDocumentCommentReply.RUnlock()
+	return calls
+}
+
+// UpdateDocumentCommentStatus calls UpdateDocumentCommentStatusFunc.
+func (mock *TxMock) UpdateDocumentCommentStatus(ctx context.Context, c commentCore.Comment) error {
+	callInfo := struct {
+		Ctx context.Context
+		C   commentCore.Comment
+	}{
+		Ctx: ctx,
+		C:   c,
+	}
+	mock.lockUpdateDocumentCommentStatus.Lock()
+	mock.calls.UpdateDocumentCommentStatus = append(mock.calls.UpdateDocumentCommentStatus, callInfo)
+	mock.lockUpdateDocumentCommentStatus.Unlock()
+	if mock.UpdateDocumentCommentStatusFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.UpdateDocumentCommentStatusFunc(ctx, c)
+}
+
+// UpdateDocumentCommentStatusCalls gets all the calls that were made to UpdateDocumentCommentStatus.
+// Check the length with:
+//
+//	len(mockedTx.UpdateDocumentCommentStatusCalls())
+func (mock *TxMock) UpdateDocumentCommentStatusCalls() []struct {
+	Ctx context.Context
+	C   commentCore.Comment
+} {
+	var calls []struct {
+		Ctx context.Context
+		C   commentCore.Comment
+	}
+	mock.lockUpdateDocumentCommentStatus.RLock()
+	calls = mock.calls.UpdateDocumentCommentStatus
+	mock.lockUpdateDocumentCommentStatus.RUnlock()
 	return calls
 }
