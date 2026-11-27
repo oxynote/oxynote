@@ -611,6 +611,22 @@ func Test_backfillDocumentCommentRevisions(t *testing.T) {
 				},
 			}
 		},
+		"Deleted comments and replies gain no revision": func(t *testing.T, db *DB) tcase {
+			c, r := prep(t, db)
+			require.NoError(t, db.DeleteDocumentCommentReply(context.Background(), r.ID, r.CommentID, r.OrganizationID))
+			require.NoError(t, db.DeleteDocumentComment(context.Background(), c.ID, c.DocumentID, c.OrganizationID))
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					var n int
+
+					require.NoError(t, db.sql.Get(&n, `SELECT
+						(SELECT count(*) FROM document_comment_revisions) +
+						(SELECT count(*) FROM document_comment_reply_revisions)`))
+					assert.Zero(t, n)
+				},
+			}
+		},
 		"No comments": func(_ *testing.T, _ *DB) tcase {
 			return tcase{
 				Check: func(t *testing.T, db *DB) {

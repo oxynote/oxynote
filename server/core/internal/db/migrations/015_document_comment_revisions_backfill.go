@@ -26,16 +26,16 @@ SELECT ids.id, r.fk_organization_id, r.id, r.content, r.fk_user_id, COALESCE(r.u
 FROM jsonb_to_recordset($1::jsonb) AS ids(id TEXT, "sourceId" TEXT)
 JOIN document_comment_replies r ON r.id = ids."sourceId"`
 
-// backfillDocumentCommentRevisions gives every comment and reply one
+// backfillDocumentCommentRevisions gives every live comment and reply one
 // revision of its current text. Earlier versions were overwritten and
-// cannot be rebuilt.
+// cannot be rebuilt. A deleted row has no text, so it gets none.
 func backfillDocumentCommentRevisions() *goose.Migration {
 	up := func(ctx context.Context, tx *sql.Tx) error {
-		if err := insertCurrentRevisions(ctx, tx, "SELECT id FROM document_comments", _insertCommentRevisions); err != nil {
+		if err := insertCurrentRevisions(ctx, tx, "SELECT id FROM document_comments WHERE content IS NOT NULL", _insertCommentRevisions); err != nil {
 			return fmt.Errorf("backfilling comment revisions: %w", err)
 		}
 
-		if err := insertCurrentRevisions(ctx, tx, "SELECT id FROM document_comment_replies", _insertReplyRevisions); err != nil {
+		if err := insertCurrentRevisions(ctx, tx, "SELECT id FROM document_comment_replies WHERE content IS NOT NULL", _insertReplyRevisions); err != nil {
 			// NOCOV: a test cannot make this step fail without failing
 			// the one above first.
 			return fmt.Errorf("backfilling reply revisions: %w", err)

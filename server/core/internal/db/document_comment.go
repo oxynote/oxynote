@@ -7,6 +7,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/document/comment"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
@@ -128,7 +129,8 @@ func (a *agent) FetchDocumentCommentReply(ctx context.Context, id, commentID xid
 }
 
 // UpdateDocumentComment updates an existing comment in the database and
-// records a revision of its text.
+// records a revision of its text. A deleted comment is not found, so a
+// delete that lands first wins.
 func (a *agent) UpdateDocumentComment(ctx context.Context, c comment.Comment) error {
 	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
 		q, args := a.builder.Update("document_comments").
@@ -144,10 +146,21 @@ func (a *agent) UpdateDocumentComment(ctx context.Context, c comment.Comment) er
 				"id":                 c.ID,
 				"fk_document_id":     c.DocumentID,
 				"fk_organization_id": c.OrganizationID,
+				"deleted_at":         nil,
 			}).MustSql()
 
-		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
+		res, err := tx.ExecContext(ctx, q, args...)
+		if err != nil {
 			return err
+		}
+
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+
+		if n == 0 {
+			return errutil.ErrNotFound
 		}
 
 		return a.recordDocumentCommentRevision(ctx, tx, c)
@@ -175,7 +188,7 @@ func (a *agent) UpdateDocumentCommentStatus(ctx context.Context, c comment.Comme
 }
 
 // UpdateDocumentCommentReply updates an existing reply in the database and
-// records a revision of its text.
+// records a revision of its text. A deleted reply is not found.
 func (a *agent) UpdateDocumentCommentReply(ctx context.Context, r comment.Reply) error {
 	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
 		q, args := a.builder.Update("document_comment_replies").
@@ -187,17 +200,29 @@ func (a *agent) UpdateDocumentCommentReply(ctx context.Context, r comment.Reply)
 				"id":                     r.ID,
 				"fk_document_comment_id": r.CommentID,
 				"fk_organization_id":     r.OrganizationID,
+				"deleted_at":             nil,
 			}).MustSql()
 
-		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
+		res, err := tx.ExecContext(ctx, q, args...)
+		if err != nil {
 			return err
+		}
+
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+
+		if n == 0 {
+			return errutil.ErrNotFound
 		}
 
 		return a.recordDocumentCommentReplyRevision(ctx, tx, r)
 	})
 }
 
-// DeleteDocumentComment soft-deletes a comment, clearing its text.
+// DeleteDocumentComment soft-deletes a comment, clearing its text. A
+// comment that is already deleted is not found.
 func (a *agent) DeleteDocumentComment(ctx context.Context, id, documentID xid.ID, organizationID string) error {
 	q, args := a.builder.Update("document_comments").
 		SetMap(map[string]any{
@@ -208,14 +233,28 @@ func (a *agent) DeleteDocumentComment(ctx context.Context, id, documentID xid.ID
 			"id":                 id,
 			"fk_document_id":     documentID,
 			"fk_organization_id": organizationID,
+			"deleted_at":         nil,
 		}).MustSql()
 
-	_, err := a.sql.ExecContext(ctx, q, args...)
+	res, err := a.sql.ExecContext(ctx, q, args...)
+	if err != nil {
+		return err
+	}
 
-	return err
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if n == 0 {
+		return errutil.ErrNotFound
+	}
+
+	return nil
 }
 
-// DeleteDocumentCommentReply soft-deletes a reply, clearing its text.
+// DeleteDocumentCommentReply soft-deletes a reply, clearing its text. A
+// reply that is already deleted is not found.
 func (a *agent) DeleteDocumentCommentReply(ctx context.Context, id, commentID xid.ID, organizationID string) error {
 	q, args := a.builder.Update("document_comment_replies").
 		SetMap(map[string]any{
@@ -226,11 +265,24 @@ func (a *agent) DeleteDocumentCommentReply(ctx context.Context, id, commentID xi
 			"id":                     id,
 			"fk_document_comment_id": commentID,
 			"fk_organization_id":     organizationID,
+			"deleted_at":             nil,
 		}).MustSql()
 
-	_, err := a.sql.ExecContext(ctx, q, args...)
+	res, err := a.sql.ExecContext(ctx, q, args...)
+	if err != nil {
+		return err
+	}
 
-	return err
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if n == 0 {
+		return errutil.ErrNotFound
+	}
+
+	return nil
 }
 
 // FetchDocumentCommentsByBranchID retrieves the comment threads of a

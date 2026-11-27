@@ -13,6 +13,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/comment"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
@@ -481,6 +482,17 @@ func Test_agent_UpdateDocumentComment(t *testing.T) {
 				Err:              assert.AnError,
 			}
 		},
+		"Deleted comment": func(t *testing.T, db *DB) tcase {
+			c := prepDocumentComments(t, db, 1, nil)[0]
+			require.NoError(t, db.DeleteDocumentComment(context.Background(), c.ID, c.DocumentID, c.OrganizationID))
+
+			c.Content = comment.Content{"text": "edited after the delete"}
+
+			return tcase{
+				Comment: c,
+				Err:     errutil.ErrNotFound,
+			}
+		},
 		"Successful update": func(t *testing.T, db *DB) tcase {
 			users := prepUsers(t, db, 1)
 			c := prepDocumentComments(t, db, 1, nil)[0]
@@ -616,6 +628,17 @@ func Test_agent_UpdateDocumentCommentReply(t *testing.T) {
 				Err:              assert.AnError,
 			}
 		},
+		"Deleted reply": func(t *testing.T, db *DB) tcase {
+			r := prepDocumentCommentReplies(t, db, 1, nil)[0]
+			require.NoError(t, db.DeleteDocumentCommentReply(context.Background(), r.ID, r.CommentID, r.OrganizationID))
+
+			r.Content = comment.Content{"text": "edited after the delete"}
+
+			return tcase{
+				Reply: r,
+				Err:   errutil.ErrNotFound,
+			}
+		},
 		"Successful update": func(t *testing.T, db *DB) tcase {
 			r := prepDocumentCommentReplies(t, db, 1, nil)[0]
 			r.Content = comment.Content{
@@ -682,6 +705,15 @@ func Test_agent_DeleteDocumentComment(t *testing.T) {
 				CancelledContext: true,
 				Comment:          prepDeleted(t, db),
 				Err:              assert.AnError,
+			}
+		},
+		"Already deleted": func(t *testing.T, db *DB) tcase {
+			c := prepDeleted(t, db)
+			require.NoError(t, db.DeleteDocumentComment(context.Background(), c.ID, c.DocumentID, c.OrganizationID))
+
+			return tcase{
+				Comment: c,
+				Err:     errutil.ErrNotFound,
 			}
 		},
 		"Successful delete": func(t *testing.T, db *DB) tcase {
@@ -751,6 +783,15 @@ func Test_agent_DeleteDocumentCommentReply(t *testing.T) {
 				CancelledContext: true,
 				Reply:            prepDeleted(t, db),
 				Err:              assert.AnError,
+			}
+		},
+		"Already deleted": func(t *testing.T, db *DB) tcase {
+			r := prepDeleted(t, db)
+			require.NoError(t, db.DeleteDocumentCommentReply(context.Background(), r.ID, r.CommentID, r.OrganizationID))
+
+			return tcase{
+				Reply: r,
+				Err:   errutil.ErrNotFound,
 			}
 		},
 		"Successful delete": func(t *testing.T, db *DB) tcase {
