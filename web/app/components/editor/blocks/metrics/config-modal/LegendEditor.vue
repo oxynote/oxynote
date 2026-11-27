@@ -27,6 +27,7 @@ import { cn } from "#layers/ui/app/lib/utils"
 import type { TimeRangePreset } from "~/utils/time-range"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 import { useBlockVariables } from "../../variables"
+import { LEGEND_LABEL_NAME, legendLabelStart } from "../utils"
 
 const legendFormatLanguage = StreamLanguage.define<{ inBraces: boolean }>({
 	name: "legend-formatting-syntax",
@@ -47,7 +48,7 @@ const legendFormatLanguage = StreamLanguage.define<{ inBraces: boolean }>({
 				return null
 			}
 
-			if (stream.match(/[a-zA-Z_][\w:]*/)) {
+			if (stream.match(LEGEND_LABEL_NAME)) {
 				return "label"
 			}
 
@@ -135,17 +136,7 @@ function legendLabelCompletionSource() {
 		}
 
 		// figure out current partial word
-		let posIndex = pos
-		while (posIndex > open + 2) {
-			const ch = before.charAt(posIndex - 1)
-			if (!/[\w:]/.test(ch)) {
-				break
-			}
-
-			posIndex--
-		}
-
-		const from = posIndex
+		const from = legendLabelStart(before, open, pos)
 		const to = pos
 
 		const isBeforeClosingBraces = ctx.state.sliceDoc(pos, pos + 2) === "}}"

@@ -2,6 +2,8 @@ import { describe, it } from "vitest"
 import {
 	buildConfigFromNodeAttrs,
 	defaultMetricConfig,
+	LEGEND_LABEL_NAME,
+	legendLabelStart,
 	MetricSimulationPreset,
 	requestErrorMessage,
 	VisualizationDataUnit,
@@ -222,4 +224,37 @@ describe("requestErrorMessage", () => {
 	])("$name", ({ input, expected }, { expect }) => {
 		expect(requestErrorMessage(input)).toBe(expected)
 	})
+})
+
+describe("legendLabelStart", () => {
+	it.for<{ name: string; text: string; expected: string }>([
+		{ name: "a plain name", text: "{{inst", expected: "inst" },
+		{ name: "a dotted name", text: "{{service.na", expected: "service.na" },
+		{ name: "a name with a colon", text: "{{job:rate", expected: "job:rate" },
+		{ name: "nothing typed yet", text: "{{", expected: "" },
+		{
+			name: "text before the braces",
+			text: "rps {{service.na",
+			expected: "service.na",
+		},
+		{
+			name: "a space after the braces",
+			text: "{{ service.na",
+			expected: "service.na",
+		},
+	])("finds the start of $name", ({ text, expected }, { expect }) => {
+		const open = text.lastIndexOf("{{")
+		const start = legendLabelStart(text, open, text.length)
+
+		expect(text.slice(start)).toBe(expected)
+	})
+})
+
+describe("LEGEND_LABEL_NAME", () => {
+	it.for(["instance", "__name__", "job:rate", "service.name", "k8s.pod.name"])(
+		"matches %s as one name",
+		(name, { expect }) => {
+			expect(name.match(LEGEND_LABEL_NAME)?.[0]).toBe(name)
+		},
+	)
 })
