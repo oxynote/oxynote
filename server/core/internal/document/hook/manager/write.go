@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
@@ -76,6 +77,12 @@ func (m *Manager) CreateHook(
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
 	if err = tx.InsertDocumentHook(ctx, *hk); err != nil {
+		return nil, err
+	}
+
+	entry := activity.NewHookEntry(activity.UserActor(updatedBy), activity.TypeHookCreated, *hk)
+
+	if err = tx.InsertDocumentActivityEntries(ctx, entry); err != nil {
 		return nil, err
 	}
 
@@ -159,6 +166,12 @@ func (m *Manager) UpdateHook(
 		if err = tx.RecordDocumentBranchHistoryEntry(ctx, hk.BranchID.V, organizationID, null.StringFrom(updatedBy), false); err != nil {
 			return nil, err
 		}
+
+		entry := activity.NewHookEntry(activity.UserActor(updatedBy), activity.TypeHookUpdated, *hk)
+
+		if err = tx.InsertDocumentActivityEntries(ctx, entry); err != nil {
+			return nil, err
+		}
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -229,6 +242,12 @@ func (m *Manager) DeleteHook(ctx context.Context, id, documentID xid.ID, organiz
 		if err = tx.RecordDocumentBranchHistoryEntry(ctx, hk.BranchID.V, organizationID, null.StringFrom(updatedBy), false); err != nil {
 			return err
 		}
+
+		entry := activity.NewHookEntry(activity.UserActor(updatedBy), activity.TypeHookDeleted, *hk)
+
+		if err = tx.InsertDocumentActivityEntries(ctx, entry); err != nil {
+			return err
+		}
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -241,10 +260,15 @@ func (m *Manager) DeleteHook(ctx context.Context, id, documentID xid.ID, organiz
 }
 
 // ResetHook takes the target as it is now as the hook's new baseline and
-// stores it. History holds no watcher state, so nothing is recorded. A hook
-// that cannot check its target is stored with that status, and its
-// maintainers are told. It fails unless the hook belongs to the document.
-func (m *Manager) ResetHook(ctx context.Context, id, documentID xid.ID, organizationID string) (_ *hook.Hook, err error) {
+// stores it with its activity entry, credited to updatedBy. History holds
+// no watcher state, so no history entry is recorded. A hook that cannot
+// check its target is stored with that status, and its maintainers are
+// told. It fails unless the hook belongs to the document.
+func (m *Manager) ResetHook(
+	ctx context.Context,
+	id, documentID xid.ID,
+	organizationID, updatedBy string,
+) (_ *hook.Hook, err error) {
 	ctx, cancel := context.WithTimeout(ctx, _hookTimeout)
 	defer cancel()
 
@@ -282,7 +306,26 @@ func (m *Manager) ResetHook(ctx context.Context, id, documentID xid.ID, organiza
 	// the resets a background check does.
 	hk.UpdatedAt = null.TimeFrom(timeutil.Now())
 
-	if err = m.db.UpdateDocumentHook(ctx, *hk); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](ctx, m.db)
+	if err != nil {
+		return nil, err
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	if err = tx.UpdateDocumentHook(ctx, *hk); err != nil {
+		return nil, err
+	}
+
+	if hk.BranchID.Valid {
+		entry := activity.NewHookEntry(activity.UserActor(updatedBy), activity.TypeHookReset, *hk)
+
+		if err = tx.InsertDocumentActivityEntries(ctx, entry); err != nil {
+			return nil, err
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
 

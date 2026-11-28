@@ -14,9 +14,11 @@ import (
 )
 
 // InsertDocumentComment inserts a new comment into the database together
-// with the first revision of its text.
-func (a *agent) InsertDocumentComment(ctx context.Context, c comment.Comment) error {
-	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
+// with the first revision of its text, which it returns.
+func (a *agent) InsertDocumentComment(ctx context.Context, c comment.Comment) (comment.Revision, error) {
+	rev := comment.NewRevision(c)
+
+	err := sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
 		q, args := a.builder.Insert("document_comments").
 			SetMap(map[string]any{
 				"id":                    c.ID,
@@ -38,14 +40,22 @@ func (a *agent) InsertDocumentComment(ctx context.Context, c comment.Comment) er
 			return err
 		}
 
-		return a.recordDocumentCommentRevision(ctx, tx, c)
+		return a.recordDocumentCommentRevision(ctx, tx, rev)
 	})
+	if err != nil {
+		return comment.Revision{}, err
+	}
+
+	return rev, nil
 }
 
 // InsertDocumentCommentReply inserts a new reply to a comment into the
-// database together with the first revision of its text.
-func (a *agent) InsertDocumentCommentReply(ctx context.Context, r comment.Reply) error {
-	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
+// database together with the first revision of its text, which it
+// returns.
+func (a *agent) InsertDocumentCommentReply(ctx context.Context, r comment.Reply) (comment.ReplyRevision, error) {
+	rev := comment.NewReplyRevision(r)
+
+	err := sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
 		q, args := a.builder.Insert("document_comment_replies").
 			SetMap(map[string]any{
 				"id":                     r.ID,
@@ -61,8 +71,13 @@ func (a *agent) InsertDocumentCommentReply(ctx context.Context, r comment.Reply)
 			return err
 		}
 
-		return a.recordDocumentCommentReplyRevision(ctx, tx, r)
+		return a.recordDocumentCommentReplyRevision(ctx, tx, rev)
 	})
+	if err != nil {
+		return comment.ReplyRevision{}, err
+	}
+
+	return rev, nil
 }
 
 // FetchDocumentComment retrieves a comment by its ID along with its live
@@ -129,10 +144,12 @@ func (a *agent) FetchDocumentCommentReply(ctx context.Context, id, commentID xid
 }
 
 // UpdateDocumentComment updates an existing comment in the database and
-// records a revision of its text. A deleted comment is not found, so a
-// delete that lands first wins.
-func (a *agent) UpdateDocumentComment(ctx context.Context, c comment.Comment) error {
-	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
+// records a revision of its text, which it returns. A deleted comment is
+// not found, so a delete that lands first wins.
+func (a *agent) UpdateDocumentComment(ctx context.Context, c comment.Comment) (comment.Revision, error) {
+	rev := comment.NewRevision(c)
+
+	err := sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
 		q, args := a.builder.Update("document_comments").
 			SetMap(map[string]any{
 				"content":         c.Content,
@@ -163,8 +180,13 @@ func (a *agent) UpdateDocumentComment(ctx context.Context, c comment.Comment) er
 			return errutil.ErrNotFound
 		}
 
-		return a.recordDocumentCommentRevision(ctx, tx, c)
+		return a.recordDocumentCommentRevision(ctx, tx, rev)
 	})
+	if err != nil {
+		return comment.Revision{}, err
+	}
+
+	return rev, nil
 }
 
 // UpdateDocumentCommentStatus stores whether a comment is resolved, and by
@@ -188,9 +210,12 @@ func (a *agent) UpdateDocumentCommentStatus(ctx context.Context, c comment.Comme
 }
 
 // UpdateDocumentCommentReply updates an existing reply in the database and
-// records a revision of its text. A deleted reply is not found.
-func (a *agent) UpdateDocumentCommentReply(ctx context.Context, r comment.Reply) error {
-	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
+// records a revision of its text, which it returns. A deleted reply is
+// not found.
+func (a *agent) UpdateDocumentCommentReply(ctx context.Context, r comment.Reply) (comment.ReplyRevision, error) {
+	rev := comment.NewReplyRevision(r)
+
+	err := sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
 		q, args := a.builder.Update("document_comment_replies").
 			SetMap(map[string]any{
 				"content":    r.Content,
@@ -217,8 +242,13 @@ func (a *agent) UpdateDocumentCommentReply(ctx context.Context, r comment.Reply)
 			return errutil.ErrNotFound
 		}
 
-		return a.recordDocumentCommentReplyRevision(ctx, tx, r)
+		return a.recordDocumentCommentReplyRevision(ctx, tx, rev)
 	})
+	if err != nil {
+		return comment.ReplyRevision{}, err
+	}
+
+	return rev, nil
 }
 
 // DeleteDocumentComment soft-deletes a comment, clearing its text. A

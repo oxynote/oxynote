@@ -55,7 +55,7 @@ func stubHookManager() *HookManagerMock {
 
 			return hk, nil
 		},
-		ResetHookFunc: func(_ context.Context, id, _ xid.ID, _ string) (*hook.Hook, error) {
+		ResetHookFunc: func(_ context.Context, id, _ xid.ID, _, _ string) (*hook.Hook, error) {
 			hk := stubHook()
 			hk.ID = id
 			hk.UpdatedAt = null.TimeFrom(_stubScheduleTime)

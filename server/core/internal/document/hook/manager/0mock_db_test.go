@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
@@ -44,6 +45,9 @@ var _ DB = &DBMock{}
 //			FetchPaginatedDocumentHooksFunc: func(ctx context.Context, offsetID xid.ID, limit int64) ([]hook.Hook, error) {
 //				panic("mock out the FetchPaginatedDocumentHooks method")
 //			},
+//			InsertDocumentActivityEntriesFunc: func(ctx context.Context, entries ...activity.Entry) error {
+//				panic("mock out the InsertDocumentActivityEntries method")
+//			},
 //			UpdateDocumentHookFunc: func(ctx context.Context, hk hook.Hook) error {
 //				panic("mock out the UpdateDocumentHook method")
 //			},
@@ -74,6 +78,9 @@ type DBMock struct {
 
 	// FetchPaginatedDocumentHooksFunc mocks the FetchPaginatedDocumentHooks method.
 	FetchPaginatedDocumentHooksFunc func(ctx context.Context, offsetID xid.ID, limit int64) ([]hook.Hook, error)
+
+	// InsertDocumentActivityEntriesFunc mocks the InsertDocumentActivityEntries method.
+	InsertDocumentActivityEntriesFunc func(ctx context.Context, entries ...activity.Entry) error
 
 	// UpdateDocumentHookFunc mocks the UpdateDocumentHook method.
 	UpdateDocumentHookFunc func(ctx context.Context, hk hook.Hook) error
@@ -137,6 +144,13 @@ type DBMock struct {
 			// Limit is the limit argument value.
 			Limit int64
 		}
+		// InsertDocumentActivityEntries holds details about calls to the InsertDocumentActivityEntries method.
+		InsertDocumentActivityEntries []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Entries is the entries argument value.
+			Entries []activity.Entry
+		}
 		// UpdateDocumentHook holds details about calls to the UpdateDocumentHook method.
 		UpdateDocumentHook []struct {
 			// Ctx is the ctx argument value.
@@ -145,14 +159,15 @@ type DBMock struct {
 			Hk hook.Hook
 		}
 	}
-	lockBeginTx                      sync.RWMutex
-	lockDeleteDocumentHook           sync.RWMutex
-	lockFetchDocumentByBranchID      sync.RWMutex
-	lockFetchDocumentHook            sync.RWMutex
-	lockFetchDocumentHooksByBranchID sync.RWMutex
-	lockFetchDocumentMaintainers     sync.RWMutex
-	lockFetchPaginatedDocumentHooks  sync.RWMutex
-	lockUpdateDocumentHook           sync.RWMutex
+	lockBeginTx                       sync.RWMutex
+	lockDeleteDocumentHook            sync.RWMutex
+	lockFetchDocumentByBranchID       sync.RWMutex
+	lockFetchDocumentHook             sync.RWMutex
+	lockFetchDocumentHooksByBranchID  sync.RWMutex
+	lockFetchDocumentMaintainers      sync.RWMutex
+	lockFetchPaginatedDocumentHooks   sync.RWMutex
+	lockInsertDocumentActivityEntries sync.RWMutex
+	lockUpdateDocumentHook            sync.RWMutex
 }
 
 // BeginTx calls BeginTxFunc.
@@ -447,6 +462,45 @@ func (mock *DBMock) FetchPaginatedDocumentHooksCalls() []struct {
 	mock.lockFetchPaginatedDocumentHooks.RLock()
 	calls = mock.calls.FetchPaginatedDocumentHooks
 	mock.lockFetchPaginatedDocumentHooks.RUnlock()
+	return calls
+}
+
+// InsertDocumentActivityEntries calls InsertDocumentActivityEntriesFunc.
+func (mock *DBMock) InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error {
+	callInfo := struct {
+		Ctx     context.Context
+		Entries []activity.Entry
+	}{
+		Ctx:     ctx,
+		Entries: entries,
+	}
+	mock.lockInsertDocumentActivityEntries.Lock()
+	mock.calls.InsertDocumentActivityEntries = append(mock.calls.InsertDocumentActivityEntries, callInfo)
+	mock.lockInsertDocumentActivityEntries.Unlock()
+	if mock.InsertDocumentActivityEntriesFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.InsertDocumentActivityEntriesFunc(ctx, entries...)
+}
+
+// InsertDocumentActivityEntriesCalls gets all the calls that were made to InsertDocumentActivityEntries.
+// Check the length with:
+//
+//	len(mockedDB.InsertDocumentActivityEntriesCalls())
+func (mock *DBMock) InsertDocumentActivityEntriesCalls() []struct {
+	Ctx     context.Context
+	Entries []activity.Entry
+} {
+	var calls []struct {
+		Ctx     context.Context
+		Entries []activity.Entry
+	}
+	mock.lockInsertDocumentActivityEntries.RLock()
+	calls = mock.calls.InsertDocumentActivityEntries
+	mock.lockInsertDocumentActivityEntries.RUnlock()
 	return calls
 }
 

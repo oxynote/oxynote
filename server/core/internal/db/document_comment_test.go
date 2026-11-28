@@ -85,7 +85,7 @@ func prepDocumentComments(t *testing.T, db *DB, count int, fn func(int, *comment
 		// text to record.
 		if c.Content != nil {
 			require.NoError(t, sqlutil.WrapTx(context.Background(), db.sql, func(tx *sqlx.Tx) error {
-				return db.recordDocumentCommentRevision(context.Background(), tx, c)
+				return db.recordDocumentCommentRevision(context.Background(), tx, comment.NewRevision(c))
 			}))
 		}
 	}
@@ -180,7 +180,7 @@ func prepDocumentCommentReplies(t *testing.T, db *DB, count int, fn func(int, *c
 		// text to record.
 		if r.Content != nil {
 			require.NoError(t, sqlutil.WrapTx(context.Background(), db.sql, func(tx *sqlx.Tx) error {
-				return db.recordDocumentCommentReplyRevision(context.Background(), tx, r)
+				return db.recordDocumentCommentReplyRevision(context.Background(), tx, comment.NewReplyRevision(r))
 			}))
 		}
 	}
@@ -240,12 +240,16 @@ func Test_agent_InsertDocumentComment(t *testing.T) {
 			db := prepTempDB(t)
 			c := cfn(t, db)
 
-			err := db.InsertDocumentComment(context.Background(), c.Comment)
+			rev, err := db.InsertDocumentComment(context.Background(), c.Comment)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
+
+			newest, err := db.FetchNewestDocumentCommentRevision(context.Background(), c.Comment.ID, c.Comment.OrganizationID)
+			require.NoError(t, err)
+			assert.Equal(t, newest, rev)
 
 			res, err := db.FetchDocumentComment(context.Background(), c.Comment.ID, c.Comment.DocumentID, c.Comment.OrganizationID)
 			require.NoError(t, err)
@@ -302,12 +306,16 @@ func Test_agent_InsertDocumentCommentReply(t *testing.T) {
 			db := prepTempDB(t)
 			c := cfn(t, db)
 
-			err := db.InsertDocumentCommentReply(context.Background(), c.Reply)
+			rev, err := db.InsertDocumentCommentReply(context.Background(), c.Reply)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
+
+			newest, err := db.FetchNewestDocumentCommentReplyRevision(context.Background(), c.Reply.ID, c.Reply.OrganizationID)
+			require.NoError(t, err)
+			assert.Equal(t, newest, rev)
 
 			res, err := db.FetchDocumentCommentReply(context.Background(), c.Reply.ID, c.Reply.CommentID, c.Reply.OrganizationID)
 			require.NoError(t, err)
@@ -527,12 +535,16 @@ func Test_agent_UpdateDocumentComment(t *testing.T) {
 				cancel()
 			}
 
-			err := db.UpdateDocumentComment(ctx, c.Comment)
+			rev, err := db.UpdateDocumentComment(ctx, c.Comment)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
+
+			newest, err := db.FetchNewestDocumentCommentRevision(context.Background(), c.Comment.ID, c.Comment.OrganizationID)
+			require.NoError(t, err)
+			assert.Equal(t, newest, rev)
 
 			res, err := db.FetchDocumentComment(context.Background(), c.Comment.ID, c.Comment.DocumentID, c.Comment.OrganizationID)
 			require.NoError(t, err)
@@ -667,12 +679,16 @@ func Test_agent_UpdateDocumentCommentReply(t *testing.T) {
 				cancel()
 			}
 
-			err := db.UpdateDocumentCommentReply(ctx, c.Reply)
+			rev, err := db.UpdateDocumentCommentReply(ctx, c.Reply)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
+
+			newest, err := db.FetchNewestDocumentCommentReplyRevision(context.Background(), c.Reply.ID, c.Reply.OrganizationID)
+			require.NoError(t, err)
+			assert.Equal(t, newest, rev)
 
 			res, err := db.FetchDocumentCommentReply(context.Background(), c.Reply.ID, c.Reply.CommentID, c.Reply.OrganizationID)
 			require.NoError(t, err)

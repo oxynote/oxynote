@@ -65,7 +65,7 @@ func prepDocumentActivityEntries(t *testing.T, db *DB, count int, fn func(int, *
 
 		res[i] = e
 
-		require.NoError(t, db.InsertDocumentActivityEntry(context.Background(), e))
+		require.NoError(t, db.InsertDocumentActivityEntries(context.Background(), e))
 	}
 
 	return res
@@ -117,7 +117,7 @@ func fetchFirstDocumentCommentReplyRevision(t *testing.T, db *DB, replyID xid.ID
 	return rev
 }
 
-func Test_agent_InsertDocumentActivityEntry(t *testing.T) {
+func Test_agent_InsertDocumentActivityEntries(t *testing.T) {
 	t.Parallel()
 
 	db := prepTempDB(t)
@@ -125,24 +125,29 @@ func Test_agent_InsertDocumentActivityEntry(t *testing.T) {
 
 	// error
 	dup := e
-	require.Error(t, db.InsertDocumentActivityEntry(context.Background(), dup))
+	require.Error(t, db.InsertDocumentActivityEntries(context.Background(), dup))
 
 	// success
 	e.ID = xid.New()
-	require.NoError(t, db.InsertDocumentActivityEntry(context.Background(), e))
+	require.NoError(t, db.InsertDocumentActivityEntries(context.Background(), e))
 	assert.Len(t, fetchStoredDocumentActivityEntries(t, db, e.OrganizationID, e.BranchID), 2)
 }
 
-func Test_agent_insertDocumentActivityEntry(t *testing.T) {
+func Test_agent_insertDocumentActivityEntries(t *testing.T) {
 	type tcase struct {
-		Entry activity.Entry
-		Err   error
+		Entries []activity.Entry
+		Err     error
+		// Result lists the branch's entries afterwards, oldest first.
+		Result []activity.Entry
 	}
 
 	cc := map[string]func(*testing.T, *DB) tcase{
+		"No entries": func(_ *testing.T, _ *DB) tcase {
+			return tcase{}
+		},
 		"Non-existent branch": func(_ *testing.T, _ *DB) tcase {
 			return tcase{
-				Entry: activity.Entry{
+				Entries: []activity.Entry{{
 					Actor:          activity.Actor{Kind: activity.ActorKindUser},
 					ID:             xid.New(),
 					OrganizationID: "non-existent-org-id",
@@ -153,7 +158,7 @@ func Test_agent_insertDocumentActivityEntry(t *testing.T) {
 					Metadata:       activity.Metadata{},
 					CreatedAt:      timeutil.Now().Truncate(time.Microsecond),
 					UpdatedAt:      timeutil.Now().Truncate(time.Microsecond),
-				},
+				}},
 				Err: assert.AnError,
 			}
 		},
@@ -162,8 +167,8 @@ func Test_agent_insertDocumentActivityEntry(t *testing.T) {
 			userID := prepUsers(t, db, 1)[0]
 			at := timeutil.Now().Truncate(time.Microsecond)
 
-			return tcase{
-				Entry: activity.Entry{
+			entries := []activity.Entry{
+				{
 					Actor: activity.Actor{
 						Kind:     activity.ActorKindMCP,
 						UserID:   null.StringFrom(userID),
@@ -180,6 +185,23 @@ func Test_agent_insertDocumentActivityEntry(t *testing.T) {
 					CreatedAt:      at,
 					UpdatedAt:      at,
 				},
+				{
+					Actor:          activity.SystemActor(),
+					ID:             xid.New(),
+					OrganizationID: branch.OrganizationID,
+					DocumentID:     branch.ID,
+					BranchID:       branch.BranchID,
+					Type:           activity.TypeHookTriggered,
+					Category:       activity.CategoryHook,
+					Metadata:       activity.Metadata{},
+					CreatedAt:      at.Add(time.Second),
+					UpdatedAt:      at.Add(time.Second),
+				},
+			}
+
+			return tcase{
+				Entries: entries,
+				Result:  entries,
 			}
 		},
 	}
@@ -191,14 +213,14 @@ func Test_agent_insertDocumentActivityEntry(t *testing.T) {
 			db := prepTempDB(t)
 			c := cfn(t, db)
 
-			err := db.insertDocumentActivityEntry(context.Background(), db.sql, c.Entry)
+			err := db.insertDocumentActivityEntries(context.Background(), db.sql, c.Entries...)
 			testutil.AssertEqualError(t, c.Err, err)
 
-			if err != nil {
+			if err != nil || len(c.Result) == 0 {
 				return
 			}
 
-			assert.Equal(t, []activity.Entry{c.Entry}, fetchStoredDocumentActivityEntries(t, db, c.Entry.OrganizationID, c.Entry.BranchID))
+			assert.Equal(t, c.Result, fetchStoredDocumentActivityEntries(t, db, c.Result[0].OrganizationID, c.Result[0].BranchID))
 		})
 	}
 }
@@ -576,7 +598,8 @@ func Test_agent_FetchDocumentActivityEntries(t *testing.T) {
 			edited := c
 			edited.Content = comment.Content{"text": "edited"}
 			edited.UpdatedAt = null.TimeFrom(c.CreatedAt.Add(time.Minute))
-			require.NoError(t, db.UpdateDocumentComment(context.Background(), edited))
+			_, err := db.UpdateDocumentComment(context.Background(), edited)
+			require.NoError(t, err)
 			require.NoError(t, db.DeleteDocumentComment(context.Background(), c.ID, c.DocumentID, c.OrganizationID))
 
 			entries[0].Subject = replyRev
@@ -735,7 +758,7 @@ func Test_agent_fetchDocumentActivitySubjects(t *testing.T) {
 		"Kind that loads nothing": func(_ *testing.T, _ *DB) tcase {
 			return tcase{
 				CancelledContext: true,
-				Kind:             "hook",
+				Kind:             activity.TargetKindHook,
 				IDs:              []string{xid.New().String()},
 				OrganizationID:   "org-id",
 				Result:           map[activity.Target]any{},

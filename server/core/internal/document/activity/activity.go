@@ -13,9 +13,15 @@ import (
 
 // Metadata keys used by the entries.
 const (
-	MetaKeyCommentID  = "commentId"
-	MetaKeyReplyID    = "replyId"
-	MetaKeyToBranchID = "toBranchId"
+	MetaKeyCommentID     = "commentId"
+	MetaKeyReplyID       = "replyId"
+	MetaKeyFrom          = "from"
+	MetaKeyTo            = "to"
+	MetaKeyFromBranchID  = "fromBranchId"
+	MetaKeyToBranchID    = "toBranchId"
+	MetaKeyTagName       = "tagName"
+	MetaKeyHookType      = "hookType"
+	MetaKeyApprovalReset = "approvalReset"
 )
 
 // Page sizes.
@@ -30,14 +36,20 @@ const (
 
 // All available ActorKind constants.
 const (
-	ActorKindUser ActorKind = "user"
-	ActorKindMCP  ActorKind = "mcp"
+	ActorKindUser   ActorKind = "user"
+	ActorKindMCP    ActorKind = "mcp"
+	ActorKindSystem ActorKind = "system"
 )
 
 // All available TargetKind constants.
 const (
+	TargetKindDocument        TargetKind = "document"
+	TargetKindBranch          TargetKind = "branch"
+	TargetKindUser            TargetKind = "user"
 	TargetKindCommentRevision TargetKind = "comment-revision"
 	TargetKindReplyRevision   TargetKind = "reply-revision"
+	TargetKindHook            TargetKind = "hook"
+	TargetKindTag             TargetKind = "tag"
 )
 
 // ActorKind specifies who made a change.
@@ -54,6 +66,19 @@ type Actor struct {
 
 	// ClientID specifies the OAuth client of an MCP actor.
 	ClientID null.String `json:"clientId" db:"actor_client_id"`
+}
+
+// UserActor returns the actor of a change the user made.
+func UserActor(userID string) Actor {
+	return Actor{
+		Kind:   ActorKindUser,
+		UserID: null.StringFrom(userID),
+	}
+}
+
+// SystemActor returns the actor of a change no person made.
+func SystemActor() Actor {
+	return Actor{Kind: ActorKindSystem}
 }
 
 // TargetKind specifies what kind of entity an entry is about.

@@ -11,6 +11,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
@@ -318,14 +319,18 @@ func (m *Manager) deleteHook(ctx context.Context, h hook.Hook) bool {
 	return true
 }
 
-// notifyTransition tells the document's maintainers when an active hook
-// triggers, or when a hook can no longer check its target.
+// notifyTransition records and tells the document's maintainers when an
+// active hook triggers, or when a hook can no longer check its target.
 // Both fire on the transition only.
 func (m *Manager) notifyTransition(ctx context.Context, prev, h hook.Hook) {
-	var core notification.Core
+	var (
+		core notification.Core
+		tp   activity.Type
+	)
 
 	switch {
 	case prev.Status == processor.StatusActive && h.Status != processor.StatusActive:
+		tp = activity.TypeHookNeedsAttention
 		core = notification.NewDocumentHookNeedsAttentionNotification(
 			h.DocumentID.V,
 			h.Type,
@@ -345,6 +350,7 @@ func (m *Manager) notifyTransition(ctx context.Context, prev, h hook.Hook) {
 			)
 		}
 
+		tp = activity.TypeHookTriggered
 		core = notification.NewDocumentHookTriggeredNotification(
 			h.DocumentID.V,
 			h.Type,
@@ -355,6 +361,16 @@ func (m *Manager) notifyTransition(ctx context.Context, prev, h hook.Hook) {
 		)
 	default:
 		return
+	}
+
+	// a transition follows a run that is already stored, so its entry is
+	// written after the run, as the notification is sent after it.
+	if h.BranchID.Valid {
+		if err := m.db.InsertDocumentActivityEntries(ctx, activity.NewHookEntry(activity.SystemActor(), tp, h)); err != nil {
+			m.log.With("hook_id", h.ID).
+				With("error", err).
+				Error("cannot record hook transition")
+		}
 	}
 
 	maintainers, err := m.db.FetchDocumentMaintainers(ctx, h.DocumentID.V, h.OrganizationID.String)
@@ -421,6 +437,9 @@ type DB interface {
 
 	// FetchDocumentMaintainers should fetch the document maintainers.
 	FetchDocumentMaintainers(ctx context.Context, documentID xid.ID, organizationID string) ([]string, error)
+
+	// InsertDocumentActivityEntries should insert the activity entries.
+	InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error
 }
 
 // Tx is the transaction a hook write runs in, with its history record.
@@ -447,6 +466,9 @@ type Tx interface {
 		by null.String,
 		boundary bool,
 	) error
+
+	// InsertDocumentActivityEntries should insert the activity entries.
+	InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error
 }
 
 // CopyTx is the part of a caller's transaction CopyHooks runs in.

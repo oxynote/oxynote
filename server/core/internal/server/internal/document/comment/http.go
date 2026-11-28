@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	commentCore "github.com/oxynote/oxynote/server/core/internal/document/comment"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
@@ -97,7 +98,28 @@ func (h *Handler) CreateDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err = h.db.InsertDocumentComment(r.Context(), c); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	rev, err := tx.InsertDocumentComment(r.Context(), c)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	entry := activity.NewCommentEntry(activity.UserActor(session.UserID), activity.TypeCommentCreated, c, rev)
+
+	if err = tx.InsertDocumentActivityEntries(r.Context(), entry); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -195,7 +217,28 @@ func (h *Handler) CreateDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.db.InsertDocumentCommentReply(r.Context(), reply); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	rev, err := tx.InsertDocumentCommentReply(r.Context(), reply)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	entry := activity.NewReplyEntry(activity.UserActor(session.UserID), activity.TypeCommentReplied, *c, rev)
+
+	if err = tx.InsertDocumentActivityEntries(r.Context(), entry); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -363,7 +406,28 @@ func (h *Handler) UpdateDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.db.UpdateDocumentComment(r.Context(), nc); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	rev, err := tx.UpdateDocumentComment(r.Context(), nc)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	entry := activity.NewCommentEntry(activity.UserActor(session.UserID), activity.TypeCommentEdited, nc, rev)
+
+	if err = tx.InsertDocumentActivityEntries(r.Context(), entry); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -412,7 +476,8 @@ func (h *Handler) UpdateDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 	// published under the path document id; the document-scoped comment
 	// fetch rejects a comment anchored to another document with a
 	// not-found.
-	if _, err = h.db.FetchDocumentComment(r.Context(), commentID, documentID, session.ActiveOrganizationID); err != nil {
+	c, err := h.db.FetchDocumentComment(r.Context(), commentID, documentID, session.ActiveOrganizationID)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -446,7 +511,28 @@ func (h *Handler) UpdateDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.db.UpdateDocumentCommentReply(r.Context(), nr); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	rev, err := tx.UpdateDocumentCommentReply(r.Context(), nr)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	entry := activity.NewReplyEntry(activity.UserActor(session.UserID), activity.TypeCommentReplyEdited, *c, rev)
+
+	if err = tx.InsertDocumentActivityEntries(r.Context(), entry); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -494,12 +580,12 @@ func (h *Handler) UpdateDocumentCommentStatus(w http.ResponseWriter, r *http.Req
 
 	var si commentCore.StatusInput
 
-	if err := httpserver.DecodeJSON(r, &si); err != nil {
+	if err = httpserver.DecodeJSON(r, &si); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := si.Validate(); err != nil {
+	if err = si.Validate(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -523,7 +609,38 @@ func (h *Handler) UpdateDocumentCommentStatus(w http.ResponseWriter, r *http.Req
 		nc = c.Unresolve()
 	}
 
-	if err := h.db.UpdateDocumentCommentStatus(r.Context(), nc); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	if err = tx.UpdateDocumentCommentStatus(r.Context(), nc); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	rev, err := tx.FetchNewestDocumentCommentRevision(r.Context(), nc.ID, session.ActiveOrganizationID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	tp := activity.TypeCommentReopened
+	if nc.Resolved {
+		tp = activity.TypeCommentResolved
+	}
+
+	entry := activity.NewCommentEntry(activity.UserActor(session.UserID), tp, nc, rev)
+
+	if err = tx.InsertDocumentActivityEntries(r.Context(), entry); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -605,7 +722,25 @@ func (h *Handler) DeleteDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := tx.DeleteDocumentComment(r.Context(), commentID, documentID, session.ActiveOrganizationID); err != nil {
+	if err = tx.DeleteDocumentComment(r.Context(), commentID, documentID, session.ActiveOrganizationID); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	rev, err := tx.FetchNewestDocumentCommentRevision(r.Context(), commentID, session.ActiveOrganizationID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	entry := activity.NewCommentEntry(activity.UserActor(session.UserID), activity.TypeCommentDeleted, *c, rev)
+
+	if err = tx.InsertDocumentActivityEntries(r.Context(), entry); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -613,11 +748,6 @@ func (h *Handler) DeleteDocumentComment(w http.ResponseWriter, r *http.Request) 
 	cct := ChangeTypeDeleted
 	if len(c.Replies) > 0 {
 		cct = ChangeTypeUpdated
-	}
-
-	if err := tx.Commit(); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
 	}
 
 	if h.comments.changeCallback != nil {
@@ -681,7 +811,33 @@ func (h *Handler) DeleteDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.db.DeleteDocumentCommentReply(r.Context(), replyID, commentID, session.ActiveOrganizationID); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	if err = tx.DeleteDocumentCommentReply(r.Context(), replyID, commentID, session.ActiveOrganizationID); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	rev, err := tx.FetchNewestDocumentCommentReplyRevision(r.Context(), replyID, session.ActiveOrganizationID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	entry := activity.NewReplyEntry(activity.UserActor(session.UserID), activity.TypeCommentReplyDeleted, *c, rev)
+
+	if err = tx.InsertDocumentActivityEntries(r.Context(), entry); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -730,6 +886,9 @@ type DBAgent interface {
 
 	// FetchDocumentMaintainers should fetch the document maintainers.
 	FetchDocumentMaintainers(ctx context.Context, documentID xid.ID, organizationID string) ([]string, error)
+
+	// InsertDocumentActivityEntries should insert the activity entries.
+	InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error
 }
 
 // CommentsDBAgent is an interface that handles communication with the document comments database.
@@ -739,8 +898,9 @@ type CommentsDBAgent interface {
 	// FetchDocumentByBranchID should fetch the document joined against the branch identified by branchID.
 	FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error)
 
-	// InsertDocumentComment should insert a new comment.
-	InsertDocumentComment(ctx context.Context, c commentCore.Comment) error
+	// InsertDocumentComment should insert a new comment and return the
+	// revision of its text.
+	InsertDocumentComment(ctx context.Context, c commentCore.Comment) (commentCore.Revision, error)
 
 	// FetchDocumentComment should fetch a comment by its ID along with all its replies.
 	FetchDocumentComment(ctx context.Context, id, documentID xid.ID, organizationID string) (*commentCore.Comment, error)
@@ -749,8 +909,13 @@ type CommentsDBAgent interface {
 	// the given resolved state with their replies.
 	FetchDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string, resolved bool) ([]commentCore.Comment, error)
 
-	// UpdateDocumentComment should update an existing comment.
-	UpdateDocumentComment(ctx context.Context, c commentCore.Comment) error
+	// UpdateDocumentComment should update an existing comment and return
+	// the revision of its text.
+	UpdateDocumentComment(ctx context.Context, c commentCore.Comment) (commentCore.Revision, error)
+
+	// FetchNewestDocumentCommentRevision should fetch the newest revision
+	// of the comment's text.
+	FetchNewestDocumentCommentRevision(ctx context.Context, commentID xid.ID, organizationID string) (commentCore.Revision, error)
 
 	// UpdateDocumentCommentStatus should update whether a comment is
 	// resolved.
@@ -767,14 +932,20 @@ type CommentsDBAgent interface {
 // RepliesDBAgent is an interface that handles communication with the
 // document comment replies database.
 type RepliesDBAgent interface {
-	// InsertDocumentCommentReply should insert a new reply to a comment.
-	InsertDocumentCommentReply(ctx context.Context, r commentCore.Reply) error
+	// InsertDocumentCommentReply should insert a new reply to a comment
+	// and return the revision of its text.
+	InsertDocumentCommentReply(ctx context.Context, r commentCore.Reply) (commentCore.ReplyRevision, error)
 
 	// FetchDocumentCommentReply should fetch a reply by its ID.
 	FetchDocumentCommentReply(ctx context.Context, id, commentID xid.ID, organizationID string) (*commentCore.Reply, error)
 
-	// UpdateDocumentCommentReply should update an existing reply.
-	UpdateDocumentCommentReply(ctx context.Context, r commentCore.Reply) error
+	// UpdateDocumentCommentReply should update an existing reply and
+	// return the revision of its text.
+	UpdateDocumentCommentReply(ctx context.Context, r commentCore.Reply) (commentCore.ReplyRevision, error)
+
+	// FetchNewestDocumentCommentReplyRevision should fetch the newest
+	// revision of the reply's text.
+	FetchNewestDocumentCommentReplyRevision(ctx context.Context, replyID xid.ID, organizationID string) (commentCore.ReplyRevision, error)
 
 	// DeleteDocumentCommentReply should soft-delete a reply.
 	DeleteDocumentCommentReply(ctx context.Context, id, commentID xid.ID, organizationID string) error

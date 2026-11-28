@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -58,7 +59,7 @@ func Test_agent_recordDocumentCommentRevision(t *testing.T) {
 			c := cfn(t, db)
 
 			err := sqlutil.WrapTx(context.Background(), db.sql, func(tx *sqlx.Tx) error {
-				return db.recordDocumentCommentRevision(context.Background(), tx, c.Comment)
+				return db.recordDocumentCommentRevision(context.Background(), tx, comment.NewRevision(c.Comment))
 			})
 			testutil.RequireEqualError(t, c.Err, err)
 
@@ -143,6 +144,67 @@ func Test_agent_fetchDocumentCommentRevisionsByIDs(t *testing.T) {
 			}
 
 			res, err := db.fetchDocumentCommentRevisionsByIDs(ctx, c.IDs, c.OrganizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
+}
+
+func Test_agent_FetchNewestDocumentCommentRevision(t *testing.T) {
+	type tcase struct {
+		ID             xid.ID
+		OrganizationID string
+		Result         comment.Revision
+		Err            error
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Not found": func(t *testing.T, db *DB) tcase {
+			return tcase{
+				ID:             xid.New(),
+				OrganizationID: prepOrganizations(t, db, 1)[0],
+				Err:            sql.ErrNoRows,
+			}
+		},
+		"Another organization": func(t *testing.T, db *DB) tcase {
+			c := prepDocumentComments(t, db, 1, nil)[0]
+
+			return tcase{
+				ID:             c.ID,
+				OrganizationID: prepOrganizations(t, db, 1)[0],
+				Err:            sql.ErrNoRows,
+			}
+		},
+		"Newest of two revisions": func(t *testing.T, db *DB) tcase {
+			c := prepDocumentComments(t, db, 1, nil)[0]
+			edited := c
+			edited.Content = comment.Content{"text": "edited"}
+			edited.UpdatedAt = null.TimeFrom(c.CreatedAt.Add(time.Minute))
+
+			rev, err := db.UpdateDocumentComment(context.Background(), edited)
+			require.NoError(t, err)
+
+			return tcase{
+				ID:             c.ID,
+				OrganizationID: c.OrganizationID,
+				Result:         rev,
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			res, err := db.FetchNewestDocumentCommentRevision(context.Background(), c.ID, c.OrganizationID)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {

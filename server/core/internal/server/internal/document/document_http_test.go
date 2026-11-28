@@ -13,6 +13,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
@@ -479,8 +480,38 @@ func Test_Handler_FetchBranchReviewers(t *testing.T) {
 func Test_Handler_RequestBranchReviewer(t *testing.T) {
 	validBody := `{"userId":"u2"}`
 
+	// memberDB serves the branch and confirms the requested user is a
+	// member.
+	memberDB := func() *DBMock {
+		return &DBMock{
+			FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+				return storedDoc(), nil
+			},
+			CheckOrganizationMemberFunc: func(context.Context, string, string) (bool, error) {
+				return true, nil
+			},
+		}
+	}
+
+	// notFound reports the user as no reviewer of the branch yet.
+	notFound := func(context.Context, xid.ID, string, string) (*documentCore.BranchReviewer, error) {
+		return nil, errutil.ErrNotFound
+	}
+
+	// existing reports the user as a reviewer of the branch already.
+	existing := func(context.Context, xid.ID, string, string) (*documentCore.BranchReviewer, error) {
+		return &documentCore.BranchReviewer{}, nil
+	}
+
+	// approved reports the user as a reviewer who already approved.
+	approved := func(context.Context, xid.ID, string, string) (*documentCore.BranchReviewer, error) {
+		return &documentCore.BranchReviewer{CurrentlyApproved: true}, nil
+	}
+
 	cc := map[string]struct {
 		DB                      *DBMock
+		Tx                      *TxMock
+		BeginErr                error
 		NoSession               bool
 		OmitDoc                 bool
 		Body                    string
@@ -491,16 +522,24 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 		Reviewers               int
 		FetchDocumentByBranchID int
 		CheckOrganizationMember int
+		BeginTx                 int
 		FetchBranchReviewer     int
+		Entries                 int
+		Committed               int
+		Rollback                int
+		// ApprovalReset tells whether the request cleared an approval.
+		ApprovalReset bool
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
+			Tx:        &TxMock{},
 			NoSession: true,
 			Body:      validBody,
 			RespCode:  http.StatusUnauthorized,
 		},
 		"Missing document ID parameter": {
 			DB:       &DBMock{},
+			Tx:       &TxMock{},
 			OmitDoc:  true,
 			Body:     validBody,
 			RespCode: http.StatusNotFound,
@@ -511,6 +550,7 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 					return nil, errors.New("boom")
 				},
 			},
+			Tx:                      &TxMock{},
 			Body:                    validBody,
 			RespCode:                http.StatusInternalServerError,
 			FetchDocumentByBranchID: 1,
@@ -524,6 +564,7 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 					return doc, nil
 				},
 			},
+			Tx:                      &TxMock{},
 			Body:                    validBody,
 			RespCode:                http.StatusNotFound,
 			FetchDocumentByBranchID: 1,
@@ -534,6 +575,7 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 					return storedDoc(), nil
 				},
 			},
+			Tx:                      &TxMock{},
 			Body:                    "{",
 			RespCode:                http.StatusBadRequest,
 			FetchDocumentByBranchID: 1,
@@ -547,6 +589,7 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 					return false, errors.New("boom")
 				},
 			},
+			Tx:                      &TxMock{},
 			Body:                    validBody,
 			RespCode:                http.StatusInternalServerError,
 			FetchDocumentByBranchID: 1,
@@ -561,19 +604,25 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 					return false, nil
 				},
 			},
+			Tx:                      &TxMock{},
 			Body:                    validBody,
 			RespCode:                http.StatusForbidden,
 			FetchDocumentByBranchID: 1,
 			CheckOrganizationMember: 1,
 		},
-		"Error returned by DB.FetchBranchReviewer": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
-				},
-				CheckOrganizationMemberFunc: func(context.Context, string, string) (bool, error) {
-					return true, nil
-				},
+		"Error returned by DB.BeginTx": {
+			DB:                      memberDB(),
+			Tx:                      &TxMock{},
+			BeginErr:                errors.New("boom"),
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			FetchDocumentByBranchID: 1,
+			CheckOrganizationMember: 1,
+			BeginTx:                 1,
+		},
+		"Error returned by Tx.FetchBranchReviewer": {
+			DB: memberDB(),
+			Tx: &TxMock{
 				FetchBranchReviewerFunc: func(context.Context, xid.ID, string, string) (*documentCore.BranchReviewer, error) {
 					return nil, errors.New("boom")
 				},
@@ -582,16 +631,14 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 			RespCode:                http.StatusInternalServerError,
 			FetchDocumentByBranchID: 1,
 			CheckOrganizationMember: 1,
+			BeginTx:                 1,
 			FetchBranchReviewer:     1,
+			Rollback:                1,
 		},
-		"Error returned by DB.UpdateBranchReviewer": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
-				},
-				CheckOrganizationMemberFunc: func(context.Context, string, string) (bool, error) {
-					return true, nil
-				},
+		"Error returned by Tx.UpdateBranchReviewer": {
+			DB: memberDB(),
+			Tx: &TxMock{
+				FetchBranchReviewerFunc: existing,
 				UpdateBranchReviewerFunc: func(context.Context, documentCore.BranchReviewer) error {
 					return errors.New("boom")
 				},
@@ -601,37 +648,14 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 			Updated:                 1,
 			FetchDocumentByBranchID: 1,
 			CheckOrganizationMember: 1,
+			BeginTx:                 1,
 			FetchBranchReviewer:     1,
+			Rollback:                1,
 		},
-		"Existing reviewer requested again": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
-				},
-				CheckOrganizationMemberFunc: func(context.Context, string, string) (bool, error) {
-					return true, nil
-				},
-			},
-			Body:                    validBody,
-			RespCode:                http.StatusCreated,
-			Updated:                 1,
-			Notified:                1,
-			Reviewers:               1,
-			FetchDocumentByBranchID: 1,
-			CheckOrganizationMember: 1,
-			FetchBranchReviewer:     1,
-		},
-		"Error returned by DB.InsertBranchReviewer": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
-				},
-				CheckOrganizationMemberFunc: func(context.Context, string, string) (bool, error) {
-					return true, nil
-				},
-				FetchBranchReviewerFunc: func(context.Context, xid.ID, string, string) (*documentCore.BranchReviewer, error) {
-					return nil, errutil.ErrNotFound
-				},
+		"Error returned by Tx.InsertBranchReviewer": {
+			DB: memberDB(),
+			Tx: &TxMock{
+				FetchBranchReviewerFunc: notFound,
 				InsertBranchReviewerFunc: func(context.Context, documentCore.BranchReviewer) error {
 					return errors.New("boom")
 				},
@@ -641,19 +665,84 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 			Inserted:                1,
 			FetchDocumentByBranchID: 1,
 			CheckOrganizationMember: 1,
+			BeginTx:                 1,
 			FetchBranchReviewer:     1,
+			Rollback:                1,
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: memberDB(),
+			Tx: &TxMock{
+				FetchBranchReviewerFunc: notFound,
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return errors.New("boom")
+				},
+			},
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			Inserted:                1,
+			FetchDocumentByBranchID: 1,
+			CheckOrganizationMember: 1,
+			BeginTx:                 1,
+			FetchBranchReviewer:     1,
+			Entries:                 1,
+			Rollback:                1,
+		},
+		"Error returned by Tx.Commit": {
+			DB: memberDB(),
+			Tx: &TxMock{
+				FetchBranchReviewerFunc: notFound,
+				CommitFunc: func() error {
+					return errors.New("boom")
+				},
+			},
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			Inserted:                1,
+			FetchDocumentByBranchID: 1,
+			CheckOrganizationMember: 1,
+			BeginTx:                 1,
+			FetchBranchReviewer:     1,
+			Entries:                 1,
+			Committed:               1,
+			Rollback:                1,
+		},
+		"Existing reviewer requested again": {
+			DB:                      memberDB(),
+			Tx:                      &TxMock{FetchBranchReviewerFunc: existing},
+			Body:                    validBody,
+			RespCode:                http.StatusCreated,
+			Updated:                 1,
+			Notified:                1,
+			Reviewers:               1,
+			FetchDocumentByBranchID: 1,
+			CheckOrganizationMember: 1,
+			BeginTx:                 1,
+			FetchBranchReviewer:     1,
+			Entries:                 1,
+			Committed:               1,
+			Rollback:                1,
+		},
+		"Approved reviewer requested again": {
+			DB:                      memberDB(),
+			Tx:                      &TxMock{FetchBranchReviewerFunc: approved},
+			Body:                    validBody,
+			RespCode:                http.StatusCreated,
+			Updated:                 1,
+			Notified:                1,
+			Reviewers:               1,
+			FetchDocumentByBranchID: 1,
+			CheckOrganizationMember: 1,
+			BeginTx:                 1,
+			FetchBranchReviewer:     1,
+			Entries:                 1,
+			Committed:               1,
+			Rollback:                1,
+			ApprovalReset:           true,
 		},
 		"New reviewer request": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
-				},
-				CheckOrganizationMemberFunc: func(context.Context, string, string) (bool, error) {
-					return true, nil
-				},
-				FetchBranchReviewerFunc: func(context.Context, xid.ID, string, string) (*documentCore.BranchReviewer, error) {
-					return nil, errutil.ErrNotFound
-				},
+			DB: memberDB(),
+			Tx: &TxMock{
+				FetchBranchReviewerFunc: notFound,
 			},
 			Body:                    validBody,
 			RespCode:                http.StatusCreated,
@@ -662,13 +751,19 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 			Reviewers:               1,
 			FetchDocumentByBranchID: 1,
 			CheckOrganizationMember: 1,
+			BeginTx:                 1,
 			FetchBranchReviewer:     1,
+			Entries:                 1,
+			Committed:               1,
+			Rollback:                1,
 		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
+
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			pub := &fakePublisher{}
 			hdl, cnt := newTestHandler(c.DB, pub)
@@ -680,22 +775,61 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchID)
 			assert.Len(t, c.DB.CheckOrganizationMemberCalls(), c.CheckOrganizationMember)
-			assert.Len(t, c.DB.FetchBranchReviewerCalls(), c.FetchBranchReviewer)
-			assert.Len(t, c.DB.InsertBranchReviewerCalls(), c.Inserted)
-			assert.Len(t, c.DB.UpdateBranchReviewerCalls(), c.Updated)
+			assert.Len(t, c.DB.BeginTxCalls(), c.BeginTx)
+			assert.Len(t, c.Tx.FetchBranchReviewerCalls(), c.FetchBranchReviewer)
+			assert.Len(t, c.Tx.InsertBranchReviewerCalls(), c.Inserted)
+			assert.Len(t, c.Tx.UpdateBranchReviewerCalls(), c.Updated)
+			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
+			assert.Len(t, c.Tx.RollbackCalls(), c.Rollback)
 			require.Len(t, pub.calls, c.Notified)
 			assert.Equal(t, c.Reviewers, cnt.reviewers)
 
 			if c.Notified > 0 {
 				assert.Equal(t, []string{"u2"}, pub.calls[0].UserIDs)
 			}
+
+			ee := c.Tx.InsertDocumentActivityEntriesCalls()
+			require.Len(t, ee, c.Entries)
+
+			if c.Entries == 0 {
+				return
+			}
+
+			require.Len(t, ee[0].Entries, 1)
+			assert.Equal(t, activity.TypeReviewRequested, ee[0].Entries[0].Type)
+			assert.Equal(t, activity.UserActor("u1"), ee[0].Entries[0].Actor)
+			assert.Equal(t, activity.NewTarget(activity.TargetKindUser, "u2"), ee[0].Entries[0].Target)
+			assert.Equal(t, _branchID, ee[0].Entries[0].BranchID)
+
+			md := activity.Metadata{}
+			if c.ApprovalReset {
+				md[activity.MetaKeyApprovalReset] = true
+			}
+
+			assert.Equal(t, md, ee[0].Entries[0].Metadata)
 		})
 	}
 }
 
 func Test_Handler_RemoveBranchReviewer(t *testing.T) {
+	// branchDB serves the branch the request names.
+	branchDB := func() *DBMock {
+		return &DBMock{
+			FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+				return storedDoc(), nil
+			},
+		}
+	}
+
+	// removed reports the user as a reviewer the delete removed.
+	removed := func(context.Context, xid.ID, string, string) (bool, error) {
+		return true, nil
+	}
+
 	cc := map[string]struct {
 		DB                      *DBMock
+		Tx                      *TxMock
+		BeginErr                error
 		NoSession               bool
 		OmitDoc                 bool
 		Query                   string
@@ -703,21 +837,28 @@ func Test_Handler_RemoveBranchReviewer(t *testing.T) {
 		Deleted                 int
 		Reviewers               int
 		FetchDocumentByBranchID int
+		BeginTx                 int
+		Entries                 int
+		Committed               int
+		Rollback                int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
+			Tx:        &TxMock{},
 			NoSession: true,
 			Query:     "?userId=u2",
 			RespCode:  http.StatusUnauthorized,
 		},
 		"Missing document ID parameter": {
 			DB:       &DBMock{},
+			Tx:       &TxMock{},
 			OmitDoc:  true,
 			Query:    "?userId=u2",
 			RespCode: http.StatusNotFound,
 		},
 		"Missing user ID query parameter": {
 			DB:       &DBMock{},
+			Tx:       &TxMock{},
 			RespCode: http.StatusBadRequest,
 		},
 		"Error returned by DB.FetchDocumentByBranchID": {
@@ -726,6 +867,7 @@ func Test_Handler_RemoveBranchReviewer(t *testing.T) {
 					return nil, errors.New("boom")
 				},
 			},
+			Tx:                      &TxMock{},
 			Query:                   "?userId=u2",
 			RespCode:                http.StatusInternalServerError,
 			FetchDocumentByBranchID: 1,
@@ -739,16 +881,39 @@ func Test_Handler_RemoveBranchReviewer(t *testing.T) {
 					return doc, nil
 				},
 			},
+			Tx:                      &TxMock{},
 			Query:                   "?userId=u2",
 			RespCode:                http.StatusNotFound,
 			FetchDocumentByBranchID: 1,
 		},
-		"Error returned by DB.DeleteBranchReviewer": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
+		"Error returned by DB.BeginTx": {
+			DB:                      branchDB(),
+			Tx:                      &TxMock{},
+			BeginErr:                errors.New("boom"),
+			Query:                   "?userId=u2",
+			RespCode:                http.StatusInternalServerError,
+			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
+		},
+		"Error returned by Tx.DeleteBranchReviewer": {
+			DB: branchDB(),
+			Tx: &TxMock{
+				DeleteBranchReviewerFunc: func(context.Context, xid.ID, string, string) (bool, error) {
+					return false, errors.New("boom")
 				},
-				DeleteBranchReviewerFunc: func(context.Context, xid.ID, string, string) error {
+			},
+			Query:                   "?userId=u2",
+			RespCode:                http.StatusInternalServerError,
+			Deleted:                 1,
+			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
+			Rollback:                1,
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: branchDB(),
+			Tx: &TxMock{
+				DeleteBranchReviewerFunc: removed,
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
 					return errors.New("boom")
 				},
 			},
@@ -756,24 +921,59 @@ func Test_Handler_RemoveBranchReviewer(t *testing.T) {
 			RespCode:                http.StatusInternalServerError,
 			Deleted:                 1,
 			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
+			Entries:                 1,
+			Rollback:                1,
 		},
-		"Successful removal": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
+		"Error returned by Tx.Commit": {
+			DB: branchDB(),
+			Tx: &TxMock{
+				DeleteBranchReviewerFunc: removed,
+				CommitFunc: func() error {
+					return errors.New("boom")
 				},
 			},
+			Query:                   "?userId=u2",
+			RespCode:                http.StatusInternalServerError,
+			Deleted:                 1,
+			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
+			Entries:                 1,
+			Committed:               1,
+			Rollback:                1,
+		},
+		"User who is not a reviewer records no entry": {
+			DB:                      branchDB(),
+			Tx:                      &TxMock{},
 			Query:                   "?userId=u2",
 			RespCode:                http.StatusNoContent,
 			Deleted:                 1,
 			Reviewers:               1,
 			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
+			Committed:               1,
+			Rollback:                1,
+		},
+		"Successful removal": {
+			DB:                      branchDB(),
+			Tx:                      &TxMock{DeleteBranchReviewerFunc: removed},
+			Query:                   "?userId=u2",
+			RespCode:                http.StatusNoContent,
+			Deleted:                 1,
+			Reviewers:               1,
+			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
+			Entries:                 1,
+			Committed:               1,
+			Rollback:                1,
 		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
+
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			hdl, cnt := newTestHandler(c.DB, &fakePublisher{})
 
@@ -800,8 +1000,23 @@ func Test_Handler_RemoveBranchReviewer(t *testing.T) {
 
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchID)
-			assert.Len(t, c.DB.DeleteBranchReviewerCalls(), c.Deleted)
+			assert.Len(t, c.DB.BeginTxCalls(), c.BeginTx)
+			assert.Len(t, c.Tx.DeleteBranchReviewerCalls(), c.Deleted)
+			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
+			assert.Len(t, c.Tx.RollbackCalls(), c.Rollback)
 			assert.Equal(t, c.Reviewers, cnt.reviewers)
+
+			ee := c.Tx.InsertDocumentActivityEntriesCalls()
+			require.Len(t, ee, c.Entries)
+
+			if c.Entries == 0 {
+				return
+			}
+
+			require.Len(t, ee[0].Entries, 1)
+			assert.Equal(t, activity.TypeReviewWithdrawn, ee[0].Entries[0].Type)
+			assert.Equal(t, activity.UserActor("u1"), ee[0].Entries[0].Actor)
+			assert.Equal(t, activity.NewTarget(activity.TargetKindUser, "u2"), ee[0].Entries[0].Target)
 		})
 	}
 }
@@ -809,8 +1024,29 @@ func Test_Handler_RemoveBranchReviewer(t *testing.T) {
 func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 	validBody := `{"approved":true}`
 
+	// branchDB serves the branch the request names.
+	branchDB := func() *DBMock {
+		return &DBMock{
+			FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+				return storedDoc(), nil
+			},
+		}
+	}
+
+	// existing reports the user as a reviewer of the branch already.
+	existing := func(context.Context, xid.ID, string, string) (*documentCore.BranchReviewer, error) {
+		return &documentCore.BranchReviewer{PreviouslyApproved: true}, nil
+	}
+
+	// approved reports the user as a reviewer who already approved.
+	approved := func(context.Context, xid.ID, string, string) (*documentCore.BranchReviewer, error) {
+		return &documentCore.BranchReviewer{CurrentlyApproved: true}, nil
+	}
+
 	cc := map[string]struct {
 		DB                      *DBMock
+		Tx                      *TxMock
+		BeginErr                error
 		NoSession               bool
 		Body                    string
 		RespCode                int
@@ -818,10 +1054,18 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 		Updated                 int
 		Reviewers               int
 		FetchDocumentByBranchID int
+		BeginTx                 int
 		FetchBranchReviewer     int
+		Entries                 int
+		Committed               int
+		Rollback                int
+		EntryType               activity.Type
+		// Approved is the approval the update stores.
+		Approved bool
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
+			Tx:        &TxMock{},
 			NoSession: true,
 			Body:      validBody,
 			RespCode:  http.StatusUnauthorized,
@@ -832,6 +1076,7 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 					return nil, errors.New("boom")
 				},
 			},
+			Tx:                      &TxMock{},
 			Body:                    validBody,
 			RespCode:                http.StatusInternalServerError,
 			FetchDocumentByBranchID: 1,
@@ -845,25 +1090,30 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 					return doc, nil
 				},
 			},
+			Tx:                      &TxMock{},
 			Body:                    validBody,
 			RespCode:                http.StatusNotFound,
 			FetchDocumentByBranchID: 1,
 		},
 		"Invalid JSON body": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
-				},
-			},
+			DB:                      branchDB(),
+			Tx:                      &TxMock{},
 			Body:                    "{",
 			RespCode:                http.StatusBadRequest,
 			FetchDocumentByBranchID: 1,
 		},
-		"Error returned by DB.FetchBranchReviewer": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
-				},
+		"Error returned by DB.BeginTx": {
+			DB:                      branchDB(),
+			Tx:                      &TxMock{},
+			BeginErr:                errors.New("boom"),
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
+		},
+		"Error returned by Tx.FetchBranchReviewer": {
+			DB: branchDB(),
+			Tx: &TxMock{
 				FetchBranchReviewerFunc: func(context.Context, xid.ID, string, string) (*documentCore.BranchReviewer, error) {
 					return nil, errors.New("boom")
 				},
@@ -871,16 +1121,14 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 			Body:                    validBody,
 			RespCode:                http.StatusInternalServerError,
 			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
 			FetchBranchReviewer:     1,
+			Rollback:                1,
 		},
-		"Error returned by DB.UpdateBranchReviewer": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
-				},
-				FetchBranchReviewerFunc: func(context.Context, xid.ID, string, string) (*documentCore.BranchReviewer, error) {
-					return &documentCore.BranchReviewer{PreviouslyApproved: true}, nil
-				},
+		"Error returned by Tx.UpdateBranchReviewer": {
+			DB: branchDB(),
+			Tx: &TxMock{
+				FetchBranchReviewerFunc: existing,
 				UpdateBranchReviewerFunc: func(context.Context, documentCore.BranchReviewer) error {
 					return errors.New("boom")
 				},
@@ -889,29 +1137,13 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 			RespCode:                http.StatusInternalServerError,
 			Updated:                 1,
 			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
 			FetchBranchReviewer:     1,
+			Rollback:                1,
 		},
-		"Existing reviewer approval": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
-				},
-				FetchBranchReviewerFunc: func(context.Context, xid.ID, string, string) (*documentCore.BranchReviewer, error) {
-					return &documentCore.BranchReviewer{PreviouslyApproved: true}, nil
-				},
-			},
-			Body:                    validBody,
-			RespCode:                http.StatusOK,
-			Updated:                 1,
-			Reviewers:               1,
-			FetchDocumentByBranchID: 1,
-			FetchBranchReviewer:     1,
-		},
-		"Error returned by DB.InsertBranchReviewer": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
-				},
+		"Error returned by Tx.InsertBranchReviewer": {
+			DB: branchDB(),
+			Tx: &TxMock{
 				FetchBranchReviewerFunc: func(context.Context, xid.ID, string, string) (*documentCore.BranchReviewer, error) {
 					return nil, errutil.ErrNotFound
 				},
@@ -923,13 +1155,118 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 			RespCode:                http.StatusInternalServerError,
 			Inserted:                1,
 			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
 			FetchBranchReviewer:     1,
+			Rollback:                1,
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: branchDB(),
+			Tx: &TxMock{
+				FetchBranchReviewerFunc: existing,
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return errors.New("boom")
+				},
+			},
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			Updated:                 1,
+			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
+			FetchBranchReviewer:     1,
+			Entries:                 1,
+			Rollback:                1,
+			EntryType:               activity.TypeReviewApproved,
+		},
+		"Error returned by Tx.Commit": {
+			DB: branchDB(),
+			Tx: &TxMock{
+				FetchBranchReviewerFunc: existing,
+				CommitFunc: func() error {
+					return errors.New("boom")
+				},
+			},
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			Updated:                 1,
+			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
+			FetchBranchReviewer:     1,
+			Entries:                 1,
+			Committed:               1,
+			Rollback:                1,
+			EntryType:               activity.TypeReviewApproved,
+		},
+		"Existing reviewer approval": {
+			DB: branchDB(),
+			Tx: &TxMock{
+				FetchBranchReviewerFunc: existing,
+			},
+			Body:                    validBody,
+			RespCode:                http.StatusOK,
+			Updated:                 1,
+			Reviewers:               1,
+			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
+			FetchBranchReviewer:     1,
+			Entries:                 1,
+			Committed:               1,
+			Approved:                true,
+			Rollback:                1,
+			EntryType:               activity.TypeReviewApproved,
+		},
+		"Approving again records no entry": {
+			DB: branchDB(),
+			Tx: &TxMock{
+				FetchBranchReviewerFunc: approved,
+			},
+			Body:                    validBody,
+			RespCode:                http.StatusOK,
+			Updated:                 1,
+			Reviewers:               1,
+			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
+			FetchBranchReviewer:     1,
+			Committed:               1,
+			Approved:                true,
+			Rollback:                1,
+		},
+		"Existing reviewer takes the approval back": {
+			DB: branchDB(),
+			Tx: &TxMock{
+				FetchBranchReviewerFunc: approved,
+			},
+			Body:                    `{"approved":false}`,
+			RespCode:                http.StatusOK,
+			Updated:                 1,
+			Reviewers:               1,
+			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
+			FetchBranchReviewer:     1,
+			Entries:                 1,
+			Committed:               1,
+			Rollback:                1,
+			EntryType:               activity.TypeReviewUnapproved,
+		},
+		"New reviewer without an approval records no entry": {
+			DB: branchDB(),
+			Tx: &TxMock{
+				FetchBranchReviewerFunc: func(context.Context, xid.ID, string, string) (*documentCore.BranchReviewer, error) {
+					return nil, errutil.ErrNotFound
+				},
+			},
+			Body:                    `{"approved":false}`,
+			RespCode:                http.StatusOK,
+			Inserted:                1,
+			Reviewers:               1,
+			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
+			FetchBranchReviewer:     1,
+			Committed:               1,
+			Rollback:                1,
 		},
 		"New reviewer approval": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
-				},
+			DB: branchDB(),
+			Tx: &TxMock{
 				FetchBranchReviewerFunc: func(context.Context, xid.ID, string, string) (*documentCore.BranchReviewer, error) {
 					return nil, errutil.ErrNotFound
 				},
@@ -939,13 +1276,20 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 			Inserted:                1,
 			Reviewers:               1,
 			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
 			FetchBranchReviewer:     1,
+			Entries:                 1,
+			Committed:               1,
+			Rollback:                1,
+			EntryType:               activity.TypeReviewApproved,
 		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
+
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			hdl, cnt := newTestHandler(c.DB, &fakePublisher{})
 
@@ -955,17 +1299,32 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchID)
-			assert.Len(t, c.DB.FetchBranchReviewerCalls(), c.FetchBranchReviewer)
-			assert.Len(t, c.DB.InsertBranchReviewerCalls(), c.Inserted)
-			assert.Len(t, c.DB.UpdateBranchReviewerCalls(), c.Updated)
+			assert.Len(t, c.DB.BeginTxCalls(), c.BeginTx)
+			assert.Len(t, c.Tx.FetchBranchReviewerCalls(), c.FetchBranchReviewer)
+			assert.Len(t, c.Tx.InsertBranchReviewerCalls(), c.Inserted)
+			assert.Len(t, c.Tx.UpdateBranchReviewerCalls(), c.Updated)
+			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
+			assert.Len(t, c.Tx.RollbackCalls(), c.Rollback)
 			assert.Equal(t, c.Reviewers, cnt.reviewers)
 
 			// PreviouslyApproved is deliberately not asserted: the update
 			// query persists currently_approved alone, so whatever the
 			// handler puts in that field never reaches the row.
 			if c.Updated == 1 && c.RespCode == http.StatusOK {
-				assert.True(t, c.DB.UpdateBranchReviewerCalls()[0].Reviewer.CurrentlyApproved)
+				assert.Equal(t, c.Approved, c.Tx.UpdateBranchReviewerCalls()[0].Reviewer.CurrentlyApproved)
 			}
+
+			ee := c.Tx.InsertDocumentActivityEntriesCalls()
+			require.Len(t, ee, c.Entries)
+
+			if c.Entries == 0 {
+				return
+			}
+
+			require.Len(t, ee[0].Entries, 1)
+			assert.Equal(t, c.EntryType, ee[0].Entries[0].Type)
+			assert.Equal(t, activity.UserActor("u1"), ee[0].Entries[0].Actor)
+			assert.Equal(t, activity.Target{}, ee[0].Entries[0].Target)
 		})
 	}
 }
@@ -1800,6 +2159,7 @@ func Test_Handler_CreateDocument(t *testing.T) {
 		BeginTx                             int
 		CheckDocumentExists                 int
 		InsertDocument                      int
+		InsertDocumentActivityEntries       int
 		RecordDocumentBranchHistoryEntry    int
 		UpsertDocumentMaintainers           int
 		Enqueue                             int
@@ -1873,6 +2233,20 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			InsertDocument: 1,
 			Rollback:       1,
 		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			Tx: &TxMock{
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return errors.New("boom")
+				},
+			},
+			Body:                             validBody,
+			RespCode:                         http.StatusInternalServerError,
+			BeginTx:                          1,
+			InsertDocument:                   1,
+			InsertDocumentActivityEntries:    1,
+			RecordDocumentBranchHistoryEntry: 1,
+			Rollback:                         1,
+		},
 		"Error returned by Tx.RecordDocumentBranchHistoryEntry": {
 			Tx: &TxMock{
 				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
@@ -1896,6 +2270,7 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			RespCode:                         http.StatusInternalServerError,
 			BeginTx:                          1,
 			InsertDocument:                   1,
+			InsertDocumentActivityEntries:    1,
 			RecordDocumentBranchHistoryEntry: 1,
 			UpsertDocumentMaintainers:        1,
 			Rollback:                         1,
@@ -1911,6 +2286,7 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			RespCode:                         http.StatusInternalServerError,
 			BeginTx:                          1,
 			InsertDocument:                   1,
+			InsertDocumentActivityEntries:    1,
 			RecordDocumentBranchHistoryEntry: 1,
 			UpsertDocumentMaintainers:        1,
 			Enqueue:                          1,
@@ -1926,6 +2302,7 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			RespCode:                            http.StatusInternalServerError,
 			BeginTx:                             1,
 			InsertDocument:                      1,
+			InsertDocumentActivityEntries:       1,
 			RecordDocumentBranchHistoryEntry:    1,
 			UpsertDocumentMaintainers:           1,
 			Enqueue:                             1,
@@ -1938,6 +2315,7 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			RespCode:                            http.StatusBadRequest,
 			BeginTx:                             1,
 			InsertDocument:                      1,
+			InsertDocumentActivityEntries:       1,
 			RecordDocumentBranchHistoryEntry:    1,
 			UpsertDocumentMaintainers:           1,
 			Enqueue:                             1,
@@ -1957,6 +2335,7 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			RespCode:                            http.StatusInternalServerError,
 			BeginTx:                             1,
 			InsertDocument:                      1,
+			InsertDocumentActivityEntries:       1,
 			RecordDocumentBranchHistoryEntry:    1,
 			UpsertDocumentMaintainers:           1,
 			Enqueue:                             1,
@@ -1978,6 +2357,7 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			Committed:                           1,
 			BeginTx:                             1,
 			InsertDocument:                      1,
+			InsertDocumentActivityEntries:       1,
 			RecordDocumentBranchHistoryEntry:    1,
 			UpsertDocumentMaintainers:           1,
 			Enqueue:                             1,
@@ -1993,6 +2373,7 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			TreeCbs:                             1,
 			BeginTx:                             1,
 			InsertDocument:                      1,
+			InsertDocumentActivityEntries:       1,
 			RecordDocumentBranchHistoryEntry:    1,
 			UpsertDocumentMaintainers:           1,
 			Enqueue:                             1,
@@ -2028,6 +2409,7 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			assert.Len(t, db.BeginTxCalls(), c.BeginTx)
 			assert.Len(t, c.Tx.CheckDocumentExistsCalls(), c.CheckDocumentExists)
 			assert.Len(t, c.Tx.InsertDocumentCalls(), c.InsertDocument)
+			assert.Len(t, c.Tx.InsertDocumentActivityEntriesCalls(), c.InsertDocumentActivityEntries)
 			assert.Len(t, c.Tx.RecordDocumentBranchHistoryEntryCalls(), c.RecordDocumentBranchHistoryEntry)
 			assert.Len(t, c.Tx.UpsertDocumentMaintainersCalls(), c.UpsertDocumentMaintainers)
 			assert.Len(t, queue.EnqueueCalls(), c.Enqueue)
@@ -2049,6 +2431,12 @@ func Test_Handler_CreateDocument(t *testing.T) {
 				assert.Equal(t, "org1", entry.OrganizationID)
 				assert.True(t, entry.Boundary)
 				assert.Equal(t, null.StringFrom("u1"), entry.By)
+
+				ee := c.Tx.InsertDocumentActivityEntriesCalls()[0].Entries
+				require.Len(t, ee, 1)
+				assert.Equal(t, activity.TypeDocumentCreated, ee[0].Type)
+				assert.Equal(t, activity.UserActor("u1"), ee[0].Actor)
+				assert.Equal(t, c.Tx.InsertDocumentCalls()[0].Doc.BranchID, ee[0].BranchID)
 
 				// a new document has no source branch to copy hooks from.
 				assert.Empty(t, c.Tx.FetchDocumentHooksByBranchIDCalls())
@@ -2279,6 +2667,7 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 		FetchDocument                       int
 		BeginTx                             int
 		InsertDocument                      int
+		InsertDocumentActivityEntries       int
 		FetchDocumentHooksByBranchID        int
 		InsertDocumentHook                  int
 		RecordDocumentBranchHistoryEntry    int
@@ -2341,6 +2730,26 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			InsertDocument: 1,
 			Rollback:       1,
 		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx: &TxMock{
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return errors.New("boom")
+				},
+			},
+			RespCode:                         http.StatusInternalServerError,
+			FetchDocument:                    1,
+			BeginTx:                          1,
+			InsertDocument:                   1,
+			InsertDocumentActivityEntries:    1,
+			RecordDocumentBranchHistoryEntry: 1,
+			FetchDocumentHooksByBranchID:     1,
+			Rollback:                         1,
+		},
 		"Error returned by Tx.CopyBranchTags": {
 			DB: &DBMock{
 				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
@@ -2356,6 +2765,7 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			FetchDocument:                    1,
 			BeginTx:                          1,
 			InsertDocument:                   1,
+			InsertDocumentActivityEntries:    1,
 			FetchDocumentHooksByBranchID:     1,
 			RecordDocumentBranchHistoryEntry: 1,
 			CopyBranchTags:                   1,
@@ -2372,6 +2782,7 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			FetchDocument:                       1,
 			BeginTx:                             1,
 			InsertDocument:                      1,
+			InsertDocumentActivityEntries:       1,
 			FetchDocumentHooksByBranchID:        1,
 			RecordDocumentBranchHistoryEntry:    1,
 			CopyBranchTags:                      1,
@@ -2399,6 +2810,7 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			FetchDocument:                       1,
 			BeginTx:                             1,
 			InsertDocument:                      1,
+			InsertDocumentActivityEntries:       1,
 			FetchDocumentHooksByBranchID:        1,
 			RecordDocumentBranchHistoryEntry:    1,
 			CopyBranchTags:                      1,
@@ -2421,6 +2833,7 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			FetchDocument:                       1,
 			BeginTx:                             1,
 			InsertDocument:                      1,
+			InsertDocumentActivityEntries:       1,
 			FetchDocumentHooksByBranchID:        1,
 			RecordDocumentBranchHistoryEntry:    1,
 			CopyBranchTags:                      1,
@@ -2442,6 +2855,7 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			FetchDocument:                       1,
 			BeginTx:                             1,
 			InsertDocument:                      1,
+			InsertDocumentActivityEntries:       1,
 			FetchDocumentHooksByBranchID:        1,
 			RecordDocumentBranchHistoryEntry:    1,
 			CopyBranchTags:                      1,
@@ -2467,6 +2881,7 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			FetchDocument:                       1,
 			BeginTx:                             1,
 			InsertDocument:                      1,
+			InsertDocumentActivityEntries:       1,
 			FetchDocumentHooksByBranchID:        1,
 			RecordDocumentBranchHistoryEntry:    1,
 			CopyBranchTags:                      1,
@@ -2496,6 +2911,7 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			FetchDocument:                       1,
 			BeginTx:                             1,
 			InsertDocument:                      1,
+			InsertDocumentActivityEntries:       1,
 			FetchDocumentHooksByBranchID:        1,
 			InsertDocumentHook:                  1,
 			RecordDocumentBranchHistoryEntry:    1,
@@ -2558,6 +2974,7 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			assert.Len(t, c.DB.FetchDocumentCalls(), c.FetchDocument)
 			assert.Len(t, c.DB.BeginTxCalls(), c.BeginTx)
 			assert.Len(t, c.Tx.InsertDocumentCalls(), c.InsertDocument)
+			assert.Len(t, c.Tx.InsertDocumentActivityEntriesCalls(), c.InsertDocumentActivityEntries)
 			assert.Len(t, c.Tx.FetchDocumentHooksByBranchIDCalls(), c.FetchDocumentHooksByBranchID)
 			assert.Len(t, c.Tx.InsertDocumentHookCalls(), c.InsertDocumentHook)
 			assert.Len(t, c.Tx.RecordDocumentBranchHistoryEntryCalls(), c.RecordDocumentBranchHistoryEntry)
@@ -2584,6 +3001,13 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 				dupl := c.Tx.InsertDocumentCalls()[0].Doc
 				assert.NotEqual(t, _documentID, dupl.ID)
 				assert.Equal(t, []string{"u1"}, c.Tx.UpsertDocumentMaintainersCalls()[0].MaintainerIDs)
+
+				// the entry lands on the copy and points at the source.
+				ee := c.Tx.InsertDocumentActivityEntriesCalls()[0].Entries
+				require.Len(t, ee, 1)
+				assert.Equal(t, activity.TypeDocumentDuplicated, ee[0].Type)
+				assert.Equal(t, dupl.BranchID, ee[0].BranchID)
+				assert.Equal(t, activity.NewTarget(activity.TargetKindDocument, _documentID.String()), ee[0].Target)
 
 				// the copy's default branch takes the source's tags before
 				// the commit.

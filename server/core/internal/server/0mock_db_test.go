@@ -36,7 +36,7 @@ var _ DB = &DBMock{}
 //
 //		// make and configure a mocked DB
 //		mockedDB := &DBMock{
-//			AssignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+//			AssignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error) {
 //				panic("mock out the AssignBranchTag method")
 //			},
 //			BeginTxFunc: func(ctx context.Context) (sqlutil.Tx, error) {
@@ -63,7 +63,7 @@ var _ DB = &DBMock{}
 //			CreateVariableGroupFunc: func(ctx context.Context, g variable.Group) error {
 //				panic("mock out the CreateVariableGroup method")
 //			},
-//			DeleteBranchReviewerFunc: func(ctx context.Context, branchID xid.ID, userID string, organizationID string) error {
+//			DeleteBranchReviewerFunc: func(ctx context.Context, branchID xid.ID, userID string, organizationID string) (bool, error) {
 //				panic("mock out the DeleteBranchReviewer method")
 //			},
 //			DeleteDataSourceFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
@@ -183,6 +183,12 @@ var _ DB = &DBMock{}
 //			FetchManyNotificationsFunc: func(ctx context.Context, organizationID string, userID string, qr httpserver.Query) ([]*notificationCore.Notification, uint64, error) {
 //				panic("mock out the FetchManyNotifications method")
 //			},
+//			FetchNewestDocumentCommentReplyRevisionFunc: func(ctx context.Context, replyID xid.ID, organizationID string) (comment.ReplyRevision, error) {
+//				panic("mock out the FetchNewestDocumentCommentReplyRevision method")
+//			},
+//			FetchNewestDocumentCommentRevisionFunc: func(ctx context.Context, commentID xid.ID, organizationID string) (comment.Revision, error) {
+//				panic("mock out the FetchNewestDocumentCommentRevision method")
+//			},
 //			FetchNotificationCountFunc: func(ctx context.Context, organizationID string, userID string, read bool) (uint64, error) {
 //				panic("mock out the FetchNotificationCount method")
 //			},
@@ -225,13 +231,16 @@ var _ DB = &DBMock{}
 //			InsertDocumentFunc: func(ctx context.Context, doc document.Document) error {
 //				panic("mock out the InsertDocument method")
 //			},
+//			InsertDocumentActivityEntriesFunc: func(ctx context.Context, entries ...activity.Entry) error {
+//				panic("mock out the InsertDocumentActivityEntries method")
+//			},
 //			InsertDocumentBranchFunc: func(ctx context.Context, doc document.Document) error {
 //				panic("mock out the InsertDocumentBranch method")
 //			},
-//			InsertDocumentCommentFunc: func(ctx context.Context, c comment.Comment) error {
+//			InsertDocumentCommentFunc: func(ctx context.Context, c comment.Comment) (comment.Revision, error) {
 //				panic("mock out the InsertDocumentComment method")
 //			},
-//			InsertDocumentCommentReplyFunc: func(ctx context.Context, r comment.Reply) error {
+//			InsertDocumentCommentReplyFunc: func(ctx context.Context, r comment.Reply) (comment.ReplyRevision, error) {
 //				panic("mock out the InsertDocumentCommentReply method")
 //			},
 //			InsertDocumentFileFunc: func(ctx context.Context, f file.File) error {
@@ -270,7 +279,7 @@ var _ DB = &DBMock{}
 //			SetTagVisibilityFunc: func(ctx context.Context, organizationID string, userID string, id xid.ID, inp tag.VisibilityInput) error {
 //				panic("mock out the SetTagVisibility method")
 //			},
-//			UnassignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+//			UnassignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error) {
 //				panic("mock out the UnassignBranchTag method")
 //			},
 //			UnassignGithubInstallationOrganizationFunc: func(ctx context.Context, organizationID string) error {
@@ -291,10 +300,10 @@ var _ DB = &DBMock{}
 //			UpdateDocumentBranchMetadataFunc: func(ctx context.Context, doc document.Document) error {
 //				panic("mock out the UpdateDocumentBranchMetadata method")
 //			},
-//			UpdateDocumentCommentFunc: func(ctx context.Context, c comment.Comment) error {
+//			UpdateDocumentCommentFunc: func(ctx context.Context, c comment.Comment) (comment.Revision, error) {
 //				panic("mock out the UpdateDocumentComment method")
 //			},
-//			UpdateDocumentCommentReplyFunc: func(ctx context.Context, r comment.Reply) error {
+//			UpdateDocumentCommentReplyFunc: func(ctx context.Context, r comment.Reply) (comment.ReplyRevision, error) {
 //				panic("mock out the UpdateDocumentCommentReply method")
 //			},
 //			UpdateDocumentCommentStatusFunc: func(ctx context.Context, c comment.Comment) error {
@@ -341,7 +350,7 @@ var _ DB = &DBMock{}
 //	}
 type DBMock struct {
 	// AssignBranchTagFunc mocks the AssignBranchTag method.
-	AssignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error
+	AssignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error)
 
 	// BeginTxFunc mocks the BeginTx method.
 	BeginTxFunc func(ctx context.Context) (sqlutil.Tx, error)
@@ -368,7 +377,7 @@ type DBMock struct {
 	CreateVariableGroupFunc func(ctx context.Context, g variable.Group) error
 
 	// DeleteBranchReviewerFunc mocks the DeleteBranchReviewer method.
-	DeleteBranchReviewerFunc func(ctx context.Context, branchID xid.ID, userID string, organizationID string) error
+	DeleteBranchReviewerFunc func(ctx context.Context, branchID xid.ID, userID string, organizationID string) (bool, error)
 
 	// DeleteDataSourceFunc mocks the DeleteDataSource method.
 	DeleteDataSourceFunc func(ctx context.Context, id xid.ID, organizationID string) error
@@ -487,6 +496,12 @@ type DBMock struct {
 	// FetchManyNotificationsFunc mocks the FetchManyNotifications method.
 	FetchManyNotificationsFunc func(ctx context.Context, organizationID string, userID string, qr httpserver.Query) ([]*notificationCore.Notification, uint64, error)
 
+	// FetchNewestDocumentCommentReplyRevisionFunc mocks the FetchNewestDocumentCommentReplyRevision method.
+	FetchNewestDocumentCommentReplyRevisionFunc func(ctx context.Context, replyID xid.ID, organizationID string) (comment.ReplyRevision, error)
+
+	// FetchNewestDocumentCommentRevisionFunc mocks the FetchNewestDocumentCommentRevision method.
+	FetchNewestDocumentCommentRevisionFunc func(ctx context.Context, commentID xid.ID, organizationID string) (comment.Revision, error)
+
 	// FetchNotificationCountFunc mocks the FetchNotificationCount method.
 	FetchNotificationCountFunc func(ctx context.Context, organizationID string, userID string, read bool) (uint64, error)
 
@@ -529,14 +544,17 @@ type DBMock struct {
 	// InsertDocumentFunc mocks the InsertDocument method.
 	InsertDocumentFunc func(ctx context.Context, doc document.Document) error
 
+	// InsertDocumentActivityEntriesFunc mocks the InsertDocumentActivityEntries method.
+	InsertDocumentActivityEntriesFunc func(ctx context.Context, entries ...activity.Entry) error
+
 	// InsertDocumentBranchFunc mocks the InsertDocumentBranch method.
 	InsertDocumentBranchFunc func(ctx context.Context, doc document.Document) error
 
 	// InsertDocumentCommentFunc mocks the InsertDocumentComment method.
-	InsertDocumentCommentFunc func(ctx context.Context, c comment.Comment) error
+	InsertDocumentCommentFunc func(ctx context.Context, c comment.Comment) (comment.Revision, error)
 
 	// InsertDocumentCommentReplyFunc mocks the InsertDocumentCommentReply method.
-	InsertDocumentCommentReplyFunc func(ctx context.Context, r comment.Reply) error
+	InsertDocumentCommentReplyFunc func(ctx context.Context, r comment.Reply) (comment.ReplyRevision, error)
 
 	// InsertDocumentFileFunc mocks the InsertDocumentFile method.
 	InsertDocumentFileFunc func(ctx context.Context, f file.File) error
@@ -575,7 +593,7 @@ type DBMock struct {
 	SetTagVisibilityFunc func(ctx context.Context, organizationID string, userID string, id xid.ID, inp tag.VisibilityInput) error
 
 	// UnassignBranchTagFunc mocks the UnassignBranchTag method.
-	UnassignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error
+	UnassignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error)
 
 	// UnassignGithubInstallationOrganizationFunc mocks the UnassignGithubInstallationOrganization method.
 	UnassignGithubInstallationOrganizationFunc func(ctx context.Context, organizationID string) error
@@ -596,10 +614,10 @@ type DBMock struct {
 	UpdateDocumentBranchMetadataFunc func(ctx context.Context, doc document.Document) error
 
 	// UpdateDocumentCommentFunc mocks the UpdateDocumentComment method.
-	UpdateDocumentCommentFunc func(ctx context.Context, c comment.Comment) error
+	UpdateDocumentCommentFunc func(ctx context.Context, c comment.Comment) (comment.Revision, error)
 
 	// UpdateDocumentCommentReplyFunc mocks the UpdateDocumentCommentReply method.
-	UpdateDocumentCommentReplyFunc func(ctx context.Context, r comment.Reply) error
+	UpdateDocumentCommentReplyFunc func(ctx context.Context, r comment.Reply) (comment.ReplyRevision, error)
 
 	// UpdateDocumentCommentStatusFunc mocks the UpdateDocumentCommentStatus method.
 	UpdateDocumentCommentStatusFunc func(ctx context.Context, c comment.Comment) error
@@ -1078,6 +1096,24 @@ type DBMock struct {
 			// Qr is the qr argument value.
 			Qr httpserver.Query
 		}
+		// FetchNewestDocumentCommentReplyRevision holds details about calls to the FetchNewestDocumentCommentReplyRevision method.
+		FetchNewestDocumentCommentReplyRevision []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// ReplyID is the replyID argument value.
+			ReplyID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
+		// FetchNewestDocumentCommentRevision holds details about calls to the FetchNewestDocumentCommentRevision method.
+		FetchNewestDocumentCommentRevision []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// CommentID is the commentID argument value.
+			CommentID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
 		// FetchNotificationCount holds details about calls to the FetchNotificationCount method.
 		FetchNotificationCount []struct {
 			// Ctx is the ctx argument value.
@@ -1195,6 +1231,13 @@ type DBMock struct {
 			Ctx context.Context
 			// Doc is the doc argument value.
 			Doc document.Document
+		}
+		// InsertDocumentActivityEntries holds details about calls to the InsertDocumentActivityEntries method.
+		InsertDocumentActivityEntries []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Entries is the entries argument value.
+			Entries []activity.Entry
 		}
 		// InsertDocumentBranch holds details about calls to the InsertDocumentBranch method.
 		InsertDocumentBranch []struct {
@@ -1556,6 +1599,8 @@ type DBMock struct {
 	lockFetchGithubInstallationByOrganizationID   sync.RWMutex
 	lockFetchGithubInstallationOrganizationID     sync.RWMutex
 	lockFetchManyNotifications                    sync.RWMutex
+	lockFetchNewestDocumentCommentReplyRevision   sync.RWMutex
+	lockFetchNewestDocumentCommentRevision        sync.RWMutex
 	lockFetchNotificationCount                    sync.RWMutex
 	lockFetchOrganizationMemberRole               sync.RWMutex
 	lockFetchOrganizationMembers                  sync.RWMutex
@@ -1570,6 +1615,7 @@ type DBMock struct {
 	lockInsertBranchReviewer                      sync.RWMutex
 	lockInsertDataSource                          sync.RWMutex
 	lockInsertDocument                            sync.RWMutex
+	lockInsertDocumentActivityEntries             sync.RWMutex
 	lockInsertDocumentBranch                      sync.RWMutex
 	lockInsertDocumentComment                     sync.RWMutex
 	lockInsertDocumentCommentReply                sync.RWMutex
@@ -1609,7 +1655,7 @@ type DBMock struct {
 }
 
 // AssignBranchTag calls AssignBranchTagFunc.
-func (mock *DBMock) AssignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+func (mock *DBMock) AssignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		OrganizationID string
@@ -1628,9 +1674,10 @@ func (mock *DBMock) AssignBranchTag(ctx context.Context, organizationID string, 
 	mock.lockAssignBranchTag.Unlock()
 	if mock.AssignBranchTagFunc == nil {
 		var (
+			bOut   bool
 			errOut error
 		)
-		return errOut
+		return bOut, errOut
 	}
 	return mock.AssignBranchTagFunc(ctx, organizationID, documentID, branchID, tagID)
 }
@@ -2000,7 +2047,7 @@ func (mock *DBMock) CreateVariableGroupCalls() []struct {
 }
 
 // DeleteBranchReviewer calls DeleteBranchReviewerFunc.
-func (mock *DBMock) DeleteBranchReviewer(ctx context.Context, branchID xid.ID, userID string, organizationID string) error {
+func (mock *DBMock) DeleteBranchReviewer(ctx context.Context, branchID xid.ID, userID string, organizationID string) (bool, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		BranchID       xid.ID
@@ -2017,9 +2064,10 @@ func (mock *DBMock) DeleteBranchReviewer(ctx context.Context, branchID xid.ID, u
 	mock.lockDeleteBranchReviewer.Unlock()
 	if mock.DeleteBranchReviewerFunc == nil {
 		var (
+			bOut   bool
 			errOut error
 		)
-		return errOut
+		return bOut, errOut
 	}
 	return mock.DeleteBranchReviewerFunc(ctx, branchID, userID, organizationID)
 }
@@ -3742,6 +3790,94 @@ func (mock *DBMock) FetchManyNotificationsCalls() []struct {
 	return calls
 }
 
+// FetchNewestDocumentCommentReplyRevision calls FetchNewestDocumentCommentReplyRevisionFunc.
+func (mock *DBMock) FetchNewestDocumentCommentReplyRevision(ctx context.Context, replyID xid.ID, organizationID string) (comment.ReplyRevision, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		ReplyID        xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		ReplyID:        replyID,
+		OrganizationID: organizationID,
+	}
+	mock.lockFetchNewestDocumentCommentReplyRevision.Lock()
+	mock.calls.FetchNewestDocumentCommentReplyRevision = append(mock.calls.FetchNewestDocumentCommentReplyRevision, callInfo)
+	mock.lockFetchNewestDocumentCommentReplyRevision.Unlock()
+	if mock.FetchNewestDocumentCommentReplyRevisionFunc == nil {
+		var (
+			replyRevisionOut comment.ReplyRevision
+			errOut           error
+		)
+		return replyRevisionOut, errOut
+	}
+	return mock.FetchNewestDocumentCommentReplyRevisionFunc(ctx, replyID, organizationID)
+}
+
+// FetchNewestDocumentCommentReplyRevisionCalls gets all the calls that were made to FetchNewestDocumentCommentReplyRevision.
+// Check the length with:
+//
+//	len(mockedDB.FetchNewestDocumentCommentReplyRevisionCalls())
+func (mock *DBMock) FetchNewestDocumentCommentReplyRevisionCalls() []struct {
+	Ctx            context.Context
+	ReplyID        xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		ReplyID        xid.ID
+		OrganizationID string
+	}
+	mock.lockFetchNewestDocumentCommentReplyRevision.RLock()
+	calls = mock.calls.FetchNewestDocumentCommentReplyRevision
+	mock.lockFetchNewestDocumentCommentReplyRevision.RUnlock()
+	return calls
+}
+
+// FetchNewestDocumentCommentRevision calls FetchNewestDocumentCommentRevisionFunc.
+func (mock *DBMock) FetchNewestDocumentCommentRevision(ctx context.Context, commentID xid.ID, organizationID string) (comment.Revision, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		CommentID      xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		CommentID:      commentID,
+		OrganizationID: organizationID,
+	}
+	mock.lockFetchNewestDocumentCommentRevision.Lock()
+	mock.calls.FetchNewestDocumentCommentRevision = append(mock.calls.FetchNewestDocumentCommentRevision, callInfo)
+	mock.lockFetchNewestDocumentCommentRevision.Unlock()
+	if mock.FetchNewestDocumentCommentRevisionFunc == nil {
+		var (
+			revisionOut comment.Revision
+			errOut      error
+		)
+		return revisionOut, errOut
+	}
+	return mock.FetchNewestDocumentCommentRevisionFunc(ctx, commentID, organizationID)
+}
+
+// FetchNewestDocumentCommentRevisionCalls gets all the calls that were made to FetchNewestDocumentCommentRevision.
+// Check the length with:
+//
+//	len(mockedDB.FetchNewestDocumentCommentRevisionCalls())
+func (mock *DBMock) FetchNewestDocumentCommentRevisionCalls() []struct {
+	Ctx            context.Context
+	CommentID      xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		CommentID      xid.ID
+		OrganizationID string
+	}
+	mock.lockFetchNewestDocumentCommentRevision.RLock()
+	calls = mock.calls.FetchNewestDocumentCommentRevision
+	mock.lockFetchNewestDocumentCommentRevision.RUnlock()
+	return calls
+}
+
 // FetchNotificationCount calls FetchNotificationCountFunc.
 func (mock *DBMock) FetchNotificationCount(ctx context.Context, organizationID string, userID string, read bool) (uint64, error) {
 	callInfo := struct {
@@ -4339,6 +4475,45 @@ func (mock *DBMock) InsertDocumentCalls() []struct {
 	return calls
 }
 
+// InsertDocumentActivityEntries calls InsertDocumentActivityEntriesFunc.
+func (mock *DBMock) InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error {
+	callInfo := struct {
+		Ctx     context.Context
+		Entries []activity.Entry
+	}{
+		Ctx:     ctx,
+		Entries: entries,
+	}
+	mock.lockInsertDocumentActivityEntries.Lock()
+	mock.calls.InsertDocumentActivityEntries = append(mock.calls.InsertDocumentActivityEntries, callInfo)
+	mock.lockInsertDocumentActivityEntries.Unlock()
+	if mock.InsertDocumentActivityEntriesFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.InsertDocumentActivityEntriesFunc(ctx, entries...)
+}
+
+// InsertDocumentActivityEntriesCalls gets all the calls that were made to InsertDocumentActivityEntries.
+// Check the length with:
+//
+//	len(mockedDB.InsertDocumentActivityEntriesCalls())
+func (mock *DBMock) InsertDocumentActivityEntriesCalls() []struct {
+	Ctx     context.Context
+	Entries []activity.Entry
+} {
+	var calls []struct {
+		Ctx     context.Context
+		Entries []activity.Entry
+	}
+	mock.lockInsertDocumentActivityEntries.RLock()
+	calls = mock.calls.InsertDocumentActivityEntries
+	mock.lockInsertDocumentActivityEntries.RUnlock()
+	return calls
+}
+
 // InsertDocumentBranch calls InsertDocumentBranchFunc.
 func (mock *DBMock) InsertDocumentBranch(ctx context.Context, doc document.Document) error {
 	callInfo := struct {
@@ -4379,7 +4554,7 @@ func (mock *DBMock) InsertDocumentBranchCalls() []struct {
 }
 
 // InsertDocumentComment calls InsertDocumentCommentFunc.
-func (mock *DBMock) InsertDocumentComment(ctx context.Context, c comment.Comment) error {
+func (mock *DBMock) InsertDocumentComment(ctx context.Context, c comment.Comment) (comment.Revision, error) {
 	callInfo := struct {
 		Ctx context.Context
 		C   comment.Comment
@@ -4392,9 +4567,10 @@ func (mock *DBMock) InsertDocumentComment(ctx context.Context, c comment.Comment
 	mock.lockInsertDocumentComment.Unlock()
 	if mock.InsertDocumentCommentFunc == nil {
 		var (
-			errOut error
+			revisionOut comment.Revision
+			errOut      error
 		)
-		return errOut
+		return revisionOut, errOut
 	}
 	return mock.InsertDocumentCommentFunc(ctx, c)
 }
@@ -4418,7 +4594,7 @@ func (mock *DBMock) InsertDocumentCommentCalls() []struct {
 }
 
 // InsertDocumentCommentReply calls InsertDocumentCommentReplyFunc.
-func (mock *DBMock) InsertDocumentCommentReply(ctx context.Context, r comment.Reply) error {
+func (mock *DBMock) InsertDocumentCommentReply(ctx context.Context, r comment.Reply) (comment.ReplyRevision, error) {
 	callInfo := struct {
 		Ctx context.Context
 		R   comment.Reply
@@ -4431,9 +4607,10 @@ func (mock *DBMock) InsertDocumentCommentReply(ctx context.Context, r comment.Re
 	mock.lockInsertDocumentCommentReply.Unlock()
 	if mock.InsertDocumentCommentReplyFunc == nil {
 		var (
-			errOut error
+			replyRevisionOut comment.ReplyRevision
+			errOut           error
 		)
-		return errOut
+		return replyRevisionOut, errOut
 	}
 	return mock.InsertDocumentCommentReplyFunc(ctx, r)
 }
@@ -4973,7 +5150,7 @@ func (mock *DBMock) SetTagVisibilityCalls() []struct {
 }
 
 // UnassignBranchTag calls UnassignBranchTagFunc.
-func (mock *DBMock) UnassignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+func (mock *DBMock) UnassignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		OrganizationID string
@@ -4992,9 +5169,10 @@ func (mock *DBMock) UnassignBranchTag(ctx context.Context, organizationID string
 	mock.lockUnassignBranchTag.Unlock()
 	if mock.UnassignBranchTagFunc == nil {
 		var (
+			bOut   bool
 			errOut error
 		)
-		return errOut
+		return bOut, errOut
 	}
 	return mock.UnassignBranchTagFunc(ctx, organizationID, documentID, branchID, tagID)
 }
@@ -5258,7 +5436,7 @@ func (mock *DBMock) UpdateDocumentBranchMetadataCalls() []struct {
 }
 
 // UpdateDocumentComment calls UpdateDocumentCommentFunc.
-func (mock *DBMock) UpdateDocumentComment(ctx context.Context, c comment.Comment) error {
+func (mock *DBMock) UpdateDocumentComment(ctx context.Context, c comment.Comment) (comment.Revision, error) {
 	callInfo := struct {
 		Ctx context.Context
 		C   comment.Comment
@@ -5271,9 +5449,10 @@ func (mock *DBMock) UpdateDocumentComment(ctx context.Context, c comment.Comment
 	mock.lockUpdateDocumentComment.Unlock()
 	if mock.UpdateDocumentCommentFunc == nil {
 		var (
-			errOut error
+			revisionOut comment.Revision
+			errOut      error
 		)
-		return errOut
+		return revisionOut, errOut
 	}
 	return mock.UpdateDocumentCommentFunc(ctx, c)
 }
@@ -5297,7 +5476,7 @@ func (mock *DBMock) UpdateDocumentCommentCalls() []struct {
 }
 
 // UpdateDocumentCommentReply calls UpdateDocumentCommentReplyFunc.
-func (mock *DBMock) UpdateDocumentCommentReply(ctx context.Context, r comment.Reply) error {
+func (mock *DBMock) UpdateDocumentCommentReply(ctx context.Context, r comment.Reply) (comment.ReplyRevision, error) {
 	callInfo := struct {
 		Ctx context.Context
 		R   comment.Reply
@@ -5310,9 +5489,10 @@ func (mock *DBMock) UpdateDocumentCommentReply(ctx context.Context, r comment.Re
 	mock.lockUpdateDocumentCommentReply.Unlock()
 	if mock.UpdateDocumentCommentReplyFunc == nil {
 		var (
-			errOut error
+			replyRevisionOut comment.ReplyRevision
+			errOut           error
 		)
-		return errOut
+		return replyRevisionOut, errOut
 	}
 	return mock.UpdateDocumentCommentReplyFunc(ctx, r)
 }

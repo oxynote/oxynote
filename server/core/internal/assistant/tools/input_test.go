@@ -2861,8 +2861,8 @@ func Test_input_AssignTag(t *testing.T) {
 		"Unknown tag": {
 			DB: func() *DBMock {
 				db := stubDocumentDB()
-				db.AssignBranchTagFunc = func(context.Context, string, xid.ID, xid.ID, xid.ID) error {
-					return errutil.ErrNotFound
+				db.AssignBranchTagFunc = func(context.Context, string, xid.ID, xid.ID, xid.ID) (bool, error) {
+					return false, errutil.ErrNotFound
 				}
 
 				return db
@@ -2874,8 +2874,8 @@ func Test_input_AssignTag(t *testing.T) {
 		"Error returned by db.AssignBranchTag": {
 			DB: func() *DBMock {
 				db := stubDocumentDB()
-				db.AssignBranchTagFunc = func(context.Context, string, xid.ID, xid.ID, xid.ID) error {
-					return assert.AnError
+				db.AssignBranchTagFunc = func(context.Context, string, xid.ID, xid.ID, xid.ID) (bool, error) {
+					return false, assert.AnError
 				}
 
 				return db
@@ -2961,8 +2961,8 @@ func Test_input_UnassignTag(t *testing.T) {
 		"Error returned by db.UnassignBranchTag": {
 			DB: func() *DBMock {
 				db := stubTagDB(nil)
-				db.UnassignBranchTagFunc = func(context.Context, string, xid.ID, xid.ID, xid.ID) error {
-					return assert.AnError
+				db.UnassignBranchTagFunc = func(context.Context, string, xid.ID, xid.ID, xid.ID) (bool, error) {
+					return false, assert.AnError
 				}
 
 				return db
@@ -3528,7 +3528,7 @@ func Test_input_ResetHook(t *testing.T) {
 	t.Parallel()
 
 	failing := stubHookManager()
-	failing.ResetHookFunc = func(context.Context, xid.ID, xid.ID, string) (*hook.Hook, error) {
+	failing.ResetHookFunc = func(context.Context, xid.ID, xid.ID, string, string) (*hook.Hook, error) {
 		return nil, assert.AnError
 	}
 
@@ -3573,6 +3573,7 @@ func Test_input_ResetHook(t *testing.T) {
 			// the hook handed in takes the stored one.
 			assert.Equal(t, c.Hook.ID, ff[0].ID)
 			assert.Equal(t, "org", ff[0].OrganizationID)
+			assert.Equal(t, "user", ff[0].UpdatedBy)
 			assert.True(t, c.Hook.UpdatedAt.Valid)
 		})
 	}

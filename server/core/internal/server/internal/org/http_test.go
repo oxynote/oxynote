@@ -16,6 +16,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/demo"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/search"
@@ -115,6 +116,28 @@ func assertWelcomeDocumentTagged(t *testing.T, tx *TxMock, count int) {
 	assert.Equal(t, tx.InsertTagCalls()[0].T.ID, ff[0].TagID)
 }
 
+// assertWelcomeDocumentRecorded checks that the welcome document's
+// creation went into the transaction as a system entry on its branch.
+func assertWelcomeDocumentRecorded(t *testing.T, tx *TxMock, count int) {
+	t.Helper()
+
+	ff := tx.InsertDocumentActivityEntriesCalls()
+	require.Len(t, ff, count)
+
+	if count == 0 {
+		return
+	}
+
+	doc := tx.InsertDocumentCalls()[0].Doc
+
+	require.Len(t, ff[0].Entries, 1)
+	assert.Equal(t, activity.TypeDocumentCreated, ff[0].Entries[0].Type)
+	assert.Equal(t, activity.SystemActor(), ff[0].Entries[0].Actor)
+	assert.Equal(t, doc.ID, ff[0].Entries[0].DocumentID)
+	assert.Equal(t, doc.BranchID, ff[0].Entries[0].BranchID)
+	assert.Equal(t, "org2", ff[0].Entries[0].OrganizationID)
+}
+
 // assertSeededVariables checks that the built-in variables went into the
 // transaction in order, each of the organization and its built-in group.
 func assertSeededVariables(t *testing.T, tx *TxMock, count int) {
@@ -198,6 +221,12 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			assert.Equal(t, "Welcome to Oxynote!", ff[0].Doc.DocumentName)
 			assert.Equal(t, "org2", ff[0].Doc.OrganizationID)
 			assert.NotEmpty(t, ff[0].Doc.Content)
+		}
+	}
+
+	wasInsertActivityEntriesCalled := func(count int) check {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *SearchQueueMock, _ *httptest.ResponseRecorder) {
+			assertWelcomeDocumentRecorded(t, tx, count)
 		}
 	}
 
@@ -292,6 +321,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasInsertDataSourceCalled(0),
 				wasBeginTxCalled(0),
 				wasInsertDocumentCalled(0),
+				wasInsertActivityEntriesCalled(0),
 				wasUpsertMaintainersCalled(0),
 				wasInsertTagCalled(0),
 				wasAssignBranchTagCalled(0),
@@ -312,6 +342,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(0),
+				wasInsertActivityEntriesCalled(0),
 				wasUpsertMaintainersCalled(0),
 				wasInsertTagCalled(0),
 				wasAssignBranchTagCalled(0),
@@ -333,6 +364,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasInsertDataSourceCalled(0),
 				wasBeginTxCalled(0),
 				wasInsertDocumentCalled(0),
+				wasInsertActivityEntriesCalled(0),
 				wasUpsertMaintainersCalled(0),
 				wasInsertTagCalled(0),
 				wasAssignBranchTagCalled(0),
@@ -351,6 +383,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasInsertDataSourceCalled(0),
 				wasBeginTxCalled(0),
 				wasInsertDocumentCalled(0),
+				wasInsertActivityEntriesCalled(0),
 				wasUpsertMaintainersCalled(0),
 				wasInsertTagCalled(0),
 				wasAssignBranchTagCalled(0),
@@ -377,6 +410,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
+				wasInsertActivityEntriesCalled(1),
 				wasUpsertMaintainersCalled(1),
 				wasInsertTagCalled(3),
 				wasAssignBranchTagCalled(1),
@@ -411,6 +445,31 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
+				wasInsertActivityEntriesCalled(0),
+				wasUpsertMaintainersCalled(0),
+				wasInsertTagCalled(0),
+				wasAssignBranchTagCalled(0),
+				wasCreateVariableGroupCalled(0),
+				wasCreateVariableCalled(0),
+				wasEnqueueCalled(0),
+				wasCommitCalled(0),
+				wasRollbackCalled(1),
+			),
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			Members: []string{"member1"},
+			Tx: &TxMock{
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return assert.AnError
+				},
+			},
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasFetchMembersCalled(1),
+				wasInsertDataSourceCalled(2),
+				wasBeginTxCalled(1),
+				wasInsertDocumentCalled(1),
+				wasInsertActivityEntriesCalled(1),
 				wasUpsertMaintainersCalled(0),
 				wasInsertTagCalled(0),
 				wasAssignBranchTagCalled(0),
@@ -434,6 +493,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
+				wasInsertActivityEntriesCalled(1),
 				wasUpsertMaintainersCalled(1),
 				wasInsertTagCalled(0),
 				wasAssignBranchTagCalled(0),
@@ -457,6 +517,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
+				wasInsertActivityEntriesCalled(1),
 				wasUpsertMaintainersCalled(1),
 				wasInsertTagCalled(1),
 				wasAssignBranchTagCalled(0),
@@ -470,8 +531,8 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 		"Error returned by Tx.AssignBranchTag": {
 			Members: []string{"member1"},
 			Tx: &TxMock{
-				AssignBranchTagFunc: func(context.Context, string, xid.ID, xid.ID, xid.ID) error {
-					return assert.AnError
+				AssignBranchTagFunc: func(context.Context, string, xid.ID, xid.ID, xid.ID) (bool, error) {
+					return false, assert.AnError
 				},
 			},
 			Checks: checks(
@@ -480,6 +541,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
+				wasInsertActivityEntriesCalled(1),
 				wasUpsertMaintainersCalled(1),
 				wasInsertTagCalled(3),
 				wasAssignBranchTagCalled(1),
@@ -503,6 +565,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
+				wasInsertActivityEntriesCalled(1),
 				wasUpsertMaintainersCalled(1),
 				wasInsertTagCalled(3),
 				wasAssignBranchTagCalled(1),
@@ -526,6 +589,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
+				wasInsertActivityEntriesCalled(1),
 				wasUpsertMaintainersCalled(1),
 				wasInsertTagCalled(3),
 				wasAssignBranchTagCalled(1),
@@ -550,6 +614,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
+				wasInsertActivityEntriesCalled(1),
 				wasUpsertMaintainersCalled(1),
 				wasInsertTagCalled(3),
 				wasAssignBranchTagCalled(1),
@@ -573,6 +638,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
+				wasInsertActivityEntriesCalled(1),
 				wasUpsertMaintainersCalled(1),
 				wasInsertTagCalled(3),
 				wasAssignBranchTagCalled(1),
@@ -595,6 +661,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasInsertDataSourceCalled(2),
 				wasBeginTxCalled(1),
 				wasInsertDocumentCalled(1),
+				wasInsertActivityEntriesCalled(1),
 				wasUpsertMaintainersCalled(1),
 				wasInsertTagCalled(3),
 				wasAssignBranchTagCalled(1),

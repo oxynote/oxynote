@@ -1125,6 +1125,7 @@ func Test_agent_AssignBranchTag(t *testing.T) {
 		BranchID         xid.ID
 		TagID            xid.ID
 		Result           []xid.ID
+		Changed          bool
 		Check            func(t *testing.T, db *DB)
 		Err              error
 	}
@@ -1158,6 +1159,7 @@ func Test_agent_AssignBranchTag(t *testing.T) {
 				BranchID:       doc.BranchID,
 				TagID:          tg.ID,
 				Result:         []xid.ID{tg.ID},
+				Changed:        true,
 			}
 		},
 		"Tag the branch already carries changes nothing": func(t *testing.T, db *DB) tcase {
@@ -1225,6 +1227,7 @@ func Test_agent_AssignBranchTag(t *testing.T) {
 				BranchID:       doc.BranchID,
 				TagID:          tg.ID,
 				Result:         []xid.ID{tg.ID},
+				Changed:        true,
 				Check: func(t *testing.T, db *DB) {
 					require.NoError(t, db.DeleteDocumentBranchByID(context.Background(), doc.BranchID, doc.OrganizationID))
 
@@ -1245,6 +1248,7 @@ func Test_agent_AssignBranchTag(t *testing.T) {
 				BranchID:       doc.BranchID,
 				TagID:          tg.ID,
 				Result:         []xid.ID{tg.ID},
+				Changed:        true,
 				Check: func(t *testing.T, db *DB) {
 					_, err := db.DeleteDocument(context.Background(), doc.ID, doc.OrganizationID)
 					require.NoError(t, err)
@@ -1270,8 +1274,9 @@ func Test_agent_AssignBranchTag(t *testing.T) {
 				cancel()
 			}
 
-			err := db.AssignBranchTag(ctx, c.OrganizationID, c.DocumentID, c.BranchID, c.TagID)
+			changed, err := db.AssignBranchTag(ctx, c.OrganizationID, c.DocumentID, c.BranchID, c.TagID)
 			testutil.RequireEqualError(t, c.Err, err)
+			assert.Equal(t, c.Changed, changed)
 
 			assert.Equal(t, c.Result, branchTagIDs(t, db, c.BranchID))
 
@@ -1290,6 +1295,7 @@ func Test_agent_UnassignBranchTag(t *testing.T) {
 		BranchID         xid.ID
 		TagID            xid.ID
 		Result           []xid.ID
+		Changed          bool
 		Err              error
 	}
 
@@ -1320,6 +1326,7 @@ func Test_agent_UnassignBranchTag(t *testing.T) {
 				BranchID:       doc.BranchID,
 				TagID:          tags[0].ID,
 				Result:         []xid.ID{tags[1].ID},
+				Changed:        true,
 			}
 		},
 		"Tag the branch does not carry changes nothing": func(t *testing.T, db *DB) tcase {
@@ -1362,8 +1369,9 @@ func Test_agent_UnassignBranchTag(t *testing.T) {
 				cancel()
 			}
 
-			err := db.UnassignBranchTag(ctx, c.OrganizationID, c.DocumentID, c.BranchID, c.TagID)
+			changed, err := db.UnassignBranchTag(ctx, c.OrganizationID, c.DocumentID, c.BranchID, c.TagID)
 			testutil.RequireEqualError(t, c.Err, err)
+			assert.Equal(t, c.Changed, changed)
 
 			assert.Equal(t, c.Result, branchTagIDs(t, db, c.BranchID))
 		})

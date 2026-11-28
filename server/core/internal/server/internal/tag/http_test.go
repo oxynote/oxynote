@@ -9,9 +9,11 @@ import (
 	"testing"
 
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	tagCore "github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	wsMock "github.com/oxynote/wetsocks/wsserver/_mock"
 	"github.com/rs/xid"
@@ -921,6 +923,8 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 
 	cc := map[string]struct {
 		DB         *DBMock
+		Tx         *TxMock
+		BeginErr   error
 		NoSession  bool
 		DocumentID string
 		BranchID   string
@@ -928,11 +932,17 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 		Code       int
 		Body       string
 		Fetches    int
-		Assigns    int
+		TagFetches int
+		Begun      int
+		Writes     int
+		Entries    int
+		Committed  int
+		RolledBack int
 		Notifies   int
 	}{
 		"No session in context": {
 			DB:         &DBMock{},
+			Tx:         &TxMock{},
 			NoSession:  true,
 			DocumentID: _documentID.String(),
 			BranchID:   _branchID.String(),
@@ -942,6 +952,7 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 		},
 		"Malformed document id": {
 			DB:         &DBMock{},
+			Tx:         &TxMock{},
 			DocumentID: "not-an-xid",
 			BranchID:   _branchID.String(),
 			Payload:    `{}`,
@@ -950,6 +961,7 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 		},
 		"Malformed branch id": {
 			DB:         &DBMock{},
+			Tx:         &TxMock{},
 			DocumentID: _documentID.String(),
 			BranchID:   "not-an-xid",
 			Payload:    `{}`,
@@ -958,6 +970,7 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 		},
 		"Malformed payload": {
 			DB:         &DBMock{},
+			Tx:         &TxMock{},
 			DocumentID: _documentID.String(),
 			BranchID:   _branchID.String(),
 			Payload:    `{`,
@@ -966,6 +979,7 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 		},
 		"Error returned by DB.FetchDocumentByBranchID": {
 			DB:         &DBMock{FetchDocumentByBranchIDFunc: stubBranch(false, assert.AnError)},
+			Tx:         &TxMock{},
 			DocumentID: _documentID.String(),
 			BranchID:   _branchID.String(),
 			Payload:    `{"tagId":"` + _tagID.String() + `"}`,
@@ -975,6 +989,7 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 		},
 		"Protected branch is refused": {
 			DB:         &DBMock{FetchDocumentByBranchIDFunc: stubBranch(true, nil)},
+			Tx:         &TxMock{},
 			DocumentID: _documentID.String(),
 			BranchID:   _branchID.String(),
 			Payload:    `{"tagId":"` + _tagID.String() + `"}`,
@@ -982,10 +997,63 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 			Body:       `{"code":"document.branch_protected","message":"a protected branch cannot be changed"}`,
 			Fetches:    1,
 		},
-		"Error returned by DB.AssignBranchTag": {
+		"Error returned by DB.FetchTag": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
-				AssignBranchTagFunc: func(context.Context, string, xid.ID, xid.ID, xid.ID) error {
+				FetchTagFunc:                stubTag(assert.AnError),
+			},
+			Tx:         &TxMock{},
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			Payload:    `{"tagId":"` + _tagID.String() + `"}`,
+			Code:       http.StatusInternalServerError,
+			Body:       `{"code":"general","message":"internal server error"}`,
+			Fetches:    1,
+			TagFetches: 1,
+		},
+		"Error returned by DB.BeginTx": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
+				FetchTagFunc:                stubTag(nil),
+			},
+			Tx:         &TxMock{},
+			BeginErr:   assert.AnError,
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			Payload:    `{"tagId":"` + _tagID.String() + `"}`,
+			Code:       http.StatusInternalServerError,
+			Body:       `{"code":"general","message":"internal server error"}`,
+			Fetches:    1,
+			TagFetches: 1,
+			Begun:      1,
+		},
+		"Error returned by Tx.AssignBranchTag": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
+				FetchTagFunc:                stubTag(nil),
+			},
+			Tx: &TxMock{
+				AssignBranchTagFunc: stubTagWrite(false, assert.AnError),
+			},
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			Payload:    `{"tagId":"` + _tagID.String() + `"}`,
+			Code:       http.StatusInternalServerError,
+			Body:       `{"code":"general","message":"internal server error"}`,
+			Fetches:    1,
+			TagFetches: 1,
+			Begun:      1,
+			Writes:     1,
+			RolledBack: 1,
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
+				FetchTagFunc:                stubTag(nil),
+			},
+			Tx: &TxMock{
+				AssignBranchTagFunc: stubTagWrite(true, nil),
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
 					return assert.AnError
 				},
 			},
@@ -995,16 +1063,71 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 			Code:       http.StatusInternalServerError,
 			Body:       `{"code":"general","message":"internal server error"}`,
 			Fetches:    1,
-			Assigns:    1,
+			TagFetches: 1,
+			Begun:      1,
+			Writes:     1,
+			Entries:    1,
+			RolledBack: 1,
 		},
-		"Successful assignment": {
-			DB:         &DBMock{FetchDocumentByBranchIDFunc: stubBranch(false, nil)},
+		"Error returned by Tx.Commit": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
+				FetchTagFunc:                stubTag(nil),
+			},
+			Tx: &TxMock{
+				AssignBranchTagFunc: stubTagWrite(true, nil),
+				CommitFunc: func() error {
+					return assert.AnError
+				},
+			},
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			Payload:    `{"tagId":"` + _tagID.String() + `"}`,
+			Code:       http.StatusInternalServerError,
+			Body:       `{"code":"general","message":"internal server error"}`,
+			Fetches:    1,
+			TagFetches: 1,
+			Begun:      1,
+			Writes:     1,
+			Entries:    1,
+			Committed:  1,
+			RolledBack: 1,
+		},
+		"Tag the branch already carries records no entry": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
+				FetchTagFunc:                stubTag(nil),
+			},
+			Tx:         &TxMock{},
 			DocumentID: _documentID.String(),
 			BranchID:   _branchID.String(),
 			Payload:    `{"tagId":"` + _tagID.String() + `"}`,
 			Code:       http.StatusNoContent,
 			Fetches:    1,
-			Assigns:    1,
+			TagFetches: 1,
+			Begun:      1,
+			Writes:     1,
+			Committed:  1,
+			RolledBack: 1,
+			Notifies:   1,
+		},
+		"Successful change": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
+				FetchTagFunc:                stubTag(nil),
+			},
+			Tx:         &TxMock{AssignBranchTagFunc: stubTagWrite(true, nil)},
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			Payload:    `{"tagId":"` + _tagID.String() + `"}`,
+			Code:       http.StatusNoContent,
+			Fetches:    1,
+			TagFetches: 1,
+			Begun:      1,
+			Writes:     1,
+			Entries:    1,
+			Committed:  1,
+			RolledBack: 1,
 			Notifies:   1,
 		},
 	}
@@ -1012,6 +1135,8 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
+
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			tpc := &wsMock.Topic{}
 			branchTpc := &wsMock.Topic{}
@@ -1035,9 +1160,33 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 
 			assert.Equal(t, c.Code, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.Fetches)
-			assert.Len(t, c.DB.AssignBranchTagCalls(), c.Assigns)
+			assert.Len(t, c.DB.FetchTagCalls(), c.TagFetches)
+			assert.Len(t, c.DB.BeginTxCalls(), c.Begun)
+			assert.Len(t, c.Tx.AssignBranchTagCalls(), c.Writes)
+			assert.Len(t, c.Tx.InsertDocumentActivityEntriesCalls(), c.Entries)
+			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
+			assert.Len(t, c.Tx.RollbackCalls(), c.RolledBack)
 			assert.Len(t, tpc.PublishManyCalls(), c.Notifies)
 			assert.Len(t, branchTpc.PublishManyCalls(), c.Notifies)
+
+			if c.Writes > 0 {
+				call := c.Tx.AssignBranchTagCalls()[0]
+				assert.Equal(t, "org1", call.OrganizationID)
+				assert.Equal(t, _documentID, call.DocumentID)
+				assert.Equal(t, _branchID, call.BranchID)
+				assert.Equal(t, _tagID, call.TagID)
+			}
+
+			if c.Entries > 0 {
+				entries := c.Tx.InsertDocumentActivityEntriesCalls()[0].Entries
+				require.Len(t, entries, 1)
+				assert.Equal(t, activity.TypeTagAssigned, entries[0].Type)
+				assert.Equal(t, activity.UserActor("u1"), entries[0].Actor)
+				assert.Equal(t, activity.NewTarget(activity.TargetKindTag, _tagID.String()), entries[0].Target)
+				assert.Equal(t, activity.Metadata{activity.MetaKeyTagName: "Production"}, entries[0].Metadata)
+				assert.Equal(t, _documentID, entries[0].DocumentID)
+				assert.Equal(t, _branchID, entries[0].BranchID)
+			}
 
 			if c.Body != "" {
 				assert.JSONEq(t, c.Body, rec.Body.String())
@@ -1045,12 +1194,6 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 			}
 
 			assert.Zero(t, rec.Body.Len())
-
-			call := c.DB.AssignBranchTagCalls()[0]
-			assert.Equal(t, "org1", call.OrganizationID)
-			assert.Equal(t, _documentID, call.DocumentID)
-			assert.Equal(t, _branchID, call.BranchID)
-			assert.Equal(t, _tagID, call.TagID)
 		})
 	}
 }
@@ -1060,6 +1203,8 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 
 	cc := map[string]struct {
 		DB         *DBMock
+		Tx         *TxMock
+		BeginErr   error
 		NoSession  bool
 		DocumentID string
 		BranchID   string
@@ -1067,11 +1212,17 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 		Code       int
 		Body       string
 		Fetches    int
-		Unassigns  int
+		TagFetches int
+		Begun      int
+		Writes     int
+		Entries    int
+		Committed  int
+		RolledBack int
 		Notifies   int
 	}{
 		"No session in context": {
 			DB:         &DBMock{},
+			Tx:         &TxMock{},
 			NoSession:  true,
 			DocumentID: _documentID.String(),
 			BranchID:   _branchID.String(),
@@ -1081,6 +1232,7 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 		},
 		"Malformed document id": {
 			DB:         &DBMock{},
+			Tx:         &TxMock{},
 			DocumentID: "not-an-xid",
 			BranchID:   _branchID.String(),
 			TagID:      _tagID.String(),
@@ -1089,6 +1241,7 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 		},
 		"Malformed branch id": {
 			DB:         &DBMock{},
+			Tx:         &TxMock{},
 			DocumentID: _documentID.String(),
 			BranchID:   "not-an-xid",
 			TagID:      _tagID.String(),
@@ -1097,6 +1250,7 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 		},
 		"Malformed tag id": {
 			DB:         &DBMock{},
+			Tx:         &TxMock{},
 			DocumentID: _documentID.String(),
 			BranchID:   _branchID.String(),
 			TagID:      "not-an-xid",
@@ -1105,6 +1259,7 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 		},
 		"Error returned by DB.FetchDocumentByBranchID": {
 			DB:         &DBMock{FetchDocumentByBranchIDFunc: stubBranch(false, assert.AnError)},
+			Tx:         &TxMock{},
 			DocumentID: _documentID.String(),
 			BranchID:   _branchID.String(),
 			TagID:      _tagID.String(),
@@ -1114,6 +1269,7 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 		},
 		"Protected branch is refused": {
 			DB:         &DBMock{FetchDocumentByBranchIDFunc: stubBranch(true, nil)},
+			Tx:         &TxMock{},
 			DocumentID: _documentID.String(),
 			BranchID:   _branchID.String(),
 			TagID:      _tagID.String(),
@@ -1121,10 +1277,63 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 			Body:       `{"code":"document.branch_protected","message":"a protected branch cannot be changed"}`,
 			Fetches:    1,
 		},
-		"Error returned by DB.UnassignBranchTag": {
+		"Error returned by DB.FetchTag": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
-				UnassignBranchTagFunc: func(context.Context, string, xid.ID, xid.ID, xid.ID) error {
+				FetchTagFunc:                stubTag(assert.AnError),
+			},
+			Tx:         &TxMock{},
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			TagID:      _tagID.String(),
+			Code:       http.StatusInternalServerError,
+			Body:       `{"code":"general","message":"internal server error"}`,
+			Fetches:    1,
+			TagFetches: 1,
+		},
+		"Error returned by DB.BeginTx": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
+				FetchTagFunc:                stubTag(nil),
+			},
+			Tx:         &TxMock{},
+			BeginErr:   assert.AnError,
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			TagID:      _tagID.String(),
+			Code:       http.StatusInternalServerError,
+			Body:       `{"code":"general","message":"internal server error"}`,
+			Fetches:    1,
+			TagFetches: 1,
+			Begun:      1,
+		},
+		"Error returned by Tx.UnassignBranchTag": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
+				FetchTagFunc:                stubTag(nil),
+			},
+			Tx: &TxMock{
+				UnassignBranchTagFunc: stubTagWrite(false, assert.AnError),
+			},
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			TagID:      _tagID.String(),
+			Code:       http.StatusInternalServerError,
+			Body:       `{"code":"general","message":"internal server error"}`,
+			Fetches:    1,
+			TagFetches: 1,
+			Begun:      1,
+			Writes:     1,
+			RolledBack: 1,
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
+				FetchTagFunc:                stubTag(nil),
+			},
+			Tx: &TxMock{
+				UnassignBranchTagFunc: stubTagWrite(true, nil),
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
 					return assert.AnError
 				},
 			},
@@ -1134,16 +1343,71 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 			Code:       http.StatusInternalServerError,
 			Body:       `{"code":"general","message":"internal server error"}`,
 			Fetches:    1,
-			Unassigns:  1,
+			TagFetches: 1,
+			Begun:      1,
+			Writes:     1,
+			Entries:    1,
+			RolledBack: 1,
 		},
-		"Successful unassignment": {
-			DB:         &DBMock{FetchDocumentByBranchIDFunc: stubBranch(false, nil)},
+		"Error returned by Tx.Commit": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
+				FetchTagFunc:                stubTag(nil),
+			},
+			Tx: &TxMock{
+				UnassignBranchTagFunc: stubTagWrite(true, nil),
+				CommitFunc: func() error {
+					return assert.AnError
+				},
+			},
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			TagID:      _tagID.String(),
+			Code:       http.StatusInternalServerError,
+			Body:       `{"code":"general","message":"internal server error"}`,
+			Fetches:    1,
+			TagFetches: 1,
+			Begun:      1,
+			Writes:     1,
+			Entries:    1,
+			Committed:  1,
+			RolledBack: 1,
+		},
+		"Tag the branch does not carry records no entry": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
+				FetchTagFunc:                stubTag(nil),
+			},
+			Tx:         &TxMock{},
 			DocumentID: _documentID.String(),
 			BranchID:   _branchID.String(),
 			TagID:      _tagID.String(),
 			Code:       http.StatusNoContent,
 			Fetches:    1,
-			Unassigns:  1,
+			TagFetches: 1,
+			Begun:      1,
+			Writes:     1,
+			Committed:  1,
+			RolledBack: 1,
+			Notifies:   1,
+		},
+		"Successful change": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch(false, nil),
+				FetchTagFunc:                stubTag(nil),
+			},
+			Tx:         &TxMock{UnassignBranchTagFunc: stubTagWrite(true, nil)},
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			TagID:      _tagID.String(),
+			Code:       http.StatusNoContent,
+			Fetches:    1,
+			TagFetches: 1,
+			Begun:      1,
+			Writes:     1,
+			Entries:    1,
+			Committed:  1,
+			RolledBack: 1,
 			Notifies:   1,
 		},
 	}
@@ -1151,6 +1415,8 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
+
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			tpc := &wsMock.Topic{}
 			branchTpc := &wsMock.Topic{}
@@ -1175,9 +1441,33 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 
 			assert.Equal(t, c.Code, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.Fetches)
-			assert.Len(t, c.DB.UnassignBranchTagCalls(), c.Unassigns)
+			assert.Len(t, c.DB.FetchTagCalls(), c.TagFetches)
+			assert.Len(t, c.DB.BeginTxCalls(), c.Begun)
+			assert.Len(t, c.Tx.UnassignBranchTagCalls(), c.Writes)
+			assert.Len(t, c.Tx.InsertDocumentActivityEntriesCalls(), c.Entries)
+			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
+			assert.Len(t, c.Tx.RollbackCalls(), c.RolledBack)
 			assert.Len(t, tpc.PublishManyCalls(), c.Notifies)
 			assert.Len(t, branchTpc.PublishManyCalls(), c.Notifies)
+
+			if c.Writes > 0 {
+				call := c.Tx.UnassignBranchTagCalls()[0]
+				assert.Equal(t, "org1", call.OrganizationID)
+				assert.Equal(t, _documentID, call.DocumentID)
+				assert.Equal(t, _branchID, call.BranchID)
+				assert.Equal(t, _tagID, call.TagID)
+			}
+
+			if c.Entries > 0 {
+				entries := c.Tx.InsertDocumentActivityEntriesCalls()[0].Entries
+				require.Len(t, entries, 1)
+				assert.Equal(t, activity.TypeTagUnassigned, entries[0].Type)
+				assert.Equal(t, activity.UserActor("u1"), entries[0].Actor)
+				assert.Equal(t, activity.NewTarget(activity.TargetKindTag, _tagID.String()), entries[0].Target)
+				assert.Equal(t, activity.Metadata{activity.MetaKeyTagName: "Production"}, entries[0].Metadata)
+				assert.Equal(t, _documentID, entries[0].DocumentID)
+				assert.Equal(t, _branchID, entries[0].BranchID)
+			}
 
 			if c.Body != "" {
 				assert.JSONEq(t, c.Body, rec.Body.String())
@@ -1185,12 +1475,6 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 			}
 
 			assert.Zero(t, rec.Body.Len())
-
-			call := c.DB.UnassignBranchTagCalls()[0]
-			assert.Equal(t, "org1", call.OrganizationID)
-			assert.Equal(t, _documentID, call.DocumentID)
-			assert.Equal(t, _branchID, call.BranchID)
-			assert.Equal(t, _tagID, call.TagID)
 		})
 	}
 }
@@ -1246,6 +1530,23 @@ func Test_extractBranchPath(t *testing.T) {
 
 // stubBranch returns a DB.FetchDocumentByBranchID that finds a branch,
 // protected or not, or fails with err.
+// stubTag returns a tag fetch that finds the tag or fails with err.
+func stubTagWrite(changed bool, err error) func(context.Context, string, xid.ID, xid.ID, xid.ID) (bool, error) {
+	return func(context.Context, string, xid.ID, xid.ID, xid.ID) (bool, error) {
+		return changed, err
+	}
+}
+
+func stubTag(err error) func(context.Context, xid.ID, string) (*tagCore.Tag, error) {
+	return func(context.Context, xid.ID, string) (*tagCore.Tag, error) {
+		if err != nil {
+			return nil, err
+		}
+
+		return &tagCore.Tag{ID: _tagID, TagName: "Production"}, nil
+	}
+}
+
 func stubBranch(protected bool, err error) func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 	return func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 		if err != nil {

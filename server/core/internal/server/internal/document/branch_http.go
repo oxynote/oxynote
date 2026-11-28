@@ -5,6 +5,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/manager"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
@@ -66,6 +67,13 @@ func (h *Handler) UpdateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
 	if err := tx.UpdateDocumentBranchMetadata(r.Context(), ndoc); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	entries := activity.NewBranchUpdated(activity.UserActor(session.UserID), *doc, ndoc)
+
+	if err := tx.InsertDocumentActivityEntries(r.Context(), entries...); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -376,6 +384,13 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	entries := activity.NewBranchMerged(activity.UserActor(session.UserID), *fromDoc, ndoc)
+
+	if err = tx.InsertDocumentActivityEntries(r.Context(), entries...); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	if err := tx.ReplaceBranchTags(r.Context(), session.ActiveOrganizationID, fromDoc.BranchID, toDoc.BranchID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -518,6 +533,13 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		true,
 	)
 	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	entries := activity.NewBranchForked(activity.UserActor(session.UserID), *sourceDoc, newDoc)
+
+	if err = tx.InsertDocumentActivityEntries(r.Context(), entries...); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}

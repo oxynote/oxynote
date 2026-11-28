@@ -176,7 +176,7 @@ func (h *Handler) ResetDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hk, err := h.hookMan.ResetHook(r.Context(), id, documentID, session.ActiveOrganizationID)
+	hk, err := h.hookMan.ResetHook(r.Context(), id, documentID, session.ActiveOrganizationID, session.UserID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -250,7 +250,7 @@ type Manager interface {
 	// credited to updatedBy.
 	DeleteHook(ctx context.Context, id, documentID xid.ID, organizationID, updatedBy string) error
 
-	// ResetHook should reset the document's hook and return the stored
-	// hook.
-	ResetHook(ctx context.Context, id, documentID xid.ID, organizationID string) (*hookCore.Hook, error)
+	// ResetHook should reset the document's hook, credited to updatedBy,
+	// and return the stored hook.
+	ResetHook(ctx context.Context, id, documentID xid.ID, organizationID, updatedBy string) (*hookCore.Hook, error)
 }

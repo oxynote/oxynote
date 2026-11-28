@@ -298,7 +298,8 @@ func Test_agent_CheckDocumentFileReferenced(t *testing.T) {
 			// the edit replaced the text, but its revision keeps the file.
 			c.Content = comment.Content{"text": "edited"}
 			c.UpdatedAt = null.TimeFrom(c.CreatedAt.Add(time.Minute))
-			require.NoError(t, db.UpdateDocumentComment(context.Background(), c))
+			_, err := db.UpdateDocumentComment(context.Background(), c)
+			require.NoError(t, err)
 
 			return tcase{ID: "file-ref", DocumentID: c.DocumentID, Result: true}
 		},

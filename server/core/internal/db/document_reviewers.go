@@ -80,8 +80,9 @@ func (a *agent) UpdateBranchReviewer(ctx context.Context, reviewer document.Bran
 	return err
 }
 
-// DeleteBranchReviewer removes a reviewer from a branch.
-func (a *agent) DeleteBranchReviewer(ctx context.Context, branchID xid.ID, userID, organizationID string) error {
+// DeleteBranchReviewer removes a reviewer from a branch and reports whether
+// the user was one.
+func (a *agent) DeleteBranchReviewer(ctx context.Context, branchID xid.ID, userID, organizationID string) (bool, error) {
 	q, args := a.builder.Delete("branch_reviewers").
 		Where(sq.Eq{
 			"fk_branch_id":       branchID,
@@ -89,9 +90,17 @@ func (a *agent) DeleteBranchReviewer(ctx context.Context, branchID xid.ID, userI
 			"fk_organization_id": organizationID,
 		}).MustSql()
 
-	_, err := a.sql.ExecContext(ctx, q, args...)
+	res, err := a.sql.ExecContext(ctx, q, args...)
+	if err != nil {
+		return false, err
+	}
 
-	return err
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+
+	return n > 0, nil
 }
 
 // PromoteBranchApprovals promotes reviewer approvals from one branch to another.

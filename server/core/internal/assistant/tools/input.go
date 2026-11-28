@@ -980,7 +980,7 @@ func (i *input) AssignTag(documentID, branchID, tagID xid.ID) error {
 		return i.protectedBranchError(doc)
 	}
 
-	if err := i.db.AssignBranchTag(i.ctx, i.orgID, doc.ID, doc.BranchID, tagID); err != nil {
+	if _, err := i.db.AssignBranchTag(i.ctx, i.orgID, doc.ID, doc.BranchID, tagID); err != nil {
 		if errutil.IsNotFound(err) {
 			return fmt.Errorf("tag %s: %w", tagID, ErrUnknownTag)
 		}
@@ -1012,7 +1012,7 @@ func (i *input) UnassignTag(documentID, branchID, tagID xid.ID) error {
 		return err
 	}
 
-	if err := i.db.UnassignBranchTag(i.ctx, i.orgID, doc.ID, doc.BranchID, tagID); err != nil {
+	if _, err := i.db.UnassignBranchTag(i.ctx, i.orgID, doc.ID, doc.BranchID, tagID); err != nil {
 		return err
 	}
 
@@ -1170,7 +1170,7 @@ func (i *input) UpdateHook(hk *hook.Hook, settings processor.Settings) error {
 // ResetHook restores the hook's triggered flag and state, keeping its
 // settings.
 func (i *input) ResetHook(hk *hook.Hook) error {
-	reset, err := i.hookMan.ResetHook(i.ctx, hk.ID, hk.DocumentID.V, i.orgID)
+	reset, err := i.hookMan.ResetHook(i.ctx, hk.ID, hk.DocumentID.V, i.orgID, i.userID)
 	if err != nil {
 		return err
 	}
@@ -1337,11 +1337,11 @@ type TagDB interface {
 
 	// AssignBranchTag should make a document's branch carry a tag,
 	// changing nothing when it already does.
-	AssignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) error
+	AssignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) (bool, error)
 
 	// UnassignBranchTag should stop a document's branch carrying a tag,
 	// changing nothing when it does not.
-	UnassignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) error
+	UnassignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) (bool, error)
 
 	// UpdateTagTree should rewrite the display order of the org's tags to
 	// the order of the given tree.
@@ -1396,9 +1396,9 @@ type HookManager interface {
 	// credited to updatedBy.
 	DeleteHook(ctx context.Context, id, documentID xid.ID, organizationID, updatedBy string) error
 
-	// ResetHook should reset the document's hook and return the stored
-	// hook.
-	ResetHook(ctx context.Context, id, documentID xid.ID, organizationID string) (*hook.Hook, error)
+	// ResetHook should reset the document's hook, credited to updatedBy,
+	// and return the stored hook.
+	ResetHook(ctx context.Context, id, documentID xid.ID, organizationID, updatedBy string) (*hook.Hook, error)
 }
 
 // SearchQueue queues search jobs.

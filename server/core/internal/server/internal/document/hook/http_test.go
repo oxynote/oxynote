@@ -499,7 +499,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 		},
 		"Hook of another document": {
 			Man: &ManagerMock{
-				ResetHookFunc: func(context.Context, xid.ID, xid.ID, string) (*hookCore.Hook, error) {
+				ResetHookFunc: func(context.Context, xid.ID, xid.ID, string, string) (*hookCore.Hook, error) {
 					return nil, hookCore.ErrHookMismatch
 				},
 			},
@@ -508,7 +508,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 		},
 		"Error returned by Manager.ResetHook": {
 			Man: &ManagerMock{
-				ResetHookFunc: func(context.Context, xid.ID, xid.ID, string) (*hookCore.Hook, error) {
+				ResetHookFunc: func(context.Context, xid.ID, xid.ID, string, string) (*hookCore.Hook, error) {
 					return nil, errors.New("boom")
 				},
 			},
@@ -517,7 +517,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 		},
 		"Successful reset": {
 			Man: &ManagerMock{
-				ResetHookFunc: func(context.Context, xid.ID, xid.ID, string) (*hookCore.Hook, error) {
+				ResetHookFunc: func(context.Context, xid.ID, xid.ID, string, string) (*hookCore.Hook, error) {
 					return &hookCore.Hook{
 						ID:             _hookID,
 						Type:           hookCore.TypeScheduledReminder,
@@ -552,6 +552,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 				assert.Equal(t, _hookID, ff[0].ID)
 				assert.Equal(t, _documentID, ff[0].DocumentID)
 				assert.Equal(t, "org1", ff[0].OrganizationID)
+				assert.Equal(t, "u1", ff[0].UpdatedBy)
 			}
 		})
 	}

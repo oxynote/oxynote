@@ -17,6 +17,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
@@ -1097,13 +1098,18 @@ func Test_Manager_notifyTransition(t *testing.T) {
 	malformedGithubHook := triggeredGithubHook
 	malformedGithubHook.State = null.ValueFrom(processor.State(`{`))
 
+	branchlessFailedHook := failedHook
+	branchlessFailedHook.BranchID = null.Value[xid.ID]{}
+
 	cc := map[string]struct {
 		DB      *DBMock
 		Prev    hook.Hook
 		Hook    hook.Hook
 		Fetches int
-		Cores   []notification.Core
-		Log     string
+		// Entry is the type of the transition entry recorded, if any.
+		Entry activity.Type
+		Cores []notification.Core
+		Log   string
 	}{
 		"Hook that keeps its status and triggered flag": {
 			DB:   &DBMock{},
@@ -1129,12 +1135,36 @@ func Test_Manager_notifyTransition(t *testing.T) {
 			Prev:    urlHook,
 			Hook:    triggeredHook,
 			Fetches: 1,
+			Entry:   activity.TypeHookTriggered,
+		},
+		"Error returned by DB.InsertDocumentActivityEntries": {
+			DB: &DBMock{
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return assert.AnError
+				},
+			},
+			Prev:    urlHook,
+			Hook:    failedHook,
+			Fetches: 1,
+			Entry:   activity.TypeHookNeedsAttention,
+			Cores: []notification.Core{
+				notification.NewDocumentHookNeedsAttentionNotification(
+					urlHook.DocumentID.V,
+					hook.TypeURLWatcher,
+					null.String{},
+					branchID,
+					processor.StatusUnreachableURL,
+					urlHook.Settings,
+				),
+			},
+			Log: "cannot record hook transition",
 		},
 		"Hook that can no longer check its target": {
 			DB:      &DBMock{},
 			Prev:    urlHook,
 			Hook:    failedHook,
 			Fetches: 1,
+			Entry:   activity.TypeHookNeedsAttention,
 			Cores: []notification.Core{
 				notification.NewDocumentHookNeedsAttentionNotification(
 					urlHook.DocumentID.V,
@@ -1146,11 +1176,28 @@ func Test_Manager_notifyTransition(t *testing.T) {
 				),
 			},
 		},
+		"Hook without a branch records no entry": {
+			DB:      &DBMock{},
+			Prev:    urlHook,
+			Hook:    branchlessFailedHook,
+			Fetches: 1,
+			Cores: []notification.Core{
+				notification.NewDocumentHookNeedsAttentionNotification(
+					urlHook.DocumentID.V,
+					hook.TypeURLWatcher,
+					null.String{},
+					xid.ID{},
+					processor.StatusUnreachableURL,
+					urlHook.Settings,
+				),
+			},
+		},
 		"Hook that triggered": {
 			DB:      &DBMock{},
 			Prev:    urlHook,
 			Hook:    triggeredHook,
 			Fetches: 1,
+			Entry:   activity.TypeHookTriggered,
 			Cores: []notification.Core{
 				notification.NewDocumentHookTriggeredNotification(
 					urlHook.DocumentID.V,
@@ -1167,6 +1214,7 @@ func Test_Manager_notifyTransition(t *testing.T) {
 			Prev:    githubHook,
 			Hook:    triggeredGithubHook,
 			Fetches: 1,
+			Entry:   activity.TypeHookTriggered,
 			Cores: []notification.Core{
 				notification.NewDocumentHookTriggeredNotification(
 					urlHook.DocumentID.V,
@@ -1183,6 +1231,7 @@ func Test_Manager_notifyTransition(t *testing.T) {
 			Prev:    githubHook,
 			Hook:    malformedGithubHook,
 			Fetches: 1,
+			Entry:   activity.TypeHookTriggered,
 			Cores: []notification.Core{
 				notification.NewDocumentHookTriggeredNotification(
 					urlHook.DocumentID.V,
@@ -1213,8 +1262,18 @@ func Test_Manager_notifyTransition(t *testing.T) {
 			assert.Len(t, c.DB.FetchDocumentMaintainersCalls(), c.Fetches)
 			assert.Equal(t, c.Cores, pub.cores)
 
+			ee := c.DB.InsertDocumentActivityEntriesCalls()
+
+			if c.Entry == "" {
+				assert.Empty(t, ee)
+			} else {
+				require.Len(t, ee, 1)
+				assertHookEntry(t, ee[0].Entries, c.Entry, activity.SystemActor(), c.Hook)
+			}
+
 			if c.Log == "" {
 				assert.NotContains(t, buf.String(), "cannot summarize")
+				assert.NotContains(t, buf.String(), "cannot record")
 
 				return
 			}

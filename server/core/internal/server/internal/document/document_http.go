@@ -11,6 +11,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/manager"
@@ -257,14 +258,35 @@ func (h *Handler) RequestBranchReviewer(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	err = h.upsertBranchReviewer(
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	reset, err := upsertBranchReviewer(
 		r.Context(),
+		tx,
 		branchDoc.BranchID,
 		inp.UserID,
 		session.ActiveOrganizationID,
 		false,
 	)
 	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	entry := activity.NewReviewRequested(activity.UserActor(session.UserID), *branchDoc, inp.UserID, reset)
+
+	if err = tx.InsertDocumentActivityEntries(r.Context(), entry); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -329,7 +351,30 @@ func (h *Handler) RemoveBranchReviewer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.DeleteBranchReviewer(r.Context(), branchID, userID, session.ActiveOrganizationID); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	removed, err := tx.DeleteBranchReviewer(r.Context(), branchID, userID, session.ActiveOrganizationID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if removed {
+		entry := activity.NewReviewWithdrawn(activity.UserActor(session.UserID), *branchDoc, userID)
+
+		if err = tx.InsertDocumentActivityEntries(r.Context(), entry); err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -618,7 +663,9 @@ func (h *Handler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.insertDocumentTx(r.Context(), doc, null.Value[xid.ID]{}, nil, session); err != nil {
+	entry := activity.NewDocumentCreated(activity.UserActor(session.UserID), doc)
+
+	if err := h.insertDocumentTx(r.Context(), doc, entry, null.Value[xid.ID]{}, nil, session); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -677,14 +724,42 @@ func (h *Handler) UpdateBranchReviewApproval(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	err = h.upsertBranchReviewer(
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	changed, err := upsertBranchReviewer(
 		r.Context(),
+		tx,
 		branchDoc.BranchID,
 		session.UserID,
 		session.ActiveOrganizationID,
 		inp.Approved,
 	)
 	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if changed {
+		tp := activity.TypeReviewUnapproved
+		if inp.Approved {
+			tp = activity.TypeReviewApproved
+		}
+
+		entry := activity.NewReviewEntry(activity.UserActor(session.UserID), tp, *branchDoc)
+
+		if err = tx.InsertDocumentActivityEntries(r.Context(), entry); err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -786,7 +861,9 @@ func (h *Handler) DuplicateDocument(w http.ResponseWriter, r *http.Request) {
 
 	duplDoc, files, newBlockIDs := doc.Duplicate(session.UserID)
 
-	if err := h.insertDocumentTx(r.Context(), duplDoc, null.ValueFrom(doc.BranchID), newBlockIDs, session); err != nil {
+	entry := activity.NewDocumentDuplicated(activity.UserActor(session.UserID), duplDoc, doc.ID)
+
+	if err := h.insertDocumentTx(r.Context(), duplDoc, entry, null.ValueFrom(doc.BranchID), newBlockIDs, session); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -867,17 +944,19 @@ func (h *Handler) copyDocumentFiles(
 	}
 }
 
-// upsertBranchReviewer records the reviewer's approval state, inserting the
-// row when the user is not yet a reviewer of the branch. PreviouslyApproved
-// is never written here: UpdateBranchReviewer persists currently_approved
-// alone, and the promotion on merge owns the other column.
-func (h *Handler) upsertBranchReviewer(
+// upsertBranchReviewer records the reviewer's approval state in the
+// transaction and reports whether it changed, inserting the row when the
+// user is not yet a reviewer of the branch. PreviouslyApproved is never written here:
+// UpdateBranchReviewer persists currently_approved alone, and the
+// promotion on merge owns the other column.
+func upsertBranchReviewer(
 	ctx context.Context,
+	tx Tx,
 	branchID xid.ID,
 	userID string,
 	organizationID string,
 	approved bool,
-) error {
+) (bool, error) {
 	reviewer := documentCore.BranchReviewer{
 		BranchID:          branchID,
 		UserID:            userID,
@@ -885,20 +964,30 @@ func (h *Handler) upsertBranchReviewer(
 		CurrentlyApproved: approved,
 	}
 
-	_, err := h.db.FetchBranchReviewer(ctx, branchID, userID, organizationID)
+	stored, err := tx.FetchBranchReviewer(ctx, branchID, userID, organizationID)
 
 	switch {
 	case err == nil:
-		return h.db.UpdateBranchReviewer(ctx, reviewer)
+		if err = tx.UpdateBranchReviewer(ctx, reviewer); err != nil {
+			return false, err
+		}
+
+		return stored.CurrentlyApproved != approved, nil
 	case errutil.IsNotFound(err):
-		return h.db.InsertBranchReviewer(ctx, reviewer)
+		if err = tx.InsertBranchReviewer(ctx, reviewer); err != nil {
+			return false, err
+		}
+
+		// a user who was no reviewer had no approval to take back.
+		return approved, nil
 	default:
-		return err
+		return false, err
 	}
 }
 
-// insertDocumentTx inserts a new document together with its maintainer,
-// its search job and the boundary history entry of its first content, and
+// insertDocumentTx inserts a new document together with its activity
+// entry, its maintainer, its search job and the boundary history entry of
+// its first content, and
 // slots it at the top of its parent's tree, all in one transaction. A
 // document duplicated from a branch also takes that branch's tags and its
 // hooks, re-anchored through newBlockIDs. Copied hooks are set up after
@@ -907,6 +996,7 @@ func (h *Handler) upsertBranchReviewer(
 func (h *Handler) insertDocumentTx(
 	ctx context.Context,
 	doc documentCore.Document,
+	entry activity.Entry,
 	sourceBranchID null.Value[xid.ID],
 	newBlockIDs map[string]string,
 	session auth.Session,
@@ -944,6 +1034,10 @@ func (h *Handler) insertDocumentTx(
 		true,
 	)
 	if err != nil {
+		return err
+	}
+
+	if err = tx.InsertDocumentActivityEntries(ctx, entry); err != nil {
 		return err
 	}
 
@@ -1030,6 +1124,9 @@ type DBAgent interface {
 	// DeleteDocumentCommentsByBranchID should soft-delete all comments for
 	// a branch.
 	DeleteDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error
+
+	// InsertDocumentActivityEntries should insert the activity entries.
+	InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error
 }
 
 // HooksDBAgent is an interface that handles communication with the document
@@ -1204,8 +1301,9 @@ type ReviewersDBAgent interface {
 	// UpdateBranchReviewer should update the approval state of a branch reviewer.
 	UpdateBranchReviewer(ctx context.Context, reviewer documentCore.BranchReviewer) error
 
-	// DeleteBranchReviewer should remove a reviewer from a branch.
-	DeleteBranchReviewer(ctx context.Context, branchID xid.ID, userID, organizationID string) error
+	// DeleteBranchReviewer should remove a reviewer from a branch and
+	// report whether the user was one.
+	DeleteBranchReviewer(ctx context.Context, branchID xid.ID, userID, organizationID string) (bool, error)
 
 	// PromoteBranchApprovals should promote reviewer approvals from one branch to another.
 	PromoteBranchApprovals(ctx context.Context, fromBranchID, toBranchID xid.ID, organizationID string) error

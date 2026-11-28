@@ -832,7 +832,8 @@ func Test_backfillDocumentActivityEntries(t *testing.T) {
 			edited := c
 			edited.Content = comment.Content{"text": "edited"}
 			edited.UpdatedAt = null.TimeFrom(c.CreatedAt.Add(time.Minute))
-			require.NoError(t, db.UpdateDocumentComment(context.Background(), edited))
+			_, err := db.UpdateDocumentComment(context.Background(), edited)
+			require.NoError(t, err)
 
 			edited.Resolved = true
 			edited.ResolvedAt = null.TimeFrom(c.CreatedAt.Add(2 * time.Minute))

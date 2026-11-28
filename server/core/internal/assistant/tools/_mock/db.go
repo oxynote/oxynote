@@ -28,7 +28,7 @@ var _ tools.DB = &DB{}
 //
 //		// make and configure a mocked tools.DB
 //		mockedDB := &DB{
-//			AssignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+//			AssignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error) {
 //				panic("mock out the AssignBranchTag method")
 //			},
 //			BeginTxFunc: func(ctx context.Context) (sqlutil.Tx, error) {
@@ -91,7 +91,7 @@ var _ tools.DB = &DB{}
 //			InsertTagFunc: func(ctx context.Context, t tag.Tag) error {
 //				panic("mock out the InsertTag method")
 //			},
-//			UnassignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+//			UnassignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error) {
 //				panic("mock out the UnassignBranchTag method")
 //			},
 //			UpdateDocumentParentIDFunc: func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error {
@@ -111,7 +111,7 @@ var _ tools.DB = &DB{}
 //	}
 type DB struct {
 	// AssignBranchTagFunc mocks the AssignBranchTag method.
-	AssignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error
+	AssignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error)
 
 	// BeginTxFunc mocks the BeginTx method.
 	BeginTxFunc func(ctx context.Context) (sqlutil.Tx, error)
@@ -174,7 +174,7 @@ type DB struct {
 	InsertTagFunc func(ctx context.Context, t tag.Tag) error
 
 	// UnassignBranchTagFunc mocks the UnassignBranchTag method.
-	UnassignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error
+	UnassignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error)
 
 	// UpdateDocumentParentIDFunc mocks the UpdateDocumentParentID method.
 	UpdateDocumentParentIDFunc func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error
@@ -443,7 +443,7 @@ type DB struct {
 }
 
 // AssignBranchTag calls AssignBranchTagFunc.
-func (mock *DB) AssignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+func (mock *DB) AssignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		OrganizationID string
@@ -462,9 +462,10 @@ func (mock *DB) AssignBranchTag(ctx context.Context, organizationID string, docu
 	mock.lockAssignBranchTag.Unlock()
 	if mock.AssignBranchTagFunc == nil {
 		var (
+			bOut   bool
 			errOut error
 		)
-		return errOut
+		return bOut, errOut
 	}
 	return mock.AssignBranchTagFunc(ctx, organizationID, documentID, branchID, tagID)
 }
@@ -1359,7 +1360,7 @@ func (mock *DB) InsertTagCalls() []struct {
 }
 
 // UnassignBranchTag calls UnassignBranchTagFunc.
-func (mock *DB) UnassignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+func (mock *DB) UnassignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		OrganizationID string
@@ -1378,9 +1379,10 @@ func (mock *DB) UnassignBranchTag(ctx context.Context, organizationID string, do
 	mock.lockUnassignBranchTag.Unlock()
 	if mock.UnassignBranchTagFunc == nil {
 		var (
+			bOut   bool
 			errOut error
 		)
-		return errOut
+		return bOut, errOut
 	}
 	return mock.UnassignBranchTagFunc(ctx, organizationID, documentID, branchID, tagID)
 }
