@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/document/comment"
 )
@@ -24,4 +25,35 @@ func (a *agent) recordDocumentCommentRevision(ctx context.Context, tx *sqlx.Tx, 
 	_, err := tx.ExecContext(ctx, q, args...)
 
 	return err
+}
+
+// fetchDocumentCommentRevisionsByIDs retrieves the comment revisions
+// with the given ids.
+func (a *agent) fetchDocumentCommentRevisionsByIDs(
+	ctx context.Context,
+	ids []string,
+	organizationID string,
+) ([]comment.Revision, error) {
+	q, args := a.builder.Select(
+		"id",
+		"fk_organization_id",
+		"fk_document_comment_id",
+		"content",
+		"fk_user_id",
+		"created_at",
+	).
+		From("document_comment_revisions").
+		Where(sq.Eq{
+			"id":                 ids,
+			"fk_organization_id": organizationID,
+		}).
+		MustSql()
+
+	revs := []comment.Revision{}
+
+	if err := sqlx.SelectContext(ctx, a.sql, &revs, q, args...); err != nil {
+		return nil, err
+	}
+
+	return revs, nil
 }

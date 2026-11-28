@@ -45,6 +45,48 @@ ALTER TABLE ONLY public.data_sources
 ALTER TABLE ONLY public.data_sources
     ADD CONSTRAINT data_sources_fk_organization_id_fkey FOREIGN KEY (fk_organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
 
+CREATE TABLE public.document_activity_entries (
+    id text NOT NULL,
+    fk_organization_id text NOT NULL,
+    fk_document_id text NOT NULL,
+    fk_branch_id text NOT NULL,
+    actor_kind text NOT NULL,
+    fk_actor_id text,
+    actor_client_id text,
+    category text NOT NULL,
+    type text NOT NULL,
+    target_kind text,
+    target_id text,
+    metadata jsonb NOT NULL,
+    created_at timestamp without time zone NOT NULL,
+    updated_at timestamp without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.document_activity_entries
+    ADD CONSTRAINT document_activity_entries_pkey PRIMARY KEY (id);
+
+CREATE INDEX document_activity_entries_fk_actor_id_idx ON public.document_activity_entries USING btree (fk_actor_id);
+
+CREATE INDEX document_activity_entries_fk_branch_id_category_created_at_idx ON public.document_activity_entries USING btree (fk_branch_id, category, created_at DESC, id DESC);
+
+CREATE INDEX document_activity_entries_fk_branch_id_created_at_idx ON public.document_activity_entries USING btree (fk_branch_id, created_at DESC, id DESC);
+
+CREATE INDEX document_activity_entries_fk_document_id_idx ON public.document_activity_entries USING btree (fk_document_id);
+
+CREATE INDEX document_activity_entries_fk_organization_id_idx ON public.document_activity_entries USING btree (fk_organization_id);
+
+ALTER TABLE ONLY public.document_activity_entries
+    ADD CONSTRAINT document_activity_entries_fk_actor_id_fkey FOREIGN KEY (fk_actor_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.document_activity_entries
+    ADD CONSTRAINT document_activity_entries_fk_branch_id_fkey FOREIGN KEY (fk_branch_id) REFERENCES public.document_branches(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.document_activity_entries
+    ADD CONSTRAINT document_activity_entries_fk_document_id_fkey FOREIGN KEY (fk_document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.document_activity_entries
+    ADD CONSTRAINT document_activity_entries_fk_organization_id_fkey FOREIGN KEY (fk_organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
 CREATE TABLE public.document_branch_history_entries (
     id text NOT NULL,
     fk_document_id text NOT NULL,

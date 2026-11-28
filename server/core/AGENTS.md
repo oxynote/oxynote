@@ -173,8 +173,8 @@ entity, row structs in the domain packages, sections ordered `Create*`,
 column list, `FROM`, and the mandatory owner/organization scope), then the
 `apply<Entity>Filter`/`Sort` whitelists. Methods are
 `<Verb><Entity>[By<Key>]`. squirrel with `.MustSql()`, then sqlx;
-pagination through `sqlutil.Select`; empty results are a non-nil empty
-slice; always a deterministic tiebreaker after the user sort. IDs are
+pagination through `sqlutil.Select` (an append-only feed pages by cursor
+instead); empty results are a non-nil empty slice; always a deterministic tiebreaker after the user sort. IDs are
 generated in the domain layer, no `RETURNING`. Soft deletes set
 `deleted_at`; hard deletes happen in `Cleanup*` sweeps. A sqlhooks error
 hook maps constraint violations → user errors; an empty result is a bare
