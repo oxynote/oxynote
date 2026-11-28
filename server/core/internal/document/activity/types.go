@@ -184,6 +184,43 @@ func NewDocumentDuplicated(actor Actor, doc document.Document, sourceID xid.ID) 
 	)
 }
 
+// NewDocumentRenamed creates the entry of a document renamed on the
+// branch.
+func NewDocumentRenamed(actor Actor, before, after document.Document) Entry {
+	return newBranchEntry(actor, after, TypeDocumentRenamed, Target{}, Metadata{
+		MetaKeyFrom: before.DocumentName,
+		MetaKeyTo:   after.DocumentName,
+	})
+}
+
+// NewPersistActivity returns what a persist of the branch adds to its
+// log: the editors its content edit is credited to, and its other
+// entries. Only a user persist naming its editors is credited, so a
+// system write adds nothing.
+func NewPersistActivity(before, after document.Document, ui document.UpdateInput) ([]Actor, []Entry) {
+	if ui.System || len(ui.Maintainers) == 0 {
+		return nil, nil
+	}
+
+	var editors []Actor
+
+	if after.ContentEdited(before) {
+		for _, userID := range ui.Maintainers {
+			editors = append(editors, UserActor(userID))
+		}
+	}
+
+	var entries []Entry
+
+	// a persist does not say which editor renamed the document, so the
+	// newest one is credited, as the history entry is.
+	if after.DocumentName != before.DocumentName {
+		entries = append(entries, NewDocumentRenamed(UserActor(after.LastUpdatedBy.String), before, after))
+	}
+
+	return editors, entries
+}
+
 // NewBranchForked creates the entries of a fork, one on each branch, each
 // pointing at the other.
 func NewBranchForked(actor Actor, source, fork document.Document) []Entry {

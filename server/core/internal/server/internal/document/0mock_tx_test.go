@@ -129,6 +129,9 @@ var _ Tx = &TxMock{}
 //			RecordDocumentBranchHistoryEntryFunc: func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) error {
 //				panic("mock out the RecordDocumentBranchHistoryEntry method")
 //			},
+//			RecordDocumentContentEditFunc: func(ctx context.Context, doc documentCore.Document, editors []activity.Actor) error {
+//				panic("mock out the RecordDocumentContentEdit method")
+//			},
 //			ReplaceBranchTagsFunc: func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error {
 //				panic("mock out the ReplaceBranchTags method")
 //			},
@@ -264,6 +267,9 @@ type TxMock struct {
 
 	// RecordDocumentBranchHistoryEntryFunc mocks the RecordDocumentBranchHistoryEntry method.
 	RecordDocumentBranchHistoryEntryFunc func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) error
+
+	// RecordDocumentContentEditFunc mocks the RecordDocumentContentEdit method.
+	RecordDocumentContentEditFunc func(ctx context.Context, doc documentCore.Document, editors []activity.Actor) error
 
 	// ReplaceBranchTagsFunc mocks the ReplaceBranchTags method.
 	ReplaceBranchTagsFunc func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error
@@ -596,6 +602,15 @@ type TxMock struct {
 			// Boundary is the boundary argument value.
 			Boundary bool
 		}
+		// RecordDocumentContentEdit holds details about calls to the RecordDocumentContentEdit method.
+		RecordDocumentContentEdit []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Doc is the doc argument value.
+			Doc documentCore.Document
+			// Editors is the editors argument value.
+			Editors []activity.Actor
+		}
 		// ReplaceBranchTags holds details about calls to the ReplaceBranchTags method.
 		ReplaceBranchTags []struct {
 			// Ctx is the ctx argument value.
@@ -712,6 +727,7 @@ type TxMock struct {
 	lockInsertDocumentHook                  sync.RWMutex
 	lockPromoteBranchApprovals              sync.RWMutex
 	lockRecordDocumentBranchHistoryEntry    sync.RWMutex
+	lockRecordDocumentContentEdit           sync.RWMutex
 	lockReplaceBranchTags                   sync.RWMutex
 	lockRollback                            sync.RWMutex
 	lockUpdateBranchReviewer                sync.RWMutex
@@ -2193,6 +2209,49 @@ func (mock *TxMock) RecordDocumentBranchHistoryEntryCalls() []struct {
 	mock.lockRecordDocumentBranchHistoryEntry.RLock()
 	calls = mock.calls.RecordDocumentBranchHistoryEntry
 	mock.lockRecordDocumentBranchHistoryEntry.RUnlock()
+	return calls
+}
+
+// RecordDocumentContentEdit calls RecordDocumentContentEditFunc.
+func (mock *TxMock) RecordDocumentContentEdit(ctx context.Context, doc documentCore.Document, editors []activity.Actor) error {
+	callInfo := struct {
+		Ctx     context.Context
+		Doc     documentCore.Document
+		Editors []activity.Actor
+	}{
+		Ctx:     ctx,
+		Doc:     doc,
+		Editors: editors,
+	}
+	mock.lockRecordDocumentContentEdit.Lock()
+	mock.calls.RecordDocumentContentEdit = append(mock.calls.RecordDocumentContentEdit, callInfo)
+	mock.lockRecordDocumentContentEdit.Unlock()
+	if mock.RecordDocumentContentEditFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.RecordDocumentContentEditFunc(ctx, doc, editors)
+}
+
+// RecordDocumentContentEditCalls gets all the calls that were made to RecordDocumentContentEdit.
+// Check the length with:
+//
+//	len(mockedTx.RecordDocumentContentEditCalls())
+func (mock *TxMock) RecordDocumentContentEditCalls() []struct {
+	Ctx     context.Context
+	Doc     documentCore.Document
+	Editors []activity.Actor
+} {
+	var calls []struct {
+		Ctx     context.Context
+		Doc     documentCore.Document
+		Editors []activity.Actor
+	}
+	mock.lockRecordDocumentContentEdit.RLock()
+	calls = mock.calls.RecordDocumentContentEdit
+	mock.lockRecordDocumentContentEdit.RUnlock()
 	return calls
 }
 

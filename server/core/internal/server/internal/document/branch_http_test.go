@@ -160,6 +160,21 @@ func Test_Handler_FetchDocumentBranchByIDUnsafe(t *testing.T) {
 
 func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 	validBody := `{"name":"Renamed","maintainers":["u1","u9"]}`
+	editBody := `{"name":"Doc","content":{"type":"doc","content":[{"type":"paragraph"}]},"maintainers":["u1","u9"]}`
+
+	// textDoc serves the stored document holding one line of text.
+	textDoc := func(context.Context, xid.ID) (*documentCore.Document, error) {
+		doc := storedDoc()
+		doc.Content = documentCore.RootBlock{
+			Type: documentCore.BlockNodeDoc,
+			Content: []documentCore.Block{{
+				Type:    documentCore.BlockNodeParagraph,
+				Content: []documentCore.Block{{Type: documentCore.BlockNodeText, Text: "hi"}},
+			}},
+		}
+
+		return doc, nil
+	}
 
 	cc := map[string]struct {
 		DB          *DBMock
@@ -185,6 +200,14 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 		FetchDocumentMaintainers      int
 		UpsertDocumentMaintainers     int
 		Rollback                      int
+		// Edits is how many times the persist records a content edit.
+		Edits int
+		// Editors is who the content edit is credited to.
+		Editors []activity.Actor
+		// Entries is how many times the persist inserts its entries.
+		Entries int
+		// Renamed tells whether the entries record a rename.
+		Renamed bool
 	}{
 		"Unchanged persist writes no history entry": {
 			DB: &DBMock{
@@ -204,6 +227,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			UpdateDocument:                1,
 			FetchDocumentMaintainers:      1,
 			UpsertDocumentMaintainers:     1,
+			Entries:                       1,
 			Rollback:                      1,
 		},
 		"Error returned by Tx.RecordDocumentBranchHistoryEntry": {
@@ -250,6 +274,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			BeginTx:                       1,
 			UpdateDocument:                1,
 			FetchDocumentMaintainers:      1,
+			Entries:                       1,
 			Rollback:                      1,
 		},
 		"Edit naming no maintainers records an unattributed entry": {
@@ -272,6 +297,99 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			BeginTx:                       1,
 			UpdateDocument:                1,
 			FetchDocumentMaintainers:      1,
+			Entries:                       1,
+			Rollback:                      1,
+		},
+		"Edit is credited to each editor": {
+			DB: &DBMock{
+				FetchDocumentUnsafeByBranchIDFunc: func(context.Context, xid.ID) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx: &TxMock{
+				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
+					return []string{"u1", "u9"}, nil
+				},
+			},
+			Body:                          editBody,
+			RespCode:                      http.StatusOK,
+			Committed:                     1,
+			Metadata:                      1,
+			SearchJobs:                    1,
+			History:                       1,
+			HistoryBy:                     null.StringFrom("u9"),
+			FetchDocumentUnsafeByBranchID: 1,
+			BeginTx:                       1,
+			UpdateDocument:                1,
+			FetchDocumentMaintainers:      1,
+			Edits:                         1,
+			Editors:                       []activity.Actor{activity.UserActor("u1"), activity.UserActor("u9")},
+			Entries:                       1,
+			Rollback:                      1,
+		},
+		"Comment mark alone is no edit": {
+			DB: &DBMock{FetchDocumentUnsafeByBranchIDFunc: textDoc},
+			Tx: &TxMock{
+				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
+					return []string{"u1", "u9"}, nil
+				},
+			},
+			Body:                          `{"name":"Doc","content":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"hi","marks":[{"type":"comment","attrs":{"commentId":"c1"}}]}]}]},"maintainers":["u1","u9"]}`,
+			RespCode:                      http.StatusOK,
+			Committed:                     1,
+			Metadata:                      1,
+			SearchJobs:                    1,
+			History:                       1,
+			HistoryBy:                     null.StringFrom("u9"),
+			FetchDocumentUnsafeByBranchID: 1,
+			BeginTx:                       1,
+			UpdateDocument:                1,
+			FetchDocumentMaintainers:      1,
+			Entries:                       1,
+			Rollback:                      1,
+		},
+		"Error returned by Tx.RecordDocumentContentEdit": {
+			DB: &DBMock{
+				FetchDocumentUnsafeByBranchIDFunc: func(context.Context, xid.ID) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx: &TxMock{
+				RecordDocumentContentEditFunc: func(context.Context, documentCore.Document, []activity.Actor) error {
+					return errors.New("boom")
+				},
+			},
+			Body:                          editBody,
+			RespCode:                      http.StatusInternalServerError,
+			History:                       1,
+			HistoryBy:                     null.StringFrom("u9"),
+			FetchDocumentUnsafeByBranchID: 1,
+			BeginTx:                       1,
+			UpdateDocument:                1,
+			Edits:                         1,
+			Editors:                       []activity.Actor{activity.UserActor("u1"), activity.UserActor("u9")},
+			Rollback:                      1,
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: &DBMock{
+				FetchDocumentUnsafeByBranchIDFunc: func(context.Context, xid.ID) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx: &TxMock{
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return errors.New("boom")
+				},
+			},
+			Body:                          validBody,
+			RespCode:                      http.StatusInternalServerError,
+			History:                       1,
+			HistoryBy:                     null.StringFrom("u9"),
+			FetchDocumentUnsafeByBranchID: 1,
+			BeginTx:                       1,
+			UpdateDocument:                1,
+			Entries:                       1,
+			Renamed:                       true,
 			Rollback:                      1,
 		},
 		"Missing document ID parameter": {
@@ -388,6 +506,8 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			BeginTx:                       1,
 			UpdateDocument:                1,
 			FetchDocumentMaintainers:      1,
+			Entries:                       1,
+			Renamed:                       true,
 			Rollback:                      1,
 		},
 		"Error returned by Tx.UpsertDocumentMaintainers": {
@@ -410,6 +530,8 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			UpdateDocument:                1,
 			FetchDocumentMaintainers:      1,
 			UpsertDocumentMaintainers:     1,
+			Entries:                       1,
+			Renamed:                       true,
 			Rollback:                      1,
 		},
 		"Error returned by SearchQueue.Enqueue": {
@@ -437,6 +559,8 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			BeginTx:                       1,
 			UpdateDocument:                1,
 			FetchDocumentMaintainers:      1,
+			Entries:                       1,
+			Renamed:                       true,
 			Rollback:                      1,
 		},
 		"Error returned by Tx.Commit": {
@@ -463,6 +587,8 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			BeginTx:                       1,
 			UpdateDocument:                1,
 			FetchDocumentMaintainers:      1,
+			Entries:                       1,
+			Renamed:                       true,
 			Rollback:                      1,
 		},
 		"Successful update with new maintainers": {
@@ -485,6 +611,8 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			UpdateDocument:                1,
 			FetchDocumentMaintainers:      1,
 			UpsertDocumentMaintainers:     1,
+			Entries:                       1,
+			Renamed:                       true,
 			Rollback:                      1,
 		},
 		"Successful update without new maintainers": {
@@ -509,6 +637,8 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			BeginTx:                       1,
 			UpdateDocument:                1,
 			FetchDocumentMaintainers:      1,
+			Entries:                       1,
+			Renamed:                       true,
 			Rollback:                      1,
 		},
 		"Feature branch queues its own search job": {
@@ -534,6 +664,8 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			BeginTx:                       1,
 			UpdateDocument:                1,
 			FetchDocumentMaintainers:      1,
+			Entries:                       1,
+			Renamed:                       true,
 			Rollback:                      1,
 		},
 	}
@@ -590,6 +722,28 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 				assert.Equal(t, "org1", hh[0].OrganizationID)
 				assert.Equal(t, c.HistoryBy, hh[0].By)
 				assert.False(t, hh[0].Boundary)
+			}
+
+			ed := c.Tx.RecordDocumentContentEditCalls()
+			require.Len(t, ed, c.Edits)
+
+			if c.Edits > 0 {
+				assert.Equal(t, c.Editors, ed[0].Editors)
+				assert.Equal(t, _branchID, ed[0].Doc.BranchID)
+			}
+
+			ee := c.Tx.InsertDocumentActivityEntriesCalls()
+			require.Len(t, ee, c.Entries)
+
+			if c.Entries > 0 && c.Renamed {
+				require.Len(t, ee[0].Entries, 1)
+				assert.Equal(t, activity.TypeDocumentRenamed, ee[0].Entries[0].Type)
+				assert.Equal(t, activity.UserActor("u9"), ee[0].Entries[0].Actor)
+				assert.Equal(t, activity.Metadata{activity.MetaKeyFrom: "Doc", activity.MetaKeyTo: "Renamed"}, ee[0].Entries[0].Metadata)
+			}
+
+			if c.Entries > 0 && !c.Renamed {
+				assert.Empty(t, ee[0].Entries)
 			}
 
 			// the job is scoped to the persisted branch, whichever branch

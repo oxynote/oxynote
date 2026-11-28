@@ -458,6 +458,46 @@ func Test_Document_SnapshotEqual(t *testing.T) {
 	}
 }
 
+func Test_Document_ContentEdited(t *testing.T) {
+	marked := stubMarkedTree()
+	unmarked := marked.StripCommentMarks()
+
+	edited := unmarked.StripCommentMarks()
+	edited.Content[0].Content[0].Text = "hello there"
+
+	cc := map[string]struct {
+		Prev   RootBlock
+		Next   RootBlock
+		Result bool
+	}{
+		"Same content":           {Prev: unmarked, Next: unmarked.StripCommentMarks()},
+		"Comment mark added":     {Prev: unmarked, Next: marked},
+		"Comment mark removed":   {Prev: marked, Next: unmarked},
+		"Text edited":            {Prev: unmarked, Next: edited, Result: true},
+		"Text edited and marked": {Prev: marked, Next: edited, Result: true},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			prev := Document{Content: c.Prev}
+			next := Document{Content: c.Next}
+
+			assert.Equal(t, c.Result, next.ContentEdited(prev))
+		})
+	}
+}
+
+func Test_contentEqual(t *testing.T) {
+	t.Parallel()
+
+	tree := stubMarkedTree()
+
+	assert.True(t, contentEqual(tree, stubMarkedTree()))
+	assert.False(t, contentEqual(tree, tree.StripCommentMarks()))
+}
+
 func Test_Document_Duplicate(t *testing.T) {
 	t.Parallel()
 
