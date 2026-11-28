@@ -194,6 +194,102 @@ func Test_NewDocumentDuplicated(t *testing.T) {
 	}, e), e)
 }
 
+func Test_NewDocumentRenamed(t *testing.T) {
+	t.Parallel()
+
+	actor := UserActor("user1")
+	before := testDoc()
+	before.DocumentName = "Old"
+	after := before
+	after.DocumentName = "New"
+
+	e := NewDocumentRenamed(actor, before, after)
+
+	assert.Equal(t, stamped(t, Entry{
+		OrganizationID: "org1",
+		DocumentID:     after.ID,
+		BranchID:       after.BranchID,
+		Actor:          actor,
+		Type:           TypeDocumentRenamed,
+		Category:       CategoryDocument,
+		Metadata:       Metadata{MetaKeyFrom: "Old", MetaKeyTo: "New"},
+	}, e), e)
+}
+
+func Test_NewPersistActivity(t *testing.T) {
+	before := testDoc()
+	before.DocumentName = "Doc"
+	before.Content = document.RootBlock{Type: document.BlockNodeDoc}
+
+	edited := before
+	edited.Content = document.RootBlock{
+		Type:    document.BlockNodeDoc,
+		Content: []document.Block{{Type: document.BlockNodeParagraph}},
+	}
+	edited.LastUpdatedBy = null.StringFrom("user2")
+
+	renamed := before
+	renamed.DocumentName = "Renamed"
+	renamed.LastUpdatedBy = null.StringFrom("user2")
+
+	both := edited
+	both.DocumentName = "Renamed"
+
+	editors := document.UpdateInput{Maintainers: []string{"user1", "user2"}}
+
+	cc := map[string]struct {
+		After   document.Document
+		Input   document.UpdateInput
+		Editors []Actor
+		Types   []Type
+	}{
+		"System persist": {
+			After: both,
+			Input: document.UpdateInput{System: true, Maintainers: []string{"user1"}},
+		},
+		"Persist without editors": {
+			After: both,
+		},
+		"Persist that changes nothing": {
+			After: before,
+			Input: editors,
+		},
+		"Edit": {
+			After:   edited,
+			Input:   editors,
+			Editors: []Actor{UserActor("user1"), UserActor("user2")},
+		},
+		"Rename": {
+			After: renamed,
+			Input: editors,
+			Types: []Type{TypeDocumentRenamed},
+		},
+		"Edit and rename": {
+			After:   both,
+			Input:   editors,
+			Editors: []Actor{UserActor("user1"), UserActor("user2")},
+			Types:   []Type{TypeDocumentRenamed},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			eds, entries := NewPersistActivity(before, c.After, c.Input)
+
+			assert.Equal(t, c.Editors, eds)
+
+			require.Len(t, entries, len(c.Types))
+
+			for i, e := range entries {
+				assert.Equal(t, c.Types[i], e.Type)
+				assert.Equal(t, UserActor("user2"), e.Actor)
+			}
+		})
+	}
+}
+
 func Test_NewBranchForked(t *testing.T) {
 	t.Parallel()
 

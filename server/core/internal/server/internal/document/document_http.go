@@ -1112,6 +1112,7 @@ type Tx interface {
 
 // DBAgent is an interface that handles communication with the document database.
 type DBAgent interface {
+	ActivityDBAgent
 	HooksDBAgent
 	ReviewersDBAgent
 	DocumentsDBAgent
@@ -1124,9 +1125,17 @@ type DBAgent interface {
 	// DeleteDocumentCommentsByBranchID should soft-delete all comments for
 	// a branch.
 	DeleteDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error
+}
 
+// ActivityDBAgent is an interface that handles communication with the
+// activity log database.
+type ActivityDBAgent interface {
 	// InsertDocumentActivityEntries should insert the activity entries.
 	InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error
+
+	// RecordDocumentContentEdit should credit a persist of the branch to
+	// each editor.
+	RecordDocumentContentEdit(ctx context.Context, doc documentCore.Document, editors []activity.Actor) error
 }
 
 // HooksDBAgent is an interface that handles communication with the document

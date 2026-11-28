@@ -237,6 +237,20 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 		}
 	}
 
+	editors, entries := activity.NewPersistActivity(*doc, ndoc, ui)
+
+	if len(editors) > 0 {
+		if err = tx.RecordDocumentContentEdit(r.Context(), ndoc, editors); err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+	}
+
+	if err = tx.InsertDocumentActivityEntries(r.Context(), entries...); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	maintainers, err := tx.FetchDocumentMaintainers(r.Context(), doc.ID, doc.OrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)

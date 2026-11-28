@@ -303,26 +303,37 @@ func (d Document) Title() string {
 }
 
 // SnapshotEqual reports whether the other document would produce the same
-// snapshot: the same name, icon and content. Content is compared as
-// JSON, which encoding/json emits with sorted keys.
+// snapshot: the same name, icon and content.
 func (d Document) SnapshotEqual(o Document) bool {
-	if d.DocumentName != o.DocumentName || d.Icon != o.Icon {
-		return false
-	}
+	return d.DocumentName == o.DocumentName && d.Icon == o.Icon && contentEqual(d.Content, o.Content)
+}
 
-	dc, err := json.Marshal(d.Content)
+// ContentEdited reports whether the content differs from prev's once
+// comment marks are set aside. Adding or resolving a comment writes a
+// mark, and that change belongs to the comment, not to an edit.
+func (d Document) ContentEdited(prev Document) bool {
+	return !contentEqual(
+		d.Content.StripCommentMarks().mergeAdjacentText(),
+		prev.Content.StripCommentMarks().mergeAdjacentText(),
+	)
+}
+
+// contentEqual reports whether two block trees are the same. They are
+// compared as JSON, which encoding/json emits with sorted keys.
+func contentEqual(a, b RootBlock) bool {
+	ac, err := json.Marshal(a)
 	if err != nil {
 		// NOCOV: a block tree of plain values always marshals.
 		return false
 	}
 
-	oc, err := json.Marshal(o.Content)
+	bc, err := json.Marshal(b)
 	if err != nil {
 		// NOCOV: a block tree of plain values always marshals.
 		return false
 	}
 
-	return bytes.Equal(dc, oc)
+	return bytes.Equal(ac, bc)
 }
 
 // CreateInput is the input structure for document operations.

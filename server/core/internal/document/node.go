@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/oxynote/oxynote/server/core/pkg/strutil"
@@ -187,6 +188,15 @@ type Mark struct {
 	Attrs Attributes `json:"attrs,omitempty"`
 }
 
+// continuesWith reports whether o is a text node that continues the text
+// node b: the same marks and the same attributes.
+func (b Block) continuesWith(o Block) bool {
+	return b.Type == BlockNodeText &&
+		o.Type == BlockNodeText &&
+		slices.EqualFunc(b.Marks, o.Marks, Mark.Equal) &&
+		maps.EqualFunc(b.Attrs, o.Attrs, reflect.DeepEqual)
+}
+
 // Equal reports whether m and o are the same mark with the same
 // attributes.
 func (m Mark) Equal(o Mark) bool {
@@ -225,6 +235,40 @@ func (m *Mark) UnmarshalJSON(data []byte) error {
 // preserved as-is.
 func (rb RootBlock) StripCommentMarks() RootBlock {
 	return rb.copyStripped(nil)
+}
+
+// mergeAdjacentText returns a copy of the RootBlock with neighbouring
+// text nodes joined when they carry the same marks. A comment on part of
+// a text node splits it, and stripping the comment mark leaves the
+// pieces.
+func (rb RootBlock) mergeAdjacentText() RootBlock {
+	return RootBlock{
+		Type:    rb.Type,
+		Content: joinTextRuns(rb.Content),
+	}
+}
+
+// joinTextRuns joins neighbouring text blocks with the same marks, at
+// every level of the tree.
+func joinTextRuns(blocks []Block) []Block {
+	if len(blocks) == 0 {
+		return blocks
+	}
+
+	res := make([]Block, 0, len(blocks))
+
+	for _, b := range blocks {
+		b.Content = joinTextRuns(b.Content)
+
+		if n := len(res); n > 0 && res[n-1].continuesWith(b) {
+			res[n-1].Text += b.Text
+			continue
+		}
+
+		res = append(res, b)
+	}
+
+	return res
 }
 
 // Duplicate creates a copy of the RootBlock with all comment marks
