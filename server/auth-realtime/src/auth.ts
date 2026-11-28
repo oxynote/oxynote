@@ -19,7 +19,7 @@ import type { Store } from "./db.js"
 import type { CoreClient, EmailTemplate } from "./core.js"
 import type { Env, SocialProviderName } from "./env.js"
 import type { Logger, LogLevel } from "./logging.js"
-import { reported } from "./reporting.js"
+import { bestEffort, reported } from "./reporting.js"
 import { ac, ADMIN_ROLE, isRole, roles } from "./roles.js"
 
 export type AuthMethod =
@@ -55,7 +55,7 @@ export interface AuthDeps {
 	core: CoreClient
 	log: Logger
 	// drops every document connection the user holds, so each one
-	// reconnects under the user's new role.
+	// reconnects and authenticates again.
 	closeUserConnections: (userId: string) => void
 }
 
@@ -888,6 +888,14 @@ export function createAuth({
 							)
 						}
 					: undefined,
+				// better-auth calls this once the user and every session
+				// are gone, from valkey too. So the reconnect finds no
+				// session.
+				afterDelete: async (user) => {
+					await bestEffort(() => {
+						closeUserConnections(user.id)
+					})
+				},
 			},
 		},
 		account: {
@@ -1298,6 +1306,19 @@ export function createAuth({
 								},
 							}
 						}),
+				},
+				delete: {
+					// a revoked session keeps its open
+					// sockets. better-auth calls this once
+					// the session is gone, from valkey too.
+					// So the reconnect finds no session.
+					after: async (session) => {
+						await bestEffort(() => {
+							closeUserConnections(
+								session.userId,
+							)
+						})
+					},
 				},
 			},
 		},

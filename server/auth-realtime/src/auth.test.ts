@@ -67,13 +67,14 @@ function buildAuth(
 		core?: StubCore
 		redis?: SecondaryStorageClient
 		store?: Store
+		closeUserConnections?: (userId: string) => void
 	} = {},
 ) {
 	const real = createDatabase("postgresql://u:p@localhost/d")
 	const core = overrides.core ?? stubCore()
 	const log = stubLog()
 	const auth = createAuth({
-		closeUserConnections: vi.fn(),
+		closeUserConnections: overrides.closeUserConnections ?? vi.fn(),
 		env: overrides.env ?? testEnv(),
 		store: overrides.store ?? stubStore(),
 		dialect: real.dialect,
@@ -1928,6 +1929,103 @@ describe("createAuth", () => {
 				),
 			).rejects.toThrow("connection terminated")
 		})
+	})
+
+	// a password change, a password reset, a revoke and a sign-out all
+	// delete session rows, so the session hook covers each of them.
+	describe("connection teardown", () => {
+		it("closes the user's document connections when one of their sessions is deleted", async ({
+			expect,
+		}) => {
+			const closeUserConnections = vi.fn()
+			const { auth } = buildAuth({ closeUserConnections })
+
+			await auth.options.databaseHooks.session.delete.after({
+				id: "session-1",
+				userId: "user-1",
+			} as never)
+
+			expect(closeUserConnections.mock.calls).toEqual([
+				["user-1"],
+			])
+		})
+
+		it("closes a deleted user's document connections", async ({
+			expect,
+		}) => {
+			const closeUserConnections = vi.fn()
+			const { auth } = buildAuth({ closeUserConnections })
+
+			await auth.options.user.deleteUser.afterDelete({
+				id: "user-1",
+			} as never)
+
+			expect(closeUserConnections.mock.calls).toEqual([
+				["user-1"],
+			])
+		})
+
+		// the session is already gone, so a failed close must not
+		// turn the request that revoked it into an error.
+		it("lets a session deletion succeed when closing the connections fails", async ({
+			expect,
+		}) => {
+			const closeUserConnections = vi.fn(() => {
+				throw new Error("socket already closed")
+			})
+			const { auth } = buildAuth({ closeUserConnections })
+
+			await expect(
+				auth.options.databaseHooks.session.delete.after(
+					{
+						id: "session-1",
+						userId: "user-1",
+					} as never,
+				),
+			).resolves.toBeUndefined()
+			expect.soft(closeUserConnections).toHaveBeenCalledTimes(
+				1,
+			)
+		})
+
+		it("lets an account deletion succeed when closing the connections fails", async ({
+			expect,
+		}) => {
+			const closeUserConnections = vi.fn(() => {
+				throw new Error("socket already closed")
+			})
+			const { auth } = buildAuth({ closeUserConnections })
+
+			await expect(
+				auth.options.user.deleteUser.afterDelete({
+					id: "user-1",
+				} as never),
+			).resolves.toBeUndefined()
+			expect.soft(closeUserConnections).toHaveBeenCalledTimes(
+				1,
+			)
+		})
+
+		it.for([
+			{ name: "created", input: "create" as const },
+			{ name: "updated", input: "update" as const },
+		])(
+			"keeps the connections when a session is $name",
+			async ({ input }, { expect }) => {
+				const closeUserConnections = vi.fn()
+				const { auth } = buildAuth({
+					closeUserConnections,
+				})
+
+				await auth.options.databaseHooks.session[
+					input
+				].before({ userId: "user-1" } as never, null)
+
+				expect(
+					closeUserConnections,
+				).not.toHaveBeenCalled()
+			},
+		)
 	})
 
 	describe("before hook", () => {

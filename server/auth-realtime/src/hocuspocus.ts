@@ -69,6 +69,22 @@ interface ResettableServer {
 	documents: Map<string, { connections: Map<ClientConnection, unknown> }>
 }
 
+// a connection's context. onAuthenticate gives a client the session and
+// the number of sweeps of a user's connections that had run when its
+// handshake started. Core's direct connections carry the other two.
+interface ConnectionContext {
+	session?: AuthSession | null
+	sweeps?: number
+	system?: boolean
+	userId?: string
+}
+
+// what hocuspocus hands a hook that runs for one connection.
+interface ConnectionPayload {
+	connection: Pick<ClientConnection, "readOnly" | "webSocket">
+	context?: ConnectionContext | null
+}
+
 // the close code hocuspocus itself uses when it resets a connection.
 const resetConnection = { code: 4205, reason: "Reset Connection" }
 
@@ -80,7 +96,9 @@ const resetConnection = { code: 4205, reason: "Reset Connection" }
 // the connection turns read-only first. It stays on the document until
 // its socket reports the close, and until then hocuspocus still applies
 // its updates.
-function dropConnection(connection: ClientConnection): void {
+function dropConnection(
+	connection: Pick<ClientConnection, "readOnly" | "webSocket">,
+): void {
 	connection.readOnly = true
 	connection.webSocket.close(resetConnection.code, resetConnection.reason)
 }
@@ -261,7 +279,31 @@ export function createDocumentHooks({
 	// reaches the caller that needed the content stored.
 	const lastPersist = new Map<string, Promise<void>>()
 
+	// closeUserConnections only reaches a connection that is already on
+	// its document. A handshake still running is not, and it would attach
+	// with the session it read before the sweep. So the sweeps are
+	// counted, and each connection remembers the count its handshake
+	// started at.
+	let sweeps = 0
+	const lastSweep = new Map<string, number>()
+
+	function sweptSinceHandshake(
+		context: ConnectionContext | null | undefined,
+	): boolean {
+		const userId = context?.session?.user.id
+		if (userId === undefined || context?.sweeps === undefined) {
+			return false
+		}
+
+		return (lastSweep.get(userId) ?? 0) > context.sweeps
+	}
+
 	return {
+		recordSweep: (userId: string): void => {
+			sweeps += 1
+			lastSweep.set(userId, sweeps)
+		},
+
 		async onAuthenticate({
 			connectionConfig,
 			documentName,
@@ -279,6 +321,10 @@ export function createDocumentHooks({
 		}) {
 			const { documentId, branchIdentifier } =
 				parseDocumentName(documentName)
+
+			// read before the session, so a sweep that lands while
+			// the session is being read counts too.
+			const sweepsAtStart = sweeps
 
 			const session = await auth.getSession({
 				headers: toHeaders(request, requestHeaders),
@@ -318,13 +364,37 @@ export function createDocumentHooks({
 					),
 				))
 
-			return { session }
+			return { session, sweeps: sweepsAtStart }
+		},
+
+		// hocuspocus calls this once the connection is on its document.
+		// A connection that sends nothing never reaches
+		// beforeHandleMessage, but it would still receive every update.
+		connected({ connection, context }: ConnectionPayload) {
+			if (sweptSinceHandshake(context)) {
+				dropConnection(connection)
+			}
+
+			return Promise.resolve()
 		},
 
 		// TODO kick users if auth becomes invalid later
-		beforeHandleMessage() {
+		beforeHandleMessage({
+			connection,
+			context,
+		}: ConnectionPayload) {
 			// periodically re-check better auth session and close
 			// the socket if needed
+			if (sweptSinceHandshake(context)) {
+				dropConnection(connection)
+
+				return Promise.reject(
+					new Error(
+						"connections closed during the handshake",
+					),
+				)
+			}
+
 			return Promise.resolve()
 		},
 
@@ -573,7 +643,8 @@ interface HocuspocusServer {
 
 export function createHocuspocus(deps: DocumentHookDeps): HocuspocusServer {
 	const { log } = deps
-	const { flushDocument, ...hooks } = createDocumentHooks(deps)
+	const { flushDocument, recordSweep, ...hooks } =
+		createDocumentHooks(deps)
 
 	const instance = new Hocuspocus({
 		// a line per connection, load, change and persist: a traffic
@@ -602,6 +673,7 @@ export function createHocuspocus(deps: DocumentHookDeps): HocuspocusServer {
 			resetConnections(instance, documentName)
 		},
 		closeUserConnections: (userId) => {
+			recordSweep(userId)
 			closeUserConnections(instance, userId)
 		},
 	}

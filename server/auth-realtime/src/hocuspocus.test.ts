@@ -203,7 +203,7 @@ describe("createDocumentHooks", () => {
 				token: "",
 			})
 
-			expect(result).toEqual({ session: SESSION })
+			expect(result).toEqual({ session: SESSION, sweeps: 0 })
 			expect(auth.getSession).toHaveBeenCalledTimes(1)
 		})
 
@@ -411,7 +411,10 @@ describe("createDocumentHooks", () => {
 					token: "",
 				})
 
-				expect(result).toEqual({ session: SESSION })
+				expect(result).toEqual({
+					session: SESSION,
+					sweeps: 0,
+				})
 				expect(connectionConfig.readOnly).toBe(true)
 				expect.soft(
 					core.verifyDocumentAccess,
@@ -577,16 +580,169 @@ describe("createDocumentHooks", () => {
 		})
 	})
 
+	// handshake runs onAuthenticate for user-1 and calls during while the
+	// session is still being read. It resolves to the context the
+	// connection gets.
+	async function handshake(
+		hooks: ReturnType<typeof createDocumentHooks>,
+		auth: ReturnType<typeof stubAuth>,
+		during: () => void = () => undefined,
+	) {
+		let answer: (session: AuthSession) => void = () => undefined
+		auth.getSession.mockReturnValueOnce(
+			new Promise<AuthSession>((resolve) => {
+				answer = resolve
+			}),
+		)
+
+		const pending = hooks.onAuthenticate({
+			connectionConfig: { readOnly: false },
+			documentName: "doc1-branch1",
+			request: {},
+			requestHeaders: { cookie: "auth.session=abc" },
+			requestParameters: currentClient(),
+			token: "",
+		})
+		during()
+		answer(SESSION)
+
+		return pending
+	}
+
+	function writableSocket() {
+		return { readOnly: false, webSocket: { close: vi.fn() } }
+	}
+
+	function hooksAndAuth() {
+		const auth = stubAuth()
+		const hooks = createDocumentHooks({
+			store: stubStore(),
+			auth,
+			core: stubCore(),
+			log: stubLog(),
+		})
+
+		return { hooks, auth }
+	}
+
+	describe("connected", () => {
+		it("drops a connection whose user's connections were closed during its handshake", async ({
+			expect,
+		}) => {
+			const { hooks, auth } = hooksAndAuth()
+			const context = await handshake(hooks, auth, () => {
+				hooks.recordSweep("user-1")
+			})
+			const connection = writableSocket()
+
+			await hooks.connected({ connection, context })
+
+			expect(connection.readOnly).toBe(true)
+			expect(connection.webSocket.close.mock.calls).toEqual([
+				[4205, "Reset Connection"],
+			])
+		})
+
+		it("keeps a connection whose handshake started after the close", async ({
+			expect,
+		}) => {
+			const { hooks, auth } = hooksAndAuth()
+			hooks.recordSweep("user-1")
+			const context = await handshake(hooks, auth)
+			const connection = writableSocket()
+
+			await hooks.connected({ connection, context })
+
+			expect(connection.readOnly).toBe(false)
+			expect(
+				connection.webSocket.close,
+			).not.toHaveBeenCalled()
+		})
+	})
+
 	describe("beforeHandleMessage", () => {
-		// a placeholder for re-checking the session mid-connection; it
-		// must still resolve, because hocuspocus awaits it on every
-		// inbound message
-		it("lets every message through", async ({ expect }) => {
-			const hooks = hooksWith(stubCore())
+		it("refuses a message and drops the connection when the user's connections were closed during its handshake", async ({
+			expect,
+		}) => {
+			const { hooks, auth } = hooksAndAuth()
+			const context = await handshake(hooks, auth, () => {
+				hooks.recordSweep("user-1")
+			})
+			const connection = writableSocket()
 
 			await expect(
-				hooks.beforeHandleMessage(),
+				hooks.beforeHandleMessage({
+					connection,
+					context,
+				}),
+			).rejects.toThrow(
+				"connections closed during the handshake",
+			)
+			expect.soft(connection.readOnly).toBe(true)
+			expect.soft(
+				connection.webSocket.close.mock.calls,
+			).toEqual([[4205, "Reset Connection"]])
+		})
+
+		// the device that keeps a valid session reconnects after the
+		// close, and that handshake must go through.
+		it("lets a message through when the handshake started after the close", async ({
+			expect,
+		}) => {
+			const { hooks, auth } = hooksAndAuth()
+			hooks.recordSweep("user-1")
+			const context = await handshake(hooks, auth)
+			const connection = writableSocket()
+
+			await expect(
+				hooks.beforeHandleMessage({
+					connection,
+					context,
+				}),
 			).resolves.toBeUndefined()
+			expect.soft(connection.readOnly).toBe(false)
+			expect.soft(
+				connection.webSocket.close,
+			).not.toHaveBeenCalled()
+		})
+
+		it("lets a message through when another user's connections were closed during the handshake", async ({
+			expect,
+		}) => {
+			const { hooks, auth } = hooksAndAuth()
+			const context = await handshake(hooks, auth, () => {
+				hooks.recordSweep("user-2")
+			})
+			const connection = writableSocket()
+
+			await expect(
+				hooks.beforeHandleMessage({
+					connection,
+					context,
+				}),
+			).resolves.toBeUndefined()
+			expect.soft(
+				connection.webSocket.close,
+			).not.toHaveBeenCalled()
+		})
+
+		// core's direct connection has no session and no handshake.
+		it("lets a message through on a connection without a session", async ({
+			expect,
+		}) => {
+			const { hooks } = hooksAndAuth()
+			hooks.recordSweep("user-1")
+			const connection = writableSocket()
+
+			await expect(
+				hooks.beforeHandleMessage({
+					connection,
+					context: { system: true },
+				}),
+			).resolves.toBeUndefined()
+			expect.soft(
+				connection.webSocket.close,
+			).not.toHaveBeenCalled()
 		})
 	})
 
@@ -1683,6 +1839,54 @@ describe("createHocuspocus", () => {
 		expect(() => {
 			resetConnections("doc1-branch1")
 		}).not.toThrow()
+	})
+
+	// a handshake still running is on no document yet, so the close has to
+	// reach it through the server's own hooks.
+	it("refuses a handshake that was running when the user's connections were closed", async ({
+		expect,
+	}) => {
+		let answer: (session: AuthSession) => void = () => undefined
+		const auth = {
+			getSession: vi.fn(
+				() =>
+					new Promise<AuthSession>((resolve) => {
+						answer = resolve
+					}),
+			),
+		}
+		const { instance, closeUserConnections } = createHocuspocus({
+			auth,
+			store: stubStore(),
+			core: stubCore(),
+			log: stubLog(),
+		})
+		const hooks = instance.configuration as unknown as ReturnType<
+			typeof createDocumentHooks
+		>
+		const pending = hooks.onAuthenticate({
+			connectionConfig: { readOnly: false },
+			documentName: "doc1-branch1",
+			request: {},
+			requestHeaders: { cookie: "auth.session=abc" },
+			requestParameters: currentClient(),
+			token: "",
+		})
+		closeUserConnections("user-1")
+		answer(SESSION)
+		const context = await pending
+		const connection = {
+			readOnly: false,
+			webSocket: { close: vi.fn() },
+		}
+
+		await expect(
+			hooks.beforeHandleMessage({ connection, context }),
+		).rejects.toThrow("connections closed during the handshake")
+		expect.soft(connection.readOnly).toBe(true)
+		expect.soft(connection.webSocket.close.mock.calls).toEqual([
+			[4205, "Reset Connection"],
+		])
 	})
 
 	it("closes user connections against its own server", ({ expect }) => {
