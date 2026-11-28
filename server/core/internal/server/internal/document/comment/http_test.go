@@ -1271,6 +1271,10 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 		NotifyUsers [][]string
 		EntryType   activity.Type
 		Check       func(t *testing.T, c commentCore.Comment)
+		// Reread is how often the stored comment is read again.
+		Reread int
+		// RespResolvedBy is the resolver the response names.
+		RespResolvedBy string
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -1456,15 +1460,40 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 			RespCode: http.StatusOK,
 			Fetched:  1,
 		},
-		"Status a concurrent request already set records nothing": {
-			DB:         &DBMock{FetchDocumentCommentFunc: stubComment},
-			Tx:         &TxMock{},
+		"Error returned by Tx.FetchDocumentComment": {
+			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx: &TxMock{
+				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
+					return nil, assert.AnError
+				},
+			},
 			Body:       `{"resolved":true}`,
-			RespCode:   http.StatusOK,
+			RespCode:   http.StatusInternalServerError,
 			Fetched:    1,
 			Begun:      1,
 			Updated:    1,
+			Reread:     1,
 			RolledBack: 1,
+		},
+		"Status a concurrent request already set records nothing": {
+			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx: &TxMock{
+				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
+					c := storedComment("u2")
+					c.Resolved = true
+					c.ResolvedBy = null.StringFrom("u3")
+
+					return c, nil
+				},
+			},
+			Body:           `{"resolved":true}`,
+			RespCode:       http.StatusOK,
+			Fetched:        1,
+			Begun:          1,
+			Updated:        1,
+			Reread:         1,
+			RolledBack:     1,
+			RespResolvedBy: "u3",
 		},
 		"Already unresolved": {
 			DB:       &DBMock{FetchDocumentCommentFunc: stubComment},
@@ -1514,6 +1543,12 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 
 			if c.Check != nil {
 				c.Check(t, uu[0].C)
+			}
+
+			assert.Len(t, tx.FetchDocumentCommentCalls(), c.Reread)
+
+			if c.RespResolvedBy != "" {
+				assert.Contains(t, rec.Body.String(), `"resolvedBy":"`+c.RespResolvedBy+`"`)
 			}
 
 			if c.RespCode == http.StatusOK {

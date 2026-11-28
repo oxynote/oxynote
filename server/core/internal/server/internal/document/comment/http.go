@@ -624,12 +624,18 @@ func (h *Handler) UpdateDocumentCommentStatus(w http.ResponseWriter, r *http.Req
 	}
 
 	// a concurrent request already set the status, so this one records and
-	// announces nothing.
+	// announces nothing, and answers with the status that request stored.
 	if !changed {
+		stored, ferr := tx.FetchDocumentComment(r.Context(), commentID, documentID, session.ActiveOrganizationID)
+		if ferr != nil {
+			httpserver.RespondError(h.log, w, ferr)
+			return
+		}
+
 		httpserver.Respond(
 			h.log,
 			w,
-			nc,
+			stored,
 			http.StatusOK,
 		)
 
