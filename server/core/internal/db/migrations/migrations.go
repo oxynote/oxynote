@@ -13,6 +13,10 @@ const (
 	// _versionDataSourceCredentialsKind adds a kind to data source
 	// credentials.
 	_versionDataSourceCredentialsKind version = 13
+
+	// _versionDocumentCommentRevisionsBackfill gives existing comments
+	// and replies their first revision.
+	_versionDocumentCommentRevisionsBackfill version = 15
 )
 
 // version is the number a Go migration shares with the SQL ones.
@@ -31,5 +35,6 @@ type Deps struct {
 func Go(deps Deps) []*goose.Migration {
 	return []*goose.Migration{
 		migrateDataSourceCredentialsKind(deps),
+		backfillDocumentCommentRevisions(),
 	}
 }

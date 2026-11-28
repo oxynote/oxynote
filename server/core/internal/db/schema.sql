@@ -174,9 +174,10 @@ CREATE TABLE public.document_comment_replies (
     fk_document_comment_id text NOT NULL,
     fk_organization_id text NOT NULL,
     fk_user_id text,
-    content jsonb NOT NULL,
+    content jsonb,
     created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone
+    updated_at timestamp without time zone,
+    deleted_at timestamp without time zone
 );
 
 ALTER TABLE ONLY public.document_comment_replies
@@ -195,6 +196,60 @@ ALTER TABLE ONLY public.document_comment_replies
 ALTER TABLE ONLY public.document_comment_replies
     ADD CONSTRAINT document_comment_replies_fk_user_id_fkey FOREIGN KEY (fk_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
+CREATE TABLE public.document_comment_reply_revisions (
+    id text NOT NULL,
+    fk_organization_id text NOT NULL,
+    fk_document_comment_reply_id text CONSTRAINT document_comment_reply_revi_fk_document_comment_reply__not_null NOT NULL,
+    content jsonb NOT NULL,
+    fk_user_id text,
+    created_at timestamp without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.document_comment_reply_revisions
+    ADD CONSTRAINT document_comment_reply_revisions_pkey PRIMARY KEY (id);
+
+CREATE INDEX document_comment_reply_revisions_fk_document_comment_reply_id_c ON public.document_comment_reply_revisions USING btree (fk_document_comment_reply_id, created_at DESC, id DESC);
+
+CREATE INDEX document_comment_reply_revisions_fk_organization_id_idx ON public.document_comment_reply_revisions USING btree (fk_organization_id);
+
+CREATE INDEX document_comment_reply_revisions_fk_user_id_idx ON public.document_comment_reply_revisions USING btree (fk_user_id);
+
+ALTER TABLE ONLY public.document_comment_reply_revisions
+    ADD CONSTRAINT document_comment_reply_revisi_fk_document_comment_reply_id_fkey FOREIGN KEY (fk_document_comment_reply_id) REFERENCES public.document_comment_replies(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.document_comment_reply_revisions
+    ADD CONSTRAINT document_comment_reply_revisions_fk_organization_id_fkey FOREIGN KEY (fk_organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.document_comment_reply_revisions
+    ADD CONSTRAINT document_comment_reply_revisions_fk_user_id_fkey FOREIGN KEY (fk_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+CREATE TABLE public.document_comment_revisions (
+    id text NOT NULL,
+    fk_organization_id text NOT NULL,
+    fk_document_comment_id text NOT NULL,
+    content jsonb NOT NULL,
+    fk_user_id text,
+    created_at timestamp without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.document_comment_revisions
+    ADD CONSTRAINT document_comment_revisions_pkey PRIMARY KEY (id);
+
+CREATE INDEX document_comment_revisions_fk_document_comment_id_created_at_id ON public.document_comment_revisions USING btree (fk_document_comment_id, created_at DESC, id DESC);
+
+CREATE INDEX document_comment_revisions_fk_organization_id_idx ON public.document_comment_revisions USING btree (fk_organization_id);
+
+CREATE INDEX document_comment_revisions_fk_user_id_idx ON public.document_comment_revisions USING btree (fk_user_id);
+
+ALTER TABLE ONLY public.document_comment_revisions
+    ADD CONSTRAINT document_comment_revisions_fk_document_comment_id_fkey FOREIGN KEY (fk_document_comment_id) REFERENCES public.document_comments(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.document_comment_revisions
+    ADD CONSTRAINT document_comment_revisions_fk_organization_id_fkey FOREIGN KEY (fk_organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.document_comment_revisions
+    ADD CONSTRAINT document_comment_revisions_fk_user_id_fkey FOREIGN KEY (fk_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
 CREATE TABLE public.document_comments (
     id text NOT NULL,
     fk_document_id text NOT NULL,
@@ -205,10 +260,11 @@ CREATE TABLE public.document_comments (
     resolved_at timestamp without time zone,
     anchor_block_id text,
     resolved boolean DEFAULT false NOT NULL,
-    content jsonb NOT NULL,
+    content jsonb,
     diff_deletion_context jsonb,
     created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone
+    updated_at timestamp without time zone,
+    deleted_at timestamp without time zone
 );
 
 ALTER TABLE ONLY public.document_comments

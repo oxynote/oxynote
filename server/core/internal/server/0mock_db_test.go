@@ -263,9 +263,6 @@ var _ DB = &DBMock{}
 //			ReplaceBranchTagsFunc: func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error {
 //				panic("mock out the ReplaceBranchTags method")
 //			},
-//			ReplaceDocumentCommentFunc: func(ctx context.Context, c comment.Comment) error {
-//				panic("mock out the ReplaceDocumentComment method")
-//			},
 //			SetTagVisibilityFunc: func(ctx context.Context, organizationID string, userID string, id xid.ID, inp tag.VisibilityInput) error {
 //				panic("mock out the SetTagVisibility method")
 //			},
@@ -295,6 +292,9 @@ var _ DB = &DBMock{}
 //			},
 //			UpdateDocumentCommentReplyFunc: func(ctx context.Context, r comment.Reply) error {
 //				panic("mock out the UpdateDocumentCommentReply method")
+//			},
+//			UpdateDocumentCommentStatusFunc: func(ctx context.Context, c comment.Comment) error {
+//				panic("mock out the UpdateDocumentCommentStatus method")
 //			},
 //			UpdateDocumentParentIDFunc: func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error {
 //				panic("mock out the UpdateDocumentParentID method")
@@ -564,9 +564,6 @@ type DBMock struct {
 	// ReplaceBranchTagsFunc mocks the ReplaceBranchTags method.
 	ReplaceBranchTagsFunc func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error
 
-	// ReplaceDocumentCommentFunc mocks the ReplaceDocumentComment method.
-	ReplaceDocumentCommentFunc func(ctx context.Context, c comment.Comment) error
-
 	// SetTagVisibilityFunc mocks the SetTagVisibility method.
 	SetTagVisibilityFunc func(ctx context.Context, organizationID string, userID string, id xid.ID, inp tag.VisibilityInput) error
 
@@ -596,6 +593,9 @@ type DBMock struct {
 
 	// UpdateDocumentCommentReplyFunc mocks the UpdateDocumentCommentReply method.
 	UpdateDocumentCommentReplyFunc func(ctx context.Context, r comment.Reply) error
+
+	// UpdateDocumentCommentStatusFunc mocks the UpdateDocumentCommentStatus method.
+	UpdateDocumentCommentStatusFunc func(ctx context.Context, c comment.Comment) error
 
 	// UpdateDocumentParentIDFunc mocks the UpdateDocumentParentID method.
 	UpdateDocumentParentIDFunc func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error
@@ -1294,13 +1294,6 @@ type DBMock struct {
 			// ToBranchID is the toBranchID argument value.
 			ToBranchID xid.ID
 		}
-		// ReplaceDocumentComment holds details about calls to the ReplaceDocumentComment method.
-		ReplaceDocumentComment []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// C is the c argument value.
-			C comment.Comment
-		}
 		// SetTagVisibility holds details about calls to the SetTagVisibility method.
 		SetTagVisibility []struct {
 			// Ctx is the ctx argument value.
@@ -1382,6 +1375,13 @@ type DBMock struct {
 			Ctx context.Context
 			// R is the r argument value.
 			R comment.Reply
+		}
+		// UpdateDocumentCommentStatus holds details about calls to the UpdateDocumentCommentStatus method.
+		UpdateDocumentCommentStatus []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// C is the c argument value.
+			C comment.Comment
 		}
 		// UpdateDocumentParentID holds details about calls to the UpdateDocumentParentID method.
 		UpdateDocumentParentID []struct {
@@ -1565,7 +1565,6 @@ type DBMock struct {
 	lockPromoteBranchApprovals                    sync.RWMutex
 	lockRecordDocumentBranchHistoryEntry          sync.RWMutex
 	lockReplaceBranchTags                         sync.RWMutex
-	lockReplaceDocumentComment                    sync.RWMutex
 	lockSetTagVisibility                          sync.RWMutex
 	lockUnassignBranchTag                         sync.RWMutex
 	lockUnassignGithubInstallationOrganization    sync.RWMutex
@@ -1576,6 +1575,7 @@ type DBMock struct {
 	lockUpdateDocumentBranchMetadata              sync.RWMutex
 	lockUpdateDocumentComment                     sync.RWMutex
 	lockUpdateDocumentCommentReply                sync.RWMutex
+	lockUpdateDocumentCommentStatus               sync.RWMutex
 	lockUpdateDocumentParentID                    sync.RWMutex
 	lockUpdateDocumentTree                        sync.RWMutex
 	lockUpdateGithubInstallationOrganizationID    sync.RWMutex
@@ -4854,45 +4854,6 @@ func (mock *DBMock) ReplaceBranchTagsCalls() []struct {
 	return calls
 }
 
-// ReplaceDocumentComment calls ReplaceDocumentCommentFunc.
-func (mock *DBMock) ReplaceDocumentComment(ctx context.Context, c comment.Comment) error {
-	callInfo := struct {
-		Ctx context.Context
-		C   comment.Comment
-	}{
-		Ctx: ctx,
-		C:   c,
-	}
-	mock.lockReplaceDocumentComment.Lock()
-	mock.calls.ReplaceDocumentComment = append(mock.calls.ReplaceDocumentComment, callInfo)
-	mock.lockReplaceDocumentComment.Unlock()
-	if mock.ReplaceDocumentCommentFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.ReplaceDocumentCommentFunc(ctx, c)
-}
-
-// ReplaceDocumentCommentCalls gets all the calls that were made to ReplaceDocumentComment.
-// Check the length with:
-//
-//	len(mockedDB.ReplaceDocumentCommentCalls())
-func (mock *DBMock) ReplaceDocumentCommentCalls() []struct {
-	Ctx context.Context
-	C   comment.Comment
-} {
-	var calls []struct {
-		Ctx context.Context
-		C   comment.Comment
-	}
-	mock.lockReplaceDocumentComment.RLock()
-	calls = mock.calls.ReplaceDocumentComment
-	mock.lockReplaceDocumentComment.RUnlock()
-	return calls
-}
-
 // SetTagVisibility calls SetTagVisibilityFunc.
 func (mock *DBMock) SetTagVisibility(ctx context.Context, organizationID string, userID string, id xid.ID, inp tag.VisibilityInput) error {
 	callInfo := struct {
@@ -5304,6 +5265,45 @@ func (mock *DBMock) UpdateDocumentCommentReplyCalls() []struct {
 	mock.lockUpdateDocumentCommentReply.RLock()
 	calls = mock.calls.UpdateDocumentCommentReply
 	mock.lockUpdateDocumentCommentReply.RUnlock()
+	return calls
+}
+
+// UpdateDocumentCommentStatus calls UpdateDocumentCommentStatusFunc.
+func (mock *DBMock) UpdateDocumentCommentStatus(ctx context.Context, c comment.Comment) error {
+	callInfo := struct {
+		Ctx context.Context
+		C   comment.Comment
+	}{
+		Ctx: ctx,
+		C:   c,
+	}
+	mock.lockUpdateDocumentCommentStatus.Lock()
+	mock.calls.UpdateDocumentCommentStatus = append(mock.calls.UpdateDocumentCommentStatus, callInfo)
+	mock.lockUpdateDocumentCommentStatus.Unlock()
+	if mock.UpdateDocumentCommentStatusFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.UpdateDocumentCommentStatusFunc(ctx, c)
+}
+
+// UpdateDocumentCommentStatusCalls gets all the calls that were made to UpdateDocumentCommentStatus.
+// Check the length with:
+//
+//	len(mockedDB.UpdateDocumentCommentStatusCalls())
+func (mock *DBMock) UpdateDocumentCommentStatusCalls() []struct {
+	Ctx context.Context
+	C   comment.Comment
+} {
+	var calls []struct {
+		Ctx context.Context
+		C   comment.Comment
+	}
+	mock.lockUpdateDocumentCommentStatus.RLock()
+	calls = mock.calls.UpdateDocumentCommentStatus
+	mock.lockUpdateDocumentCommentStatus.RUnlock()
 	return calls
 }
 

@@ -54,10 +54,11 @@ request handler:
   NULL`; `document_files.storage_key` stays reachable once FKs are gone.
 - `file/manager` ticks every 5 minutes: trims expired history, then reclaims
   files. A file is referenced if its id appears in any branch content,
-  retained history entry or comment (`CheckDocumentFileReferenced`, in
-  SQL). Unreferenced files are stamped `unreferenced_at` and deleted a day
-  later; NULL-FK rows skip the wait; files younger than a day are never
-  touched.
+  retained history entry, or comment or reply revision
+  (`CheckDocumentFileReferenced`, in SQL). Revisions are never trimmed, so
+  a comment's files outlive its edits and its deletion. Unreferenced files
+  are stamped `unreferenced_at` and deleted a day later; NULL-FK rows skip
+  the wait; files younger than a day are never touched.
 - `hook/manager` does the same for hooks, calling `Hook.Delete` before
   dropping a row with a NULL FK. A merge detaches the target's hooks
   (`DetachDocumentHooksByBranchID`) rather than soft-deleting them.

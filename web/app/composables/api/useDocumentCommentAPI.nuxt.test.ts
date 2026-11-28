@@ -27,7 +27,6 @@ const COMMENT_ID_2 = "commentid20000000002"
 const REPLY_ID = "replyid1000000000001"
 const REPLY_ID_2 = "replyid2000000000002"
 const USER_ID = "userid10000000000001"
-const USER_ID_2 = "userid20000000000002"
 const ORG_ID = "orgid100000000000001"
 const NON_XID_ID = "nano1"
 
@@ -712,31 +711,16 @@ describe("useDocumentCommentAPI", { concurrent: false }, () => {
 	describe("deleteDocumentCommentByCommentId", () => {
 		it.for([
 			{
-				name: "replaces the deleted comment with its promoted oldest reply",
+				name: "keeps a deleted comment with replies as the start of its thread",
 				makeSeed: () => [
-					makeComment(COMMENT_ID, {
-						replies: [
-							makeReply(REPLY_ID_2, { createdAt: "2024-01-04T00:00:00.000Z" }),
-							makeReply(REPLY_ID, {
-								userId: USER_ID_2,
-								content: { text: "first reply" },
-								createdAt: "2024-01-02T00:00:00.000Z",
-								updatedAt: "2024-01-03T00:00:00.000Z",
-							}),
-						],
-					}),
+					makeComment(COMMENT_ID, { replies: [makeReply(REPLY_ID)] }),
 					makeComment(COMMENT_ID_2),
 				],
 				makeExpectedAtRequest: () => [
 					{
-						...makeComment(COMMENT_ID),
-						userId: USER_ID_2,
-						content: { text: "first reply" },
-						createdAt: "2024-01-02T00:00:00.000Z",
-						updatedAt: "2024-01-03T00:00:00.000Z",
-						replies: [
-							makeReply(REPLY_ID_2, { createdAt: "2024-01-04T00:00:00.000Z" }),
-						],
+						...makeComment(COMMENT_ID, { replies: [makeReply(REPLY_ID)] }),
+						content: null,
+						deletedAt: ANY_STRING,
 					},
 					makeComment(COMMENT_ID_2),
 				],
@@ -1208,6 +1192,40 @@ describe("useDocumentCommentAPI", { concurrent: false }, () => {
 			])
 			expect(getCalls).toHaveLength(1)
 			expect(readComments()).toEqual(serverComments)
+		})
+
+		it("removes a deleted comment once its last reply is deleted", async ({
+			expect,
+		}) => {
+			seedAuth()
+			const target = makeComment(COMMENT_ID, {
+				content: null,
+				deletedAt: "2024-01-05T00:00:00.000Z",
+				replies: [makeReply(REPLY_ID)],
+			})
+			const other = makeComment(COMMENT_ID_2)
+			seedComments([target, other])
+			const getCalls = mockEndpoint("GET", COMMENTS_URL, () => [other])
+			let commentsAtRequest: DocumentCommentsResponse | undefined
+			const deleteCalls = mockEndpoint("DELETE", REPLY_URL, () => {
+				commentsAtRequest = readComments()
+
+				return {}
+			})
+			const api = makeCommentAPI()
+			runInApp(() => api.useFetchDocumentCommentsByDocId(DOC_ID, BRANCH_ID))
+
+			await api.deleteDocumentCommentReplyByReplyId.mutateAsync({
+				docId: DOC_ID,
+				branchId: BRANCH_ID,
+				commentId: COMMENT_ID,
+				replyId: REPLY_ID,
+			})
+
+			expect(deleteCalls).toHaveLength(1)
+			expect(commentsAtRequest).toEqual([other])
+			expect(getCalls).toHaveLength(1)
+			expect(readComments()).toEqual([other])
 		})
 
 		it("leaves the replies unchanged when the reply is not cached", async ({

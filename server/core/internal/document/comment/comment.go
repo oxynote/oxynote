@@ -23,6 +23,10 @@ var (
 
 	// ErrMissingStatus is returned when a status update carries no resolved flag.
 	ErrMissingStatus = errutil.New(http.StatusBadRequest, "comment.missing_status", "comment resolved status is required")
+
+	// ErrDeleted is returned when a deleted comment is edited or deleted
+	// again.
+	ErrDeleted = errutil.New(http.StatusNotFound, "comment.deleted", "comment is deleted")
 )
 
 // _excerptLength is the most runes an excerpt keeps of a comment's text.
@@ -57,7 +61,8 @@ type Comment struct {
 	// ResolvedAt is the timestamp when the comment was resolved.
 	ResolvedAt null.Time `json:"resolvedAt" db:"resolved_at"`
 
-	// Content is the content of the comment.
+	// Content is the content of the comment. It is nil once the comment is
+	// deleted, and the text lives on in its revisions.
 	Content Content `json:"content" db:"content"`
 
 	// DiffDeletionContext stores contextual information when comment is in deleted content diff.
@@ -68,6 +73,10 @@ type Comment struct {
 
 	// UpdatedAt is the timestamp when the comment was last updated.
 	UpdatedAt null.Time `json:"updatedAt" db:"updated_at"`
+
+	// DeletedAt is the timestamp when the comment was deleted. A deleted
+	// comment is still listed while its thread has replies.
+	DeletedAt null.Time `json:"deletedAt" db:"deleted_at"`
 
 	// Replies contains all replies to this comment (not included in database queries by default).
 	Replies []Reply `json:"replies" db:"-"`
@@ -87,7 +96,8 @@ type Reply struct {
 	// UserID is the identifier for the user who created this reply.
 	UserID null.String `json:"userId" db:"fk_user_id"`
 
-	// Content is the content of the reply.
+	// Content is the content of the reply. It is nil once the reply is
+	// deleted, and the text lives on in its revisions.
 	Content Content `json:"content" db:"content"`
 
 	// CreatedAt is the timestamp when the reply was created.
@@ -95,6 +105,9 @@ type Reply struct {
 
 	// UpdatedAt is the timestamp when the reply was last updated.
 	UpdatedAt null.Time `json:"updatedAt" db:"updated_at"`
+
+	// DeletedAt is the timestamp when the reply was deleted.
+	DeletedAt null.Time `json:"deletedAt" db:"deleted_at"`
 }
 
 // Content represents the structured content of a comment or reply.
@@ -195,8 +208,12 @@ func NewComment(inp Input, documentID, branchID xid.ID, userID, organizationID s
 }
 
 // ApplyUpdate returns the comment with the input's anchor and content. It
-// fails on an input Validate refuses.
+// fails on a deleted comment and on an input Validate refuses.
 func (c Comment) ApplyUpdate(inp Input) (Comment, error) {
+	if c.DeletedAt.Valid {
+		return Comment{}, ErrDeleted
+	}
+
 	if err := inp.Validate(); err != nil {
 		return Comment{}, err
 	}
@@ -229,33 +246,22 @@ func (c Comment) Unresolve() Comment {
 	return nc
 }
 
-// Replace returns a new comment whose content and author are taken from the
-// head of the reply list, with that reply removed. The second return value
-// reports whether there was a reply to promote; a comment with none is
-// returned unchanged.
-func (c Comment) Replace() (Comment, bool) {
-	if len(c.Replies) == 0 {
-		return c, false
+// Excerpt returns the start of the thread's text. Once the comment is
+// deleted, the text comes from its first reply.
+func (c Comment) Excerpt() string {
+	if c.DeletedAt.Valid && len(c.Replies) > 0 {
+		return c.Replies[0].Content.Excerpt()
 	}
 
-	r := c.Replies[0]
-
-	nc := c
-	nc.UserID = r.UserID
-	nc.Content = r.Content
-	nc.CreatedAt = r.CreatedAt
-	nc.UpdatedAt = r.UpdatedAt
-	nc.Replies = c.Replies[1:]
-
-	return nc, true
+	return c.Content.Excerpt()
 }
 
 // Participants returns the users who wrote the comment or a reply to it,
-// in that order, each once.
+// in that order, each once. The author of a deleted comment is left out.
 func (c Comment) Participants() []string {
 	var ids []string
 
-	if c.UserID.Valid {
+	if c.UserID.Valid && !c.DeletedAt.Valid {
 		ids = append(ids, c.UserID.String)
 	}
 
@@ -334,8 +340,8 @@ type Input struct {
 }
 
 // Validate checks whether the input carries the content a comment cannot
-// exist without. The column is NOT NULL, so a missing body would otherwise
-// surface as an unmapped database error.
+// exist without. A comment without content reads as deleted, and no
+// revision records it.
 func (inp Input) Validate() error {
 	if len(inp.Content) == 0 {
 		return ErrMissingContent

@@ -105,7 +105,8 @@ func (a *agent) DeleteDocumentFile(ctx context.Context, id string) error {
 
 // CheckDocumentFileReferenced reports whether the file id still appears in
 // the document's live branch content, in a retained history entry, or
-// in a comment or comment reply.
+// in any revision of a comment or comment reply. A live comment's text is
+// always its newest revision, so the revisions cover the comments too.
 //
 // The id is matched as a substring of the serialized content rather than by
 // walking the block tree, which keeps the whole check inside Postgres. The
@@ -120,12 +121,14 @@ func (a *agent) CheckDocumentFileReferenced(ctx context.Context, id string, docu
 			SELECT 1 FROM document_branch_history_entries
 			WHERE fk_document_id = $1 AND position($2 in content::text) > 0
 			UNION ALL
-			SELECT 1 FROM document_comments
-			WHERE fk_document_id = $1 AND position($2 in content::text) > 0
+			SELECT 1 FROM document_comment_revisions v
+			JOIN document_comments c ON c.id = v.fk_document_comment_id
+			WHERE c.fk_document_id = $1 AND position($2 in v.content::text) > 0
 			UNION ALL
-			SELECT 1 FROM document_comment_replies r
+			SELECT 1 FROM document_comment_reply_revisions v
+			JOIN document_comment_replies r ON r.id = v.fk_document_comment_reply_id
 			JOIN document_comments c ON c.id = r.fk_document_comment_id
-			WHERE c.fk_document_id = $1 AND position($2 in r.content::text) > 0
+			WHERE c.fk_document_id = $1 AND position($2 in v.content::text) > 0
 		)
 	`
 

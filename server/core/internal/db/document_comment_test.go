@@ -8,9 +8,13 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	sq "github.com/Masterminds/squirrel"
 	"github.com/guregu/null/v5"
+	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/comment"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
@@ -71,13 +75,52 @@ func prepDocumentComments(t *testing.T, db *DB, count int, fn func(int, *comment
 				"diff_deletion_context": c.DiffDeletionContext,
 				"created_at":            c.CreatedAt,
 				"updated_at":            c.UpdatedAt,
+				"deleted_at":            c.DeletedAt,
 			}).MustSql()
 
 		_, err := db.sql.Exec(q, args...)
 		require.NoError(t, err)
+
+		// a live comment has a revision of its text. A deleted one has no
+		// text to record.
+		if c.Content != nil {
+			require.NoError(t, sqlutil.WrapTx(context.Background(), db.sql, func(tx *sqlx.Tx) error {
+				return db.recordDocumentCommentRevision(context.Background(), tx, c)
+			}))
+		}
 	}
 
 	return res
+}
+
+// fetchStoredDocumentComment reads a comment row as stored, deleted or not,
+// without its replies.
+func fetchStoredDocumentComment(t *testing.T, db *DB, id xid.ID) comment.Comment {
+	t.Helper()
+
+	q, args := db.selectDocumentComment(db.builder.Select()).
+		Where(sq.Eq{"document_comments.id": id}).
+		MustSql()
+
+	var c comment.Comment
+	require.NoError(t, sqlx.GetContext(context.Background(), db.sql, &c, q, args...))
+
+	return c
+}
+
+// fetchStoredDocumentCommentReply reads a reply row as stored, deleted or
+// not.
+func fetchStoredDocumentCommentReply(t *testing.T, db *DB, id xid.ID) comment.Reply {
+	t.Helper()
+
+	q, args := db.selectDocumentCommentReply(db.builder.Select()).
+		Where(sq.Eq{"document_comment_replies.id": id}).
+		MustSql()
+
+	var r comment.Reply
+	require.NoError(t, sqlx.GetContext(context.Background(), db.sql, &r, q, args...))
+
+	return r
 }
 
 func prepDocumentCommentReplies(t *testing.T, db *DB, count int, fn func(int, *comment.Reply)) []comment.Reply {
@@ -127,10 +170,19 @@ func prepDocumentCommentReplies(t *testing.T, db *DB, count int, fn func(int, *c
 				"content":                r.Content,
 				"created_at":             r.CreatedAt,
 				"updated_at":             r.UpdatedAt,
+				"deleted_at":             r.DeletedAt,
 			}).MustSql()
 
 		_, err := db.sql.Exec(q, args...)
 		require.NoError(t, err)
+
+		// a live reply has a revision of its text. A deleted one has no
+		// text to record.
+		if r.Content != nil {
+			require.NoError(t, sqlutil.WrapTx(context.Background(), db.sql, func(tx *sqlx.Tx) error {
+				return db.recordDocumentCommentReplyRevision(context.Background(), tx, r)
+			}))
+		}
 	}
 
 	return res
@@ -301,6 +353,50 @@ func Test_agent_FetchDocumentComment(t *testing.T) {
 				Err:            assert.AnError,
 			}
 		},
+		"Deleted comment without live replies": func(t *testing.T, db *DB) tcase {
+			c := prepDocumentComments(t, db, 1, func(_ int, c *comment.Comment) {
+				c.Content = nil
+				c.DeletedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))
+			})[0]
+
+			prepDocumentCommentReplies(t, db, 1, func(_ int, r *comment.Reply) {
+				r.CommentID = c.ID
+				r.OrganizationID = c.OrganizationID
+				r.Content = nil
+				r.DeletedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))
+			})
+
+			return tcase{
+				ID:             c.ID,
+				DocumentID:     c.DocumentID,
+				OrganizationID: c.OrganizationID,
+				Err:            sql.ErrNoRows,
+			}
+		},
+		"Successful fetch of a deleted comment kept by a live reply": func(t *testing.T, db *DB) tcase {
+			c := prepDocumentComments(t, db, 1, func(_ int, c *comment.Comment) {
+				c.Content = nil
+				c.DeletedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))
+			})[0]
+
+			replies := prepDocumentCommentReplies(t, db, 2, func(i int, r *comment.Reply) {
+				r.CommentID = c.ID
+				r.OrganizationID = c.OrganizationID
+
+				if i == 0 {
+					r.Content = nil
+					r.DeletedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))
+				}
+			})
+			c.Replies = replies[1:]
+
+			return tcase{
+				ID:             c.ID,
+				DocumentID:     c.DocumentID,
+				OrganizationID: c.OrganizationID,
+				Result:         &c,
+			}
+		},
 		"Successful fetch with replies": func(t *testing.T, db *DB) tcase {
 			c := prepDocumentComments(t, db, 1, nil)[0]
 			c.Replies = prepDocumentCommentReplies(t, db, 2, func(_ int, r *comment.Reply) {
@@ -351,6 +447,16 @@ func Test_agent_FetchDocumentCommentReply(t *testing.T) {
 	testutil.AssertEqualError(t, sql.ErrNoRows, err)
 	assert.Nil(t, res)
 
+	// error - deleted
+	deleted := prepDocumentCommentReplies(t, db, 1, func(_ int, r *comment.Reply) {
+		r.Content = nil
+		r.DeletedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))
+	})[0]
+
+	res, err = db.FetchDocumentCommentReply(context.Background(), deleted.ID, deleted.CommentID, deleted.OrganizationID)
+	testutil.AssertEqualError(t, sql.ErrNoRows, err)
+	assert.Nil(t, res)
+
 	// success
 	r := prepDocumentCommentReplies(t, db, 1, nil)[0]
 
@@ -374,6 +480,17 @@ func Test_agent_UpdateDocumentComment(t *testing.T) {
 				CancelledContext: true,
 				Comment:          c,
 				Err:              assert.AnError,
+			}
+		},
+		"Deleted comment": func(t *testing.T, db *DB) tcase {
+			c := prepDocumentComments(t, db, 1, nil)[0]
+			require.NoError(t, db.DeleteDocumentComment(context.Background(), c.ID, c.DocumentID, c.OrganizationID))
+
+			c.Content = comment.Content{"text": "edited after the delete"}
+
+			return tcase{
+				Comment: c,
+				Err:     errutil.ErrNotFound,
 			}
 		},
 		"Successful update": func(t *testing.T, db *DB) tcase {
@@ -424,6 +541,76 @@ func Test_agent_UpdateDocumentComment(t *testing.T) {
 	}
 }
 
+func Test_agent_UpdateDocumentCommentStatus(t *testing.T) {
+	type tcase struct {
+		CancelledContext bool
+		Comment          comment.Comment
+		Err              error
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(t *testing.T, db *DB) tcase {
+			return tcase{
+				CancelledContext: true,
+				Comment:          prepDocumentComments(t, db, 1, nil)[0],
+				Err:              assert.AnError,
+			}
+		},
+		"Successful update": func(t *testing.T, db *DB) tcase {
+			users := prepUsers(t, db, 1)
+			c := prepDocumentComments(t, db, 1, nil)[0]
+			c.Resolved = true
+			c.ResolvedBy = null.StringFrom(users[0])
+			c.ResolvedAt = null.TimeFrom(timeutil.Now().Truncate(time.Microsecond))
+			c.Replies = []comment.Reply{}
+
+			return tcase{
+				Comment: c,
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			err := db.UpdateDocumentCommentStatus(ctx, c.Comment)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			res, err := db.FetchDocumentComment(context.Background(), c.Comment.ID, c.Comment.DocumentID, c.Comment.OrganizationID)
+			require.NoError(t, err)
+			testutil.AssertFilterEqual(t, &c.Comment, res)
+
+			// the text did not change, so only the revision from the
+			// comment's creation exists.
+			var revisions int
+
+			require.NoError(t, sqlx.GetContext(
+				context.Background(),
+				db.sql,
+				&revisions,
+				`SELECT COUNT(*) FROM document_comment_revisions WHERE fk_document_comment_id = $1`,
+				c.Comment.ID,
+			))
+			assert.Equal(t, 1, revisions)
+		})
+	}
+}
+
 func Test_agent_UpdateDocumentCommentReply(t *testing.T) {
 	type tcase struct {
 		CancelledContext bool
@@ -439,6 +626,17 @@ func Test_agent_UpdateDocumentCommentReply(t *testing.T) {
 				CancelledContext: true,
 				Reply:            r,
 				Err:              assert.AnError,
+			}
+		},
+		"Deleted reply": func(t *testing.T, db *DB) tcase {
+			r := prepDocumentCommentReplies(t, db, 1, nil)[0]
+			require.NoError(t, db.DeleteDocumentCommentReply(context.Background(), r.ID, r.CommentID, r.OrganizationID))
+
+			r.Content = comment.Content{"text": "edited after the delete"}
+
+			return tcase{
+				Reply: r,
+				Err:   errutil.ErrNotFound,
 			}
 		},
 		"Successful update": func(t *testing.T, db *DB) tcase {
@@ -490,21 +688,37 @@ func Test_agent_DeleteDocumentComment(t *testing.T) {
 		Err              error
 	}
 
+	// prepDeleted stores a live comment and returns it as deleted.
+	prepDeleted := func(t *testing.T, db *DB) comment.Comment {
+		t.Helper()
+
+		c := prepDocumentComments(t, db, 1, nil)[0]
+		c.Content = nil
+		c.DeletedAt = null.TimeFrom(timeutil.Now().Truncate(time.Microsecond))
+
+		return c
+	}
+
 	cc := map[string]func(*testing.T, *DB) tcase{
 		"Cancelled context": func(t *testing.T, db *DB) tcase {
-			c := prepDocumentComments(t, db, 1, nil)[0]
-
 			return tcase{
 				CancelledContext: true,
-				Comment:          c,
+				Comment:          prepDeleted(t, db),
 				Err:              assert.AnError,
 			}
 		},
-		"Successful delete": func(t *testing.T, db *DB) tcase {
-			c := prepDocumentComments(t, db, 1, nil)[0]
+		"Already deleted": func(t *testing.T, db *DB) tcase {
+			c := prepDeleted(t, db)
+			require.NoError(t, db.DeleteDocumentComment(context.Background(), c.ID, c.DocumentID, c.OrganizationID))
 
 			return tcase{
 				Comment: c,
+				Err:     errutil.ErrNotFound,
+			}
+		},
+		"Successful delete": func(t *testing.T, db *DB) tcase {
+			return tcase{
+				Comment: prepDeleted(t, db),
 			}
 		},
 	}
@@ -530,6 +744,14 @@ func Test_agent_DeleteDocumentComment(t *testing.T) {
 				return
 			}
 
+			// the row stays, without its text, and the comment leaves
+			// every read.
+			// the delete stamps its own time.
+			stored := fetchStoredDocumentComment(t, db, c.Comment.ID)
+			assert.WithinDuration(t, timeutil.Now(), stored.DeletedAt.Time, time.Minute)
+			c.Comment.DeletedAt = stored.DeletedAt
+			testutil.AssertFilterEqual(t, c.Comment, stored)
+
 			res, err := db.FetchDocumentComment(context.Background(), c.Comment.ID, c.Comment.DocumentID, c.Comment.OrganizationID)
 			testutil.AssertEqualError(t, sql.ErrNoRows, err)
 			assert.Nil(t, res)
@@ -544,21 +766,37 @@ func Test_agent_DeleteDocumentCommentReply(t *testing.T) {
 		Err              error
 	}
 
+	// prepDeleted stores a live reply and returns it as deleted.
+	prepDeleted := func(t *testing.T, db *DB) comment.Reply {
+		t.Helper()
+
+		r := prepDocumentCommentReplies(t, db, 1, nil)[0]
+		r.Content = nil
+		r.DeletedAt = null.TimeFrom(timeutil.Now().Truncate(time.Microsecond))
+
+		return r
+	}
+
 	cc := map[string]func(*testing.T, *DB) tcase{
 		"Cancelled context": func(t *testing.T, db *DB) tcase {
-			r := prepDocumentCommentReplies(t, db, 1, nil)[0]
-
 			return tcase{
 				CancelledContext: true,
-				Reply:            r,
+				Reply:            prepDeleted(t, db),
 				Err:              assert.AnError,
 			}
 		},
-		"Successful delete": func(t *testing.T, db *DB) tcase {
-			r := prepDocumentCommentReplies(t, db, 1, nil)[0]
+		"Already deleted": func(t *testing.T, db *DB) tcase {
+			r := prepDeleted(t, db)
+			require.NoError(t, db.DeleteDocumentCommentReply(context.Background(), r.ID, r.CommentID, r.OrganizationID))
 
 			return tcase{
 				Reply: r,
+				Err:   errutil.ErrNotFound,
+			}
+		},
+		"Successful delete": func(t *testing.T, db *DB) tcase {
+			return tcase{
+				Reply: prepDeleted(t, db),
 			}
 		},
 	}
@@ -584,73 +822,15 @@ func Test_agent_DeleteDocumentCommentReply(t *testing.T) {
 				return
 			}
 
+			// the delete stamps its own time.
+			stored := fetchStoredDocumentCommentReply(t, db, c.Reply.ID)
+			assert.WithinDuration(t, timeutil.Now(), stored.DeletedAt.Time, time.Minute)
+			c.Reply.DeletedAt = stored.DeletedAt
+			testutil.AssertFilterEqual(t, c.Reply, stored)
+
 			res, err := db.FetchDocumentCommentReply(context.Background(), c.Reply.ID, c.Reply.CommentID, c.Reply.OrganizationID)
 			testutil.AssertEqualError(t, sql.ErrNoRows, err)
 			assert.Nil(t, res)
-		})
-	}
-}
-
-func Test_agent_ReplaceDocumentComment(t *testing.T) {
-	type tcase struct {
-		CancelledContext bool
-		Comment          comment.Comment
-		Err              error
-	}
-
-	cc := map[string]func(*testing.T, *DB) tcase{
-		"Cancelled context": func(t *testing.T, db *DB) tcase {
-			c := prepDocumentComments(t, db, 1, nil)[0]
-
-			return tcase{
-				CancelledContext: true,
-				Comment:          c,
-				Err:              assert.AnError,
-			}
-		},
-		"Successful replace": func(t *testing.T, db *DB) tcase {
-			users := prepUsers(t, db, 1)
-			c := prepDocumentComments(t, db, 1, nil)[0]
-			c.Content = comment.Content{
-				"type": "paragraph",
-				"text": "Promoted reply content",
-			}
-			c.UserID = null.StringFrom(users[0])
-			c.AnchorBlockID = null.StringFrom("block-3")
-			c.CreatedAt = c.CreatedAt.Add(time.Hour)
-			c.UpdatedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))
-			c.Replies = []comment.Reply{}
-
-			return tcase{
-				Comment: c,
-			}
-		},
-	}
-
-	for cn, cfn := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			db := prepTempDB(t)
-			c := cfn(t, db)
-
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			if c.CancelledContext {
-				cancel()
-			}
-
-			err := db.ReplaceDocumentComment(ctx, c.Comment)
-			testutil.RequireEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			res, err := db.FetchDocumentComment(context.Background(), c.Comment.ID, c.Comment.DocumentID, c.Comment.OrganizationID)
-			require.NoError(t, err)
-			testutil.AssertFilterEqual(t, &c.Comment, res)
 		})
 	}
 }
@@ -741,6 +921,40 @@ func Test_agent_FetchDocumentCommentsByBranchID(t *testing.T) {
 				Result:         comments,
 			}
 		},
+		"Successful fetch of deleted threads": func(t *testing.T, db *DB) tcase {
+			// a deleted comment stays listed only while it has a live
+			// reply, and deleted replies are left out.
+			deletedAt := null.TimeFrom(timeutil.Now().Truncate(time.Second))
+
+			comments := prepDocumentComments(t, db, 4, func(i int, c *comment.Comment) {
+				if i == 1 || i == 2 {
+					c.Content = nil
+					c.DeletedAt = deletedAt
+				}
+			})
+
+			kept := prepDocumentCommentReplies(t, db, 1, func(_ int, r *comment.Reply) {
+				r.CommentID = comments[1].ID
+				r.OrganizationID = comments[1].OrganizationID
+			})
+
+			prepDocumentCommentReplies(t, db, 1, func(_ int, r *comment.Reply) {
+				r.CommentID = comments[3].ID
+				r.OrganizationID = comments[3].OrganizationID
+				r.Content = nil
+				r.DeletedAt = deletedAt
+			})
+
+			comments[0].Replies = make([]comment.Reply, 0)
+			comments[1].Replies = kept
+			comments[3].Replies = make([]comment.Reply, 0)
+
+			return tcase{
+				BranchID:       comments[0].BranchID,
+				OrganizationID: comments[0].OrganizationID,
+				Result:         []comment.Comment{comments[0], comments[1], comments[3]},
+			}
+		},
 		"Successful fetch of resolved comments": func(t *testing.T, db *DB) tcase {
 			comments, resolved := prepBranchComments(t, db)
 
@@ -790,22 +1004,30 @@ func Test_agent_DeleteDocumentCommentsByBranchID(t *testing.T) {
 	type tcase struct {
 		CancelledContext bool
 		Comments         []comment.Comment
+		Replies          []comment.Reply
+		Other            comment.Comment
 		Err              error
 	}
 
 	cc := map[string]func(*testing.T, *DB) tcase{
 		"Cancelled context": func(t *testing.T, db *DB) tcase {
-			comments := prepDocumentComments(t, db, 1, nil)
-
 			return tcase{
 				CancelledContext: true,
-				Comments:         comments,
+				Comments:         prepDocumentComments(t, db, 1, nil),
 				Err:              assert.AnError,
 			}
 		},
 		"Successful delete": func(t *testing.T, db *DB) tcase {
+			comments := prepDocumentComments(t, db, 2, nil)
+			replies := prepDocumentCommentReplies(t, db, 1, func(_ int, r *comment.Reply) {
+				r.CommentID = comments[0].ID
+				r.OrganizationID = comments[0].OrganizationID
+			})
+
 			return tcase{
-				Comments: prepDocumentComments(t, db, 2, nil),
+				Comments: comments,
+				Replies:  replies,
+				Other:    prepDocumentComments(t, db, 1, nil)[0],
 			}
 		},
 	}
@@ -834,6 +1056,25 @@ func Test_agent_DeleteDocumentCommentsByBranchID(t *testing.T) {
 			res, err := db.FetchDocumentCommentsByBranchID(context.Background(), c.Comments[0].BranchID, c.Comments[0].OrganizationID, false)
 			require.NoError(t, err)
 			assert.Empty(t, res)
+
+			// the delete stamps its own time, one for every row.
+			deletedAt := fetchStoredDocumentComment(t, db, c.Comments[0].ID).DeletedAt
+			assert.WithinDuration(t, timeutil.Now(), deletedAt.Time, time.Minute)
+
+			for _, cmt := range c.Comments {
+				cmt.Content = nil
+				cmt.DeletedAt = deletedAt
+				testutil.AssertFilterEqual(t, cmt, fetchStoredDocumentComment(t, db, cmt.ID))
+			}
+
+			for _, r := range c.Replies {
+				r.Content = nil
+				r.DeletedAt = deletedAt
+				testutil.AssertFilterEqual(t, r, fetchStoredDocumentCommentReply(t, db, r.ID))
+			}
+
+			// another branch keeps its comments.
+			testutil.AssertFilterEqual(t, c.Other, fetchStoredDocumentComment(t, db, c.Other.ID))
 		})
 	}
 }

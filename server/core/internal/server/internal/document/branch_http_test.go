@@ -972,6 +972,10 @@ func Test_Handler_MergeBranches(t *testing.T) {
 				assert.True(t, entry.Boundary)
 				assert.Equal(t, null.StringFrom("u1"), entry.By)
 
+				// the target's comments are soft-deleted.
+				deleted := c.Tx.DeleteDocumentCommentsByBranchIDCalls()[0]
+				assert.Equal(t, _branchID, deleted.BranchID)
+
 				// the target's hooks are detached and the source's copied
 				// inside the transaction; the copies are set up once it
 				// commits.

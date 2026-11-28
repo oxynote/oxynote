@@ -533,6 +533,132 @@ describe("<CommentRenderer>", { concurrent: false }, () => {
 		expect(wrapper.text()).toContain("looks good")
 	})
 
+	it("shows a deleted comment as a placeholder above its replies, with no actions", async ({
+		expect,
+	}) => {
+		const editor = textDoc("hello world")
+		editor.commands.addNodeComment(0, { nodeCommentId: COMMENT_ID })
+		seedComments([
+			serverComment({
+				content: null,
+				deletedAt: new Date("2026-01-03T00:00:00Z"),
+				replies: [
+					{
+						id: makeXid("rpl"),
+						commentId: COMMENT_ID,
+						userId: ME,
+						content: commentBody("agreed"),
+						createdAt: new Date("2026-01-02T00:00:00Z"),
+					},
+				],
+			}),
+		])
+		const wrapper = await mountRenderer(editor)
+
+		await api(wrapper).selectComment({ textComment: false, id: COMMENT_ID })
+
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain("agreed")
+		}, WAIT_FOR_OPTIONS)
+		expect(wrapper.text()).toContain(t("editor.comment-thread.deleted-comment"))
+		// only the reply keeps an actions menu
+		expect(wrapper.findAll("[data-slot='dropdown-menu-trigger']")).toHaveLength(
+			1,
+		)
+	})
+
+	it("closes a deleted comment's thread and removes its mark when its last reply is deleted", async ({
+		expect,
+	}) => {
+		const editor = textDoc("hello world")
+		editor.commands.addNodeComment(0, { nodeCommentId: COMMENT_ID })
+		seedComments([
+			serverComment({
+				content: null,
+				deletedAt: new Date("2026-01-03T00:00:00Z"),
+				replies: [myReply()],
+			}),
+		])
+		const calls = mockEndpoint(
+			"DELETE",
+			`/api/documents/${DOCUMENT_ID}/comments/${COMMENT_ID}/replies/${REPLY_ID}`,
+			() => ({}),
+		)
+		mockEndpoint("GET", `/api/documents/${DOCUMENT_ID}/comments`, () => [])
+		const wrapper = await mountRenderer(editor)
+		await api(wrapper).selectComment({ textComment: false, id: COMMENT_ID })
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain("agreed")
+		}, WAIT_FOR_OPTIONS)
+		await openItemMenu(wrapper, 0)
+
+		menuItem(t("editor.comment-thread.delete-button")).click()
+		await settleMutations()
+
+		expect(calls).toHaveLength(1)
+		expect(popoverOpen(wrapper)).toBe(false)
+		expect(editor.state.doc.firstChild?.attrs.nodeCommentId).toBeNull()
+	})
+
+	it("removes the mark of a comment deleted without replies", async ({
+		expect,
+	}) => {
+		const editor = textDoc("hello world")
+		editor.commands.addNodeComment(0, { nodeCommentId: COMMENT_ID })
+		seedComments([serverComment({ replies: [] })])
+		const wrapper = await mountRenderer(editor)
+		await api(wrapper).selectComment({ textComment: false, id: COMMENT_ID })
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain("looks good")
+		}, WAIT_FOR_OPTIONS)
+		const calls = mockEndpoint(
+			"DELETE",
+			`/api/documents/${DOCUMENT_ID}/comments/${COMMENT_ID}`,
+			() => ({}),
+		)
+		mockEndpoint("GET", `/api/documents/${DOCUMENT_ID}/comments`, () => [])
+		await openItemMenu(wrapper, 0)
+
+		menuItem(t("editor.comment-thread.delete-button")).click()
+		await settleMutations()
+
+		expect(calls).toHaveLength(1)
+		expect(popoverOpen(wrapper)).toBe(false)
+		expect(editor.state.doc.firstChild?.attrs.nodeCommentId).toBeNull()
+	})
+
+	it("keeps the mark of a comment deleted above its replies", async ({
+		expect,
+	}) => {
+		const editor = textDoc("hello world")
+		editor.commands.addNodeComment(0, { nodeCommentId: COMMENT_ID })
+		seedComments([serverComment({ replies: [myReply()] })])
+		const wrapper = await mountRenderer(editor)
+		await api(wrapper).selectComment({ textComment: false, id: COMMENT_ID })
+		await vi.waitFor(() => {
+			expect(wrapper.text()).toContain("looks good")
+		}, WAIT_FOR_OPTIONS)
+		const calls = mockEndpoint(
+			"DELETE",
+			`/api/documents/${DOCUMENT_ID}/comments/${COMMENT_ID}`,
+			() => ({}),
+		)
+		mockEndpoint("GET", `/api/documents/${DOCUMENT_ID}/comments`, () => [
+			serverComment({
+				content: null,
+				deletedAt: new Date("2026-01-03T00:00:00Z"),
+				replies: [myReply()],
+			}),
+		])
+		await openItemMenu(wrapper, 0)
+
+		menuItem(t("editor.comment-thread.delete-button")).click()
+		await settleMutations()
+
+		expect(calls).toHaveLength(1)
+		expect(editor.state.doc.firstChild?.attrs.nodeCommentId).toBe(COMMENT_ID)
+	})
+
 	it("closes the thread on request", async ({ expect }) => {
 		const editor = textDoc("hello world")
 		const wrapper = await mountRenderer(editor)

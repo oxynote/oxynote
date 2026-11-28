@@ -340,9 +340,9 @@ export default function () {
 			const index = newComments.findIndex((h) => h.id === commentId)
 			const target = newComments[index]
 			if (target) {
-				const promoted = promoteFirstDocumentReplyToComment(target)
-				if (promoted) {
-					newComments[index] = promoted
+				const deleted = markDocumentCommentDeleted(target)
+				if (deleted) {
+					newComments[index] = deleted
 				} else {
 					newComments.splice(index, 1)
 				}
@@ -652,6 +652,11 @@ export default function () {
 			const index = modComment.replies?.findIndex((h) => h.id === replyId)
 			if (index !== undefined && index !== -1) {
 				modComment.replies?.splice(index, 1)
+			}
+
+			// a deleted comment lives only while a reply is left
+			if (modComment.deletedAt && !modComment.replies?.length) {
+				newComments?.splice(newComments.indexOf(modComment), 1)
 			}
 
 			queryCache.setQueryData(key, newComments)

@@ -99,10 +99,16 @@ func Test_Comment_ApplyUpdate(t *testing.T) {
 	stored := stubComment().Resolve("resolver")
 
 	cc := map[string]struct {
-		Input Input
-		Check func(t *testing.T, nc Comment)
-		Err   error
+		Deleted bool
+		Input   Input
+		Check   func(t *testing.T, nc Comment)
+		Err     error
 	}{
+		"Deleted comment": {
+			Deleted: true,
+			Input:   Input{Content: Content{"text": "edited"}},
+			Err:     ErrDeleted,
+		},
 		"Invalid input": {
 			Input: Input{},
 			Err:   ErrMissingContent,
@@ -137,7 +143,12 @@ func Test_Comment_ApplyUpdate(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := stored.ApplyUpdate(c.Input)
+			cmt := stored
+			if c.Deleted {
+				cmt.DeletedAt = null.TimeFrom(time.Now())
+			}
+
+			res, err := cmt.ApplyUpdate(c.Input)
 
 			testutil.AssertEqualError(t, c.Err, err)
 
@@ -177,40 +188,34 @@ func Test_Comment_Unresolve(t *testing.T) {
 	assert.Equal(t, c.Content, unresolved.Content)
 }
 
-func Test_Comment_Replace(t *testing.T) {
-	t.Parallel()
-
-	cmt := stubComment()
-	head := cmt.Replies[0]
-
-	empty := cmt
-	empty.Replies = nil
+func Test_Comment_Excerpt(t *testing.T) {
+	text := func(s string) Content {
+		return Content{
+			"type":    "doc",
+			"content": []any{map[string]any{"type": "text", "text": s}},
+		}
+	}
 
 	cc := map[string]struct {
 		Comment Comment
-		Result  Comment
-		OK      bool
+		Result  string
 	}{
-		"Head reply takes over the comment": {
-			Comment: cmt,
-			Result: Comment{
-				ID:                  cmt.ID,
-				DocumentID:          cmt.DocumentID,
-				OrganizationID:      cmt.OrganizationID,
-				BranchID:            cmt.BranchID,
-				AnchorBlockID:       cmt.AnchorBlockID,
-				UserID:              head.UserID,
-				Content:             head.Content,
-				DiffDeletionContext: cmt.DiffDeletionContext,
-				CreatedAt:           head.CreatedAt,
-				UpdatedAt:           head.UpdatedAt,
-				Replies:             []Reply{cmt.Replies[1]},
+		"Live comment": {
+			Comment: Comment{
+				Content: text("Comment"),
+				Replies: []Reply{{Content: text("Reply")}},
 			},
-			OK: true,
+			Result: "Comment",
 		},
-		"Comment without replies is returned unchanged": {
-			Comment: empty,
-			Result:  empty,
+		"Deleted comment with replies": {
+			Comment: Comment{
+				DeletedAt: null.TimeFrom(time.Now()),
+				Replies:   []Reply{{Content: text("Reply")}, {Content: text("Later")}},
+			},
+			Result: "Reply",
+		},
+		"Deleted comment without replies": {
+			Comment: Comment{DeletedAt: null.TimeFrom(time.Now())},
 		},
 	}
 
@@ -218,9 +223,7 @@ func Test_Comment_Replace(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			nc, ok := c.Comment.Replace()
-			assert.Equal(t, c.OK, ok)
-			assert.Equal(t, c.Result, nc)
+			assert.Equal(t, c.Result, c.Comment.Excerpt())
 		})
 	}
 }
@@ -250,6 +253,14 @@ func Test_Comment_Participants(t *testing.T) {
 		"Deleted author": {
 			Comment: Comment{Replies: []Reply{{UserID: null.StringFrom("user-2")}}},
 			Result:  []string{"user-2"},
+		},
+		"Deleted comment": {
+			Comment: Comment{
+				UserID:    null.StringFrom("user-1"),
+				DeletedAt: null.TimeFrom(time.Now()),
+				Replies:   []Reply{{UserID: null.StringFrom("user-2")}},
+			},
+			Result: []string{"user-2"},
 		},
 		"Nobody": {},
 	}
