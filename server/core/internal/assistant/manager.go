@@ -24,6 +24,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/persist"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/memkit"
@@ -204,11 +205,11 @@ func (m *Manager) SetTagNotifier(tags tools.TagNotifier) {
 	m.tags = tags
 }
 
-// ToolSet builds the tool registry for one (organization, user) pair
-// from the manager's shared wiring. The MCP surface uses it to serve
-// the same tools the assistant's sessions get, scoped the same way. The
-// registry holds only the tools the given role may call.
-func (m *Manager) ToolSet(orgID, userID string, role org.Role) *tools.Set {
+// ToolSet builds the tool registry for one organization and the actor
+// working in it from the manager's shared wiring. The MCP surface uses it
+// to serve the same tools the assistant's sessions get, scoped the same
+// way. The registry holds only the tools the given role may call.
+func (m *Manager) ToolSet(orgID string, actor activity.Actor, role org.Role) *tools.Set {
 	return tools.New(tools.NewDeps(
 		m.log,
 		m.db,
@@ -224,7 +225,7 @@ func (m *Manager) ToolSet(orgID, userID string, role org.Role) *tools.Set {
 		m.tags,
 		m.offload,
 		orgID,
-		userID,
+		actor,
 	), role)
 }
 

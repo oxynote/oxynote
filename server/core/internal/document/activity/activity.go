@@ -36,9 +36,10 @@ const (
 
 // All available ActorKind constants.
 const (
-	ActorKindUser   ActorKind = "user"
-	ActorKindMCP    ActorKind = "mcp"
-	ActorKindSystem ActorKind = "system"
+	ActorKindUser      ActorKind = "user"
+	ActorKindAssistant ActorKind = "assistant"
+	ActorKindMCP       ActorKind = "mcp"
+	ActorKindSystem    ActorKind = "system"
 )
 
 // All available TargetKind constants.
@@ -73,6 +74,25 @@ func UserActor(userID string) Actor {
 	return Actor{
 		Kind:   ActorKindUser,
 		UserID: null.StringFrom(userID),
+	}
+}
+
+// AssistantActor returns the actor of a change the in-app assistant made
+// for the user.
+func AssistantActor(userID string) Actor {
+	return Actor{
+		Kind:   ActorKindAssistant,
+		UserID: null.StringFrom(userID),
+	}
+}
+
+// MCPActor returns the actor of a change an MCP client made for the
+// user.
+func MCPActor(userID, clientID string) Actor {
+	return Actor{
+		Kind:     ActorKindMCP,
+		UserID:   null.StringFrom(userID),
+		ClientID: null.StringFrom(clientID),
 	}
 }
 

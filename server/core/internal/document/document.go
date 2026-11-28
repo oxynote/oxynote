@@ -416,6 +416,11 @@ type UpdateInput struct {
 	// authoritative and diffed against the stored one.
 	Maintainers []string `json:"maintainers"`
 
+	// Editors specifies who made the edits this update holds, newest
+	// last, with what they edited through: the editor, the assistant or
+	// an MCP client.
+	Editors []Editor `json:"editors"`
+
 	// RawContent is the raw content of the document, typically in
 	// a text format.
 	RawContent []byte `json:"rawContent"`
@@ -426,6 +431,19 @@ type UpdateInput struct {
 
 	// Branch is the target branch for the update (e.g. "main" or "feature-x").
 	Branch string `json:"branch"`
+}
+
+// Editor is someone whose edits an update holds.
+type Editor struct {
+	// UserID specifies the user, or the user an agent edited for.
+	UserID string `json:"userId"`
+
+	// Kind specifies what the edits came through: "user", "assistant"
+	// or "mcp".
+	Kind string `json:"kind"`
+
+	// ClientID specifies the OAuth client of an MCP editor.
+	ClientID null.String `json:"clientId"`
 }
 
 // AddsMaintainers reports whether the update names anyone the stored

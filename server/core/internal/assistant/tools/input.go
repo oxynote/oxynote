@@ -14,6 +14,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/org"
@@ -131,6 +132,10 @@ type Deps struct {
 	// when a tool creates audit-relevant rows (the created_by fields
 	// on a new document, for instance).
 	userID string
+
+	// actor is who the session's writes are credited to in the activity
+	// log: the assistant or an MCP client, acting for the user.
+	actor activity.Actor
 }
 
 // NewDeps creates a fresh instance of Deps. Every dependency is
@@ -151,13 +156,14 @@ func NewDeps(
 	tree TreeNotifier,
 	tags TagNotifier,
 	offload OffloadReader,
-	orgID, userID string,
+	orgID string,
+	actor activity.Actor,
 ) *Deps {
 	return &Deps{
 		log: log.With(
 			"component", "assistant-tools",
 			"org_id", orgID,
-			"user_id", userID,
+			"user_id", actor.UserID.String,
 		),
 		db:              db,
 		search:          searcher,
@@ -172,7 +178,8 @@ func NewDeps(
 		tags:            tags,
 		offload:         offload,
 		orgID:           orgID,
-		userID:          userID,
+		userID:          actor.UserID.String,
+		actor:           actor,
 	}
 }
 
@@ -483,6 +490,10 @@ func (i *input) CreateDocument(doc document.Document) error {
 		return fmt.Errorf("inserting document: %w", err)
 	}
 
+	if err := tx.InsertDocumentActivityEntries(i.ctx, activity.NewDocumentCreated(i.actor, doc)); err != nil {
+		return fmt.Errorf("recording the creation: %w", err)
+	}
+
 	// mirror the HTTP create path: whoever asked for the document
 	// becomes its first maintainer so they own it from the start.
 	if err := tx.UpsertDocumentMaintainers(i.ctx, doc.ID, i.orgID, []string{i.userID}); err != nil {
@@ -654,7 +665,7 @@ func (i *input) ApplyEdit(documentID, branchID xid.ID, ops []edit.Operation) err
 		documentID,
 		branchID,
 		ops,
-		i.userID,
+		i.actor,
 		false,
 	)
 	if err != nil {
@@ -980,12 +991,30 @@ func (i *input) AssignTag(documentID, branchID, tagID xid.ID) error {
 		return i.protectedBranchError(doc)
 	}
 
-	if _, err := i.db.AssignBranchTag(i.ctx, i.orgID, doc.ID, doc.BranchID, tagID); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](i.ctx, i.db)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	changed, err := tx.AssignBranchTag(i.ctx, i.orgID, doc.ID, doc.BranchID, tagID)
+	if err != nil {
 		if errutil.IsNotFound(err) {
 			return fmt.Errorf("tag %s: %w", tagID, ErrUnknownTag)
 		}
 
 		return err
+	}
+
+	if changed {
+		if err = i.recordTagChange(tx, activity.TypeTagAssigned, *doc, tagID); err != nil {
+			return err
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("committing: %w", err)
 	}
 
 	i.notifyTagTreeChange()
@@ -1008,16 +1037,49 @@ func (i *input) UnassignTag(documentID, branchID, tagID xid.ID) error {
 		return i.protectedBranchError(doc)
 	}
 
-	if _, err := i.FetchTag(tagID); err != nil {
+	if _, err = i.FetchTag(tagID); err != nil {
 		return err
 	}
 
-	if _, err := i.db.UnassignBranchTag(i.ctx, i.orgID, doc.ID, doc.BranchID, tagID); err != nil {
+	tx, err := sqlutil.BeginTx[Tx](i.ctx, i.db)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	changed, err := tx.UnassignBranchTag(i.ctx, i.orgID, doc.ID, doc.BranchID, tagID)
+	if err != nil {
 		return err
+	}
+
+	if changed {
+		if err = i.recordTagChange(tx, activity.TypeTagUnassigned, *doc, tagID); err != nil {
+			return err
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("committing: %w", err)
 	}
 
 	i.notifyTagTreeChange()
 	i.notifyBranchTagsChange(doc.ID, doc.BranchID)
+
+	return nil
+}
+
+// recordTagChange records a tag change on the branch, keeping the tag's
+// name. The tag is read in the transaction, once the change is known.
+func (i *input) recordTagChange(tx Tx, tp activity.Type, doc document.Document, tagID xid.ID) error {
+	t, err := tx.FetchTag(i.ctx, tagID, i.orgID)
+	if err != nil {
+		return fmt.Errorf("fetching the tag: %w", err)
+	}
+
+	if err = tx.InsertDocumentActivityEntries(i.ctx, activity.NewTagEntry(i.actor, tp, doc, *t)); err != nil {
+		return fmt.Errorf("recording the tag change: %w", err)
+	}
 
 	return nil
 }
@@ -1142,7 +1204,7 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 		BranchID: doc.BranchID,
 		BlockID:  null.NewString(blockUID, blockUID != ""),
 		Settings: settings,
-	}, doc.ID, i.orgID, i.userID)
+	}, doc.ID, i.orgID, i.actor)
 	if err != nil {
 		if errors.Is(err, hook.ErrBlockNotFound) {
 			return nil, fmt.Errorf("block %s: %w", blockUID, _errUnknownBlock)
@@ -1157,7 +1219,7 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 // UpdateHook replaces the hook's settings and resets its triggered flag and
 // state, as a fresh hook with those settings would have them.
 func (i *input) UpdateHook(hk *hook.Hook, settings processor.Settings) error {
-	updated, err := i.hookMan.UpdateHook(i.ctx, hk.ID, hk.DocumentID.V, i.orgID, hook.UpdateInput{Settings: settings}, i.userID)
+	updated, err := i.hookMan.UpdateHook(i.ctx, hk.ID, hk.DocumentID.V, i.orgID, hook.UpdateInput{Settings: settings}, i.actor)
 	if err != nil {
 		return err
 	}
@@ -1170,7 +1232,7 @@ func (i *input) UpdateHook(hk *hook.Hook, settings processor.Settings) error {
 // ResetHook restores the hook's triggered flag and state, keeping its
 // settings.
 func (i *input) ResetHook(hk *hook.Hook) error {
-	reset, err := i.hookMan.ResetHook(i.ctx, hk.ID, hk.DocumentID.V, i.orgID, i.userID)
+	reset, err := i.hookMan.ResetHook(i.ctx, hk.ID, hk.DocumentID.V, i.orgID, i.actor)
 	if err != nil {
 		return err
 	}
@@ -1195,7 +1257,7 @@ func (i *input) DeleteHook(hk *hook.Hook) error {
 		}
 	}
 
-	if err := i.hookMan.DeleteHook(i.ctx, hk.ID, hk.DocumentID.V, i.orgID, i.userID); err != nil {
+	if err := i.hookMan.DeleteHook(i.ctx, hk.ID, hk.DocumentID.V, i.orgID, i.actor); err != nil {
 		return err
 	}
 
@@ -1335,14 +1397,6 @@ type TagDB interface {
 	// delete_tag.
 	DeleteTag(ctx context.Context, id xid.ID, organizationID string) error
 
-	// AssignBranchTag should make a document's branch carry a tag,
-	// changing nothing when it already does.
-	AssignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) (bool, error)
-
-	// UnassignBranchTag should stop a document's branch carrying a tag,
-	// changing nothing when it does not.
-	UnassignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) (bool, error)
-
 	// UpdateTagTree should rewrite the display order of the org's tags to
 	// the order of the given tree.
 	UpdateTagTree(ctx context.Context, tree tag.Summaries, organizationID string) error
@@ -1378,6 +1432,20 @@ type Tx interface {
 	// document and of every cascade-deleted descendant. Used by
 	// delete_document.
 	DeleteDocument(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error)
+
+	// AssignBranchTag should make a document's branch carry a tag and
+	// report whether it did not before. Used by set_tag_assignment.
+	AssignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) (bool, error)
+
+	// UnassignBranchTag should stop a document's branch carrying a tag
+	// and report whether it carried it. Used by set_tag_assignment.
+	UnassignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) (bool, error)
+
+	// FetchTag should fetch one tag of the organization.
+	FetchTag(ctx context.Context, id xid.ID, organizationID string) (*tag.Tag, error)
+
+	// InsertDocumentActivityEntries should insert the activity entries.
+	InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error
 }
 
 // HookManager runs hook writes.
@@ -1385,20 +1453,20 @@ type Tx interface {
 //go:generate ../../../scripts/codegen/mock -t internal HookManager hook_manager
 type HookManager interface {
 	// CreateHook should create the hook on the branch of the document,
-	// credited to updatedBy.
-	CreateHook(ctx context.Context, ci hook.CreateInput, documentID xid.ID, organizationID, updatedBy string) (*hook.Hook, error)
+	// credited to the actor.
+	CreateHook(ctx context.Context, ci hook.CreateInput, documentID xid.ID, organizationID string, actor activity.Actor) (*hook.Hook, error)
 
 	// UpdateHook should replace the settings of the document's hook,
-	// credited to updatedBy, and return the stored hook.
-	UpdateHook(ctx context.Context, id, documentID xid.ID, organizationID string, ui hook.UpdateInput, updatedBy string) (*hook.Hook, error)
+	// credited to the actor, and return the stored hook.
+	UpdateHook(ctx context.Context, id, documentID xid.ID, organizationID string, ui hook.UpdateInput, actor activity.Actor) (*hook.Hook, error)
 
 	// DeleteHook should tear the document's hook down and remove it,
-	// credited to updatedBy.
-	DeleteHook(ctx context.Context, id, documentID xid.ID, organizationID, updatedBy string) error
+	// credited to the actor.
+	DeleteHook(ctx context.Context, id, documentID xid.ID, organizationID string, actor activity.Actor) error
 
-	// ResetHook should reset the document's hook, credited to updatedBy,
+	// ResetHook should reset the document's hook, credited to the actor,
 	// and return the stored hook.
-	ResetHook(ctx context.Context, id, documentID xid.ID, organizationID, updatedBy string) (*hook.Hook, error)
+	ResetHook(ctx context.Context, id, documentID xid.ID, organizationID string, actor activity.Actor) (*hook.Hook, error)
 }
 
 // SearchQueue queues search jobs.
@@ -1495,5 +1563,5 @@ type EditApplier interface {
 	// for the (documentID, branchID) document and return the per-op
 	// outcome. A tool's writes are a person's, never core's own, so
 	// this package always asks for an ordinary one.
-	Apply(ctx context.Context, documentID, branchID xid.ID, ops []edit.Operation, userID string, system bool) (edit.Result, error)
+	Apply(ctx context.Context, documentID, branchID xid.ID, ops []edit.Operation, actor activity.Actor, system bool) (edit.Result, error)
 }

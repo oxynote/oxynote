@@ -18,6 +18,7 @@ import (
 	"github.com/jarcoal/httpmock"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
@@ -65,7 +66,7 @@ func stubSet(db *toolsMock.DB, role org.Role) *tools.Set {
 		nil,
 		nil,
 		"org1",
-		"user1",
+		activity.MCPActor("user1", "client1"),
 	), role)
 }
 
@@ -338,7 +339,7 @@ func Test_Handler_ServeHTTP(t *testing.T) {
 			t.Parallel()
 
 			man := &ManagerMock{
-				ToolSetFunc: func(string, string, org.Role) *tools.Set {
+				ToolSetFunc: func(string, activity.Actor, org.Role) *tools.Set {
 					return stubSet(&toolsMock.DB{}, org.RoleEditor)
 				},
 			}
@@ -372,7 +373,7 @@ func Test_Handler_ServeHTTP(t *testing.T) {
 
 			for _, call := range toolSetCalls {
 				assert.Equal(t, "org1", call.OrgID)
-				assert.Equal(t, "user1", call.UserID)
+				assert.Equal(t, activity.MCPActor("user1", "client1"), call.Actor)
 			}
 
 			assert.Len(t, db.FetchDocumentTreeCalls(), c.FetchDocumentTreeCalls)

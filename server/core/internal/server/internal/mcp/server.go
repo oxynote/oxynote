@@ -8,6 +8,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 )
 
 // server builds the MCP server for one request's identity: the tools
@@ -45,7 +46,7 @@ func (h *Handler) server(r *http.Request) *mcp.Server {
 
 	// a member is offered only the tools their role may call, so a call
 	// to another fails as an unknown tool.
-	set := h.man.ToolSet(session.OrganizationID, session.UserID, session.Role)
+	set := h.man.ToolSet(session.OrganizationID, activity.MCPActor(session.UserID, session.ClientID), session.Role)
 
 	for _, e := range set.Entries() {
 		// a tool no scope grants is not offered: an internal one addresses

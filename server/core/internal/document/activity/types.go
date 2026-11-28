@@ -198,15 +198,15 @@ func NewDocumentRenamed(actor Actor, before, after document.Document) Entry {
 // entries. Only a user persist naming its editors is credited, so a
 // system write adds nothing.
 func NewPersistActivity(before, after document.Document, ui document.UpdateInput) ([]Actor, []Entry) {
-	if ui.System || len(ui.Maintainers) == 0 {
+	if ui.System || len(ui.Editors) == 0 {
 		return nil, nil
 	}
 
 	var editors []Actor
 
 	if after.ContentEdited(before) {
-		for _, userID := range ui.Maintainers {
-			editors = append(editors, UserActor(userID))
+		for _, ed := range ui.Editors {
+			editors = append(editors, newEditorActor(ed))
 		}
 	}
 
@@ -215,10 +215,25 @@ func NewPersistActivity(before, after document.Document, ui document.UpdateInput
 	// a persist does not say which editor renamed the document, so the
 	// newest one is credited, as the history entry is.
 	if after.DocumentName != before.DocumentName {
-		entries = append(entries, NewDocumentRenamed(UserActor(after.LastUpdatedBy.String), before, after))
+		newest := newEditorActor(ui.Editors[len(ui.Editors)-1])
+		entries = append(entries, NewDocumentRenamed(newest, before, after))
 	}
 
 	return editors, entries
+}
+
+// newEditorActor returns the actor of a persist's editor. A kind this
+// package does not know reads as the user's own edit, so a persist is
+// never refused over it.
+func newEditorActor(ed document.Editor) Actor {
+	actor := UserActor(ed.UserID)
+
+	if kind := ActorKind(ed.Kind); kind == ActorKindAssistant || kind == ActorKindMCP {
+		actor.Kind = kind
+		actor.ClientID = ed.ClientID
+	}
+
+	return actor
 }
 
 // NewBranchForked creates the entries of a fork, one on each branch, each

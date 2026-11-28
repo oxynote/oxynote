@@ -7,6 +7,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -180,7 +181,7 @@ func Test_Handler_server(t *testing.T) {
 			t.Parallel()
 
 			man := &ManagerMock{
-				ToolSetFunc: func(_, _ string, role org.Role) *tools.Set {
+				ToolSetFunc: func(_ string, _ activity.Actor, role org.Role) *tools.Set {
 					return stubSet(&toolsMock.DB{}, role)
 				},
 			}
@@ -225,7 +226,7 @@ func Test_Handler_server(t *testing.T) {
 
 			for _, call := range toolSetCalls {
 				assert.Equal(t, "org1", call.OrgID)
-				assert.Equal(t, "user1", call.UserID)
+				assert.Equal(t, activity.MCPActor("user1", "client1"), call.Actor)
 				assert.Equal(t, c.Role, call.Role)
 			}
 

@@ -159,8 +159,8 @@ func Test_Handler_FetchDocumentBranchByIDUnsafe(t *testing.T) {
 }
 
 func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
-	validBody := `{"name":"Renamed","maintainers":["u1","u9"]}`
-	editBody := `{"name":"Doc","content":{"type":"doc","content":[{"type":"paragraph"}]},"maintainers":["u1","u9"]}`
+	validBody := `{"name":"Renamed","maintainers":["u1","u9"],"editors":[{"userId":"u1","kind":"user"},{"userId":"u9","kind":"mcp","clientId":"c1"}]}`
+	editBody := `{"name":"Doc","content":{"type":"doc","content":[{"type":"paragraph"}]},"maintainers":["u1","u9"],"editors":[{"userId":"u1","kind":"user"},{"userId":"u9","kind":"mcp","clientId":"c1"}]}`
 
 	// textDoc serves the stored document holding one line of text.
 	textDoc := func(context.Context, xid.ID) (*documentCore.Document, error) {
@@ -216,7 +216,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 				},
 			},
 			Tx:                            &TxMock{},
-			Body:                          `{"name":"Doc","maintainers":["u1","u9"]}`,
+			Body:                          `{"name":"Doc","maintainers":["u1","u9"],"editors":[{"userId":"u1","kind":"user"},{"userId":"u9","kind":"mcp","clientId":"c1"}]}`,
 			RespCode:                      http.StatusOK,
 			Committed:                     1,
 			Metadata:                      1,
@@ -323,7 +323,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			UpdateDocument:                1,
 			FetchDocumentMaintainers:      1,
 			Edits:                         1,
-			Editors:                       []activity.Actor{activity.UserActor("u1"), activity.UserActor("u9")},
+			Editors:                       []activity.Actor{activity.UserActor("u1"), activity.MCPActor("u9", "c1")},
 			Entries:                       1,
 			Rollback:                      1,
 		},
@@ -334,7 +334,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 					return []string{"u1", "u9"}, nil
 				},
 			},
-			Body:                          `{"name":"Doc","content":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"hi","marks":[{"type":"comment","attrs":{"commentId":"c1"}}]}]}]},"maintainers":["u1","u9"]}`,
+			Body:                          `{"name":"Doc","content":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"hi","marks":[{"type":"comment","attrs":{"commentId":"c1"}}]}]}]},"maintainers":["u1","u9"],"editors":[{"userId":"u1","kind":"user"},{"userId":"u9","kind":"mcp","clientId":"c1"}]}`,
 			RespCode:                      http.StatusOK,
 			Committed:                     1,
 			Metadata:                      1,
@@ -355,7 +355,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 					return []string{"u1", "u9"}, nil
 				},
 			},
-			Body:                          `{"name":"Doc","content":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"h"},{"type":"text","text":"i","marks":[{"type":"comment","attrs":{"commentId":"c1"}}]}]}]},"maintainers":["u1","u9"]}`,
+			Body:                          `{"name":"Doc","content":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"h"},{"type":"text","text":"i","marks":[{"type":"comment","attrs":{"commentId":"c1"}}]}]}]},"maintainers":["u1","u9"],"editors":[{"userId":"u1","kind":"user"},{"userId":"u9","kind":"mcp","clientId":"c1"}]}`,
 			RespCode:                      http.StatusOK,
 			Committed:                     1,
 			Metadata:                      1,
@@ -388,7 +388,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			BeginTx:                       1,
 			UpdateDocument:                1,
 			Edits:                         1,
-			Editors:                       []activity.Actor{activity.UserActor("u1"), activity.UserActor("u9")},
+			Editors:                       []activity.Actor{activity.UserActor("u1"), activity.MCPActor("u9", "c1")},
 			Rollback:                      1,
 		},
 		"Error returned by Tx.InsertDocumentActivityEntries": {
@@ -759,7 +759,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			if c.Entries > 0 && c.Renamed {
 				require.Len(t, ee[0].Entries, 1)
 				assert.Equal(t, activity.TypeDocumentRenamed, ee[0].Entries[0].Type)
-				assert.Equal(t, activity.UserActor("u9"), ee[0].Entries[0].Actor)
+				assert.Equal(t, activity.MCPActor("u9", "c1"), ee[0].Entries[0].Actor)
 				assert.Equal(t, activity.Metadata{activity.MetaKeyFrom: "Doc", activity.MetaKeyTo: "Renamed"}, ee[0].Entries[0].Metadata)
 			}
 

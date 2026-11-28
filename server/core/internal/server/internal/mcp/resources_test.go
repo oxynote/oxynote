@@ -10,6 +10,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -105,7 +106,7 @@ func Test_Handler_addResources(t *testing.T) {
 			t.Parallel()
 
 			man := &ManagerMock{
-				ToolSetFunc: func(string, string, org.Role) *tools.Set {
+				ToolSetFunc: func(string, activity.Actor, org.Role) *tools.Set {
 					return stubSet(&toolsMock.DB{}, org.RoleEditor)
 				},
 			}

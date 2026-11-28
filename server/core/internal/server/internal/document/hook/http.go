@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
@@ -103,7 +104,7 @@ func (h *Handler) CreateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hk, err := h.hookMan.CreateHook(r.Context(), hi, documentID, session.ActiveOrganizationID, session.UserID)
+	hk, err := h.hookMan.CreateHook(r.Context(), hi, documentID, session.ActiveOrganizationID, activity.UserActor(session.UserID))
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -143,7 +144,7 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hk, err := h.hookMan.UpdateHook(r.Context(), id, documentID, session.ActiveOrganizationID, ui, session.UserID)
+	hk, err := h.hookMan.UpdateHook(r.Context(), id, documentID, session.ActiveOrganizationID, ui, activity.UserActor(session.UserID))
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -176,7 +177,7 @@ func (h *Handler) ResetDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hk, err := h.hookMan.ResetHook(r.Context(), id, documentID, session.ActiveOrganizationID, session.UserID)
+	hk, err := h.hookMan.ResetHook(r.Context(), id, documentID, session.ActiveOrganizationID, activity.UserActor(session.UserID))
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -209,7 +210,7 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = h.hookMan.DeleteHook(r.Context(), id, documentID, session.ActiveOrganizationID, session.UserID); err != nil {
+	if err = h.hookMan.DeleteHook(r.Context(), id, documentID, session.ActiveOrganizationID, activity.UserActor(session.UserID)); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -239,18 +240,18 @@ type DB interface {
 //go:generate ../../../../../scripts/codegen/mock -t internal Manager manager
 type Manager interface {
 	// CreateHook should create the hook on the branch of the document,
-	// credited to updatedBy.
-	CreateHook(ctx context.Context, ci hookCore.CreateInput, documentID xid.ID, organizationID, updatedBy string) (*hookCore.Hook, error)
+	// credited to the actor.
+	CreateHook(ctx context.Context, ci hookCore.CreateInput, documentID xid.ID, organizationID string, actor activity.Actor) (*hookCore.Hook, error)
 
 	// UpdateHook should replace the settings of the document's hook,
-	// credited to updatedBy, and return the stored hook.
-	UpdateHook(ctx context.Context, id, documentID xid.ID, organizationID string, ui hookCore.UpdateInput, updatedBy string) (*hookCore.Hook, error)
+	// credited to the actor, and return the stored hook.
+	UpdateHook(ctx context.Context, id, documentID xid.ID, organizationID string, ui hookCore.UpdateInput, actor activity.Actor) (*hookCore.Hook, error)
 
 	// DeleteHook should tear the document's hook down and remove it,
-	// credited to updatedBy.
-	DeleteHook(ctx context.Context, id, documentID xid.ID, organizationID, updatedBy string) error
+	// credited to the actor.
+	DeleteHook(ctx context.Context, id, documentID xid.ID, organizationID string, actor activity.Actor) error
 
-	// ResetHook should reset the document's hook, credited to updatedBy,
+	// ResetHook should reset the document's hook, credited to the actor,
 	// and return the stored hook.
-	ResetHook(ctx context.Context, id, documentID xid.ID, organizationID, updatedBy string) (*hookCore.Hook, error)
+	ResetHook(ctx context.Context, id, documentID xid.ID, organizationID string, actor activity.Actor) (*hookCore.Hook, error)
 }

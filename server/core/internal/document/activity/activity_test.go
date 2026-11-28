@@ -19,6 +19,22 @@ func Test_UserActor(t *testing.T) {
 	assert.Equal(t, Actor{Kind: ActorKindUser, UserID: null.StringFrom("user1")}, UserActor("user1"))
 }
 
+func Test_AssistantActor(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, Actor{Kind: ActorKindAssistant, UserID: null.StringFrom("user1")}, AssistantActor("user1"))
+}
+
+func Test_MCPActor(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(
+		t,
+		Actor{Kind: ActorKindMCP, UserID: null.StringFrom("user1"), ClientID: null.StringFrom("client1")},
+		MCPActor("user1", "client1"),
+	)
+}
+
 func Test_SystemActor(t *testing.T) {
 	t.Parallel()
 

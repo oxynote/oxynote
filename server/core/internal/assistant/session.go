@@ -15,6 +15,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/persist"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/logutil"
 	"github.com/tidwall/gjson"
@@ -61,7 +62,7 @@ func (m *Manager) newSession(
 	writer protocol.SessionWriter,
 ) (*session, error) {
 	key := persist.SessionKey(orgID, userID)
-	toolSet := m.ToolSet(orgID, userID, role)
+	toolSet := m.ToolSet(orgID, activity.AssistantActor(userID), role)
 
 	s := &session{
 		man:    m,

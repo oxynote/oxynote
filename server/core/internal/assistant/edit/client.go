@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/rs/xid"
 )
 
@@ -55,8 +56,8 @@ func NewClient(httpClient *http.Client, baseURL string) *Client {
 //
 // A system batch comes from core, not a person, so its persist may reach
 // a protected branch. Only core itself passes true, never anything a
-// prompt can reach. userID is the person an ordinary batch credits, and
-// is empty for a system batch.
+// prompt can reach. The actor is who an ordinary batch's edits are
+// credited to.
 //
 // A transport failure is returned as an error. The batch may still have
 // been applied, since the response can be lost after Node applies it. An
@@ -65,7 +66,7 @@ func (c *Client) Apply(
 	ctx context.Context,
 	documentID, branchID xid.ID,
 	ops []Operation,
-	userID string,
+	actor activity.Actor,
 	system bool,
 ) (Result, error) {
 	if len(ops) == 0 {
@@ -73,10 +74,10 @@ func (c *Client) Apply(
 	}
 
 	body, err := json.Marshal(struct {
-		Operations []Operation `json:"operations"`
-		UserID     string      `json:"userId,omitempty"`
-		System     bool        `json:"system"`
-	}{Operations: ops, UserID: userID, System: system})
+		Operations []Operation    `json:"operations"`
+		Actor      activity.Actor `json:"actor"`
+		System     bool           `json:"system"`
+	}{Operations: ops, Actor: actor, System: system})
 	if err != nil {
 		return Result{}, fmt.Errorf("marshaling operations: %w", err)
 	}

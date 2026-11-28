@@ -166,6 +166,13 @@ describe("createCoreClient", () => {
 				icon: "lucide:file",
 				content: { type: "doc", content: [] },
 				maintainers: ["user-1"],
+				editors: [
+					{
+						userId: "user-1",
+						kind: "user",
+						clientId: null,
+					},
+				],
 				rawContent: "AAEC",
 				system: false,
 			}

@@ -96,6 +96,29 @@ function readBoolean(source: unknown, key: string): boolean | undefined {
 	return typeof value === "boolean" ? value : undefined
 }
 
+// readActor reads who an operations batch is made for. A batch with no
+// user to credit has no actor.
+function readActor(
+	body: unknown,
+): { kind: string; userId: string; clientId: string | null } | undefined {
+	const source =
+		body && typeof body === "object"
+			? (body as { actor?: unknown }).actor
+			: undefined
+
+	const kind = readString(source, "kind")
+	const userId = readString(source, "userId")
+	if (!kind || !userId) {
+		return undefined
+	}
+
+	return {
+		kind,
+		userId,
+		clientId: readString(source, "clientId") ?? null,
+	}
+}
+
 // an axios rejection carrying core's own response, which the merge route
 // forwards verbatim so the caller sees core's status and error body rather
 // than a generic 500.
@@ -565,6 +588,7 @@ export function createRoutes({
 				icon: merged.icon,
 				content: merged.content,
 				maintainers: [],
+				editors: [],
 				rawContent: Buffer.from(
 					Y.encodeStateAsUpdate(toDocument),
 				).toString("base64"),
@@ -749,16 +773,19 @@ export function createRoutes({
 							.system === true
 					: false
 
-			// the user the batch is made for, such as the one the
-			// assistant acts for. The persist names them as its author.
-			const userId =
-				body && typeof body === "object"
-					? (body as { userId?: unknown }).userId
-					: undefined
+			// who the batch is made for: the assistant or an MCP client
+			// acting for a user. The persist credits its edits to them.
+			const actor = readActor(body)
 			const context = system
 				? systemOrigin.context
-				: typeof userId === "string" && userId !== ""
-					? { userId }
+				: actor
+					? {
+							userId: actor.userId,
+							actor: {
+								kind: actor.kind,
+								clientId: actor.clientId,
+							},
+						}
 					: {}
 
 			const operations =

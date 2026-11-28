@@ -226,16 +226,20 @@ func Test_NewPersistActivity(t *testing.T) {
 		Type:    document.BlockNodeDoc,
 		Content: []document.Block{{Type: document.BlockNodeParagraph}},
 	}
-	edited.LastUpdatedBy = null.StringFrom("user2")
 
 	renamed := before
 	renamed.DocumentName = "Renamed"
-	renamed.LastUpdatedBy = null.StringFrom("user2")
 
 	both := edited
 	both.DocumentName = "Renamed"
 
-	editors := document.UpdateInput{Maintainers: []string{"user1", "user2"}}
+	editors := document.UpdateInput{Editors: []document.Editor{
+		{UserID: "user1", Kind: "user"},
+		{UserID: "user2", Kind: "mcp", ClientID: null.StringFrom("client1")},
+	}}
+
+	user1 := UserActor("user1")
+	mcp2 := MCPActor("user2", "client1")
 
 	cc := map[string]struct {
 		After   document.Document
@@ -245,10 +249,11 @@ func Test_NewPersistActivity(t *testing.T) {
 	}{
 		"System persist": {
 			After: both,
-			Input: document.UpdateInput{System: true, Maintainers: []string{"user1"}},
+			Input: document.UpdateInput{System: true, Editors: editors.Editors},
 		},
 		"Persist without editors": {
 			After: both,
+			Input: document.UpdateInput{Maintainers: []string{"user1"}},
 		},
 		"Persist that changes nothing": {
 			After: before,
@@ -257,7 +262,7 @@ func Test_NewPersistActivity(t *testing.T) {
 		"Edit": {
 			After:   edited,
 			Input:   editors,
-			Editors: []Actor{UserActor("user1"), UserActor("user2")},
+			Editors: []Actor{user1, mcp2},
 		},
 		"Rename": {
 			After: renamed,
@@ -267,7 +272,7 @@ func Test_NewPersistActivity(t *testing.T) {
 		"Edit and rename": {
 			After:   both,
 			Input:   editors,
-			Editors: []Actor{UserActor("user1"), UserActor("user2")},
+			Editors: []Actor{user1, mcp2},
 			Types:   []Type{TypeDocumentRenamed},
 		},
 	}
@@ -279,13 +284,49 @@ func Test_NewPersistActivity(t *testing.T) {
 			eds, entries := NewPersistActivity(before, c.After, c.Input)
 
 			assert.Equal(t, c.Editors, eds)
-
 			require.Len(t, entries, len(c.Types))
 
+			// the newest editor is credited with the rename.
 			for i, e := range entries {
 				assert.Equal(t, c.Types[i], e.Type)
-				assert.Equal(t, UserActor("user2"), e.Actor)
+				assert.Equal(t, mcp2, e.Actor)
 			}
+		})
+	}
+}
+
+func Test_newEditorActor(t *testing.T) {
+	cc := map[string]struct {
+		Editor document.Editor
+		Result Actor
+	}{
+		"User": {
+			Editor: document.Editor{UserID: "user1", Kind: "user"},
+			Result: UserActor("user1"),
+		},
+		"Assistant": {
+			Editor: document.Editor{UserID: "user1", Kind: "assistant"},
+			Result: AssistantActor("user1"),
+		},
+		"MCP client": {
+			Editor: document.Editor{UserID: "user1", Kind: "mcp", ClientID: null.StringFrom("client1")},
+			Result: MCPActor("user1", "client1"),
+		},
+		"Unknown kind": {
+			Editor: document.Editor{UserID: "user1", Kind: "robot"},
+			Result: UserActor("user1"),
+		},
+		"System kind": {
+			Editor: document.Editor{UserID: "user1", Kind: "system"},
+			Result: UserActor("user1"),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, newEditorActor(c.Editor))
 		})
 	}
 }

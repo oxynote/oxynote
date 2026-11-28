@@ -14,6 +14,7 @@ import (
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/memkit"
@@ -295,7 +296,7 @@ func (c *Checker) clear(
 				document.AttrSimulationActive: false,
 			}),
 		},
-		"",
+		activity.SystemActor(),
 		true,
 	)
 	if err != nil {
@@ -406,5 +407,5 @@ type Applier interface {
 	// the (documentID, branchID) document and return the per-op
 	// outcome. The clear is core's own write, so this package always
 	// asks for a system one.
-	Apply(ctx context.Context, documentID, branchID xid.ID, ops []edit.Operation, userID string, system bool) (edit.Result, error)
+	Apply(ctx context.Context, documentID, branchID xid.ID, ops []edit.Operation, actor activity.Actor, system bool) (edit.Result, error)
 }

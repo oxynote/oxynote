@@ -13,6 +13,7 @@ import (
 	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
@@ -649,7 +650,7 @@ func Test_Checker_Check(t *testing.T) {
 			}
 
 			applier := &ApplierMock{
-				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, string, bool) (edit.Result, error) {
+				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, activity.Actor, bool) (edit.Result, error) {
 					return c.ApplyResult, c.ApplyErr
 				},
 			}
@@ -697,7 +698,10 @@ func Test_Checker_Check(t *testing.T) {
 			}
 
 			if c.AssertClearOp {
-				call := applier.ApplyCalls()[0]
+				aa := applier.ApplyCalls()
+				require.Len(t, aa, 1)
+
+				call := aa[0]
 
 				assert.Equal(t, documentID, call.DocumentID)
 				assert.Equal(t, branchID, call.BranchID)
@@ -705,6 +709,7 @@ func Test_Checker_Check(t *testing.T) {
 				// the clear is core's own write: an ordinary one
 				// would be refused on a protected branch.
 				assert.True(t, call.System)
+				assert.Equal(t, activity.SystemActor(), call.Actor)
 				require.Len(t, call.Ops, 1)
 
 				assert.Equal(t, edit.Operation{
