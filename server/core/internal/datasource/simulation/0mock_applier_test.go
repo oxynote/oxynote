@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/rs/xid"
 )
 
@@ -21,7 +22,7 @@ var _ Applier = &ApplierMock{}
 //
 //		// make and configure a mocked Applier
 //		mockedApplier := &ApplierMock{
-//			ApplyFunc: func(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation, userID string, system bool) (edit.Result, error) {
+//			ApplyFunc: func(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation, actor activity.Actor, system bool) (edit.Result, error) {
 //				panic("mock out the Apply method")
 //			},
 //		}
@@ -32,7 +33,7 @@ var _ Applier = &ApplierMock{}
 //	}
 type ApplierMock struct {
 	// ApplyFunc mocks the Apply method.
-	ApplyFunc func(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation, userID string, system bool) (edit.Result, error)
+	ApplyFunc func(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation, actor activity.Actor, system bool) (edit.Result, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -46,8 +47,8 @@ type ApplierMock struct {
 			BranchID xid.ID
 			// Ops is the ops argument value.
 			Ops []edit.Operation
-			// UserID is the userID argument value.
-			UserID string
+			// Actor is the actor argument value.
+			Actor activity.Actor
 			// System is the system argument value.
 			System bool
 		}
@@ -56,20 +57,20 @@ type ApplierMock struct {
 }
 
 // Apply calls ApplyFunc.
-func (mock *ApplierMock) Apply(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation, userID string, system bool) (edit.Result, error) {
+func (mock *ApplierMock) Apply(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation, actor activity.Actor, system bool) (edit.Result, error) {
 	callInfo := struct {
 		Ctx        context.Context
 		DocumentID xid.ID
 		BranchID   xid.ID
 		Ops        []edit.Operation
-		UserID     string
+		Actor      activity.Actor
 		System     bool
 	}{
 		Ctx:        ctx,
 		DocumentID: documentID,
 		BranchID:   branchID,
 		Ops:        ops,
-		UserID:     userID,
+		Actor:      actor,
 		System:     system,
 	}
 	mock.lockApply.Lock()
@@ -82,7 +83,7 @@ func (mock *ApplierMock) Apply(ctx context.Context, documentID xid.ID, branchID 
 		)
 		return resultOut, errOut
 	}
-	return mock.ApplyFunc(ctx, documentID, branchID, ops, userID, system)
+	return mock.ApplyFunc(ctx, documentID, branchID, ops, actor, system)
 }
 
 // ApplyCalls gets all the calls that were made to Apply.
@@ -94,7 +95,7 @@ func (mock *ApplierMock) ApplyCalls() []struct {
 	DocumentID xid.ID
 	BranchID   xid.ID
 	Ops        []edit.Operation
-	UserID     string
+	Actor      activity.Actor
 	System     bool
 } {
 	var calls []struct {
@@ -102,7 +103,7 @@ func (mock *ApplierMock) ApplyCalls() []struct {
 		DocumentID xid.ID
 		BranchID   xid.ID
 		Ops        []edit.Operation
-		UserID     string
+		Actor      activity.Actor
 		System     bool
 	}
 	mock.lockApply.RLock()

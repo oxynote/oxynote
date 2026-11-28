@@ -19,6 +19,7 @@ import (
 	protocolMock "github.com/oxynote/oxynote/server/core/internal/assistant/protocol/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/memkit"
@@ -423,7 +424,7 @@ func Test_Manager_ToolSet(t *testing.T) {
 
 			m, _ := testManagerStores()
 
-			s := m.ToolSet("org1", "user1", c.Role)
+			s := m.ToolSet("org1", activity.AssistantActor("user1"), c.Role)
 			require.NotNil(t, s)
 
 			assert.Len(t, s.Tools(), c.Tools)

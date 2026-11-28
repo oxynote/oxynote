@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/org"
 )
 
@@ -20,7 +21,7 @@ var _ Manager = &ManagerMock{}
 //
 //		// make and configure a mocked Manager
 //		mockedManager := &ManagerMock{
-//			ToolSetFunc: func(orgID string, userID string, role org.Role) *tools.Set {
+//			ToolSetFunc: func(orgID string, actor activity.Actor, role org.Role) *tools.Set {
 //				panic("mock out the ToolSet method")
 //			},
 //		}
@@ -31,7 +32,7 @@ var _ Manager = &ManagerMock{}
 //	}
 type ManagerMock struct {
 	// ToolSetFunc mocks the ToolSet method.
-	ToolSetFunc func(orgID string, userID string, role org.Role) *tools.Set
+	ToolSetFunc func(orgID string, actor activity.Actor, role org.Role) *tools.Set
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -39,8 +40,8 @@ type ManagerMock struct {
 		ToolSet []struct {
 			// OrgID is the orgID argument value.
 			OrgID string
-			// UserID is the userID argument value.
-			UserID string
+			// Actor is the actor argument value.
+			Actor activity.Actor
 			// Role is the role argument value.
 			Role org.Role
 		}
@@ -49,15 +50,15 @@ type ManagerMock struct {
 }
 
 // ToolSet calls ToolSetFunc.
-func (mock *ManagerMock) ToolSet(orgID string, userID string, role org.Role) *tools.Set {
+func (mock *ManagerMock) ToolSet(orgID string, actor activity.Actor, role org.Role) *tools.Set {
 	callInfo := struct {
-		OrgID  string
-		UserID string
-		Role   org.Role
+		OrgID string
+		Actor activity.Actor
+		Role  org.Role
 	}{
-		OrgID:  orgID,
-		UserID: userID,
-		Role:   role,
+		OrgID: orgID,
+		Actor: actor,
+		Role:  role,
 	}
 	mock.lockToolSet.Lock()
 	mock.calls.ToolSet = append(mock.calls.ToolSet, callInfo)
@@ -68,7 +69,7 @@ func (mock *ManagerMock) ToolSet(orgID string, userID string, role org.Role) *to
 		)
 		return setOut
 	}
-	return mock.ToolSetFunc(orgID, userID, role)
+	return mock.ToolSetFunc(orgID, actor, role)
 }
 
 // ToolSetCalls gets all the calls that were made to ToolSet.
@@ -76,14 +77,14 @@ func (mock *ManagerMock) ToolSet(orgID string, userID string, role org.Role) *to
 //
 //	len(mockedManager.ToolSetCalls())
 func (mock *ManagerMock) ToolSetCalls() []struct {
-	OrgID  string
-	UserID string
-	Role   org.Role
+	OrgID string
+	Actor activity.Actor
+	Role  org.Role
 } {
 	var calls []struct {
-		OrgID  string
-		UserID string
-		Role   org.Role
+		OrgID string
+		Actor activity.Actor
+		Role  org.Role
 	}
 	mock.lockToolSet.RLock()
 	calls = mock.calls.ToolSet

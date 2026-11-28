@@ -1753,12 +1753,20 @@ describe("createRoutes", () => {
 				input: { system: 1 },
 			},
 			{
-				name: "a userId that is not a string",
-				input: { userId: 1 },
+				name: "an actor that is not an object",
+				input: { actor: 1 },
 			},
 			{
-				name: "an empty userId",
-				input: { userId: "" },
+				name: "an actor without a kind",
+				input: { actor: { userId: "user-1" } },
+			},
+			{
+				name: "an actor without a user",
+				input: { actor: { kind: "mcp" } },
+			},
+			{
+				name: "an actor with an empty user",
+				input: { actor: { kind: "mcp", userId: "" } },
 			},
 		])(
 			"opens the connection as an ordinary one given $name",
@@ -1800,41 +1808,76 @@ describe("createRoutes", () => {
 			},
 		)
 
-		it("opens the connection for the user the batch names", async ({
-			expect,
-		}) => {
-			const doc = new Y.Doc()
-			const { registry, openDirectConnection } = stubRegistry(
-				{
-					documents: new Map([["doc1-b1", doc]]),
-					transact: (fn) => {
-						fn(doc)
-
-						return Promise.resolve()
+		it.for([
+			{
+				name: "the assistant",
+				input: {
+					kind: "assistant",
+					userId: "user-1",
+					clientId: null,
+				},
+				expected: {
+					userId: "user-1",
+					actor: {
+						kind: "assistant",
+						clientId: null,
 					},
 				},
-			)
-			const { app } = build({ hocuspocus: registry })
-
-			await app.request(path, {
-				method: "POST",
-				body: JSON.stringify({
+			},
+			{
+				name: "an MCP client",
+				input: {
+					kind: "mcp",
 					userId: "user-1",
-					operations: [
-						{
-							kind: "set_icon",
-							icon: "lucide:siren",
-						},
-					],
-				}),
-				headers: { "Content-Type": "application/json" },
-			})
+					clientId: "client-1",
+				},
+				expected: {
+					userId: "user-1",
+					actor: {
+						kind: "mcp",
+						clientId: "client-1",
+					},
+				},
+			},
+		])(
+			"opens the connection for $name acting for the user",
+			async ({ input, expected }, { expect }) => {
+				const doc = new Y.Doc()
+				const { registry, openDirectConnection } =
+					stubRegistry({
+						documents: new Map([
+							["doc1-b1", doc],
+						]),
+						transact: (fn) => {
+							fn(doc)
 
-			expect(openDirectConnection).toHaveBeenCalledWith(
-				"doc1-b1",
-				{ userId: "user-1" },
-			)
-		})
+							return Promise.resolve()
+						},
+					})
+				const { app } = build({ hocuspocus: registry })
+
+				await app.request(path, {
+					method: "POST",
+					body: JSON.stringify({
+						actor: input,
+						operations: [
+							{
+								kind: "set_icon",
+								icon: "lucide:siren",
+							},
+						],
+					}),
+					headers: {
+						"Content-Type":
+							"application/json",
+					},
+				})
+
+				expect(
+					openDirectConnection,
+				).toHaveBeenCalledWith("doc1-b1", expected)
+			},
+		)
 
 		it("opens a system batch as core's own even when it names a user", async ({
 			expect,
@@ -1856,7 +1899,11 @@ describe("createRoutes", () => {
 				method: "POST",
 				body: JSON.stringify({
 					system: true,
-					userId: "user-1",
+					actor: {
+						kind: "assistant",
+						userId: "user-1",
+						clientId: null,
+					},
 					operations: [
 						{
 							kind: "set_icon",

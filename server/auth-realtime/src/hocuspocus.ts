@@ -5,7 +5,7 @@ import { Hocuspocus } from "@hocuspocus/server"
 import { Logger } from "@hocuspocus/extension-logger"
 // aliased because the extension above already claims the name Logger.
 import type { Logger as ServiceLogger } from "./logging.js"
-import type { CoreClient } from "./core.js"
+import type { CoreClient, Editor } from "./core.js"
 import type { Store } from "./db.js"
 import { toAxiosHeaders, toHeaders } from "./headers.js"
 import { bestEffort, reportedAsMessage } from "./reporting.js"
@@ -249,6 +249,11 @@ export function createDocumentHooks({
 	// test, between cases.
 	const documentMaintainers = new Map<string, Set<string>>()
 
+	// who edited each open document since its last persist, with what
+	// they edited through. One person's edits through two clients stay
+	// apart, so each is credited on its own.
+	const documentEditors = new Map<string, Map<string, Editor>>()
+
 	// whether every change to each open document since its last persist
 	// came from core. A document nobody has changed is absent, and a
 	// persist of one reads as an ordinary write: core's permission is
@@ -336,6 +341,10 @@ export function createDocumentHooks({
 				session?: AuthSession | null
 				system?: boolean
 				userId?: string
+				actor?: {
+					kind: string
+					clientId: string | null
+				}
 			} | null
 			documentName: string
 		}) {
@@ -362,6 +371,27 @@ export function createDocumentHooks({
 			// latest editor moves to the end.
 			set.delete(userId)
 			set.add(userId)
+
+			// a socket edit is the user's own. Only a batch core sends
+			// for an agent carries an actor.
+			const actor = context?.session
+				? undefined
+				: context?.actor
+			const editor: Editor = {
+				userId,
+				kind: actor?.kind ?? "user",
+				clientId: actor?.clientId ?? null,
+			}
+
+			let editors = documentEditors.get(documentName)
+			if (!editors) {
+				editors = new Map()
+				documentEditors.set(documentName, editors)
+			}
+
+			const key = `${editor.kind}:${userId}:${editor.clientId ?? ""}`
+			editors.delete(key)
+			editors.set(key, editor)
 
 			return Promise.resolve()
 		},
@@ -430,6 +460,7 @@ export function createDocumentHooks({
 							icon: branch.icon,
 							content: branch.content,
 							maintainers: [],
+							editors: [],
 							rawContent: encodeState(
 								ydoc,
 							),
@@ -456,6 +487,13 @@ export function createDocumentHooks({
 					[],
 			)
 			documentMaintainers.delete(data.documentName)
+
+			const editors = Array.from(
+				documentEditors
+					.get(data.documentName)
+					?.values() ?? [],
+			)
+			documentEditors.delete(data.documentName)
 
 			// nothing but core changed the document, so the persist
 			// carries core's own permission and a protected branch
@@ -493,6 +531,7 @@ export function createDocumentHooks({
 							"content",
 						) as unknown,
 						maintainers,
+						editors,
 						rawContent: encodeState(
 							data.document,
 						),

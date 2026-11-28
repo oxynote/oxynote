@@ -31,11 +31,20 @@ export interface BranchContent {
 	rawContent?: string | null
 }
 
+// someone whose edits a persist holds, with what they edited through:
+// the editor ("user"), the assistant or an MCP client.
+export interface Editor {
+	userId: string
+	kind: string
+	clientId: string | null
+}
+
 export interface BranchUpdate {
 	name: string
 	icon: string
 	content: unknown
 	maintainers: string[]
+	editors: Editor[]
 	rawContent: string
 	system: boolean
 }

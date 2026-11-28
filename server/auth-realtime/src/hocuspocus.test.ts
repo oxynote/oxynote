@@ -703,6 +703,145 @@ describe("createDocumentHooks", () => {
 			).toEqual(["user-3"])
 		})
 
+		it("credits a socket edit to the user", async ({ expect }) => {
+			const core = stubCore()
+			const hooks = hooksWith(core)
+
+			await hooks.onChange({
+				context: {
+					session: SESSION,
+					actor: {
+						kind: "mcp",
+						clientId: "client-1",
+					},
+				},
+				documentName: "doc1-branch1",
+			})
+			await hooks.onStoreDocument({
+				documentName: "doc1-branch1",
+				document: seededDocument(),
+			})
+
+			expect(
+				core.storeBranchContent.mock.calls[0]?.[2]
+					.editors,
+			).toEqual([
+				{
+					userId: "user-1",
+					kind: "user",
+					clientId: null,
+				},
+			])
+		})
+
+		it("credits a batch to the agent it was made for", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			const hooks = hooksWith(core)
+
+			await hooks.onChange({
+				context: {
+					userId: "user-3",
+					actor: {
+						kind: "mcp",
+						clientId: "client-1",
+					},
+				},
+				documentName: "doc1-branch1",
+			})
+			await hooks.onStoreDocument({
+				documentName: "doc1-branch1",
+				document: seededDocument(),
+			})
+
+			expect(
+				core.storeBranchContent.mock.calls[0]?.[2]
+					.editors,
+			).toEqual([
+				{
+					userId: "user-3",
+					kind: "mcp",
+					clientId: "client-1",
+				},
+			])
+		})
+
+		it("credits one person's edits through each client apart, newest last", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			const hooks = hooksWith(core)
+
+			await hooks.onChange({
+				context: { session: SESSION },
+				documentName: "doc1-branch1",
+			})
+			await hooks.onChange({
+				context: {
+					userId: "user-1",
+					actor: {
+						kind: "mcp",
+						clientId: "client-1",
+					},
+				},
+				documentName: "doc1-branch1",
+			})
+			await hooks.onChange({
+				context: { session: SESSION },
+				documentName: "doc1-branch1",
+			})
+			await hooks.onStoreDocument({
+				documentName: "doc1-branch1",
+				document: seededDocument(),
+			})
+
+			expect(
+				core.storeBranchContent.mock.calls[0]?.[2]
+					.editors,
+			).toEqual([
+				{
+					userId: "user-1",
+					kind: "mcp",
+					clientId: "client-1",
+				},
+				{
+					userId: "user-1",
+					kind: "user",
+					clientId: null,
+				},
+			])
+			expect.soft(
+				core.storeBranchContent.mock.calls[0]?.[2]
+					.maintainers,
+			).toEqual(["user-1"])
+		})
+
+		it("credits nobody on a second persist with no edits between", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			const hooks = hooksWith(core)
+
+			await hooks.onChange({
+				context: { session: SESSION },
+				documentName: "doc1-branch1",
+			})
+			await hooks.onStoreDocument({
+				documentName: "doc1-branch1",
+				document: seededDocument(),
+			})
+			await hooks.onStoreDocument({
+				documentName: "doc1-branch1",
+				document: seededDocument(),
+			})
+
+			expect(
+				core.storeBranchContent.mock.calls[1]?.[2]
+					.editors,
+			).toEqual([])
+		})
+
 		it("ignores a change carrying no session", async ({
 			expect,
 		}) => {

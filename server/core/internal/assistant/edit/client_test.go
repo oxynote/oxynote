@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -63,7 +64,7 @@ func Test_Client_Apply(t *testing.T) {
 
 	cc := map[string]struct {
 		Ops            []Operation
-		UserID         string
+		Actor          activity.Actor
 		System         bool
 		BaseURL        string
 		CloseEarly     bool
@@ -72,14 +73,18 @@ func Test_Client_Apply(t *testing.T) {
 		ResponseBody   string
 		ExpectedErrors []OpError
 		ExpectedPath   string
-		Requests       int
-		Err            error
+		// ExpectedActor is the actor the request body carries.
+		ExpectedActor string
+		Requests      int
+		Err           error
 	}{
 		"Successful batch": {
 			Ops: []Operation{
 				Append(paragraph()),
 				Delete("uid-1"),
 			},
+			Actor:          activity.UserActor("user-1"),
+			ExpectedActor:  `{"kind":"user","userId":"user-1","clientId":null}`,
 			StatusCode:     200,
 			ResponseBody:   `{"errors": []}`,
 			ExpectedErrors: []OpError{},
@@ -92,6 +97,8 @@ func Test_Client_Apply(t *testing.T) {
 			Ops: []Operation{
 				Append(paragraph()),
 			},
+			Actor:          activity.SystemActor(),
+			ExpectedActor:  `{"kind":"system","userId":null,"clientId":null}`,
 			System:         true,
 			StatusCode:     200,
 			ResponseBody:   `{"errors": []}`,
@@ -99,11 +106,12 @@ func Test_Client_Apply(t *testing.T) {
 			ExpectedPath:   path,
 			Requests:       1,
 		},
-		"An ordinary batch names its user": {
+		"An agent batch names its user and client": {
 			Ops: []Operation{
 				Append(paragraph()),
 			},
-			UserID:         "user-1",
+			Actor:          activity.MCPActor("user-1", "client-1"),
+			ExpectedActor:  `{"kind":"mcp","userId":"user-1","clientId":"client-1"}`,
 			StatusCode:     200,
 			ResponseBody:   `{"errors": []}`,
 			ExpectedErrors: []OpError{},
@@ -214,7 +222,7 @@ func Test_Client_Apply(t *testing.T) {
 
 			client := NewClient(srv.Client(), baseURL)
 
-			res, err := client.Apply(context.Background(), docID, branchID, c.Ops, c.UserID, c.System)
+			res, err := client.Apply(context.Background(), docID, branchID, c.Ops, c.Actor, c.System)
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Equal(t, c.Requests, requests)
 
@@ -232,12 +240,13 @@ func Test_Client_Apply(t *testing.T) {
 				require.True(t, ok, "request body should carry operations array")
 				assert.Len(t, ops, len(c.Ops))
 				assert.Equal(t, c.System, captured.body["system"])
+				assert.NotContains(t, captured.body, "userId")
+			}
 
-				if c.UserID == "" {
-					assert.NotContains(t, captured.body, "userId")
-				} else {
-					assert.Equal(t, c.UserID, captured.body["userId"])
-				}
+			if c.ExpectedActor != "" {
+				actor, err := json.Marshal(captured.body["actor"])
+				require.NoError(t, err)
+				assert.JSONEq(t, c.ExpectedActor, string(actor))
 			}
 		})
 	}

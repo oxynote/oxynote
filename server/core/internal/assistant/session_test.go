@@ -17,6 +17,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -934,7 +935,7 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 			t.Parallel()
 
 			applier := &toolsMock.EditApplier{
-				ApplyFunc: func(_ context.Context, _, _ xid.ID, _ []edit.Operation, _ string, _ bool) (edit.Result, error) {
+				ApplyFunc: func(_ context.Context, _, _ xid.ID, _ []edit.Operation, _ activity.Actor, _ bool) (edit.Result, error) {
 					return edit.Result{Errors: []edit.OpError{}}, nil
 				},
 			}

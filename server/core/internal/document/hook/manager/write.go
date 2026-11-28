@@ -18,7 +18,7 @@ import (
 )
 
 // CreateHook creates the hook's external resource, then stores the hook
-// and records its branch in history, credited to updatedBy. It fails
+// and records its branch in history, credited to the actor. It fails
 // unless the branch belongs to the document, holds the hook's block and
 // the hook can check its target.
 func (m *Manager) CreateHook(
@@ -26,7 +26,7 @@ func (m *Manager) CreateHook(
 	ci hook.CreateInput,
 	documentID xid.ID,
 	organizationID string,
-	updatedBy string,
+	actor activity.Actor,
 ) (_ *hook.Hook, err error) {
 	ctx, cancel := context.WithTimeout(ctx, _hookTimeout)
 	defer cancel()
@@ -80,13 +80,13 @@ func (m *Manager) CreateHook(
 		return nil, err
 	}
 
-	entry := activity.NewHookEntry(activity.UserActor(updatedBy), activity.TypeHookCreated, *hk)
+	entry := activity.NewHookEntry(actor, activity.TypeHookCreated, *hk)
 
 	if err = tx.InsertDocumentActivityEntries(ctx, entry); err != nil {
 		return nil, err
 	}
 
-	if err = tx.RecordDocumentBranchHistoryEntry(ctx, ci.BranchID, organizationID, null.StringFrom(updatedBy), false); err != nil {
+	if err = tx.RecordDocumentBranchHistoryEntry(ctx, ci.BranchID, organizationID, actor.UserID, false); err != nil {
 		return nil, err
 	}
 
@@ -101,7 +101,7 @@ func (m *Manager) CreateHook(
 
 // UpdateHook applies the new settings, which resets the hook's state, then
 // stores the hook and records its branch in history, credited to
-// updatedBy. It fails unless the hook belongs to the document and can
+// the actor. It fails unless the hook belongs to the document and can
 // check its target with the new settings. The outside calls run before the
 // transaction opens, so no connection waits on them.
 func (m *Manager) UpdateHook(
@@ -110,7 +110,7 @@ func (m *Manager) UpdateHook(
 	documentID xid.ID,
 	organizationID string,
 	ui hook.UpdateInput,
-	updatedBy string,
+	actor activity.Actor,
 ) (_ *hook.Hook, err error) {
 	ctx, cancel := context.WithTimeout(ctx, _hookTimeout)
 	defer cancel()
@@ -163,11 +163,11 @@ func (m *Manager) UpdateHook(
 	}
 
 	if hk.BranchID.Valid {
-		if err = tx.RecordDocumentBranchHistoryEntry(ctx, hk.BranchID.V, organizationID, null.StringFrom(updatedBy), false); err != nil {
+		if err = tx.RecordDocumentBranchHistoryEntry(ctx, hk.BranchID.V, organizationID, actor.UserID, false); err != nil {
 			return nil, err
 		}
 
-		entry := activity.NewHookEntry(activity.UserActor(updatedBy), activity.TypeHookUpdated, *hk)
+		entry := activity.NewHookEntry(actor, activity.TypeHookUpdated, *hk)
 
 		if err = tx.InsertDocumentActivityEntries(ctx, entry); err != nil {
 			return nil, err
@@ -184,9 +184,9 @@ func (m *Manager) UpdateHook(
 }
 
 // DeleteHook tears down the hook's external resource, then removes the row
-// and records its branch in history, credited to updatedBy. It fails unless
+// and records its branch in history, credited to the actor. It fails unless
 // the hook belongs to the document.
-func (m *Manager) DeleteHook(ctx context.Context, id, documentID xid.ID, organizationID, updatedBy string) error {
+func (m *Manager) DeleteHook(ctx context.Context, id, documentID xid.ID, organizationID string, actor activity.Actor) error {
 	ctx, cancel := context.WithTimeout(ctx, _hookTimeout)
 	defer cancel()
 
@@ -239,11 +239,11 @@ func (m *Manager) DeleteHook(ctx context.Context, id, documentID xid.ID, organiz
 	}
 
 	if hk.BranchID.Valid {
-		if err = tx.RecordDocumentBranchHistoryEntry(ctx, hk.BranchID.V, organizationID, null.StringFrom(updatedBy), false); err != nil {
+		if err = tx.RecordDocumentBranchHistoryEntry(ctx, hk.BranchID.V, organizationID, actor.UserID, false); err != nil {
 			return err
 		}
 
-		entry := activity.NewHookEntry(activity.UserActor(updatedBy), activity.TypeHookDeleted, *hk)
+		entry := activity.NewHookEntry(actor, activity.TypeHookDeleted, *hk)
 
 		if err = tx.InsertDocumentActivityEntries(ctx, entry); err != nil {
 			return err
@@ -260,14 +260,15 @@ func (m *Manager) DeleteHook(ctx context.Context, id, documentID xid.ID, organiz
 }
 
 // ResetHook takes the target as it is now as the hook's new baseline and
-// stores it with its activity entry, credited to updatedBy. History holds
+// stores it with its activity entry, credited to the actor. History holds
 // no watcher state, so no history entry is recorded. A hook that cannot
 // check its target is stored with that status, and its maintainers are
 // told. It fails unless the hook belongs to the document.
 func (m *Manager) ResetHook(
 	ctx context.Context,
 	id, documentID xid.ID,
-	organizationID, updatedBy string,
+	organizationID string,
+	actor activity.Actor,
 ) (_ *hook.Hook, err error) {
 	ctx, cancel := context.WithTimeout(ctx, _hookTimeout)
 	defer cancel()
@@ -318,7 +319,7 @@ func (m *Manager) ResetHook(
 	}
 
 	if hk.BranchID.Valid {
-		entry := activity.NewHookEntry(activity.UserActor(updatedBy), activity.TypeHookReset, *hk)
+		entry := activity.NewHookEntry(actor, activity.TypeHookReset, *hk)
 
 		if err = tx.InsertDocumentActivityEntries(ctx, entry); err != nil {
 			return nil, err

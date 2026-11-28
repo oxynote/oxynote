@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
+	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/rs/xid"
 )
 
@@ -21,17 +23,29 @@ var _ Tx = &TxMock{}
 //
 //		// make and configure a mocked Tx
 //		mockedTx := &TxMock{
+//			AssignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error) {
+//				panic("mock out the AssignBranchTag method")
+//			},
 //			CommitFunc: func() error {
 //				panic("mock out the Commit method")
 //			},
 //			DeleteDocumentFunc: func(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error) {
 //				panic("mock out the DeleteDocument method")
 //			},
+//			FetchTagFunc: func(ctx context.Context, id xid.ID, organizationID string) (*tag.Tag, error) {
+//				panic("mock out the FetchTag method")
+//			},
 //			InsertDocumentFunc: func(ctx context.Context, doc document.Document) error {
 //				panic("mock out the InsertDocument method")
 //			},
+//			InsertDocumentActivityEntriesFunc: func(ctx context.Context, entries ...activity.Entry) error {
+//				panic("mock out the InsertDocumentActivityEntries method")
+//			},
 //			RollbackFunc: func() error {
 //				panic("mock out the Rollback method")
+//			},
+//			UnassignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error) {
+//				panic("mock out the UnassignBranchTag method")
 //			},
 //			UpsertDocumentMaintainersFunc: func(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error {
 //				panic("mock out the UpsertDocumentMaintainers method")
@@ -43,28 +57,62 @@ var _ Tx = &TxMock{}
 //
 //	}
 type TxMock struct {
+	// AssignBranchTagFunc mocks the AssignBranchTag method.
+	AssignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error)
+
 	// CommitFunc mocks the Commit method.
 	CommitFunc func() error
 
 	// DeleteDocumentFunc mocks the DeleteDocument method.
 	DeleteDocumentFunc func(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error)
 
+	// FetchTagFunc mocks the FetchTag method.
+	FetchTagFunc func(ctx context.Context, id xid.ID, organizationID string) (*tag.Tag, error)
+
 	// InsertDocumentFunc mocks the InsertDocument method.
 	InsertDocumentFunc func(ctx context.Context, doc document.Document) error
 
+	// InsertDocumentActivityEntriesFunc mocks the InsertDocumentActivityEntries method.
+	InsertDocumentActivityEntriesFunc func(ctx context.Context, entries ...activity.Entry) error
+
 	// RollbackFunc mocks the Rollback method.
 	RollbackFunc func() error
+
+	// UnassignBranchTagFunc mocks the UnassignBranchTag method.
+	UnassignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error)
 
 	// UpsertDocumentMaintainersFunc mocks the UpsertDocumentMaintainers method.
 	UpsertDocumentMaintainersFunc func(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// AssignBranchTag holds details about calls to the AssignBranchTag method.
+		AssignBranchTag []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// DocumentID is the documentID argument value.
+			DocumentID xid.ID
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+			// TagID is the tagID argument value.
+			TagID xid.ID
+		}
 		// Commit holds details about calls to the Commit method.
 		Commit []struct {
 		}
 		// DeleteDocument holds details about calls to the DeleteDocument method.
 		DeleteDocument []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// ID is the id argument value.
+			ID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
+		// FetchTag holds details about calls to the FetchTag method.
+		FetchTag []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// ID is the id argument value.
@@ -79,8 +127,28 @@ type TxMock struct {
 			// Doc is the doc argument value.
 			Doc document.Document
 		}
+		// InsertDocumentActivityEntries holds details about calls to the InsertDocumentActivityEntries method.
+		InsertDocumentActivityEntries []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Entries is the entries argument value.
+			Entries []activity.Entry
+		}
 		// Rollback holds details about calls to the Rollback method.
 		Rollback []struct {
+		}
+		// UnassignBranchTag holds details about calls to the UnassignBranchTag method.
+		UnassignBranchTag []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// DocumentID is the documentID argument value.
+			DocumentID xid.ID
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+			// TagID is the tagID argument value.
+			TagID xid.ID
 		}
 		// UpsertDocumentMaintainers holds details about calls to the UpsertDocumentMaintainers method.
 		UpsertDocumentMaintainers []struct {
@@ -94,11 +162,67 @@ type TxMock struct {
 			MaintainerIDs []string
 		}
 	}
-	lockCommit                    sync.RWMutex
-	lockDeleteDocument            sync.RWMutex
-	lockInsertDocument            sync.RWMutex
-	lockRollback                  sync.RWMutex
-	lockUpsertDocumentMaintainers sync.RWMutex
+	lockAssignBranchTag               sync.RWMutex
+	lockCommit                        sync.RWMutex
+	lockDeleteDocument                sync.RWMutex
+	lockFetchTag                      sync.RWMutex
+	lockInsertDocument                sync.RWMutex
+	lockInsertDocumentActivityEntries sync.RWMutex
+	lockRollback                      sync.RWMutex
+	lockUnassignBranchTag             sync.RWMutex
+	lockUpsertDocumentMaintainers     sync.RWMutex
+}
+
+// AssignBranchTag calls AssignBranchTagFunc.
+func (mock *TxMock) AssignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+		TagID          xid.ID
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		DocumentID:     documentID,
+		BranchID:       branchID,
+		TagID:          tagID,
+	}
+	mock.lockAssignBranchTag.Lock()
+	mock.calls.AssignBranchTag = append(mock.calls.AssignBranchTag, callInfo)
+	mock.lockAssignBranchTag.Unlock()
+	if mock.AssignBranchTagFunc == nil {
+		var (
+			bOut   bool
+			errOut error
+		)
+		return bOut, errOut
+	}
+	return mock.AssignBranchTagFunc(ctx, organizationID, documentID, branchID, tagID)
+}
+
+// AssignBranchTagCalls gets all the calls that were made to AssignBranchTag.
+// Check the length with:
+//
+//	len(mockedTx.AssignBranchTagCalls())
+func (mock *TxMock) AssignBranchTagCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	DocumentID     xid.ID
+	BranchID       xid.ID
+	TagID          xid.ID
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+		TagID          xid.ID
+	}
+	mock.lockAssignBranchTag.RLock()
+	calls = mock.calls.AssignBranchTag
+	mock.lockAssignBranchTag.RUnlock()
+	return calls
 }
 
 // Commit calls CommitFunc.
@@ -175,6 +299,50 @@ func (mock *TxMock) DeleteDocumentCalls() []struct {
 	return calls
 }
 
+// FetchTag calls FetchTagFunc.
+func (mock *TxMock) FetchTag(ctx context.Context, id xid.ID, organizationID string) (*tag.Tag, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		ID             xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		ID:             id,
+		OrganizationID: organizationID,
+	}
+	mock.lockFetchTag.Lock()
+	mock.calls.FetchTag = append(mock.calls.FetchTag, callInfo)
+	mock.lockFetchTag.Unlock()
+	if mock.FetchTagFunc == nil {
+		var (
+			tagOut *tag.Tag
+			errOut error
+		)
+		return tagOut, errOut
+	}
+	return mock.FetchTagFunc(ctx, id, organizationID)
+}
+
+// FetchTagCalls gets all the calls that were made to FetchTag.
+// Check the length with:
+//
+//	len(mockedTx.FetchTagCalls())
+func (mock *TxMock) FetchTagCalls() []struct {
+	Ctx            context.Context
+	ID             xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		ID             xid.ID
+		OrganizationID string
+	}
+	mock.lockFetchTag.RLock()
+	calls = mock.calls.FetchTag
+	mock.lockFetchTag.RUnlock()
+	return calls
+}
+
 // InsertDocument calls InsertDocumentFunc.
 func (mock *TxMock) InsertDocument(ctx context.Context, doc document.Document) error {
 	callInfo := struct {
@@ -214,6 +382,45 @@ func (mock *TxMock) InsertDocumentCalls() []struct {
 	return calls
 }
 
+// InsertDocumentActivityEntries calls InsertDocumentActivityEntriesFunc.
+func (mock *TxMock) InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error {
+	callInfo := struct {
+		Ctx     context.Context
+		Entries []activity.Entry
+	}{
+		Ctx:     ctx,
+		Entries: entries,
+	}
+	mock.lockInsertDocumentActivityEntries.Lock()
+	mock.calls.InsertDocumentActivityEntries = append(mock.calls.InsertDocumentActivityEntries, callInfo)
+	mock.lockInsertDocumentActivityEntries.Unlock()
+	if mock.InsertDocumentActivityEntriesFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.InsertDocumentActivityEntriesFunc(ctx, entries...)
+}
+
+// InsertDocumentActivityEntriesCalls gets all the calls that were made to InsertDocumentActivityEntries.
+// Check the length with:
+//
+//	len(mockedTx.InsertDocumentActivityEntriesCalls())
+func (mock *TxMock) InsertDocumentActivityEntriesCalls() []struct {
+	Ctx     context.Context
+	Entries []activity.Entry
+} {
+	var calls []struct {
+		Ctx     context.Context
+		Entries []activity.Entry
+	}
+	mock.lockInsertDocumentActivityEntries.RLock()
+	calls = mock.calls.InsertDocumentActivityEntries
+	mock.lockInsertDocumentActivityEntries.RUnlock()
+	return calls
+}
+
 // Rollback calls RollbackFunc.
 func (mock *TxMock) Rollback() error {
 	callInfo := struct {
@@ -241,6 +448,58 @@ func (mock *TxMock) RollbackCalls() []struct {
 	mock.lockRollback.RLock()
 	calls = mock.calls.Rollback
 	mock.lockRollback.RUnlock()
+	return calls
+}
+
+// UnassignBranchTag calls UnassignBranchTagFunc.
+func (mock *TxMock) UnassignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+		TagID          xid.ID
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		DocumentID:     documentID,
+		BranchID:       branchID,
+		TagID:          tagID,
+	}
+	mock.lockUnassignBranchTag.Lock()
+	mock.calls.UnassignBranchTag = append(mock.calls.UnassignBranchTag, callInfo)
+	mock.lockUnassignBranchTag.Unlock()
+	if mock.UnassignBranchTagFunc == nil {
+		var (
+			bOut   bool
+			errOut error
+		)
+		return bOut, errOut
+	}
+	return mock.UnassignBranchTagFunc(ctx, organizationID, documentID, branchID, tagID)
+}
+
+// UnassignBranchTagCalls gets all the calls that were made to UnassignBranchTag.
+// Check the length with:
+//
+//	len(mockedTx.UnassignBranchTagCalls())
+func (mock *TxMock) UnassignBranchTagCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	DocumentID     xid.ID
+	BranchID       xid.ID
+	TagID          xid.ID
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+		TagID          xid.ID
+	}
+	mock.lockUnassignBranchTag.RLock()
+	calls = mock.calls.UnassignBranchTag
+	mock.lockUnassignBranchTag.RUnlock()
 	return calls
 }
 

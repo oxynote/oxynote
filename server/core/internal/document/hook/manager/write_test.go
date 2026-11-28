@@ -51,6 +51,10 @@ func assertHookEntry(t *testing.T, entries []activity.Entry, tp activity.Type, a
 	assert.Equal(t, hk.BranchID.V, entries[0].BranchID)
 }
 
+// _agentActor is an MCP client acting for u1, so a test tells the actor's
+// own entry apart from the history entry credited to its user.
+var _agentActor = activity.MCPActor("u1", "client-1")
+
 func Test_Manager_CreateHook(t *testing.T) {
 	t.Parallel()
 
@@ -305,7 +309,7 @@ func Test_Manager_CreateHook(t *testing.T) {
 				BranchID: branchID,
 				BlockID:  c.BlockID,
 				Settings: c.Settings,
-			}, documentID, "org-1", "u1")
+			}, documentID, "org-1", _agentActor)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, man.flusher.(*FlusherMock).FlushCalls(), c.Flushes)
@@ -353,7 +357,7 @@ func Test_Manager_CreateHook(t *testing.T) {
 
 			ee := c.Tx.InsertDocumentActivityEntriesCalls()
 			require.Len(t, ee, 1)
-			assertHookEntry(t, ee[0].Entries, activity.TypeHookCreated, activity.UserActor("u1"), *hk)
+			assertHookEntry(t, ee[0].Entries, activity.TypeHookCreated, _agentActor, *hk)
 		})
 	}
 }
@@ -575,7 +579,7 @@ func Test_Manager_UpdateHook(t *testing.T) {
 				documentID = xid.New()
 			}
 
-			hk, err := man.UpdateHook(ctx, stored.ID, documentID, "org-1", hook.UpdateInput{Settings: c.Settings}, "u1")
+			hk, err := man.UpdateHook(ctx, stored.ID, documentID, "org-1", hook.UpdateInput{Settings: c.Settings}, _agentActor)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, dbm.FetchDocumentHookCalls(), c.Fetches)
@@ -617,7 +621,9 @@ func Test_Manager_UpdateHook(t *testing.T) {
 			assert.Equal(t, []hook.Hook{*hk}, changes)
 
 			if c.Entries > 0 {
-				assertHookEntry(t, tx.InsertDocumentActivityEntriesCalls()[0].Entries, activity.TypeHookUpdated, activity.UserActor("u1"), *hk)
+				ee := tx.InsertDocumentActivityEntriesCalls()
+				require.Len(t, ee, 1)
+				assertHookEntry(t, ee[0].Entries, activity.TypeHookUpdated, _agentActor, *hk)
 			}
 		})
 	}
@@ -914,7 +920,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 				documentID = xid.New()
 			}
 
-			err := man.DeleteHook(ctx, hk.ID, documentID, "org-1", "u1")
+			err := man.DeleteHook(ctx, hk.ID, documentID, "org-1", _agentActor)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			// only a service the hook could not reach is reported as one.
@@ -948,7 +954,13 @@ func Test_Manager_DeleteHook(t *testing.T) {
 				require.Len(t, flushes, 1)
 				assert.Equal(t, hk.BranchID.V, flushes[0].BranchID)
 
-				assertHookEntry(t, tx.InsertDocumentActivityEntriesCalls()[0].Entries, activity.TypeHookDeleted, activity.UserActor("u1"), hk)
+				rr := tx.RecordDocumentBranchHistoryEntryCalls()
+				require.Len(t, rr, 1)
+				assert.Equal(t, null.StringFrom("u1"), rr[0].By)
+
+				ee := tx.InsertDocumentActivityEntriesCalls()
+				require.Len(t, ee, 1)
+				assertHookEntry(t, ee[0].Entries, activity.TypeHookDeleted, _agentActor, hk)
 			}
 		})
 	}
@@ -1181,7 +1193,7 @@ func Test_Manager_ResetHook(t *testing.T) {
 				documentID = xid.New()
 			}
 
-			hk, err := man.ResetHook(ctx, stored.ID, documentID, "org-1", "u1")
+			hk, err := man.ResetHook(ctx, stored.ID, documentID, "org-1", _agentActor)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, db.FetchDocumentHookCalls(), c.Fetches)
@@ -1218,7 +1230,7 @@ func Test_Manager_ResetHook(t *testing.T) {
 			assert.Equal(t, []hook.Hook{*hk}, changes)
 
 			if c.Entries > 0 {
-				assertHookEntry(t, ee[0].Entries, activity.TypeHookReset, activity.UserActor("u1"), *hk)
+				assertHookEntry(t, ee[0].Entries, activity.TypeHookReset, _agentActor, *hk)
 			}
 
 			if c.Transitions > 0 {

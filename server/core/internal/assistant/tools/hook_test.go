@@ -10,6 +10,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/org"
@@ -36,7 +37,7 @@ func hookDeps(db *DBMock, man *HookManagerMock) *Deps {
 // UpdatedAt so a test can tell the answer from the hook it handed in.
 func stubHookManager() *HookManagerMock {
 	return &HookManagerMock{
-		CreateHookFunc: func(_ context.Context, ci hook.CreateInput, documentID xid.ID, organizationID, _ string) (*hook.Hook, error) {
+		CreateHookFunc: func(_ context.Context, ci hook.CreateInput, documentID xid.ID, organizationID string, _ activity.Actor) (*hook.Hook, error) {
 			hk := stubHook()
 			hk.Type = ci.Type
 			hk.DocumentID = null.ValueFrom(documentID)
@@ -47,7 +48,7 @@ func stubHookManager() *HookManagerMock {
 
 			return hk, nil
 		},
-		UpdateHookFunc: func(_ context.Context, id, _ xid.ID, _ string, ui hook.UpdateInput, _ string) (*hook.Hook, error) {
+		UpdateHookFunc: func(_ context.Context, id, _ xid.ID, _ string, ui hook.UpdateInput, _ activity.Actor) (*hook.Hook, error) {
 			hk := stubHook()
 			hk.ID = id
 			hk.Settings = ui.Settings
@@ -55,7 +56,7 @@ func stubHookManager() *HookManagerMock {
 
 			return hk, nil
 		},
-		ResetHookFunc: func(_ context.Context, id, _ xid.ID, _, _ string) (*hook.Hook, error) {
+		ResetHookFunc: func(_ context.Context, id, _ xid.ID, _ string, _ activity.Actor) (*hook.Hook, error) {
 			hk := stubHook()
 			hk.ID = id
 			hk.UpdatedAt = null.TimeFrom(_stubScheduleTime)

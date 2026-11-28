@@ -19,6 +19,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/org"
@@ -56,6 +57,9 @@ const (
 	_stubTagColor = "green"
 )
 
+// _testActor is who the test session's writes are credited to.
+var _testActor = activity.MCPActor("user", "client")
+
 // testDeps builds session wiring with don't-care dependencies. Pass the
 // mocks a test cares about; nil leaves a don't-care in place.
 func testDeps(db *DBMock, applier *EditApplierMock, tree *TreeNotifierMock) *Deps {
@@ -92,6 +96,7 @@ func testDeps(db *DBMock, applier *EditApplierMock, tree *TreeNotifierMock) *Dep
 		offload:         &offloadReaderMock{},
 		orgID:           "org",
 		userID:          "user",
+		actor:           _testActor,
 	}
 
 	// a nil notifier is a real case, since NotifyTreeChange then does
@@ -382,7 +387,7 @@ func failingDocumentDB() *DBMock {
 // stubApplier accepts every edit it is handed.
 func stubApplier() *EditApplierMock {
 	return &EditApplierMock{
-		ApplyFunc: func(_ context.Context, _, _ xid.ID, _ []edit.Operation, _ string, _ bool) (edit.Result, error) {
+		ApplyFunc: func(_ context.Context, _, _ xid.ID, _ []edit.Operation, _ activity.Actor, _ bool) (edit.Result, error) {
 			return edit.Result{Errors: []edit.OpError{}}, nil
 		},
 	}
@@ -413,7 +418,7 @@ func Test_NewDeps(t *testing.T) {
 
 	queue := &SearchQueueMock{}
 
-	d := NewDeps(slog.New(slog.DiscardHandler), db, searcher, queue, runners, gh, wc, hookMan, varMan, applier, tree, tags, offload, "org", "user")
+	d := NewDeps(slog.New(slog.DiscardHandler), db, searcher, queue, runners, gh, wc, hookMan, varMan, applier, tree, tags, offload, "org", _testActor)
 	require.NotNil(t, d)
 
 	assert.NotNil(t, d.log)
@@ -431,6 +436,7 @@ func Test_NewDeps(t *testing.T) {
 	assert.Same(t, offload, d.offload)
 	assert.Equal(t, "org", d.orgID)
 	assert.Equal(t, "user", d.userID)
+	assert.Equal(t, _testActor, d.actor)
 }
 
 func Test_Deps_newInput(t *testing.T) {
@@ -447,6 +453,7 @@ func Test_Deps_newInput(t *testing.T) {
 	assert.Equal(t, ctx, i.Context())
 	assert.Equal(t, "org", i.orgID)
 	assert.Equal(t, "user", i.userID)
+	assert.Equal(t, _testActor, i.actor)
 }
 
 func Test_input_HasRole(t *testing.T) {
@@ -1302,6 +1309,7 @@ func Test_input_CreateDocument(t *testing.T) {
 		Exists   int
 		Begins   int
 		Inserts  int
+		Entries  int
 		Upserts  int
 		Commits  int
 		Jobs     int
@@ -1317,10 +1325,13 @@ func Test_input_CreateDocument(t *testing.T) {
 		}
 	}
 
-	stubTx := func(insertErr, upsertErr, commitErr error) *TxMock {
+	stubTx := func(insertErr, entryErr, upsertErr, commitErr error) *TxMock {
 		return &TxMock{
 			InsertDocumentFunc: func(context.Context, document.Document) error {
 				return insertErr
+			},
+			InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+				return entryErr
 			},
 			UpsertDocumentMaintainersFunc: func(context.Context, xid.ID, string, []string) error {
 				return upsertErr
@@ -1359,29 +1370,34 @@ func Test_input_CreateDocument(t *testing.T) {
 			return tcase{DB: stubDB(nil, assert.AnError), Queue: stubQueue(nil), Begins: 1, Err: assert.AnError}
 		}(),
 		"Error returned by Tx.InsertDocument": func() tcase {
-			tx := stubTx(assert.AnError, nil, nil)
+			tx := stubTx(assert.AnError, nil, nil, nil)
 
 			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Err: assert.AnError}
 		}(),
-		"Error returned by Tx.UpsertDocumentMaintainers": func() tcase {
-			tx := stubTx(nil, assert.AnError, nil)
+		"Error returned by Tx.InsertDocumentActivityEntries": func() tcase {
+			tx := stubTx(nil, assert.AnError, nil, nil)
 
-			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Upserts: 1, Err: assert.AnError}
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Entries: 1, Err: assert.AnError}
+		}(),
+		"Error returned by Tx.UpsertDocumentMaintainers": func() tcase {
+			tx := stubTx(nil, nil, assert.AnError, nil)
+
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Entries: 1, Upserts: 1, Err: assert.AnError}
 		}(),
 		"Error returned by SearchQueue.Enqueue": func() tcase {
-			tx := stubTx(nil, nil, nil)
+			tx := stubTx(nil, nil, nil, nil)
 
-			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(assert.AnError), Begins: 1, Inserts: 1, Upserts: 1, Jobs: 1, Err: assert.AnError}
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(assert.AnError), Begins: 1, Inserts: 1, Entries: 1, Upserts: 1, Jobs: 1, Err: assert.AnError}
 		}(),
 		"Error returned by Tx.Commit": func() tcase {
-			tx := stubTx(nil, nil, assert.AnError)
+			tx := stubTx(nil, nil, nil, assert.AnError)
 
-			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Upserts: 1, Commits: 1, Jobs: 1, Err: assert.AnError}
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Entries: 1, Upserts: 1, Commits: 1, Jobs: 1, Err: assert.AnError}
 		}(),
 		"Every write lands together": func() tcase {
-			tx := stubTx(nil, nil, nil)
+			tx := stubTx(nil, nil, nil, nil)
 
-			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Upserts: 1, Commits: 1, Jobs: 1, Notifies: 1}
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Queue: stubQueue(nil), Begins: 1, Inserts: 1, Entries: 1, Upserts: 1, Commits: 1, Jobs: 1, Notifies: 1}
 		}(),
 	}
 
@@ -1418,6 +1434,18 @@ func Test_input_CreateDocument(t *testing.T) {
 
 			assert.Len(t, c.Tx.InsertDocumentCalls(), c.Inserts)
 			assert.Len(t, c.Tx.UpsertDocumentMaintainersCalls(), c.Upserts)
+
+			ee := c.Tx.InsertDocumentActivityEntriesCalls()
+			require.Len(t, ee, c.Entries)
+
+			if c.Entries > 0 {
+				require.Len(t, ee[0].Entries, 1)
+				assert.Equal(t, activity.TypeDocumentCreated, ee[0].Entries[0].Type)
+				assert.Equal(t, _testActor, ee[0].Entries[0].Actor)
+				assert.Equal(t, doc.ID, ee[0].Entries[0].DocumentID)
+				assert.Equal(t, doc.BranchID, ee[0].Entries[0].BranchID)
+			}
+
 			assert.Len(t, c.Tx.CommitCalls(), c.Commits)
 
 			// the rollback is deferred unconditionally; after a
@@ -1650,7 +1678,7 @@ func Test_input_RenameDocument(t *testing.T) {
 	doc := &document.Document{ID: _testDocID, BranchID: _stubMainBranchID, ParentID: parentID}
 
 	failing := &EditApplierMock{
-		ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, string, bool) (edit.Result, error) {
+		ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, activity.Actor, bool) (edit.Result, error) {
 			return edit.Result{}, assert.AnError
 		},
 	}
@@ -1800,7 +1828,7 @@ func Test_input_ApplyEdit(t *testing.T) {
 		"Error returned by applier.Apply": {
 			DB: stubDocumentDB(),
 			Applier: &EditApplierMock{
-				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, string, bool) (edit.Result, error) {
+				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, activity.Actor, bool) (edit.Result, error) {
 					return edit.Result{}, assert.AnError
 				},
 			},
@@ -1841,7 +1869,7 @@ func Test_input_ApplyEdit(t *testing.T) {
 		"Nothing applied is a failure rather than a result": {
 			DB: stubDocumentDB(),
 			Applier: &EditApplierMock{
-				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, string, bool) (edit.Result, error) {
+				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, activity.Actor, bool) (edit.Result, error) {
 					return edit.Result{
 						Errors: []edit.OpError{{Index: 0, Message: "block_uid not found: a"}},
 					}, nil
@@ -1853,7 +1881,7 @@ func Test_input_ApplyEdit(t *testing.T) {
 		"Failed batch names the operation that failed": {
 			DB: stubDocumentDB(),
 			Applier: &EditApplierMock{
-				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, string, bool) (edit.Result, error) {
+				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, activity.Actor, bool) (edit.Result, error) {
 					return edit.Result{
 						Errors: []edit.OpError{{Index: 1, Message: "uid not found"}},
 					}, nil
@@ -1907,11 +1935,11 @@ func Test_input_ApplyEdit(t *testing.T) {
 			// a tool's write is a person's, never core's own: an
 			// edit asking otherwise would land on a protected
 			// branch, which is the one place a tool may not reach.
-			// The persist credits the user the assistant acts for.
+			// The persist credits the session's actor.
 			if c.Applier != nil {
 				for _, call := range c.Applier.ApplyCalls() {
 					assert.False(t, call.System)
-					assert.Equal(t, inp.userID, call.UserID)
+					assert.Equal(t, _testActor, call.Actor)
 				}
 			}
 		})
@@ -2835,66 +2863,167 @@ func Test_input_DeleteTag(t *testing.T) {
 	}
 }
 
+// stubTagTx returns a transaction whose tag write reports changed or
+// fails with writeErr, and whose later steps fail with the given errors.
+func stubTagTx(changed bool, writeErr, fetchErr, entryErr, commitErr error) *TxMock {
+	write := func(context.Context, string, xid.ID, xid.ID, xid.ID) (bool, error) {
+		return changed, writeErr
+	}
+
+	return &TxMock{
+		AssignBranchTagFunc:   write,
+		UnassignBranchTagFunc: write,
+		FetchTagFunc: func(context.Context, xid.ID, string) (*tag.Tag, error) {
+			if fetchErr != nil {
+				return nil, fetchErr
+			}
+
+			return &tag.Tag{ID: _testTagID, TagName: _stubTagName}, nil
+		},
+		InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+			return entryErr
+		},
+		CommitFunc: func() error { return commitErr },
+	}
+}
+
+// assertTagEntry checks the one entry a tag change recorded.
+func assertTagEntry(t *testing.T, tx *TxMock, tp activity.Type, branchID xid.ID) {
+	t.Helper()
+
+	ee := tx.InsertDocumentActivityEntriesCalls()
+	require.Len(t, ee, 1)
+	require.Len(t, ee[0].Entries, 1)
+
+	e := ee[0].Entries[0]
+	assert.Equal(t, tp, e.Type)
+	assert.Equal(t, _testActor, e.Actor)
+	assert.Equal(t, _testDocID, e.DocumentID)
+	assert.Equal(t, branchID, e.BranchID)
+	assert.Equal(t, activity.NewTarget(activity.TargetKindTag, _testTagID.String()), e.Target)
+	assert.Equal(t, activity.Metadata{activity.MetaKeyTagName: _stubTagName}, e.Metadata)
+}
+
 func Test_input_AssignTag(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB       *DBMock
-		Branch   xid.ID
-		Listings int
-		Assigns  int
-		Notifies int
-		Err      error
+		DB         *DBMock
+		Tx         *TxMock
+		BeginErr   error
+		Branch     xid.ID
+		Listings   int
+		Begins     int
+		Assigns    int
+		TagFetches int
+		Entries    int
+		Commits    int
+		Rollbacks  int
+		Notifies   int
+		Err        error
 	}{
 		"Unknown branch is refused before the write": {
 			DB:       stubDocumentDB(),
+			Tx:       stubTagTx(true, nil, nil, nil, nil),
 			Branch:   _unknownBranchID,
 			Listings: 1,
 			Err:      fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
 		},
 		"Protected branch is refused before the write": {
 			DB:       protectedDocumentDB(),
+			Tx:       stubTagTx(true, nil, nil, nil, nil),
 			Branch:   _stubMainBranchID,
 			Listings: 1,
 			Err:      fmt.Errorf("branch main: %w; write to one of draft (%s)", _errBranchProtected, _stubBranchID),
 		},
-		"Unknown tag": {
-			DB: func() *DBMock {
-				db := stubDocumentDB()
-				db.AssignBranchTagFunc = func(context.Context, string, xid.ID, xid.ID, xid.ID) (bool, error) {
-					return false, errutil.ErrNotFound
-				}
-
-				return db
-			}(),
-			Branch:  _stubMainBranchID,
-			Assigns: 1,
-			Err:     fmt.Errorf("tag %s: %w", _testTagID, ErrUnknownTag),
+		"Error returned by db.BeginTx": {
+			DB:       stubDocumentDB(),
+			Tx:       stubTagTx(true, nil, nil, nil, nil),
+			BeginErr: assert.AnError,
+			Branch:   _stubBranchID,
+			Begins:   1,
+			Err:      assert.AnError,
 		},
-		"Error returned by db.AssignBranchTag": {
-			DB: func() *DBMock {
-				db := stubDocumentDB()
-				db.AssignBranchTagFunc = func(context.Context, string, xid.ID, xid.ID, xid.ID) (bool, error) {
-					return false, assert.AnError
-				}
-
-				return db
-			}(),
-			Branch:  _stubMainBranchID,
-			Assigns: 1,
-			Err:     assert.AnError,
+		"Unknown tag": {
+			DB:        stubDocumentDB(),
+			Tx:        stubTagTx(false, errutil.ErrNotFound, nil, nil, nil),
+			Branch:    _stubBranchID,
+			Begins:    1,
+			Assigns:   1,
+			Rollbacks: 1,
+			Err:       fmt.Errorf("tag %s: %w", _testTagID, ErrUnknownTag),
+		},
+		"Error returned by Tx.AssignBranchTag": {
+			DB:        stubDocumentDB(),
+			Tx:        stubTagTx(false, assert.AnError, nil, nil, nil),
+			Branch:    _stubBranchID,
+			Begins:    1,
+			Assigns:   1,
+			Rollbacks: 1,
+			Err:       assert.AnError,
+		},
+		"Error returned by Tx.FetchTag": {
+			DB:         stubDocumentDB(),
+			Tx:         stubTagTx(true, nil, assert.AnError, nil, nil),
+			Branch:     _stubBranchID,
+			Begins:     1,
+			Assigns:    1,
+			TagFetches: 1,
+			Rollbacks:  1,
+			Err:        assert.AnError,
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB:         stubDocumentDB(),
+			Tx:         stubTagTx(true, nil, nil, assert.AnError, nil),
+			Branch:     _stubBranchID,
+			Begins:     1,
+			Assigns:    1,
+			TagFetches: 1,
+			Entries:    1,
+			Rollbacks:  1,
+			Err:        assert.AnError,
+		},
+		"Error returned by Tx.Commit": {
+			DB:         stubDocumentDB(),
+			Tx:         stubTagTx(true, nil, nil, nil, assert.AnError),
+			Branch:     _stubBranchID,
+			Begins:     1,
+			Assigns:    1,
+			TagFetches: 1,
+			Entries:    1,
+			Commits:    1,
+			Rollbacks:  1,
+			Err:        assert.AnError,
+		},
+		"Tag the branch already carries records nothing": {
+			DB:        stubDocumentDB(),
+			Tx:        stubTagTx(false, nil, nil, nil, nil),
+			Branch:    _stubBranchID,
+			Begins:    1,
+			Assigns:   1,
+			Commits:   1,
+			Rollbacks: 1,
+			Notifies:  1,
 		},
 		"Assigned and recorded": {
-			DB:       stubDocumentDB(),
-			Branch:   _stubBranchID,
-			Assigns:  1,
-			Notifies: 1,
+			DB:         stubDocumentDB(),
+			Tx:         stubTagTx(true, nil, nil, nil, nil),
+			Branch:     _stubBranchID,
+			Begins:     1,
+			Assigns:    1,
+			TagFetches: 1,
+			Entries:    1,
+			Commits:    1,
+			Rollbacks:  1,
+			Notifies:   1,
 		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
+
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			tags := &TagNotifierMock{}
 			d := testDeps(c.DB, nil, nil)
@@ -2906,10 +3035,14 @@ func Test_input_AssignTag(t *testing.T) {
 
 			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), 1)
 			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), c.Listings)
+			assert.Len(t, c.DB.BeginTxCalls(), c.Begins)
+			assert.Len(t, c.Tx.FetchTagCalls(), c.TagFetches)
+			assert.Len(t, c.Tx.CommitCalls(), c.Commits)
+			assert.Len(t, c.Tx.RollbackCalls(), c.Rollbacks)
 			assert.Len(t, tags.NotifyTreeChangeCalls(), c.Notifies)
 			assert.Len(t, tags.NotifyBranchTagsChangeCalls(), c.Notifies)
 
-			ff := c.DB.AssignBranchTagCalls()
+			ff := c.Tx.AssignBranchTagCalls()
 			require.Len(t, ff, c.Assigns)
 
 			if c.Assigns > 0 {
@@ -2917,6 +3050,12 @@ func Test_input_AssignTag(t *testing.T) {
 				assert.Equal(t, _testDocID, ff[0].DocumentID)
 				assert.Equal(t, c.Branch, ff[0].BranchID)
 				assert.Equal(t, _testTagID, ff[0].TagID)
+			}
+
+			if c.Entries > 0 {
+				assertTagEntry(t, c.Tx, activity.TypeTagAssigned, c.Branch)
+			} else {
+				assert.Empty(t, c.Tx.InsertDocumentActivityEntriesCalls())
 			}
 		})
 	}
@@ -2926,17 +3065,25 @@ func Test_input_UnassignTag(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		DB         *DBMock
-		Branch     xid.ID
-		Tag        xid.ID
-		Listings   int
-		TagFetches int
-		Unassigns  int
-		Notifies   int
-		Err        error
+		DB          *DBMock
+		Tx          *TxMock
+		BeginErr    error
+		Branch      xid.ID
+		Tag         xid.ID
+		Listings    int
+		TreeFetches int
+		Begins      int
+		Unassigns   int
+		TagFetches  int
+		Entries     int
+		Commits     int
+		Rollbacks   int
+		Notifies    int
+		Err         error
 	}{
 		"Unknown branch is refused before the write": {
 			DB:       stubTagDB(nil),
+			Tx:       stubTagTx(true, nil, nil, nil, nil),
 			Branch:   _unknownBranchID,
 			Tag:      _testTagID,
 			Listings: 1,
@@ -2944,6 +3091,7 @@ func Test_input_UnassignTag(t *testing.T) {
 		},
 		"Protected branch is refused before the write": {
 			DB:       protectedDocumentDB(),
+			Tx:       stubTagTx(true, nil, nil, nil, nil),
 			Branch:   _stubMainBranchID,
 			Tag:      _testTagID,
 			Listings: 1,
@@ -2952,40 +3100,106 @@ func Test_input_UnassignTag(t *testing.T) {
 		// the repository treats a tag the branch does not carry as
 		// nothing to do, so an id naming nothing is caught here.
 		"Unknown tag": {
-			DB:         stubTagDB(nil),
-			Branch:     _stubMainBranchID,
-			Tag:        _unknownTagID,
-			TagFetches: 1,
-			Err:        fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
+			DB:          stubTagDB(nil),
+			Tx:          stubTagTx(true, nil, nil, nil, nil),
+			Branch:      _stubBranchID,
+			Tag:         _unknownTagID,
+			TreeFetches: 1,
+			Err:         fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
 		},
-		"Error returned by db.UnassignBranchTag": {
-			DB: func() *DBMock {
-				db := stubTagDB(nil)
-				db.UnassignBranchTagFunc = func(context.Context, string, xid.ID, xid.ID, xid.ID) (bool, error) {
-					return false, assert.AnError
-				}
-
-				return db
-			}(),
-			Branch:     _stubMainBranchID,
-			Tag:        _testTagID,
-			TagFetches: 1,
-			Unassigns:  1,
-			Err:        assert.AnError,
+		"Error returned by db.BeginTx": {
+			DB:          stubTagDB(nil),
+			Tx:          stubTagTx(true, nil, nil, nil, nil),
+			BeginErr:    assert.AnError,
+			Branch:      _stubBranchID,
+			Tag:         _testTagID,
+			TreeFetches: 1,
+			Begins:      1,
+			Err:         assert.AnError,
+		},
+		"Error returned by Tx.UnassignBranchTag": {
+			DB:          stubTagDB(nil),
+			Tx:          stubTagTx(false, assert.AnError, nil, nil, nil),
+			Branch:      _stubBranchID,
+			Tag:         _testTagID,
+			TreeFetches: 1,
+			Begins:      1,
+			Unassigns:   1,
+			Rollbacks:   1,
+			Err:         assert.AnError,
+		},
+		"Error returned by Tx.FetchTag": {
+			DB:          stubTagDB(nil),
+			Tx:          stubTagTx(true, nil, assert.AnError, nil, nil),
+			Branch:      _stubBranchID,
+			Tag:         _testTagID,
+			TreeFetches: 1,
+			Begins:      1,
+			Unassigns:   1,
+			TagFetches:  1,
+			Rollbacks:   1,
+			Err:         assert.AnError,
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB:          stubTagDB(nil),
+			Tx:          stubTagTx(true, nil, nil, assert.AnError, nil),
+			Branch:      _stubBranchID,
+			Tag:         _testTagID,
+			TreeFetches: 1,
+			Begins:      1,
+			Unassigns:   1,
+			TagFetches:  1,
+			Entries:     1,
+			Rollbacks:   1,
+			Err:         assert.AnError,
+		},
+		"Error returned by Tx.Commit": {
+			DB:          stubTagDB(nil),
+			Tx:          stubTagTx(true, nil, nil, nil, assert.AnError),
+			Branch:      _stubBranchID,
+			Tag:         _testTagID,
+			TreeFetches: 1,
+			Begins:      1,
+			Unassigns:   1,
+			TagFetches:  1,
+			Entries:     1,
+			Commits:     1,
+			Rollbacks:   1,
+			Err:         assert.AnError,
+		},
+		"Tag the branch does not carry records nothing": {
+			DB:          stubTagDB(nil),
+			Tx:          stubTagTx(false, nil, nil, nil, nil),
+			Branch:      _stubBranchID,
+			Tag:         _testTagID,
+			TreeFetches: 1,
+			Begins:      1,
+			Unassigns:   1,
+			Commits:     1,
+			Rollbacks:   1,
+			Notifies:    1,
 		},
 		"Unassigned and recorded": {
-			DB:         stubTagDB(nil),
-			Branch:     _stubBranchID,
-			Tag:        _testTagID,
-			TagFetches: 1,
-			Unassigns:  1,
-			Notifies:   1,
+			DB:          stubTagDB(nil),
+			Tx:          stubTagTx(true, nil, nil, nil, nil),
+			Branch:      _stubBranchID,
+			Tag:         _testTagID,
+			TreeFetches: 1,
+			Begins:      1,
+			Unassigns:   1,
+			TagFetches:  1,
+			Entries:     1,
+			Commits:     1,
+			Rollbacks:   1,
+			Notifies:    1,
 		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
+
+			c.DB.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr)
 
 			tags := &TagNotifierMock{}
 			d := testDeps(c.DB, nil, nil)
@@ -2997,11 +3211,15 @@ func Test_input_UnassignTag(t *testing.T) {
 
 			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), 1)
 			assert.Len(t, c.DB.FetchDocumentBranchesCalls(), c.Listings)
-			assert.Len(t, c.DB.FetchTagTreeCalls(), c.TagFetches)
+			assert.Len(t, c.DB.FetchTagTreeCalls(), c.TreeFetches)
+			assert.Len(t, c.DB.BeginTxCalls(), c.Begins)
+			assert.Len(t, c.Tx.FetchTagCalls(), c.TagFetches)
+			assert.Len(t, c.Tx.CommitCalls(), c.Commits)
+			assert.Len(t, c.Tx.RollbackCalls(), c.Rollbacks)
 			assert.Len(t, tags.NotifyTreeChangeCalls(), c.Notifies)
 			assert.Len(t, tags.NotifyBranchTagsChangeCalls(), c.Notifies)
 
-			ff := c.DB.UnassignBranchTagCalls()
+			ff := c.Tx.UnassignBranchTagCalls()
 			require.Len(t, ff, c.Unassigns)
 
 			if c.Unassigns > 0 {
@@ -3009,6 +3227,12 @@ func Test_input_UnassignTag(t *testing.T) {
 				assert.Equal(t, _testDocID, ff[0].DocumentID)
 				assert.Equal(t, c.Branch, ff[0].BranchID)
 				assert.Equal(t, c.Tag, ff[0].TagID)
+			}
+
+			if c.Entries > 0 {
+				assertTagEntry(t, c.Tx, activity.TypeTagUnassigned, c.Branch)
+			} else {
+				assert.Empty(t, c.Tx.InsertDocumentActivityEntriesCalls())
 			}
 		})
 	}
@@ -3337,12 +3561,12 @@ func Test_input_CreateHook(t *testing.T) {
 	scheduled := processor.Settings(`{"duration":"custom","schedule":"` + _stubSchedule + `"}`)
 
 	failing := stubHookManager()
-	failing.CreateHookFunc = func(context.Context, hook.CreateInput, xid.ID, string, string) (*hook.Hook, error) {
+	failing.CreateHookFunc = func(context.Context, hook.CreateInput, xid.ID, string, activity.Actor) (*hook.Hook, error) {
 		return nil, assert.AnError
 	}
 
 	blockless := stubHookManager()
-	blockless.CreateHookFunc = func(context.Context, hook.CreateInput, xid.ID, string, string) (*hook.Hook, error) {
+	blockless.CreateHookFunc = func(context.Context, hook.CreateInput, xid.ID, string, activity.Actor) (*hook.Hook, error) {
 		return nil, hook.ErrBlockNotFound
 	}
 
@@ -3441,7 +3665,7 @@ func Test_input_CreateHook(t *testing.T) {
 
 			// the write is credited to the user the assistant acts for.
 			for _, call := range ff {
-				assert.Equal(t, inp.userID, call.UpdatedBy)
+				assert.Equal(t, _testActor, call.Actor)
 			}
 
 			if err != nil {
@@ -3466,7 +3690,7 @@ func Test_input_UpdateHook(t *testing.T) {
 	t.Parallel()
 
 	failing := stubHookManager()
-	failing.UpdateHookFunc = func(context.Context, xid.ID, xid.ID, string, hook.UpdateInput, string) (*hook.Hook, error) {
+	failing.UpdateHookFunc = func(context.Context, xid.ID, xid.ID, string, hook.UpdateInput, activity.Actor) (*hook.Hook, error) {
 		return nil, assert.AnError
 	}
 
@@ -3507,7 +3731,7 @@ func Test_input_UpdateHook(t *testing.T) {
 
 			// the write is credited to the user the assistant acts for.
 			for _, call := range ff {
-				assert.Equal(t, inp.userID, call.UpdatedBy)
+				assert.Equal(t, _testActor, call.Actor)
 			}
 
 			if err != nil {
@@ -3528,7 +3752,7 @@ func Test_input_ResetHook(t *testing.T) {
 	t.Parallel()
 
 	failing := stubHookManager()
-	failing.ResetHookFunc = func(context.Context, xid.ID, xid.ID, string, string) (*hook.Hook, error) {
+	failing.ResetHookFunc = func(context.Context, xid.ID, xid.ID, string, activity.Actor) (*hook.Hook, error) {
 		return nil, assert.AnError
 	}
 
@@ -3573,7 +3797,7 @@ func Test_input_ResetHook(t *testing.T) {
 			// the hook handed in takes the stored one.
 			assert.Equal(t, c.Hook.ID, ff[0].ID)
 			assert.Equal(t, "org", ff[0].OrganizationID)
-			assert.Equal(t, "user", ff[0].UpdatedBy)
+			assert.Equal(t, _testActor, ff[0].Actor)
 			assert.True(t, c.Hook.UpdatedAt.Valid)
 		})
 	}
@@ -3583,7 +3807,7 @@ func Test_input_DeleteHook(t *testing.T) {
 	t.Parallel()
 
 	failing := stubHookManager()
-	failing.DeleteHookFunc = func(context.Context, xid.ID, xid.ID, string, string) error {
+	failing.DeleteHookFunc = func(context.Context, xid.ID, xid.ID, string, activity.Actor) error {
 		return assert.AnError
 	}
 
@@ -3647,7 +3871,7 @@ func Test_input_DeleteHook(t *testing.T) {
 
 			// the write is credited to the user the assistant acts for.
 			for _, call := range ff {
-				assert.Equal(t, inp.userID, call.UpdatedBy)
+				assert.Equal(t, _testActor, call.Actor)
 			}
 
 			if err != nil {
