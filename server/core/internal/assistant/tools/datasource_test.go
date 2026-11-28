@@ -371,8 +371,9 @@ func Test_getDataSourceMetadata_Info(t *testing.T) {
 
 	assert.Equal(t, NameGetDataSourceMetadata, info.Name)
 	assert.Equal(t, []string{"data_source_id"}, info.Required)
-	assert.Contains(t, info.Description, "Loki and VictoriaLogs give the labels or fields their logs had over the last hour")
+	assert.Contains(t, info.Description, "Loki and VictoriaLogs give the labels or fields of the last hour")
 	assert.NotContains(t, info.Description, "all their fields")
+	assert.Contains(t, info.Description, "older ones with from/to")
 }
 
 func Test_getDataSourceMetadata_Validate(t *testing.T) {

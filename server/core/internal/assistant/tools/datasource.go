@@ -143,7 +143,7 @@ func (getDataSourceMetadata) Info() Info {
 	return Info{
 		Name:        NameGetDataSourceMetadata,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
-		Description: "Describe what a data source holds. Prometheus and VictoriaMetrics give each metric with its type, help and unit. Loki and VictoriaLogs give the labels or fields their logs had over the last hour, and list_log_fields with a query finds the rest. SQL gives {default_schema, tables: {table: [columns]}}. Read it before writing a query, so the names in it are real.",
+		Description: "Describe what a data source holds. Prometheus and VictoriaMetrics give each metric with its type, help and unit. Loki and VictoriaLogs give the labels or fields of the last hour; list_log_fields finds others with a query, older ones with from/to. SQL gives {default_schema, tables: {table: [columns]}}. Read it before writing a query, so the names in it are real.",
 		Properties:  map[string]any{"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription}},
 		Required:    []string{"data_source_id"},
 	}
