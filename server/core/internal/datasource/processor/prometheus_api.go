@@ -130,6 +130,14 @@ func (pa *prometheusAPI) QueryRange(ctx context.Context, q string, tr TimeRange)
 		return nil, prometheusAPIError(err, "error performing query")
 	}
 
+	// VictoriaMetrics ignores the limit, so the series are cut here the way
+	// Prometheus cuts them.
+	if m, ok := v.(model.Matrix); ok && len(m) > _queryLimit {
+		v = m[:_queryLimit]
+
+		warns = append(warns, "results truncated due to limit")
+	}
+
 	return &PrometheusQueryResult{
 		Type:     v.Type(),
 		Result:   v,

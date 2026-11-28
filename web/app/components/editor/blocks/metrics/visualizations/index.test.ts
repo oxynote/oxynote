@@ -956,6 +956,25 @@ describe("calculateYAxisBounds", () => {
 		).toEqual({ min: 5, max: 35 })
 	})
 
+	it("handles more points than a function call takes as arguments", ({
+		expect,
+	}) => {
+		// 1,000 series of 200 points each, which a capped query can return
+		const data: BarChartData[] = Array.from({ length: 1000 }, (_, i) => ({
+			name: `s${i}`,
+			data: Array.from({ length: 200 }, () => [at(0, 0, 0), 20]),
+		}))
+		data.push({
+			name: "edges",
+			data: [
+				[at(0, 0, 0), 10],
+				[at(0, 0, 0), 30],
+			],
+		})
+
+		expect(calculateYAxisBounds(data)).toEqual({ min: 5, max: 35 })
+	})
+
 	it("widens the bounds to include the thresholds", ({ expect }) => {
 		expect(calculateYAxisBounds(bars(10, 30), [{ value: 90 }])).toEqual({
 			min: 0,
