@@ -595,6 +595,8 @@
 				"bar-chart": "Bar",
 				"gauge-chart": "Gauge"
 			},
+			"gauge-scroll-label": "Gauge charts. Scroll horizontally to view all gauges",
+			"gauge-scroll-hint": "More gauges",
 			"status": {
 				"simplified-config-in-progress": {
 					"title": "No Data"

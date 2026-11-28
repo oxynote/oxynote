@@ -186,6 +186,7 @@ const option = computed<ECOption>(() => {
 				props.thresholds,
 				0.1,
 				props.axisBounds,
+				unit.type,
 			),
 			axisTick: {
 				show: false,

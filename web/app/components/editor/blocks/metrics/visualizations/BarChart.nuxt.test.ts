@@ -10,7 +10,7 @@ import {
 	tooltipParam,
 } from "./test-helpers"
 import { stubChartColorContext } from "../test-helpers"
-import { VisualizationDataUnit } from "../utils"
+import { VisualizationDataUnit, VisualizationMiscUnit } from "../utils"
 import type { MultipleBarChartData } from "."
 
 // what the stand-in chart hands the tooltip slot, and the actions the
@@ -214,6 +214,27 @@ describe("<BarChart>", { concurrent: false }, () => {
 
 		expect(option.yAxis.min).toBe(-5)
 		expect(option.yAxis.max).toBe(50)
+	})
+
+	it("keeps a 0-to-100 scale for percentage data and thresholds", async ({
+		expect,
+	}) => {
+		const wrapper = await mountBar({
+			seriesData: [
+				{
+					name: "success rate",
+					data: [
+						[new Date("2026-01-01T00:00:00Z"), 29],
+						[new Date("2026-01-01T00:01:00Z"), 120],
+					],
+				},
+			],
+			unit: { type: VisualizationMiscUnit.Percent0to100, custom: null },
+			thresholds: [{ value: 130, color: "#ff0000" }],
+		})
+
+		expect(chartOption(wrapper).yAxis.min).toBe(0)
+		expect(chartOption(wrapper).yAxis.max).toBe(100)
 	})
 
 	it("labels the value axis in the configured unit", async ({ expect }) => {

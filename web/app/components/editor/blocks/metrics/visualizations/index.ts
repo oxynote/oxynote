@@ -555,6 +555,34 @@ function roundDownToStep(value: number, step: number): number {
 	return Number(result.toFixed(decimals))
 }
 
+function getPercentageBounds(
+	unit?: VisualizationUnit | null,
+	bounds?: { min?: number | null; max?: number | null },
+): { min: number; max: number } | null {
+	let defaults: { min: number; max: number } | null = null
+
+	switch (unit) {
+		case VisualizationMiscUnit.Percent0to100:
+			defaults = { min: 0, max: 100 }
+			break
+		case VisualizationMiscUnit.Percent0to1:
+			defaults = { min: 0, max: 1 }
+			break
+	}
+
+	if (!defaults) {
+		return null
+	}
+
+	const min = bounds?.min ?? defaults.min
+	const max = bounds?.max ?? defaults.max
+	if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) {
+		return defaults
+	}
+
+	return { min, max }
+}
+
 /**
  * Count the number of decimal places in a number.
  */
@@ -583,7 +611,13 @@ export function calculateYAxisBounds(
 	thresholds?: { value: number }[],
 	margin = 0.1,
 	bounds?: { min?: number | null; max?: number | null },
+	unit?: VisualizationUnit | null,
 ): { min: number; max: number } {
+	const percentageBounds = getPercentageBounds(unit, bounds)
+	if (percentageBounds) {
+		return percentageBounds
+	}
+
 	// Collect all values from data points
 	const allValues: number[] = []
 
@@ -661,7 +695,13 @@ export function calculateGaugeAxisBounds(
 	thresholds?: { value: number }[],
 	margin = 0.1,
 	bounds?: { min?: number | null; max?: number | null },
+	unit?: VisualizationUnit | null,
 ): { min: number; max: number } {
+	const percentageBounds = getPercentageBounds(unit, bounds)
+	if (percentageBounds) {
+		return percentageBounds
+	}
+
 	// Collect all values from gauges
 	const allValues: number[] = gauges.map((g) => g.value)
 
