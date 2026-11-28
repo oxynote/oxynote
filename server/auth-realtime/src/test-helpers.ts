@@ -76,7 +76,9 @@ export function stubCore(): StubCore {
 }
 
 export type StubLogger = {
-	[K in keyof Logger]: Mock<Logger[K]>
+	[K in keyof Logger]: K extends "error"
+		? Logger["error"] & Mock<Logger["error"]>
+		: Mock<Logger[K]>
 }
 
 // a logger that records instead of writing, so a suite neither prints nor
@@ -86,7 +88,8 @@ export function stubLog(): StubLogger {
 		debug: vi.fn(),
 		info: vi.fn(),
 		warn: vi.fn(),
-		error: vi.fn(),
+		error: vi.fn<Logger["error"]>() as Logger["error"] &
+			Mock<Logger["error"]>,
 	}
 }
 
