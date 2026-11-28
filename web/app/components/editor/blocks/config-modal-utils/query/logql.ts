@@ -2,6 +2,8 @@ import { parser } from "@oxynote/lezer-logql"
 import { LanguageSupport, LRLanguage } from "@codemirror/language"
 import { styleTags, tags } from "@lezer/highlight"
 import {
+	insertCompletionText,
+	pickedCompletion,
 	snippetCompletion,
 	type Completion,
 	type CompletionContext,
@@ -151,6 +153,28 @@ function valueMatcher(text: string) {
 	return { field: match[1], regex: match[2].endsWith("~") }
 }
 
+// a regex lists its alternatives with |, so a value completes only the
+// one around the cursor. alternativeRange finds where that one starts and
+// ends, in the string text between from and to. It does so only for a
+// plain regex. An escape, a group or a character class can change what a |
+// means, so in a regex with one of them the value replaces the whole text.
+function alternativeRange(doc: string, from: number, to: number, pos: number) {
+	const text = doc.slice(from, to)
+
+	if (/[\\()[\]]/.test(text)) {
+		return { start: from, end: to, split: false }
+	}
+
+	const before = text.slice(0, pos - from).lastIndexOf("|")
+	const after = text.indexOf("|", pos - from)
+
+	return {
+		start: before < 0 ? from : from + before + 1,
+		end: after < 0 ? to : from + after,
+		split: true,
+	}
+}
+
 // what the query holds before the cursor, read character by character.
 // The parse tree cannot say this alone. An unclosed string has no node,
 // but a value is typed in an unclosed string. string and selector are
@@ -219,6 +243,68 @@ function scanQuery(text: string): Scan {
 	}
 
 	return scan
+}
+
+// the end of the string at from, or the end of the document while it is
+// still open. A backslash escapes the next character only in a double
+// quoted string.
+function stringEnd(doc: string, from: number, quote: string) {
+	for (let i = from + 1; i < doc.length; i++) {
+		if (quote === '"' && doc.charAt(i) === "\\") {
+			i++
+		} else if (doc.charAt(i) === quote) {
+			return i
+		}
+	}
+
+	return doc.length
+}
+
+// the end of the alternative that starts at from, in the current document.
+// A split alternative ends at the next | or at the closing quote; a whole
+// value ends at the closing quote.
+function valueEnd(doc: string, from: number, quote: string, split: boolean) {
+	for (let i = from; i < doc.length; i++) {
+		const c = doc.charAt(i)
+
+		if (quote === '"' && c === "\\") {
+			i++
+		} else if (c === quote || (split && c === "|")) {
+			return i
+		}
+	}
+
+	return doc.length
+}
+
+// CodeMirror filters the options by the text between from and to, so a
+// completion in the middle of a value keeps to at the cursor. Picking an
+// option still replaces the whole alternative, using the positions that
+// are current when apply runs.
+function valueRangeOptions(
+	options: Completion[],
+	quote: string,
+	split: boolean,
+): Completion[] {
+	return options.map((option) => {
+		if (typeof option.apply !== "string") {
+			return option
+		}
+
+		const applied = option.apply
+
+		return {
+			...option,
+			apply: (view, completion, from, _to) => {
+				const end = valueEnd(view.state.doc.toString(), from, quote, split)
+
+				view.dispatch({
+					...insertCompletionText(view.state, applied, from, end),
+					annotations: pickedCompletion.of(completion),
+				})
+			},
+		}
+	})
 }
 
 // the matchers of the selector around pos, other than the one pos is in.
@@ -375,14 +461,25 @@ export function useLogQLQueryExtension(
 				quote === "`" && value.includes("`")
 					? null
 					: quoteValue(value, quote, matcher.regex)
+			const textEnd = stringEnd(doc, from, quote)
+			const range = matcher.regex
+				? alternativeRange(doc, from + 1, textEnd, ctx.pos)
+				: { start: from + 1, end: ctx.pos, split: false }
+			const valueRange = (options: Completion[]) =>
+				range.end > ctx.pos
+					? valueRangeOptions(options, quote, range.split)
+					: options
 
 			if (scan.selector !== null) {
 				return {
-					from: from + 1,
-					options: await fieldValues(
-						matcher.field,
-						otherMatchers(doc, scan.selector, ctx.pos),
-						apply,
+					from: range.start,
+					to: ctx.pos,
+					options: valueRange(
+						await fieldValues(
+							matcher.field,
+							otherMatchers(doc, scan.selector, ctx.pos),
+							apply,
+						),
 					),
 				}
 			}
@@ -392,11 +489,14 @@ export function useLogQLQueryExtension(
 			}
 
 			return {
-				from: from + 1,
-				options: await fieldValues(
-					matcher.field,
-					doc.slice(0, scan.stagePipe).trim(),
-					apply,
+				from: range.start,
+				to: ctx.pos,
+				options: valueRange(
+					await fieldValues(
+						matcher.field,
+						doc.slice(0, scan.stagePipe).trim(),
+						apply,
+					),
 				),
 			}
 		}
