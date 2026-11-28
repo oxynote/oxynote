@@ -501,6 +501,47 @@ describe("mergeVisualizationResults", () => {
 		expect(merged.data?.[0]?.name).toBe(expected)
 	})
 
+	it.for<{
+		name: string
+		format: string
+		labels: Record<string, string>
+		expected: string
+	}>([
+		{
+			name: "substitutes a variable containing a dot",
+			format: "{{service.name}}",
+			labels: { "service.name": "checkout" },
+			expected: "checkout",
+		},
+		{
+			name: "substitutes dotted and plain variables in one format",
+			format: "{{service.name}} on {{instance}}",
+			labels: { "service.name": "checkout", instance: "node-1" },
+			expected: "checkout on node-1",
+		},
+		{
+			name: "drops a dotted variable the series has no label for",
+			format: "{{service.name}}/{{missing.dotted}}",
+			labels: { "service.name": "checkout" },
+			expected: "checkout/",
+		},
+		{
+			name: "falls back when only an unknown dotted variable is left",
+			format: "{{missing.dotted}}",
+			labels: { "service.name": "checkout" },
+			expected: "auto-line_chart",
+		},
+	])("$name", ({ format, labels, expected }, { expect }) => {
+		const merged = mergeVisualizationResults(
+			GenericQueryChartType.Line,
+			[queryItem(okResult([{ labels, metrics: [[1700000000, 1]] }]), format)],
+			null,
+			orderedLabel,
+		)
+
+		expect(merged.data?.[0]?.name).toBe(expected)
+	})
+
 	it("falls back to the ordered legend label for a gauge without a format", ({
 		expect,
 	}) => {

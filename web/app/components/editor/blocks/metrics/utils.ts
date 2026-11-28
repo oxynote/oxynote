@@ -9,6 +9,28 @@ import {
 export const CONFIG_DEBOUNCE_MS = 500
 export const NODE_ATTR_UPDATE_REFRESH_DISABLE_MS = CONFIG_DEBOUNCE_MS + 1000 // slightly longer than config debounce to avoid content refreshes on drag-drop
 
+// Characters of a label name inside a legend format's {{...}}. Dots are
+// allowed because OpenTelemetry label names (service.name) keep them in
+// VictoriaMetrics and Prometheus 3. The renderer, the editor's highlighting
+// and its completions all read names with these, so they agree.
+export const LEGEND_LABEL_NAME = /[a-zA-Z_][\w:.]*/
+const LEGEND_LABEL_CHAR = /[\w:.]/
+
+// Start of the label name being typed at `pos`, where `open` is the index of
+// the "{{" it follows. A completion replaces the text from here to `pos`.
+export function legendLabelStart(
+	text: string,
+	open: number,
+	pos: number,
+): number {
+	let start = pos
+	while (start > open + 2 && LEGEND_LABEL_CHAR.test(text.charAt(start - 1))) {
+		start--
+	}
+
+	return start
+}
+
 export const VISUALIZATION_MAX_DECIMALS = 16
 export const VISUALIZATION_MAX_CUSTOM_UNIT_LENGTH = 8
 

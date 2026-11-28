@@ -6,6 +6,7 @@ import {
 	VisualizationMiscUnit,
 	VisualizationTimeUnit,
 	type VisualizationUnit,
+	LEGEND_LABEL_NAME,
 } from "../utils"
 
 const MAX_AUTO_DECIMALS_AFTER_LAST_ZERO = 3
@@ -207,7 +208,7 @@ function nameFromMetric(
 	labels: Record<string, string>,
 ) {
 	const name = legendLabelFormat.replace(
-		/\{\{([a-zA-Z_][\w:]*)\}\}/g,
+		new RegExp(`\\{\\{(${LEGEND_LABEL_NAME.source})\\}\\}`, "g"),
 		(_match: string, variable: string) => {
 			return labels[variable] ?? ""
 		},
