@@ -779,6 +779,10 @@ func Test_Input_Validate(t *testing.T) {
 			Input: with(func(vi *Input) { vi.Options = []OptionInput{{Value: ""}} }),
 			Err:   ErrInvalidOption,
 		},
+		"List with an option of white space only": {
+			Input: with(func(vi *Input) { vi.Options = []OptionInput{{Value: "   "}} }),
+			Err:   ErrInvalidOption,
+		},
 		"List with an option over the length limit": {
 			Input: with(func(vi *Input) { vi.Options = []OptionInput{{Value: strings.Repeat("a", 129)}} }),
 			Err:   ErrValueTooLong,
@@ -809,6 +813,12 @@ func Test_Input_Validate(t *testing.T) {
 		"List repeating an option value": {
 			Input: with(func(vi *Input) {
 				vi.Options = []OptionInput{{Value: "a"}, {Value: "a"}}
+			}),
+			Err: ErrDuplicateOptionValue,
+		},
+		"List repeating an option value padded with white space": {
+			Input: with(func(vi *Input) {
+				vi.Options = []OptionInput{{Value: "prod"}, {Value: "prod "}}
 			}),
 			Err: ErrDuplicateOptionValue,
 		},
