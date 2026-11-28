@@ -143,7 +143,7 @@ func (getDataSourceMetadata) Info() Info {
 	return Info{
 		Name:        NameGetDataSourceMetadata,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
-		Description: "Describe what a data source holds. Prometheus and VictoriaMetrics give each metric with its type, help and unit. Loki gives the labels its logs carried over the last hour and VictoriaLogs all their fields, and list_log_fields with a query finds the rest. SQL gives {default_schema, tables: {table: [columns]}}. Read it before writing a query, so the names in it are real.",
+		Description: "Describe what a data source holds. Prometheus and VictoriaMetrics give each metric with its type, help and unit. Loki and VictoriaLogs give the labels or fields their logs had over the last hour, and list_log_fields with a query finds the rest. SQL gives {default_schema, tables: {table: [columns]}}. Read it before writing a query, so the names in it are real.",
 		Properties:  map[string]any{"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription}},
 		Required:    []string{"data_source_id"},
 	}
@@ -442,7 +442,7 @@ func (listLogFields) Info() Info {
 	return Info{
 		Name:        NameListLogFields,
 		Traits:      Traits{Group: GroupDataSources, DataSource: true, Role: org.RoleViewer},
-		Description: "List the field names the logs of a Loki or VictoriaLogs data source carry. With field, it lists that field's values instead, counted when the source counts them. Without query Loki gives only labels and their values. A query narrows either list to the logs it matches and adds their other fields. Use it to find what a log query should filter on. In LogsQL, filter a field as level:=\"error\". In LogQL, a filter on a field parsed from a log needs a parser stage first: | json for JSON logs, | logfmt for key=value logs. detected_level and other structured metadata need no parser, but they are not labels, so filter them after the selector, as in | detected_level=\"error\".",
+		Description: "List the field names the logs of a Loki or VictoriaLogs data source carry. With field, it lists that field's values instead, counted when the source counts them. Without query Loki gives only labels and their values. A query narrows either list to the logs it matches and adds their other fields. Use it to find what a log query should filter on. In LogsQL, filter a field as level:=\"error\". Keys inside _msg need | unpack_logfmt or | unpack_json first. In LogQL, a filter on a field parsed from a log needs a parser stage first: | json for JSON logs, | logfmt for key=value logs. detected_level and other structured metadata need no parser, but they are not labels, so filter them after the selector, as in | detected_level=\"error\".",
 		Properties: map[string]any{
 			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
 			"field":          map[string]any{"type": "string", "description": "A field, such as detected_level, whose values to list."},

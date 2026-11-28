@@ -371,6 +371,8 @@ func Test_getDataSourceMetadata_Info(t *testing.T) {
 
 	assert.Equal(t, NameGetDataSourceMetadata, info.Name)
 	assert.Equal(t, []string{"data_source_id"}, info.Required)
+	assert.Contains(t, info.Description, "Loki and VictoriaLogs give the labels or fields their logs had over the last hour")
+	assert.NotContains(t, info.Description, "all their fields")
 }
 
 func Test_getDataSourceMetadata_Validate(t *testing.T) {
@@ -923,6 +925,8 @@ func Test_listLogFields_Info(t *testing.T) {
 	assert.Contains(t, info.Properties, "from")
 	assert.Contains(t, info.Properties, "to")
 	assert.NotContains(t, info.Description, "lines")
+	assert.Contains(t, info.Description, "| unpack_logfmt")
+	assert.Contains(t, info.Description, "| unpack_json")
 }
 
 func Test_listLogFields_Validate(t *testing.T) {
