@@ -12,6 +12,7 @@ import SidebarNestedGroup from "./SidebarNestedGroup.vue"
 import TagEditMenu from "./TagEditMenu.vue"
 import { showRequestErrorToast, showToastMessage } from "./toast"
 import { useSidebar } from "#layers/ui/app/components/shadcn/ui/sidebar"
+import { cn } from "#layers/ui/app/lib/utils"
 
 const props = defineProps<{
 	allInitialSectionsLoaded: boolean
@@ -53,6 +54,14 @@ const { useFetchNotificationCount } = useNotificationAPI()
 const fetchNotificationCount = useFetchNotificationCount({ read: false })
 const editorStore = useEditorStore()
 const { openExternalLink } = useExternalLinks()
+const {
+	spotlight,
+	shownSpotlight,
+	newRelease,
+	newReleaseRowOpen,
+	closeStarSpotlight,
+	collapseUpdateSpotlight,
+} = useSidebarSpotlights()
 const wsState = useWebSocketStateStore()
 let unsubWsTreeChange: (() => void) | null | undefined = null
 let unsubWsTagTreeChange: (() => void) | null | undefined = null
@@ -591,10 +600,120 @@ async function installSlack() {
 						</ShadcnUiSidebarGroupContent>
 					</ShadcnUiSidebarGroup>
 				</ShadcnUiSidebarContent>
-				<ShadcnUiSidebarFooter class="shrink-0 border-t border-sidebar-border">
+				<div
+					v-if="shownSpotlight"
+					:class="
+						cn(
+							'group/spotlight grid shrink-0 grid-rows-[0fr] border-t border-sidebar-border',
+							'transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none',
+							'data-open:grid-rows-[1fr]',
+						)
+					"
+					:data-open="spotlight ? '' : undefined"
+					:inert="!spotlight"
+				>
+					<div
+						:class="
+							cn(
+								'min-h-0 overflow-hidden opacity-0',
+								'transition-opacity duration-200 ease-out motion-reduce:transition-none',
+								'group-data-open/spotlight:opacity-100',
+							)
+						"
+					>
+						<div class="px-2 pt-2">
+							<SidebarSpotlight
+								v-if="shownSpotlight === 'star'"
+								:title="$t('sidebar.spotlight.star.title')"
+								:text="$t('sidebar.spotlight.star.text')"
+								:action="{
+									label: $t('sidebar.spotlight.star.action'),
+									link: config.public.githubRepositoryURL,
+									icon: 'mingcute:star-line',
+								}"
+								@dismiss="closeStarSpotlight"
+								@action="closeStarSpotlight"
+							/>
+							<SidebarSpotlight
+								v-else-if="newRelease"
+								:title="
+									$t('sidebar.spotlight.update.title', {
+										latest: newRelease.latestVersion,
+									})
+								"
+								:text="
+									$t('sidebar.spotlight.update.text', {
+										current: newRelease.currentVersion,
+									})
+								"
+								:action="{
+									label: $t('sidebar.spotlight.update.action'),
+									link: newRelease.notesUrl,
+									icon: 'mingcute:external-link-line',
+								}"
+								@dismiss="collapseUpdateSpotlight"
+							/>
+						</div>
+					</div>
+				</div>
+				<ShadcnUiSidebarFooter
+					:class="
+						cn('shrink-0', !shownSpotlight && 'border-t border-sidebar-border')
+					"
+				>
 					<!--icons are sized in em, so the row text size is what keeps them
 						level with the ones in the sections above-->
 					<ShadcnUiSidebarMenu class="text-sm">
+						<!--the negative margin takes back the menu gap while the row is
+							folded, so the gap opens together with the row-->
+						<ShadcnUiSidebarMenuItem
+							v-if="newRelease"
+							:class="
+								cn(
+									'-mb-1 grid grid-rows-[0fr] opacity-0 *:min-h-0 *:overflow-hidden',
+									'transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none',
+									'data-open:grid-rows-[1fr] data-open:opacity-100',
+								)
+							"
+							:data-open="newReleaseRowOpen ? '' : undefined"
+							:inert="!newReleaseRowOpen"
+						>
+							<div class="relative">
+								<div class="pb-1">
+									<ShadcnUiSidebarMenuAction
+										side="left"
+										disable-direct-interaction
+									>
+										<Icon name="mingcute:arrow-up-circle-line" />
+									</ShadcnUiSidebarMenuAction>
+									<!--an inset ring, because the fold clips anything drawn outside
+										the row-->
+									<ShadcnUiSidebarMenuButton
+										size="md"
+										class="focus-visible:ring-inset"
+										as-child
+									>
+										<a
+											:href="newRelease.notesUrl"
+											target="_blank"
+											rel="noopener noreferrer"
+										>
+											<span class="truncate">
+												{{ $t("sidebar.spotlight.update.row") }}
+											</span>
+											<span
+												class="ml-auto flex min-w-5.5 items-center justify-center rounded border border-border bg-background px-1.5 py-0.5 text-xs font-medium select-none"
+											>
+												{{ newRelease.latestVersion }}
+											</span>
+											<span class="sr-only">
+												{{ $t("sidebar.spotlight.new-tab-hint") }}
+											</span>
+										</a>
+									</ShadcnUiSidebarMenuButton>
+								</div>
+							</div>
+						</ShadcnUiSidebarMenuItem>
 						<ShadcnUiSidebarMenuItem>
 							<ShadcnUiSidebarMenuAction side="left" disable-direct-interaction>
 								<Icon name="mingcute:book-6-line" />

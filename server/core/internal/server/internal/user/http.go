@@ -122,6 +122,51 @@ func (h *Handler) UploadUserImage(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
+// FetchUserSpotlights handles the retrieval of the state of the session
+// user's spotlights.
+func (h *Handler) FetchUserSpotlights(w http.ResponseWriter, r *http.Request) {
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
+		return
+	}
+
+	spotlights, err := h.db.FetchUserSpotlights(r.Context(), session.UserID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	httpserver.Respond(h.log, w, spotlights, http.StatusOK)
+}
+
+// UpdateUserSpotlights handles a change to the state of the session user's
+// spotlights.
+func (h *Handler) UpdateUserSpotlights(w http.ResponseWriter, r *http.Request) {
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
+		return
+	}
+
+	var inp userCore.SpotlightsInput
+
+	if err := httpserver.DecodeJSON(r, &inp); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err := inp.Validate(); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err := h.db.UpsertUserSpotlights(r.Context(), session.UserID, inp); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
+}
+
 // DB is an interface that combines sqlutil.DB and DBAgent.
 //
 //go:generate ../../../../scripts/codegen/mock -t internal DB db
@@ -134,6 +179,13 @@ type DB interface {
 type DBAgent interface {
 	// UpdateUserImage should update the user's image URL.
 	UpdateUserImage(ctx context.Context, userID, image string) error
+
+	// FetchUserSpotlights should retrieve the state of the user's spotlights.
+	FetchUserSpotlights(ctx context.Context, userID string) (userCore.Spotlights, error)
+
+	// UpsertUserSpotlights should store the state of the user's spotlights,
+	// keeping a dismissed spotlight dismissed.
+	UpsertUserSpotlights(ctx context.Context, userID string, inp userCore.SpotlightsInput) error
 }
 
 // Storer is an interface that defines methods for uploading and retrieving objects.

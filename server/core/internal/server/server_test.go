@@ -13,14 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blang/semver/v4"
 	"github.com/gomodule/redigo/redis"
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/provider"
-	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -116,6 +114,7 @@ func Test_NewServer(t *testing.T) {
 	db := &DBMock{}
 	storer := &StorerMock{}
 	notifier := &NotifierMock{}
+	releases := &ReleaseCheckerMock{}
 
 	cc := map[string]struct {
 		Opts                Options
@@ -220,6 +219,7 @@ func Test_NewServer(t *testing.T) {
 				&SearchQueueMock{},
 				notifier,
 				nil,
+				releases,
 				http.DefaultClient,
 			)
 			testutil.AssertEqualError(t, c.Err, err)
@@ -242,6 +242,7 @@ func Test_NewServer(t *testing.T) {
 			assert.Same(t, fc, srv.fc)
 			assert.Same(t, http.DefaultClient, srv.client)
 			assert.Same(t, db, srv.db)
+			assert.Same(t, releases, srv.releases)
 			assert.Equal(t, ":8080", srv.http.Addr)
 			assert.NotNil(t, srv.http.Handler)
 			assert.NotNil(t, srv.ws)
@@ -393,7 +394,8 @@ func Test_Server_fetchVersion(t *testing.T) {
 	t.Parallel()
 
 	s := Server{
-		log: slog.New(slog.DiscardHandler),
+		log:  slog.New(slog.DiscardHandler),
+		opts: Options{Version: "0.11.0"},
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
@@ -402,7 +404,7 @@ func Test_Server_fetchVersion(t *testing.T) {
 	s.fetchVersion(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.JSONEq(t, `{"version":"`+buildinfo.Full().Version.String()+`"}`, rec.Body.String())
+	assert.JSONEq(t, `{"version":"0.11.0"}`, rec.Body.String())
 }
 
 func Test_Server_bindVersionPing(t *testing.T) {
@@ -441,7 +443,8 @@ func Test_Server_bindVersionPing(t *testing.T) {
 			t.Parallel()
 
 			s := Server{
-				log: slog.New(slog.DiscardHandler),
+				log:  slog.New(slog.DiscardHandler),
+				opts: Options{Version: "0.11.0"},
 			}
 
 			published := make(chan struct{}, 16)
@@ -494,9 +497,9 @@ func Test_Server_bindVersionPing(t *testing.T) {
 			ff := tpc.PublishManyCalls()
 			require.NotEmpty(t, ff)
 			assert.Equal(t, struct {
-				Version semver.Version `json:"version"`
+				Version string `json:"version"`
 			}{
-				Version: buildinfo.Full().Version,
+				Version: "0.11.0",
 			}, ff[0].Payload)
 		})
 	}

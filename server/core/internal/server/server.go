@@ -10,14 +10,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blang/semver/v4"
 	"github.com/coder/websocket"
 	"github.com/guregu/null/v5"
 	githubCore "github.com/oxynote/oxynote/server/core/internal/apps/github"
 	slackCore "github.com/oxynote/oxynote/server/core/internal/apps/slack"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
-	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	notificationCore "github.com/oxynote/oxynote/server/core/internal/notification"
@@ -51,6 +49,10 @@ import (
 type Options struct {
 	// PublicURL is the public URL of the server.
 	PublicURL string
+
+	// Version specifies the version the server reports. Empty reports
+	// an empty version.
+	Version string
 
 	// Host specifies the interface the server binds to. Empty binds
 	// all interfaces.
@@ -119,6 +121,9 @@ type Server struct {
 	// runtime.
 	capabilities Capabilities
 
+	// releases reports the latest release.
+	releases ReleaseChecker
+
 	handlers struct {
 		user         *user.Handler
 		organization *org.Handler
@@ -161,6 +166,7 @@ func NewServer(
 	searchQueue SearchQueue,
 	notifier Notifier,
 	emailSender email.Sender,
+	releases ReleaseChecker,
 	client *http.Client,
 ) (*Server, error) {
 	if err := opts.validate(); err != nil {
@@ -168,11 +174,12 @@ func NewServer(
 	}
 
 	srv := &Server{
-		log:    log.With("component", "server"),
-		opts:   opts,
-		fc:     fc,
-		client: client,
-		db:     db,
+		log:      log.With("component", "server"),
+		opts:     opts,
+		fc:       fc,
+		client:   client,
+		db:       db,
+		releases: releases,
 		capabilities: Capabilities{
 			GitHub:          githubMan.Configured(),
 			Slack:           slackMan.Configured(),
@@ -288,9 +295,9 @@ func (s *Server) Close() error {
 // fetchVersion retrieves the exec's version.
 func (s *Server) fetchVersion(w http.ResponseWriter, _ *http.Request) {
 	httpserver.Respond(s.log, w, struct {
-		Version semver.Version `json:"version"`
+		Version string `json:"version"`
 	}{
-		Version: buildinfo.Full().Version,
+		Version: s.opts.Version,
 	}, http.StatusOK)
 }
 
@@ -320,9 +327,9 @@ func (s *Server) bindVersionPing(tpc wsserver.Topic) {
 		}
 
 		tpc.PublishMany(pubCtx, struct {
-			Version semver.Version `json:"version"`
+			Version string `json:"version"`
 		}{
-			Version: buildinfo.Full().Version,
+			Version: s.opts.Version,
 		}, nil)
 	})
 	if err != nil {

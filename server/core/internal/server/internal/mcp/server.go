@@ -7,7 +7,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
-	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 )
 
 // server builds the MCP server for one request's identity: the tools
@@ -28,7 +27,7 @@ func (h *Handler) server(r *http.Request) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{
 		Name:    "oxynote",
 		Title:   "Oxynote",
-		Version: buildinfo.Full().Version.String(),
+		Version: h.version,
 	}, &mcp.ServerOptions{
 		Logger:       h.log,
 		Instructions: assistant.MCPInstructions(),

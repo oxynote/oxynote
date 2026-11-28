@@ -15,6 +15,8 @@ const testSentryDsns = {
 	authRealtimeDsn: "https://auth@sentry.example.com/3",
 }
 
+const testImageVersion = "1.2.3"
+
 const inheritedEnv = { PATH: "/usr/bin", HOME: "/oxynote" }
 
 function build(
@@ -22,7 +24,13 @@ function build(
 	sentryDsns = testSentryDsns,
 	secrets = testSecrets(),
 ) {
-	return buildChildEnvs(config, secrets, sentryDsns, inheritedEnv)
+	return buildChildEnvs(
+		config,
+		secrets,
+		sentryDsns,
+		testImageVersion,
+		inheritedEnv,
+	)
 }
 
 describe("buildChildEnvs", () => {
@@ -301,6 +309,20 @@ describe("buildChildEnvs", () => {
 		expect(envs.authRealtime.SENTRY_DSN).toBe("")
 	})
 
+	it("hands the image version to every service, even with error reporting disabled", ({
+		expect,
+	}) => {
+		const envs = build(testConfig({ crashReportingDisabled: true }))
+
+		expect(envs.web.NUXT_PUBLIC_APP_VERSION).toBe(testImageVersion)
+		expect(envs.core.OXYNOTE_CORE_APP_VERSION).toBe(
+			testImageVersion,
+		)
+		expect(
+			envs.authRealtime.OXYNOTE_AUTH_REALTIME_APP_VERSION,
+		).toBe(testImageVersion)
+	})
+
 	it("leaves a disabled feature's variables empty", ({ expect }) => {
 		const envs = build()
 
@@ -438,6 +460,9 @@ describe("buildChildEnvs", () => {
 		expect(envs.web.NUXT_PUBLIC_DOCS_URL).toBe(
 			"https://github.com/oxynote/oxynote",
 		)
+		expect(envs.web.NUXT_PUBLIC_GITHUB_REPOSITORY_URL).toBe(
+			"https://github.com/oxynote/oxynote",
+		)
 	})
 
 	it("keeps the documentation links out of the deployer's reach", ({
@@ -447,6 +472,7 @@ describe("buildChildEnvs", () => {
 			testConfig(),
 			testSecrets(),
 			testSentryDsns,
+			testImageVersion,
 			{
 				...inheritedEnv,
 				NUXT_PUBLIC_DOCS_URL:

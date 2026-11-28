@@ -118,8 +118,10 @@ export default defineNuxtConfig({
 		authRealtimeAPIInternalHttpURL: "",
 		public: {
 			sentryDSN: "",
+			appVersion: "",
 			appBaseURL: "",
 			linkToMoreInfoAboutProduct: "",
+			githubRepositoryURL: "",
 			authRealtimeAPIBaseHttpURL: "",
 			authRealtimeAPIBaseWsURL: "",
 			coreAPIBaseHttpURL: "",

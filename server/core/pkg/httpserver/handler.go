@@ -198,7 +198,7 @@ func FormFile(
 
 	f, _, err := r.FormFile(field)
 	if err != nil {
-		if _, ok := errors.AsType[*http.MaxBytesError](err); ok { //nolint:errcheck // only the match matters, not the value
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			return nil, tooLarge
 		}
 

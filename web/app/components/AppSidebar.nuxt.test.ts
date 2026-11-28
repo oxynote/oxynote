@@ -4,6 +4,7 @@ import {
 	clearQueryCache,
 	disposeMockEndpoints,
 	mockEndpoint,
+	runInApp,
 	seedQueryData,
 } from "~/composables/api/test-helpers"
 import { mockNuxtImport } from "@nuxt/test-utils/runtime"
@@ -42,6 +43,10 @@ const DOC_ID = "doc1".padEnd(20, "0")
 const BRANCH_ID = "br1".padEnd(20, "0")
 const TAG_A = "taga".padEnd(20, "0")
 const TAG_B = "tagb".padEnd(20, "0")
+const RELEASE = {
+	version: "0.12.0",
+	notesUrl: "https://oxynote.io/blog/oxynote-v0-12",
+}
 
 function tagElement(id: string, tagName: string, color: string) {
 	return {
@@ -65,8 +70,8 @@ function treeElement() {
 }
 
 // AppSidebar refreshes the tree, the organization and the unread count on
-// mount and loads the variables, so every one of them needs an endpoint
-// behind it
+// mount and loads the variables, the user's spotlights and the latest release,
+// so every one of them needs an endpoint behind it
 function stubQueries(
 	options: {
 		tree?: unknown[]
@@ -74,6 +79,8 @@ function stubQueries(
 		unread?: number
 		gitHub?: { connected: boolean; configured: boolean }
 		slack?: { connected: boolean; configured: boolean }
+		star?: () => SpotlightState
+		release?: LatestRelease
 	} = {},
 ) {
 	mockEndpoint("GET", "/api/documents/tree", () => options.tree ?? [])
@@ -82,6 +89,10 @@ function stubQueries(
 	mockEndpoint("GET", "/api/notifications/count", () => ({
 		count: options.unread ?? 0,
 	}))
+	mockEndpoint("GET", "/api/users/spotlights", () => ({
+		star: options.star?.() ?? null,
+	}))
+	mockEndpoint("GET", "/api/releases/latest", () => options.release ?? null)
 	seedQueryData(
 		["github", "connected"],
 		options.gitHub ?? { connected: true, configured: true },
@@ -191,6 +202,31 @@ function footerRows(wrapper: Awaited<ReturnType<typeof mountSidebar>>) {
 	return wrapper
 		.get("[data-slot='sidebar-footer']")
 		.findAll("[data-slot='sidebar-menu-button']")
+}
+
+// the card's fold sits between the scrolling sections and the footer, and
+// the update row is the first row of the footer
+function spotlightFold(wrapper: Awaited<ReturnType<typeof mountSidebar>>) {
+	return wrapper.get("[data-slot='sidebar-content'] + div")
+}
+
+function updateRowFold(wrapper: Awaited<ReturnType<typeof mountSidebar>>) {
+	return wrapper.get(
+		"[data-slot='sidebar-footer'] [data-slot='sidebar-menu-item']:first-child",
+	)
+}
+
+function spotlightCloseButton(
+	wrapper: Awaited<ReturnType<typeof mountSidebar>>,
+) {
+	const button = spotlightFold(wrapper)
+		.findAll("button")
+		.find((el) => el.text() === t("sidebar.spotlight.dismiss"))
+	if (!button) {
+		throw new Error("no spotlight close button")
+	}
+
+	return button
 }
 
 function itemNamed(
@@ -1446,6 +1482,121 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			expect(keys).toEqual(
 				SHORTCUT_ACTIONS.toggleShortcuts.keyboardKey.other.split("+"),
 			)
+		})
+	})
+
+	describe("spotlights", { concurrent: false }, () => {
+		beforeEach(() => {
+			useRuntimeConfig().public.appVersion = "0.11.0"
+			useRuntimeConfig().public.githubRepositoryURL =
+				"https://github.com/oxynote/oxynote"
+			runInApp(() =>
+				usePersistentState<string>({
+					key: "update-spotlight-collapsed-version",
+					defaultValue: "",
+					storage: { web: "local-storage" },
+				}),
+			).value = ""
+		})
+
+		afterEach(() => {
+			useRuntimeConfig().public.appVersion = ""
+			useRuntimeConfig().public.githubRepositoryURL = ""
+		})
+
+		it("shows the update card above the footer while the row stays folded", async ({
+			expect,
+		}) => {
+			stubQueries({ release: RELEASE })
+			const wrapper = await mountSidebar()
+			await settleMutations()
+
+			const card = spotlightFold(wrapper)
+			const row = updateRowFold(wrapper)
+
+			expect.soft(card.attributes("data-open")).toBeDefined()
+			expect
+				.soft(card.text())
+				.toContain(t("sidebar.spotlight.update.title", { latest: "0.12.0" }))
+			expect
+				.soft(card.text())
+				.toContain(t("sidebar.spotlight.update.text", { current: "0.11.0" }))
+			expect.soft(card.get("a").attributes("href")).toBe(RELEASE.notesUrl)
+			expect.soft(row.attributes("data-open")).toBeUndefined()
+			expect.soft(row.attributes("inert")).toBeDefined()
+		})
+
+		it("folds the closed update card into a row that links the release notes", async ({
+			expect,
+		}) => {
+			stubQueries({ release: RELEASE })
+			const wrapper = await mountSidebar()
+			await settleMutations()
+
+			await spotlightCloseButton(wrapper).trigger("click")
+
+			const card = spotlightFold(wrapper)
+			const row = updateRowFold(wrapper)
+			const link = row.get("a")
+
+			expect.soft(card.attributes("data-open")).toBeUndefined()
+			expect.soft(card.attributes("inert")).toBeDefined()
+			expect.soft(row.attributes("data-open")).toBeDefined()
+			expect.soft(row.attributes("inert")).toBeUndefined()
+			expect.soft(link.text()).toContain(t("sidebar.spotlight.update.row"))
+			expect.soft(link.text()).toContain("0.12.0")
+			expect.soft(link.attributes("href")).toBe(RELEASE.notesUrl)
+			expect.soft(link.attributes("target")).toBe("_blank")
+		})
+
+		it("dismisses the star card for good once its link is followed", async ({
+			expect,
+		}) => {
+			const writes = mockEndpoint("PUT", "/api/users/spotlights", () => null)
+			// core answers the refetch after the write with what it stored
+			stubQueries({
+				star: () =>
+					writes.length ? SpotlightState.Dismissed : SpotlightState.Shown,
+			})
+			const wrapper = await mountSidebar()
+			await settleMutations()
+
+			expect(spotlightFold(wrapper).text()).toContain(
+				t("sidebar.spotlight.star.title"),
+			)
+			expect(spotlightFold(wrapper).get("a").attributes("href")).toBe(
+				"https://github.com/oxynote/oxynote",
+			)
+
+			await spotlightFold(wrapper).get("a").trigger("click")
+			await settleMutations()
+
+			expect
+				.soft(spotlightFold(wrapper).attributes("data-open"))
+				.toBeUndefined()
+			expect.soft(writes).toHaveLength(1)
+			expect.soft(writes[0]?.body).toEqual({ star: SpotlightState.Dismissed })
+			expect.soft(toast.custom).not.toHaveBeenCalled()
+		})
+
+		it("closes the star card without a warning when it cannot be dismissed", async ({
+			expect,
+		}) => {
+			stubQueries({ star: () => SpotlightState.Shown })
+			const writes = mockEndpoint("PUT", "/api/users/spotlights", () => {
+				throw createError({ statusCode: 500 })
+			})
+			const wrapper = await mountSidebar()
+			await settleMutations()
+
+			await spotlightCloseButton(wrapper).trigger("click")
+			await settleMutations()
+
+			expect
+				.soft(spotlightFold(wrapper).attributes("data-open"))
+				.toBeUndefined()
+			expect.soft(writes).toHaveLength(1)
+			expect.soft(toast.custom).not.toHaveBeenCalled()
 		})
 	})
 })

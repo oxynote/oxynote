@@ -162,7 +162,7 @@ func Test_Options_Validate(t *testing.T) {
 			Err:     errors.New("missing mcp resource url"),
 		},
 		"Valid options": {
-			Options: Options{SessionURL: _testSessionURL, ResourceURL: _testResourceURL},
+			Options: Options{SessionURL: _testSessionURL, ResourceURL: _testResourceURL, Version: "0.11.0"},
 		},
 	}
 
@@ -226,6 +226,7 @@ func Test_NewHandler(t *testing.T) {
 			assert.Same(t, man, hdl.man)
 			assert.Same(t, db, hdl.db)
 			assert.NotNil(t, hdl.handler)
+			assert.Equal(t, c.Options.Version, hdl.version)
 		})
 	}
 }

@@ -212,7 +212,7 @@ func (s *Server) appsRouter() chi.Router {
 }
 
 // router prepares all main application routes.
-func (s *Server) router() chi.Router {
+func (s *Server) router() chi.Router { //nolint:maintidx // a flat route table grows by length, not by complexity
 	r := chi.NewRouter()
 
 	s.setupCORS(r)
@@ -228,6 +228,7 @@ func (s *Server) router() chi.Router {
 	}))
 
 	r.Get("/capabilities", s.fetchCapabilities)
+	r.Get("/releases/latest", s.fetchLatestRelease)
 
 	r.Route("/github", func(sr chi.Router) {
 		// the status endpoint stays available when the GitHub App is not
@@ -259,6 +260,8 @@ func (s *Server) router() chi.Router {
 	r.Route("/users", func(sr chi.Router) {
 		sr.Put("/image", s.handlers.user.UploadUserImage)
 		sr.Get("/{userId}/image", s.handlers.user.RetrieveUserImage)
+		sr.Get("/spotlights", s.handlers.user.FetchUserSpotlights)
+		sr.Put("/spotlights", s.handlers.user.UpdateUserSpotlights)
 	})
 	r.Route("/organizations/logo", func(sr chi.Router) {
 		sr.With(requireAdmin).Put("/", s.handlers.organization.UploadOrganizationLogo)

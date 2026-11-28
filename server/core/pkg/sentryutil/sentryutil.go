@@ -24,15 +24,6 @@ type Config struct {
 	// Environment specifies the environment of the application.
 	Environment string
 
-	// ReleaseName specifies the name of the application.
-	ReleaseName string
-
-	// ReleaseCommit specifies the commit of the application.
-	ReleaseCommit string
-
-	// ReleaseTimestamp specifies the timestamp of the application.
-	ReleaseTimestamp string
-
 	// Deduplication specifies the deduplication configuration.
 	Deduplication DeduplicationConfig
 }
@@ -110,20 +101,6 @@ func Setup(cfg Config) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-
-	sentry.ConfigureScope(func(scope *sentry.Scope) {
-		if cfg.ReleaseName != "" {
-			scope.SetTag("release.name", cfg.ReleaseName)
-		}
-
-		if cfg.ReleaseCommit != "" {
-			scope.SetTag("release.commit", cfg.ReleaseCommit)
-		}
-
-		if cfg.ReleaseTimestamp != "" {
-			scope.SetTag("release.timestamp", cfg.ReleaseTimestamp)
-		}
-	})
 
 	if dc != nil {
 		go dc.Start()

@@ -33,9 +33,6 @@ func Test_Setup(t *testing.T) {
 		},
 		"Successful setup with deduplication": {
 			Config: Config{
-				ReleaseName:      "test",
-				ReleaseCommit:    "commit",
-				ReleaseTimestamp: "timestamp",
 				Deduplication: DeduplicationConfig{
 					Interval: time.Millisecond * 100,
 					Capacity: 10,

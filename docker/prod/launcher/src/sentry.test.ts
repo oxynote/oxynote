@@ -32,7 +32,7 @@ function harness(overrides: { flush?: () => Promise<boolean> } = {}): {
 }
 
 describe("createCrashReporter", () => {
-	it("initializes sentry with the baked dsn, no tracing and no data collection", ({
+	it("initializes sentry with the baked dsn and release, no tracing and no data collection", ({
 		expect,
 	}) => {
 		const h = harness()
@@ -40,12 +40,14 @@ describe("createCrashReporter", () => {
 		createCrashReporter(
 			h.client,
 			"https://key@sentry.test/1",
+			"1.2.3",
 			false,
 		)
 
 		expect(h.init).toHaveBeenCalledWith({
 			dsn: "https://key@sentry.test/1",
 			environment: "production",
+			release: "1.2.3",
 			tracesSampleRate: 0,
 			dataCollection: {
 				userInfo: false,
@@ -81,6 +83,7 @@ describe("createCrashReporter", () => {
 		await createCrashReporter(
 			h.client,
 			input.dsn,
+			"1.2.3",
 			input.disabled,
 		).report(new Error("boom"))
 
@@ -97,6 +100,7 @@ describe("createCrashReporter", () => {
 		await createCrashReporter(
 			h.client,
 			"https://key@sentry.test/1",
+			"1.2.3",
 			false,
 		).report(error)
 
@@ -117,6 +121,7 @@ describe("createCrashReporter", () => {
 			createCrashReporter(
 				h.client,
 				"https://key@sentry.test/1",
+				"1.2.3",
 				false,
 			).report(new Error("boom")),
 		).resolves.toBeUndefined()

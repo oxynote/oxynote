@@ -26,8 +26,7 @@ build:
 # publish ghcr.io/oxynote/core alongside the image being released.
 #
 # The snapshot variant is for local and e2e builds, where there may be no
-# tag and the version does not matter. A published image must use the other
-# one: a snapshot stamps the binary as version dev in a dev environment.
+# tag.
 #
 # Both build DOCKER_ARCH alone and copy the binary to OUTPUT, so a caller
 # never depends on goreleaser's dist layout.

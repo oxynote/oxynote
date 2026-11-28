@@ -317,6 +317,14 @@ text-muted-foreground`.
 `sidebar-accent`. Hovering a row swaps its icon for a collapse chevron and
 fades in its actions menu. Group labels are 12px medium at 70%.
 
+**Sidebar spotlight.** At most one card, at the foot of the sidebar. The
+footer's hairline moves above it, and the card sits 8px in from that
+hairline and the sides, with the footer rows right below: `rounded-md border
+bg-card p-3`, no shadow. A 13px semibold title with a 20px ghost close
+button (14px muted icon) centred on its first line. Then 13px muted text
+set `text-pretty`, then a full-width 28px outline button with a 14px
+leading icon that opens its link in a new tab. A spotlight never closes by itself.
+
 **List and result rows** (search, notifications). `rounded-md`, selected
 `accent/50`, pressed `accent`; hover styling only on devices that hover.
 Matched text is a `search-highlight` mark.
@@ -387,6 +395,9 @@ Skeletons are `rounded-md bg-primary/10` with a pulse.
   settled, so layout never jumps in view.
 - Things that appear on hover (row actions, drag handle, block buttons)
   fade; they do not move.
+- A sidebar spotlight folds into its footer row over the same 200ms
+  ease-out: the card closes while the row opens, and the footer rows below
+  do not move.
 - No bounces, springs or decorative animation in the chrome.
 
 ## 10. States and accessibility

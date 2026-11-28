@@ -1,13 +1,19 @@
 import { registerEndpoint } from "@nuxt/test-utils/runtime"
-import { readFormData, setResponseHeader, type H3Event } from "h3"
+import { createError, readFormData, setResponseHeader, type H3Event } from "h3"
 import { afterEach, beforeEach, describe, it } from "vitest"
 import {
 	clearQueryCache,
 	disposeMockEndpoints,
+	mockDeferredEndpoint,
+	mockEndpoint,
+	readQueryData,
 	runInApp,
+	seedQueryData,
 	trackEndpointDisposal,
 } from "./test-helpers"
 import useUserAPI from "./useUserAPI"
+
+const SPOTLIGHTS_KEY = ["users", "spotlights"]
 
 function makeUserAPI() {
 	return runInApp(() => useUserAPI())
@@ -55,6 +61,98 @@ describe("useUserAPI", { concurrent: false }, () => {
 	beforeEach(clearQueryCache)
 
 	afterEach(disposeMockEndpoints)
+
+	describe("useFetchUserSpotlights", () => {
+		it("fetches the user's spotlight states", async ({ expect }) => {
+			const calls = mockEndpoint("GET", "/api/users/spotlights", () => ({
+				star: SpotlightState.Shown,
+			}))
+			const api = makeUserAPI()
+
+			const result = await runInApp(() =>
+				api.useFetchUserSpotlights(),
+			).refresh()
+
+			expect(result.data).toEqual({ star: SpotlightState.Shown })
+			expect(calls).toHaveLength(1)
+		})
+	})
+
+	describe("updateUserSpotlights", () => {
+		it("shows the new state while the write is in flight", async ({
+			expect,
+		}) => {
+			seedQueryData(SPOTLIGHTS_KEY, { star: SpotlightState.Shown })
+			const put = mockDeferredEndpoint("PUT", "/api/users/spotlights")
+			const reads = mockEndpoint("GET", "/api/users/spotlights", () => ({
+				star: SpotlightState.Dismissed,
+			}))
+			const api = makeUserAPI()
+			// the refetch reaches only a query someone still reads
+			runInApp(() => api.useFetchUserSpotlights())
+
+			const pending = api.updateUserSpotlights.mutateAsync({
+				star: SpotlightState.Dismissed,
+			})
+			await put.reached
+
+			expect(readQueryData(SPOTLIGHTS_KEY)).toEqual({
+				star: SpotlightState.Dismissed,
+			})
+
+			put.resolve(null)
+			await pending
+
+			expect.soft(put.calls).toHaveLength(1)
+			expect
+				.soft(put.calls[0]?.body)
+				.toEqual({ star: SpotlightState.Dismissed })
+			// the answer core keeps replaces the optimistic one
+			expect.soft(reads).toHaveLength(1)
+		})
+
+		it("puts the previous state back when the write fails", async ({
+			expect,
+		}) => {
+			seedQueryData(SPOTLIGHTS_KEY, { star: SpotlightState.Shown })
+			const put = mockEndpoint("PUT", "/api/users/spotlights", () => {
+				throw createError({ statusCode: 500 })
+			})
+			const reads = mockEndpoint("GET", "/api/users/spotlights", () => ({
+				star: SpotlightState.Shown,
+			}))
+			const api = makeUserAPI()
+
+			await expect(
+				api.updateUserSpotlights.mutateAsync({
+					star: SpotlightState.Dismissed,
+				}),
+			).rejects.toThrow()
+
+			expect.soft(readQueryData(SPOTLIGHTS_KEY)).toEqual({
+				star: SpotlightState.Shown,
+			})
+			expect.soft(put).toHaveLength(1)
+			expect.soft(reads).toHaveLength(0)
+		})
+		it("keeps a newer state when the write fails", async ({ expect }) => {
+			seedQueryData(SPOTLIGHTS_KEY, { star: SpotlightState.Shown })
+			const put = mockDeferredEndpoint("PUT", "/api/users/spotlights")
+			const api = makeUserAPI()
+
+			const pending = api.updateUserSpotlights.mutateAsync({
+				star: SpotlightState.Dismissed,
+			})
+			await put.reached
+			seedQueryData(SPOTLIGHTS_KEY, { star: null })
+			put.reject(createError({ statusCode: 500 }))
+
+			await expect(pending).rejects.toThrow()
+
+			expect.soft(readQueryData(SPOTLIGHTS_KEY)).toEqual({ star: null })
+			expect.soft(put.calls).toHaveLength(1)
+		})
+	})
 
 	describe("uploadUserImage", () => {
 		it("uploads the image and returns the stored location", async ({
