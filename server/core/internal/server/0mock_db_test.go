@@ -12,6 +12,7 @@ import (
 	slackCore "github.com/oxynote/oxynote/server/core/internal/apps/slack"
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/comment"
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
@@ -124,6 +125,9 @@ var _ DB = &DBMock{}
 //			},
 //			FetchDocumentFunc: func(ctx context.Context, id xid.ID, organizationID string, branchName string) (*document.Document, error) {
 //				panic("mock out the FetchDocument method")
+//			},
+//			FetchDocumentActivityEntriesFunc: func(ctx context.Context, branchID xid.ID, organizationID string, qr activity.Query) (activity.Page, error) {
+//				panic("mock out the FetchDocumentActivityEntries method")
 //			},
 //			FetchDocumentBranchViewsFunc: func(ctx context.Context, branchID xid.ID, organizationID string) ([]document.BranchView, error) {
 //				panic("mock out the FetchDocumentBranchViews method")
@@ -425,6 +429,9 @@ type DBMock struct {
 
 	// FetchDocumentFunc mocks the FetchDocument method.
 	FetchDocumentFunc func(ctx context.Context, id xid.ID, organizationID string, branchName string) (*document.Document, error)
+
+	// FetchDocumentActivityEntriesFunc mocks the FetchDocumentActivityEntries method.
+	FetchDocumentActivityEntriesFunc func(ctx context.Context, branchID xid.ID, organizationID string, qr activity.Query) (activity.Page, error)
 
 	// FetchDocumentBranchViewsFunc mocks the FetchDocumentBranchViews method.
 	FetchDocumentBranchViewsFunc func(ctx context.Context, branchID xid.ID, organizationID string) ([]document.BranchView, error)
@@ -901,6 +908,17 @@ type DBMock struct {
 			OrganizationID string
 			// BranchName is the branchName argument value.
 			BranchName string
+		}
+		// FetchDocumentActivityEntries holds details about calls to the FetchDocumentActivityEntries method.
+		FetchDocumentActivityEntries []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// Qr is the qr argument value.
+			Qr activity.Query
 		}
 		// FetchDocumentBranchViews holds details about calls to the FetchDocumentBranchViews method.
 		FetchDocumentBranchViews []struct {
@@ -1519,6 +1537,7 @@ type DBMock struct {
 	lockFetchDataSource                           sync.RWMutex
 	lockFetchDataSources                          sync.RWMutex
 	lockFetchDocument                             sync.RWMutex
+	lockFetchDocumentActivityEntries              sync.RWMutex
 	lockFetchDocumentBranchViews                  sync.RWMutex
 	lockFetchDocumentBranches                     sync.RWMutex
 	lockFetchDocumentBranchesUnsafe               sync.RWMutex
@@ -2887,6 +2906,54 @@ func (mock *DBMock) FetchDocumentCalls() []struct {
 	mock.lockFetchDocument.RLock()
 	calls = mock.calls.FetchDocument
 	mock.lockFetchDocument.RUnlock()
+	return calls
+}
+
+// FetchDocumentActivityEntries calls FetchDocumentActivityEntriesFunc.
+func (mock *DBMock) FetchDocumentActivityEntries(ctx context.Context, branchID xid.ID, organizationID string, qr activity.Query) (activity.Page, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		BranchID       xid.ID
+		OrganizationID string
+		Qr             activity.Query
+	}{
+		Ctx:            ctx,
+		BranchID:       branchID,
+		OrganizationID: organizationID,
+		Qr:             qr,
+	}
+	mock.lockFetchDocumentActivityEntries.Lock()
+	mock.calls.FetchDocumentActivityEntries = append(mock.calls.FetchDocumentActivityEntries, callInfo)
+	mock.lockFetchDocumentActivityEntries.Unlock()
+	if mock.FetchDocumentActivityEntriesFunc == nil {
+		var (
+			pageOut activity.Page
+			errOut  error
+		)
+		return pageOut, errOut
+	}
+	return mock.FetchDocumentActivityEntriesFunc(ctx, branchID, organizationID, qr)
+}
+
+// FetchDocumentActivityEntriesCalls gets all the calls that were made to FetchDocumentActivityEntries.
+// Check the length with:
+//
+//	len(mockedDB.FetchDocumentActivityEntriesCalls())
+func (mock *DBMock) FetchDocumentActivityEntriesCalls() []struct {
+	Ctx            context.Context
+	BranchID       xid.ID
+	OrganizationID string
+	Qr             activity.Query
+} {
+	var calls []struct {
+		Ctx            context.Context
+		BranchID       xid.ID
+		OrganizationID string
+		Qr             activity.Query
+	}
+	mock.lockFetchDocumentActivityEntries.RLock()
+	calls = mock.calls.FetchDocumentActivityEntries
+	mock.lockFetchDocumentActivityEntries.RUnlock()
 	return calls
 }
 

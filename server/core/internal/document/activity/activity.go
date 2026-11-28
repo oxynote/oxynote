@@ -18,6 +18,16 @@ const (
 	MetaKeyToBranchID = "toBranchId"
 )
 
+// Page sizes.
+const (
+	// _defaultLimit is the number of entries a page holds when the query
+	// sets no limit.
+	_defaultLimit = 50
+
+	// _maxLimit caps the number of entries one page holds.
+	_maxLimit = 100
+)
+
 // All available ActorKind constants.
 const (
 	ActorKindUser ActorKind = "user"
@@ -178,6 +188,26 @@ type Query struct {
 	// at the newest entry.
 	Before xid.ID `schema:"before"`
 
-	// Limit specifies the most entries the page holds.
+	// Limit specifies the number of entries the page holds, see PageSize.
 	Limit uint64 `schema:"limit"`
+}
+
+// PageSize returns the number of entries the page holds: the default when
+// the query sets no limit, and at most the maximum.
+func (qr Query) PageSize() uint64 {
+	if qr.Limit == 0 {
+		return _defaultLimit
+	}
+
+	return min(qr.Limit, _maxLimit)
+}
+
+// Page is a page of a branch's entries, newest first.
+type Page struct {
+	// Entries specifies the entries on the page.
+	Entries []Entry `json:"entries"`
+
+	// Next specifies the cursor of the following page. It is null on the
+	// last page.
+	Next null.Value[xid.ID] `json:"next"`
 }

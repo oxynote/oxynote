@@ -344,6 +344,7 @@ func (s *Server) router() chi.Router {
 			ssr.Route("/branches", func(sssr chi.Router) {
 				sssr.Get("/", s.handlers.document.FetchDocumentBranches)
 				sssr.Route("/{branchId}", func(ssssr chi.Router) {
+					ssssr.Get("/activity", s.handlers.activity.FetchDocumentActivity)
 					ssssr.Put("/review-approve", s.handlers.document.UpdateBranchReviewApproval)
 					ssssr.Get("/views", s.handlers.document.FetchDocumentBranchViews)
 					ssssr.Post("/views", s.handlers.document.RecordDocumentBranchView)

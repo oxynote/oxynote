@@ -165,6 +165,7 @@ func Test_Server_router(t *testing.T) {
 		"GET /documents/tree/":                                           orgCore.RoleViewer,
 		"GET /documents/{documentId}/access":                             orgCore.RoleViewer,
 		"GET /documents/{documentId}/branches/":                          orgCore.RoleViewer,
+		"GET /documents/{documentId}/branches/{branchId}/activity":       orgCore.RoleViewer,
 		"GET /documents/{documentId}/branches/{branchId}/reviewers/":     orgCore.RoleViewer,
 		"GET /documents/{documentId}/branches/{branchId}/search":         orgCore.RoleViewer,
 		"GET /documents/{documentId}/branches/{branchId}/tags/":          orgCore.RoleViewer,
