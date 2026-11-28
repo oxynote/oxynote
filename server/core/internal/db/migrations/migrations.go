@@ -17,6 +17,10 @@ const (
 	// _versionDocumentCommentRevisionsBackfill gives existing comments
 	// and replies their first revision.
 	_versionDocumentCommentRevisionsBackfill version = 15
+
+	// _versionDocumentActivityEntriesBackfill rebuilds the activity
+	// entries that existing rows can tell.
+	_versionDocumentActivityEntriesBackfill version = 17
 )
 
 // version is the number a Go migration shares with the SQL ones.
@@ -36,5 +40,6 @@ func Go(deps Deps) []*goose.Migration {
 	return []*goose.Migration{
 		migrateDataSourceCredentialsKind(deps),
 		backfillDocumentCommentRevisions(),
+		backfillDocumentActivityEntries(),
 	}
 }

@@ -81,3 +81,75 @@ func Test_agent_recordDocumentCommentRevision(t *testing.T) {
 		})
 	}
 }
+
+func Test_agent_fetchDocumentCommentRevisionsByIDs(t *testing.T) {
+	type tcase struct {
+		CancelledContext bool
+		IDs              []string
+		OrganizationID   string
+		Result           []comment.Revision
+		Err              error
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Error returned by the select": func(t *testing.T, db *DB) tcase {
+			rev := fetchFirstDocumentCommentRevision(t, db, prepDocumentComments(t, db, 1, nil)[0].ID)
+
+			return tcase{
+				CancelledContext: true,
+				IDs:              []string{rev.ID.String()},
+				OrganizationID:   rev.OrganizationID,
+				Err:              assert.AnError,
+			}
+		},
+		"No ids": func(t *testing.T, db *DB) tcase {
+			return tcase{
+				OrganizationID: prepOrganizations(t, db, 1)[0],
+				Result:         []comment.Revision{},
+			}
+		},
+		"Another organization": func(t *testing.T, db *DB) tcase {
+			rev := fetchFirstDocumentCommentRevision(t, db, prepDocumentComments(t, db, 1, nil)[0].ID)
+
+			return tcase{
+				IDs:            []string{rev.ID.String()},
+				OrganizationID: prepOrganizations(t, db, 1)[0],
+				Result:         []comment.Revision{},
+			}
+		},
+		"Successful fetch": func(t *testing.T, db *DB) tcase {
+			rev := fetchFirstDocumentCommentRevision(t, db, prepDocumentComments(t, db, 1, nil)[0].ID)
+
+			return tcase{
+				IDs:            []string{rev.ID.String(), xid.New().String()},
+				OrganizationID: rev.OrganizationID,
+				Result:         []comment.Revision{rev},
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.fetchDocumentCommentRevisionsByIDs(ctx, c.IDs, c.OrganizationID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
+}

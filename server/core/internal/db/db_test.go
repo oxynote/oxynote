@@ -23,6 +23,8 @@ import (
 	pgDocker "github.com/orlangure/gnomock/preset/postgres"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/db/migrations"
+	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/comment"
 	"github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
@@ -677,6 +679,235 @@ func Test_backfillDocumentCommentRevisions(t *testing.T) {
 
 			m := migrations.Go(migrations.Deps{})[1]
 			require.Equal(t, int64(15), m.Version)
+
+			run := m.UpFnContext
+			if c.Down {
+				run = m.DownFnContext
+			}
+
+			err = run(ctx, tx)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			require.NoError(t, tx.Commit())
+
+			c.Check(t, db)
+		})
+	}
+}
+
+func Test_backfillDocumentActivityEntries(t *testing.T) {
+	type tcase struct {
+		CancelledContext bool
+		Down             bool
+		Err              error
+		// Check inspects the rows the migration left behind.
+		Check func(t *testing.T, db *DB)
+	}
+
+	// countEntries returns how many activity entries are stored.
+	countEntries := func(t *testing.T, db *DB) int {
+		t.Helper()
+
+		var n int
+		require.NoError(t, db.sql.Get(&n, "SELECT count(*) FROM document_activity_entries"))
+
+		return n
+	}
+
+	// user returns the actor of the user.
+	user := func(userID string) activity.Actor {
+		return activity.Actor{
+			Kind:   activity.ActorKindUser,
+			UserID: null.StringFrom(userID),
+		}
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(t *testing.T, db *DB) tcase {
+			prepDocuments(t, db, 1, nil)
+
+			return tcase{
+				CancelledContext: true,
+				Err:              assert.AnError,
+			}
+		},
+		"No rows": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					assert.Zero(t, countEntries(t, db))
+				},
+			}
+		},
+		"Existing rows gain the entries they can tell": func(t *testing.T, db *DB) tcase {
+			users := prepUsers(t, db, 2)
+			alice, bob := users[0], users[1]
+
+			doc := prepDocuments(t, db, 1, func(_ int, d *document.Document) {
+				d.CreatedBy = null.StringFrom(alice)
+			})[0]
+			fork := prepDocumentBranches(t, db, 1, func(_ int, d *document.Document) {
+				d.ID = doc.ID
+				d.OrganizationID = doc.OrganizationID
+				d.CreatedBy = null.StringFrom(alice)
+				d.CreatedAt = doc.CreatedAt.Add(time.Minute)
+			})[0]
+			c := prepDocumentComments(t, db, 1, func(_ int, c *comment.Comment) {
+				c.BranchID = fork.BranchID
+				c.DocumentID = fork.ID
+				c.OrganizationID = fork.OrganizationID
+				c.UserID = null.StringFrom(bob)
+				c.CreatedAt = fork.CreatedAt.Add(time.Minute)
+				c.Resolved = true
+				c.ResolvedBy = null.StringFrom(alice)
+				c.ResolvedAt = null.TimeFrom(c.CreatedAt.Add(2 * time.Minute))
+			})[0]
+			r := prepDocumentCommentReplies(t, db, 1, func(_ int, r *comment.Reply) {
+				r.CommentID = c.ID
+				r.OrganizationID = c.OrganizationID
+				r.UserID = null.StringFrom(alice)
+				r.CreatedAt = c.CreatedAt.Add(time.Minute)
+			})[0]
+
+			rev := fetchFirstDocumentCommentRevision(t, db, c.ID)
+			replyRev := fetchFirstDocumentCommentReplyRevision(t, db, r.ID)
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					main := fetchStoredDocumentActivityEntries(t, db, doc.OrganizationID, doc.BranchID)
+					require.Len(t, main, 1)
+					assert.Equal(t, user(alice), main[0].Actor)
+					assert.Equal(t, activity.TypeDocumentCreated, main[0].Type)
+					assert.Equal(t, activity.CategoryDocument, main[0].Category)
+					assert.Equal(t, activity.Target{}, main[0].Target)
+					assert.Equal(t, activity.Metadata{}, main[0].Metadata)
+					assert.Equal(t, doc.ID, main[0].DocumentID)
+					assert.Equal(t, doc.OrganizationID, main[0].OrganizationID)
+					assert.Equal(t, doc.CreatedAt, main[0].CreatedAt)
+					assert.Equal(t, doc.CreatedAt, main[0].UpdatedAt)
+
+					// the ids are real xids, so they carry the time they
+					// were made.
+					assert.WithinDuration(t, timeutil.Now(), main[0].ID.Time(), time.Minute)
+
+					entries := fetchStoredDocumentActivityEntries(t, db, fork.OrganizationID, fork.BranchID)
+					require.Len(t, entries, 4)
+
+					assert.Equal(t, user(alice), entries[0].Actor)
+					assert.Equal(t, activity.TypeBranchForked, entries[0].Type)
+					assert.Equal(t, activity.CategoryBranch, entries[0].Category)
+					assert.Equal(t, activity.Metadata{activity.MetaKeyToBranchID: fork.BranchID.String()}, entries[0].Metadata)
+					assert.Equal(t, fork.CreatedAt, entries[0].CreatedAt)
+
+					assert.Equal(t, user(bob), entries[1].Actor)
+					assert.Equal(t, activity.TypeCommentCreated, entries[1].Type)
+					assert.Equal(t, activity.CategoryComment, entries[1].Category)
+					assert.Equal(t, activity.NewTarget(activity.TargetKindCommentRevision, rev.ID.String()), entries[1].Target)
+					assert.Equal(t, activity.Metadata{activity.MetaKeyCommentID: c.ID.String()}, entries[1].Metadata)
+					assert.Equal(t, c.CreatedAt, entries[1].CreatedAt)
+
+					assert.Equal(t, user(alice), entries[2].Actor)
+					assert.Equal(t, activity.TypeCommentReplied, entries[2].Type)
+					assert.Equal(t, activity.NewTarget(activity.TargetKindReplyRevision, replyRev.ID.String()), entries[2].Target)
+					assert.Equal(t, activity.Metadata{
+						activity.MetaKeyCommentID: c.ID.String(),
+						activity.MetaKeyReplyID:   r.ID.String(),
+					}, entries[2].Metadata)
+					assert.Equal(t, r.CreatedAt, entries[2].CreatedAt)
+
+					assert.Equal(t, user(alice), entries[3].Actor)
+					assert.Equal(t, activity.TypeCommentResolved, entries[3].Type)
+					assert.Equal(t, activity.NewTarget(activity.TargetKindCommentRevision, rev.ID.String()), entries[3].Target)
+					assert.Equal(t, c.ResolvedAt.Time, entries[3].CreatedAt)
+				},
+			}
+		},
+		"A comment's creation points at its oldest revision and its resolution at its newest": func(t *testing.T, db *DB) tcase {
+			c := prepDocumentComments(t, db, 1, nil)[0]
+			first := fetchFirstDocumentCommentRevision(t, db, c.ID)
+
+			edited := c
+			edited.Content = comment.Content{"text": "edited"}
+			edited.UpdatedAt = null.TimeFrom(c.CreatedAt.Add(time.Minute))
+			require.NoError(t, db.UpdateDocumentComment(context.Background(), edited))
+
+			edited.Resolved = true
+			edited.ResolvedAt = null.TimeFrom(c.CreatedAt.Add(2 * time.Minute))
+			require.NoError(t, db.UpdateDocumentCommentStatus(context.Background(), edited))
+
+			var newest xid.ID
+			require.NoError(t, db.sql.Get(
+				&newest,
+				"SELECT id FROM document_comment_revisions WHERE fk_document_comment_id = $1 ORDER BY created_at DESC LIMIT 1",
+				c.ID,
+			))
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					// the comment's branch is a fork, so its first entry is
+					// the fork.
+					entries := fetchStoredDocumentActivityEntries(t, db, c.OrganizationID, c.BranchID)
+					require.Len(t, entries, 3)
+					assert.Equal(t, activity.TypeCommentCreated, entries[1].Type)
+					assert.Equal(t, activity.NewTarget(activity.TargetKindCommentRevision, first.ID.String()), entries[1].Target)
+					assert.Equal(t, activity.TypeCommentResolved, entries[2].Type)
+					assert.Equal(t, activity.NewTarget(activity.TargetKindCommentRevision, newest.String()), entries[2].Target)
+				},
+			}
+		},
+		"Deleted comments and replies gain no entries": func(t *testing.T, db *DB) tcase {
+			r := prepDocumentCommentReplies(t, db, 1, nil)[0]
+			c := fetchStoredDocumentComment(t, db, r.CommentID)
+			require.NoError(t, db.DeleteDocumentCommentReply(context.Background(), r.ID, r.CommentID, r.OrganizationID))
+			require.NoError(t, db.DeleteDocumentComment(context.Background(), c.ID, c.DocumentID, c.OrganizationID))
+
+			return tcase{
+				Check: func(t *testing.T, db *DB) {
+					var n int
+
+					require.NoError(t, db.sql.Get(&n, "SELECT count(*) FROM document_activity_entries WHERE category = 'comment'"))
+					assert.Zero(t, n)
+				},
+			}
+		},
+		"Down removes every entry": func(t *testing.T, db *DB) tcase {
+			prepDocumentActivityEntries(t, db, 2, nil)
+
+			return tcase{
+				Down: true,
+				Check: func(t *testing.T, db *DB) {
+					assert.Zero(t, countEntries(t, db))
+				},
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			tx, err := db.sql.BeginTx(ctx, nil)
+			require.NoError(t, err)
+
+			t.Cleanup(func() {
+				tx.Rollback() //nolint:errcheck,gosec // the transaction is committed or the test failed
+			})
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			m := migrations.Go(migrations.Deps{})[2]
+			require.Equal(t, int64(17), m.Version)
 
 			run := m.UpFnContext
 			if c.Down {
