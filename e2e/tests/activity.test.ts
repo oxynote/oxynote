@@ -214,9 +214,11 @@ test.describe("activity log", () => {
 			`?limit=1&before=${second.next ?? ""}`,
 		)
 
-		expect(
-			[first, second, third].flatMap((p) => p.entries.map((e) => e.type)),
-		).toEqual(["branch.protected", "branch.forked", "document.created"])
+		expect(first.entries.map((e) => e.type)).toEqual(["branch.protected"])
+		expect(first.next).toBeTruthy()
+		expect(second.entries.map((e) => e.type)).toEqual(["branch.forked"])
+		expect(second.next).toBeTruthy()
+		expect(third.entries.map((e) => e.type)).toEqual(["document.created"])
 		expect(third.next).toBeNull()
 	})
 
