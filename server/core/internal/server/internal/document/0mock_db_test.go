@@ -10,6 +10,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/search"
@@ -45,7 +46,7 @@ var _ DB = &DBMock{}
 //			CountDocumentBranchesFunc: func(ctx context.Context, docID xid.ID, organizationID string) (int, error) {
 //				panic("mock out the CountDocumentBranches method")
 //			},
-//			DeleteBranchReviewerFunc: func(ctx context.Context, branchID xid.ID, userID string, organizationID string) error {
+//			DeleteBranchReviewerFunc: func(ctx context.Context, branchID xid.ID, userID string, organizationID string) (bool, error) {
 //				panic("mock out the DeleteBranchReviewer method")
 //			},
 //			DeleteDocumentFunc: func(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error) {
@@ -110,6 +111,9 @@ var _ DB = &DBMock{}
 //			},
 //			InsertDocumentFunc: func(ctx context.Context, doc documentCore.Document) error {
 //				panic("mock out the InsertDocument method")
+//			},
+//			InsertDocumentActivityEntriesFunc: func(ctx context.Context, entries ...activity.Entry) error {
+//				panic("mock out the InsertDocumentActivityEntries method")
 //			},
 //			InsertDocumentBranchFunc: func(ctx context.Context, doc documentCore.Document) error {
 //				panic("mock out the InsertDocumentBranch method")
@@ -176,7 +180,7 @@ type DBMock struct {
 	CountDocumentBranchesFunc func(ctx context.Context, docID xid.ID, organizationID string) (int, error)
 
 	// DeleteBranchReviewerFunc mocks the DeleteBranchReviewer method.
-	DeleteBranchReviewerFunc func(ctx context.Context, branchID xid.ID, userID string, organizationID string) error
+	DeleteBranchReviewerFunc func(ctx context.Context, branchID xid.ID, userID string, organizationID string) (bool, error)
 
 	// DeleteDocumentFunc mocks the DeleteDocument method.
 	DeleteDocumentFunc func(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error)
@@ -240,6 +244,9 @@ type DBMock struct {
 
 	// InsertDocumentFunc mocks the InsertDocument method.
 	InsertDocumentFunc func(ctx context.Context, doc documentCore.Document) error
+
+	// InsertDocumentActivityEntriesFunc mocks the InsertDocumentActivityEntries method.
+	InsertDocumentActivityEntriesFunc func(ctx context.Context, entries ...activity.Entry) error
 
 	// InsertDocumentBranchFunc mocks the InsertDocumentBranch method.
 	InsertDocumentBranchFunc func(ctx context.Context, doc documentCore.Document) error
@@ -534,6 +541,13 @@ type DBMock struct {
 			// Doc is the doc argument value.
 			Doc documentCore.Document
 		}
+		// InsertDocumentActivityEntries holds details about calls to the InsertDocumentActivityEntries method.
+		InsertDocumentActivityEntries []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Entries is the entries argument value.
+			Entries []activity.Entry
+		}
 		// InsertDocumentBranch holds details about calls to the InsertDocumentBranch method.
 		InsertDocumentBranch []struct {
 			// Ctx is the ctx argument value.
@@ -686,6 +700,7 @@ type DBMock struct {
 	lockFetchRecentlyViewedDocuments        sync.RWMutex
 	lockInsertBranchReviewer                sync.RWMutex
 	lockInsertDocument                      sync.RWMutex
+	lockInsertDocumentActivityEntries       sync.RWMutex
 	lockInsertDocumentBranch                sync.RWMutex
 	lockInsertDocumentFile                  sync.RWMutex
 	lockInsertDocumentHook                  sync.RWMutex
@@ -964,7 +979,7 @@ func (mock *DBMock) CountDocumentBranchesCalls() []struct {
 }
 
 // DeleteBranchReviewer calls DeleteBranchReviewerFunc.
-func (mock *DBMock) DeleteBranchReviewer(ctx context.Context, branchID xid.ID, userID string, organizationID string) error {
+func (mock *DBMock) DeleteBranchReviewer(ctx context.Context, branchID xid.ID, userID string, organizationID string) (bool, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		BranchID       xid.ID
@@ -981,9 +996,10 @@ func (mock *DBMock) DeleteBranchReviewer(ctx context.Context, branchID xid.ID, u
 	mock.lockDeleteBranchReviewer.Unlock()
 	if mock.DeleteBranchReviewerFunc == nil {
 		var (
+			bOut   bool
 			errOut error
 		)
-		return errOut
+		return bOut, errOut
 	}
 	return mock.DeleteBranchReviewerFunc(ctx, branchID, userID, organizationID)
 }
@@ -1922,6 +1938,45 @@ func (mock *DBMock) InsertDocumentCalls() []struct {
 	mock.lockInsertDocument.RLock()
 	calls = mock.calls.InsertDocument
 	mock.lockInsertDocument.RUnlock()
+	return calls
+}
+
+// InsertDocumentActivityEntries calls InsertDocumentActivityEntriesFunc.
+func (mock *DBMock) InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error {
+	callInfo := struct {
+		Ctx     context.Context
+		Entries []activity.Entry
+	}{
+		Ctx:     ctx,
+		Entries: entries,
+	}
+	mock.lockInsertDocumentActivityEntries.Lock()
+	mock.calls.InsertDocumentActivityEntries = append(mock.calls.InsertDocumentActivityEntries, callInfo)
+	mock.lockInsertDocumentActivityEntries.Unlock()
+	if mock.InsertDocumentActivityEntriesFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.InsertDocumentActivityEntriesFunc(ctx, entries...)
+}
+
+// InsertDocumentActivityEntriesCalls gets all the calls that were made to InsertDocumentActivityEntries.
+// Check the length with:
+//
+//	len(mockedDB.InsertDocumentActivityEntriesCalls())
+func (mock *DBMock) InsertDocumentActivityEntriesCalls() []struct {
+	Ctx     context.Context
+	Entries []activity.Entry
+} {
+	var calls []struct {
+		Ctx     context.Context
+		Entries []activity.Entry
+	}
+	mock.lockInsertDocumentActivityEntries.RLock()
+	calls = mock.calls.InsertDocumentActivityEntries
+	mock.lockInsertDocumentActivityEntries.RUnlock()
 	return calls
 }
 

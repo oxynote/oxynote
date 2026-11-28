@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/rs/xid"
 )
@@ -27,6 +28,9 @@ var _ Tx = &TxMock{}
 //			},
 //			DeleteDocumentHookFunc: func(ctx context.Context, id xid.ID) error {
 //				panic("mock out the DeleteDocumentHook method")
+//			},
+//			InsertDocumentActivityEntriesFunc: func(ctx context.Context, entries ...activity.Entry) error {
+//				panic("mock out the InsertDocumentActivityEntries method")
 //			},
 //			InsertDocumentHookFunc: func(ctx context.Context, hk hook.Hook) error {
 //				panic("mock out the InsertDocumentHook method")
@@ -53,6 +57,9 @@ type TxMock struct {
 	// DeleteDocumentHookFunc mocks the DeleteDocumentHook method.
 	DeleteDocumentHookFunc func(ctx context.Context, id xid.ID) error
 
+	// InsertDocumentActivityEntriesFunc mocks the InsertDocumentActivityEntries method.
+	InsertDocumentActivityEntriesFunc func(ctx context.Context, entries ...activity.Entry) error
+
 	// InsertDocumentHookFunc mocks the InsertDocumentHook method.
 	InsertDocumentHookFunc func(ctx context.Context, hk hook.Hook) error
 
@@ -76,6 +83,13 @@ type TxMock struct {
 			Ctx context.Context
 			// ID is the id argument value.
 			ID xid.ID
+		}
+		// InsertDocumentActivityEntries holds details about calls to the InsertDocumentActivityEntries method.
+		InsertDocumentActivityEntries []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Entries is the entries argument value.
+			Entries []activity.Entry
 		}
 		// InsertDocumentHook holds details about calls to the InsertDocumentHook method.
 		InsertDocumentHook []struct {
@@ -110,6 +124,7 @@ type TxMock struct {
 	}
 	lockCommit                           sync.RWMutex
 	lockDeleteDocumentHook               sync.RWMutex
+	lockInsertDocumentActivityEntries    sync.RWMutex
 	lockInsertDocumentHook               sync.RWMutex
 	lockRecordDocumentBranchHistoryEntry sync.RWMutex
 	lockRollback                         sync.RWMutex
@@ -182,6 +197,45 @@ func (mock *TxMock) DeleteDocumentHookCalls() []struct {
 	mock.lockDeleteDocumentHook.RLock()
 	calls = mock.calls.DeleteDocumentHook
 	mock.lockDeleteDocumentHook.RUnlock()
+	return calls
+}
+
+// InsertDocumentActivityEntries calls InsertDocumentActivityEntriesFunc.
+func (mock *TxMock) InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error {
+	callInfo := struct {
+		Ctx     context.Context
+		Entries []activity.Entry
+	}{
+		Ctx:     ctx,
+		Entries: entries,
+	}
+	mock.lockInsertDocumentActivityEntries.Lock()
+	mock.calls.InsertDocumentActivityEntries = append(mock.calls.InsertDocumentActivityEntries, callInfo)
+	mock.lockInsertDocumentActivityEntries.Unlock()
+	if mock.InsertDocumentActivityEntriesFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.InsertDocumentActivityEntriesFunc(ctx, entries...)
+}
+
+// InsertDocumentActivityEntriesCalls gets all the calls that were made to InsertDocumentActivityEntries.
+// Check the length with:
+//
+//	len(mockedTx.InsertDocumentActivityEntriesCalls())
+func (mock *TxMock) InsertDocumentActivityEntriesCalls() []struct {
+	Ctx     context.Context
+	Entries []activity.Entry
+} {
+	var calls []struct {
+		Ctx     context.Context
+		Entries []activity.Entry
+	}
+	mock.lockInsertDocumentActivityEntries.RLock()
+	calls = mock.calls.InsertDocumentActivityEntries
+	mock.lockInsertDocumentActivityEntries.RUnlock()
 	return calls
 }
 

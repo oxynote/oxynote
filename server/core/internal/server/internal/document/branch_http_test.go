@@ -11,6 +11,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/search"
@@ -634,6 +635,7 @@ func Test_Handler_MergeBranches(t *testing.T) {
 		DetachDocumentHooksByBranchID    int
 		DeleteDocumentCommentsByBranchID int
 		UpdateDocument                   int
+		InsertDocumentActivityEntries    int
 		FetchDocumentHooksByBranchID     int
 		InsertDocumentHook               int
 		ReplaceBranchTags                int
@@ -791,6 +793,25 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			UpdateDocument:                   1,
 			Rollback:                         1,
 		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: &DBMock{FetchDocumentByBranchIDFunc: fetchByBranch},
+			Tx: &TxMock{
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return errors.New("boom")
+				},
+			},
+			Body:                             validBody,
+			RespCode:                         http.StatusInternalServerError,
+			FetchDocumentByBranchID:          2,
+			BeginTx:                          1,
+			DetachDocumentHooksByBranchID:    1,
+			DeleteDocumentCommentsByBranchID: 1,
+			UpdateDocument:                   1,
+			InsertDocumentActivityEntries:    1,
+			History:                          1,
+			FetchDocumentHooksByBranchID:     1,
+			Rollback:                         1,
+		},
 		"Error returned by Tx.PromoteBranchApprovals": {
 			DB: &DBMock{FetchDocumentByBranchIDFunc: fetchByBranch},
 			Tx: &TxMock{
@@ -806,6 +827,7 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			DetachDocumentHooksByBranchID:    1,
 			DeleteDocumentCommentsByBranchID: 1,
 			UpdateDocument:                   1,
+			InsertDocumentActivityEntries:    1,
 			FetchDocumentHooksByBranchID:     1,
 			ReplaceBranchTags:                1,
 			Enqueue:                          1,
@@ -827,6 +849,7 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			DetachDocumentHooksByBranchID:    1,
 			DeleteDocumentCommentsByBranchID: 1,
 			UpdateDocument:                   1,
+			InsertDocumentActivityEntries:    1,
 			FetchDocumentHooksByBranchID:     1,
 			ReplaceBranchTags:                1,
 			Rollback:                         1,
@@ -885,6 +908,7 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			DetachDocumentHooksByBranchID:    1,
 			DeleteDocumentCommentsByBranchID: 1,
 			UpdateDocument:                   1,
+			InsertDocumentActivityEntries:    1,
 			FetchDocumentHooksByBranchID:     1,
 			ReplaceBranchTags:                1,
 			Enqueue:                          1,
@@ -912,6 +936,7 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			DetachDocumentHooksByBranchID:    1,
 			DeleteDocumentCommentsByBranchID: 1,
 			UpdateDocument:                   1,
+			InsertDocumentActivityEntries:    1,
 			FetchDocumentHooksByBranchID:     1,
 			InsertDocumentHook:               1,
 			ReplaceBranchTags:                1,
@@ -955,6 +980,7 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			assert.Len(t, c.Tx.DetachDocumentHooksByBranchIDCalls(), c.DetachDocumentHooksByBranchID)
 			assert.Len(t, c.Tx.DeleteDocumentCommentsByBranchIDCalls(), c.DeleteDocumentCommentsByBranchID)
 			assert.Len(t, c.Tx.UpdateDocumentCalls(), c.UpdateDocument)
+			assert.Len(t, c.Tx.InsertDocumentActivityEntriesCalls(), c.InsertDocumentActivityEntries)
 			assert.Len(t, c.Tx.FetchDocumentHooksByBranchIDCalls(), c.FetchDocumentHooksByBranchID)
 			assert.Len(t, c.Tx.InsertDocumentHookCalls(), c.InsertDocumentHook)
 			assert.Len(t, c.Tx.ReplaceBranchTagsCalls(), c.ReplaceBranchTags)
@@ -971,6 +997,15 @@ func Test_Handler_MergeBranches(t *testing.T) {
 				assert.Equal(t, "org1", entry.OrganizationID)
 				assert.True(t, entry.Boundary)
 				assert.Equal(t, null.StringFrom("u1"), entry.By)
+
+				// each side of the merge records it, pointing at the other.
+				ee := c.Tx.InsertDocumentActivityEntriesCalls()[0].Entries
+				require.Len(t, ee, 2)
+				assert.Equal(t, activity.TypeBranchMerged, ee[0].Type)
+				assert.Equal(t, _branchID2, ee[0].BranchID)
+				assert.Equal(t, activity.NewTarget(activity.TargetKindBranch, _branchID.String()), ee[0].Target)
+				assert.Equal(t, _branchID, ee[1].BranchID)
+				assert.Equal(t, activity.NewTarget(activity.TargetKindBranch, _branchID2.String()), ee[1].Target)
 
 				// the target's comments are soft-deleted.
 				deleted := c.Tx.DeleteDocumentCommentsByBranchIDCalls()[0]
@@ -1083,16 +1118,17 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 		RespJSON  string
 		Committed int
 		// History is how many history entries the fork records.
-		History                      int
-		FetchDocumentByBranchID      int
-		BeginTx                      int
-		InsertDocumentBranch         int
-		FetchDocumentHooksByBranchID int
-		InsertDocumentHook           int
-		CopyBranchTags               int
-		Enqueue                      int
-		Rollback                     int
-		SetUpBranch                  int
+		History                       int
+		FetchDocumentByBranchID       int
+		BeginTx                       int
+		InsertDocumentBranch          int
+		InsertDocumentActivityEntries int
+		FetchDocumentHooksByBranchID  int
+		InsertDocumentHook            int
+		CopyBranchTags                int
+		Enqueue                       int
+		Rollback                      int
+		SetUpBranch                   int
 	}{
 		"Error returned by Tx.RecordDocumentBranchHistoryEntry": {
 			DB: &DBMock{
@@ -1226,6 +1262,27 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 			InsertDocumentBranch:    1,
 			Rollback:                1,
 		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx: &TxMock{
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return errors.New("boom")
+				},
+			},
+			Body:                          validBody,
+			RespCode:                      http.StatusInternalServerError,
+			FetchDocumentByBranchID:       1,
+			BeginTx:                       1,
+			InsertDocumentBranch:          1,
+			InsertDocumentActivityEntries: 1,
+			History:                       1,
+			FetchDocumentHooksByBranchID:  1,
+			Rollback:                      1,
+		},
 		"Error returned by Tx.FetchDocumentHooksByBranchID": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
@@ -1279,17 +1336,18 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 					return errors.New("boom")
 				},
 			},
-			Body:                         validBody,
-			RespCode:                     http.StatusInternalServerError,
-			Committed:                    1,
-			History:                      1,
-			FetchDocumentByBranchID:      1,
-			BeginTx:                      1,
-			InsertDocumentBranch:         1,
-			FetchDocumentHooksByBranchID: 1,
-			CopyBranchTags:               1,
-			Enqueue:                      1,
-			Rollback:                     1,
+			Body:                          validBody,
+			RespCode:                      http.StatusInternalServerError,
+			Committed:                     1,
+			History:                       1,
+			FetchDocumentByBranchID:       1,
+			BeginTx:                       1,
+			InsertDocumentBranch:          1,
+			InsertDocumentActivityEntries: 1,
+			FetchDocumentHooksByBranchID:  1,
+			CopyBranchTags:                1,
+			Enqueue:                       1,
+			Rollback:                      1,
 		},
 		"Error returned by SearchQueue.Enqueue": {
 			DB: &DBMock{
@@ -1303,16 +1361,17 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 					return errors.New("boom")
 				},
 			},
-			Body:                         validBody,
-			RespCode:                     http.StatusInternalServerError,
-			History:                      1,
-			FetchDocumentByBranchID:      1,
-			BeginTx:                      1,
-			InsertDocumentBranch:         1,
-			FetchDocumentHooksByBranchID: 1,
-			CopyBranchTags:               1,
-			Enqueue:                      1,
-			Rollback:                     1,
+			Body:                          validBody,
+			RespCode:                      http.StatusInternalServerError,
+			History:                       1,
+			FetchDocumentByBranchID:       1,
+			BeginTx:                       1,
+			InsertDocumentBranch:          1,
+			InsertDocumentActivityEntries: 1,
+			FetchDocumentHooksByBranchID:  1,
+			CopyBranchTags:                1,
+			Enqueue:                       1,
+			Rollback:                      1,
 		},
 		"Successful branch creation": {
 			DB: &DBMock{
@@ -1325,19 +1384,20 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 					return []hookCore.Hook{storedHook()}, nil
 				},
 			},
-			Body:                         validBody,
-			RespCode:                     http.StatusCreated,
-			Committed:                    1,
-			History:                      1,
-			FetchDocumentByBranchID:      1,
-			BeginTx:                      1,
-			InsertDocumentBranch:         1,
-			FetchDocumentHooksByBranchID: 1,
-			InsertDocumentHook:           1,
-			CopyBranchTags:               1,
-			Enqueue:                      1,
-			Rollback:                     1,
-			SetUpBranch:                  1,
+			Body:                          validBody,
+			RespCode:                      http.StatusCreated,
+			Committed:                     1,
+			History:                       1,
+			FetchDocumentByBranchID:       1,
+			BeginTx:                       1,
+			InsertDocumentBranch:          1,
+			InsertDocumentActivityEntries: 1,
+			FetchDocumentHooksByBranchID:  1,
+			InsertDocumentHook:            1,
+			CopyBranchTags:                1,
+			Enqueue:                       1,
+			Rollback:                      1,
+			SetUpBranch:                   1,
 		},
 		"Error returned by Tx.CopyBranchTags": {
 			DB: &DBMock{FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
@@ -1348,15 +1408,16 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 					return errors.New("boom")
 				},
 			},
-			Body:                         validBody,
-			RespCode:                     http.StatusInternalServerError,
-			History:                      1,
-			FetchDocumentByBranchID:      1,
-			BeginTx:                      1,
-			InsertDocumentBranch:         1,
-			FetchDocumentHooksByBranchID: 1,
-			CopyBranchTags:               1,
-			Rollback:                     1,
+			Body:                          validBody,
+			RespCode:                      http.StatusInternalServerError,
+			History:                       1,
+			FetchDocumentByBranchID:       1,
+			BeginTx:                       1,
+			InsertDocumentBranch:          1,
+			InsertDocumentActivityEntries: 1,
+			FetchDocumentHooksByBranchID:  1,
+			CopyBranchTags:                1,
+			Rollback:                      1,
 		},
 	}
 
@@ -1392,6 +1453,7 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.FetchDocumentByBranchID)
 			assert.Len(t, c.DB.BeginTxCalls(), c.BeginTx)
 			assert.Len(t, c.Tx.InsertDocumentBranchCalls(), c.InsertDocumentBranch)
+			assert.Len(t, c.Tx.InsertDocumentActivityEntriesCalls(), c.InsertDocumentActivityEntries)
 			assert.Len(t, c.Tx.FetchDocumentHooksByBranchIDCalls(), c.FetchDocumentHooksByBranchID)
 			assert.Len(t, c.Tx.InsertDocumentHookCalls(), c.InsertDocumentHook)
 			assert.Len(t, c.Tx.CopyBranchTagsCalls(), c.CopyBranchTags)
@@ -1406,6 +1468,15 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 				assert.NotEqual(t, _branchID, forked.BranchID)
 				assert.False(t, forked.Protected)
 				assert.Nil(t, forked.RawContent)
+
+				// each side of the fork records it, pointing at the other.
+				ee := c.Tx.InsertDocumentActivityEntriesCalls()[0].Entries
+				require.Len(t, ee, 2)
+				assert.Equal(t, activity.TypeBranchForked, ee[0].Type)
+				assert.Equal(t, _branchID, ee[0].BranchID)
+				assert.Equal(t, activity.NewTarget(activity.TargetKindBranch, forked.BranchID.String()), ee[0].Target)
+				assert.Equal(t, forked.BranchID, ee[1].BranchID)
+				assert.Equal(t, activity.NewTarget(activity.TargetKindBranch, _branchID.String()), ee[1].Target)
 
 				// the fork starts with a boundary entry of its own content.
 				entry := c.Tx.RecordDocumentBranchHistoryEntryCalls()[0]
@@ -1667,6 +1738,8 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 		RespCode                int
 		RespJSON                string
 		Updated                 int
+		Entries                 int
+		EntryTypes              []activity.Type
 		Metadata                int
 		Jobs                    int
 		FetchDocumentByBranchID int
@@ -1770,6 +1843,25 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			BeginTx:                 1,
 			Rollback:                1,
 		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID), nil
+				},
+			},
+			Tx: &TxMock{
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return errors.New("boom")
+				},
+			},
+			Body:                    validBody,
+			RespCode:                http.StatusInternalServerError,
+			Updated:                 1,
+			Entries:                 1,
+			FetchDocumentByBranchID: 1,
+			BeginTx:                 1,
+			Rollback:                1,
+		},
 		"Error returned by SearchQueue.Enqueue": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
@@ -1784,6 +1876,7 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			Body:                    validBody,
 			RespCode:                http.StatusInternalServerError,
 			Updated:                 1,
+			Entries:                 1,
 			Jobs:                    1,
 			FetchDocumentByBranchID: 1,
 			BeginTx:                 1,
@@ -1812,6 +1905,8 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			WantName:                documentCore.DefaultBranch,
 			RespCode:                http.StatusOK,
 			Updated:                 1,
+			Entries:                 1,
+			EntryTypes:              []activity.Type{activity.TypeBranchProtected},
 			Metadata:                1,
 			FetchDocumentByBranchID: 1,
 			BeginTx:                 1,
@@ -1828,6 +1923,8 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			WantName:                "Renamed",
 			RespCode:                http.StatusOK,
 			Updated:                 1,
+			Entries:                 1,
+			EntryTypes:              []activity.Type{activity.TypeBranchRenamed, activity.TypeBranchProtected},
 			Metadata:                1,
 			Jobs:                    1,
 			FetchDocumentByBranchID: 1,
@@ -1845,6 +1942,8 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			WantName:                "Renamed",
 			RespCode:                http.StatusOK,
 			Updated:                 1,
+			Entries:                 1,
+			EntryTypes:              []activity.Type{activity.TypeBranchRenamed, activity.TypeBranchProtected},
 			Metadata:                1,
 			Jobs:                    1,
 			FetchDocumentByBranchID: 1,
@@ -1893,7 +1992,20 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			require.Len(t, qq, c.Jobs)
 			assert.Equal(t, c.Metadata, cnt.metadata)
 
+			ee := tx.InsertDocumentActivityEntriesCalls()
+			require.Len(t, ee, c.Entries)
+
 			if c.RespCode == http.StatusOK {
+				// each changed setting records an entry of its own.
+				types := make([]activity.Type, 0, len(ee[0].Entries))
+
+				for _, e := range ee[0].Entries {
+					types = append(types, e.Type)
+					assert.Equal(t, activity.UserActor("u1"), e.Actor)
+				}
+
+				assert.Equal(t, c.EntryTypes, types)
+
 				ff := tx.UpdateDocumentBranchMetadataCalls()
 				require.NotEmpty(t, ff)
 				assert.Equal(t, c.WantName, ff[0].Doc.BranchName)

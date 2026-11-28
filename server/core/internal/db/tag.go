@@ -297,10 +297,11 @@ func (a *agent) DeleteTag(ctx context.Context, id xid.ID, organizationID string)
 	return nil
 }
 
-// AssignBranchTag makes a document's branch carry a tag. Assigning a tag
-// the branch already carries changes nothing; a branch or tag outside the
-// organization, or a branch of another document, is not found.
-func (a *agent) AssignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) error {
+// AssignBranchTag makes a document's branch carry a tag and reports whether
+// it did not before. Assigning a tag the branch already carries changes
+// nothing; a branch or tag outside the organization, or a branch of another
+// document, is not found.
+func (a *agent) AssignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) (bool, error) {
 	const q = `
 		INSERT INTO document_branch_tags (fk_branch_id, fk_tag_id, fk_organization_id)
 		SELECT b.id, t.id, b.fk_organization_id
@@ -312,16 +313,16 @@ func (a *agent) AssignBranchTag(ctx context.Context, organizationID string, docu
 
 	res, err := a.sql.ExecContext(ctx, q, branchID, documentID, tagID, organizationID)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	n, err := res.RowsAffected()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if n > 0 {
-		return nil
+		return true, nil
 	}
 
 	// nothing inserted means either the pair already exists or one side
@@ -340,18 +341,19 @@ func (a *agent) AssignBranchTag(ctx context.Context, organizationID string, docu
 
 	if err = sqlx.GetContext(ctx, a.sql, &exists, eq, eargs...); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return errutil.ErrNotFound
+			return false, errutil.ErrNotFound
 		}
 
-		return err
+		return false, err
 	}
 
-	return nil
+	return false, nil
 }
 
-// UnassignBranchTag stops a document's branch carrying a tag. Removing a
-// tag the branch does not carry changes nothing.
-func (a *agent) UnassignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) error {
+// UnassignBranchTag stops a document's branch carrying a tag and reports
+// whether it carried it. Removing a tag the branch does not carry changes
+// nothing.
+func (a *agent) UnassignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) (bool, error) {
 	const q = `
 		DELETE FROM document_branch_tags dbt
 		USING document_branches b
@@ -362,9 +364,17 @@ func (a *agent) UnassignBranchTag(ctx context.Context, organizationID string, do
 			AND dbt.fk_organization_id = $4
 	`
 
-	_, err := a.sql.ExecContext(ctx, q, branchID, documentID, tagID, organizationID)
+	res, err := a.sql.ExecContext(ctx, q, branchID, documentID, tagID, organizationID)
+	if err != nil {
+		return false, err
+	}
 
-	return err
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+
+	return n > 0, nil
 }
 
 // CopyBranchTags makes the target branch carry every tag the source branch

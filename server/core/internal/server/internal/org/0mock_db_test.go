@@ -9,6 +9,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
@@ -26,7 +27,7 @@ var _ DB = &DBMock{}
 //
 //		// make and configure a mocked DB
 //		mockedDB := &DBMock{
-//			AssignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+//			AssignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error) {
 //				panic("mock out the AssignBranchTag method")
 //			},
 //			BeginTxFunc: func(ctx context.Context) (sqlutil.Tx, error) {
@@ -56,6 +57,9 @@ var _ DB = &DBMock{}
 //			InsertDocumentFunc: func(ctx context.Context, doc document.Document) error {
 //				panic("mock out the InsertDocument method")
 //			},
+//			InsertDocumentActivityEntriesFunc: func(ctx context.Context, entries ...activity.Entry) error {
+//				panic("mock out the InsertDocumentActivityEntries method")
+//			},
 //			InsertTagFunc: func(ctx context.Context, t tag.Tag) error {
 //				panic("mock out the InsertTag method")
 //			},
@@ -73,7 +77,7 @@ var _ DB = &DBMock{}
 //	}
 type DBMock struct {
 	// AssignBranchTagFunc mocks the AssignBranchTag method.
-	AssignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error
+	AssignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error)
 
 	// BeginTxFunc mocks the BeginTx method.
 	BeginTxFunc func(ctx context.Context) (sqlutil.Tx, error)
@@ -101,6 +105,9 @@ type DBMock struct {
 
 	// InsertDocumentFunc mocks the InsertDocument method.
 	InsertDocumentFunc func(ctx context.Context, doc document.Document) error
+
+	// InsertDocumentActivityEntriesFunc mocks the InsertDocumentActivityEntries method.
+	InsertDocumentActivityEntriesFunc func(ctx context.Context, entries ...activity.Entry) error
 
 	// InsertTagFunc mocks the InsertTag method.
 	InsertTagFunc func(ctx context.Context, t tag.Tag) error
@@ -187,6 +194,13 @@ type DBMock struct {
 			// Doc is the doc argument value.
 			Doc document.Document
 		}
+		// InsertDocumentActivityEntries holds details about calls to the InsertDocumentActivityEntries method.
+		InsertDocumentActivityEntries []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Entries is the entries argument value.
+			Entries []activity.Entry
+		}
 		// InsertTag holds details about calls to the InsertTag method.
 		InsertTag []struct {
 			// Ctx is the ctx argument value.
@@ -225,13 +239,14 @@ type DBMock struct {
 	lockFetchOrganizationMembers                  sync.RWMutex
 	lockInsertDataSource                          sync.RWMutex
 	lockInsertDocument                            sync.RWMutex
+	lockInsertDocumentActivityEntries             sync.RWMutex
 	lockInsertTag                                 sync.RWMutex
 	lockUpdateOrganizationLogo                    sync.RWMutex
 	lockUpsertDocumentMaintainers                 sync.RWMutex
 }
 
 // AssignBranchTag calls AssignBranchTagFunc.
-func (mock *DBMock) AssignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+func (mock *DBMock) AssignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) (bool, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		OrganizationID string
@@ -250,9 +265,10 @@ func (mock *DBMock) AssignBranchTag(ctx context.Context, organizationID string, 
 	mock.lockAssignBranchTag.Unlock()
 	if mock.AssignBranchTagFunc == nil {
 		var (
+			bOut   bool
 			errOut error
 		)
-		return errOut
+		return bOut, errOut
 	}
 	return mock.AssignBranchTagFunc(ctx, organizationID, documentID, branchID, tagID)
 }
@@ -628,6 +644,45 @@ func (mock *DBMock) InsertDocumentCalls() []struct {
 	mock.lockInsertDocument.RLock()
 	calls = mock.calls.InsertDocument
 	mock.lockInsertDocument.RUnlock()
+	return calls
+}
+
+// InsertDocumentActivityEntries calls InsertDocumentActivityEntriesFunc.
+func (mock *DBMock) InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error {
+	callInfo := struct {
+		Ctx     context.Context
+		Entries []activity.Entry
+	}{
+		Ctx:     ctx,
+		Entries: entries,
+	}
+	mock.lockInsertDocumentActivityEntries.Lock()
+	mock.calls.InsertDocumentActivityEntries = append(mock.calls.InsertDocumentActivityEntries, callInfo)
+	mock.lockInsertDocumentActivityEntries.Unlock()
+	if mock.InsertDocumentActivityEntriesFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.InsertDocumentActivityEntriesFunc(ctx, entries...)
+}
+
+// InsertDocumentActivityEntriesCalls gets all the calls that were made to InsertDocumentActivityEntries.
+// Check the length with:
+//
+//	len(mockedDB.InsertDocumentActivityEntriesCalls())
+func (mock *DBMock) InsertDocumentActivityEntriesCalls() []struct {
+	Ctx     context.Context
+	Entries []activity.Entry
+} {
+	var calls []struct {
+		Ctx     context.Context
+		Entries []activity.Entry
+	}
+	mock.lockInsertDocumentActivityEntries.RLock()
+	calls = mock.calls.InsertDocumentActivityEntries
+	mock.lockInsertDocumentActivityEntries.RUnlock()
 	return calls
 }
 

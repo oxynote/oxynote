@@ -12,6 +12,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	commentCore "github.com/oxynote/oxynote/server/core/internal/document/comment"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
@@ -33,6 +34,7 @@ var (
 	_commentID  = xid.New()
 	_replyID    = xid.New()
 	_branchID   = xid.New()
+	_revisionID = xid.New()
 )
 
 // fakePublisher captures published notifications.
@@ -133,6 +135,71 @@ func storedReply(userID string) commentCore.Reply {
 	}
 }
 
+// stubTx returns the transaction the database mock begins, an empty one
+// when the case sets none.
+func stubTx(db *DBMock, tx *TxMock, beginErr error) *TxMock {
+	if tx == nil {
+		tx = &TxMock{}
+	}
+
+	db.BeginTxFunc = testutil.StubBeginTx[sqlutil.Tx](tx, beginErr)
+
+	return tx
+}
+
+// stubRevision stores a comment's text as the revision _revisionID.
+func stubRevision(context.Context, commentCore.Comment) (commentCore.Revision, error) {
+	return commentCore.Revision{ID: _revisionID}, nil
+}
+
+// stubNewestRevision returns _revisionID as the comment's newest revision.
+func stubNewestRevision(context.Context, xid.ID, string) (commentCore.Revision, error) {
+	return commentCore.Revision{ID: _revisionID}, nil
+}
+
+// stubReplyRevision stores a reply's text as the revision _revisionID.
+func stubReplyRevision(_ context.Context, r commentCore.Reply) (commentCore.ReplyRevision, error) {
+	return commentCore.ReplyRevision{ID: _revisionID, ReplyID: r.ID}, nil
+}
+
+// stubNewestReplyRevision returns _revisionID as the reply's newest
+// revision.
+func stubNewestReplyRevision(_ context.Context, replyID xid.ID, _ string) (commentCore.ReplyRevision, error) {
+	return commentCore.ReplyRevision{ID: _revisionID, ReplyID: replyID}, nil
+}
+
+// assertEntry checks the one activity entry the transaction wrote, made by
+// the session user on the comment's branch.
+func assertEntry(t *testing.T, tx *TxMock, tp activity.Type, target activity.Target, md activity.Metadata) {
+	t.Helper()
+
+	ee := tx.InsertDocumentActivityEntriesCalls()
+	require.Len(t, ee, 1)
+	require.Len(t, ee[0].Entries, 1)
+
+	e := ee[0].Entries[0]
+	assert.Equal(t, activity.UserActor("u1"), e.Actor)
+	assert.Equal(t, tp, e.Type)
+	assert.Equal(t, target, e.Target)
+	assert.Equal(t, md, e.Metadata)
+	assert.Equal(t, "org1", e.OrganizationID)
+	assert.Equal(t, _documentID, e.DocumentID)
+	assert.Equal(t, _branchID, e.BranchID)
+}
+
+// commentMetadata is the metadata of a comment entry.
+func commentMetadata(commentID xid.ID) activity.Metadata {
+	return activity.Metadata{activity.MetaKeyCommentID: commentID.String()}
+}
+
+// replyMetadata is the metadata of an entry of the reply.
+func replyMetadata(replyID xid.ID) activity.Metadata {
+	return activity.Metadata{
+		activity.MetaKeyCommentID: _commentID.String(),
+		activity.MetaKeyReplyID:   replyID.String(),
+	}
+}
+
 func Test_NewHandler(t *testing.T) {
 	t.Parallel()
 
@@ -149,17 +216,28 @@ func Test_NewHandler(t *testing.T) {
 func Test_Handler_CreateDocumentComment(t *testing.T) {
 	validBody := `{"content":` + _docContent + `,"branchId":"` + _branchID.String() + `"}`
 
+	stubBranch := func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+		return &documentCore.Document{ID: _documentID, BranchID: _branchID}, nil
+	}
+
 	cc := map[string]struct {
 		DB                 *DBMock
+		Tx                 *TxMock
+		BeginErr           error
 		NoSession          bool
 		OmitDoc            bool
 		Body               string
 		RespCode           int
 		BranchFetched      int
+		Begun              int
 		Inserted           int
+		Entries            int
+		Committed          int
+		RolledBack         int
 		MaintainersFetched int
 		Changes            []ChangeMessage
 		NotifyUsers        [][]string
+		EntryType          activity.Type
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -179,11 +257,7 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 			RespCode: http.StatusBadRequest,
 		},
 		"Empty comment content": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return &documentCore.Document{ID: _documentID, BranchID: _branchID}, nil
-				},
-			},
+			DB:            &DBMock{FetchDocumentByBranchIDFunc: stubBranch},
 			Body:          `{"branchId":"` + _branchID.String() + `"}`,
 			RespCode:      http.StatusBadRequest,
 			BranchFetched: 1,
@@ -198,39 +272,6 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 			RespCode:      http.StatusInternalServerError,
 			BranchFetched: 1,
 		},
-		"Error returned by DB.InsertDocumentComment": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return &documentCore.Document{ID: _documentID, BranchID: _branchID}, nil
-				},
-				InsertDocumentCommentFunc: func(context.Context, commentCore.Comment) error {
-					return assert.AnError
-				},
-			},
-			Body:          validBody,
-			RespCode:      http.StatusInternalServerError,
-			BranchFetched: 1,
-			Inserted:      1,
-		},
-		// the comment is already stored and announced by the time the
-		// maintainers are read, so a failure there costs notifications, not
-		// the request.
-		"Error returned by DB.FetchDocumentMaintainers": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return &documentCore.Document{ID: _documentID, BranchID: _branchID}, nil
-				},
-				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
-					return nil, assert.AnError
-				},
-			},
-			Body:               validBody,
-			RespCode:           http.StatusCreated,
-			BranchFetched:      1,
-			Inserted:           1,
-			MaintainersFetched: 1,
-			Changes:            []ChangeMessage{{Type: ChangeTypeCreated}},
-		},
 		"Branch belongs to another document": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
@@ -241,22 +282,103 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 			RespCode:      http.StatusNotFound,
 			BranchFetched: 1,
 		},
+		"Error returned by DB.BeginTx": {
+			DB:            &DBMock{FetchDocumentByBranchIDFunc: stubBranch},
+			BeginErr:      assert.AnError,
+			Body:          validBody,
+			RespCode:      http.StatusInternalServerError,
+			BranchFetched: 1,
+			Begun:         1,
+		},
+		"Error returned by Tx.InsertDocumentComment": {
+			DB: &DBMock{FetchDocumentByBranchIDFunc: stubBranch},
+			Tx: &TxMock{
+				InsertDocumentCommentFunc: func(context.Context, commentCore.Comment) (commentCore.Revision, error) {
+					return commentCore.Revision{}, assert.AnError
+				},
+			},
+			Body:          validBody,
+			RespCode:      http.StatusInternalServerError,
+			BranchFetched: 1,
+			Begun:         1,
+			Inserted:      1,
+			RolledBack:    1,
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: &DBMock{FetchDocumentByBranchIDFunc: stubBranch},
+			Tx: &TxMock{
+				InsertDocumentCommentFunc: stubRevision,
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return assert.AnError
+				},
+			},
+			Body:          validBody,
+			RespCode:      http.StatusInternalServerError,
+			BranchFetched: 1,
+			Begun:         1,
+			Inserted:      1,
+			Entries:       1,
+			RolledBack:    1,
+		},
+		"Error returned by Tx.Commit": {
+			DB: &DBMock{FetchDocumentByBranchIDFunc: stubBranch},
+			Tx: &TxMock{
+				InsertDocumentCommentFunc: stubRevision,
+				CommitFunc: func() error {
+					return assert.AnError
+				},
+			},
+			Body:          validBody,
+			RespCode:      http.StatusInternalServerError,
+			BranchFetched: 1,
+			Begun:         1,
+			Inserted:      1,
+			Entries:       1,
+			Committed:     1,
+			RolledBack:    1,
+		},
+		// the comment is already stored and announced by the time the
+		// maintainers are read, so a failure there costs notifications, not
+		// the request.
+		"Error returned by DB.FetchDocumentMaintainers": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch,
+				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
+					return nil, assert.AnError
+				},
+			},
+			Tx:                 &TxMock{InsertDocumentCommentFunc: stubRevision},
+			Body:               validBody,
+			RespCode:           http.StatusCreated,
+			BranchFetched:      1,
+			Begun:              1,
+			Inserted:           1,
+			Entries:            1,
+			Committed:          1,
+			RolledBack:         1,
+			MaintainersFetched: 1,
+			Changes:            []ChangeMessage{{Type: ChangeTypeCreated}},
+		},
 		"Successful creation notifies other maintainers": {
 			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return &documentCore.Document{ID: _documentID, BranchID: _branchID}, nil
-				},
+				FetchDocumentByBranchIDFunc: stubBranch,
 				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
 					return []string{"u1", "u2", "u2", "u3"}, nil
 				},
 			},
+			Tx:                 &TxMock{InsertDocumentCommentFunc: stubRevision},
 			Body:               validBody,
 			RespCode:           http.StatusCreated,
 			BranchFetched:      1,
+			Begun:              1,
 			Inserted:           1,
+			Entries:            1,
+			Committed:          1,
+			RolledBack:         1,
 			MaintainersFetched: 1,
 			Changes:            []ChangeMessage{{Type: ChangeTypeCreated}},
 			NotifyUsers:        [][]string{{"u2", "u3"}},
+			EntryType:          activity.TypeCommentCreated,
 		},
 	}
 
@@ -264,6 +386,7 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			tx := stubTx(c.DB, c.Tx, c.BeginErr)
 			pub := &fakePublisher{}
 			cpt := &capturedChange{}
 			hdl := newTestHandler(c.DB, pub, cpt)
@@ -274,7 +397,11 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.BranchFetched)
-			assert.Len(t, c.DB.InsertDocumentCommentCalls(), c.Inserted)
+			assert.Len(t, c.DB.BeginTxCalls(), c.Begun)
+			require.Len(t, tx.InsertDocumentCommentCalls(), c.Inserted)
+			assert.Len(t, tx.InsertDocumentActivityEntriesCalls(), c.Entries)
+			assert.Len(t, tx.CommitCalls(), c.Committed)
+			assert.Len(t, tx.RollbackCalls(), c.RolledBack)
 			assert.Len(t, c.DB.FetchDocumentMaintainersCalls(), c.MaintainersFetched)
 			require.Len(t, cpt.calls, len(c.Changes))
 
@@ -290,6 +417,18 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 				assert.Equal(t, notification.NotificationDocumentNewComment, pub.calls[i].Core.Code)
 				assert.Equal(t, "hello", pub.calls[i].Core.Metadata[notification.MetaKeyCommentExcerpt])
 			}
+
+			if c.EntryType == "" {
+				return
+			}
+
+			assertEntry(
+				t,
+				tx,
+				c.EntryType,
+				activity.NewTarget(activity.TargetKindCommentRevision, _revisionID.String()),
+				commentMetadata(tx.InsertDocumentCommentCalls()[0].C.ID),
+			)
 		})
 	}
 }
@@ -297,17 +436,28 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 func Test_Handler_CreateDocumentCommentReply(t *testing.T) {
 	validBody := `{"content":` + _docContent + `}`
 
+	stubComment := func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
+		return storedComment("u2"), nil
+	}
+
 	cc := map[string]struct {
 		DB          *DBMock
+		Tx          *TxMock
+		BeginErr    error
 		NoSession   bool
 		OmitDoc     bool
 		OmitComment bool
 		Body        string
 		RespCode    int
 		Fetched     int
+		Begun       int
 		Inserted    int
+		Entries     int
+		Committed   int
+		RolledBack  int
 		Changes     []ChangeMessage
 		NotifyUsers [][]string
+		EntryType   activity.Type
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -338,38 +488,71 @@ func Test_Handler_CreateDocumentCommentReply(t *testing.T) {
 			Fetched:  1,
 		},
 		"Invalid JSON body": {
-			DB: &DBMock{
-				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u2"), nil
-				},
-			},
+			DB:       &DBMock{FetchDocumentCommentFunc: stubComment},
 			Body:     "{",
 			RespCode: http.StatusBadRequest,
 			Fetched:  1,
 		},
 		"Empty reply content": {
-			DB: &DBMock{
-				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u2"), nil
-				},
-			},
+			DB:       &DBMock{FetchDocumentCommentFunc: stubComment},
 			Body:     `{"content":{}}`,
 			RespCode: http.StatusBadRequest,
 			Fetched:  1,
 		},
-		"Error returned by DB.InsertDocumentCommentReply": {
-			DB: &DBMock{
-				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u2"), nil
-				},
-				InsertDocumentCommentReplyFunc: func(context.Context, commentCore.Reply) error {
-					return assert.AnError
-				},
-			},
+		"Error returned by DB.BeginTx": {
+			DB:       &DBMock{FetchDocumentCommentFunc: stubComment},
+			BeginErr: assert.AnError,
 			Body:     validBody,
 			RespCode: http.StatusInternalServerError,
 			Fetched:  1,
-			Inserted: 1,
+			Begun:    1,
+		},
+		"Error returned by Tx.InsertDocumentCommentReply": {
+			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx: &TxMock{
+				InsertDocumentCommentReplyFunc: func(context.Context, commentCore.Reply) (commentCore.ReplyRevision, error) {
+					return commentCore.ReplyRevision{}, assert.AnError
+				},
+			},
+			Body:       validBody,
+			RespCode:   http.StatusInternalServerError,
+			Fetched:    1,
+			Begun:      1,
+			Inserted:   1,
+			RolledBack: 1,
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx: &TxMock{
+				InsertDocumentCommentReplyFunc: stubReplyRevision,
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return assert.AnError
+				},
+			},
+			Body:       validBody,
+			RespCode:   http.StatusInternalServerError,
+			Fetched:    1,
+			Begun:      1,
+			Inserted:   1,
+			Entries:    1,
+			RolledBack: 1,
+		},
+		"Error returned by Tx.Commit": {
+			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx: &TxMock{
+				InsertDocumentCommentReplyFunc: stubReplyRevision,
+				CommitFunc: func() error {
+					return assert.AnError
+				},
+			},
+			Body:       validBody,
+			RespCode:   http.StatusInternalServerError,
+			Fetched:    1,
+			Begun:      1,
+			Inserted:   1,
+			Entries:    1,
+			Committed:  1,
+			RolledBack: 1,
 		},
 		"Successful reply notifies author and other repliers": {
 			DB: &DBMock{
@@ -377,12 +560,18 @@ func Test_Handler_CreateDocumentCommentReply(t *testing.T) {
 					return storedComment("u2", storedReply("u1"), storedReply("u3")), nil
 				},
 			},
+			Tx:          &TxMock{InsertDocumentCommentReplyFunc: stubReplyRevision},
 			Body:        validBody,
 			RespCode:    http.StatusCreated,
 			Fetched:     1,
+			Begun:       1,
 			Inserted:    1,
+			Entries:     1,
+			Committed:   1,
+			RolledBack:  1,
 			Changes:     []ChangeMessage{{Type: ChangeTypeUpdated}},
 			NotifyUsers: [][]string{{"u2", "u3"}},
+			EntryType:   activity.TypeCommentReplied,
 		},
 	}
 
@@ -390,6 +579,7 @@ func Test_Handler_CreateDocumentCommentReply(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			tx := stubTx(c.DB, c.Tx, c.BeginErr)
 			pub := &fakePublisher{}
 			cpt := &capturedChange{}
 			hdl := newTestHandler(c.DB, pub, cpt)
@@ -400,7 +590,11 @@ func Test_Handler_CreateDocumentCommentReply(t *testing.T) {
 
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentCommentCalls(), c.Fetched)
-			assert.Len(t, c.DB.InsertDocumentCommentReplyCalls(), c.Inserted)
+			assert.Len(t, c.DB.BeginTxCalls(), c.Begun)
+			require.Len(t, tx.InsertDocumentCommentReplyCalls(), c.Inserted)
+			assert.Len(t, tx.InsertDocumentActivityEntriesCalls(), c.Entries)
+			assert.Len(t, tx.CommitCalls(), c.Committed)
+			assert.Len(t, tx.RollbackCalls(), c.RolledBack)
 			require.Len(t, cpt.calls, len(c.Changes))
 
 			for i, ch := range c.Changes {
@@ -415,6 +609,18 @@ func Test_Handler_CreateDocumentCommentReply(t *testing.T) {
 				assert.Equal(t, notification.NotificationDocumentNewCommentReply, pub.calls[i].Core.Code)
 				assert.Equal(t, "hello", pub.calls[i].Core.Metadata[notification.MetaKeyCommentExcerpt])
 			}
+
+			if c.EntryType == "" {
+				return
+			}
+
+			assertEntry(
+				t,
+				tx,
+				c.EntryType,
+				activity.NewTarget(activity.TargetKindReplyRevision, _revisionID.String()),
+				replyMetadata(tx.InsertDocumentCommentReplyCalls()[0].R.ID),
+			)
 		})
 	}
 }
@@ -639,15 +845,26 @@ func Test_Handler_FetchDocumentComments(t *testing.T) {
 func Test_Handler_UpdateDocumentComment(t *testing.T) {
 	validBody := `{"content":{"text":"updated"}}`
 
+	stubComment := func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
+		return storedComment("u1"), nil
+	}
+
 	cc := map[string]struct {
-		DB        *DBMock
-		NoSession bool
-		OmitDoc   bool
-		Body      string
-		RespCode  int
-		Fetched   int
-		Updated   int
-		Changes   int
+		DB         *DBMock
+		Tx         *TxMock
+		BeginErr   error
+		NoSession  bool
+		OmitDoc    bool
+		Body       string
+		RespCode   int
+		Fetched    int
+		Begun      int
+		Updated    int
+		Entries    int
+		Committed  int
+		RolledBack int
+		Changes    int
+		EntryType  activity.Type
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -695,40 +912,79 @@ func Test_Handler_UpdateDocumentComment(t *testing.T) {
 			Fetched:  1,
 		},
 		"Invalid JSON body": {
-			DB: &DBMock{
-				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u1"), nil
-				},
-			},
+			DB:       &DBMock{FetchDocumentCommentFunc: stubComment},
 			Body:     "{",
 			RespCode: http.StatusBadRequest,
 			Fetched:  1,
 		},
-		"Error returned by DB.UpdateDocumentComment": {
-			DB: &DBMock{
-				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u1"), nil
-				},
-				UpdateDocumentCommentFunc: func(context.Context, commentCore.Comment) error {
-					return assert.AnError
-				},
-			},
+		"Error returned by DB.BeginTx": {
+			DB:       &DBMock{FetchDocumentCommentFunc: stubComment},
+			BeginErr: assert.AnError,
 			Body:     validBody,
 			RespCode: http.StatusInternalServerError,
 			Fetched:  1,
-			Updated:  1,
+			Begun:    1,
 		},
-		"Successful update": {
-			DB: &DBMock{
-				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u1"), nil
+		"Error returned by Tx.UpdateDocumentComment": {
+			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx: &TxMock{
+				UpdateDocumentCommentFunc: func(context.Context, commentCore.Comment) (commentCore.Revision, error) {
+					return commentCore.Revision{}, assert.AnError
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusOK,
-			Fetched:  1,
-			Updated:  1,
-			Changes:  1,
+			Body:       validBody,
+			RespCode:   http.StatusInternalServerError,
+			Fetched:    1,
+			Begun:      1,
+			Updated:    1,
+			RolledBack: 1,
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx: &TxMock{
+				UpdateDocumentCommentFunc: stubRevision,
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return assert.AnError
+				},
+			},
+			Body:       validBody,
+			RespCode:   http.StatusInternalServerError,
+			Fetched:    1,
+			Begun:      1,
+			Updated:    1,
+			Entries:    1,
+			RolledBack: 1,
+		},
+		"Error returned by Tx.Commit": {
+			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx: &TxMock{
+				UpdateDocumentCommentFunc: stubRevision,
+				CommitFunc: func() error {
+					return assert.AnError
+				},
+			},
+			Body:       validBody,
+			RespCode:   http.StatusInternalServerError,
+			Fetched:    1,
+			Begun:      1,
+			Updated:    1,
+			Entries:    1,
+			Committed:  1,
+			RolledBack: 1,
+		},
+		"Successful update": {
+			DB:         &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx:         &TxMock{UpdateDocumentCommentFunc: stubRevision},
+			Body:       validBody,
+			RespCode:   http.StatusOK,
+			Fetched:    1,
+			Begun:      1,
+			Updated:    1,
+			Entries:    1,
+			Committed:  1,
+			RolledBack: 1,
+			Changes:    1,
+			EntryType:  activity.TypeCommentEdited,
 		},
 	}
 
@@ -736,6 +992,7 @@ func Test_Handler_UpdateDocumentComment(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			tx := stubTx(c.DB, c.Tx, c.BeginErr)
 			cpt := &capturedChange{}
 			hdl := newTestHandler(c.DB, &fakePublisher{}, cpt)
 
@@ -745,8 +1002,24 @@ func Test_Handler_UpdateDocumentComment(t *testing.T) {
 
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentCommentCalls(), c.Fetched)
-			assert.Len(t, c.DB.UpdateDocumentCommentCalls(), c.Updated)
+			assert.Len(t, c.DB.BeginTxCalls(), c.Begun)
+			assert.Len(t, tx.UpdateDocumentCommentCalls(), c.Updated)
+			assert.Len(t, tx.InsertDocumentActivityEntriesCalls(), c.Entries)
+			assert.Len(t, tx.CommitCalls(), c.Committed)
+			assert.Len(t, tx.RollbackCalls(), c.RolledBack)
 			assert.Len(t, cpt.calls, c.Changes)
+
+			if c.EntryType == "" {
+				return
+			}
+
+			assertEntry(
+				t,
+				tx,
+				c.EntryType,
+				activity.NewTarget(activity.TargetKindCommentRevision, _revisionID.String()),
+				commentMetadata(_commentID),
+			)
 		})
 	}
 }
@@ -754,16 +1027,35 @@ func Test_Handler_UpdateDocumentComment(t *testing.T) {
 func Test_Handler_UpdateDocumentCommentReply(t *testing.T) {
 	validBody := `{"content":{"text":"updated"}}`
 
+	stubComment := func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
+		return storedComment("u2"), nil
+	}
+
+	stubReply := func(userID string) func(context.Context, xid.ID, xid.ID, string) (*commentCore.Reply, error) {
+		return func(context.Context, xid.ID, xid.ID, string) (*commentCore.Reply, error) {
+			r := storedReply(userID)
+
+			return &r, nil
+		}
+	}
+
 	cc := map[string]struct {
 		DB             *DBMock
+		Tx             *TxMock
+		BeginErr       error
 		NoSession      bool
 		OmitReply      bool
 		Body           string
 		RespCode       int
 		CommentFetched int
 		ReplyFetched   int
+		Begun          int
 		Updated        int
+		Entries        int
+		Committed      int
+		RolledBack     int
 		Changes        int
+		EntryType      activity.Type
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -792,6 +1084,7 @@ func Test_Handler_UpdateDocumentCommentReply(t *testing.T) {
 		},
 		"Error returned by DB.FetchDocumentCommentReply": {
 			DB: &DBMock{
+				FetchDocumentCommentFunc: stubComment,
 				FetchDocumentCommentReplyFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Reply, error) {
 					return nil, assert.AnError
 				},
@@ -803,11 +1096,8 @@ func Test_Handler_UpdateDocumentCommentReply(t *testing.T) {
 		},
 		"Not the reply author": {
 			DB: &DBMock{
-				FetchDocumentCommentReplyFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Reply, error) {
-					r := storedReply("u2")
-
-					return &r, nil
-				},
+				FetchDocumentCommentFunc:      stubComment,
+				FetchDocumentCommentReplyFunc: stubReply("u2"),
 			},
 			Body:           validBody,
 			RespCode:       http.StatusForbidden,
@@ -816,25 +1106,52 @@ func Test_Handler_UpdateDocumentCommentReply(t *testing.T) {
 		},
 		"Invalid JSON body": {
 			DB: &DBMock{
-				FetchDocumentCommentReplyFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Reply, error) {
-					r := storedReply("u1")
-
-					return &r, nil
-				},
+				FetchDocumentCommentFunc:      stubComment,
+				FetchDocumentCommentReplyFunc: stubReply("u1"),
 			},
 			Body:           "{",
 			RespCode:       http.StatusBadRequest,
 			CommentFetched: 1,
 			ReplyFetched:   1,
 		},
-		"Error returned by DB.UpdateDocumentCommentReply": {
+		"Error returned by DB.BeginTx": {
 			DB: &DBMock{
-				FetchDocumentCommentReplyFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Reply, error) {
-					r := storedReply("u1")
-
-					return &r, nil
+				FetchDocumentCommentFunc:      stubComment,
+				FetchDocumentCommentReplyFunc: stubReply("u1"),
+			},
+			BeginErr:       assert.AnError,
+			Body:           validBody,
+			RespCode:       http.StatusInternalServerError,
+			CommentFetched: 1,
+			ReplyFetched:   1,
+			Begun:          1,
+		},
+		"Error returned by Tx.UpdateDocumentCommentReply": {
+			DB: &DBMock{
+				FetchDocumentCommentFunc:      stubComment,
+				FetchDocumentCommentReplyFunc: stubReply("u1"),
+			},
+			Tx: &TxMock{
+				UpdateDocumentCommentReplyFunc: func(context.Context, commentCore.Reply) (commentCore.ReplyRevision, error) {
+					return commentCore.ReplyRevision{}, assert.AnError
 				},
-				UpdateDocumentCommentReplyFunc: func(context.Context, commentCore.Reply) error {
+			},
+			Body:           validBody,
+			RespCode:       http.StatusInternalServerError,
+			CommentFetched: 1,
+			ReplyFetched:   1,
+			Begun:          1,
+			Updated:        1,
+			RolledBack:     1,
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: &DBMock{
+				FetchDocumentCommentFunc:      stubComment,
+				FetchDocumentCommentReplyFunc: stubReply("u1"),
+			},
+			Tx: &TxMock{
+				UpdateDocumentCommentReplyFunc: stubReplyRevision,
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
 					return assert.AnError
 				},
 			},
@@ -842,22 +1159,49 @@ func Test_Handler_UpdateDocumentCommentReply(t *testing.T) {
 			RespCode:       http.StatusInternalServerError,
 			CommentFetched: 1,
 			ReplyFetched:   1,
+			Begun:          1,
 			Updated:        1,
+			Entries:        1,
+			RolledBack:     1,
+		},
+		"Error returned by Tx.Commit": {
+			DB: &DBMock{
+				FetchDocumentCommentFunc:      stubComment,
+				FetchDocumentCommentReplyFunc: stubReply("u1"),
+			},
+			Tx: &TxMock{
+				UpdateDocumentCommentReplyFunc: stubReplyRevision,
+				CommitFunc: func() error {
+					return assert.AnError
+				},
+			},
+			Body:           validBody,
+			RespCode:       http.StatusInternalServerError,
+			CommentFetched: 1,
+			ReplyFetched:   1,
+			Begun:          1,
+			Updated:        1,
+			Entries:        1,
+			Committed:      1,
+			RolledBack:     1,
 		},
 		"Successful update": {
 			DB: &DBMock{
-				FetchDocumentCommentReplyFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Reply, error) {
-					r := storedReply("u1")
-
-					return &r, nil
-				},
+				FetchDocumentCommentFunc:      stubComment,
+				FetchDocumentCommentReplyFunc: stubReply("u1"),
 			},
+			Tx:             &TxMock{UpdateDocumentCommentReplyFunc: stubReplyRevision},
 			Body:           validBody,
 			RespCode:       http.StatusOK,
 			CommentFetched: 1,
 			ReplyFetched:   1,
+			Begun:          1,
 			Updated:        1,
+			Entries:        1,
+			Committed:      1,
+			RolledBack:     1,
 			Changes:        1,
+			EntryType:      activity.TypeCommentReplyEdited,
 		},
 	}
 
@@ -865,6 +1209,7 @@ func Test_Handler_UpdateDocumentCommentReply(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			tx := stubTx(c.DB, c.Tx, c.BeginErr)
 			cpt := &capturedChange{}
 			hdl := newTestHandler(c.DB, &fakePublisher{}, cpt)
 
@@ -875,24 +1220,61 @@ func Test_Handler_UpdateDocumentCommentReply(t *testing.T) {
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentCommentCalls(), c.CommentFetched)
 			assert.Len(t, c.DB.FetchDocumentCommentReplyCalls(), c.ReplyFetched)
-			assert.Len(t, c.DB.UpdateDocumentCommentReplyCalls(), c.Updated)
+			assert.Len(t, c.DB.BeginTxCalls(), c.Begun)
+			assert.Len(t, tx.UpdateDocumentCommentReplyCalls(), c.Updated)
+			assert.Len(t, tx.InsertDocumentActivityEntriesCalls(), c.Entries)
+			assert.Len(t, tx.CommitCalls(), c.Committed)
+			assert.Len(t, tx.RollbackCalls(), c.RolledBack)
 			assert.Len(t, cpt.calls, c.Changes)
+
+			if c.EntryType == "" {
+				return
+			}
+
+			assertEntry(
+				t,
+				tx,
+				c.EntryType,
+				activity.NewTarget(activity.TargetKindReplyRevision, _revisionID.String()),
+				replyMetadata(_replyID),
+			)
 		})
 	}
 }
 
 func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
+	stubComment := func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
+		return storedComment("u2"), nil
+	}
+
+	// changed reports the status write as one that changed the comment.
+	changed := func(context.Context, commentCore.Comment) (bool, error) {
+		return true, nil
+	}
+
 	cc := map[string]struct {
 		DB          *DBMock
+		Tx          *TxMock
+		BeginErr    error
 		NoSession   bool
 		OmitDoc     bool
 		Body        string
 		RespCode    int
 		Fetched     int
+		Begun       int
 		Updated     int
+		Newest      int
+		Entries     int
+		Committed   int
+		RolledBack  int
 		Changes     int
 		NotifyUsers [][]string
+		EntryType   activity.Type
 		Check       func(t *testing.T, c commentCore.Comment)
+		// Reread is how often the stored comment is read again.
+		Reread int
+		// RespResolvedBy is the resolver the response names.
+		RespResolvedBy string
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -917,38 +1299,91 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 			Fetched:  1,
 		},
 		"Invalid JSON body": {
-			DB: &DBMock{
-				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u2"), nil
-				},
-			},
+			DB:       &DBMock{FetchDocumentCommentFunc: stubComment},
 			Body:     "{",
 			RespCode: http.StatusBadRequest,
 			Fetched:  1,
 		},
 		"Missing resolved field": {
-			DB: &DBMock{
-				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u2"), nil
-				},
-			},
+			DB:       &DBMock{FetchDocumentCommentFunc: stubComment},
 			Body:     `{}`,
 			RespCode: http.StatusBadRequest,
 			Fetched:  1,
 		},
-		"Error returned by DB.UpdateDocumentCommentStatus": {
-			DB: &DBMock{
-				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u2"), nil
-				},
-				UpdateDocumentCommentStatusFunc: func(context.Context, commentCore.Comment) error {
-					return assert.AnError
-				},
-			},
+		"Error returned by DB.BeginTx": {
+			DB:       &DBMock{FetchDocumentCommentFunc: stubComment},
+			BeginErr: assert.AnError,
 			Body:     `{"resolved":true}`,
 			RespCode: http.StatusInternalServerError,
 			Fetched:  1,
-			Updated:  1,
+			Begun:    1,
+		},
+		"Error returned by Tx.UpdateDocumentCommentStatus": {
+			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx: &TxMock{
+				UpdateDocumentCommentStatusFunc: func(context.Context, commentCore.Comment) (bool, error) {
+					return false, assert.AnError
+				},
+			},
+			Body:       `{"resolved":true}`,
+			RespCode:   http.StatusInternalServerError,
+			Fetched:    1,
+			Begun:      1,
+			Updated:    1,
+			RolledBack: 1,
+		},
+		"Error returned by Tx.FetchNewestDocumentCommentRevision": {
+			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx: &TxMock{
+				UpdateDocumentCommentStatusFunc: changed,
+				FetchNewestDocumentCommentRevisionFunc: func(context.Context, xid.ID, string) (commentCore.Revision, error) {
+					return commentCore.Revision{}, assert.AnError
+				},
+			},
+			Body:       `{"resolved":true}`,
+			RespCode:   http.StatusInternalServerError,
+			Fetched:    1,
+			Begun:      1,
+			Updated:    1,
+			Newest:     1,
+			RolledBack: 1,
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx: &TxMock{
+				UpdateDocumentCommentStatusFunc:        changed,
+				FetchNewestDocumentCommentRevisionFunc: stubNewestRevision,
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return assert.AnError
+				},
+			},
+			Body:       `{"resolved":true}`,
+			RespCode:   http.StatusInternalServerError,
+			Fetched:    1,
+			Begun:      1,
+			Updated:    1,
+			Newest:     1,
+			Entries:    1,
+			RolledBack: 1,
+		},
+		"Error returned by Tx.Commit": {
+			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx: &TxMock{
+				UpdateDocumentCommentStatusFunc:        changed,
+				FetchNewestDocumentCommentRevisionFunc: stubNewestRevision,
+				CommitFunc: func() error {
+					return assert.AnError
+				},
+			},
+			Body:       `{"resolved":true}`,
+			RespCode:   http.StatusInternalServerError,
+			Fetched:    1,
+			Begun:      1,
+			Updated:    1,
+			Newest:     1,
+			Entries:    1,
+			Committed:  1,
+			RolledBack: 1,
 		},
 		"Successful resolution notifies author and repliers": {
 			DB: &DBMock{
@@ -962,12 +1397,19 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 					return c, nil
 				},
 			},
+			Tx:          &TxMock{UpdateDocumentCommentStatusFunc: changed, FetchNewestDocumentCommentRevisionFunc: stubNewestRevision},
 			Body:        `{"resolved":true}`,
 			RespCode:    http.StatusOK,
 			Fetched:     1,
+			Begun:       1,
 			Updated:     1,
+			Newest:      1,
+			Entries:     1,
+			Committed:   1,
+			RolledBack:  1,
 			Changes:     1,
 			NotifyUsers: [][]string{{"u2", "u3"}},
+			EntryType:   activity.TypeCommentResolved,
 			Check: func(t *testing.T, c commentCore.Comment) {
 				assert.True(t, c.Resolved)
 				assert.Equal(t, null.StringFrom("u1"), c.ResolvedBy)
@@ -985,11 +1427,18 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 					return c, nil
 				},
 			},
-			Body:     `{"resolved":false}`,
-			RespCode: http.StatusOK,
-			Fetched:  1,
-			Updated:  1,
-			Changes:  1,
+			Tx:         &TxMock{UpdateDocumentCommentStatusFunc: changed, FetchNewestDocumentCommentRevisionFunc: stubNewestRevision},
+			Body:       `{"resolved":false}`,
+			RespCode:   http.StatusOK,
+			Fetched:    1,
+			Begun:      1,
+			Updated:    1,
+			Newest:     1,
+			Entries:    1,
+			Committed:  1,
+			RolledBack: 1,
+			Changes:    1,
+			EntryType:  activity.TypeCommentReopened,
 			Check: func(t *testing.T, c commentCore.Comment) {
 				assert.False(t, c.Resolved)
 				assert.False(t, c.ResolvedBy.Valid)
@@ -1011,12 +1460,43 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 			RespCode: http.StatusOK,
 			Fetched:  1,
 		},
-		"Already unresolved": {
-			DB: &DBMock{
+		"Error returned by Tx.FetchDocumentComment": {
+			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx: &TxMock{
 				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u2"), nil
+					return nil, assert.AnError
 				},
 			},
+			Body:       `{"resolved":true}`,
+			RespCode:   http.StatusInternalServerError,
+			Fetched:    1,
+			Begun:      1,
+			Updated:    1,
+			Reread:     1,
+			RolledBack: 1,
+		},
+		"Status a concurrent request already set records nothing": {
+			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx: &TxMock{
+				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
+					c := storedComment("u2")
+					c.Resolved = true
+					c.ResolvedBy = null.StringFrom("u3")
+
+					return c, nil
+				},
+			},
+			Body:           `{"resolved":true}`,
+			RespCode:       http.StatusOK,
+			Fetched:        1,
+			Begun:          1,
+			Updated:        1,
+			Reread:         1,
+			RolledBack:     1,
+			RespResolvedBy: "u3",
+		},
+		"Already unresolved": {
+			DB:       &DBMock{FetchDocumentCommentFunc: stubComment},
 			Body:     `{"resolved":false}`,
 			RespCode: http.StatusOK,
 			Fetched:  1,
@@ -1027,6 +1507,7 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			tx := stubTx(c.DB, c.Tx, c.BeginErr)
 			cpt := &capturedChange{}
 			pub := &fakePublisher{}
 			hdl := newTestHandler(c.DB, pub, cpt)
@@ -1037,6 +1518,11 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentCommentCalls(), c.Fetched)
+			assert.Len(t, c.DB.BeginTxCalls(), c.Begun)
+			require.Len(t, tx.FetchNewestDocumentCommentRevisionCalls(), c.Newest)
+			assert.Len(t, tx.InsertDocumentActivityEntriesCalls(), c.Entries)
+			assert.Len(t, tx.CommitCalls(), c.Committed)
+			assert.Len(t, tx.RollbackCalls(), c.RolledBack)
 			require.Len(t, pub.calls, len(c.NotifyUsers))
 
 			for i, users := range c.NotifyUsers {
@@ -1047,7 +1533,7 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 				assert.Equal(t, "hello", pub.calls[i].Core.Metadata[notification.MetaKeyCommentExcerpt])
 			}
 
-			uu := c.DB.UpdateDocumentCommentStatusCalls()
+			uu := tx.UpdateDocumentCommentStatusCalls()
 			require.Len(t, uu, c.Updated)
 			require.Len(t, cpt.calls, c.Changes)
 
@@ -1059,9 +1545,28 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 				c.Check(t, uu[0].C)
 			}
 
+			assert.Len(t, tx.FetchDocumentCommentCalls(), c.Reread)
+
+			if c.RespResolvedBy != "" {
+				assert.Contains(t, rec.Body.String(), `"resolvedBy":"`+c.RespResolvedBy+`"`)
+			}
+
 			if c.RespCode == http.StatusOK {
 				assert.Contains(t, rec.Body.String(), _commentID.String())
 			}
+
+			if c.EntryType == "" {
+				return
+			}
+
+			assert.Equal(t, _commentID, tx.FetchNewestDocumentCommentRevisionCalls()[0].CommentID)
+			assertEntry(
+				t,
+				tx,
+				c.EntryType,
+				activity.NewTarget(activity.TargetKindCommentRevision, _revisionID.String()),
+				commentMetadata(_commentID),
+			)
 		})
 	}
 }
@@ -1082,9 +1587,12 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 		Begun      int
 		Fetched    int
 		Deleted    int
+		Newest     int
+		Entries    int
 		Committed  int
 		RolledBack int
 		ChangeType ChangeType
+		EntryType  activity.Type
 	}{
 		"No session in context": {
 			Tx:        &TxMock{},
@@ -1151,9 +1659,40 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 			Deleted:    1,
 			RolledBack: 1,
 		},
-		"Error returned by Tx.Commit": {
+		"Error returned by Tx.FetchNewestDocumentCommentRevision": {
 			Tx: &TxMock{
 				FetchDocumentCommentFunc: stubComment(),
+				FetchNewestDocumentCommentRevisionFunc: func(context.Context, xid.ID, string) (commentCore.Revision, error) {
+					return commentCore.Revision{}, assert.AnError
+				},
+			},
+			RespCode:   http.StatusInternalServerError,
+			Begun:      1,
+			Fetched:    1,
+			Deleted:    1,
+			Newest:     1,
+			RolledBack: 1,
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			Tx: &TxMock{
+				FetchDocumentCommentFunc:               stubComment(),
+				FetchNewestDocumentCommentRevisionFunc: stubNewestRevision,
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return assert.AnError
+				},
+			},
+			RespCode:   http.StatusInternalServerError,
+			Begun:      1,
+			Fetched:    1,
+			Deleted:    1,
+			Newest:     1,
+			Entries:    1,
+			RolledBack: 1,
+		},
+		"Error returned by Tx.Commit": {
+			Tx: &TxMock{
+				FetchDocumentCommentFunc:               stubComment(),
+				FetchNewestDocumentCommentRevisionFunc: stubNewestRevision,
 				CommitFunc: func() error {
 					return assert.AnError
 				},
@@ -1162,28 +1701,42 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 			Begun:      1,
 			Fetched:    1,
 			Deleted:    1,
+			Newest:     1,
+			Entries:    1,
 			Committed:  1,
 			RolledBack: 1,
 		},
 		"Successful deletion without replies": {
-			Tx:         &TxMock{FetchDocumentCommentFunc: stubComment()},
+			Tx: &TxMock{
+				FetchDocumentCommentFunc:               stubComment(),
+				FetchNewestDocumentCommentRevisionFunc: stubNewestRevision,
+			},
 			RespCode:   http.StatusNoContent,
 			Begun:      1,
 			Fetched:    1,
 			Deleted:    1,
+			Newest:     1,
+			Entries:    1,
 			Committed:  1,
 			RolledBack: 1,
 			ChangeType: ChangeTypeDeleted,
+			EntryType:  activity.TypeCommentDeleted,
 		},
 		"Successful deletion keeps a thread with replies": {
-			Tx:         &TxMock{FetchDocumentCommentFunc: stubComment(storedReply("u2"))},
+			Tx: &TxMock{
+				FetchDocumentCommentFunc:               stubComment(storedReply("u2")),
+				FetchNewestDocumentCommentRevisionFunc: stubNewestRevision,
+			},
 			RespCode:   http.StatusNoContent,
 			Begun:      1,
 			Fetched:    1,
 			Deleted:    1,
+			Newest:     1,
+			Entries:    1,
 			Committed:  1,
 			RolledBack: 1,
 			ChangeType: ChangeTypeUpdated,
+			EntryType:  activity.TypeCommentDeleted,
 		},
 	}
 
@@ -1192,9 +1745,8 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 			t.Parallel()
 
 			cpt := &capturedChange{}
-			db := &DBMock{
-				BeginTxFunc: testutil.StubBeginTx[sqlutil.Tx](c.Tx, c.BeginErr),
-			}
+			db := &DBMock{}
+			stubTx(db, c.Tx, c.BeginErr)
 			hdl := newTestHandler(db, &fakePublisher{}, cpt)
 
 			rec := httptest.NewRecorder()
@@ -1204,7 +1756,9 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, db.BeginTxCalls(), c.Begun)
 			assert.Len(t, c.Tx.FetchDocumentCommentCalls(), c.Fetched)
-			assert.Len(t, c.Tx.DeleteDocumentCommentCalls(), c.Deleted)
+			require.Len(t, c.Tx.DeleteDocumentCommentCalls(), c.Deleted)
+			require.Len(t, c.Tx.FetchNewestDocumentCommentRevisionCalls(), c.Newest)
+			assert.Len(t, c.Tx.InsertDocumentActivityEntriesCalls(), c.Entries)
 			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
 			assert.Len(t, c.Tx.RollbackCalls(), c.RolledBack)
 
@@ -1213,6 +1767,17 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 				assert.Equal(t, _commentID, deleted.ID)
 				assert.Equal(t, _documentID, deleted.DocumentID)
 				assert.Equal(t, "org1", deleted.OrganizationID)
+			}
+
+			if c.EntryType != "" {
+				assert.Equal(t, _commentID, c.Tx.FetchNewestDocumentCommentRevisionCalls()[0].CommentID)
+				assertEntry(
+					t,
+					c.Tx,
+					c.EntryType,
+					activity.NewTarget(activity.TargetKindCommentRevision, _revisionID.String()),
+					commentMetadata(_commentID),
+				)
 			}
 
 			if c.ChangeType == "" {
@@ -1241,13 +1806,21 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 
 	cc := map[string]struct {
 		DB             *DBMock
+		Tx             *TxMock
+		BeginErr       error
 		NoSession      bool
 		OmitReply      bool
 		RespCode       int
 		CommentFetched int
 		ReplyFetched   int
+		Begun          int
 		Deleted        int
+		Newest         int
+		Entries        int
+		Committed      int
+		RolledBack     int
 		ChangeType     ChangeType
+		EntryType      activity.Type
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -1291,10 +1864,23 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 			CommentFetched: 1,
 			ReplyFetched:   1,
 		},
-		"Error returned by DB.DeleteDocumentCommentReply": {
+		"Error returned by DB.BeginTx": {
 			DB: &DBMock{
 				FetchDocumentCommentFunc:      stubComment,
 				FetchDocumentCommentReplyFunc: stubReply("u1"),
+			},
+			BeginErr:       assert.AnError,
+			RespCode:       http.StatusInternalServerError,
+			CommentFetched: 1,
+			ReplyFetched:   1,
+			Begun:          1,
+		},
+		"Error returned by Tx.DeleteDocumentCommentReply": {
+			DB: &DBMock{
+				FetchDocumentCommentFunc:      stubComment,
+				FetchDocumentCommentReplyFunc: stubReply("u1"),
+			},
+			Tx: &TxMock{
 				DeleteDocumentCommentReplyFunc: func(context.Context, xid.ID, xid.ID, string) error {
 					return assert.AnError
 				},
@@ -1302,18 +1888,86 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 			RespCode:       http.StatusInternalServerError,
 			CommentFetched: 1,
 			ReplyFetched:   1,
+			Begun:          1,
 			Deleted:        1,
+			RolledBack:     1,
+		},
+		"Error returned by Tx.FetchNewestDocumentCommentReplyRevision": {
+			DB: &DBMock{
+				FetchDocumentCommentFunc:      stubComment,
+				FetchDocumentCommentReplyFunc: stubReply("u1"),
+			},
+			Tx: &TxMock{
+				FetchNewestDocumentCommentReplyRevisionFunc: func(context.Context, xid.ID, string) (commentCore.ReplyRevision, error) {
+					return commentCore.ReplyRevision{}, assert.AnError
+				},
+			},
+			RespCode:       http.StatusInternalServerError,
+			CommentFetched: 1,
+			ReplyFetched:   1,
+			Begun:          1,
+			Deleted:        1,
+			Newest:         1,
+			RolledBack:     1,
+		},
+		"Error returned by Tx.InsertDocumentActivityEntries": {
+			DB: &DBMock{
+				FetchDocumentCommentFunc:      stubComment,
+				FetchDocumentCommentReplyFunc: stubReply("u1"),
+			},
+			Tx: &TxMock{
+				FetchNewestDocumentCommentReplyRevisionFunc: stubNewestReplyRevision,
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return assert.AnError
+				},
+			},
+			RespCode:       http.StatusInternalServerError,
+			CommentFetched: 1,
+			ReplyFetched:   1,
+			Begun:          1,
+			Deleted:        1,
+			Newest:         1,
+			Entries:        1,
+			RolledBack:     1,
+		},
+		"Error returned by Tx.Commit": {
+			DB: &DBMock{
+				FetchDocumentCommentFunc:      stubComment,
+				FetchDocumentCommentReplyFunc: stubReply("u1"),
+			},
+			Tx: &TxMock{
+				FetchNewestDocumentCommentReplyRevisionFunc: stubNewestReplyRevision,
+				CommitFunc: func() error {
+					return assert.AnError
+				},
+			},
+			RespCode:       http.StatusInternalServerError,
+			CommentFetched: 1,
+			ReplyFetched:   1,
+			Begun:          1,
+			Deleted:        1,
+			Newest:         1,
+			Entries:        1,
+			Committed:      1,
+			RolledBack:     1,
 		},
 		"Successful deletion": {
 			DB: &DBMock{
 				FetchDocumentCommentFunc:      stubComment,
 				FetchDocumentCommentReplyFunc: stubReply("u1"),
 			},
+			Tx:             &TxMock{FetchNewestDocumentCommentReplyRevisionFunc: stubNewestReplyRevision},
 			RespCode:       http.StatusOK,
 			CommentFetched: 1,
 			ReplyFetched:   1,
+			Begun:          1,
 			Deleted:        1,
+			Newest:         1,
+			Entries:        1,
+			Committed:      1,
+			RolledBack:     1,
 			ChangeType:     ChangeTypeUpdated,
+			EntryType:      activity.TypeCommentReplyDeleted,
 		},
 		"Successful deletion of the last reply under a deleted comment": {
 			DB: &DBMock{
@@ -1325,11 +1979,18 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 				},
 				FetchDocumentCommentReplyFunc: stubReply("u1"),
 			},
+			Tx:             &TxMock{FetchNewestDocumentCommentReplyRevisionFunc: stubNewestReplyRevision},
 			RespCode:       http.StatusOK,
 			CommentFetched: 1,
 			ReplyFetched:   1,
+			Begun:          1,
 			Deleted:        1,
+			Newest:         1,
+			Entries:        1,
+			Committed:      1,
+			RolledBack:     1,
 			ChangeType:     ChangeTypeDeleted,
+			EntryType:      activity.TypeCommentReplyDeleted,
 		},
 	}
 
@@ -1337,6 +1998,7 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			tx := stubTx(c.DB, c.Tx, c.BeginErr)
 			cpt := &capturedChange{}
 			hdl := newTestHandler(c.DB, &fakePublisher{}, cpt)
 
@@ -1347,13 +2009,29 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentCommentCalls(), c.CommentFetched)
 			assert.Len(t, c.DB.FetchDocumentCommentReplyCalls(), c.ReplyFetched)
-			assert.Len(t, c.DB.DeleteDocumentCommentReplyCalls(), c.Deleted)
+			assert.Len(t, c.DB.BeginTxCalls(), c.Begun)
+			require.Len(t, tx.DeleteDocumentCommentReplyCalls(), c.Deleted)
+			require.Len(t, tx.FetchNewestDocumentCommentReplyRevisionCalls(), c.Newest)
+			assert.Len(t, tx.InsertDocumentActivityEntriesCalls(), c.Entries)
+			assert.Len(t, tx.CommitCalls(), c.Committed)
+			assert.Len(t, tx.RollbackCalls(), c.RolledBack)
 
 			if c.Deleted > 0 {
-				deleted := c.DB.DeleteDocumentCommentReplyCalls()[0]
+				deleted := tx.DeleteDocumentCommentReplyCalls()[0]
 				assert.Equal(t, _replyID, deleted.ID)
 				assert.Equal(t, _commentID, deleted.CommentID)
 				assert.Equal(t, "org1", deleted.OrganizationID)
+			}
+
+			if c.EntryType != "" {
+				assert.Equal(t, _replyID, tx.FetchNewestDocumentCommentReplyRevisionCalls()[0].ReplyID)
+				assertEntry(
+					t,
+					tx,
+					c.EntryType,
+					activity.NewTarget(activity.TargetKindReplyRevision, _revisionID.String()),
+					replyMetadata(_replyID),
+				)
 			}
 
 			if c.ChangeType == "" {

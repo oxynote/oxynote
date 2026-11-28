@@ -233,6 +233,7 @@ func Test_agent_DeleteBranchReviewer(t *testing.T) {
 	type tcase struct {
 		CancelledContext bool
 		Reviewer         document.BranchReviewer
+		Removed          bool
 		Err              error
 	}
 
@@ -246,11 +247,20 @@ func Test_agent_DeleteBranchReviewer(t *testing.T) {
 				Err:              assert.AnError,
 			}
 		},
+		"User who is not a reviewer": func(t *testing.T, db *DB) tcase {
+			reviewer := prepBranchReviewers(t, db, 1, nil)[0]
+			reviewer.UserID = "not-a-reviewer"
+
+			return tcase{
+				Reviewer: reviewer,
+			}
+		},
 		"Successful delete": func(t *testing.T, db *DB) tcase {
 			reviewer := prepBranchReviewers(t, db, 1, nil)[0]
 
 			return tcase{
 				Reviewer: reviewer,
+				Removed:  true,
 			}
 		},
 	}
@@ -269,12 +279,14 @@ func Test_agent_DeleteBranchReviewer(t *testing.T) {
 				cancel()
 			}
 
-			err := db.DeleteBranchReviewer(ctx, c.Reviewer.BranchID, c.Reviewer.UserID, c.Reviewer.OrganizationID)
+			removed, err := db.DeleteBranchReviewer(ctx, c.Reviewer.BranchID, c.Reviewer.UserID, c.Reviewer.OrganizationID)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
+
+			assert.Equal(t, c.Removed, removed)
 
 			res, err := db.FetchBranchReviewer(context.Background(), c.Reviewer.BranchID, c.Reviewer.UserID, c.Reviewer.OrganizationID)
 			testutil.AssertEqualError(t, sql.ErrNoRows, err)

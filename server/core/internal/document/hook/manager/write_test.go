@@ -10,6 +10,7 @@ import (
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
@@ -35,6 +36,21 @@ func stubStoredHook(db *DBMock, hk hook.Hook, fetchErr error) *DBMock {
 	return db
 }
 
+// assertHookEntry checks that the entries are the one entry of the hook's
+// change.
+func assertHookEntry(t *testing.T, entries []activity.Entry, tp activity.Type, actor activity.Actor, hk hook.Hook) {
+	t.Helper()
+
+	require.Len(t, entries, 1)
+	assert.Equal(t, tp, entries[0].Type)
+	assert.Equal(t, actor, entries[0].Actor)
+	assert.Equal(t, activity.NewTarget(activity.TargetKindHook, hk.ID.String()), entries[0].Target)
+	assert.Equal(t, activity.Metadata{activity.MetaKeyHookType: hk.Type}, entries[0].Metadata)
+	assert.Equal(t, hk.OrganizationID.String, entries[0].OrganizationID)
+	assert.Equal(t, hk.DocumentID.V, entries[0].DocumentID)
+	assert.Equal(t, hk.BranchID.V, entries[0].BranchID)
+}
+
 func Test_Manager_CreateHook(t *testing.T) {
 	t.Parallel()
 
@@ -58,6 +74,7 @@ func Test_Manager_CreateHook(t *testing.T) {
 		Fetches       int
 		Begins        int
 		Inserts       int
+		Entries       int
 		Records       int
 		Commits       int
 		Rollbacks     int
@@ -159,6 +176,7 @@ func Test_Manager_CreateHook(t *testing.T) {
 			Begins:    1,
 			Inserts:   1,
 			Records:   1,
+			Entries:   1,
 			Watchers:  []string{"w-new"},
 			Rollbacks: 1,
 			Err:       assert.AnError,
@@ -177,7 +195,26 @@ func Test_Manager_CreateHook(t *testing.T) {
 			Begins:    1,
 			Inserts:   1,
 			Records:   1,
+			Entries:   1,
 			Commits:   1,
+			Watchers:  []string{"w-new"},
+			Rollbacks: 1,
+			Err:       assert.AnError,
+		},
+		"Error returned by tx.InsertDocumentActivityEntries": {
+			Type:     hook.TypeURLWatcher,
+			Settings: processor.Settings(`{"url":"https://example.com"}`),
+			CD:       true,
+			Tx: &TxMock{
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return assert.AnError
+				},
+			},
+			Flushes:   1,
+			Fetches:   1,
+			Begins:    1,
+			Inserts:   1,
+			Entries:   1,
 			Watchers:  []string{"w-new"},
 			Rollbacks: 1,
 			Err:       assert.AnError,
@@ -211,6 +248,7 @@ func Test_Manager_CreateHook(t *testing.T) {
 			Begins:    1,
 			Inserts:   1,
 			Records:   1,
+			Entries:   1,
 			Commits:   1,
 			Rollbacks: 1,
 		},
@@ -274,6 +312,7 @@ func Test_Manager_CreateHook(t *testing.T) {
 			assert.Len(t, dbm.FetchDocumentByBranchIDCalls(), c.Fetches)
 			assert.Len(t, dbm.BeginTxCalls(), c.Begins)
 			require.Len(t, c.Tx.InsertDocumentHookCalls(), c.Inserts)
+			assert.Len(t, c.Tx.InsertDocumentActivityEntriesCalls(), c.Entries)
 			assert.Len(t, c.Tx.RecordDocumentBranchHistoryEntryCalls(), c.Records)
 			assert.Len(t, c.Tx.CommitCalls(), c.Commits)
 			assert.Len(t, c.Tx.RollbackCalls(), c.Rollbacks)
@@ -311,6 +350,10 @@ func Test_Manager_CreateHook(t *testing.T) {
 			rr := c.Tx.RecordDocumentBranchHistoryEntryCalls()
 			require.Len(t, rr, 1)
 			assert.Equal(t, null.StringFrom("u1"), rr[0].By)
+
+			ee := c.Tx.InsertDocumentActivityEntriesCalls()
+			require.Len(t, ee, 1)
+			assertHookEntry(t, ee[0].Entries, activity.TypeHookCreated, activity.UserActor("u1"), *hk)
 		})
 	}
 }
@@ -334,12 +377,14 @@ func Test_Manager_UpdateHook(t *testing.T) {
 		BeginErr      error
 		UpdateErr     error
 		RecordErr     error
+		EntryErr      error
 		CommitErr     error
 		Fetches       int
 		Flushes       int
 		Begins        int
 		Updates       int
 		Records       int
+		Entries       int
 		Commits       int
 		Rollbacks     int
 		Watchers      []string
@@ -414,6 +459,19 @@ func Test_Manager_UpdateHook(t *testing.T) {
 			Rollbacks: 1,
 			Err:       assert.AnError,
 		},
+		"Error returned by tx.InsertDocumentActivityEntries tears down the setup": {
+			Settings:  settings,
+			EntryErr:  assert.AnError,
+			Fetches:   1,
+			Flushes:   1,
+			Begins:    1,
+			Updates:   1,
+			Records:   1,
+			Entries:   1,
+			Watchers:  []string{"w-new"},
+			Rollbacks: 1,
+			Err:       assert.AnError,
+		},
 		"Error returned by tx.Commit tears down the setup": {
 			Settings:  settings,
 			CommitErr: assert.AnError,
@@ -422,6 +480,7 @@ func Test_Manager_UpdateHook(t *testing.T) {
 			Begins:    1,
 			Updates:   1,
 			Records:   1,
+			Entries:   1,
 			Commits:   1,
 			Watchers:  []string{"w-new"},
 			Rollbacks: 1,
@@ -443,6 +502,7 @@ func Test_Manager_UpdateHook(t *testing.T) {
 			Begins:    1,
 			Updates:   1,
 			Records:   1,
+			Entries:   1,
 			Commits:   1,
 			Rollbacks: 1,
 		},
@@ -467,6 +527,9 @@ func Test_Manager_UpdateHook(t *testing.T) {
 				},
 				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
 					return c.RecordErr
+				},
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return c.EntryErr
 				},
 				CommitFunc: func() error {
 					return c.CommitErr
@@ -519,6 +582,7 @@ func Test_Manager_UpdateHook(t *testing.T) {
 			assert.Len(t, man.flusher.(*FlusherMock).FlushCalls(), c.Flushes)
 			assert.Len(t, dbm.BeginTxCalls(), c.Begins)
 			assert.Len(t, tx.UpdateDocumentHookCalls(), c.Updates)
+			assert.Len(t, tx.InsertDocumentActivityEntriesCalls(), c.Entries)
 			assert.Len(t, tx.CommitCalls(), c.Commits)
 			assert.Len(t, tx.RollbackCalls(), c.Rollbacks)
 			assert.Equal(t, c.Watchers, cd.deletedWatchers())
@@ -551,6 +615,10 @@ func Test_Manager_UpdateHook(t *testing.T) {
 			assert.True(t, hk.UpdatedAt.Valid)
 			assert.Len(t, tx.CommitCalls(), 1)
 			assert.Equal(t, []hook.Hook{*hk}, changes)
+
+			if c.Entries > 0 {
+				assertHookEntry(t, tx.InsertDocumentActivityEntriesCalls()[0].Entries, activity.TypeHookUpdated, activity.UserActor("u1"), *hk)
+			}
 		})
 	}
 }
@@ -576,6 +644,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 		BeginErr       error
 		DelErr         error
 		RecordErr      error
+		EntryErr       error
 		CommitErr      error
 		Fetches        int
 		BranchFetches  int
@@ -583,6 +652,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 		Begins         int
 		Deletes        int
 		Records        int
+		Entries        int
 		Commits        int
 		Rollbacks      int
 		Err            error
@@ -701,6 +771,21 @@ func Test_Manager_DeleteHook(t *testing.T) {
 			Rollbacks:     1,
 			Err:           assert.AnError,
 		},
+		"Error returned by tx.InsertDocumentActivityEntries": {
+			Hook: func(t *testing.T) hook.Hook {
+				return stubHook(t, branchID, time.Now().Add(time.Hour))
+			},
+			EntryErr:      assert.AnError,
+			Fetches:       1,
+			BranchFetches: 1,
+			Flushes:       1,
+			Begins:        1,
+			Deletes:       1,
+			Records:       1,
+			Entries:       1,
+			Rollbacks:     1,
+			Err:           assert.AnError,
+		},
 		"Error returned by tx.Commit": {
 			Hook: func(t *testing.T) hook.Hook {
 				return stubHook(t, branchID, time.Now().Add(time.Hour))
@@ -712,6 +797,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 			Begins:        1,
 			Deletes:       1,
 			Records:       1,
+			Entries:       1,
 			Commits:       1,
 			Rollbacks:     1,
 			Err:           assert.AnError,
@@ -729,6 +815,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 			Begins:        1,
 			Deletes:       1,
 			Records:       1,
+			Entries:       1,
 			Commits:       1,
 			Rollbacks:     1,
 		},
@@ -755,6 +842,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 			Begins:        1,
 			Deletes:       1,
 			Records:       1,
+			Entries:       1,
 			Commits:       1,
 			Rollbacks:     1,
 		},
@@ -772,6 +860,9 @@ func Test_Manager_DeleteHook(t *testing.T) {
 				},
 				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
 					return c.RecordErr
+				},
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return c.EntryErr
 				},
 				CommitFunc: func() error {
 					return c.CommitErr
@@ -839,6 +930,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 			ff := tx.DeleteDocumentHookCalls()
 			require.Len(t, ff, c.Deletes)
 			assert.Len(t, tx.RecordDocumentBranchHistoryEntryCalls(), c.Records)
+			assert.Len(t, tx.InsertDocumentActivityEntriesCalls(), c.Entries)
 			assert.Len(t, tx.CommitCalls(), c.Commits)
 			assert.Len(t, tx.RollbackCalls(), c.Rollbacks)
 
@@ -855,6 +947,8 @@ func Test_Manager_DeleteHook(t *testing.T) {
 				flushes := man.flusher.(*FlusherMock).FlushCalls()
 				require.Len(t, flushes, 1)
 				assert.Equal(t, hk.BranchID.V, flushes[0].BranchID)
+
+				assertHookEntry(t, tx.InsertDocumentActivityEntriesCalls()[0].Entries, activity.TypeHookDeleted, activity.UserActor("u1"), hk)
 			}
 		})
 	}
@@ -865,6 +959,15 @@ func Test_Manager_ResetHook(t *testing.T) {
 
 	branchID := xid.New()
 
+	// unset returns a url watcher that is not set up yet, so a reset sets
+	// it up and a failure after that has a watcher to tear down.
+	unset := func(*testing.T) hook.Hook {
+		hk := urlWatcherHook(branchID)
+		hk.State = null.Value[processor.State]{}
+
+		return hk
+	}
+
 	cc := map[string]struct {
 		// Held has another write hold the hook's lock until the reset
 		// gives up.
@@ -874,14 +977,23 @@ func Test_Manager_ResetHook(t *testing.T) {
 		CD            bool
 		Unreachable   bool
 		FetchErr      error
+		BeginErr      error
 		UpdateErr     error
+		EntryErr      error
+		CommitErr     error
 		Fetches       int
+		Begins        int
 		Updates       int
+		Entries       int
+		Commits       int
+		Rollbacks     int
 		MaintFetches  int
-		Status        processor.Status
-		Published     []notification.Code
-		Watchers      []string
-		Err           error
+		// Transitions is how many transition entries are recorded.
+		Transitions int
+		Status      processor.Status
+		Published   []notification.Code
+		Watchers    []string
+		Err         error
 	}{
 		"Hook another write holds": {
 			Held: true,
@@ -907,29 +1019,53 @@ func Test_Manager_ResetHook(t *testing.T) {
 			Err:           hook.ErrHookMismatch,
 		},
 		"Service the hook checks is unreachable": {
-			Hook: func(*testing.T) hook.Hook {
-				hk := urlWatcherHook(branchID)
-				hk.State = null.Value[processor.State]{}
-
-				return hk
-			},
+			Hook:        unset,
 			Unreachable: true,
 			Fetches:     1,
 			Err:         hook.ErrUpstreamUnavailable,
 		},
-		// the reset set the hook up, but the row that would name the new
-		// watcher is not stored.
-		"Error returned by db.UpdateDocumentHook tears down the setup": {
-			Hook: func(*testing.T) hook.Hook {
-				hk := urlWatcherHook(branchID)
-				hk.State = null.Value[processor.State]{}
-
-				return hk
-			},
+		"Error returned by db.BeginTx tears down the setup": {
+			Hook:     unset,
+			CD:       true,
+			BeginErr: assert.AnError,
+			Fetches:  1,
+			Begins:   1,
+			Watchers: []string{"w-new"},
+			Err:      assert.AnError,
+		},
+		"Error returned by tx.UpdateDocumentHook tears down the setup": {
+			Hook:      unset,
 			CD:        true,
 			UpdateErr: assert.AnError,
 			Fetches:   1,
+			Begins:    1,
 			Updates:   1,
+			Rollbacks: 1,
+			Watchers:  []string{"w-new"},
+			Err:       assert.AnError,
+		},
+		"Error returned by tx.InsertDocumentActivityEntries tears down the setup": {
+			Hook:      unset,
+			CD:        true,
+			EntryErr:  assert.AnError,
+			Fetches:   1,
+			Begins:    1,
+			Updates:   1,
+			Entries:   1,
+			Rollbacks: 1,
+			Watchers:  []string{"w-new"},
+			Err:       assert.AnError,
+		},
+		"Error returned by tx.Commit tears down the setup": {
+			Hook:      unset,
+			CD:        true,
+			CommitErr: assert.AnError,
+			Fetches:   1,
+			Begins:    1,
+			Updates:   1,
+			Entries:   1,
+			Commits:   1,
+			Rollbacks: 1,
 			Watchers:  []string{"w-new"},
 			Err:       assert.AnError,
 		},
@@ -940,10 +1076,29 @@ func Test_Manager_ResetHook(t *testing.T) {
 				return urlWatcherHook(branchID)
 			},
 			Fetches:      1,
+			Begins:       1,
 			Updates:      1,
+			Entries:      1,
+			Commits:      1,
+			Rollbacks:    1,
 			MaintFetches: 1,
+			Transitions:  1,
 			Status:       processor.StatusUnconfigured,
 			Published:    []notification.Code{notification.NotificationDocumentHookNeedsAttention},
+		},
+		"Hook without a branch records no entry": {
+			Hook: func(t *testing.T) hook.Hook {
+				h := stubHook(t, branchID, time.Now().Add(time.Hour))
+				h.BranchID = null.Value[xid.ID]{}
+
+				return h
+			},
+			Fetches:   1,
+			Begins:    1,
+			Updates:   1,
+			Commits:   1,
+			Rollbacks: 1,
+			Status:    processor.StatusActive,
 		},
 		"Successful reset": {
 			Hook: func(t *testing.T) hook.Hook {
@@ -952,9 +1107,13 @@ func Test_Manager_ResetHook(t *testing.T) {
 
 				return h
 			},
-			Fetches: 1,
-			Updates: 1,
-			Status:  processor.StatusActive,
+			Fetches:   1,
+			Begins:    1,
+			Updates:   1,
+			Entries:   1,
+			Commits:   1,
+			Rollbacks: 1,
+			Status:    processor.StatusActive,
 		},
 	}
 
@@ -964,10 +1123,20 @@ func Test_Manager_ResetHook(t *testing.T) {
 
 			stored := c.Hook(t)
 
-			db := stubStoredHook(&DBMock{
+			tx := &TxMock{
 				UpdateDocumentHookFunc: func(context.Context, hook.Hook) error {
 					return c.UpdateErr
 				},
+				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
+					return c.EntryErr
+				},
+				CommitFunc: func() error {
+					return c.CommitErr
+				},
+			}
+
+			db := stubStoredHook(&DBMock{
+				BeginTxFunc: testutil.StubBeginTx[sqlutil.Tx](tx, c.BeginErr),
 				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
 					return []string{"user-1"}, nil
 				},
@@ -1012,16 +1181,25 @@ func Test_Manager_ResetHook(t *testing.T) {
 				documentID = xid.New()
 			}
 
-			hk, err := man.ResetHook(ctx, stored.ID, documentID, "org-1")
+			hk, err := man.ResetHook(ctx, stored.ID, documentID, "org-1", "u1")
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, db.FetchDocumentHookCalls(), c.Fetches)
+			assert.Len(t, db.BeginTxCalls(), c.Begins)
 
-			ff := db.UpdateDocumentHookCalls()
+			ff := tx.UpdateDocumentHookCalls()
 			require.Len(t, ff, c.Updates)
 
+			ee := tx.InsertDocumentActivityEntriesCalls()
+			require.Len(t, ee, c.Entries)
+
+			assert.Len(t, tx.CommitCalls(), c.Commits)
+			assert.Len(t, tx.RollbackCalls(), c.Rollbacks)
 			assert.Len(t, db.FetchDocumentMaintainersCalls(), c.MaintFetches)
 			assert.Equal(t, c.Published, pub.codes)
+
+			tt := db.InsertDocumentActivityEntriesCalls()
+			require.Len(t, tt, c.Transitions)
 
 			if cd != nil {
 				assert.Equal(t, c.Watchers, cd.deletedWatchers())
@@ -1038,6 +1216,14 @@ func Test_Manager_ResetHook(t *testing.T) {
 			assert.False(t, hk.Triggered)
 			assert.True(t, hk.UpdatedAt.Valid)
 			assert.Equal(t, []hook.Hook{*hk}, changes)
+
+			if c.Entries > 0 {
+				assertHookEntry(t, ee[0].Entries, activity.TypeHookReset, activity.UserActor("u1"), *hk)
+			}
+
+			if c.Transitions > 0 {
+				assertHookEntry(t, tt[0].Entries, activity.TypeHookNeedsAttention, activity.SystemActor(), *hk)
+			}
 		})
 	}
 }

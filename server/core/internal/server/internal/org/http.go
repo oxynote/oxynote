@@ -12,6 +12,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	orgCore "github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/search"
@@ -131,6 +132,11 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if err = tx.InsertDocumentActivityEntries(r.Context(), activity.NewDocumentCreated(activity.SystemActor(), doc)); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	if err = tx.UpsertDocumentMaintainers(r.Context(), doc.ID, id, []string{members[0]}); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -156,7 +162,7 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	if err = tx.AssignBranchTag(r.Context(), id, doc.ID, doc.BranchID, productionID); err != nil {
+	if _, err = tx.AssignBranchTag(r.Context(), id, doc.ID, doc.BranchID, productionID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -398,6 +404,9 @@ type DBAgent interface {
 	// InsertDocument should insert the document.
 	InsertDocument(ctx context.Context, doc document.Document) error
 
+	// InsertDocumentActivityEntries should insert the activity entries.
+	InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error
+
 	// FetchDocumentHooksByOrganizationID should return every hook of the
 	// organization.
 	FetchDocumentHooksByOrganizationID(ctx context.Context, organizationID string) ([]hook.Hook, error)
@@ -427,7 +436,7 @@ type SeedDBAgent interface {
 	InsertTag(ctx context.Context, t tag.Tag) error
 
 	// AssignBranchTag should make a document's branch carry a tag.
-	AssignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) error
+	AssignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) (bool, error)
 
 	// CreateVariableGroup should store a new group at the end of its
 	// organization's groups.

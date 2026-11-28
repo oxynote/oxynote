@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	commentCore "github.com/oxynote/oxynote/server/core/internal/document/comment"
 	"github.com/rs/xid"
 )
@@ -49,22 +50,31 @@ var _ Tx = &TxMock{}
 //			FetchDocumentMaintainersFunc: func(ctx context.Context, documentID xid.ID, organizationID string) ([]string, error) {
 //				panic("mock out the FetchDocumentMaintainers method")
 //			},
-//			InsertDocumentCommentFunc: func(ctx context.Context, c commentCore.Comment) error {
+//			FetchNewestDocumentCommentReplyRevisionFunc: func(ctx context.Context, replyID xid.ID, organizationID string) (commentCore.ReplyRevision, error) {
+//				panic("mock out the FetchNewestDocumentCommentReplyRevision method")
+//			},
+//			FetchNewestDocumentCommentRevisionFunc: func(ctx context.Context, commentID xid.ID, organizationID string) (commentCore.Revision, error) {
+//				panic("mock out the FetchNewestDocumentCommentRevision method")
+//			},
+//			InsertDocumentActivityEntriesFunc: func(ctx context.Context, entries ...activity.Entry) error {
+//				panic("mock out the InsertDocumentActivityEntries method")
+//			},
+//			InsertDocumentCommentFunc: func(ctx context.Context, c commentCore.Comment) (commentCore.Revision, error) {
 //				panic("mock out the InsertDocumentComment method")
 //			},
-//			InsertDocumentCommentReplyFunc: func(ctx context.Context, r commentCore.Reply) error {
+//			InsertDocumentCommentReplyFunc: func(ctx context.Context, r commentCore.Reply) (commentCore.ReplyRevision, error) {
 //				panic("mock out the InsertDocumentCommentReply method")
 //			},
 //			RollbackFunc: func() error {
 //				panic("mock out the Rollback method")
 //			},
-//			UpdateDocumentCommentFunc: func(ctx context.Context, c commentCore.Comment) error {
+//			UpdateDocumentCommentFunc: func(ctx context.Context, c commentCore.Comment) (commentCore.Revision, error) {
 //				panic("mock out the UpdateDocumentComment method")
 //			},
-//			UpdateDocumentCommentReplyFunc: func(ctx context.Context, r commentCore.Reply) error {
+//			UpdateDocumentCommentReplyFunc: func(ctx context.Context, r commentCore.Reply) (commentCore.ReplyRevision, error) {
 //				panic("mock out the UpdateDocumentCommentReply method")
 //			},
-//			UpdateDocumentCommentStatusFunc: func(ctx context.Context, c commentCore.Comment) error {
+//			UpdateDocumentCommentStatusFunc: func(ctx context.Context, c commentCore.Comment) (bool, error) {
 //				panic("mock out the UpdateDocumentCommentStatus method")
 //			},
 //		}
@@ -101,23 +111,32 @@ type TxMock struct {
 	// FetchDocumentMaintainersFunc mocks the FetchDocumentMaintainers method.
 	FetchDocumentMaintainersFunc func(ctx context.Context, documentID xid.ID, organizationID string) ([]string, error)
 
+	// FetchNewestDocumentCommentReplyRevisionFunc mocks the FetchNewestDocumentCommentReplyRevision method.
+	FetchNewestDocumentCommentReplyRevisionFunc func(ctx context.Context, replyID xid.ID, organizationID string) (commentCore.ReplyRevision, error)
+
+	// FetchNewestDocumentCommentRevisionFunc mocks the FetchNewestDocumentCommentRevision method.
+	FetchNewestDocumentCommentRevisionFunc func(ctx context.Context, commentID xid.ID, organizationID string) (commentCore.Revision, error)
+
+	// InsertDocumentActivityEntriesFunc mocks the InsertDocumentActivityEntries method.
+	InsertDocumentActivityEntriesFunc func(ctx context.Context, entries ...activity.Entry) error
+
 	// InsertDocumentCommentFunc mocks the InsertDocumentComment method.
-	InsertDocumentCommentFunc func(ctx context.Context, c commentCore.Comment) error
+	InsertDocumentCommentFunc func(ctx context.Context, c commentCore.Comment) (commentCore.Revision, error)
 
 	// InsertDocumentCommentReplyFunc mocks the InsertDocumentCommentReply method.
-	InsertDocumentCommentReplyFunc func(ctx context.Context, r commentCore.Reply) error
+	InsertDocumentCommentReplyFunc func(ctx context.Context, r commentCore.Reply) (commentCore.ReplyRevision, error)
 
 	// RollbackFunc mocks the Rollback method.
 	RollbackFunc func() error
 
 	// UpdateDocumentCommentFunc mocks the UpdateDocumentComment method.
-	UpdateDocumentCommentFunc func(ctx context.Context, c commentCore.Comment) error
+	UpdateDocumentCommentFunc func(ctx context.Context, c commentCore.Comment) (commentCore.Revision, error)
 
 	// UpdateDocumentCommentReplyFunc mocks the UpdateDocumentCommentReply method.
-	UpdateDocumentCommentReplyFunc func(ctx context.Context, r commentCore.Reply) error
+	UpdateDocumentCommentReplyFunc func(ctx context.Context, r commentCore.Reply) (commentCore.ReplyRevision, error)
 
 	// UpdateDocumentCommentStatusFunc mocks the UpdateDocumentCommentStatus method.
-	UpdateDocumentCommentStatusFunc func(ctx context.Context, c commentCore.Comment) error
+	UpdateDocumentCommentStatusFunc func(ctx context.Context, c commentCore.Comment) (bool, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -206,6 +225,31 @@ type TxMock struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
+		// FetchNewestDocumentCommentReplyRevision holds details about calls to the FetchNewestDocumentCommentReplyRevision method.
+		FetchNewestDocumentCommentReplyRevision []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// ReplyID is the replyID argument value.
+			ReplyID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
+		// FetchNewestDocumentCommentRevision holds details about calls to the FetchNewestDocumentCommentRevision method.
+		FetchNewestDocumentCommentRevision []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// CommentID is the commentID argument value.
+			CommentID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
+		// InsertDocumentActivityEntries holds details about calls to the InsertDocumentActivityEntries method.
+		InsertDocumentActivityEntries []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Entries is the entries argument value.
+			Entries []activity.Entry
+		}
 		// InsertDocumentComment holds details about calls to the InsertDocumentComment method.
 		InsertDocumentComment []struct {
 			// Ctx is the ctx argument value.
@@ -245,21 +289,24 @@ type TxMock struct {
 			C commentCore.Comment
 		}
 	}
-	lockCommit                           sync.RWMutex
-	lockDeleteDocumentComment            sync.RWMutex
-	lockDeleteDocumentCommentReply       sync.RWMutex
-	lockDeleteDocumentCommentsByBranchID sync.RWMutex
-	lockFetchDocumentByBranchID          sync.RWMutex
-	lockFetchDocumentComment             sync.RWMutex
-	lockFetchDocumentCommentReply        sync.RWMutex
-	lockFetchDocumentCommentsByBranchID  sync.RWMutex
-	lockFetchDocumentMaintainers         sync.RWMutex
-	lockInsertDocumentComment            sync.RWMutex
-	lockInsertDocumentCommentReply       sync.RWMutex
-	lockRollback                         sync.RWMutex
-	lockUpdateDocumentComment            sync.RWMutex
-	lockUpdateDocumentCommentReply       sync.RWMutex
-	lockUpdateDocumentCommentStatus      sync.RWMutex
+	lockCommit                                  sync.RWMutex
+	lockDeleteDocumentComment                   sync.RWMutex
+	lockDeleteDocumentCommentReply              sync.RWMutex
+	lockDeleteDocumentCommentsByBranchID        sync.RWMutex
+	lockFetchDocumentByBranchID                 sync.RWMutex
+	lockFetchDocumentComment                    sync.RWMutex
+	lockFetchDocumentCommentReply               sync.RWMutex
+	lockFetchDocumentCommentsByBranchID         sync.RWMutex
+	lockFetchDocumentMaintainers                sync.RWMutex
+	lockFetchNewestDocumentCommentReplyRevision sync.RWMutex
+	lockFetchNewestDocumentCommentRevision      sync.RWMutex
+	lockInsertDocumentActivityEntries           sync.RWMutex
+	lockInsertDocumentComment                   sync.RWMutex
+	lockInsertDocumentCommentReply              sync.RWMutex
+	lockRollback                                sync.RWMutex
+	lockUpdateDocumentComment                   sync.RWMutex
+	lockUpdateDocumentCommentReply              sync.RWMutex
+	lockUpdateDocumentCommentStatus             sync.RWMutex
 }
 
 // Commit calls CommitFunc.
@@ -661,8 +708,135 @@ func (mock *TxMock) FetchDocumentMaintainersCalls() []struct {
 	return calls
 }
 
+// FetchNewestDocumentCommentReplyRevision calls FetchNewestDocumentCommentReplyRevisionFunc.
+func (mock *TxMock) FetchNewestDocumentCommentReplyRevision(ctx context.Context, replyID xid.ID, organizationID string) (commentCore.ReplyRevision, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		ReplyID        xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		ReplyID:        replyID,
+		OrganizationID: organizationID,
+	}
+	mock.lockFetchNewestDocumentCommentReplyRevision.Lock()
+	mock.calls.FetchNewestDocumentCommentReplyRevision = append(mock.calls.FetchNewestDocumentCommentReplyRevision, callInfo)
+	mock.lockFetchNewestDocumentCommentReplyRevision.Unlock()
+	if mock.FetchNewestDocumentCommentReplyRevisionFunc == nil {
+		var (
+			replyRevisionOut commentCore.ReplyRevision
+			errOut           error
+		)
+		return replyRevisionOut, errOut
+	}
+	return mock.FetchNewestDocumentCommentReplyRevisionFunc(ctx, replyID, organizationID)
+}
+
+// FetchNewestDocumentCommentReplyRevisionCalls gets all the calls that were made to FetchNewestDocumentCommentReplyRevision.
+// Check the length with:
+//
+//	len(mockedTx.FetchNewestDocumentCommentReplyRevisionCalls())
+func (mock *TxMock) FetchNewestDocumentCommentReplyRevisionCalls() []struct {
+	Ctx            context.Context
+	ReplyID        xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		ReplyID        xid.ID
+		OrganizationID string
+	}
+	mock.lockFetchNewestDocumentCommentReplyRevision.RLock()
+	calls = mock.calls.FetchNewestDocumentCommentReplyRevision
+	mock.lockFetchNewestDocumentCommentReplyRevision.RUnlock()
+	return calls
+}
+
+// FetchNewestDocumentCommentRevision calls FetchNewestDocumentCommentRevisionFunc.
+func (mock *TxMock) FetchNewestDocumentCommentRevision(ctx context.Context, commentID xid.ID, organizationID string) (commentCore.Revision, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		CommentID      xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		CommentID:      commentID,
+		OrganizationID: organizationID,
+	}
+	mock.lockFetchNewestDocumentCommentRevision.Lock()
+	mock.calls.FetchNewestDocumentCommentRevision = append(mock.calls.FetchNewestDocumentCommentRevision, callInfo)
+	mock.lockFetchNewestDocumentCommentRevision.Unlock()
+	if mock.FetchNewestDocumentCommentRevisionFunc == nil {
+		var (
+			revisionOut commentCore.Revision
+			errOut      error
+		)
+		return revisionOut, errOut
+	}
+	return mock.FetchNewestDocumentCommentRevisionFunc(ctx, commentID, organizationID)
+}
+
+// FetchNewestDocumentCommentRevisionCalls gets all the calls that were made to FetchNewestDocumentCommentRevision.
+// Check the length with:
+//
+//	len(mockedTx.FetchNewestDocumentCommentRevisionCalls())
+func (mock *TxMock) FetchNewestDocumentCommentRevisionCalls() []struct {
+	Ctx            context.Context
+	CommentID      xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		CommentID      xid.ID
+		OrganizationID string
+	}
+	mock.lockFetchNewestDocumentCommentRevision.RLock()
+	calls = mock.calls.FetchNewestDocumentCommentRevision
+	mock.lockFetchNewestDocumentCommentRevision.RUnlock()
+	return calls
+}
+
+// InsertDocumentActivityEntries calls InsertDocumentActivityEntriesFunc.
+func (mock *TxMock) InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error {
+	callInfo := struct {
+		Ctx     context.Context
+		Entries []activity.Entry
+	}{
+		Ctx:     ctx,
+		Entries: entries,
+	}
+	mock.lockInsertDocumentActivityEntries.Lock()
+	mock.calls.InsertDocumentActivityEntries = append(mock.calls.InsertDocumentActivityEntries, callInfo)
+	mock.lockInsertDocumentActivityEntries.Unlock()
+	if mock.InsertDocumentActivityEntriesFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.InsertDocumentActivityEntriesFunc(ctx, entries...)
+}
+
+// InsertDocumentActivityEntriesCalls gets all the calls that were made to InsertDocumentActivityEntries.
+// Check the length with:
+//
+//	len(mockedTx.InsertDocumentActivityEntriesCalls())
+func (mock *TxMock) InsertDocumentActivityEntriesCalls() []struct {
+	Ctx     context.Context
+	Entries []activity.Entry
+} {
+	var calls []struct {
+		Ctx     context.Context
+		Entries []activity.Entry
+	}
+	mock.lockInsertDocumentActivityEntries.RLock()
+	calls = mock.calls.InsertDocumentActivityEntries
+	mock.lockInsertDocumentActivityEntries.RUnlock()
+	return calls
+}
+
 // InsertDocumentComment calls InsertDocumentCommentFunc.
-func (mock *TxMock) InsertDocumentComment(ctx context.Context, c commentCore.Comment) error {
+func (mock *TxMock) InsertDocumentComment(ctx context.Context, c commentCore.Comment) (commentCore.Revision, error) {
 	callInfo := struct {
 		Ctx context.Context
 		C   commentCore.Comment
@@ -675,9 +849,10 @@ func (mock *TxMock) InsertDocumentComment(ctx context.Context, c commentCore.Com
 	mock.lockInsertDocumentComment.Unlock()
 	if mock.InsertDocumentCommentFunc == nil {
 		var (
-			errOut error
+			revisionOut commentCore.Revision
+			errOut      error
 		)
-		return errOut
+		return revisionOut, errOut
 	}
 	return mock.InsertDocumentCommentFunc(ctx, c)
 }
@@ -701,7 +876,7 @@ func (mock *TxMock) InsertDocumentCommentCalls() []struct {
 }
 
 // InsertDocumentCommentReply calls InsertDocumentCommentReplyFunc.
-func (mock *TxMock) InsertDocumentCommentReply(ctx context.Context, r commentCore.Reply) error {
+func (mock *TxMock) InsertDocumentCommentReply(ctx context.Context, r commentCore.Reply) (commentCore.ReplyRevision, error) {
 	callInfo := struct {
 		Ctx context.Context
 		R   commentCore.Reply
@@ -714,9 +889,10 @@ func (mock *TxMock) InsertDocumentCommentReply(ctx context.Context, r commentCor
 	mock.lockInsertDocumentCommentReply.Unlock()
 	if mock.InsertDocumentCommentReplyFunc == nil {
 		var (
-			errOut error
+			replyRevisionOut commentCore.ReplyRevision
+			errOut           error
 		)
-		return errOut
+		return replyRevisionOut, errOut
 	}
 	return mock.InsertDocumentCommentReplyFunc(ctx, r)
 }
@@ -770,7 +946,7 @@ func (mock *TxMock) RollbackCalls() []struct {
 }
 
 // UpdateDocumentComment calls UpdateDocumentCommentFunc.
-func (mock *TxMock) UpdateDocumentComment(ctx context.Context, c commentCore.Comment) error {
+func (mock *TxMock) UpdateDocumentComment(ctx context.Context, c commentCore.Comment) (commentCore.Revision, error) {
 	callInfo := struct {
 		Ctx context.Context
 		C   commentCore.Comment
@@ -783,9 +959,10 @@ func (mock *TxMock) UpdateDocumentComment(ctx context.Context, c commentCore.Com
 	mock.lockUpdateDocumentComment.Unlock()
 	if mock.UpdateDocumentCommentFunc == nil {
 		var (
-			errOut error
+			revisionOut commentCore.Revision
+			errOut      error
 		)
-		return errOut
+		return revisionOut, errOut
 	}
 	return mock.UpdateDocumentCommentFunc(ctx, c)
 }
@@ -809,7 +986,7 @@ func (mock *TxMock) UpdateDocumentCommentCalls() []struct {
 }
 
 // UpdateDocumentCommentReply calls UpdateDocumentCommentReplyFunc.
-func (mock *TxMock) UpdateDocumentCommentReply(ctx context.Context, r commentCore.Reply) error {
+func (mock *TxMock) UpdateDocumentCommentReply(ctx context.Context, r commentCore.Reply) (commentCore.ReplyRevision, error) {
 	callInfo := struct {
 		Ctx context.Context
 		R   commentCore.Reply
@@ -822,9 +999,10 @@ func (mock *TxMock) UpdateDocumentCommentReply(ctx context.Context, r commentCor
 	mock.lockUpdateDocumentCommentReply.Unlock()
 	if mock.UpdateDocumentCommentReplyFunc == nil {
 		var (
-			errOut error
+			replyRevisionOut commentCore.ReplyRevision
+			errOut           error
 		)
-		return errOut
+		return replyRevisionOut, errOut
 	}
 	return mock.UpdateDocumentCommentReplyFunc(ctx, r)
 }
@@ -848,7 +1026,7 @@ func (mock *TxMock) UpdateDocumentCommentReplyCalls() []struct {
 }
 
 // UpdateDocumentCommentStatus calls UpdateDocumentCommentStatusFunc.
-func (mock *TxMock) UpdateDocumentCommentStatus(ctx context.Context, c commentCore.Comment) error {
+func (mock *TxMock) UpdateDocumentCommentStatus(ctx context.Context, c commentCore.Comment) (bool, error) {
 	callInfo := struct {
 		Ctx context.Context
 		C   commentCore.Comment
@@ -861,9 +1039,10 @@ func (mock *TxMock) UpdateDocumentCommentStatus(ctx context.Context, c commentCo
 	mock.lockUpdateDocumentCommentStatus.Unlock()
 	if mock.UpdateDocumentCommentStatusFunc == nil {
 		var (
+			bOut   bool
 			errOut error
 		)
-		return errOut
+		return bOut, errOut
 	}
 	return mock.UpdateDocumentCommentStatusFunc(ctx, c)
 }

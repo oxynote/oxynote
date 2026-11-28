@@ -7,9 +7,11 @@ import (
 	"net/http"
 
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	tagCore "github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
 )
 
@@ -275,8 +277,36 @@ func (h *Handler) AssignBranchTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.db.AssignBranchTag(r.Context(), session.ActiveOrganizationID, documentID, branchID, inp.TagID)
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
 	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	changed, err := tx.AssignBranchTag(r.Context(), session.ActiveOrganizationID, documentID, branchID, inp.TagID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if changed {
+		err = recordTagChange(
+			r.Context(),
+			tx,
+			activity.UserActor(session.UserID),
+			activity.TypeTagAssigned,
+			*doc,
+			inp.TagID,
+		)
+		if err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -317,8 +347,36 @@ func (h *Handler) UnassignBranchTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.db.UnassignBranchTag(r.Context(), session.ActiveOrganizationID, documentID, branchID, tagID)
+	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
 	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	changed, err := tx.UnassignBranchTag(r.Context(), session.ActiveOrganizationID, documentID, branchID, tagID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if changed {
+		err = recordTagChange(
+			r.Context(),
+			tx,
+			activity.UserActor(session.UserID),
+			activity.TypeTagUnassigned,
+			*doc,
+			tagID,
+		)
+		if err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -345,12 +403,44 @@ func extractBranchPath(r *http.Request) (xid.ID, xid.ID, error) {
 	return documentID, branchID, nil
 }
 
+// recordTagChange records a tag change on the document's branch, keeping
+// the tag's name. A tag a change removed may already be deleted, so the
+// tag is fetched only once the change is known.
+func recordTagChange(
+	ctx context.Context,
+	tx Tx,
+	actor activity.Actor,
+	tp activity.Type,
+	doc documentCore.Document,
+	tagID xid.ID,
+) error {
+	t, err := tx.FetchTag(ctx, tagID, doc.OrganizationID)
+	if err != nil {
+		return err
+	}
+
+	return tx.InsertDocumentActivityEntries(ctx, activity.NewTagEntry(actor, tp, doc, *t))
+}
+
 // DB is an interface that handles communication with the tag database.
 //
 //go:generate ../../../../scripts/codegen/mock -t internal DB db
 type DB interface {
+	sqlutil.DB
 	TreeDB
 	BranchTagDB
+}
+
+// Tx is the transaction a branch's tag change runs in, with its activity
+// entry.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal Tx tx
+type Tx interface {
+	sqlutil.Tx
+	BranchTagDB
+
+	// FetchTag should fetch one tag of the organization.
+	FetchTag(ctx context.Context, id xid.ID, organizationID string) (*tagCore.Tag, error)
 }
 
 // TreeDB is an interface that handles communication with the database of
@@ -396,15 +486,20 @@ type BranchTagDB interface {
 	// carries, in the tags' display order.
 	FetchBranchTagIDs(ctx context.Context, organizationID string, documentID, branchID xid.ID) ([]xid.ID, error)
 
-	// AssignBranchTag should make a document's branch carry a tag. Assigning
-	// a tag the branch already carries should change nothing.
-	AssignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) error
+	// AssignBranchTag should make a document's branch carry a tag and
+	// report whether it did not before. Assigning a tag the branch already
+	// carries should change nothing.
+	AssignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) (bool, error)
 
-	// UnassignBranchTag should stop a document's branch carrying a tag.
-	// Removing a tag the branch does not carry should change nothing.
-	UnassignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) error
+	// UnassignBranchTag should stop a document's branch carrying a tag and
+	// report whether it carried it. Removing a tag the branch does not
+	// carry should change nothing.
+	UnassignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) (bool, error)
 
 	// FetchDocumentByBranchID should fetch a document joined against the
 	// branch identified by branchID.
 	FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, organizationID string) (*documentCore.Document, error)
+
+	// InsertDocumentActivityEntries should insert the activity entries.
+	InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error
 }

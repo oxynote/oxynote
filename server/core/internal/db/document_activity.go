@@ -19,9 +19,9 @@ import (
 // editor's edits.
 const _contentEditWindow = 30 * time.Minute
 
-// InsertDocumentActivityEntry inserts a new activity entry.
-func (a *agent) InsertDocumentActivityEntry(ctx context.Context, e activity.Entry) error {
-	return a.insertDocumentActivityEntry(ctx, a.sql, e)
+// InsertDocumentActivityEntries inserts new activity entries.
+func (a *agent) InsertDocumentActivityEntries(ctx context.Context, entries ...activity.Entry) error {
+	return a.insertDocumentActivityEntries(ctx, a.sql, entries...)
 }
 
 // RecordDocumentContentEdit grows each editor's open content edit entry
@@ -84,7 +84,7 @@ func (a *agent) RecordDocumentContentEdit(
 				continue
 			}
 
-			if err = a.insertDocumentActivityEntry(ctx, tx, activity.NewContentEdited(ed, doc, now)); err != nil {
+			if err = a.insertDocumentActivityEntries(ctx, tx, activity.NewContentEdited(ed, doc, now)); err != nil {
 				return err
 			}
 		}
@@ -93,26 +93,50 @@ func (a *agent) RecordDocumentContentEdit(
 	})
 }
 
-// insertDocumentActivityEntry inserts the entry through the given
-// executor.
-func (a *agent) insertDocumentActivityEntry(ctx context.Context, ex sqlx.ExecerContext, e activity.Entry) error {
-	q, args := a.builder.Insert("document_activity_entries").
-		SetMap(map[string]any{
-			"id":                 e.ID,
-			"fk_organization_id": e.OrganizationID,
-			"fk_document_id":     e.DocumentID,
-			"fk_branch_id":       e.BranchID,
-			"actor_kind":         e.Actor.Kind,
-			"fk_actor_id":        e.Actor.UserID,
-			"actor_client_id":    e.Actor.ClientID,
-			"category":           e.Category,
-			"type":               e.Type,
-			"target_kind":        e.Target.Kind,
-			"target_id":          e.Target.ID,
-			"metadata":           e.Metadata,
-			"created_at":         e.CreatedAt,
-			"updated_at":         e.UpdatedAt,
-		}).MustSql()
+// insertDocumentActivityEntries inserts the entries through the given
+// executor, all in one statement.
+func (a *agent) insertDocumentActivityEntries(ctx context.Context, ex sqlx.ExecerContext, entries ...activity.Entry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	b := a.builder.Insert("document_activity_entries").Columns(
+		"id",
+		"fk_organization_id",
+		"fk_document_id",
+		"fk_branch_id",
+		"actor_kind",
+		"fk_actor_id",
+		"actor_client_id",
+		"category",
+		"type",
+		"target_kind",
+		"target_id",
+		"metadata",
+		"created_at",
+		"updated_at",
+	)
+
+	for _, e := range entries {
+		b = b.Values(
+			e.ID,
+			e.OrganizationID,
+			e.DocumentID,
+			e.BranchID,
+			e.Actor.Kind,
+			e.Actor.UserID,
+			e.Actor.ClientID,
+			e.Category,
+			e.Type,
+			e.Target.Kind,
+			e.Target.ID,
+			e.Metadata,
+			e.CreatedAt,
+			e.UpdatedAt,
+		)
+	}
+
+	q, args := b.MustSql()
 
 	_, err := ex.ExecContext(ctx, q, args...)
 
@@ -201,7 +225,7 @@ func (a *agent) attachDocumentActivitySubjects(ctx context.Context, entries []ac
 }
 
 // fetchDocumentActivitySubjects loads what the targets of one kind point
-// at, keyed by target. A kind that loads nothing returns no subjects.
+// at, keyed by target. Only comment and reply revisions load a subject.
 func (a *agent) fetchDocumentActivitySubjects(
 	ctx context.Context,
 	kind activity.TargetKind,
@@ -229,6 +253,13 @@ func (a *agent) fetchDocumentActivitySubjects(
 		for _, rev := range revs {
 			res[activity.NewTarget(kind, rev.ID.String())] = rev
 		}
+	case activity.TargetKindDocument,
+		activity.TargetKindBranch,
+		activity.TargetKindUser,
+		activity.TargetKindHook,
+		activity.TargetKindTag:
+		// the client already lists these, so the entry carries only the
+		// id.
 	}
 
 	return res, nil

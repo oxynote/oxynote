@@ -13,6 +13,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func Test_UserActor(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, Actor{Kind: ActorKindUser, UserID: null.StringFrom("user1")}, UserActor("user1"))
+}
+
+func Test_SystemActor(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, Actor{Kind: ActorKindSystem}, SystemActor())
+}
+
 func Test_NewTarget(t *testing.T) {
 	t.Parallel()
 
