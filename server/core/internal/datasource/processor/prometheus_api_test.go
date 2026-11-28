@@ -2,10 +2,12 @@ package processor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
 
@@ -311,6 +313,19 @@ func Test_prometheusAPI_Metadata(t *testing.T) {
 }
 
 func Test_prometheusAPI_QueryRange(t *testing.T) {
+	// one series more than the query limit, which VictoriaMetrics returns
+	// because it ignores the limit parameter.
+	long := make(model.Matrix, 0, _queryLimit+1)
+	for i := range _queryLimit + 1 {
+		long = append(long, &model.SampleStream{
+			Metric: model.Metric{"__name__": "up", "instance": model.LabelValue(strconv.Itoa(i))},
+			Values: []model.SamplePair{{Timestamp: 1700000000000, Value: 1}},
+		})
+	}
+
+	longJSON, err := json.Marshal(long)
+	require.NoError(t, err)
+
 	cc := map[string]struct {
 		Inp     *InputMock
 		Handler http.Handler
@@ -383,6 +398,14 @@ func Test_prometheusAPI_QueryRange(t *testing.T) {
 			Handler: testutil.JSONHandler("/select/0/prometheus/api/v1/query_range", http.StatusOK, `{"status":"success","data":{"resultType":"matrix","result":[]}}`),
 			URLPath: "/select/0/prometheus",
 			Result:  &PrometheusQueryResult{Type: model.ValMatrix, Result: model.Matrix{}},
+		},
+		"Successful query with more series than the query limit": {
+			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusOK, `{"status":"success","data":{"resultType":"matrix","result":`+string(longJSON)+`}}`),
+			Result: &PrometheusQueryResult{
+				Warnings: []string{"results truncated due to limit"},
+				Type:     model.ValMatrix,
+				Result:   long[:_queryLimit],
+			},
 		},
 		"Successful query": {
 			Handler: testutil.JSONHandler("/api/v1/query_range", http.StatusOK, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"up"},"values":[[1700000000,"1"]]}]}}`),

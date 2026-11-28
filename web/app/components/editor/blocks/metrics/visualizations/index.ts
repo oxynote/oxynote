@@ -607,8 +607,10 @@ export function calculateYAxisBounds(
 		return { min: 0, max: 100 }
 	}
 
-	const dataMin = Math.min(...allValues)
-	const dataMax = Math.max(...allValues)
+	// a spread passes every value as an argument, which overflows the stack
+	// past about 125k values
+	const dataMin = allValues.reduce((a, b) => Math.min(a, b))
+	const dataMax = allValues.reduce((a, b) => Math.max(a, b))
 	const range = dataMax - dataMin
 
 	// Handle zero range (all values are the same)
