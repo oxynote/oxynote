@@ -505,9 +505,9 @@ export function yAxisLabelFormatter(
 
 		// misc
 		case VisualizationMiscUnit.Percent0to100:
-			return `${value}%`
+			return `${formatScaledNumber(value)}%`
 		case VisualizationMiscUnit.Percent0to1:
-			return `${value * 100}%`
+			return `${formatScaledNumber(value * 100)}%`
 	}
 
 	return formatShortNumber(value)

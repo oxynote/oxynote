@@ -831,10 +831,33 @@ describe("yAxisLabelFormatter", () => {
 	it.for([
 		{ unit: VisualizationMiscUnit.Percent0to100, value: 42, expected: "42%" },
 		{ unit: VisualizationMiscUnit.Percent0to1, value: 0.5, expected: "50%" },
+		{ unit: VisualizationMiscUnit.Percent0to1, value: 0.57, expected: "57%" },
+		{ unit: VisualizationMiscUnit.Percent0to1, value: 0.07, expected: "7%" },
+		{ unit: VisualizationMiscUnit.Percent0to1, value: 0.29, expected: "29%" },
+		{
+			unit: VisualizationMiscUnit.Percent0to100,
+			value: 0.1 + 0.2,
+			expected: "0.3%",
+		},
+		{
+			unit: VisualizationMiscUnit.Percent0to100,
+			value: 12.345678,
+			expected: "12.346%",
+		},
 	])(
 		"renders $value $unit as $expected",
 		({ unit, value, expected }, { expect }) => {
 			expect(yAxisLabelFormatter({ type: unit }, value)).toBe(expected)
+		},
+	)
+
+	it.for([
+		{ unit: VisualizationMiscUnit.Percent0to100, value: 12.345678 },
+		{ unit: VisualizationMiscUnit.Percent0to1, value: 0.12345678 },
+	])(
+		"applies the configured decimal count to $unit",
+		({ unit, value }, { expect }) => {
+			expect(yAxisLabelFormatter({ type: unit }, value, 2)).toBe("12.35%")
 		},
 	)
 
