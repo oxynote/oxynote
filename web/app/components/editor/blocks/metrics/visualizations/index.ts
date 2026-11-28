@@ -298,26 +298,40 @@ const ONE_DAY = 24 * ONE_HOUR
 const ONE_YEAR = 365 * ONE_DAY
 
 /**
- * Computes the time range of the series data and returns a formatter
- * function for x-axis labels. Below a day all ticks use the same format
- * so labels never mix e.g. "16:34" with "16:34:40". From a day up, a tick
- * at midnight shows the date and any other tick its time of day.
+ * Computes the time range of the series data (or uses the provided time range)
+ * and returns a formatter function for x-axis labels. Below a day all ticks use
+ * the same format so labels never mix e.g. "16:34" with "16:34:40". From a day
+ * up, a tick at midnight shows the date and any other tick its time of day.
  */
 export function xAxisLabelFormatter(
 	data: MultipleLineChartData | MultipleBarChartData,
+	timeRange?: { from: Date; to: Date } | null,
 ): (value: number) => string {
-	let minTime = Infinity
-	let maxTime = -Infinity
+	let range: number
 
-	for (const series of data) {
-		for (const [date] of series.data) {
-			const t = date.getTime()
-			if (t < minTime) minTime = t
-			if (t > maxTime) maxTime = t
+	const minTime = timeRange?.from.getTime()
+	const maxTime = timeRange?.to.getTime()
+	if (
+		typeof minTime === "number" &&
+		!Number.isNaN(minTime) &&
+		typeof maxTime === "number" &&
+		!Number.isNaN(maxTime)
+	) {
+		range = maxTime - minTime
+	} else {
+		let minDataTime = Infinity
+		let maxDataTime = -Infinity
+
+		for (const series of data) {
+			for (const [date] of series.data) {
+				const t = date.getTime()
+				if (t < minDataTime) minDataTime = t
+				if (t > maxDataTime) maxDataTime = t
+			}
 		}
-	}
 
-	const range = maxTime - minTime
+		range = maxDataTime - minDataTime
+	}
 
 	const pad = (n: number) => String(n).padStart(2, "0")
 

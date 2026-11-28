@@ -39,7 +39,11 @@ export interface ChartOption {
 		className?: string
 	}
 	grid: { top: number; bottom: number }
-	xAxis: { axisLabel: { formatter: (value: number) => string } }
+	xAxis: {
+		min?: number
+		max?: number
+		axisLabel: { formatter: (value: number) => string }
+	}
 	yAxis: {
 		min?: number
 		max?: number

@@ -670,6 +670,15 @@ describe("xAxisLabelFormatter", () => {
 
 		expect(format(at(15, 30, 0).getTime())).toBe("15:30")
 	})
+
+	it("uses timeRange when provided instead of data range", ({ expect }) => {
+		const format = xAxisLabelFormatter(series(at(15, 30, 0), at(15, 30, 30)), {
+			from: at(12, 0, 0),
+			to: at(18, 0, 0),
+		})
+
+		expect(format(at(15, 30, 0).getTime())).toBe("15:30")
+	})
 })
 
 describe("yAxisLabelFormatter", () => {

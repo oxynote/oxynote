@@ -767,6 +767,11 @@ describe("<VisualizationContainer>", { concurrent: false }, () => {
 			expect(
 				wrapper.findComponent({ name: "LineChart" }).props("seriesData"),
 			).toHaveLength(3)
+			const timeRange = wrapper
+				.findComponent({ name: "LineChart" })
+				.props("timeRange") as { from: Date; to: Date }
+			expect(timeRange.from).toBeInstanceOf(Date)
+			expect(timeRange.to).toBeInstanceOf(Date)
 			expect(calls).toHaveLength(0)
 		})
 

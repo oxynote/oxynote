@@ -64,6 +64,7 @@ const props = defineProps<{
 	showLegend?: boolean
 	thresholds?: LineChartThreshold[]
 	axisBounds?: { min?: number | null; max?: number | null }
+	timeRange?: { from: Date; to: Date } | null
 	disableAnimation?: boolean
 }>()
 
@@ -166,6 +167,10 @@ const option = computed<ECOption>(() => {
 		},
 		xAxis: {
 			type: "time",
+			...(props.timeRange && {
+				min: props.timeRange.from.getTime(),
+				max: props.timeRange.to.getTime(),
+			}),
 			axisTick: {
 				show: false,
 			},
@@ -184,7 +189,7 @@ const option = computed<ECOption>(() => {
 				fontWeight: "normal",
 				fontFamily: st.fontFamily,
 				color: st.lineChart.text,
-				formatter: xAxisLabelFormatter(props.seriesData),
+				formatter: xAxisLabelFormatter(props.seriesData, props.timeRange),
 			},
 		},
 		yAxis: {

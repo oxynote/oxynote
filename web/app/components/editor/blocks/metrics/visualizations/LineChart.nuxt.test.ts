@@ -236,6 +236,28 @@ describe("<LineChart>", { concurrent: false }, () => {
 		expect(label(new Date(2026, 9, 29).getTime())).toBe("Oct 29")
 	})
 
+	it("sets x-axis min and max when timeRange is provided", async ({
+		expect,
+	}) => {
+		const from = new Date("2026-01-01T00:00:00Z")
+		const to = new Date("2026-01-01T03:00:00Z")
+		const wrapper = await mountLine({ timeRange: { from, to } })
+
+		const option = chartOption(wrapper)
+		expect(option.xAxis.min).toBe(from.getTime())
+		expect(option.xAxis.max).toBe(to.getTime())
+	})
+
+	it("leaves x-axis min and max undefined when timeRange is not provided", async ({
+		expect,
+	}) => {
+		const wrapper = await mountLine()
+
+		const option = chartOption(wrapper)
+		expect(option.xAxis.min).toBeUndefined()
+		expect(option.xAxis.max).toBeUndefined()
+	})
+
 	describe("tooltip", () => {
 		it("stays inside the chart", async ({ expect }) => {
 			const wrapper = await mountLine()

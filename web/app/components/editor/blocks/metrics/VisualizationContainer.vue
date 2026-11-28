@@ -12,6 +12,7 @@ import {
 	RefreshInterval,
 	refreshIntervalToMs,
 	resolveTimeRange,
+	TimeRangePreset,
 } from "~/utils/time-range"
 import { paletteColors } from "~/assets/css"
 import {
@@ -329,6 +330,30 @@ const data = computed<{
 	)
 })
 
+const activeTimeRange = computed<{ from: Date; to: Date } | null>(() => {
+	// track data updates so relative time ranges re-resolve when data refreshes
+	// eslint-disable-next-line @typescript-eslint/no-unused-expressions
+	fetchMetricData.state.value
+
+	const preset = drawnSimulationPreset.value
+		? (metricVariables.timeRange(props.config.timeRange) ??
+			TimeRangePreset.Last5Minutes)
+		: metricVariables.timeRange(
+				canUseDebouncedConfigInParams.value
+					? debouncedConfig.value.timeRange
+					: props.config.timeRange,
+			)
+
+	if (!preset) {
+		return null
+	}
+
+	return resolveTimeRange(
+		preset,
+		drawnSimulationPreset.value ? simulationNow.value : undefined,
+	)
+})
+
 useIntervalFn(
 	() => {
 		void refreshData()
@@ -582,6 +607,7 @@ function openModal() {
 				:title="debouncedConfig.title || undefined"
 				show-legend
 				:thresholds="processedThresholds"
+				:time-range="activeTimeRange"
 				:title-right-padding="props.titleRightPadding"
 				:title-offset-top="props.titleOffsetTop"
 				:unit="debouncedConfig.unit"
@@ -595,6 +621,7 @@ function openModal() {
 				:series-data="data.data as MultipleBarChartData"
 				show-legend
 				:thresholds="processedThresholds"
+				:time-range="activeTimeRange"
 				:title-right-padding="props.titleRightPadding"
 				:title-offset-top="props.titleOffsetTop"
 				:unit="debouncedConfig.unit"
