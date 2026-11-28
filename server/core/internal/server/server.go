@@ -27,6 +27,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/block"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/document/activity"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/document/comment"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/document/files"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/document/hook"
@@ -125,6 +126,7 @@ type Server struct {
 		document     *document.Handler
 		tag          *tag.Handler
 		variable     *variable.Handler
+		activity     *activity.Handler
 		comment      *comment.Handler
 		files        *files.Handler
 		hook         *hook.Handler
@@ -195,6 +197,7 @@ func NewServer(
 	srv.handlers.document = document.NewHandler(log, db, hookMan, searcher, searchQueue, notifier, storageClient)
 	srv.handlers.tag = tag.NewHandler(log, db)
 	srv.handlers.variable = variable.NewHandler(log, variableMan)
+	srv.handlers.activity = activity.NewHandler(log, db)
 	srv.handlers.comment = comment.NewHandler(log, db, notifier)
 	srv.handlers.files = files.NewHandler(log, db, storageClient, opts.PublicURL)
 	srv.handlers.hook = hook.NewHandler(log, db, hookMan)
@@ -375,6 +378,7 @@ type DB interface {
 	auth.DB
 	assistant.DB
 	document.DB
+	activity.DB
 	comment.DB
 	files.DB
 	hook.DB

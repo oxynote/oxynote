@@ -6,6 +6,7 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
+	"github.com/guregu/null/v5"
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/activity"
@@ -125,11 +126,14 @@ func (a *agent) FetchDocumentActivityEntries(
 	branchID xid.ID,
 	organizationID string,
 	qr activity.Query,
-) ([]activity.Entry, error) {
+) (activity.Page, error) {
+	size := qr.PageSize()
+
+	// one entry past the page tells whether a next page exists.
 	b := a.selectDocumentActivityEntry(a.builder.Select(), organizationID).
 		Where(sq.Eq{"document_activity_entries.fk_branch_id": branchID}).
 		OrderBy("document_activity_entries.created_at DESC", "document_activity_entries.id DESC").
-		Limit(qr.Limit)
+		Limit(size + 1)
 
 	if len(qr.Categories) > 0 {
 		b = b.Where(sq.Eq{"document_activity_entries.category": qr.Categories})
@@ -147,19 +151,24 @@ func (a *agent) FetchDocumentActivityEntries(
 
 	q, args := b.MustSql()
 
-	entries := []activity.Entry{}
+	page := activity.Page{Entries: []activity.Entry{}}
 
-	if err := sqlx.SelectContext(ctx, a.sql, &entries, q, args...); err != nil {
-		return nil, err
+	if err := sqlx.SelectContext(ctx, a.sql, &page.Entries, q, args...); err != nil {
+		return activity.Page{}, err
 	}
 
-	if err := a.attachDocumentActivitySubjects(ctx, entries, organizationID); err != nil {
+	if uint64(len(page.Entries)) > size {
+		page.Entries = page.Entries[:size]
+		page.Next = null.ValueFrom(page.Entries[size-1].ID)
+	}
+
+	if err := a.attachDocumentActivitySubjects(ctx, page.Entries, organizationID); err != nil {
 		// NOCOV: a test cannot make the subject reads fail without
 		// failing the entry read first.
-		return nil, err
+		return activity.Page{}, err
 	}
 
-	return entries, nil
+	return page, nil
 }
 
 // attachDocumentActivitySubjects sets what each entry's target points

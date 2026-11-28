@@ -419,7 +419,7 @@ func Test_agent_FetchDocumentActivityEntries(t *testing.T) {
 		BranchID         xid.ID
 		OrganizationID   string
 		Query            activity.Query
-		Result           []activity.Entry
+		Result           activity.Page
 		Err              error
 	}
 
@@ -442,17 +442,30 @@ func Test_agent_FetchDocumentActivityEntries(t *testing.T) {
 				BranchID:       branch.BranchID,
 				OrganizationID: branch.OrganizationID,
 				Query:          activity.Query{Limit: 10},
-				Result:         []activity.Entry{},
+				Result:         activity.Page{Entries: []activity.Entry{}},
 			}
 		},
-		"Newest entries up to the limit": func(t *testing.T, db *DB) tcase {
+		"Newest entries up to the limit, with the next cursor": func(t *testing.T, db *DB) tcase {
 			entries := prepDocumentActivityEntries(t, db, 3, nil)
 
 			return tcase{
 				BranchID:       entries[0].BranchID,
 				OrganizationID: entries[0].OrganizationID,
 				Query:          activity.Query{Limit: 2},
-				Result:         entries[:2],
+				Result: activity.Page{
+					Entries: entries[:2],
+					Next:    null.ValueFrom(entries[1].ID),
+				},
+			}
+		},
+		"A full last page has no next cursor": func(t *testing.T, db *DB) tcase {
+			entries := prepDocumentActivityEntries(t, db, 2, nil)
+
+			return tcase{
+				BranchID:       entries[0].BranchID,
+				OrganizationID: entries[0].OrganizationID,
+				Query:          activity.Query{Limit: 2},
+				Result:         activity.Page{Entries: entries},
 			}
 		},
 		"Entries after the cursor": func(t *testing.T, db *DB) tcase {
@@ -462,7 +475,7 @@ func Test_agent_FetchDocumentActivityEntries(t *testing.T) {
 				BranchID:       entries[0].BranchID,
 				OrganizationID: entries[0].OrganizationID,
 				Query:          activity.Query{Before: entries[0].ID, Limit: 10},
-				Result:         entries[1:],
+				Result:         activity.Page{Entries: entries[1:]},
 			}
 		},
 		"Entries with the same time are ordered by id": func(t *testing.T, db *DB) tcase {
@@ -478,7 +491,7 @@ func Test_agent_FetchDocumentActivityEntries(t *testing.T) {
 				BranchID:       entries[0].BranchID,
 				OrganizationID: entries[0].OrganizationID,
 				Query:          activity.Query{Before: entries[0].ID, Limit: 10},
-				Result:         entries[1:],
+				Result:         activity.Page{Entries: entries[1:]},
 			}
 		},
 		"Cursor from another branch": func(t *testing.T, db *DB) tcase {
@@ -489,7 +502,7 @@ func Test_agent_FetchDocumentActivityEntries(t *testing.T) {
 				BranchID:       entries[0].BranchID,
 				OrganizationID: entries[0].OrganizationID,
 				Query:          activity.Query{Before: other.ID, Limit: 10},
-				Result:         []activity.Entry{},
+				Result:         activity.Page{Entries: []activity.Entry{}},
 			}
 		},
 		"Entries of the given categories": func(t *testing.T, db *DB) tcase {
@@ -511,7 +524,7 @@ func Test_agent_FetchDocumentActivityEntries(t *testing.T) {
 					Categories: []activity.Category{activity.CategoryTag, activity.CategoryReview},
 					Limit:      10,
 				},
-				Result: []activity.Entry{entries[0], entries[2]},
+				Result: activity.Page{Entries: []activity.Entry{entries[0], entries[2]}},
 			}
 		},
 		"Entries of another branch are left out": func(t *testing.T, db *DB) tcase {
@@ -522,7 +535,7 @@ func Test_agent_FetchDocumentActivityEntries(t *testing.T) {
 				BranchID:       entries[0].BranchID,
 				OrganizationID: entries[0].OrganizationID,
 				Query:          activity.Query{Limit: 10},
-				Result:         entries,
+				Result:         activity.Page{Entries: entries},
 			}
 		},
 		"Another organization": func(t *testing.T, db *DB) tcase {
@@ -532,7 +545,7 @@ func Test_agent_FetchDocumentActivityEntries(t *testing.T) {
 				BranchID:       e.BranchID,
 				OrganizationID: prepOrganizations(t, db, 1)[0],
 				Query:          activity.Query{Limit: 10},
-				Result:         []activity.Entry{},
+				Result:         activity.Page{Entries: []activity.Entry{}},
 			}
 		},
 		"Comment entries carry the text they point at": func(t *testing.T, db *DB) tcase {
@@ -573,7 +586,7 @@ func Test_agent_FetchDocumentActivityEntries(t *testing.T) {
 				BranchID:       c.BranchID,
 				OrganizationID: c.OrganizationID,
 				Query:          activity.Query{Limit: 10},
-				Result:         entries,
+				Result:         activity.Page{Entries: entries},
 			}
 		},
 	}

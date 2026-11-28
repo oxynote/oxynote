@@ -115,3 +115,22 @@ func Test_Metadata_Scan(t *testing.T) {
 		})
 	}
 }
+
+func Test_Query_PageSize(t *testing.T) {
+	cc := map[string]struct {
+		Query  Query
+		Result uint64
+	}{
+		"No limit":            {Result: _defaultLimit},
+		"Limit inside a page": {Query: Query{Limit: 10}, Result: 10},
+		"Limit above the max": {Query: Query{Limit: _maxLimit + 1}, Result: _maxLimit},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Query.PageSize())
+		})
+	}
+}
