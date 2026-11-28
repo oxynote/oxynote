@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/nuxt"
 // https://docs.sentry.io/platforms/javascript/guides/nuxt/manual-setup/
 Sentry.init({
 	dsn: useRuntimeConfig().public.sentryDSN,
+	release: useRuntimeConfig().public.appVersion || undefined,
 
 	// every category the SDK may attach, stated in full: an omitted field
 	// takes a default that collects. Errors and stack traces only, since

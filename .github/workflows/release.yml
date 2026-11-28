@@ -86,9 +86,7 @@ jobs:
           # shallow clone that has no tags in it.
           fetch-depth: 0
 
-      # the binary baked into the image must come from goreleaser and must
-      # not be a snapshot: a snapshot reports itself as version dev running
-      # in a dev environment, which is not what gets published.
+      # the binary baked into the image must come from goreleaser.
       - name: Set up Go
         uses: actions/setup-go@v7
         with:

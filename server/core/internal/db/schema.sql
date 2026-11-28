@@ -900,6 +900,18 @@ CREATE INDEX user_sessions_fk_user_id_idx ON public.user_sessions USING btree (f
 ALTER TABLE ONLY public.user_sessions
     ADD CONSTRAINT user_sessions_fk_user_id_fkey FOREIGN KEY (fk_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
+CREATE TABLE public.user_spotlights (
+    fk_user_id text NOT NULL,
+    star text,
+    CONSTRAINT user_spotlights_star_check CHECK ((star = ANY (ARRAY['shown'::text, 'dismissed'::text])))
+);
+
+ALTER TABLE ONLY public.user_spotlights
+    ADD CONSTRAINT user_spotlights_pkey PRIMARY KEY (fk_user_id);
+
+ALTER TABLE ONLY public.user_spotlights
+    ADD CONSTRAINT user_spotlights_fk_user_id_fkey FOREIGN KEY (fk_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
 CREATE TABLE public.user_tag_settings (
     fk_user_id text NOT NULL,
     fk_tag_id text NOT NULL,

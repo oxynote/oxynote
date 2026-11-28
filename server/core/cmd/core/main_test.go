@@ -142,6 +142,27 @@ func Test_fail(t *testing.T) {
 	}
 }
 
+func Test_sentryEnvironment(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		AppVersion string
+		Result     string
+	}{
+		"Release version":   {AppVersion: "0.11.0", Result: "production"},
+		"Development build": {AppVersion: "dev", Result: "development"},
+		"No version":        {AppVersion: "", Result: "development"},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, sentryEnvironment(c.AppVersion))
+		})
+	}
+}
+
 func Test_warnDisabled(t *testing.T) {
 	t.Parallel()
 

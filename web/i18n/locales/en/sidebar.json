@@ -43,6 +43,21 @@
 			"shortcuts": "Keyboard Shortcuts",
 			"shortcuts-narrow": "Shortcuts"
 		},
+		"spotlight": {
+			"dismiss": "Dismiss",
+			"new-tab-hint": "Opens in a new tab",
+			"update": {
+				"title": "Oxynote {latest} is out",
+				"text": "{current} is the version this workspace uses. Update to get the latest fixes and features.",
+				"action": "Release notes",
+				"row": "Update available"
+			},
+			"star": {
+				"title": "Oxynote is open source and free",
+				"text": "If you like using it, a star on GitHub helps the project grow.",
+				"action": "Star on GitHub"
+			}
+		},
 		"item-collapse-trigger-button": {
 			"open-screen-reader-hint": "Open Sub Pages",
 			"close-screen-reader-hint": "Close Sub Pages"

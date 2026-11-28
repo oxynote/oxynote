@@ -575,7 +575,13 @@ func Test_DB_moveSQLMigrateHistory(t *testing.T) {
 			}
 		},
 		"Full history": func(t *testing.T, db *DB) tcase {
-			_, err := db.sql.Exec("DROP TABLE goose_db_version")
+			// a database from before goose stops at 012. Roll the schema
+			// back to it, or goose sees the newer migrations as unapplied
+			// and runs them again on tables that already exist.
+			_, err := db.migrations.DownTo(context.Background(), 12)
+			require.NoError(t, err)
+
+			_, err = db.sql.Exec("DROP TABLE goose_db_version")
 			require.NoError(t, err)
 
 			prepSQLMigrateHistory(t, db, ids...)
@@ -598,7 +604,13 @@ func Test_DB_moveSQLMigrateHistory(t *testing.T) {
 			}
 		},
 		"History outside the public schema": func(t *testing.T, db *DB) tcase {
-			_, err := db.sql.Exec("DROP TABLE goose_db_version")
+			// a database from before goose stops at 012. Roll the schema
+			// back to it, or goose sees the newer migrations as unapplied
+			// and runs them again on tables that already exist.
+			_, err := db.migrations.DownTo(context.Background(), 12)
+			require.NoError(t, err)
+
+			_, err = db.sql.Exec("DROP TABLE goose_db_version")
 			require.NoError(t, err)
 
 			prepSQLMigrateHistory(t, db, ids...)

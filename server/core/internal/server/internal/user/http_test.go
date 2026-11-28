@@ -10,8 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
+	userCore "github.com/oxynote/oxynote/server/core/internal/user"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -392,6 +394,294 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 
 			for _, ch := range c.Checks {
 				ch(t, c.DB, c.Storer, rec)
+			}
+		})
+	}
+}
+
+func Test_Handler_FetchUserSpotlights(t *testing.T) {
+	type check func(*testing.T, *DBMock, *httptest.ResponseRecorder)
+
+	checks := func(cc ...check) []check { return cc }
+
+	hasResp := func(code int, body string) check {
+		return func(t *testing.T, _ *DBMock, rec *httptest.ResponseRecorder) {
+			testutil.AssertResponse(t, rec, code, body)
+		}
+	}
+
+	wasFetchUserSpotlightsCalled := func(count int) check {
+		return func(t *testing.T, db *DBMock, _ *httptest.ResponseRecorder) {
+			ff := db.FetchUserSpotlightsCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "u1", ff[0].UserID)
+		}
+	}
+
+	wasFetchUserSpotlightActivityCalled := func(count int) check {
+		return func(t *testing.T, db *DBMock, _ *httptest.ResponseRecorder) {
+			ff := db.FetchUserSpotlightActivityCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "u1", ff[0].UserID)
+		}
+	}
+
+	wasUpsertUserSpotlightsCalled := func(count int) check {
+		return func(t *testing.T, db *DBMock, _ *httptest.ResponseRecorder) {
+			ff := db.UpsertUserSpotlightsCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "u1", ff[0].UserID)
+			assert.Equal(t, userCore.SpotlightsInput{Star: userCore.SpotlightStateShown}, ff[0].Inp)
+		}
+	}
+
+	// earned is an activity that earns the star spotlight at any time.
+	earned := userCore.SpotlightActivity{CreatedDocuments: 100}
+
+	stubDB := func(
+		spotlights userCore.Spotlights,
+		activity userCore.SpotlightActivity,
+		fetchErr, activityErr, upsertErr error,
+	) *DBMock {
+		return &DBMock{
+			FetchUserSpotlightsFunc: func(context.Context, string) (userCore.Spotlights, error) {
+				return spotlights, fetchErr
+			},
+			FetchUserSpotlightActivityFunc: func(context.Context, string) (userCore.SpotlightActivity, error) {
+				return activity, activityErr
+			},
+			UpsertUserSpotlightsFunc: func(context.Context, string, userCore.SpotlightsInput) error {
+				return upsertErr
+			},
+		}
+	}
+
+	cc := map[string]struct {
+		DB        *DBMock
+		NoSession bool
+		Checks    []check
+	}{
+		"No session in context": {
+			DB:        &DBMock{},
+			NoSession: true,
+			Checks: checks(
+				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
+				wasFetchUserSpotlightsCalled(0),
+				wasFetchUserSpotlightActivityCalled(0),
+				wasUpsertUserSpotlightsCalled(0),
+			),
+		},
+		"Error returned by DB.FetchUserSpotlights": {
+			DB: stubDB(userCore.Spotlights{}, earned, assert.AnError, nil, nil),
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasFetchUserSpotlightsCalled(1),
+				wasFetchUserSpotlightActivityCalled(0),
+				wasUpsertUserSpotlightsCalled(0),
+			),
+		},
+		"Error returned by DB.FetchUserSpotlightActivity": {
+			DB: stubDB(userCore.Spotlights{}, earned, nil, assert.AnError, nil),
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasFetchUserSpotlightsCalled(1),
+				wasFetchUserSpotlightActivityCalled(1),
+				wasUpsertUserSpotlightsCalled(0),
+			),
+		},
+		"Error returned by DB.UpsertUserSpotlights": {
+			DB: stubDB(userCore.Spotlights{}, earned, nil, nil, assert.AnError),
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasFetchUserSpotlightsCalled(1),
+				wasFetchUserSpotlightActivityCalled(1),
+				wasUpsertUserSpotlightsCalled(1),
+			),
+		},
+		"Successful retrieval of an unset state that is not earned": {
+			DB: stubDB(userCore.Spotlights{}, userCore.SpotlightActivity{}, nil, nil, nil),
+			Checks: checks(
+				hasResp(http.StatusOK, `{"star":null}`),
+				wasFetchUserSpotlightsCalled(1),
+				wasFetchUserSpotlightActivityCalled(1),
+				wasUpsertUserSpotlightsCalled(0),
+			),
+		},
+		"Successful retrieval of an unset state that is earned": {
+			DB: stubDB(userCore.Spotlights{}, earned, nil, nil, nil),
+			Checks: checks(
+				hasResp(http.StatusOK, `{"star":"shown"}`),
+				wasFetchUserSpotlightsCalled(1),
+				wasFetchUserSpotlightActivityCalled(1),
+				wasUpsertUserSpotlightsCalled(1),
+			),
+		},
+		"Successful retrieval of a shown state": {
+			DB: stubDB(userCore.Spotlights{Star: null.ValueFrom(userCore.SpotlightStateShown)}, earned, nil, nil, nil),
+			Checks: checks(
+				hasResp(http.StatusOK, `{"star":"shown"}`),
+				wasFetchUserSpotlightsCalled(1),
+				wasFetchUserSpotlightActivityCalled(0),
+				wasUpsertUserSpotlightsCalled(0),
+			),
+		},
+		"Successful retrieval of a dismissed state": {
+			DB: stubDB(userCore.Spotlights{Star: null.ValueFrom(userCore.SpotlightStateDismissed)}, earned, nil, nil, nil),
+			Checks: checks(
+				hasResp(http.StatusOK, `{"star":"dismissed"}`),
+				wasFetchUserSpotlightsCalled(1),
+				wasFetchUserSpotlightActivityCalled(0),
+				wasUpsertUserSpotlightsCalled(0),
+			),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl := Handler{
+				log: slog.New(slog.DiscardHandler),
+				db:  c.DB,
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
+
+			if !c.NoSession {
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
+			}
+
+			rec := httptest.NewRecorder()
+
+			hdl.FetchUserSpotlights(rec, req)
+
+			for _, ch := range c.Checks {
+				ch(t, c.DB, rec)
+			}
+		})
+	}
+}
+
+func Test_Handler_UpdateUserSpotlights(t *testing.T) {
+	type check func(*testing.T, *DBMock, *httptest.ResponseRecorder)
+
+	checks := func(cc ...check) []check { return cc }
+
+	hasResp := func(code int, body string) check {
+		return func(t *testing.T, _ *DBMock, rec *httptest.ResponseRecorder) {
+			testutil.AssertResponse(t, rec, code, body)
+		}
+	}
+
+	wasUpsertUserSpotlightsCalled := func(count int, inp userCore.SpotlightsInput) check {
+		return func(t *testing.T, db *DBMock, _ *httptest.ResponseRecorder) {
+			ff := db.UpsertUserSpotlightsCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "u1", ff[0].UserID)
+			assert.Equal(t, inp, ff[0].Inp)
+		}
+	}
+
+	cc := map[string]struct {
+		DB        *DBMock
+		NoSession bool
+		JSON      string
+		Checks    []check
+	}{
+		"No session in context": {
+			DB:        &DBMock{},
+			NoSession: true,
+			JSON:      `{"star":"shown"}`,
+			Checks: checks(
+				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
+				wasUpsertUserSpotlightsCalled(0, userCore.SpotlightsInput{}),
+			),
+		},
+		"Invalid JSON": {
+			DB:   &DBMock{},
+			JSON: `{"star":`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"request.invalid_json","message":"invalid JSON body"}`),
+				wasUpsertUserSpotlightsCalled(0, userCore.SpotlightsInput{}),
+			),
+		},
+		"Invalid star state": {
+			DB:   &DBMock{},
+			JSON: `{"star":"hidden"}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"user.invalid_spotlight_state","message":"invalid spotlight state"}`),
+				wasUpsertUserSpotlightsCalled(0, userCore.SpotlightsInput{}),
+			),
+		},
+		"Error returned by DB.UpsertUserSpotlights": {
+			DB: &DBMock{
+				UpsertUserSpotlightsFunc: func(context.Context, string, userCore.SpotlightsInput) error {
+					return assert.AnError
+				},
+			},
+			JSON: `{"star":"shown"}`,
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasUpsertUserSpotlightsCalled(1, userCore.SpotlightsInput{Star: userCore.SpotlightStateShown}),
+			),
+		},
+		"Successful update": {
+			DB:   &DBMock{},
+			JSON: `{"star":"dismissed"}`,
+			Checks: checks(
+				hasResp(http.StatusNoContent, ""),
+				wasUpsertUserSpotlightsCalled(1, userCore.SpotlightsInput{Star: userCore.SpotlightStateDismissed}),
+			),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl := Handler{
+				log: slog.New(slog.DiscardHandler),
+				db:  c.DB,
+			}
+
+			req := httptest.NewRequest(http.MethodPut, "http://test.com/", strings.NewReader(c.JSON))
+
+			if !c.NoSession {
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
+			}
+
+			rec := httptest.NewRecorder()
+
+			hdl.UpdateUserSpotlights(rec, req)
+
+			for _, ch := range c.Checks {
+				ch(t, c.DB, rec)
 			}
 		})
 	}

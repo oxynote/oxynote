@@ -25,6 +25,7 @@ export interface SentryClient {
 	init(options: {
 		dsn: string
 		environment: string
+		release: string
 		tracesSampleRate: number
 		dataCollection: DataCollection
 	}): void
@@ -58,6 +59,7 @@ const noop: CrashReporter = {
 export function createCrashReporter(
 	client: SentryClient,
 	dsn: string,
+	release: string,
 	disabled: boolean,
 ): CrashReporter {
 	if (dsn === "" || disabled) {
@@ -67,6 +69,7 @@ export function createCrashReporter(
 	client.init({
 		dsn,
 		environment: "production",
+		release,
 		// every category the SDK may attach, stated in full: an
 		// omitted field takes a default that collects. Errors and
 		// stack traces only, since anything else here would carry

@@ -19,6 +19,7 @@ import (
 	orgCore "github.com/oxynote/oxynote/server/core/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
+	"github.com/oxynote/oxynote/server/core/internal/user"
 	"github.com/oxynote/oxynote/server/core/internal/variable"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
@@ -212,6 +213,12 @@ var _ DB = &DBMock{}
 //			FetchTagTreeFunc: func(ctx context.Context, organizationID string, userID string) (tag.Summaries, error) {
 //				panic("mock out the FetchTagTree method")
 //			},
+//			FetchUserSpotlightActivityFunc: func(ctx context.Context, userID string) (user.SpotlightActivity, error) {
+//				panic("mock out the FetchUserSpotlightActivity method")
+//			},
+//			FetchUserSpotlightsFunc: func(ctx context.Context, userID string) (user.Spotlights, error) {
+//				panic("mock out the FetchUserSpotlights method")
+//			},
 //			InsertBranchReviewerFunc: func(ctx context.Context, reviewer document.BranchReviewer) error {
 //				panic("mock out the InsertBranchReviewer method")
 //			},
@@ -328,6 +335,9 @@ var _ DB = &DBMock{}
 //			},
 //			UpsertDocumentMaintainersFunc: func(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error {
 //				panic("mock out the UpsertDocumentMaintainers method")
+//			},
+//			UpsertUserSpotlightsFunc: func(ctx context.Context, userID string, inp user.SpotlightsInput) error {
+//				panic("mock out the UpsertUserSpotlights method")
 //			},
 //		}
 //
@@ -513,6 +523,12 @@ type DBMock struct {
 	// FetchTagTreeFunc mocks the FetchTagTree method.
 	FetchTagTreeFunc func(ctx context.Context, organizationID string, userID string) (tag.Summaries, error)
 
+	// FetchUserSpotlightActivityFunc mocks the FetchUserSpotlightActivity method.
+	FetchUserSpotlightActivityFunc func(ctx context.Context, userID string) (user.SpotlightActivity, error)
+
+	// FetchUserSpotlightsFunc mocks the FetchUserSpotlights method.
+	FetchUserSpotlightsFunc func(ctx context.Context, userID string) (user.Spotlights, error)
+
 	// InsertBranchReviewerFunc mocks the InsertBranchReviewer method.
 	InsertBranchReviewerFunc func(ctx context.Context, reviewer document.BranchReviewer) error
 
@@ -629,6 +645,9 @@ type DBMock struct {
 
 	// UpsertDocumentMaintainersFunc mocks the UpsertDocumentMaintainers method.
 	UpsertDocumentMaintainersFunc func(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error
+
+	// UpsertUserSpotlightsFunc mocks the UpsertUserSpotlights method.
+	UpsertUserSpotlightsFunc func(ctx context.Context, userID string, inp user.SpotlightsInput) error
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -1157,6 +1176,20 @@ type DBMock struct {
 			// UserID is the userID argument value.
 			UserID string
 		}
+		// FetchUserSpotlightActivity holds details about calls to the FetchUserSpotlightActivity method.
+		FetchUserSpotlightActivity []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// UserID is the userID argument value.
+			UserID string
+		}
+		// FetchUserSpotlights holds details about calls to the FetchUserSpotlights method.
+		FetchUserSpotlights []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// UserID is the userID argument value.
+			UserID string
+		}
 		// InsertBranchReviewer holds details about calls to the InsertBranchReviewer method.
 		InsertBranchReviewer []struct {
 			// Ctx is the ctx argument value.
@@ -1488,6 +1521,15 @@ type DBMock struct {
 			// MaintainerIDs is the maintainerIDs argument value.
 			MaintainerIDs []string
 		}
+		// UpsertUserSpotlights holds details about calls to the UpsertUserSpotlights method.
+		UpsertUserSpotlights []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// UserID is the userID argument value.
+			UserID string
+			// Inp is the inp argument value.
+			Inp user.SpotlightsInput
+		}
 	}
 	lockAssignBranchTag                           sync.RWMutex
 	lockBeginTx                                   sync.RWMutex
@@ -1548,6 +1590,8 @@ type DBMock struct {
 	lockFetchSlackUserLinkByUserID                sync.RWMutex
 	lockFetchTag                                  sync.RWMutex
 	lockFetchTagTree                              sync.RWMutex
+	lockFetchUserSpotlightActivity                sync.RWMutex
+	lockFetchUserSpotlights                       sync.RWMutex
 	lockInsertBranchReviewer                      sync.RWMutex
 	lockInsertDataSource                          sync.RWMutex
 	lockInsertDocument                            sync.RWMutex
@@ -1587,6 +1631,7 @@ type DBMock struct {
 	lockUpdateUserImage                           sync.RWMutex
 	lockUpsertDocumentBranchView                  sync.RWMutex
 	lockUpsertDocumentMaintainers                 sync.RWMutex
+	lockUpsertUserSpotlights                      sync.RWMutex
 }
 
 // AssignBranchTag calls AssignBranchTagFunc.
@@ -4155,6 +4200,86 @@ func (mock *DBMock) FetchTagTreeCalls() []struct {
 	return calls
 }
 
+// FetchUserSpotlightActivity calls FetchUserSpotlightActivityFunc.
+func (mock *DBMock) FetchUserSpotlightActivity(ctx context.Context, userID string) (user.SpotlightActivity, error) {
+	callInfo := struct {
+		Ctx    context.Context
+		UserID string
+	}{
+		Ctx:    ctx,
+		UserID: userID,
+	}
+	mock.lockFetchUserSpotlightActivity.Lock()
+	mock.calls.FetchUserSpotlightActivity = append(mock.calls.FetchUserSpotlightActivity, callInfo)
+	mock.lockFetchUserSpotlightActivity.Unlock()
+	if mock.FetchUserSpotlightActivityFunc == nil {
+		var (
+			spotlightActivityOut user.SpotlightActivity
+			errOut               error
+		)
+		return spotlightActivityOut, errOut
+	}
+	return mock.FetchUserSpotlightActivityFunc(ctx, userID)
+}
+
+// FetchUserSpotlightActivityCalls gets all the calls that were made to FetchUserSpotlightActivity.
+// Check the length with:
+//
+//	len(mockedDB.FetchUserSpotlightActivityCalls())
+func (mock *DBMock) FetchUserSpotlightActivityCalls() []struct {
+	Ctx    context.Context
+	UserID string
+} {
+	var calls []struct {
+		Ctx    context.Context
+		UserID string
+	}
+	mock.lockFetchUserSpotlightActivity.RLock()
+	calls = mock.calls.FetchUserSpotlightActivity
+	mock.lockFetchUserSpotlightActivity.RUnlock()
+	return calls
+}
+
+// FetchUserSpotlights calls FetchUserSpotlightsFunc.
+func (mock *DBMock) FetchUserSpotlights(ctx context.Context, userID string) (user.Spotlights, error) {
+	callInfo := struct {
+		Ctx    context.Context
+		UserID string
+	}{
+		Ctx:    ctx,
+		UserID: userID,
+	}
+	mock.lockFetchUserSpotlights.Lock()
+	mock.calls.FetchUserSpotlights = append(mock.calls.FetchUserSpotlights, callInfo)
+	mock.lockFetchUserSpotlights.Unlock()
+	if mock.FetchUserSpotlightsFunc == nil {
+		var (
+			spotlightsOut user.Spotlights
+			errOut        error
+		)
+		return spotlightsOut, errOut
+	}
+	return mock.FetchUserSpotlightsFunc(ctx, userID)
+}
+
+// FetchUserSpotlightsCalls gets all the calls that were made to FetchUserSpotlights.
+// Check the length with:
+//
+//	len(mockedDB.FetchUserSpotlightsCalls())
+func (mock *DBMock) FetchUserSpotlightsCalls() []struct {
+	Ctx    context.Context
+	UserID string
+} {
+	var calls []struct {
+		Ctx    context.Context
+		UserID string
+	}
+	mock.lockFetchUserSpotlights.RLock()
+	calls = mock.calls.FetchUserSpotlights
+	mock.lockFetchUserSpotlights.RUnlock()
+	return calls
+}
+
 // InsertBranchReviewer calls InsertBranchReviewerFunc.
 func (mock *DBMock) InsertBranchReviewer(ctx context.Context, reviewer document.BranchReviewer) error {
 	callInfo := struct {
@@ -5789,5 +5914,48 @@ func (mock *DBMock) UpsertDocumentMaintainersCalls() []struct {
 	mock.lockUpsertDocumentMaintainers.RLock()
 	calls = mock.calls.UpsertDocumentMaintainers
 	mock.lockUpsertDocumentMaintainers.RUnlock()
+	return calls
+}
+
+// UpsertUserSpotlights calls UpsertUserSpotlightsFunc.
+func (mock *DBMock) UpsertUserSpotlights(ctx context.Context, userID string, inp user.SpotlightsInput) error {
+	callInfo := struct {
+		Ctx    context.Context
+		UserID string
+		Inp    user.SpotlightsInput
+	}{
+		Ctx:    ctx,
+		UserID: userID,
+		Inp:    inp,
+	}
+	mock.lockUpsertUserSpotlights.Lock()
+	mock.calls.UpsertUserSpotlights = append(mock.calls.UpsertUserSpotlights, callInfo)
+	mock.lockUpsertUserSpotlights.Unlock()
+	if mock.UpsertUserSpotlightsFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.UpsertUserSpotlightsFunc(ctx, userID, inp)
+}
+
+// UpsertUserSpotlightsCalls gets all the calls that were made to UpsertUserSpotlights.
+// Check the length with:
+//
+//	len(mockedDB.UpsertUserSpotlightsCalls())
+func (mock *DBMock) UpsertUserSpotlightsCalls() []struct {
+	Ctx    context.Context
+	UserID string
+	Inp    user.SpotlightsInput
+} {
+	var calls []struct {
+		Ctx    context.Context
+		UserID string
+		Inp    user.SpotlightsInput
+	}
+	mock.lockUpsertUserSpotlights.RLock()
+	calls = mock.calls.UpsertUserSpotlights
+	mock.lockUpsertUserSpotlights.RUnlock()
 	return calls
 }

@@ -213,8 +213,7 @@ prod-build:
 	docker build --platform linux/$(DOCKER_ARCH) $(PROD_BUILD_EXTRA) -f docker/prod/Dockerfile -t ghcr.io/oxynote/oxynote:$(PROD_IMAGE_TAG) .
 
 # the published image: the same Dockerfile as prod-build, but core's binary
-# is built from the tag instead of as a snapshot — a snapshot would report
-# itself as version dev in a dev environment — and the result is pushed for
+# is built from the tag instead of as a snapshot, and the result is pushed for
 # linux/amd64 and linux/arm64 as latest and the version rather than loaded
 # locally. These are the only two tags the registry gets, and a pull of
 # either resolves to the puller's own architecture. The version and commit

@@ -127,10 +127,10 @@ func renderGroup(e *sqlExpander, name, epoch string, args []string) (string, err
 // renderUnixEpochFilter renders $__unixEpochFilter and
 // $__unixEpochNanoFilter.
 func renderUnixEpochFilter(e *sqlExpander, name string, args []string) (string, error) {
-	from, to := e.tr.From.Unix(), e.tr.To.Unix()
+	from, to := e.tr.From.Unix(), e.tr.To.Unix() //nolint:revive // the unit depends on the macro, so no suffix fits
 
 	if strings.Contains(name, "Nano") {
-		from, to = e.tr.From.UnixNano(), e.tr.To.UnixNano()
+		from, to = e.tr.From.UnixNano(), e.tr.To.UnixNano() //nolint:revive // the unit depends on the macro, so no suffix fits
 	}
 
 	return fmt.Sprintf("(%s) >= %d AND (%s) <= %d", args[0], from, args[0], to), nil

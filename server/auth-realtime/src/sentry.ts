@@ -4,6 +4,9 @@ if (process.env.SENTRY_DSN) {
 	Sentry.init({
 		dsn: process.env.SENTRY_DSN,
 		environment: process.env.NODE_ENV ?? "development",
+		release:
+			process.env.OXYNOTE_AUTH_REALTIME_APP_VERSION ||
+			undefined,
 		// every category the SDK may attach, stated in full: an
 		// omitted field takes a default that collects. Errors and
 		// stack traces only, since anything else here would carry

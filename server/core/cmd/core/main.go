@@ -36,6 +36,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/job"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/notification/interpreter"
+	"github.com/oxynote/oxynote/server/core/internal/release"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	searchMan "github.com/oxynote/oxynote/server/core/internal/search/manager"
 	"github.com/oxynote/oxynote/server/core/internal/server"
@@ -92,7 +93,10 @@ const (
 func main() { //nolint:maintidx,cyclop // main performs linear wiring of all components
 	var closers []io.Closer
 
-	log, flushLogs, ok := newLogger()
+	appVersion := buildinfo.Getenv("APP_VERSION")
+	logutil.ShowCritical = !release.IsReleaseVersion(appVersion)
+
+	log, flushLogs, ok := newLogger(appVersion)
 	if !ok {
 		return
 	}
@@ -358,8 +362,11 @@ func main() { //nolint:maintidx,cyclop // main performs linear wiring of all com
 	mcpOpts := server.MCPOptions{
 		SessionURL:  buildinfo.Getenv("SERVER_MCP_SESSION_URL"),
 		ResourceURL: buildinfo.Getenv("SERVER_MCP_RESOURCE_URL"),
+		Version:     appVersion,
 	}
 	warnDisabled(log, mcpOpts.Enabled(), "mcp is disabled")
+
+	releaseChecker := release.NewChecker(log, http.DefaultClient)
 
 	serverHost, serverPort, err := parseServerAddress(buildinfo.Getenv("SERVER_ADDRESS"))
 	if err != nil {
@@ -371,6 +378,7 @@ func main() { //nolint:maintidx,cyclop // main performs linear wiring of all com
 		log,
 		server.Options{
 			PublicURL: buildinfo.Getenv("SERVER_PUBLIC_URL"),
+			Version:   appVersion,
 			Host:      serverHost,
 			Port:      serverPort,
 			Origins:   origins,
@@ -398,6 +406,7 @@ func main() { //nolint:maintidx,cyclop // main performs linear wiring of all com
 		searchJobMan,
 		notifMan,
 		emailSender,
+		releaseChecker,
 		http.DefaultClient,
 	)
 	if err != nil {
@@ -440,6 +449,10 @@ func main() { //nolint:maintidx,cyclop // main performs linear wiring of all com
 	backgroundSupv.Go(datasourceMan.Start)
 	backgroundSupv.Go(jobMan.Start)
 
+	if release.IsReleaseVersion(appVersion) {
+		backgroundSupv.Go(releaseChecker.Start)
+	}
+
 	<-termCtx.Done()
 
 	// the managers query the database and redis, so let them finish their
@@ -468,7 +481,7 @@ func fail(log *slog.Logger, closers []io.Closer, msg string, err error) {
 }
 
 // newLogger initializes a new logger with Sentry support.
-func newLogger() (*slog.Logger, func(), bool) {
+func newLogger(appVersion string) (*slog.Logger, func(), bool) {
 	var level slog.Level
 
 	buildLevel := buildinfo.Getenv("LOG_LEVEL")
@@ -481,18 +494,15 @@ func newLogger() (*slog.Logger, func(), bool) {
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: level,
-	})).With("version", buildinfo.Full().Version)
+	})).With("version", appVersion)
 
 	// an empty DSN disables sentry; sentryutil.Setup tolerates it.
 	dsn := buildinfo.Getenv("SENTRY_DSN")
 
 	fn, err := sentryutil.Setup(sentryutil.Config{
-		DSN:              dsn,
-		Release:          buildinfo.Full().PlainVersion(),
-		Environment:      buildinfo.Full().Env,
-		ReleaseName:      buildinfo.Full().VersionName(),
-		ReleaseCommit:    buildinfo.Full().Commit,
-		ReleaseTimestamp: buildinfo.Full().FormattedTimestamp(),
+		DSN:         dsn,
+		Release:     appVersion,
+		Environment: sentryEnvironment(appVersion),
 		Deduplication: sentryutil.DeduplicationConfig{
 			Interval: _sentryDedupInterval,
 			Capacity: _sentryDedupCapacity,
@@ -506,11 +516,20 @@ func newLogger() (*slog.Logger, func(), bool) {
 	return log, fn, true
 }
 
+// sentryEnvironment returns the environment Sentry events are filed under.
+func sentryEnvironment(appVersion string) string {
+	if release.IsReleaseVersion(appVersion) {
+		return "production"
+	}
+
+	return "development"
+}
+
 // newMetrics initializes and starts the metrics collection.
 func newMetrics(log *slog.Logger) (metricutil.Factory, func()) {
 	metricsStopCh := make(chan struct{})
 
-	metrics := metricutil.NewFactory(buildinfo.Full().Name, prometheus.NewRegistry())
+	metrics := metricutil.NewFactory(buildinfo.Name, prometheus.NewRegistry())
 
 	metricsCtx, metricsCancel := context.WithCancel(context.Background())
 

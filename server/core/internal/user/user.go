@@ -1,5 +1,6 @@
-// Package user defines what a user owns outside of Postgres: the storage
-// layout of their image and the URL the image is served under.
+// Package user defines what belongs to a user account: the storage layout
+// of their image, the URL the image is served under, and the state of the
+// spotlights the app shows them once.
 package user
 
 import "fmt"

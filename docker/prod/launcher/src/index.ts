@@ -68,6 +68,7 @@ import {
 const crashReporter = createCrashReporter(
 	Sentry,
 	bakedLauncherSentryDsn,
+	bakedImageVersion,
 	process.env.OXYNOTE_CRASH_REPORTING_DISABLED === "true",
 )
 
@@ -343,6 +344,7 @@ async function main(): Promise<void> {
 		config,
 		secrets,
 		bakedSentryDsns,
+		bakedImageVersion,
 		inheritedEnv,
 	)
 	if (!mcpAvailable(config.publicOrigin)) {

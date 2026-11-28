@@ -6,6 +6,7 @@ Sentry.init({
 	// useRuntimeConfig() is fully available, environment variables are
 	// only accessible via process.env.
 	dsn: process.env.NUXT_PUBLIC_SENTRY_DSN,
+	release: process.env.NUXT_PUBLIC_APP_VERSION || undefined,
 
 	// every category the SDK may attach, stated in full: an omitted field
 	// takes a default that collects. Errors and stack traces only, since

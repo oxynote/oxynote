@@ -69,6 +69,7 @@ export interface ChildEnvs {
 const webDocumentationLinks = {
 	NUXT_PUBLIC_DOCS_URL: "https://github.com/oxynote/oxynote",
 	NUXT_PUBLIC_LINK_TO_MORE_INFO_ABOUT_PRODUCT: "https://oxynote.io",
+	NUXT_PUBLIC_GITHUB_REPOSITORY_URL: "https://github.com/oxynote/oxynote",
 	NUXT_PUBLIC_POSTGRESQL_READ_ONLY_USER_SETUP_GUIDE_URL:
 		"https://tableplus.com/blog/2018/04/postgresql-how-to-create-read-only-user.html",
 	NUXT_PUBLIC_SUPABASE_READ_ONLY_USER_SETUP_GUIDE_URL:
@@ -128,6 +129,7 @@ export function buildChildEnvs(
 	config: Config,
 	secrets: Secrets,
 	bakedSentryDsns: SentryDsns,
+	imageVersion: string,
 	inheritedEnv: Record<string, string>,
 ): ChildEnvs {
 	const publicCoreUrl = `${config.publicOrigin}/core`
@@ -200,6 +202,7 @@ export function buildChildEnvs(
 		OXYNOTE_CORE_EMAIL_SMTP_TLS: config.smtp?.tls ?? "",
 		OXYNOTE_CORE_EMAIL_FROM_ADDRESS: config.emailFromAddress,
 		OXYNOTE_CORE_SENTRY_DSN: sentryDsns.coreDsn,
+		OXYNOTE_CORE_APP_VERSION: imageVersion,
 		OXYNOTE_CORE_LOG_LEVEL: config.logLevel,
 	}
 
@@ -258,6 +261,7 @@ export function buildChildEnvs(
 		// node trusts these besides its public CAs.
 		NODE_EXTRA_CA_CERTS: config.oidcLogin?.caCertsPath ?? "",
 		SENTRY_DSN: sentryDsns.authRealtimeDsn,
+		OXYNOTE_AUTH_REALTIME_APP_VERSION: imageVersion,
 	}
 
 	const web: Record<string, string> = {
@@ -274,6 +278,7 @@ export function buildChildEnvs(
 		NUXT_CORE_API_INTERNAL_HTTP_URL: coreUrl,
 		NUXT_AUTH_REALTIME_API_INTERNAL_HTTP_URL: authRealtimeUrl,
 		NUXT_PUBLIC_SENTRY_DSN: sentryDsns.webDsn,
+		NUXT_PUBLIC_APP_VERSION: imageVersion,
 		NUXT_PUBLIC_TERMS_OF_SERVICE_URL: config.termsOfServiceUrl,
 		NUXT_PUBLIC_PRIVACY_POLICY_URL: config.privacyPolicyUrl,
 		...webDocumentationLinks,

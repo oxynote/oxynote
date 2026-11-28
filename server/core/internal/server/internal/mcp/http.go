@@ -47,6 +47,9 @@ type Options struct {
 	// WWW-Authenticate challenges is derived from it. Empty turns the
 	// MCP surface off.
 	ResourceURL string
+
+	// Version specifies the version reported to MCP clients.
+	Version string
 }
 
 // Enabled reports whether the MCP surface is served.
@@ -73,6 +76,7 @@ type Handler struct {
 	man     Manager
 	db      DB
 	handler http.Handler
+	version string
 }
 
 // NewHandler creates a fresh instance of Handler.
@@ -93,9 +97,10 @@ func NewHandler(
 	}
 
 	h := &Handler{
-		log: log.With("component", "mcp-handler"),
-		man: man,
-		db:  db,
+		log:     log.With("component", "mcp-handler"),
+		man:     man,
+		db:      db,
+		version: opts.Version,
 	}
 
 	streamable := mcp.NewStreamableHTTPHandler(
