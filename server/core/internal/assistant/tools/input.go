@@ -64,27 +64,6 @@ var _errUnknownParent = errors.New("no document with that id to use as parent; c
 // discover that a document exists elsewhere.
 var ErrUnknownDocument = errors.New("no document with that id in this organisation; call list_documents for the ids that exist")
 
-// branchAsDocumentError is returned when a document_id names a branch
-// in the organisation. It unwraps to ErrUnknownDocument so callers
-// classifying missing documents (such as MCP resource reads) still
-// treat it as not found without appending ErrUnknownDocument's text.
-type branchAsDocumentError struct {
-	branchID xid.ID
-	docID    xid.ID
-	docName  string
-}
-
-func (e branchAsDocumentError) Error() string {
-	return fmt.Sprintf(
-		"id %s is a branch of document %s (%q); pass %s as document_id and %s as branch_id",
-		e.branchID, e.docID, e.docName, e.docID, e.branchID,
-	)
-}
-
-func (e branchAsDocumentError) Unwrap() error {
-	return ErrUnknownDocument
-}
-
 // _errBranchProtected is what a content write reports for a branch that
 // is protected. Reading it stays allowed; the caller is told which of
 // the document's branches would take the write instead.
@@ -341,9 +320,8 @@ func (i *input) FetchDocument(documentID xid.ID) (*document.Document, error) {
 }
 
 // unknownDocumentError returns the error for a document_id that names
-// no document in the session's organisation. When the id names one of
-// the organisatin's branches instead, the error names the document it
-// belongs to so the callers can recover without listing every document.
+// no document. A branch id is an easy slip, since the two look alike. So when
+// the id names a branch, the error names its document instead.
 func (i *input) unknownDocumentError(id xid.ID) error {
 	doc, err := i.db.FetchDocumentByBranchID(i.ctx, id, i.orgID)
 	if err != nil {
@@ -351,17 +329,11 @@ func (i *input) unknownDocumentError(id xid.ID) error {
 			return ErrUnknownDocument
 		}
 
-		return err
-	}
-
-	if doc == nil {
-		return ErrUnknownDocument
+		return fmt.Errorf("fetching branch: %w", err)
 	}
 
 	return branchAsDocumentError{
-		branchID: id,
-		docID:    doc.ID,
-		docName:  doc.DocumentName,
+		branch: doc,
 	}
 }
 
@@ -496,12 +468,7 @@ func (i *input) FetchDocumentChildren(parentID null.Value[xid.ID]) (document.Sum
 
 	if cerr := i.db.CheckDocumentExists(i.ctx, parentID.V, i.orgID); cerr != nil {
 		if errutil.IsNotFound(cerr) {
-			err := i.unknownDocumentError(parentID.V)
-			if errors.Is(err, ErrUnknownDocument) {
-				return nil, fmt.Errorf("parent %s: %w", parentID.V, err)
-			}
-
-			return nil, fmt.Errorf("checking parent: %w", err)
+			return nil, fmt.Errorf("parent %s: %w", parentID.V, i.unknownDocumentError(parentID.V))
 		}
 
 		return nil, fmt.Errorf("checking parent: %w", cerr)
@@ -560,11 +527,10 @@ func (i *input) CreateDocument(doc document.Document) error {
 // ids after the commit. A delete that matched nothing is an error.
 func (i *input) DeleteDocument(id xid.ID) error {
 	// the parent is read before the row goes, to tell the subtree that
-	// changed. A document that cannot be read leaves the root's.
-	var parentID null.Value[xid.ID]
-
-	if doc, err := i.FetchDocument(id); err == nil {
-		parentID = doc.ParentID
+	// changed.
+	doc, err := i.FetchDocument(id)
+	if err != nil {
+		return err
 	}
 
 	tx, err := sqlutil.BeginTx[Tx](i.ctx, i.db)
@@ -580,7 +546,7 @@ func (i *input) DeleteDocument(id xid.ID) error {
 	}
 
 	if len(ids) == 0 {
-		return i.unknownDocumentError(id)
+		return ErrUnknownDocument
 	}
 
 	for _, id := range ids {
@@ -593,7 +559,7 @@ func (i *input) DeleteDocument(id xid.ID) error {
 		return fmt.Errorf("committing: %w", err)
 	}
 
-	i.notifyTreeChange(parentID)
+	i.notifyTreeChange(doc.ParentID)
 
 	return nil
 }
@@ -1263,6 +1229,27 @@ func branchLabels(branches []document.BranchSummary) string {
 	}
 
 	return strings.Join(labels, ", ")
+}
+
+// branchAsDocumentError is the error for a document id that names a
+// branch. It unwraps to ErrUnknownDocument, so the id still counts as an
+// unknown document. But its message replaces that error's text, because
+// the next step is not list_documents.
+type branchAsDocumentError struct {
+	branch *document.Document
+}
+
+// Error names the branch's document and the ids to pass instead.
+func (e branchAsDocumentError) Error() string {
+	return fmt.Sprintf(
+		"id %s is a branch of document %s (%q); pass %s as document_id and %s as branch_id",
+		e.branch.BranchID, e.branch.ID, e.branch.DocumentName, e.branch.ID, e.branch.BranchID,
+	)
+}
+
+// Unwrap returns ErrUnknownDocument.
+func (e branchAsDocumentError) Unwrap() error {
+	return ErrUnknownDocument
 }
 
 // DataSourceRunners hands out the runner for a data source. The
