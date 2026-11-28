@@ -837,7 +837,8 @@ func Test_backfillDocumentActivityEntries(t *testing.T) {
 
 			edited.Resolved = true
 			edited.ResolvedAt = null.TimeFrom(c.CreatedAt.Add(2 * time.Minute))
-			require.NoError(t, db.UpdateDocumentCommentStatus(context.Background(), edited))
+			_, err = db.UpdateDocumentCommentStatus(context.Background(), edited)
+			require.NoError(t, err)
 
 			var newest xid.ID
 			require.NoError(t, db.sql.Get(

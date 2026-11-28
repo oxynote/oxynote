@@ -306,7 +306,7 @@ var _ DB = &DBMock{}
 //			UpdateDocumentCommentReplyFunc: func(ctx context.Context, r comment.Reply) (comment.ReplyRevision, error) {
 //				panic("mock out the UpdateDocumentCommentReply method")
 //			},
-//			UpdateDocumentCommentStatusFunc: func(ctx context.Context, c comment.Comment) error {
+//			UpdateDocumentCommentStatusFunc: func(ctx context.Context, c comment.Comment) (bool, error) {
 //				panic("mock out the UpdateDocumentCommentStatus method")
 //			},
 //			UpdateDocumentParentIDFunc: func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error {
@@ -620,7 +620,7 @@ type DBMock struct {
 	UpdateDocumentCommentReplyFunc func(ctx context.Context, r comment.Reply) (comment.ReplyRevision, error)
 
 	// UpdateDocumentCommentStatusFunc mocks the UpdateDocumentCommentStatus method.
-	UpdateDocumentCommentStatusFunc func(ctx context.Context, c comment.Comment) error
+	UpdateDocumentCommentStatusFunc func(ctx context.Context, c comment.Comment) (bool, error)
 
 	// UpdateDocumentParentIDFunc mocks the UpdateDocumentParentID method.
 	UpdateDocumentParentIDFunc func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error
@@ -5516,7 +5516,7 @@ func (mock *DBMock) UpdateDocumentCommentReplyCalls() []struct {
 }
 
 // UpdateDocumentCommentStatus calls UpdateDocumentCommentStatusFunc.
-func (mock *DBMock) UpdateDocumentCommentStatus(ctx context.Context, c comment.Comment) error {
+func (mock *DBMock) UpdateDocumentCommentStatus(ctx context.Context, c comment.Comment) (bool, error) {
 	callInfo := struct {
 		Ctx context.Context
 		C   comment.Comment
@@ -5529,9 +5529,10 @@ func (mock *DBMock) UpdateDocumentCommentStatus(ctx context.Context, c comment.C
 	mock.lockUpdateDocumentCommentStatus.Unlock()
 	if mock.UpdateDocumentCommentStatusFunc == nil {
 		var (
+			bOut   bool
 			errOut error
 		)
-		return errOut
+		return bOut, errOut
 	}
 	return mock.UpdateDocumentCommentStatusFunc(ctx, c)
 }

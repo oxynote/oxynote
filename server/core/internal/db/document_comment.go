@@ -190,8 +190,10 @@ func (a *agent) UpdateDocumentComment(ctx context.Context, c comment.Comment) (c
 }
 
 // UpdateDocumentCommentStatus stores whether a comment is resolved, and by
-// whom. The text stays, so no revision is recorded.
-func (a *agent) UpdateDocumentCommentStatus(ctx context.Context, c comment.Comment) error {
+// whom, and reports whether the status changed. A comment that already has
+// the status is left as it is, so of two concurrent resolves only one
+// changes it. The text stays, so no revision is recorded.
+func (a *agent) UpdateDocumentCommentStatus(ctx context.Context, c comment.Comment) (bool, error) {
 	q, args := a.builder.Update("document_comments").
 		SetMap(map[string]any{
 			"resolved":       c.Resolved,
@@ -202,11 +204,20 @@ func (a *agent) UpdateDocumentCommentStatus(ctx context.Context, c comment.Comme
 			"id":                 c.ID,
 			"fk_document_id":     c.DocumentID,
 			"fk_organization_id": c.OrganizationID,
+			"resolved":           !c.Resolved,
 		}).MustSql()
 
-	_, err := a.sql.ExecContext(ctx, q, args...)
+	res, err := a.sql.ExecContext(ctx, q, args...)
+	if err != nil {
+		return false, err
+	}
 
-	return err
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+
+	return n > 0, nil
 }
 
 // UpdateDocumentCommentReply updates an existing reply in the database and

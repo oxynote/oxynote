@@ -74,7 +74,7 @@ var _ Tx = &TxMock{}
 //			UpdateDocumentCommentReplyFunc: func(ctx context.Context, r commentCore.Reply) (commentCore.ReplyRevision, error) {
 //				panic("mock out the UpdateDocumentCommentReply method")
 //			},
-//			UpdateDocumentCommentStatusFunc: func(ctx context.Context, c commentCore.Comment) error {
+//			UpdateDocumentCommentStatusFunc: func(ctx context.Context, c commentCore.Comment) (bool, error) {
 //				panic("mock out the UpdateDocumentCommentStatus method")
 //			},
 //		}
@@ -136,7 +136,7 @@ type TxMock struct {
 	UpdateDocumentCommentReplyFunc func(ctx context.Context, r commentCore.Reply) (commentCore.ReplyRevision, error)
 
 	// UpdateDocumentCommentStatusFunc mocks the UpdateDocumentCommentStatus method.
-	UpdateDocumentCommentStatusFunc func(ctx context.Context, c commentCore.Comment) error
+	UpdateDocumentCommentStatusFunc func(ctx context.Context, c commentCore.Comment) (bool, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -1026,7 +1026,7 @@ func (mock *TxMock) UpdateDocumentCommentReplyCalls() []struct {
 }
 
 // UpdateDocumentCommentStatus calls UpdateDocumentCommentStatusFunc.
-func (mock *TxMock) UpdateDocumentCommentStatus(ctx context.Context, c commentCore.Comment) error {
+func (mock *TxMock) UpdateDocumentCommentStatus(ctx context.Context, c commentCore.Comment) (bool, error) {
 	callInfo := struct {
 		Ctx context.Context
 		C   commentCore.Comment
@@ -1039,9 +1039,10 @@ func (mock *TxMock) UpdateDocumentCommentStatus(ctx context.Context, c commentCo
 	mock.lockUpdateDocumentCommentStatus.Unlock()
 	if mock.UpdateDocumentCommentStatusFunc == nil {
 		var (
+			bOut   bool
 			errOut error
 		)
-		return errOut
+		return bOut, errOut
 	}
 	return mock.UpdateDocumentCommentStatusFunc(ctx, c)
 }

@@ -617,8 +617,22 @@ func (h *Handler) UpdateDocumentCommentStatus(w http.ResponseWriter, r *http.Req
 
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
-	if err = tx.UpdateDocumentCommentStatus(r.Context(), nc); err != nil {
+	changed, err := tx.UpdateDocumentCommentStatus(r.Context(), nc)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	// a concurrent request already set the status, so this one records and
+	// announces nothing.
+	if !changed {
+		httpserver.Respond(
+			h.log,
+			w,
+			nc,
+			http.StatusOK,
+		)
+
 		return
 	}
 
@@ -918,8 +932,8 @@ type CommentsDBAgent interface {
 	FetchNewestDocumentCommentRevision(ctx context.Context, commentID xid.ID, organizationID string) (commentCore.Revision, error)
 
 	// UpdateDocumentCommentStatus should update whether a comment is
-	// resolved.
-	UpdateDocumentCommentStatus(ctx context.Context, c commentCore.Comment) error
+	// resolved and report whether the status changed.
+	UpdateDocumentCommentStatus(ctx context.Context, c commentCore.Comment) (bool, error)
 
 	// DeleteDocumentComment should soft-delete a comment.
 	DeleteDocumentComment(ctx context.Context, id, documentID xid.ID, organizationID string) error

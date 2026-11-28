@@ -557,6 +557,7 @@ func Test_agent_UpdateDocumentCommentStatus(t *testing.T) {
 	type tcase struct {
 		CancelledContext bool
 		Comment          comment.Comment
+		Changed          bool
 		Err              error
 	}
 
@@ -566,6 +567,14 @@ func Test_agent_UpdateDocumentCommentStatus(t *testing.T) {
 				CancelledContext: true,
 				Comment:          prepDocumentComments(t, db, 1, nil)[0],
 				Err:              assert.AnError,
+			}
+		},
+		"Status already set": func(t *testing.T, db *DB) tcase {
+			c := prepDocumentComments(t, db, 1, nil)[0]
+			c.Replies = []comment.Reply{}
+
+			return tcase{
+				Comment: c,
 			}
 		},
 		"Successful update": func(t *testing.T, db *DB) tcase {
@@ -578,6 +587,7 @@ func Test_agent_UpdateDocumentCommentStatus(t *testing.T) {
 
 			return tcase{
 				Comment: c,
+				Changed: true,
 			}
 		},
 	}
@@ -596,12 +606,14 @@ func Test_agent_UpdateDocumentCommentStatus(t *testing.T) {
 				cancel()
 			}
 
-			err := db.UpdateDocumentCommentStatus(ctx, c.Comment)
+			changed, err := db.UpdateDocumentCommentStatus(ctx, c.Comment)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
+
+			assert.Equal(t, c.Changed, changed)
 
 			res, err := db.FetchDocumentComment(context.Background(), c.Comment.ID, c.Comment.DocumentID, c.Comment.OrganizationID)
 			require.NoError(t, err)

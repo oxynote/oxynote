@@ -9,6 +9,7 @@ import (
 
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/activity"
+	tagCore "github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/rs/xid"
 )
 
@@ -33,6 +34,9 @@ var _ Tx = &TxMock{}
 //			},
 //			FetchDocumentByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) (*documentCore.Document, error) {
 //				panic("mock out the FetchDocumentByBranchID method")
+//			},
+//			FetchTagFunc: func(ctx context.Context, id xid.ID, organizationID string) (*tagCore.Tag, error) {
+//				panic("mock out the FetchTag method")
 //			},
 //			InsertDocumentActivityEntriesFunc: func(ctx context.Context, entries ...activity.Entry) error {
 //				panic("mock out the InsertDocumentActivityEntries method")
@@ -61,6 +65,9 @@ type TxMock struct {
 
 	// FetchDocumentByBranchIDFunc mocks the FetchDocumentByBranchID method.
 	FetchDocumentByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) (*documentCore.Document, error)
+
+	// FetchTagFunc mocks the FetchTag method.
+	FetchTagFunc func(ctx context.Context, id xid.ID, organizationID string) (*tagCore.Tag, error)
 
 	// InsertDocumentActivityEntriesFunc mocks the InsertDocumentActivityEntries method.
 	InsertDocumentActivityEntriesFunc func(ctx context.Context, entries ...activity.Entry) error
@@ -109,6 +116,15 @@ type TxMock struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
+		// FetchTag holds details about calls to the FetchTag method.
+		FetchTag []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// ID is the id argument value.
+			ID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
 		// InsertDocumentActivityEntries holds details about calls to the InsertDocumentActivityEntries method.
 		InsertDocumentActivityEntries []struct {
 			// Ctx is the ctx argument value.
@@ -137,6 +153,7 @@ type TxMock struct {
 	lockCommit                        sync.RWMutex
 	lockFetchBranchTagIDs             sync.RWMutex
 	lockFetchDocumentByBranchID       sync.RWMutex
+	lockFetchTag                      sync.RWMutex
 	lockInsertDocumentActivityEntries sync.RWMutex
 	lockRollback                      sync.RWMutex
 	lockUnassignBranchTag             sync.RWMutex
@@ -313,6 +330,50 @@ func (mock *TxMock) FetchDocumentByBranchIDCalls() []struct {
 	mock.lockFetchDocumentByBranchID.RLock()
 	calls = mock.calls.FetchDocumentByBranchID
 	mock.lockFetchDocumentByBranchID.RUnlock()
+	return calls
+}
+
+// FetchTag calls FetchTagFunc.
+func (mock *TxMock) FetchTag(ctx context.Context, id xid.ID, organizationID string) (*tagCore.Tag, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		ID             xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		ID:             id,
+		OrganizationID: organizationID,
+	}
+	mock.lockFetchTag.Lock()
+	mock.calls.FetchTag = append(mock.calls.FetchTag, callInfo)
+	mock.lockFetchTag.Unlock()
+	if mock.FetchTagFunc == nil {
+		var (
+			tagOut *tagCore.Tag
+			errOut error
+		)
+		return tagOut, errOut
+	}
+	return mock.FetchTagFunc(ctx, id, organizationID)
+}
+
+// FetchTagCalls gets all the calls that were made to FetchTag.
+// Check the length with:
+//
+//	len(mockedTx.FetchTagCalls())
+func (mock *TxMock) FetchTagCalls() []struct {
+	Ctx            context.Context
+	ID             xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		ID             xid.ID
+		OrganizationID string
+	}
+	mock.lockFetchTag.RLock()
+	calls = mock.calls.FetchTag
+	mock.lockFetchTag.RUnlock()
 	return calls
 }
 

@@ -158,14 +158,14 @@ func stubNewestRevision(context.Context, xid.ID, string) (commentCore.Revision, 
 }
 
 // stubReplyRevision stores a reply's text as the revision _revisionID.
-func stubReplyRevision(context.Context, commentCore.Reply) (commentCore.ReplyRevision, error) {
-	return commentCore.ReplyRevision{ID: _revisionID, ReplyID: _replyID}, nil
+func stubReplyRevision(_ context.Context, r commentCore.Reply) (commentCore.ReplyRevision, error) {
+	return commentCore.ReplyRevision{ID: _revisionID, ReplyID: r.ID}, nil
 }
 
 // stubNewestReplyRevision returns _revisionID as the reply's newest
 // revision.
-func stubNewestReplyRevision(context.Context, xid.ID, string) (commentCore.ReplyRevision, error) {
-	return commentCore.ReplyRevision{ID: _revisionID, ReplyID: _replyID}, nil
+func stubNewestReplyRevision(_ context.Context, replyID xid.ID, _ string) (commentCore.ReplyRevision, error) {
+	return commentCore.ReplyRevision{ID: _revisionID, ReplyID: replyID}, nil
 }
 
 // assertEntry checks the one activity entry the transaction wrote, made by
@@ -192,11 +192,11 @@ func commentMetadata(commentID xid.ID) activity.Metadata {
 	return activity.Metadata{activity.MetaKeyCommentID: commentID.String()}
 }
 
-// replyMetadata is the metadata of a reply entry.
-func replyMetadata() activity.Metadata {
+// replyMetadata is the metadata of an entry of the reply.
+func replyMetadata(replyID xid.ID) activity.Metadata {
 	return activity.Metadata{
 		activity.MetaKeyCommentID: _commentID.String(),
-		activity.MetaKeyReplyID:   _replyID.String(),
+		activity.MetaKeyReplyID:   replyID.String(),
 	}
 }
 
@@ -398,7 +398,7 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentByBranchIDCalls(), c.BranchFetched)
 			assert.Len(t, c.DB.BeginTxCalls(), c.Begun)
-			assert.Len(t, tx.InsertDocumentCommentCalls(), c.Inserted)
+			require.Len(t, tx.InsertDocumentCommentCalls(), c.Inserted)
 			assert.Len(t, tx.InsertDocumentActivityEntriesCalls(), c.Entries)
 			assert.Len(t, tx.CommitCalls(), c.Committed)
 			assert.Len(t, tx.RollbackCalls(), c.RolledBack)
@@ -591,7 +591,7 @@ func Test_Handler_CreateDocumentCommentReply(t *testing.T) {
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentCommentCalls(), c.Fetched)
 			assert.Len(t, c.DB.BeginTxCalls(), c.Begun)
-			assert.Len(t, tx.InsertDocumentCommentReplyCalls(), c.Inserted)
+			require.Len(t, tx.InsertDocumentCommentReplyCalls(), c.Inserted)
 			assert.Len(t, tx.InsertDocumentActivityEntriesCalls(), c.Entries)
 			assert.Len(t, tx.CommitCalls(), c.Committed)
 			assert.Len(t, tx.RollbackCalls(), c.RolledBack)
@@ -619,7 +619,7 @@ func Test_Handler_CreateDocumentCommentReply(t *testing.T) {
 				tx,
 				c.EntryType,
 				activity.NewTarget(activity.TargetKindReplyRevision, _revisionID.String()),
-				replyMetadata(),
+				replyMetadata(tx.InsertDocumentCommentReplyCalls()[0].R.ID),
 			)
 		})
 	}
@@ -1236,7 +1236,7 @@ func Test_Handler_UpdateDocumentCommentReply(t *testing.T) {
 				tx,
 				c.EntryType,
 				activity.NewTarget(activity.TargetKindReplyRevision, _revisionID.String()),
-				replyMetadata(),
+				replyMetadata(_replyID),
 			)
 		})
 	}
@@ -1245,6 +1245,11 @@ func Test_Handler_UpdateDocumentCommentReply(t *testing.T) {
 func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 	stubComment := func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
 		return storedComment("u2"), nil
+	}
+
+	// changed reports the status write as one that changed the comment.
+	changed := func(context.Context, commentCore.Comment) (bool, error) {
+		return true, nil
 	}
 
 	cc := map[string]struct {
@@ -1312,8 +1317,8 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 		"Error returned by Tx.UpdateDocumentCommentStatus": {
 			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
 			Tx: &TxMock{
-				UpdateDocumentCommentStatusFunc: func(context.Context, commentCore.Comment) error {
-					return assert.AnError
+				UpdateDocumentCommentStatusFunc: func(context.Context, commentCore.Comment) (bool, error) {
+					return false, assert.AnError
 				},
 			},
 			Body:       `{"resolved":true}`,
@@ -1326,6 +1331,7 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 		"Error returned by Tx.FetchNewestDocumentCommentRevision": {
 			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
 			Tx: &TxMock{
+				UpdateDocumentCommentStatusFunc: changed,
 				FetchNewestDocumentCommentRevisionFunc: func(context.Context, xid.ID, string) (commentCore.Revision, error) {
 					return commentCore.Revision{}, assert.AnError
 				},
@@ -1341,6 +1347,7 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 		"Error returned by Tx.InsertDocumentActivityEntries": {
 			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
 			Tx: &TxMock{
+				UpdateDocumentCommentStatusFunc:        changed,
 				FetchNewestDocumentCommentRevisionFunc: stubNewestRevision,
 				InsertDocumentActivityEntriesFunc: func(context.Context, ...activity.Entry) error {
 					return assert.AnError
@@ -1358,6 +1365,7 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 		"Error returned by Tx.Commit": {
 			DB: &DBMock{FetchDocumentCommentFunc: stubComment},
 			Tx: &TxMock{
+				UpdateDocumentCommentStatusFunc:        changed,
 				FetchNewestDocumentCommentRevisionFunc: stubNewestRevision,
 				CommitFunc: func() error {
 					return assert.AnError
@@ -1385,7 +1393,7 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 					return c, nil
 				},
 			},
-			Tx:          &TxMock{FetchNewestDocumentCommentRevisionFunc: stubNewestRevision},
+			Tx:          &TxMock{UpdateDocumentCommentStatusFunc: changed, FetchNewestDocumentCommentRevisionFunc: stubNewestRevision},
 			Body:        `{"resolved":true}`,
 			RespCode:    http.StatusOK,
 			Fetched:     1,
@@ -1415,7 +1423,7 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 					return c, nil
 				},
 			},
-			Tx:         &TxMock{FetchNewestDocumentCommentRevisionFunc: stubNewestRevision},
+			Tx:         &TxMock{UpdateDocumentCommentStatusFunc: changed, FetchNewestDocumentCommentRevisionFunc: stubNewestRevision},
 			Body:       `{"resolved":false}`,
 			RespCode:   http.StatusOK,
 			Fetched:    1,
@@ -1448,6 +1456,16 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 			RespCode: http.StatusOK,
 			Fetched:  1,
 		},
+		"Status a concurrent request already set records nothing": {
+			DB:         &DBMock{FetchDocumentCommentFunc: stubComment},
+			Tx:         &TxMock{},
+			Body:       `{"resolved":true}`,
+			RespCode:   http.StatusOK,
+			Fetched:    1,
+			Begun:      1,
+			Updated:    1,
+			RolledBack: 1,
+		},
 		"Already unresolved": {
 			DB:       &DBMock{FetchDocumentCommentFunc: stubComment},
 			Body:     `{"resolved":false}`,
@@ -1472,7 +1490,7 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.DB.FetchDocumentCommentCalls(), c.Fetched)
 			assert.Len(t, c.DB.BeginTxCalls(), c.Begun)
-			assert.Len(t, tx.FetchNewestDocumentCommentRevisionCalls(), c.Newest)
+			require.Len(t, tx.FetchNewestDocumentCommentRevisionCalls(), c.Newest)
 			assert.Len(t, tx.InsertDocumentActivityEntriesCalls(), c.Entries)
 			assert.Len(t, tx.CommitCalls(), c.Committed)
 			assert.Len(t, tx.RollbackCalls(), c.RolledBack)
@@ -1703,8 +1721,8 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, db.BeginTxCalls(), c.Begun)
 			assert.Len(t, c.Tx.FetchDocumentCommentCalls(), c.Fetched)
-			assert.Len(t, c.Tx.DeleteDocumentCommentCalls(), c.Deleted)
-			assert.Len(t, c.Tx.FetchNewestDocumentCommentRevisionCalls(), c.Newest)
+			require.Len(t, c.Tx.DeleteDocumentCommentCalls(), c.Deleted)
+			require.Len(t, c.Tx.FetchNewestDocumentCommentRevisionCalls(), c.Newest)
 			assert.Len(t, c.Tx.InsertDocumentActivityEntriesCalls(), c.Entries)
 			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
 			assert.Len(t, c.Tx.RollbackCalls(), c.RolledBack)
@@ -1957,8 +1975,8 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 			assert.Len(t, c.DB.FetchDocumentCommentCalls(), c.CommentFetched)
 			assert.Len(t, c.DB.FetchDocumentCommentReplyCalls(), c.ReplyFetched)
 			assert.Len(t, c.DB.BeginTxCalls(), c.Begun)
-			assert.Len(t, tx.DeleteDocumentCommentReplyCalls(), c.Deleted)
-			assert.Len(t, tx.FetchNewestDocumentCommentReplyRevisionCalls(), c.Newest)
+			require.Len(t, tx.DeleteDocumentCommentReplyCalls(), c.Deleted)
+			require.Len(t, tx.FetchNewestDocumentCommentReplyRevisionCalls(), c.Newest)
 			assert.Len(t, tx.InsertDocumentActivityEntriesCalls(), c.Entries)
 			assert.Len(t, tx.CommitCalls(), c.Committed)
 			assert.Len(t, tx.RollbackCalls(), c.RolledBack)
@@ -1977,7 +1995,7 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 					tx,
 					c.EntryType,
 					activity.NewTarget(activity.TargetKindReplyRevision, _revisionID.String()),
-					replyMetadata(),
+					replyMetadata(_replyID),
 				)
 			}
 

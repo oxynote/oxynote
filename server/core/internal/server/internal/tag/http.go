@@ -277,12 +277,6 @@ func (h *Handler) AssignBranchTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := h.db.FetchTag(r.Context(), inp.TagID, session.ActiveOrganizationID)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
 	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -298,9 +292,15 @@ func (h *Handler) AssignBranchTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if changed {
-		entry := activity.NewTagEntry(activity.UserActor(session.UserID), activity.TypeTagAssigned, *doc, *t)
-
-		if err = tx.InsertDocumentActivityEntries(r.Context(), entry); err != nil {
+		err = recordTagChange(
+			r.Context(),
+			tx,
+			activity.UserActor(session.UserID),
+			activity.TypeTagAssigned,
+			*doc,
+			inp.TagID,
+		)
+		if err != nil {
 			httpserver.RespondError(h.log, w, err)
 			return
 		}
@@ -347,12 +347,6 @@ func (h *Handler) UnassignBranchTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := h.db.FetchTag(r.Context(), tagID, session.ActiveOrganizationID)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
 	tx, err := sqlutil.BeginTx[Tx](r.Context(), h.db)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -368,9 +362,15 @@ func (h *Handler) UnassignBranchTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if changed {
-		entry := activity.NewTagEntry(activity.UserActor(session.UserID), activity.TypeTagUnassigned, *doc, *t)
-
-		if err = tx.InsertDocumentActivityEntries(r.Context(), entry); err != nil {
+		err = recordTagChange(
+			r.Context(),
+			tx,
+			activity.UserActor(session.UserID),
+			activity.TypeTagUnassigned,
+			*doc,
+			tagID,
+		)
+		if err != nil {
 			httpserver.RespondError(h.log, w, err)
 			return
 		}
@@ -403,6 +403,25 @@ func extractBranchPath(r *http.Request) (xid.ID, xid.ID, error) {
 	return documentID, branchID, nil
 }
 
+// recordTagChange records a tag change on the document's branch, keeping
+// the tag's name. A tag a change removed may already be deleted, so the
+// tag is fetched only once the change is known.
+func recordTagChange(
+	ctx context.Context,
+	tx Tx,
+	actor activity.Actor,
+	tp activity.Type,
+	doc documentCore.Document,
+	tagID xid.ID,
+) error {
+	t, err := tx.FetchTag(ctx, tagID, doc.OrganizationID)
+	if err != nil {
+		return err
+	}
+
+	return tx.InsertDocumentActivityEntries(ctx, activity.NewTagEntry(actor, tp, doc, *t))
+}
+
 // DB is an interface that handles communication with the tag database.
 //
 //go:generate ../../../../scripts/codegen/mock -t internal DB db
@@ -419,6 +438,9 @@ type DB interface {
 type Tx interface {
 	sqlutil.Tx
 	BranchTagDB
+
+	// FetchTag should fetch one tag of the organization.
+	FetchTag(ctx context.Context, id xid.ID, organizationID string) (*tagCore.Tag, error)
 }
 
 // TreeDB is an interface that handles communication with the database of
