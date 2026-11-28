@@ -11,6 +11,7 @@ import {
 	mockAuthEndpoint,
 	mockAuthOrganization,
 	mountWithFrozenClock,
+	seedAuthOrganization,
 	settleActionSubmit,
 	t,
 } from "../test-helpers"
@@ -60,6 +61,78 @@ describe("<WorkspaceURLChangeAction>", { concurrent: false }, () => {
 		const wrapper = await mountAction()
 
 		expect(wrapper.get("input").attributes("placeholder")).toBe("acme-corp")
+	})
+
+	it("starts the url field from the workspace slug", async ({ expect }) => {
+		const wrapper = await mountAction()
+
+		expect((wrapper.get("input").element as HTMLInputElement).value).toBe(
+			"acme-corp",
+		)
+	})
+
+	it("fills the url field once a late organization arrives", async ({
+		expect,
+	}) => {
+		seedAuthOrganization(null)
+
+		const wrapper = await mountAction()
+		expect((wrapper.get("input").element as HTMLInputElement).value).toBe("")
+
+		mockAuthOrganization({
+			id: "org-1",
+			name: "Acme Corp",
+			slug: "acme-corp",
+			members: [],
+			invitations: [],
+		})
+		await nextTick()
+
+		expect((wrapper.get("input").element as HTMLInputElement).value).toBe(
+			"acme-corp",
+		)
+	})
+
+	it("follows a slug that changed since the field was filled", async ({
+		expect,
+	}) => {
+		const wrapper = await mountAction()
+		expect((wrapper.get("input").element as HTMLInputElement).value).toBe(
+			"acme-corp",
+		)
+
+		mockAuthOrganization({
+			id: "org-1",
+			name: "Acme Corp",
+			slug: "acme-renamed",
+			members: [],
+			invitations: [],
+		})
+		await nextTick()
+
+		expect((wrapper.get("input").element as HTMLInputElement).value).toBe(
+			"acme-renamed",
+		)
+	})
+
+	it("leaves a half-typed url alone when the organization updates", async ({
+		expect,
+	}) => {
+		const wrapper = await mountAction()
+		await wrapper.get("input").setValue("half-typed")
+
+		mockAuthOrganization({
+			id: "org-1",
+			name: "Acme Corp",
+			slug: "acme-renamed",
+			members: [],
+			invitations: [],
+		})
+		await nextTick()
+
+		expect((wrapper.get("input").element as HTMLInputElement).value).toBe(
+			"half-typed",
+		)
 	})
 
 	it("checks the new slug before claiming it", async ({ expect }) => {

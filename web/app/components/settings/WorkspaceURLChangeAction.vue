@@ -26,13 +26,31 @@ const formSchema = toTypedSchema(
 					"settings.action-modals.workspace-url-change.errors.url-regex",
 				),
 			})
-			.default(fetchOrganization.state.value.data?.data?.slug || ""),
+			.default(""),
 	}),
 )
 const form = useForm({
 	validationSchema: formSchema,
 })
 const loading = ref(false)
+const organization = computed(() => fetchOrganization.state.value.data?.data)
+
+// the organization arrives asynchronously, so the form follows it rather
+// than reading it once during setup. A dialog mounted before the query
+// settles would keep showing an empty url, and one reopened after a save
+// would show the value from before it. Resetting only while the form is clean
+// leaves a half-typed edit alone.
+watchImmediate(organization, (org) => {
+	if (!org || form.meta.value.dirty) {
+		return
+	}
+
+	form.resetForm({
+		values: {
+			url: org.slug,
+		},
+	})
+})
 
 const onSubmit = form.handleSubmit(async (values) => {
 	if (values.url === fetchOrganization.state.value.data?.data?.slug) {
