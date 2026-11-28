@@ -284,6 +284,110 @@ func Test_RootBlock_StripCommentMarks(t *testing.T) {
 	}, stripped)
 }
 
+func Test_RootBlock_mergeAdjacentText(t *testing.T) {
+	t.Parallel()
+
+	rb := RootBlock{
+		Type: BlockNodeDoc,
+		Content: []Block{{
+			Type: BlockNodeParagraph,
+			Content: []Block{
+				{Type: BlockNodeText, Text: "h"},
+				{Type: BlockNodeText, Text: "ell"},
+				{Type: BlockNodeText, Text: "o"},
+			},
+		}},
+	}
+
+	assert.Equal(t, RootBlock{
+		Type: BlockNodeDoc,
+		Content: []Block{{
+			Type:    BlockNodeParagraph,
+			Content: []Block{{Type: BlockNodeText, Text: "hello"}},
+		}},
+	}, rb.mergeAdjacentText())
+}
+
+func Test_joinTextRuns(t *testing.T) {
+	bold := []Mark{{Type: "bold"}}
+	link := []Mark{{Type: "link", Attrs: Attributes{"href": "https://example.com"}}}
+
+	cc := map[string]struct {
+		Blocks []Block
+		Result []Block
+	}{
+		"No blocks": {},
+		"Unmarked runs join": {
+			Blocks: []Block{{Type: BlockNodeText, Text: "he"}, {Type: BlockNodeText, Text: "llo"}},
+			Result: []Block{{Type: BlockNodeText, Text: "hello"}},
+		},
+		"Runs with the same marks join": {
+			Blocks: []Block{{Type: BlockNodeText, Text: "he", Marks: bold}, {Type: BlockNodeText, Text: "llo", Marks: bold}},
+			Result: []Block{{Type: BlockNodeText, Text: "hello", Marks: bold}},
+		},
+		"Runs with other marks stay apart": {
+			Blocks: []Block{{Type: BlockNodeText, Text: "he", Marks: bold}, {Type: BlockNodeText, Text: "llo"}},
+			Result: []Block{{Type: BlockNodeText, Text: "he", Marks: bold}, {Type: BlockNodeText, Text: "llo"}},
+		},
+		"Runs with other mark attributes stay apart": {
+			Blocks: []Block{
+				{Type: BlockNodeText, Text: "he", Marks: link},
+				{Type: BlockNodeText, Text: "llo", Marks: []Mark{{Type: "link", Attrs: Attributes{"href": "https://other.com"}}}},
+			},
+			Result: []Block{
+				{Type: BlockNodeText, Text: "he", Marks: link},
+				{Type: BlockNodeText, Text: "llo", Marks: []Mark{{Type: "link", Attrs: Attributes{"href": "https://other.com"}}}},
+			},
+		},
+		"Runs apart from another node stay apart": {
+			Blocks: []Block{{Type: BlockNodeText, Text: "a"}, {Type: "hardBreak"}, {Type: BlockNodeText, Text: "b"}},
+			Result: []Block{{Type: BlockNodeText, Text: "a"}, {Type: "hardBreak"}, {Type: BlockNodeText, Text: "b"}},
+		},
+		"Nested runs join": {
+			Blocks: []Block{{
+				Type:    BlockNodeParagraph,
+				Content: []Block{{Type: BlockNodeText, Text: "a"}, {Type: BlockNodeText, Text: "b"}},
+			}},
+			Result: []Block{{
+				Type:    BlockNodeParagraph,
+				Content: []Block{{Type: BlockNodeText, Text: "ab"}},
+			}},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, joinTextRuns(c.Blocks))
+		})
+	}
+}
+
+func Test_Block_continuesWith(t *testing.T) {
+	text := Block{Type: BlockNodeText, Text: "a", Marks: []Mark{{Type: "bold"}}}
+
+	cc := map[string]struct {
+		Block  Block
+		Next   Block
+		Result bool
+	}{
+		"Same marks":       {Block: text, Next: Block{Type: BlockNodeText, Text: "b", Marks: []Mark{{Type: "bold"}}}, Result: true},
+		"Other marks":      {Block: text, Next: Block{Type: BlockNodeText, Text: "b"}},
+		"Other attributes": {Block: text, Next: Block{Type: BlockNodeText, Text: "b", Marks: []Mark{{Type: "bold"}}, Attrs: Attributes{"x": 1}}},
+		"Not text":         {Block: text, Next: Block{Type: BlockNodeParagraph}},
+		"After not text":   {Block: Block{Type: BlockNodeParagraph}, Next: text},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Block.continuesWith(c.Next))
+		})
+	}
+}
+
 func Test_FilePath(t *testing.T) {
 	cc := map[string]struct {
 		ID     string

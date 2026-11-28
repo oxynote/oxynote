@@ -348,6 +348,27 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			Entries:                       1,
 			Rollback:                      1,
 		},
+		"Comment on part of the text is no edit": {
+			DB: &DBMock{FetchDocumentUnsafeByBranchIDFunc: textDoc},
+			Tx: &TxMock{
+				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
+					return []string{"u1", "u9"}, nil
+				},
+			},
+			Body:                          `{"name":"Doc","content":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"h"},{"type":"text","text":"i","marks":[{"type":"comment","attrs":{"commentId":"c1"}}]}]}]},"maintainers":["u1","u9"]}`,
+			RespCode:                      http.StatusOK,
+			Committed:                     1,
+			Metadata:                      1,
+			SearchJobs:                    1,
+			History:                       1,
+			HistoryBy:                     null.StringFrom("u9"),
+			FetchDocumentUnsafeByBranchID: 1,
+			BeginTx:                       1,
+			UpdateDocument:                1,
+			FetchDocumentMaintainers:      1,
+			Entries:                       1,
+			Rollback:                      1,
+		},
 		"Error returned by Tx.RecordDocumentContentEdit": {
 			DB: &DBMock{
 				FetchDocumentUnsafeByBranchIDFunc: func(context.Context, xid.ID) (*documentCore.Document, error) {

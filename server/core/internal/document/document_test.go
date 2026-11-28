@@ -465,16 +465,35 @@ func Test_Document_ContentEdited(t *testing.T) {
 	edited := unmarked.StripCommentMarks()
 	edited.Content[0].Content[0].Text = "hello there"
 
+	// a comment on "ell" splits the one text node into three.
+	split := RootBlock{
+		Type: BlockNodeDoc,
+		Content: []Block{{
+			Type:  BlockNodeParagraph,
+			Attrs: Attributes{"uid": "p1", "align": "left"},
+			Content: []Block{
+				{Type: BlockNodeText, Text: "h", Marks: []Mark{{Type: "bold"}}},
+				{
+					Type:  BlockNodeText,
+					Text:  "ell",
+					Marks: []Mark{{Type: "bold"}, {Type: MarkComment, Attrs: Attributes{"commentId": "c2"}}},
+				},
+				{Type: BlockNodeText, Text: "o", Marks: []Mark{{Type: "bold"}}},
+			},
+		}},
+	}
+
 	cc := map[string]struct {
 		Prev   RootBlock
 		Next   RootBlock
 		Result bool
 	}{
-		"Same content":           {Prev: unmarked, Next: unmarked.StripCommentMarks()},
-		"Comment mark added":     {Prev: unmarked, Next: marked},
-		"Comment mark removed":   {Prev: marked, Next: unmarked},
-		"Text edited":            {Prev: unmarked, Next: edited, Result: true},
-		"Text edited and marked": {Prev: marked, Next: edited, Result: true},
+		"Same content":                {Prev: unmarked, Next: unmarked.StripCommentMarks()},
+		"Comment mark added":          {Prev: unmarked, Next: marked},
+		"Comment mark removed":        {Prev: marked, Next: unmarked},
+		"Comment on part of the text": {Prev: unmarked, Next: split},
+		"Text edited":                 {Prev: unmarked, Next: edited, Result: true},
+		"Text edited and marked":      {Prev: marked, Next: edited, Result: true},
 	}
 
 	for cn, c := range cc {

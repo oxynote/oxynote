@@ -312,7 +312,10 @@ func (d Document) SnapshotEqual(o Document) bool {
 // comment marks are set aside. Adding or resolving a comment writes a
 // mark, and that change belongs to the comment, not to an edit.
 func (d Document) ContentEdited(prev Document) bool {
-	return !contentEqual(d.Content.StripCommentMarks(), prev.Content.StripCommentMarks())
+	return !contentEqual(
+		d.Content.StripCommentMarks().mergeAdjacentText(),
+		prev.Content.StripCommentMarks().mergeAdjacentText(),
+	)
 }
 
 // contentEqual reports whether two block trees are the same. They are
