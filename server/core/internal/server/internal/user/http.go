@@ -6,12 +6,14 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
 	userCore "github.com/oxynote/oxynote/server/core/internal/user"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
 // Handler holds dependencies required for user-related operations.
@@ -123,7 +125,8 @@ func (h *Handler) UploadUserImage(w http.ResponseWriter, r *http.Request) {
 }
 
 // FetchUserSpotlights handles the retrieval of the state of the session
-// user's spotlights.
+// user's spotlights. A spotlight that was never shown starts showing once
+// the user's activity earns it.
 func (h *Handler) FetchUserSpotlights(w http.ResponseWriter, r *http.Request) {
 	session, ok := auth.RequireSession(h.log, w, r)
 	if !ok {
@@ -135,6 +138,33 @@ func (h *Handler) FetchUserSpotlights(w http.ResponseWriter, r *http.Request) {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
+
+	if spotlights.Star.Valid {
+		httpserver.Respond(h.log, w, spotlights, http.StatusOK)
+		return
+	}
+
+	activity, err := h.db.FetchUserSpotlightActivity(r.Context(), session.UserID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if !activity.QualifiesForStar(timeutil.Now()) {
+		httpserver.Respond(h.log, w, spotlights, http.StatusOK)
+		return
+	}
+
+	inp := userCore.SpotlightsInput{
+		Star: userCore.SpotlightStateShown,
+	}
+
+	if err := h.db.UpsertUserSpotlights(r.Context(), session.UserID, inp); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	spotlights.Star = null.ValueFrom(inp.Star)
 
 	httpserver.Respond(h.log, w, spotlights, http.StatusOK)
 }
@@ -182,6 +212,10 @@ type DBAgent interface {
 
 	// FetchUserSpotlights should retrieve the state of the user's spotlights.
 	FetchUserSpotlights(ctx context.Context, userID string) (userCore.Spotlights, error)
+
+	// FetchUserSpotlightActivity should retrieve what the user has done so
+	// far.
+	FetchUserSpotlightActivity(ctx context.Context, userID string) (userCore.SpotlightActivity, error)
 
 	// UpsertUserSpotlights should store the state of the user's spotlights,
 	// keeping a dismissed spotlight dismissed.

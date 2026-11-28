@@ -423,10 +423,50 @@ func Test_Handler_FetchUserSpotlights(t *testing.T) {
 		}
 	}
 
-	stubDB := func(spotlights userCore.Spotlights, err error) *DBMock {
+	wasFetchUserSpotlightActivityCalled := func(count int) check {
+		return func(t *testing.T, db *DBMock, _ *httptest.ResponseRecorder) {
+			ff := db.FetchUserSpotlightActivityCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "u1", ff[0].UserID)
+		}
+	}
+
+	wasUpsertUserSpotlightsCalled := func(count int) check {
+		return func(t *testing.T, db *DBMock, _ *httptest.ResponseRecorder) {
+			ff := db.UpsertUserSpotlightsCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "u1", ff[0].UserID)
+			assert.Equal(t, userCore.SpotlightsInput{Star: userCore.SpotlightStateShown}, ff[0].Inp)
+		}
+	}
+
+	// earned is an activity that earns the star spotlight at any time.
+	earned := userCore.SpotlightActivity{CreatedDocuments: 100}
+
+	stubDB := func(
+		spotlights userCore.Spotlights,
+		activity userCore.SpotlightActivity,
+		fetchErr, activityErr, upsertErr error,
+	) *DBMock {
 		return &DBMock{
 			FetchUserSpotlightsFunc: func(context.Context, string) (userCore.Spotlights, error) {
-				return spotlights, err
+				return spotlights, fetchErr
+			},
+			FetchUserSpotlightActivityFunc: func(context.Context, string) (userCore.SpotlightActivity, error) {
+				return activity, activityErr
+			},
+			UpsertUserSpotlightsFunc: func(context.Context, string, userCore.SpotlightsInput) error {
+				return upsertErr
 			},
 		}
 	}
@@ -442,34 +482,71 @@ func Test_Handler_FetchUserSpotlights(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
 				wasFetchUserSpotlightsCalled(0),
+				wasFetchUserSpotlightActivityCalled(0),
+				wasUpsertUserSpotlightsCalled(0),
 			),
 		},
 		"Error returned by DB.FetchUserSpotlights": {
-			DB: stubDB(userCore.Spotlights{}, assert.AnError),
+			DB: stubDB(userCore.Spotlights{}, earned, assert.AnError, nil, nil),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasFetchUserSpotlightsCalled(1),
+				wasFetchUserSpotlightActivityCalled(0),
+				wasUpsertUserSpotlightsCalled(0),
 			),
 		},
-		"Successful retrieval of an unset state": {
-			DB: stubDB(userCore.Spotlights{}, nil),
+		"Error returned by DB.FetchUserSpotlightActivity": {
+			DB: stubDB(userCore.Spotlights{}, earned, nil, assert.AnError, nil),
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasFetchUserSpotlightsCalled(1),
+				wasFetchUserSpotlightActivityCalled(1),
+				wasUpsertUserSpotlightsCalled(0),
+			),
+		},
+		"Error returned by DB.UpsertUserSpotlights": {
+			DB: stubDB(userCore.Spotlights{}, earned, nil, nil, assert.AnError),
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasFetchUserSpotlightsCalled(1),
+				wasFetchUserSpotlightActivityCalled(1),
+				wasUpsertUserSpotlightsCalled(1),
+			),
+		},
+		"Successful retrieval of an unset state that is not earned": {
+			DB: stubDB(userCore.Spotlights{}, userCore.SpotlightActivity{}, nil, nil, nil),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"star":null}`),
 				wasFetchUserSpotlightsCalled(1),
+				wasFetchUserSpotlightActivityCalled(1),
+				wasUpsertUserSpotlightsCalled(0),
 			),
 		},
-		"Successful retrieval of a shown state": {
-			DB: stubDB(userCore.Spotlights{Star: null.ValueFrom(userCore.SpotlightStateShown)}, nil),
+		"Successful retrieval of an unset state that is earned": {
+			DB: stubDB(userCore.Spotlights{}, earned, nil, nil, nil),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"star":"shown"}`),
 				wasFetchUserSpotlightsCalled(1),
+				wasFetchUserSpotlightActivityCalled(1),
+				wasUpsertUserSpotlightsCalled(1),
+			),
+		},
+		"Successful retrieval of a shown state": {
+			DB: stubDB(userCore.Spotlights{Star: null.ValueFrom(userCore.SpotlightStateShown)}, earned, nil, nil, nil),
+			Checks: checks(
+				hasResp(http.StatusOK, `{"star":"shown"}`),
+				wasFetchUserSpotlightsCalled(1),
+				wasFetchUserSpotlightActivityCalled(0),
+				wasUpsertUserSpotlightsCalled(0),
 			),
 		},
 		"Successful retrieval of a dismissed state": {
-			DB: stubDB(userCore.Spotlights{Star: null.ValueFrom(userCore.SpotlightStateDismissed)}, nil),
+			DB: stubDB(userCore.Spotlights{Star: null.ValueFrom(userCore.SpotlightStateDismissed)}, earned, nil, nil, nil),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"star":"dismissed"}`),
 				wasFetchUserSpotlightsCalled(1),
+				wasFetchUserSpotlightActivityCalled(0),
+				wasUpsertUserSpotlightsCalled(0),
 			),
 		},
 	}

@@ -24,6 +24,9 @@ var _ DB = &DBMock{}
 //			BeginTxFunc: func(ctx context.Context) (sqlutil.Tx, error) {
 //				panic("mock out the BeginTx method")
 //			},
+//			FetchUserSpotlightActivityFunc: func(ctx context.Context, userID string) (userCore.SpotlightActivity, error) {
+//				panic("mock out the FetchUserSpotlightActivity method")
+//			},
 //			FetchUserSpotlightsFunc: func(ctx context.Context, userID string) (userCore.Spotlights, error) {
 //				panic("mock out the FetchUserSpotlights method")
 //			},
@@ -43,6 +46,9 @@ type DBMock struct {
 	// BeginTxFunc mocks the BeginTx method.
 	BeginTxFunc func(ctx context.Context) (sqlutil.Tx, error)
 
+	// FetchUserSpotlightActivityFunc mocks the FetchUserSpotlightActivity method.
+	FetchUserSpotlightActivityFunc func(ctx context.Context, userID string) (userCore.SpotlightActivity, error)
+
 	// FetchUserSpotlightsFunc mocks the FetchUserSpotlights method.
 	FetchUserSpotlightsFunc func(ctx context.Context, userID string) (userCore.Spotlights, error)
 
@@ -58,6 +64,13 @@ type DBMock struct {
 		BeginTx []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
+		}
+		// FetchUserSpotlightActivity holds details about calls to the FetchUserSpotlightActivity method.
+		FetchUserSpotlightActivity []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// UserID is the userID argument value.
+			UserID string
 		}
 		// FetchUserSpotlights holds details about calls to the FetchUserSpotlights method.
 		FetchUserSpotlights []struct {
@@ -85,10 +98,11 @@ type DBMock struct {
 			Inp userCore.SpotlightsInput
 		}
 	}
-	lockBeginTx              sync.RWMutex
-	lockFetchUserSpotlights  sync.RWMutex
-	lockUpdateUserImage      sync.RWMutex
-	lockUpsertUserSpotlights sync.RWMutex
+	lockBeginTx                    sync.RWMutex
+	lockFetchUserSpotlightActivity sync.RWMutex
+	lockFetchUserSpotlights        sync.RWMutex
+	lockUpdateUserImage            sync.RWMutex
+	lockUpsertUserSpotlights       sync.RWMutex
 }
 
 // BeginTx calls BeginTxFunc.
@@ -124,6 +138,46 @@ func (mock *DBMock) BeginTxCalls() []struct {
 	mock.lockBeginTx.RLock()
 	calls = mock.calls.BeginTx
 	mock.lockBeginTx.RUnlock()
+	return calls
+}
+
+// FetchUserSpotlightActivity calls FetchUserSpotlightActivityFunc.
+func (mock *DBMock) FetchUserSpotlightActivity(ctx context.Context, userID string) (userCore.SpotlightActivity, error) {
+	callInfo := struct {
+		Ctx    context.Context
+		UserID string
+	}{
+		Ctx:    ctx,
+		UserID: userID,
+	}
+	mock.lockFetchUserSpotlightActivity.Lock()
+	mock.calls.FetchUserSpotlightActivity = append(mock.calls.FetchUserSpotlightActivity, callInfo)
+	mock.lockFetchUserSpotlightActivity.Unlock()
+	if mock.FetchUserSpotlightActivityFunc == nil {
+		var (
+			spotlightActivityOut userCore.SpotlightActivity
+			errOut               error
+		)
+		return spotlightActivityOut, errOut
+	}
+	return mock.FetchUserSpotlightActivityFunc(ctx, userID)
+}
+
+// FetchUserSpotlightActivityCalls gets all the calls that were made to FetchUserSpotlightActivity.
+// Check the length with:
+//
+//	len(mockedDB.FetchUserSpotlightActivityCalls())
+func (mock *DBMock) FetchUserSpotlightActivityCalls() []struct {
+	Ctx    context.Context
+	UserID string
+} {
+	var calls []struct {
+		Ctx    context.Context
+		UserID string
+	}
+	mock.lockFetchUserSpotlightActivity.RLock()
+	calls = mock.calls.FetchUserSpotlightActivity
+	mock.lockFetchUserSpotlightActivity.RUnlock()
 	return calls
 }
 
