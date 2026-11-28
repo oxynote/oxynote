@@ -52,7 +52,11 @@ export interface UniqueIDOptions {
 	updateDocument: boolean
 }
 
-export const UniqueID = Extension.create<UniqueIDOptions>({
+interface UniqueIDStorage {
+	unsubscribeSynced: (() => void) | null
+}
+
+export const UniqueID = Extension.create<UniqueIDOptions, UniqueIDStorage>({
 	name: "uniqueID",
 
 	// we’ll set a very high priority to make sure this runs first
@@ -66,6 +70,12 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 			generateID: () => uuidv4(),
 			filterTransaction: null,
 			updateDocument: true,
+		}
+	},
+
+	addStorage() {
+		return {
+			unsubscribeSynced: null,
 		}
 	},
 
@@ -144,9 +154,7 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 
 			view.dispatch(tr)
 
-			if (provider) {
-				provider.off("synced", createIds)
-			}
+			this.storage.unsubscribeSynced?.()
 		}
 
 		/**
@@ -161,10 +169,18 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 			}
 
 			provider.on("synced", createIds)
+			this.storage.unsubscribeSynced = () => {
+				provider.off("synced", createIds)
+				this.storage.unsubscribeSynced = null
+			}
 		} else {
 			createIds()
 			return
 		}
+	},
+
+	onDestroy() {
+		this.storage.unsubscribeSynced?.()
 	},
 
 	addProseMirrorPlugins() {
